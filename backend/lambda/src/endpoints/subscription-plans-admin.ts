@@ -13,6 +13,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 
@@ -263,9 +264,9 @@ export function registerSubscriptionPlansAdminEndpoints(app: Hono) {
       body: '',
       pathParameters: {},
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' };
     const result = await getPlansHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -280,9 +281,9 @@ export function registerSubscriptionPlansAdminEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' };
     const result = await createPlanHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -297,9 +298,9 @@ export function registerSubscriptionPlansAdminEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: { planId: c.req.param('planId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' };
     const result = await updatePlanHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -313,9 +314,9 @@ export function registerSubscriptionPlansAdminEndpoints(app: Hono) {
       body: '',
       pathParameters: { planId: c.req.param('planId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'subscription-plans', functionVersion: '$LATEST' };
     const result = await deletePlanHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });

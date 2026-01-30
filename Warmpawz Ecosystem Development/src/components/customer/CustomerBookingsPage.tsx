@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { ArrowLeft, Calendar, Clock, MapPin, Phone } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface Booking {
   id: string;
@@ -31,7 +31,7 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled'>('all');
   
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     if (phone) {
@@ -48,7 +48,7 @@ export function CustomerBookingsPage({ phone, onBack, onNavigate }: CustomerBook
         `${API_BASE}/customer/bookings?phone=${encodeURIComponent(phone)}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'apikey': publicAnonKey
           }
         }

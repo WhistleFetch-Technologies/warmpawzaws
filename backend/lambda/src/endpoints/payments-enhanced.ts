@@ -30,6 +30,7 @@ import { normalizePayment, isValidUUID } from '../types/entities';
 import {
   CreatePaymentRequestSchema,
 } from '@warmpawz/api-contracts/payments';
+import { calculateFees } from './fee-config';
 
 // ============================================================================
 // PAYMENT HANDLERS
@@ -94,12 +95,31 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     // Get booking to extract customer_id and vendor_id
-    const bookings = await select('bookings', { id: bookingId });
+    let bookings: any[];
+    try {
+      bookings = await select('bookings', { id: bookingId });
+    } catch (dbErr: any) {
+      const err = dbErr as Error & { step?: string };
+      err.step = 'select_booking';
+      throw err;
+    }
     if (bookings.length === 0) {
       return this.error('Booking not found', 404, 'NOT_FOUND', undefined, requestId);
     }
 
     const booking = bookings[0];
+
+    // Payments table requires customer_id NOT NULL
+    const effectiveCustomerId = customerId || booking.customer_id;
+    if (!effectiveCustomerId) {
+      return this.error(
+        'Customer ID is required for payment (missing in request and booking)',
+        400,
+        'VALIDATION_ERROR',
+        { bookingId },
+        requestId
+      );
+    }
 
     try {
       // Calculate tax for booking payment
@@ -224,9 +244,48 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         gstAmount = 0;
       }
 
+      // Calculate platform and convenience fees
+      let platformFee = 0;
+      let convenienceFee = 0;
+      let feesBreakdown = null;
+      
+      try {
+        // Fetch fee configuration from platform_settings
+        const feeSettings = await query(
+          `SELECT setting_value FROM platform_settings WHERE setting_key = 'platform:fees:config'`
+        );
+        
+        const feeConfig = feeSettings.rows.length > 0 
+          ? (feeSettings.rows[0].setting_value as any)
+          : undefined;
+        
+        // Calculate fees based on service style and type
+        const fees = calculateFees({
+          amount,
+          serviceStyle: serviceStyle || undefined,
+          type: 'booking',
+          config: feeConfig,
+        });
+        
+        platformFee = fees.platformFee;
+        convenienceFee = fees.convenienceFee;
+        feesBreakdown = fees.breakdown;
+        
+        console.log(`[PAYMENT] Calculated fees: platform=₹${platformFee}, convenience=₹${convenienceFee}`);
+      } catch (feeError) {
+        console.warn('[PAYMENT] Error calculating fees, using defaults:', feeError);
+        // Default fees if calculation fails
+        platformFee = Math.round((amount * 2) / 100); // 2% with max cap
+        platformFee = Math.min(platformFee, 200);
+        convenienceFee = 10; // ₹10 flat
+      }
+      
+      // Total amount including fees (fees are added on top of service amount)
+      const totalAmount = amount + gstAmount + platformFee + convenienceFee;
+
       // Handle wallet payment if requested
       let walletDebited = false;
-      let remainingAmount = amount;
+      let remainingAmount = totalAmount; // Use total amount including fees
       let walletTransactionId = null;
 
       if (useWallet && customerId) {
@@ -272,12 +331,14 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       }
 
       // Use transaction for atomicity
-      const payment = await withTransaction(async (client) => {
+      let payment: any;
+      try {
+        payment = await withTransaction(async (client) => {
         const paymentData: any = {
           booking_id: bookingId,
-          customer_id: customerId || booking.customer_id,
+          customer_id: effectiveCustomerId,
           vendor_id: vendorId || booking.vendor_id,
-          amount: amount,
+          amount: amount, // Base service amount
           currency: 'INR',
           payment_method: walletDebited && remainingAmount === 0 ? 'wallet' : (paymentMethod || 'razorpay'),
           payment_status: walletDebited && remainingAmount === 0 ? 'completed' : 'pending',
@@ -293,6 +354,13 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
             paymentData.gst_rule_id = gstRuleId;
           }
         }
+        
+        // Add platform and convenience fees
+        if (platformFee > 0 || convenienceFee > 0) {
+          paymentData.platform_fee = platformFee;
+          paymentData.convenience_fee = convenienceFee;
+          paymentData.total_amount = totalAmount; // Total including all fees and taxes
+        }
 
         const columns = Object.keys(paymentData);
         const values = Object.values(paymentData);
@@ -305,6 +373,10 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
 
         return result.rows[0];
       });
+      } catch (txErr: any) {
+        (txErr as Error & { step?: string }).step = 'payment_insert';
+        throw txErr;
+      }
 
       // Log audit entry
       await logAuditEntry({
@@ -382,8 +454,17 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         message: 'Payment created successfully',
         isNew: true,
         walletUsed: walletDebited,
-        walletAmount: walletDebited ? (walletAmount > 0 ? walletAmount : amount - remainingAmount) : 0,
+        walletAmount: walletDebited ? (walletAmount > 0 ? walletAmount : totalAmount - remainingAmount) : 0,
         remainingAmount: remainingAmount > 0 ? remainingAmount : 0,
+        // Fee breakdown for frontend display
+        fees: {
+          baseAmount: amount,
+          platformFee,
+          convenienceFee,
+          gstAmount,
+          totalAmount,
+          breakdown: feesBreakdown,
+        },
       };
 
       // Store idempotency key
@@ -393,12 +474,22 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
 
       return this.success(response, requestId);
     } catch (error: any) {
-      console.error('Error creating payment:', error);
+      const message = error?.message || 'Failed to create payment';
+      console.error('[PAYMENT-CREATE] Error creating payment:', message, error?.stack);
+      // Include error details in response so client can show them (and so CloudWatch has context)
+      const details: Record<string, unknown> = {
+        step: error?.step || 'unknown',
+        message: message,
+      };
+      if (process.env.NODE_ENV === 'development' || process.env.STAGE === 'dev') {
+        details.stack = error?.stack;
+        details.code = error?.code;
+      }
       return this.error(
-        error.message || 'Failed to create payment',
+        message,
         500,
         'INTERNAL_ERROR',
-        undefined,
+        details,
         requestId
       );
     }
@@ -660,15 +751,26 @@ export function registerPaymentEndpointsEnhanced(app: Hono) {
       
       return c.json(body, result.statusCode);
     } catch (error: any) {
-      console.error('Error in payments/create endpoint:', error);
-      return c.json({ 
-        success: false, 
-        error: { 
-          code: 'INTERNAL_ERROR', 
-          message: error?.message || 'Internal server error',
-          details: error 
-        } 
-      }, 500);
+      const message = error?.message || 'Internal server error';
+      console.error('[PAYMENTS-CREATE] Endpoint error:', message, error?.stack);
+      // Return structured JSON so client can display it (CORS-safe; API Gateway forwards body)
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: 'INTERNAL_ERROR',
+            message,
+            details: {
+              step: error?.step,
+              ...(process.env.NODE_ENV === 'development' || process.env.STAGE === 'dev'
+                ? { stack: error?.stack, raw: String(error) }
+                : {}),
+            },
+          },
+          meta: { timestamp: new Date().toISOString() },
+        },
+        500
+      );
     }
   });
   

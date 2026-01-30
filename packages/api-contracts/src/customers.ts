@@ -16,6 +16,9 @@ export const UpdateCustomerProfileRequestSchema = z.object({
   email: z.string().email('Invalid email format').optional(),
   address: z.string().max(500, 'Address too long').optional(),
   pincode: z.string().regex(/^\d{6}$/, 'Invalid pincode format').optional(),
+  city: z.string().max(100, 'City too long').optional(),
+  state: z.string().max(100, 'State too long').optional(),
+  landmark: z.string().max(200, 'Landmark too long').optional(),
   photo: z.string().url('Invalid photo URL').optional(),
 });
 

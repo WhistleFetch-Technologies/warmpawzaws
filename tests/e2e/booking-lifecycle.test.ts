@@ -17,7 +17,7 @@
  * ============================================================================
  */
 
-const API_BASE_URL = process.env.TEST_API_URL || 'http://localhost:3000';
+const API_BASE_URL = process.env.TEST_API_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
 
 // ============================================================================
 // TEST UTILITIES
@@ -45,12 +45,16 @@ async function apiRequest(
     body: body ? JSON.stringify(body) : undefined,
   });
   
-  const data: any = await response.json();
-  
+  const data: any = await response.json().catch(() => ({}));
+  const errMsg =
+    typeof data?.error === 'string'
+      ? data.error
+      : data?.error?.message ?? (data?.error && JSON.stringify(data.error)) ?? response.statusText;
+
   if (!response.ok) {
-    throw new Error(`API Error: ${data.error || response.statusText}`);
+    throw new Error(`API Error: ${errMsg}`);
   }
-  
+
   return data;
 }
 
@@ -74,29 +78,37 @@ function log(step: string, message: string, data?: any): void {
 async function testServiceDiscovery(ctx: TestContext): Promise<void> {
   log('1.1', 'Testing service category discovery');
   
-  // Search for vet services
+  // Search for vet services (API returns vendors, services, total)
   const searchResults = await apiRequest(
     `/search?q=veterinarian&lat=12.9716&lng=77.5946`,
     'GET'
   );
   
-  assert(searchResults.results !== undefined, 'Search should return results');
-  log('1.1', 'Search results received', { count: searchResults.total });
+  assert(
+    searchResults.vendors !== undefined || searchResults.services !== undefined,
+    'Search should return vendors or services'
+  );
+  const total = searchResults.total ?? (searchResults.vendors?.length || 0) + (searchResults.services?.length || 0);
+  log('1.1', 'Search results received', { count: total });
 
-  // Get service categories
-  log('1.2', 'Testing service category listing');
-  const categories = await apiRequest('/service-discovery/categories', 'GET');
-  assert(categories.categories?.length > 0, 'Should have service categories');
+  // Get problem grid / categories (public API returns problems and byCategory)
+  log('1.2', 'Testing problem grid / category listing');
+  const categories = await apiRequest('/public/problem-grid', 'GET');
+  assert(
+    categories.problems !== undefined || categories.byCategory !== undefined,
+    'Should return problem grid or categories'
+  );
 
-  // Get vendors for a category
+  // Get vendors via customer discovery (replaces legacy service-discovery/vendors)
   log('1.3', 'Testing vendor discovery for category');
   const vendors = await apiRequest(
-    `/service-discovery/vendors?category=vet_clinic&service_style=centre&lat=12.9716&lng=77.5946`,
+    `/customer/discover-services?lat=12.9716&lng=77.5946&role_id=veterinarian`,
     'GET'
   );
   
-  if (vendors.vendors?.length > 0) {
-    ctx.vendorId = vendors.vendors[0].id;
+  const providerList = vendors.providers ?? vendors.vendors ?? [];
+  if (Array.isArray(providerList) && providerList.length > 0) {
+    ctx.vendorId = providerList[0].id ?? providerList[0].vendor_id;
     log('1.3', 'Vendor selected', { vendorId: ctx.vendorId });
   }
 }
@@ -104,7 +116,7 @@ async function testServiceDiscovery(ctx: TestContext): Promise<void> {
 async function testProblemGridDiscovery(ctx: TestContext): Promise<void> {
   log('2.1', 'Testing problem grid discovery');
   
-  const problems = await apiRequest('/service-discovery/problems', 'GET');
+  const problems = await apiRequest('/public/problem-grid', 'GET');
   assert(problems.problems !== undefined, 'Should return problem grid');
   
   // Search by symptom
@@ -114,7 +126,8 @@ async function testProblemGridDiscovery(ctx: TestContext): Promise<void> {
     'GET'
   );
   
-  log('2.2', 'Symptom search results', { count: symptomResults.total });
+  const symptomTotal = symptomResults.total ?? (symptomResults.vendors?.length || 0) + (symptomResults.services?.length || 0);
+  log('2.2', 'Symptom search results', { count: symptomTotal });
 }
 
 async function testVendorSelection(ctx: TestContext): Promise<void> {
@@ -126,16 +139,16 @@ async function testVendorSelection(ctx: TestContext): Promise<void> {
 
   log('3.1', 'Testing vendor profile fetch');
   try {
-    const vendor = await apiRequest(`/vendor/${ctx.vendorId}/profile`, 'GET');
+    const vendor = await apiRequest(`/customer/vendor/${ctx.vendorId}`, 'GET');
     assert(vendor.vendor !== undefined, 'Should return vendor profile');
-    log('3.1', 'Vendor profile retrieved', { name: vendor.vendor?.business_name });
+    log('3.1', 'Vendor profile retrieved', { name: vendor.vendor?.businessName });
   } catch (error) {
     log('3.1', 'Vendor profile fetch failed (may not exist in test env)', { error });
   }
 
   log('3.2', 'Testing vendor services listing');
   try {
-    const services = await apiRequest(`/vendor/${ctx.vendorId}/services`, 'GET');
+    const services = await apiRequest(`/customer/vendor/${ctx.vendorId}/services`, 'GET');
     
     if (services.services?.length > 0) {
       ctx.serviceId = services.services[0].id;
@@ -151,23 +164,23 @@ async function testStaffSelection(ctx: TestContext): Promise<void> {
 
   log('4.1', 'Testing staff listing');
   try {
-    const staff = await apiRequest(
-      `/service-discovery/staff?vendor_id=${ctx.vendorId}&lat=12.9716&lng=77.5946`,
+    const vendorDetail = await apiRequest(
+      `/customer/vendor/${ctx.vendorId}`,
       'GET'
     );
-    
-    if (staff.staff?.length > 0) {
-      ctx.staffId = staff.staff[0].id;
+    const staffList = vendorDetail.staff ?? vendorDetail.vendor?.staff ?? [];
+    if (Array.isArray(staffList) && staffList.length > 0) {
+      ctx.staffId = staffList[0].id;
       log('4.1', 'Staff selected', { staffId: ctx.staffId });
     }
   } catch (error) {
-    log('4.1', 'Staff fetch failed', { error });
+    log('4.1', 'Staff fetch failed (may not exist)', { error });
   }
 
   log('4.2', 'Testing previous provider check');
   try {
     const previousProvider = await apiRequest(
-      `/customer/${ctx.customerPhone}/previous-providers?service_type=vet`,
+      `/customer/${ctx.customerPhone}/previous-providers?serviceType=vet`,
       'GET'
     );
     log('4.2', 'Previous providers', { count: previousProvider.providers?.length || 0 });
@@ -184,8 +197,9 @@ async function testBookingCreation(ctx: TestContext): Promise<void> {
   const dateStr = tomorrow.toISOString().split('T')[0];
 
   try {
+    // Backend expects vendorId and date (camelCase) - followup-reschedule.ts
     const slots = await apiRequest(
-      `/bookings/available-slots?vendor_id=${ctx.vendorId}&service_id=${ctx.serviceId}&date=${dateStr}`,
+      `/bookings/available-slots?vendorId=${ctx.vendorId}&date=${dateStr}&serviceId=${ctx.serviceId || ''}`,
       'GET'
     );
     log('5.1', 'Available slots', { count: slots.slots?.length || 0 });
@@ -195,19 +209,21 @@ async function testBookingCreation(ctx: TestContext): Promise<void> {
 
   log('5.2', 'Testing booking creation');
   try {
+    // Backend CreateBookingRequestSchema expects camelCase
     const booking = await apiRequest('/bookings/create', 'POST', {
-      customer_phone: ctx.customerPhone,
-      vendor_id: ctx.vendorId || 'test-vendor-001',
-      service_id: ctx.serviceId || 'test-service-001',
-      staff_id: ctx.staffId,
-      booking_date: dateStr,
-      booking_time: '10:00',
-      service_style: 'centre',
-      total_amount: 500,
+      customerPhone: ctx.customerPhone,
+      customerId: ctx.customerId || undefined,
+      vendorId: ctx.vendorId || 'test-vendor-001',
+      serviceId: ctx.serviceId || 'test-service-001',
+      staffId: ctx.staffId,
+      bookingDate: dateStr,
+      bookingTime: '10:00',
+      serviceType: 'at_center',
+      amount: 500,
     });
-    
-    if (booking.booking_id) {
-      ctx.bookingId = booking.booking_id;
+    const bid = booking.data?.bookingId ?? booking.data?.booking_id ?? booking.bookingId ?? booking.booking_id ?? booking.id;
+    if (bid) {
+      ctx.bookingId = bid;
       log('5.2', 'Booking created', { bookingId: ctx.bookingId });
     }
   } catch (error: any) {
@@ -249,8 +265,10 @@ async function testBookingLifecycle(ctx: TestContext): Promise<void> {
 
   log('7.1', 'Testing booking confirmation');
   try {
-    await apiRequest(`/bookings/${ctx.bookingId}/confirm`, 'POST', {
-      payment_id: ctx.paymentId || 'test-payment',
+    // Backend: PUT /bookings/:bookingId/status with status: 'confirmed' (no separate /confirm)
+    await apiRequest(`/bookings/${ctx.bookingId}/status`, 'PUT', {
+      status: 'confirmed',
+      reason: ctx.paymentId ? `Payment ${ctx.paymentId}` : undefined,
     });
     log('7.1', 'Booking confirmed');
   } catch (error: any) {
@@ -267,8 +285,10 @@ async function testBookingLifecycle(ctx: TestContext): Promise<void> {
 
   log('7.3', 'Testing booking start (check-in)');
   try {
-    await apiRequest(`/bookings/${ctx.bookingId}/start`, 'POST', {
-      started_by: ctx.staffId || 'test-staff',
+    // Backend: PUT /bookings/:bookingId/status with status: 'in_progress'
+    await apiRequest(`/bookings/${ctx.bookingId}/status`, 'PUT', {
+      status: 'in_progress',
+      reason: ctx.staffId ? `Started by ${ctx.staffId}` : 'E2E test start',
     });
     log('7.3', 'Booking started');
   } catch (error: any) {
@@ -277,8 +297,9 @@ async function testBookingLifecycle(ctx: TestContext): Promise<void> {
 
   log('7.4', 'Testing booking completion');
   try {
-    await apiRequest(`/bookings/${ctx.bookingId}/complete`, 'POST', {
-      completed_by: ctx.staffId || 'test-staff',
+    // Backend: PUT /bookings/:bookingId/status with status: 'completed'
+    await apiRequest(`/bookings/${ctx.bookingId}/status`, 'PUT', {
+      status: 'completed',
       notes: 'Service completed successfully',
     });
     log('7.4', 'Booking completed');

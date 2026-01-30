@@ -5,7 +5,7 @@ import {
   AlertCircle, RefreshCw, Eye, EyeOff, Package, ChevronRight,
   Phone, Navigation, Star, MessageSquare, User
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { copyTextToClipboard } from '../../utils/shareUtils';
 import { Badge } from '../ui/badge';
 
@@ -94,9 +94,9 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine 
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${phone}/bookings`,
+        `${getApiBaseUrl()}/customer/${phone}/bookings`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

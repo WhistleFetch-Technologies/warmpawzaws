@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, ChevronDown, ChevronRight, Edit, Trash2, MoreVertical } from 'lucide-react';
 import { Button } from '../../ui/button';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { DeleteCategoryModal } from './DeleteCategoryModal';
 import { BulkActionsModal } from './BulkActionsModal';
 import { ExportCategoriesModal } from './ExportCategoriesModal';
@@ -83,10 +83,10 @@ export function CategoriesTab({ onRefresh }: CategoriesTabProps) {
       console.log('Loading categories...');
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/categories`,
+        `${getApiBaseUrl()}/admin/catalog/categories`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -139,11 +139,11 @@ export function CategoriesTab({ onRefresh }: CategoriesTabProps) {
     
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/categories/${categoryId}`,
+        `${getApiBaseUrl()}/admin/catalog/categories/${categoryId}`,
         {
           method: 'DELETE',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -162,11 +162,11 @@ export function CategoriesTab({ onRefresh }: CategoriesTabProps) {
     
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/services/${serviceId}`,
+        `${getApiBaseUrl()}/admin/catalog/services/${serviceId}`,
         {
           method: 'DELETE',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -186,11 +186,11 @@ export function CategoriesTab({ onRefresh }: CategoriesTabProps) {
     try {
       setSeeding(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/seed-veterinary-services`,
+        `${getApiBaseUrl()}/admin/catalog/seed-veterinary-services`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -217,11 +217,11 @@ export function CategoriesTab({ onRefresh }: CategoriesTabProps) {
     try {
       setSeeding(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/seed-all-services`,
+        `${getApiBaseUrl()}/admin/catalog/seed-all-services`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, FileText, Pill, Calendar, Download, AlertCircle, Stethoscope, Clipboard, Activity } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface MedicalHistoryModalProps {
   petId: string;
@@ -45,10 +45,10 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
       console.log('[MEDICAL UI] Requesting history for appointment:', bookingId);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/appointments/${bookingId}/medical-records`,
+        `${getApiBaseUrl()}/appointments/${bookingId}/medical-records`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'X-User-Id': vendorId,
             'X-User-Role': 'vendor'
           }

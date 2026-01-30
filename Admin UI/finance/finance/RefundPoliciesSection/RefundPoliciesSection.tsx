@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Button, Input, Label, Checkbox } from "@repo/ui";
 
 import { Plus, Edit, Trash2, Check, X, RefreshCw } from "lucide-react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import { toast } from "sonner";
 
 // Hardcoded vendor types with icons - same as payment settings
@@ -57,9 +57,9 @@ export function RefundPoliciesSection() {
 		try {
 			setLoading(true);
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings-rules`,
+				`${getApiBaseUrl()}/admin/vendor-settings-rules`,
 				{
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 
@@ -119,8 +119,8 @@ export function RefundPoliciesSection() {
 		setSaving(true);
 		try {
 			const url = isCreatingNew
-				? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings/refund-tiers`
-				: `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings/refund-tiers/${editingTier.id}`;
+				? `${getApiBaseUrl()}/admin/vendor-settings/refund-tiers`
+				: `${getApiBaseUrl()}/admin/vendor-settings/refund-tiers/${editingTier.id}`;
 
 			const method = isCreatingNew ? "POST" : "PUT";
 
@@ -128,7 +128,7 @@ export function RefundPoliciesSection() {
 				method,
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${publicAnonKey}`,
+					...getAuthHeaders(),
 				},
 				body: JSON.stringify(editingTier),
 			});
@@ -156,10 +156,10 @@ export function RefundPoliciesSection() {
 
 		try {
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings/refund-tiers/${tierId}`,
+				`${getApiBaseUrl()}/admin/vendor-settings/refund-tiers/${tierId}`,
 				{
 					method: "DELETE",
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 

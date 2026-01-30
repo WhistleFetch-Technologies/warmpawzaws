@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Package, Calendar, Users, Gift, CheckCircle, Info, Plus, X } from 'lucide-react';
+import { ArrowLeft, Package, Calendar, Users, Gift, CheckCircle, Info, Plus, X, AlertTriangle, Loader2 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
@@ -8,6 +8,9 @@ import { Textarea } from '../../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Card } from '../../ui/card';
 import { Switch } from '../../ui/switch';
+import { useVendorCapabilities } from '../hooks/useVendorCapabilities';
+import { hasVendorRole } from '@/lib/vendor-utils';
+import { toast } from 'sonner';
 
 interface Service {
   id: string;
@@ -63,16 +66,67 @@ interface PackageFormData {
 
 export function CreatePackageFlow({
   vendorId,
+  vendorData,
   onBack,
   onSuccess
 }: {
   vendorId: string;
+  vendorData?: any;
   onBack: () => void;
   onSuccess: () => void;
 }) {
   const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [availableServices, setAvailableServices] = useState<Service[]>([]);
+  
+  // ✅ CAPABILITY CHECK: Only allow package creation for vendors with package_management capability
+  // ✅ CRITICAL FIX: Check both roleId formats (camelCase and snake_case)
+  const effectiveRoleId = vendorData?.roleId || vendorData?.role_id || (vendorData as any)?.selected_role_id;
+  const { capabilities, loading: capsLoading } = useVendorCapabilities(effectiveRoleId);
+  const hasPackageCapability = capabilities.package_management || 
+                                capabilities.packages || 
+                                capabilities.packageManagement || 
+                                false;
+  
+  // ✅ FIX: Solo vendors cannot create packages EXCEPT trainers/walkers/sitters
+  const isSoloVendor = vendorData?.vendorConfiguration === 'solo' || 
+                       vendorData?.isSoloProvider || 
+                       vendorData?.is_solo_provider || 
+                       false;
+  
+  // ✅ Check if this is a trainer/walker/sitter/groomer who CAN create session packages as solo (solo trainer, solo groomer)
+  const isTrainerWalkerSitter = vendorData ? hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter', 'pet_groomer', 'groomer', 'groomer_solo']) : false;
+  
+  // ✅ Solo trainers/walkers/sitters CAN create session packages
+  // Business accounts with package capability CAN create all packages
+  const canCreatePackages = hasPackageCapability || isTrainerWalkerSitter || !isSoloVendor;
+  
+  // ✅ Block if: solo vendor AND NOT a trainer/walker/sitter
+  const shouldBlockAccess = isSoloVendor && !isTrainerWalkerSitter;
+  
+  // ✅ Show access denied if no capability and not a trainer/walker/sitter, OR blocked solo vendor
+  if (!capsLoading && (shouldBlockAccess || (!hasPackageCapability && !isTrainerWalkerSitter))) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white flex flex-col items-center justify-center p-6">
+        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
+          <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+            <AlertTriangle className="w-8 h-8 text-red-500" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Package Creation Not Available</h2>
+          <p className="text-gray-600 mb-6">
+            {shouldBlockAccess
+              ? 'Solo providers can create custom services but not packages. Solo trainers, walkers, sitters, and groomers can create session packages.'
+              : 'Package creation is only available for business accounts with package management capability enabled.'
+            }
+          </p>
+          <Button onClick={onBack} className="w-full bg-orange-500 hover:bg-orange-600 text-white">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Go Back
+          </Button>
+        </div>
+      </div>
+    );
+  }
   const [formData, setFormData] = useState<PackageFormData>({
     packageName: '',
     packageType: 'bundle',
@@ -168,21 +222,46 @@ export function CreatePackageFlow({
     return formData.includedServicesDetails.reduce((sum, s) => sum + s.price, 0);
   };
 
+  // Validate form before submission
+  const validateForm = (): string | null => {
+    if (!formData.packageName.trim()) {
+      return 'Package name is required';
+    }
+    if (!formData.packagePrice || formData.packagePrice <= 0) {
+      return 'Package price must be greater than 0';
+    }
+    if (formData.includedServices.length === 0) {
+      return 'Please select at least one service to include';
+    }
+    if (formData.validityPeriod <= 0 && formData.validityType !== 'unlimited') {
+      return 'Validity period must be greater than 0';
+    }
+    return null;
+  };
+
   const handleSubmit = async () => {
+    // Validate form
+    const validationError = validateForm();
+    if (validationError) {
+      toast.error(validationError);
+      return;
+    }
+
     try {
       setSubmitting(true);
 
       const response = await apiClient.post<any>(`/vendor/${vendorId}/packages`, formData);
 
       if (response.success) {
-        alert('✅ Package created and submitted for approval!');
+        toast.success('Package created and submitted for approval!');
         onSuccess();
       } else {
-        alert(`Error: ${response.error || 'Failed to create package'}`);
+        toast.error(response.error || response.hint || 'Failed to create package');
       }
     } catch (error: any) {
       console.error('Error creating package:', error);
-      alert('Failed to create package. Please try again.');
+      const errorMessage = error?.response?.data?.error || error?.message || 'Failed to create package. Please try again.';
+      toast.error(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -772,10 +851,17 @@ export function CreatePackageFlow({
               </Button>
               <Button
                 onClick={handleSubmit}
-                disabled={submitting || formData.benefits.length === 0}
+                disabled={submitting || !formData.packageName.trim() || !formData.packagePrice}
                 className="flex-1 bg-[#FF8C42] hover:bg-[#FF7A2E]"
               >
-                {submitting ? 'Submitting...' : 'Submit for Approval'}
+                {submitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  'Submit for Approval'
+                )}
               </Button>
             </div>
           </div>

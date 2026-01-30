@@ -5,10 +5,10 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../utils/api-config';
 import { cacheManager } from '../utils/cache-manager';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 export interface RoleConfig {
   roleId: string;
@@ -55,7 +55,7 @@ export function useRoleConfigs() {
 
       // Fetch from API
       const response = await fetch(`${API_BASE}/config/roles`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (!response.ok) {

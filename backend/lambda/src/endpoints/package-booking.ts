@@ -621,12 +621,27 @@ export function registerPackageBookingEndpoints(app: Hono) {
 
   /**
    * GET /customer/:customerId/previous-providers
-   * Get customer's previous service providers for quick rebooking
+   * Get customer's previous service providers for quick rebooking.
+   * customerId can be UUID or phone number (frontend often passes phone).
    */
   app.get("/customer/:customerId/previous-providers", async (c) => {
     try {
-      const { customerId } = c.req.param();
+      let { customerId: rawId } = c.req.param();
       const serviceType = c.req.query('serviceType');
+
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawId);
+      let customerId = rawId;
+      if (!isUUID) {
+        const normalizedPhone = rawId.replace(/\D/g, '').slice(-10);
+        const custResult = await query(
+          `SELECT id FROM customers WHERE phone = $1 OR phone = $2 OR phone LIKE $3 LIMIT 1`,
+          [rawId, normalizedPhone, `%${normalizedPhone}`]
+        );
+        if (!custResult.rows?.length) {
+          return c.json({ success: true, providers: [], total: 0 });
+        }
+        customerId = custResult.rows[0].id;
+      }
 
       let providerQuery = `
         SELECT 
@@ -636,7 +651,6 @@ export function registerPackageBookingEndpoints(app: Hono) {
           v.address,
           v.city,
           v.rating as vendor_rating,
-          v.profile_image_url,
           (
             SELECT COUNT(*) FROM reviews r 
             WHERE r.vendor_id = v.id AND r.is_approved = true
@@ -672,6 +686,7 @@ export function registerPackageBookingEndpoints(app: Hono) {
 
           return {
             ...provider,
+            profile_image_url: provider.profile_image_url ?? null,
             hasActivePackage: packageResult.rows.length > 0,
             activePackage: packageResult.rows[0] || null
           };

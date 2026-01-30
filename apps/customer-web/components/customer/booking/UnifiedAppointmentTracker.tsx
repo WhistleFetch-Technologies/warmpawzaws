@@ -161,24 +161,25 @@ export function UnifiedAppointmentTracker({
             try {
               // Check if tracking is available
               const trackingRes = await apiClient.get<any>(
-                `/gps-tracking/booking/${booking.id || booking.bookingId}`
+                `/tracking/booking/${booking.id || booking.bookingId}`
               ).catch(() => null);
 
-              if (trackingRes?.isTracking && trackingRes.tracking) {
+              if (trackingRes?.success && trackingRes.tracking) {
+                const t = trackingRes.tracking;
                 appointmentItems.push({
                   id: booking.id || booking.bookingId,
                   type: 'home',
                   bookingId: booking.id || booking.bookingId,
                   serviceName: booking.serviceName || 'Home Service',
-                  providerName: trackingRes.tracking.staff_name || 'Provider',
-                  status: trackingRes.tracking.status === 'arriving' ? 'arriving' : 'in_progress',
+                  providerName: t.providerName || t.staff_name || 'Provider',
+                  status: t.status === 'arrived' ? 'arriving' : t.status === 'in_transit' ? 'in_progress' : 'in_progress',
                   trackingData: {
-                    staffName: trackingRes.tracking.staff_name,
-                    staffPhone: trackingRes.tracking.staff_phone,
-                    etaMinutes: trackingRes.tracking.eta_minutes,
-                    distanceKm: trackingRes.tracking.distance_km,
-                    currentLocation: trackingRes.tracking.current_location,
-                    destination: trackingRes.tracking.destination,
+                    staffName: t.providerName || t.staff_name,
+                    staffPhone: t.staff_phone,
+                    etaMinutes: t.estimatedEtaMinutes ?? t.eta_minutes,
+                    distanceKm: t.distanceKm ?? t.distance_km,
+                    currentLocation: t.currentLocation || t.current_location,
+                    destination: t.destinationLocation || t.destination,
                   },
                 });
               }

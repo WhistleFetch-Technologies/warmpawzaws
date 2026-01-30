@@ -24,10 +24,10 @@ import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-sec
 // CONFIGURATION
 // ============================================================================
 
-const DB_HOST = process.env.DB_HOST || process.env.RDS_HOSTNAME;
+const DB_HOST = process.env.DB_HOST || process.env.RDS_HOSTNAME || process.env.AURORA_PROXY_ENDPOINT;
 const DB_PORT = parseInt(process.env.DB_PORT || '5432', 10);
-const DB_NAME = process.env.DB_NAME || process.env.RDS_DB_NAME;
-const DB_SECRET_ARN = process.env.DB_SECRET_ARN;
+const DB_NAME = process.env.DB_NAME || process.env.RDS_DB_NAME || process.env.AURORA_DATABASE;
+const DB_SECRET_ARN = process.env.DB_SECRET_ARN || process.env.AURORA_SECRET_ARN;
 
 // Database credentials (will be fetched from Secrets Manager)
 let DB_USER: string | undefined = process.env.DB_USER || process.env.RDS_USERNAME;

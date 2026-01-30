@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { CheckCircle, XCircle, Clock, AlertCircle, RefreshCw } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 
 interface VendorStatusResponse {
   status: 'pending' | 'approved' | 'rejected' | 'more_info_required' | 'resubmitted' | 'not_found';

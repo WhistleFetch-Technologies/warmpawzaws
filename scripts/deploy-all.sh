@@ -116,8 +116,21 @@ echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━�
 for APP in admin-web customer-web vendor-web; do
     echo "  Building $APP..."
     cd "$PROJECT_ROOT/apps/$APP"
+    # Clean Next.js/React cache to avoid ENOENT and type-check flakes
+    rm -rf .next 2>/dev/null || true
     npm install --silent --legacy-peer-deps
-    npm run build
+    for attempt in 1 2; do
+        if npm run build; then
+            break
+        fi
+        if [ "$attempt" -eq 2 ]; then
+            echo -e "  ${RED}✗${NC} $APP build failed after 2 attempts"
+            exit 1
+        fi
+        echo -e "  ${YELLOW}Retrying $APP build (attempt 2)...${NC}"
+        rm -rf .next 2>/dev/null || true
+        sleep 2
+    done
     echo -e "  ${GREEN}✓${NC} $APP built"
 done
 echo ""
@@ -153,7 +166,7 @@ echo -e "  ${GREEN}✓${NC} Infrastructure deployed"
 echo ""
 
 # Get outputs
-API_URL=$(cat cdk-outputs.json | grep -o '"ApiGatewayUrl":"[^"]*' | cut -d'"' -f4 || echo "")
+API_URL=$(cat cdk-outputs.json | grep -o '"ApiGatewayUrl":"[^"]*' | cut -d'"' -f4 || echo '')
 
 # ============================================================================
 # STEP 5: VERIFY DEPLOYMENT

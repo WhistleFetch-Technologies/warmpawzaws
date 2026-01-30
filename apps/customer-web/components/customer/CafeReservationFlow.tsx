@@ -104,9 +104,11 @@ export function CafeReservationFlow(props: CafeReservationFlowProps) {
           amount: 0, // Cafe reservations may not require upfront payment
           notes: `Reservation for ${formData.guests} guests, ${formData.petCount} pets. ${formData.specialRequests || ''}`,
         });
-        const bookingId = (response as any).bookingId || (response as any).id;
+        const res1 = response as any;
+        const bookingId1 = res1?.data?.bookingId ?? res1?.bookingId ?? res1?.booking?.id ?? res1?.id ?? '';
+        if (!bookingId1) throw new Error(res1?.error ?? 'Failed to create reservation');
         toast.success('Reservation confirmed!');
-        props.onSuccess?.(bookingId);
+        props.onSuccess?.(bookingId1);
         props.onComplete?.();
         return;
       }
@@ -124,7 +126,9 @@ export function CafeReservationFlow(props: CafeReservationFlowProps) {
         notes: `Reservation for ${formData.guests} guests, ${formData.petCount} pets. ${formData.specialRequests || ''}`,
       });
       
-      const bookingId = (response as any).bookingId || (response as any).id;
+      const res = response as any;
+      const bookingId = res?.data?.bookingId ?? res?.bookingId ?? res?.booking?.id ?? res?.booking?.bookingId ?? res?.id ?? '';
+      if (!bookingId) throw new Error(res?.error ?? 'Failed to create reservation');
       toast.success('Reservation confirmed!');
       props.onSuccess?.(bookingId);
       props.onComplete?.();

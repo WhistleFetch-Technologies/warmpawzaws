@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { MapPin, Phone, AlertCircle, Clock, User } from 'lucide-react';
+import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 
 interface AmbulanceBookingFlowProps {
   vendorId: string;
@@ -38,7 +39,13 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
   const [pickupAddress, setPickupAddress] = useState('');
   const [dropAddress, setDropAddress] = useState('');
   const [urgency, setUrgency] = useState<'critical' | 'urgent' | 'normal'>('urgent');
-  const [contactPhone, setContactPhone] = useState(customerPhone);
+  const [contactPhone, setContactPhone] = useState(customerPhone.replace(/[^0-9]/g, ''));
+  const [contactCountryCode, setContactCountryCode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('customerCountryCode') || '+91';
+    }
+    return '+91';
+  });
 
   useEffect(() => {
     loadAvailableVehicles();
@@ -311,17 +318,23 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
 
         {/* Contact */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-0">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             Contact Phone *
           </label>
-          <div className="relative">
-            <Phone className="absolute left-3 top-1 text-gray-400" size={20} />
+          <div className="flex items-stretch border border-gray-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-orange-500 focus-within:border-orange-500 bg-white">
+            <CountryCodeSelector
+              selectedCode={contactCountryCode}
+              onSelect={setContactCountryCode}
+              disabled={false}
+            />
             <input
               type="tel"
+              inputMode="numeric"
               value={contactPhone}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setContactPhone(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setContactPhone(e.target.value.replace(/[^0-9]/g, ''))}
+              maxLength={10}
               required
-              className="w-full pl-0 pr-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="flex-1 px-4 py-3 outline-none"
             />
           </div>
         </div>

@@ -13,7 +13,7 @@ import {
   TrendingDown,
   Award
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 
 interface VendorAnalyticsProps {
@@ -38,9 +38,9 @@ export function VendorAnalytics({ vendorId, vendorData, onBack }: VendorAnalytic
 
       // Load vendor analytics
       const analyticsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/analytics?period=${period}`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/analytics?period=${period}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -51,9 +51,9 @@ export function VendorAnalytics({ vendorId, vendorData, onBack }: VendorAnalytic
 
       // Load staff performance
       const staffRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/staff-performance?period=${period}`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/staff-performance?period=${period}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

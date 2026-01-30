@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Upload, Loader2, CheckCircle } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface UnifiedUploadProps {
   onUploadComplete: (url: string) => void;
@@ -26,10 +26,10 @@ export function UnifiedUpload({ onUploadComplete, path = 'general', label = 'Upl
       formData.append('path', path);
 
       // Call the unified upload endpoint
-      const res = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/upload/unified`, {
+      const res = await fetch(`${getApiBaseUrl()}/upload/unified`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: formData
       });

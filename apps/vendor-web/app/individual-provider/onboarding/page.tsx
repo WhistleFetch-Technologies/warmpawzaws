@@ -27,19 +27,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 
-// Specialization options (same as staff)
-const SPECIALIZATION_OPTIONS = [
-  { id: 'eye_care', name: 'Eye Care', description: 'Eye problems, vision care, optical issues', icon: '👁️' },
-  { id: 'heart_cardio', name: 'Heart & Cardiovascular', description: 'Heart conditions, cardiac care, circulation', icon: '❤️' },
-  { id: 'neuro', name: 'Neurological Care', description: 'Nervous system, seizures, neurological issues', icon: '🧠' },
-  { id: 'general', name: 'General Health', description: 'General health issues, consultation, diagnosis', icon: '🩺' },
-  { id: 'skin_coat', name: 'Skin & Coat Care', description: 'Dermatology, skin conditions, coat health', icon: '🧴' },
-  { id: 'dental', name: 'Dental Care', description: 'Dental cleaning, oral health, tooth issues', icon: '🦷' },
-  { id: 'surgery', name: 'Surgery & Procedures', description: 'Surgical procedures, operations, aftercare', icon: '🔪' },
-  { id: 'nutrition', name: 'Nutrition & Diet', description: 'Diet planning, nutrition counseling', icon: '🥗' },
-  { id: 'emergency', name: 'Emergency Care', description: 'Emergency treatment, critical care', icon: '🚨' },
-  { id: 'orthopedic', name: 'Orthopedic Care', description: 'Bone, joint, muscle issues', icon: '🦴' },
-];
+// Role options for individual providers
 
 const ROLE_OPTIONS = [
   { id: 'veterinarian', name: 'Veterinarian', description: 'Individual vet without clinic', icon: <Stethoscope className="w-5 h-5" /> },
@@ -64,7 +52,6 @@ export default function IndividualProviderOnboardingPage() {
     qualifications: '',
     experience: '',
     bio: '',
-    specializations: [] as string[],
     defaultLocation: null as any,
   });
 
@@ -135,8 +122,8 @@ export default function IndividualProviderOnboardingPage() {
   };
 
   const handleSubmit = async () => {
-    // Validate all mandatory fields
-    if (!formData.name || !formData.phone || !formData.role) {
+    // Validate all mandatory fields (trim whitespace)
+    if (!formData.name?.trim() || !formData.phone?.trim() || !formData.role) {
       toast.error('Name, phone, and role are required');
       return;
     }
@@ -148,11 +135,6 @@ export default function IndividualProviderOnboardingPage() {
 
     if (!formData.qualifications || formData.qualifications.trim() === '') {
       toast.error('Qualifications are MANDATORY');
-      return;
-    }
-
-    if (formData.specializations.length === 0) {
-      toast.error('At least one specialization is MANDATORY');
       return;
     }
 
@@ -178,12 +160,6 @@ export default function IndividualProviderOnboardingPage() {
         photoUrl = photoPreview;
       }
 
-      // Map specializations
-      const specializationNames = formData.specializations.map(id => {
-        const spec = SPECIALIZATION_OPTIONS.find(s => s.id === id);
-        return spec?.name || id;
-      });
-
       const payload = {
         name: formData.name,
         phone: formData.phone,
@@ -193,7 +169,6 @@ export default function IndividualProviderOnboardingPage() {
         qualifications: formData.qualifications,
         experienceYears: parseInt(formData.experience) || 0,
         bio: formData.bio,
-        specializations: specializationNames,
         defaultLocation: formData.defaultLocation,
       };
 
@@ -201,7 +176,7 @@ export default function IndividualProviderOnboardingPage() {
 
       if (response.success) {
         toast.success('Profile created successfully! OTP sent to your mobile for verification.');
-        router.push('/staff/login');
+        router.push('/auth');
       } else {
         throw new Error(response.error || 'Failed to create profile');
       }
@@ -211,15 +186,6 @@ export default function IndividualProviderOnboardingPage() {
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const toggleSpecialization = (specId: string) => {
-    setFormData(prev => ({
-      ...prev,
-      specializations: prev.specializations.includes(specId)
-        ? prev.specializations.filter(id => id !== specId)
-        : [...prev.specializations, specId],
-    }));
   };
 
   return (
@@ -441,54 +407,6 @@ export default function IndividualProviderOnboardingPage() {
               />
             </div>
 
-            {/* Specializations */}
-            <div>
-              <Label className="text-sm font-medium text-gray-700 mb-2 block">
-                Specializations <span className="text-red-500">*</span> <span className="text-red-500 font-semibold">(MANDATORY - At least one)</span>
-              </Label>
-              <p className="text-xs text-gray-500 mb-3">Select areas of expertise. At least one specialization is mandatory.</p>
-              <div className="space-y-2 border border-gray-200 rounded-lg p-3 max-h-64 overflow-y-auto">
-                {SPECIALIZATION_OPTIONS.map((spec) => {
-                  const isSelected = formData.specializations.includes(spec.id);
-                  return (
-                    <label
-                      key={spec.id}
-                      className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
-                        isSelected ? 'bg-orange-50 border-2 border-[#FF8C42]' : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleSpecialization(spec.id)}
-                        className="sr-only"
-                      />
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                        isSelected ? 'bg-[#FF8C42] border-[#FF8C42]' : 'border-gray-300'
-                      }`}>
-                        {isSelected && <Check className="w-3 h-3 text-white" />}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">{spec.icon}</span>
-                          <span className="font-medium text-gray-900">{spec.name}</span>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-0.5">{spec.description}</p>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-              {formData.specializations.length > 0 ? (
-                <p className="text-sm text-green-600 mt-2 flex items-center gap-1">
-                  <Check className="w-4 h-4" />
-                  {formData.specializations.length} specialization{formData.specializations.length !== 1 ? 's' : ''} selected
-                </p>
-              ) : (
-                <p className="text-sm text-red-500 mt-2">Please select at least one specialization</p>
-              )}
-            </div>
-
             {/* Bio */}
             <div>
               <Label htmlFor="bio" className="text-sm font-medium text-gray-700 mb-1 block">
@@ -520,10 +438,6 @@ export default function IndividualProviderOnboardingPage() {
                   }
                   if (!formData.qualifications || formData.qualifications.trim() === '') {
                     toast.error('Qualifications are MANDATORY');
-                    return;
-                  }
-                  if (formData.specializations.length === 0) {
-                    toast.error('At least one specialization is MANDATORY');
                     return;
                   }
                   setStep(3);

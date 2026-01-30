@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Building2, CreditCard, Wallet, CheckCircle, XCircle, AlertCircle, Loader2, Upload, FileText } from 'lucide-react';
+import { Building2, CreditCard, Wallet, CheckCircle, XCircle, AlertCircle, Loader2, Upload, FileText, Edit2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import { EnhancedBankAccountForm } from '@/components/shared/EnhancedBankAccountForm';
 
 interface VendorPaymentSettingsProps {
   vendorId: string;
@@ -117,20 +118,40 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSaveBankAccount = async () => {
-    if (!validateBankData()) {
-      toast.error('Please fix the errors before saving');
-      return;
+  const handleSaveBankAccount = async (formData?: {
+    account_holder_name: string;
+    account_number: string;
+    ifsc_code: string;
+    bank_name: string;
+    branch_name: string;
+  }) => {
+    // Use formData from enhanced form if provided, otherwise use state
+    const dataToSave = formData || bankData;
+    
+    // Validation
+    if (!dataToSave.account_holder_name || !dataToSave.account_number || !dataToSave.ifsc_code) {
+      toast.error('Please fill all required fields');
+      throw new Error('Please fill all required fields');
+    }
+
+    if (!/^\d{9,18}$/.test(dataToSave.account_number)) {
+      toast.error('Account number must be 9-18 digits');
+      throw new Error('Account number must be 9-18 digits');
+    }
+
+    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(dataToSave.ifsc_code.toUpperCase())) {
+      toast.error('Invalid IFSC code format');
+      throw new Error('Invalid IFSC code format');
     }
 
     try {
       setSaving(true);
       const response = await apiClient.post(`/vendor/${vendorId}/bank-account`, {
-        account_holder_name: bankData.account_holder_name.trim(),
-        account_number: bankData.account_number.replace(/\s/g, ''),
-        ifsc_code: bankData.ifsc_code.toUpperCase().trim(),
-        bank_name: bankData.bank_name.trim(),
-        branch_name: bankData.branch_name.trim(),
+        account_holder_name: dataToSave.account_holder_name.trim(),
+        account_number: dataToSave.account_number.replace(/\s/g, ''),
+        ifsc_code: dataToSave.ifsc_code.toUpperCase().trim(),
+        bank_name: dataToSave.bank_name.trim(),
+        branch_name: dataToSave.branch_name.trim(),
       }) as any;
 
       if (response && response.success) {
@@ -142,6 +163,7 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
     } catch (error: any) {
       console.error('Error saving bank account:', error);
       toast.error(error.message || 'Failed to save bank account details');
+      throw error; // Re-throw for enhanced form to handle
     } finally {
       setSaving(false);
     }
@@ -171,8 +193,8 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
       setUploadingDoc(true);
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('type', type);
-      formData.append('vendor_id', vendorId);
+      formData.append('documentType', type);  // FIX: Backend expects 'documentType', not 'type'
+      formData.append('vendorId', vendorId);  // FIX: Backend expects 'vendorId', not 'vendor_id'
 
       const response = await apiClient.post(`/storage/upload`, formData) as any;
       
@@ -307,136 +329,47 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
               </div>
             )}
 
-            {/* Bank Account Form */}
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="account_holder_name" className="text-sm font-semibold text-gray-700">
-                  Account Holder Name *
-                </Label>
-                <Input
-                  id="account_holder_name"
-                  value={bankData.account_holder_name}
-                  onChange={(e) => setBankData({ ...bankData, account_holder_name: e.target.value })}
-                  placeholder="Enter account holder name"
-                  className={`mt-1 ${errors.account_holder_name ? 'border-red-500' : ''}`}
-                  disabled={bankStatus.is_verified}
-                />
-                {errors.account_holder_name && (
-                  <p className="text-xs text-red-600 mt-1">{errors.account_holder_name}</p>
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="account_number" className="text-sm font-semibold text-gray-700">
-                  Account Number *
-                </Label>
-                <Input
-                  id="account_number"
-                  type="text"
-                  value={bankData.account_number}
-                  onChange={(e) => {
-                    const value = e.target.value.replace(/\D/g, '');
-                    setBankData({ ...bankData, account_number: value });
-                  }}
-                  placeholder="Enter account number (9-18 digits)"
-                  className={`mt-1 ${errors.account_number ? 'border-red-500' : ''}`}
-                  maxLength={18}
-                  disabled={bankStatus.is_verified}
-                />
-                {errors.account_number && (
-                  <p className="text-xs text-red-600 mt-1">{errors.account_number}</p>
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="ifsc_code" className="text-sm font-semibold text-gray-700">
-                  IFSC Code *
-                </Label>
-                <Input
-                  id="ifsc_code"
-                  type="text"
-                  value={bankData.ifsc_code}
-                  onChange={(e) => {
-                    const value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-                    setBankData({ ...bankData, ifsc_code: value });
-                  }}
-                  placeholder="ABCD0123456"
-                  className={`mt-1 ${errors.ifsc_code ? 'border-red-500' : ''}`}
-                  maxLength={11}
-                  disabled={bankStatus.is_verified}
-                />
-                {errors.ifsc_code && (
-                  <p className="text-xs text-red-600 mt-1">{errors.ifsc_code}</p>
-                )}
-                <p className="text-xs text-gray-500 mt-1">Format: 4 letters, 0, 6 alphanumeric</p>
-              </div>
-
-              <div>
-                <Label htmlFor="bank_name" className="text-sm font-semibold text-gray-700">
-                  Bank Name *
-                </Label>
-                <Input
-                  id="bank_name"
-                  value={bankData.bank_name}
-                  onChange={(e) => setBankData({ ...bankData, bank_name: e.target.value })}
-                  placeholder="Enter bank name"
-                  className={`mt-1 ${errors.bank_name ? 'border-red-500' : ''}`}
-                  disabled={bankStatus.is_verified}
-                />
-                {errors.bank_name && (
-                  <p className="text-xs text-red-600 mt-1">{errors.bank_name}</p>
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="branch_name" className="text-sm font-semibold text-gray-700">
-                  Branch Name
-                </Label>
-                <Input
-                  id="branch_name"
-                  value={bankData.branch_name}
-                  onChange={(e) => setBankData({ ...bankData, branch_name: e.target.value })}
-                  placeholder="Enter branch name (optional)"
-                  className="mt-1"
-                  disabled={bankStatus.is_verified}
-                />
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            {!bankStatus.is_verified && (
-              <div className="flex gap-3">
-                <Button
-                  onClick={handleSaveBankAccount}
-                  disabled={saving}
-                  className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    'Save Bank Account'
-                  )}
-                </Button>
-                {bankStatus.exists && (
-                  <Button
-                    onClick={handleVerifyBankAccount}
-                    disabled={verifying || !bankStatus.exists}
-                    variant="outline"
-                    className="border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
-                  >
-                    {verifying ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Requesting...
-                      </>
-                    ) : (
-                      'Request Verification'
-                    )}
-                  </Button>
-                )}
+            {/* Enhanced Bank Account Form with IFSC Auto-lookup */}
+            {!bankStatus.is_verified ? (
+              <EnhancedBankAccountForm
+                initialData={bankData}
+                onSubmit={async (data) => {
+                  await handleSaveBankAccount(data);
+                }}
+                submitLabel={bankStatus.exists ? 'Update Bank Account' : 'Save Bank Account'}
+                showVerification={true}
+              />
+            ) : (
+              <div className="space-y-4">
+                {/* Display verified bank account details */}
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-semibold text-green-900">Bank Account Verified</p>
+                      <div className="mt-2 space-y-1 text-sm text-green-700">
+                        <p><strong>Account Holder:</strong> {bankData.account_holder_name}</p>
+                        <p><strong>Account Number:</strong> {bankData.account_number.replace(/\d(?=\d{4})/g, '*')}</p>
+                        <p><strong>IFSC:</strong> {bankData.ifsc_code}</p>
+                        <p><strong>Bank:</strong> {bankData.bank_name}</p>
+                        {bankData.branch_name && <p><strong>Branch:</strong> {bankData.branch_name}</p>}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        // Allow editing verified account
+                        setBankStatus(prev => ({ ...prev, is_verified: false }));
+                      }}
+                      className="border-orange-500 text-orange-600 hover:bg-orange-50"
+                    >
+                      <Edit2 className="w-4 h-4 mr-1" />
+                      Change Account
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
 

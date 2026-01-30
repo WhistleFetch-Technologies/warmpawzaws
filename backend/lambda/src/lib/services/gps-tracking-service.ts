@@ -22,6 +22,24 @@ import { sendVendorOnWay, sendEventNotification } from './push-notification-serv
 // CONFIGURATION
 // ============================================================================
 
+// Google Maps API key: env (injected from Secrets Manager at deploy) or Secrets Manager at runtime
+let _googleMapsKeyCache: string | null = null;
+async function getGoogleMapsApiKey(): Promise<string> {
+  if (_googleMapsKeyCache) return _googleMapsKeyCache;
+  if (process.env.GOOGLE_MAPS_API_KEY) {
+    _googleMapsKeyCache = process.env.GOOGLE_MAPS_API_KEY;
+    return _googleMapsKeyCache;
+  }
+  try {
+    const { getSecret } = await import('../../utils/secrets-manager');
+    const key = await getSecret('google-maps/api-key');
+    if (key) _googleMapsKeyCache = key;
+  } catch (e) {
+    console.warn('[GPS] Secrets Manager Google Maps key not available:', (e as Error).message);
+  }
+  return _googleMapsKeyCache || '';
+}
+
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || '';
 const TRACKING_UPDATE_INTERVAL_MS = 30000; // 30 seconds
 const ETA_BUFFER_MINUTES = 5; // Add buffer to ETA
@@ -384,17 +402,25 @@ class GPSTrackingServiceImpl {
 
   /**
    * Calculate ETA using Google Maps Distance Matrix API
+   * Uses GOOGLE_MAPS_API_KEY from env (set from Secrets Manager at deploy) or fetches from Secrets Manager at runtime
    */
   async calculateETA(origin: Location, destination: Location): Promise<ETAResult> {
+    const FETCH_TIMEOUT_MS = 6000; // 6s so Lambda does not timeout (503)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
     try {
-      if (GOOGLE_MAPS_API_KEY) {
+      const apiKey = GOOGLE_MAPS_API_KEY || (await getGoogleMapsApiKey());
+      if (apiKey) {
         const response = await fetch(
           `https://maps.googleapis.com/maps/api/distancematrix/json?` +
           `origins=${origin.latitude},${origin.longitude}` +
           `&destinations=${destination.latitude},${destination.longitude}` +
           `&mode=driving&departure_time=now` +
-          `&key=${GOOGLE_MAPS_API_KEY}`
+          `&key=${apiKey}`,
+          { signal: controller.signal }
         );
+        clearTimeout(timeoutId);
 
         if (response.ok) {
           const data = await response.json();
@@ -404,16 +430,20 @@ class GPSTrackingServiceImpl {
             const durationInTraffic = element.duration_in_traffic?.value || element.duration?.value || 0;
             const distance = element.distance?.value || 0;
 
-            // Get route polyline
+            // Get route polyline with timeout so we don't block Lambda
             let routePolyline: string | undefined;
             try {
+              const polyController = new AbortController();
+              const polyTimeout = setTimeout(() => polyController.abort(), 4000);
               const directionsResponse = await fetch(
                 `https://maps.googleapis.com/maps/api/directions/json?` +
                 `origin=${origin.latitude},${origin.longitude}` +
                 `&destination=${destination.latitude},${destination.longitude}` +
                 `&mode=driving&departure_time=now` +
-                `&key=${GOOGLE_MAPS_API_KEY}`
+                `&key=${apiKey}`,
+                { signal: polyController.signal }
               );
+              clearTimeout(polyTimeout);
               if (directionsResponse.ok) {
                 const directionsData = await directionsResponse.json();
                 routePolyline = directionsData.routes?.[0]?.overview_polyline?.points;
@@ -433,6 +463,7 @@ class GPSTrackingServiceImpl {
         }
       }
 
+      clearTimeout(timeoutId);
       // Fallback: Calculate straight-line distance and estimate time
       const distanceKm = this.calculateDistance(
         origin.latitude,
@@ -451,9 +482,10 @@ class GPSTrackingServiceImpl {
       };
 
     } catch (error) {
+      clearTimeout(timeoutId);
       console.error('Error calculating ETA:', error);
       
-      // Fallback calculation
+      // Fallback calculation (used on timeout, network error, or missing API key)
       const distanceKm = this.calculateDistance(
         origin.latitude,
         origin.longitude,

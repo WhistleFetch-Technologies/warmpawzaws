@@ -1,1 +1,1 @@
-{"version":1,"functions":{"/booking/[serviceId]":{},"/auth":{},"/nutrition/[vendorId]/order":{},"/orders/[id]/tracking":{},"/prescriptions/[id]/order":{},"/shop/[productId]":{},"/track/[orderId]":{},"/tracking/[bookingId]":{},"/video/[bookingId]":{}}}
+{"version":1,"functions":{"/auth":{},"/booking/[serviceId]":{},"/nutrition/[vendorId]/order":{},"/prescriptions/[id]/order":{},"/shop/[productId]":{},"/orders/[id]/tracking":{},"/track/[orderId]":{},"/tracking/[bookingId]":{},"/video/[bookingId]":{}}}

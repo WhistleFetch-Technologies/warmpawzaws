@@ -8,7 +8,7 @@ import {
   Home, FileText, Shield, AlertCircle
 } from 'lucide-react';
 import logoImage from 'figma:asset/da6636b92da744b3db8eed5288ca6da9ab889afe.png';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { BookingDetailModal } from './BookingDetailModal';
 
 interface UserProfile {
@@ -76,9 +76,9 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/profile/${phone}`,
+        `${getApiBaseUrl()}/customer/profile/${phone}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -134,9 +134,9 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
     try {
       setLoadingBookings(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${phone}`,
+        `${getApiBaseUrl()}/bookings/${phone}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -186,12 +186,12 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
     setSaving(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/profile`,
+        `${getApiBaseUrl()}/customer/profile`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({
             phone: phone,

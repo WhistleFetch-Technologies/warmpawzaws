@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Mic, MicOff, Video as VideoIcon, VideoOff, PhoneOff, Monitor, MonitorOff, Loader2 } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { useVideoCall } from '../../hooks/useVideoCall';
 

@@ -674,7 +674,7 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
         <div className="px-4 pb-6">
           <Button
             onClick={handleSave}
-            disabled={saving || uploadingPhotos || (newPhotos.length === 0 && facility.photos.length === 0)}
+            disabled={saving || uploadingPhotos}
             className="w-full bg-[#FF8C42] hover:bg-[#FF7A2F] text-white h-12"
           >
             {saving || uploadingPhotos ? (

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Wallet, TrendingUp, TrendingDown, RefreshCw, Calendar, DollarSign } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface WalletViewProps {
   customerId: string;
@@ -13,7 +13,7 @@ export function WalletView({ customerId, onBack }: WalletViewProps) {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadWalletData();
@@ -25,7 +25,7 @@ export function WalletView({ customerId, onBack }: WalletViewProps) {
       const response = await fetch(
         `${API_BASE}/wallet/${customerId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

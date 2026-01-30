@@ -18,7 +18,7 @@ import {
   XCircle
 } from 'lucide-react';
 import { CreateRegionalPackageModal } from './CreateRegionalPackageModal';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner';
 
 interface Region {
@@ -89,10 +89,10 @@ export function RegionalPackageList() {
   const loadRegions = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/regions`,
+        `${getApiBaseUrl()}/admin/regions`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
           },
         }
       );
@@ -112,15 +112,15 @@ export function RegionalPackageList() {
       
       if (selectedRegion === 'all') {
         // Load all packages
-        url = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/packages/stats/by-region`;
+        url = `${getApiBaseUrl()}/admin/packages/stats/by-region`;
       } else {
         // Load packages for specific region
-        url = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/packages/by-region/${selectedRegion}`;
+        url = `${getApiBaseUrl()}/packages/by-region/${selectedRegion}`;
       }
 
       const response = await fetch(url, {
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
         },
       });
 
@@ -143,10 +143,10 @@ export function RegionalPackageList() {
   const loadStats = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/packages/stats/by-region`,
+        `${getApiBaseUrl()}/admin/packages/stats/by-region`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
           },
         }
       );

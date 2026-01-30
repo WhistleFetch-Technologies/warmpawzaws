@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Send, Paperclip, Image, FileText, AlertCircle, Clock, CheckCheck, User, Phone, Calendar, MessageSquare, Headphones, CalendarPlus, Video } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -53,6 +53,7 @@ interface CommunicationHubProps {
   onContactSupport?: (bookingId: string, reason: string) => void;
   onNavigate?: (screen: string, data?: any) => void; // ✅ NEW: For video call navigation
   meetingId?: string; // ✅ NEW: Meeting ID for video calls
+  onStartVideoCall?: (bookingId: string, meetingId?: string) => Promise<void>; // Rule 2: Create + notify vendor (WhatsApp-like) then navigate
 }
 
 // ============================================================================
@@ -106,7 +107,8 @@ export function CommunicationHub({
   onBookFollowUp,
   onContactSupport,
   onNavigate, // ✅ NEW
-  meetingId // ✅ NEW
+  meetingId, // ✅ NEW
+  onStartVideoCall, // Rule 2: Customer starts video from chat → create + notify vendor then navigate
 }: CommunicationHubProps) {
   // State
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -306,7 +308,7 @@ export function CommunicationHub({
       formData.append('senderType', 'customer');
 
       // Use fetch directly for FormData
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/chat/upload-file`, {
+      const response = await fetch(`${getApiBaseUrl()}/chat/upload-file`, {
         method: 'POST',
         body: formData,
         headers: {
@@ -432,11 +434,15 @@ export function CommunicationHub({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* ✅ FIX: Add video call button */}
-            {onNavigate && booking && (booking.status === 'confirmed' || booking.status === 'in_progress' || booking.status === 'active') && (
+            {/* Rule 2: Video from chat - when onStartVideoCall provided, create + notify vendor (WhatsApp-like) then navigate */}
+            {(onNavigate || onStartVideoCall) && booking && (booking.status === 'confirmed' || booking.status === 'in_progress' || booking.status === 'active') && (
               <button
-                onClick={() => {
-                  if (onNavigate) {
+                onClick={async () => {
+                  if (onStartVideoCall) {
+                    await onStartVideoCall(bookingId, meetingId);
+                    if (onNavigate) onNavigate('video-call', { bookingId, meetingId, vendorName: otherUserName });
+                    onClose();
+                  } else if (onNavigate) {
                     onNavigate('video-call', { bookingId, meetingId, vendorName: otherUserName });
                     onClose();
                   }

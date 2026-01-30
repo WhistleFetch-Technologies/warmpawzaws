@@ -69,10 +69,12 @@ export function TierManagement() {
     setLoading(true);
     try {
       const data = await apiClient.get<any>('/admin/payments/tiers');
-      setTiers((data as any).data?.tiers || (data as any).tiers || []);
+      const raw = (data as any)?.data?.tiers ?? (data as any)?.tiers;
+      setTiers(Array.isArray(raw) ? raw : []);
     } catch (error) {
       console.error('Error loading tiers:', error);
       toast.error('Failed to load payment tiers');
+      setTiers([]);
     } finally {
       setLoading(false);
     }
@@ -82,7 +84,8 @@ export function TierManagement() {
     setLoading(true);
     try {
       const data = await apiClient.post<any>('/admin/payments/tiers/seed-defaults');
-      setTiers((data as any).data?.tiers || (data as any).tiers || []);
+      const raw = (data as any)?.data?.tiers ?? (data as any)?.tiers;
+      setTiers(Array.isArray(raw) ? raw : []);
       toast.success('Default tiers seeded successfully');
     } catch (error) {
       toast.error('Error seeding tiers');
@@ -98,11 +101,13 @@ export function TierManagement() {
     try {
       if (currentTier.id) {
         const data = await apiClient.put<any>(`/admin/payments/tiers/${currentTier.id}`, currentTier);
-        setTiers(tiers.map((t) => (t.id === currentTier.id ? (data as any).data?.tier || (data as any).tier : t)));
+        const updatedTier = (data as any)?.data?.tier ?? (data as any)?.tier;
+    setTiers((tiers ?? []).map((t) => (t.id === currentTier.id && updatedTier ? { ...t, ...updatedTier } : t)));
         toast.success('Tier updated successfully');
       } else {
         const data = await apiClient.post<any>('/admin/payments/tiers', currentTier);
-        setTiers([...tiers, (data as any).data?.tier || (data as any).tier]);
+        const newTier = (data as any)?.data?.tier ?? (data as any)?.tier;
+        setTiers(newTier ? [...(tiers ?? []), newTier] : (tiers ?? []));
         toast.success('Tier created successfully');
       }
       setIsModalOpen(false);
@@ -197,7 +202,7 @@ export function TierManagement() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-full">
-          {tiers.map((tier) => (
+          {(tiers ?? []).map((tier) => (
             <Card
               key={tier.id}
               className={`relative overflow-hidden border-2 transition-all w-full max-w-full ${

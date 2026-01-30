@@ -3,7 +3,7 @@ import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { ArrowLeft, Calendar, Clock, ChevronLeft, ChevronRight, AlertCircle, Info, Building2, XCircle, CheckCircle2 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface SchedulingPolicy {
   advanceBookingDays: number;
@@ -43,7 +43,7 @@ export function TimeSlotSelector({ vendorId, serviceDuration = 60, serviceStyle 
   });
   const [loadingPolicy, setLoadingPolicy] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
   
   // ✅ NEW: Load vendor scheduling policy
   useEffect(() => {

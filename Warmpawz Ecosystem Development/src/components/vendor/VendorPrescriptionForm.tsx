@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X, Plus, Trash2, AlertCircle, Save, Calendar } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface VendorPrescriptionFormProps {
   bookingId: string;
@@ -171,11 +171,11 @@ export function VendorPrescriptionForm({
       console.log('📝 [VENDOR-PRESCRIPTION] Submitting:', prescriptionData);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/prescription/create`,
+        `${getApiBaseUrl()}/prescription/create`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(prescriptionData)

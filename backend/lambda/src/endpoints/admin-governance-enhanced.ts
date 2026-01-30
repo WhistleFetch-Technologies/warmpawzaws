@@ -15,6 +15,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update, deleteRows } from '../database/rds-connection';
 import { publishToSNS } from '../utils/aws-clients';
@@ -429,26 +430,37 @@ class CreateBannerHandler extends BaseHandler {
     const body = this.parseBody(context.event);
     const {
       title,
+      subtitle,
       description,
       imageUrl,
+      image_url,
       linkUrl,
+      cta_link,
+      ctaText,
+      cta_text,
       position,
+      type,
       priority = 0,
+      display_order,
       startDate,
       endDate,
       isActive = true,
+      metadata,
     } = body;
 
-    this.validateRequired(body, ['title', 'imageUrl', 'position']);
+    const bannerType = type || position || 'main';
+    this.validateRequired(body, ['title']);
 
     try {
       const banner = await insert('banners', {
+        type: bannerType,
         title,
-        description,
-        image_url: imageUrl,
-        link_url: linkUrl,
-        position,
-        priority,
+        subtitle: subtitle || description,
+        image_url: imageUrl || image_url,
+        cta_text: ctaText || cta_text || 'Learn More',
+        cta_link: cta_link || linkUrl,
+        display_order: display_order ?? priority,
+        metadata: metadata || null,
         start_date: startDate ? new Date(startDate) : new Date(),
         end_date: endDate ? new Date(endDate) : null,
         is_active: isActive,
@@ -458,7 +470,7 @@ class CreateBannerHandler extends BaseHandler {
       await publishToSNS('banner-change', {
         action: 'create',
         bannerId: banner[0].id,
-        position,
+        position: bannerType,
       });
 
       return this.success({
@@ -482,30 +494,43 @@ class UpdateBannerHandler extends BaseHandler {
     const body = this.parseBody(context.event);
     const {
       title,
+      subtitle,
       description,
       imageUrl,
+      image_url,
       linkUrl,
+      cta_link,
+      ctaText,
+      cta_text,
       position,
+      type,
       priority,
+      display_order,
       startDate,
       endDate,
       isActive,
-      ctaText,
+      metadata,
     } = body;
 
     try {
-      const updateData: any = {};
+      const updateData: any = { updated_at: new Date().toISOString() };
       if (title !== undefined) updateData.title = title;
-      if (description !== undefined) updateData.description = description;
+      if (subtitle !== undefined) updateData.subtitle = subtitle;
+      if (description !== undefined) updateData.subtitle = description;
       if (imageUrl !== undefined) updateData.image_url = imageUrl;
-      if (linkUrl !== undefined) updateData.link_url = linkUrl;
-      if (position !== undefined) updateData.position = position;
-      if (priority !== undefined) updateData.priority = priority;
+      if (image_url !== undefined) updateData.image_url = image_url;
+      if (cta_text !== undefined) updateData.cta_text = cta_text;
+      if (ctaText !== undefined) updateData.cta_text = ctaText;
+      if (cta_link !== undefined) updateData.cta_link = cta_link;
+      if (linkUrl !== undefined) updateData.cta_link = linkUrl;
+      if (type !== undefined) updateData.type = type;
+      if (position !== undefined) updateData.type = position;
+      if (display_order !== undefined) updateData.display_order = display_order;
+      if (priority !== undefined) updateData.display_order = priority;
       if (startDate !== undefined) updateData.start_date = startDate ? new Date(startDate) : null;
       if (endDate !== undefined) updateData.end_date = endDate ? new Date(endDate) : null;
       if (isActive !== undefined) updateData.is_active = isActive;
-      if (ctaText !== undefined) updateData.cta_text = ctaText;
-      updateData.updated_at = new Date().toISOString();
+      if (metadata !== undefined) updateData.metadata = metadata;
 
       await update('banners', { id: bannerId }, updateData);
 
@@ -513,7 +538,7 @@ class UpdateBannerHandler extends BaseHandler {
       await publishToSNS('banner-change', {
         action: 'update',
         bannerId,
-        position: position || undefined,
+        position: type || position || undefined,
       });
 
       // Use explicit UUID casting in query to avoid "uuid = text" errors
@@ -552,7 +577,7 @@ class DeleteBannerHandler extends BaseHandler {
       await publishToSNS('banner-change', {
         action: 'delete',
         bannerId,
-        position: banner[0].position || banner[0].type,
+        position: banner[0].type || 'main',
       });
 
       return this.success({
@@ -666,14 +691,18 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
   });
 
   app.post('/admin/banners', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEvent(c.req);
+    event.body = JSON.stringify(body);
     const context = createLambdaContext();
     const result = await createBannerHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.put('/admin/banners/:id', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEvent(c.req);
+    event.body = JSON.stringify(body);
     event.pathParameters = { id: c.req.param('id') };
     const context = createLambdaContext();
     const result = await updateBannerHandler.execute(event, context);
@@ -687,6 +716,212 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
     const result = await deleteBannerHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
+
+  // ==========================================
+  // BANNER CLICK TRACKING ENDPOINTS
+  // ==========================================
+
+  /**
+   * POST /banners/:id/click - Track banner click (public endpoint)
+   */
+  app.post('/banners/:id/click', async (c) => {
+    try {
+      const bannerId = c.req.param('id');
+      const body = await c.req.json().catch(() => ({}));
+      const { customerId, source = 'unknown' } = body;
+
+      // Ensure banner_clicks table exists
+      await query(`
+        CREATE TABLE IF NOT EXISTS banner_clicks (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          banner_id UUID NOT NULL,
+          customer_id UUID,
+          source VARCHAR(50),
+          clicked_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+          ip_address VARCHAR(45),
+          user_agent TEXT
+        )
+      `).catch(() => null);
+
+      // Record the click
+      await insert('banner_clicks', {
+        banner_id: bannerId,
+        customer_id: customerId || null,
+        source,
+        clicked_at: new Date().toISOString(),
+      });
+
+      // Update click count on banner (if column exists)
+      await query(
+        `UPDATE banners SET click_count = COALESCE(click_count, 0) + 1 WHERE id = $1::uuid`,
+        [bannerId]
+      ).catch(() => null); // Ignore if column doesn't exist
+
+      return c.json({ success: true, message: 'Click tracked' });
+    } catch (error: any) {
+      console.error('Error tracking banner click:', error);
+      // Don't fail the request for tracking errors
+      return c.json({ success: true, message: 'Click acknowledged' });
+    }
+  });
+
+  /**
+   * GET /admin/banners/analytics - Get banner click analytics
+   */
+  app.get('/admin/banners/analytics', async (c) => {
+    try {
+      const period = c.req.query('period') || '30';
+      const days = parseInt(period, 10) || 30;
+
+      // Get banner analytics with click counts
+      const analyticsData = await query(`
+        SELECT 
+          b.id,
+          b.title,
+          b.position,
+          b.is_active,
+          COALESCE(b.click_count, 0) as total_clicks,
+          COUNT(bc.id) as period_clicks,
+          COUNT(DISTINCT bc.customer_id) as unique_clicks
+        FROM banners b
+        LEFT JOIN banner_clicks bc ON b.id = bc.banner_id 
+          AND bc.clicked_at >= CURRENT_DATE - INTERVAL '${days} days'
+        GROUP BY b.id, b.title, b.position, b.is_active, b.click_count
+        ORDER BY period_clicks DESC
+      `).catch(() => ({ rows: [] }));
+
+      const rows = Array.isArray(analyticsData) ? analyticsData : (analyticsData as any).rows || [];
+
+      // Get total stats
+      const totalStats = await query(`
+        SELECT 
+          COUNT(*) as total_clicks,
+          COUNT(DISTINCT customer_id) as unique_clickers,
+          COUNT(DISTINCT banner_id) as banners_clicked
+        FROM banner_clicks 
+        WHERE clicked_at >= CURRENT_DATE - INTERVAL '${days} days'
+      `).catch(() => ({ rows: [{ total_clicks: 0, unique_clickers: 0, banners_clicked: 0 }] }));
+
+      const statsRow = Array.isArray(totalStats) ? totalStats[0] : totalStats.rows?.[0] || {};
+
+      return c.json({
+        success: true,
+        analytics: rows.map((row: any) => ({
+          id: row.id,
+          title: row.title,
+          position: row.position,
+          isActive: row.is_active,
+          totalClicks: parseInt(row.total_clicks || '0'),
+          periodClicks: parseInt(row.period_clicks || '0'),
+          uniqueClicks: parseInt(row.unique_clicks || '0'),
+        })),
+        summary: {
+          totalClicks: parseInt(statsRow.total_clicks || '0'),
+          uniqueClickers: parseInt(statsRow.unique_clickers || '0'),
+          bannersClicked: parseInt(statsRow.banners_clicked || '0'),
+          period: `${days}d`,
+        }
+      });
+    } catch (error: any) {
+      console.error('Error fetching banner analytics:', error);
+      return c.json({ 
+        success: true, 
+        analytics: [], 
+        summary: { totalClicks: 0, uniqueClickers: 0, bannersClicked: 0, period: '30d' },
+        error: 'Analytics not available' 
+      });
+    }
+  });
+
+  /**
+   * POST /promotions/:id/click - Track promotion click (public endpoint)
+   */
+  app.post('/promotions/:id/click', async (c) => {
+    try {
+      const promotionId = c.req.param('id');
+      const body = await c.req.json().catch(() => ({}));
+      const { customerId, source = 'unknown' } = body;
+
+      // Ensure promotion_clicks table exists
+      await query(`
+        CREATE TABLE IF NOT EXISTS promotion_clicks (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          promotion_id UUID NOT NULL,
+          customer_id UUID,
+          source VARCHAR(50),
+          clicked_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        )
+      `).catch(() => null);
+
+      // Record the click
+      await insert('promotion_clicks', {
+        promotion_id: promotionId,
+        customer_id: customerId || null,
+        source,
+        clicked_at: new Date().toISOString(),
+      });
+
+      // Update click count on promotion (if column exists)
+      await query(
+        `UPDATE promotions SET click_count = COALESCE(click_count, 0) + 1 WHERE id = $1::uuid`,
+        [promotionId]
+      ).catch(() => null);
+
+      return c.json({ success: true, message: 'Click tracked' });
+    } catch (error: any) {
+      console.error('Error tracking promotion click:', error);
+      return c.json({ success: true, message: 'Click acknowledged' });
+    }
+  });
+
+  /**
+   * GET /admin/promotions/analytics - Get promotion click analytics
+   */
+  app.get('/admin/promotions/analytics', async (c) => {
+    try {
+      const period = c.req.query('period') || '30';
+      const days = parseInt(period, 10) || 30;
+
+      // Get promotion analytics
+      const analyticsData = await query(`
+        SELECT 
+          p.id,
+          p.name,
+          p.code,
+          p.is_active,
+          COALESCE(p.click_count, 0) as total_clicks,
+          p.redemption_count,
+          COUNT(pc.id) as period_clicks
+        FROM promotions p
+        LEFT JOIN promotion_clicks pc ON p.id = pc.promotion_id 
+          AND pc.clicked_at >= CURRENT_DATE - INTERVAL '${days} days'
+        GROUP BY p.id, p.name, p.code, p.is_active, p.click_count, p.redemption_count
+        ORDER BY period_clicks DESC
+      `).catch(() => ({ rows: [] }));
+
+      const rows = Array.isArray(analyticsData) ? analyticsData : (analyticsData as any).rows || [];
+
+      return c.json({
+        success: true,
+        analytics: rows.map((row: any) => ({
+          id: row.id,
+          name: row.name,
+          code: row.code,
+          isActive: row.is_active,
+          totalClicks: parseInt(row.total_clicks || '0'),
+          periodClicks: parseInt(row.period_clicks || '0'),
+          redemptions: parseInt(row.redemption_count || '0'),
+          conversionRate: parseInt(row.period_clicks || '0') > 0 
+            ? ((parseInt(row.redemption_count || '0') / parseInt(row.period_clicks || '0')) * 100).toFixed(1)
+            : '0',
+        })),
+        period: `${days}d`,
+      });
+    } catch (error: any) {
+      console.error('Error fetching promotion analytics:', error);
+      return c.json({ success: true, analytics: [], period: '30d', error: 'Analytics not available' });
+    }
+  });
 }
 
 function createApiGatewayEvent(req: any): any {
@@ -698,14 +933,14 @@ function createApiGatewayEvent(req: any): any {
     pathParameters: {},
     queryStringParameters: Object.fromEntries(new URL(req.url, 'http://localhost').searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'admin-governance-enhanced',
     functionVersion: '$LATEST',
   };

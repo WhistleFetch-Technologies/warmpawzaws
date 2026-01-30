@@ -144,14 +144,33 @@ export function AdminRolesPage() {
     }
   };
 
-  const handleDeleteRole = async (roleId: string, roleName: string) => {
-    if (!confirm(`Are you sure you want to delete role "${roleName}"? This action cannot be undone. Existing vendors with this role will need to be reassigned.`)) {
-      return;
+  const handleDeleteRole = async (roleId: string, roleName: string, permanent: boolean = false) => {
+    if (permanent) {
+      // Double confirmation for permanent delete
+      const firstConfirm = window.confirm(
+        `⚠️ PERMANENT DELETE\n\nAre you sure you want to PERMANENTLY delete role "${roleName}"?\n\nThis will:\n• Remove the role from the database\n• Delete all associated permissions\n• This action CANNOT be undone!`
+      );
+      if (!firstConfirm) return;
+      
+      const secondConfirm = window.prompt(
+        `To confirm permanent deletion, type the role name: "${roleName}"`
+      );
+      if (secondConfirm !== roleName) {
+        alert('Role name did not match. Deletion cancelled.');
+        return;
+      }
+    } else {
+      if (!confirm(`Are you sure you want to deactivate role "${roleName}"?\n\nThe role will be hidden from new vendors but existing vendors will keep their role. You can restore it later.`)) {
+        return;
+      }
     }
 
     try {
-      await apiClient.delete(`/admin/roles/${roleId}`);
-      alert('Role deleted successfully');
+      const endpoint = permanent 
+        ? `/admin/roles/${roleId}?permanent=true`
+        : `/admin/roles/${roleId}`;
+      const result = await apiClient.delete<any>(endpoint);
+      alert(result.message || (permanent ? 'Role permanently deleted' : 'Role deactivated'));
       loadData();
     } catch (err: any) {
       console.error('Error deleting role:', err);
@@ -407,7 +426,7 @@ export function AdminRolesPage() {
               
               <div className="flex items-center justify-between pt-3 border-t">
                 <span className="text-xs text-muted-foreground capitalize">{role.category.replace(/_/g, ' ')}</span>
-                <div className="flex gap-2">
+                <div className="flex gap-1">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -419,15 +438,29 @@ export function AdminRolesPage() {
                   >
                     Edit →
                   </Button>
+                  {role.is_active && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteRole(role.id, role.display_name, false);
+                      }}
+                      title="Deactivate role (soft delete)"
+                    >
+                      ⏸️
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-6 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleDeleteRole(role.id, role.display_name);
+                      handleDeleteRole(role.id, role.display_name, true);
                     }}
-                    title="Delete role"
+                    title="Permanently delete role"
                   >
                     🗑️
                   </Button>
@@ -481,6 +514,10 @@ export function AdminRolesPage() {
             }
           }}
           onToggle={() => handleToggleRole(selectedRole.id, selectedRole.is_active)}
+          onDelete={async (permanent: boolean) => {
+            await handleDeleteRole(selectedRole.id, selectedRole.display_name, permanent);
+            setSelectedRole(null);
+          }}
         />
       )}
 
@@ -511,6 +548,7 @@ function RoleDetailModal({
   onClose,
   onSave,
   onToggle,
+  onDelete,
 }: {
   role: Role;
   allCapabilities: Capability[];
@@ -518,6 +556,7 @@ function RoleDetailModal({
   onClose: () => void;
   onSave: (role: Partial<Role>) => void;
   onToggle: () => void;
+  onDelete: (permanent: boolean) => void;
 }) {
   const [activeTab, setActiveTab] = useState('basic');
   const [formData, setFormData] = useState({
@@ -836,14 +875,23 @@ function RoleDetailModal({
           </div>
         </Tabs>
 
-        <DialogFooter className="mt-4">
-          <Button
-            onClick={onToggle}
-            variant={role.is_active ? "secondary" : "default"}
-          >
-            {role.is_active ? 'Deactivate Role' : 'Activate Role'}
-          </Button>
+        <DialogFooter className="mt-4 flex-wrap gap-2">
           <div className="flex gap-2">
+            <Button
+              onClick={onToggle}
+              variant={role.is_active ? "secondary" : "default"}
+            >
+              {role.is_active ? 'Deactivate Role' : 'Activate Role'}
+            </Button>
+            <Button
+              onClick={() => onDelete(true)}
+              variant="destructive"
+              className="bg-red-600 hover:bg-red-700"
+            >
+              🗑️ Permanently Delete
+            </Button>
+          </div>
+          <div className="flex gap-2 ml-auto">
             <Button onClick={onClose} variant="outline">
               Cancel
             </Button>

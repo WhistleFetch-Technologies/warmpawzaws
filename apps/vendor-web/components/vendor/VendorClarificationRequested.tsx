@@ -2,23 +2,32 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, ArrowRight, FileText } from 'lucide-react';
+import { AlertCircle, ArrowLeft, ArrowRight, FileText } from 'lucide-react';
 
 interface VendorClarificationRequestedProps {
   applicationId: string;
   clarificationNotes: string;
   reviewerName?: string;
   onCorrectAndResubmit: () => void;
+  onBack?: () => void;
 }
 
 export function VendorClarificationRequested({
   applicationId,
   clarificationNotes,
   reviewerName = 'Admin',
-  onCorrectAndResubmit
+  onCorrectAndResubmit,
+  onBack
 }: VendorClarificationRequestedProps) {
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white w-full max-w-[430px] mx-auto flex flex-col px-6 py-8">
+      {onBack && (
+        <div className="flex justify-start -mt-2 mb-4">
+          <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full -ml-2">
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+        </div>
+      )}
       {/* Icon */}
       <div className="flex flex-col items-center text-center mb-8">
         <div className="w-24 h-24 bg-orange-100 rounded-full flex items-center justify-center mb-6">

@@ -187,48 +187,17 @@ export class ApiClient {
       console.log(`🌐 [UAT] API Request: ${options.method || 'GET'} ${endpoint}`);
       console.log('   Full URL:', url);
     }
-    
-    // #region agent log
-    if (typeof window !== 'undefined') {
-      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api-client.ts:191',message:'Before fetch',data:{url,method:options.method||'GET',hasOrigin:!!headers.Origin,headers:Object.keys(headers)},timestamp:Date.now(),sessionId:'debug-session',runId:'browser-test',hypothesisId:'G'})}).catch(()=>{});
-    }
-    // #endregion
+
     let response: Response;
     try {
-      // #region agent log
-      if (typeof window !== 'undefined') {
-        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api-client.ts:194',message:'Fetch call start',data:{url,method:options.method||'GET'},timestamp:Date.now(),sessionId:'debug-session',runId:'browser-test',hypothesisId:'J'})}).catch(()=>{});
-      }
-      // #endregion
       response = await fetch(url, {
         ...options,
         headers,
       });
-      // #region agent log
-      if (typeof window !== 'undefined') {
-        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api-client.ts:202',message:'Fetch call complete',data:{status:response.status,ok:response.ok,type:response.type},timestamp:Date.now(),sessionId:'debug-session',runId:'browser-test',hypothesisId:'K'})}).catch(()=>{});
-      }
-      // #endregion
     } catch (fetchError: any) {
-      // #region agent log
-      if (typeof window !== 'undefined') {
-        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api-client.ts:210',message:'Fetch call failed',data:{error:fetchError?.message||String(fetchError),name:fetchError?.name,stack:fetchError?.stack?.substring(0,200)},timestamp:Date.now(),sessionId:'debug-session',runId:'browser-test',hypothesisId:'L'})}).catch(()=>{});
-      }
-      // #endregion
       throw fetchError;
     }
-    // #region agent log
-    if (typeof window !== 'undefined') {
-      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api-client.ts:196',message:'After fetch',data:{status:response.status,statusText:response.statusText,ok:response.ok,url:response.url,hasCorsHeaders:!!response.headers.get('access-control-allow-origin')},timestamp:Date.now(),sessionId:'debug-session',runId:'browser-test',hypothesisId:'H'})}).catch(()=>{});
-    }
-    // #endregion
 
-    // #region agent log
-    if (typeof window !== 'undefined') {
-      const corsHeader = response.headers.get('access-control-allow-origin');
-      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api-client.ts:199',message:'Response received',data:{status:response.status,statusText:response.statusText,ok:response.ok,hasCorsOrigin:corsHeader,allHeaders:Array.from(response.headers.entries()).map(([k,v])=>k+':'+v.substring(0,50))},timestamp:Date.now(),sessionId:'debug-session',runId:'browser-test',hypothesisId:'I'})}).catch(()=>{});
-    }
-    // #endregion
     if (!response.ok) {
       let error: any = {};
       let errorText = '';

@@ -25,7 +25,7 @@ import {
   CheckCircle2,
   BadgeCheck
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { SERVICE_CONFIGS, HomeServiceType } from './UniversalHomeServiceRouter';
 
 interface ServiceConfig {
@@ -88,7 +88,7 @@ export function HomeServiceProviderListView({
   onSelectProvider,
   onNavigate
 }: HomeServiceProviderListViewProps) {
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   // State
   const [providers, setProviders] = useState<Provider[]>([]);

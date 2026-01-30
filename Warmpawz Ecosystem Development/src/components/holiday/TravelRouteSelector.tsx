@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plane, Train, Car, Clock, DollarSign, Check, Star } from 'lucide-react';
 import { Card } from '../ui/card';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface TravelRouteSelectorProps {
   origin?: string;
@@ -15,7 +15,7 @@ export function TravelRouteSelector({ origin, destination, travelDate, onSelectR
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchRoutes();
@@ -29,7 +29,7 @@ export function TravelRouteSelector({ origin, destination, travelDate, onSelectR
       if (travelDate) params.append('travelDate', travelDate);
 
       const response = await fetch(`${API_BASE}/travel/route-options?${params}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {

@@ -7,6 +7,8 @@ import {
 	PaymentGatewayIntegration,
 	LogisticsIntegration,
 	RewardsLoyaltyManagement,
+	DiscoveryRulesManager,
+	LegalPoliciesManager,
 } from "@/components/admin/platform-settings/integrations";
 import {
 	CreditCard,
@@ -14,6 +16,8 @@ import {
 	Cloud,
 	Settings,
 	Gift,
+	BookOpen,
+	FileText,
 } from "lucide-react";
 import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 
@@ -53,7 +57,7 @@ export default function PlatformSettings() {
 						console.log('🔧 Platform Settings tab clicked:', value);
 						setActiveTab(value);
 					}} className="space-y-8">
-						<TabsList className="grid w-full grid-cols-4 h-auto p-1 bg-white border rounded-xl shadow-sm">
+						<TabsList className="grid w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-6 h-auto p-1 bg-white border rounded-xl shadow-sm">
 							<TabsTrigger
 								value="cloud"
 								className="flex flex-col md:flex-row items-center gap-3 py-3 md:py-4 px-4 data-[state=active]:bg-orange-50 data-[state=active]:text-orange-700 data-[state=active]:border-orange-200 border border-transparent rounded-lg transition-all"
@@ -121,6 +125,40 @@ export default function PlatformSettings() {
 									</div>
 								</div>
 							</TabsTrigger>
+
+							<TabsTrigger
+								value="rules"
+								className="flex flex-col md:flex-row items-center gap-3 py-3 md:py-4 px-4 data-[state=active]:bg-orange-50 data-[state=active]:text-orange-700 data-[state=active]:border-orange-200 border border-transparent rounded-lg transition-all"
+							>
+								<div className="p-2 bg-slate-100 rounded-md group-data-[state=active]:bg-white">
+									<BookOpen className="w-5 h-5 text-slate-600 group-data-[state=active]:text-orange-600" />
+								</div>
+								<div className="text-center md:text-left">
+									<div className="font-semibold text-slate-900 group-data-[state=active]:text-orange-900">
+										Rule Book
+									</div>
+									<div className="text-xs text-slate-500 hidden md:block mt-0.5">
+										Discovery & Service Rules
+									</div>
+								</div>
+							</TabsTrigger>
+
+							<TabsTrigger
+								value="legal"
+								className="flex flex-col md:flex-row items-center gap-3 py-3 md:py-4 px-4 data-[state=active]:bg-orange-50 data-[state=active]:text-orange-700 data-[state=active]:border-orange-200 border border-transparent rounded-lg transition-all"
+							>
+								<div className="p-2 bg-slate-100 rounded-md group-data-[state=active]:bg-white">
+									<FileText className="w-5 h-5 text-slate-600 group-data-[state=active]:text-orange-600" />
+								</div>
+								<div className="text-center md:text-left">
+									<div className="font-semibold text-slate-900 group-data-[state=active]:text-orange-900">
+										Legal & Policies
+									</div>
+									<div className="text-xs text-slate-500 hidden md:block mt-0.5">
+										T&C, Vendor Agreements
+									</div>
+								</div>
+							</TabsTrigger>
 						</TabsList>
 
 						<div className="min-h-[500px]">
@@ -150,6 +188,20 @@ export default function PlatformSettings() {
 								className="m-0 focus-visible:ring-0 outline-none"
 							>
 								<RewardsLoyaltyManagement />
+							</TabsContent>
+
+							<TabsContent
+								value="rules"
+								className="m-0 focus-visible:ring-0 outline-none"
+							>
+								<DiscoveryRulesManager />
+							</TabsContent>
+
+							<TabsContent
+								value="legal"
+								className="m-0 focus-visible:ring-0 outline-none"
+							>
+								<LegalPoliciesManager />
 							</TabsContent>
 						</div>
 					</Tabs>

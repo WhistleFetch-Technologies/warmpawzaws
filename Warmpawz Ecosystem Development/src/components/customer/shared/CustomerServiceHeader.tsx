@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Heart, ShoppingCart } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { useCart } from '../../../context/CartContext';
 
 interface CustomerServiceHeaderProps {
@@ -33,18 +33,18 @@ export function CustomerServiceHeader({
 
   const loadUserData = async () => {
     try {
-      const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+      const API_BASE = getApiBaseUrl();
       
       // Load profile and pets in parallel
       const [profileRes, petsRes, walletRes] = await Promise.all([
         fetch(`${API_BASE}/customer/profile/${phone}`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }),
         fetch(`${API_BASE}/customer/pets/${phone}`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }),
         fetch(`${API_BASE}/customer/wallet/${phone}`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         })
       ]);
 

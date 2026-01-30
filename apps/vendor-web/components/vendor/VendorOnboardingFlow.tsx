@@ -13,6 +13,7 @@ interface VendorOnboardingFlowProps {
   vendorType: string;
   serviceStyle: 'at_home' | 'at_center' | 'both';
   onComplete: () => void;
+  onBack?: () => void;
 }
 
 type OnboardingStep = 
@@ -28,7 +29,8 @@ export function VendorOnboardingFlow({
   vendorId, 
   vendorType, 
   serviceStyle, 
-  onComplete 
+  onComplete,
+  onBack 
 }: VendorOnboardingFlowProps) {
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('profile');
   const [applicationId, setApplicationId] = useState('');
@@ -77,6 +79,26 @@ export function VendorOnboardingFlow({
     setCurrentStep('profile');
   };
 
+  /** Explicit back: move to previous step, or call parent onBack when at first step. */
+  const handleBackInFlow = () => {
+    switch (currentStep) {
+      case 'profile':
+        onBack?.();
+        break;
+      case 'submitted':
+        setCurrentStep('profile');
+        break;
+      case 'under_review':
+        setCurrentStep('submitted');
+        break;
+      case 'clarification':
+        setCurrentStep('under_review');
+        break;
+      default:
+        onBack?.();
+    }
+  };
+
   // Render appropriate screen based on step
   switch (currentStep) {
     case 'profile':
@@ -84,6 +106,7 @@ export function VendorOnboardingFlow({
         <VendorDetailsFormNew
           vendorId={vendorId}
           onSubmit={handleProfileSubmit}
+          onBack={onBack}
         />
       );
 
@@ -92,6 +115,7 @@ export function VendorOnboardingFlow({
         <VendorApplicationSubmitted
           applicationId={applicationId}
           onContinue={handleContinueFromSubmitted}
+          onBack={handleBackInFlow}
         />
       );
 
@@ -101,6 +125,7 @@ export function VendorOnboardingFlow({
           vendorId={vendorId}
           onApproved={handleApproved}
           onClarificationRequested={handleClarificationRequested}
+          onBack={handleBackInFlow}
         />
       );
 
@@ -111,6 +136,7 @@ export function VendorOnboardingFlow({
           clarificationNotes={clarificationNotes}
           reviewerName={reviewerName}
           onCorrectAndResubmit={handleResubmit}
+          onBack={handleBackInFlow}
         />
       );
 

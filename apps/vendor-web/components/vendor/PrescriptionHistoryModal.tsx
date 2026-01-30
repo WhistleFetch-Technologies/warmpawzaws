@@ -1,10 +1,18 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, Upload, FileText, Calendar, Image, File, Eye } from 'lucide-react';
+import { X, Upload, FileText, Calendar, Image, File, Eye, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import dynamic from 'next/dynamic';
+import { transformPrescriptionData } from './PrescriptionDocument';
+
+// Dynamically import PrescriptionDocument for A4 view
+const PrescriptionDocument = dynamic(() => import('./PrescriptionDocument'), {
+  loading: () => <div className="flex items-center justify-center p-8">Loading document...</div>,
+  ssr: false
+});
 
 interface PrescriptionHistoryModalProps {
   bookingId: string;
@@ -35,11 +43,13 @@ export function PrescriptionHistoryModal({
   onUploadSuccess,
 }: PrescriptionHistoryModalProps) {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [fullPrescriptionData, setFullPrescriptionData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
   const [showViewer, setShowViewer] = useState(false);
+  const [showA4Document, setShowA4Document] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [recordDate, setRecordDate] = useState('');
   const [uploadingFile, setUploadingFile] = useState<File | null>(null);
@@ -53,6 +63,16 @@ export function PrescriptionHistoryModal({
       setLoading(true);
       const result = await apiClient.get(`/medical-records/booking/${bookingId}/prescriptions`) as any;
       setPrescriptions(result.prescriptions || []);
+      
+      // Also load full prescription data with doctor/pet details for A4 view
+      try {
+        const fullResult = await apiClient.get(`/prescriptions/booking/${bookingId}?includeDetails=true&includeDrafts=true`) as any;
+        if (fullResult.prescriptions?.length > 0) {
+          setFullPrescriptionData(fullResult);
+        }
+      } catch {
+        // Ignore - full data is optional
+      }
     } catch (error) {
       console.error('Error loading prescriptions:', error);
       toast.error('Failed to load prescriptions');
@@ -456,8 +476,40 @@ export function PrescriptionHistoryModal({
                 <p className="text-gray-600">No content available</p>
               )}
             </div>
+            
+            {/* View A4 Document Button */}
+            <div className="p-4 border-t flex gap-2">
+              <button
+                onClick={() => {
+                  setShowViewer(false);
+                  setShowA4Document(true);
+                }}
+                className="flex-1 py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center justify-center gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                View Full Prescription (A4)
+              </button>
+              <button
+                onClick={() => setShowViewer(false)}
+                className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
+      )}
+
+      {/* A4 Prescription Document Modal */}
+      {showA4Document && selectedPrescription && (
+        <PrescriptionDocument
+          prescription={transformPrescriptionData({
+            ...selectedPrescription,
+            ...(fullPrescriptionData?.prescriptions?.find((p: any) => p.id === selectedPrescription.id) || {}),
+            medications: selectedPrescription.content_data?.medications || [],
+          })}
+          onClose={() => setShowA4Document(false)}
+        />
       )}
     </>
   );

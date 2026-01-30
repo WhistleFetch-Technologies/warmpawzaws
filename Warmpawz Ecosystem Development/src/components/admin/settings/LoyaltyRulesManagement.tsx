@@ -5,7 +5,7 @@ import { Switch } from '../../ui/switch';
 import { Badge } from '../../ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '../../ui/card';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 export function LoyaltyRulesManagement() {
@@ -19,8 +19,8 @@ export function LoyaltyRulesManagement() {
   const loadRules = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/loyalty/rules`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/admin/loyalty/rules`,
+        { headers: getAuthHeaders() }
       );
       const data = await response.json();
       setRules(data.rules || []);
@@ -42,11 +42,11 @@ export function LoyaltyRulesManagement() {
       setRules(rules.map(r => r.id === ruleId ? updatedRule : r));
 
       await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/loyalty/rules`,
+        `${getApiBaseUrl()}/admin/loyalty/rules`,
         {
           method: 'POST',
           headers: { 
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(updatedRule)

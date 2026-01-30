@@ -7,7 +7,7 @@ import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface InstantTeleBookingFlowProps {
   serviceId: string;
@@ -66,9 +66,9 @@ export function InstantTeleBookingFlow({
       setLoading(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/tele/instant-available-doctors?serviceId=${serviceId}`,
+        `${getApiBaseUrl()}/tele/instant-available-doctors?serviceId=${serviceId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -93,11 +93,11 @@ export function InstantTeleBookingFlow({
 
       // Create instant tele booking (without assigned doctor yet)
       const bookingRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/instant-tele`,
+        `${getApiBaseUrl()}/bookings/instant-tele`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -121,11 +121,11 @@ export function InstantTeleBookingFlow({
 
       // Process payment
       const paymentRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/payments/process-instant-tele`,
+        `${getApiBaseUrl()}/payments/process-instant-tele`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -160,9 +160,9 @@ export function InstantTeleBookingFlow({
     const pollInterval = setInterval(async () => {
       try {
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${bookingId}/status`,
+          `${getApiBaseUrl()}/bookings/${bookingId}/status`,
           {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            headers: getAuthHeaders()
           }
         );
 

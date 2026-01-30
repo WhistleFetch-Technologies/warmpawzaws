@@ -255,9 +255,9 @@ export function VendorTeleConsultationFlow({
         }
       };
       
-      // Notify backend about call start
+      // Notify backend about call start (using standard endpoint)
       try {
-        await apiClient.post('/video-call/create', {
+        await apiClient.post('/video-call/create-meeting', {
           bookingId,
           vendorId,
           roomId: newRoomId,

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, Search, Filter, Star, MapPin, Clock, ChevronRight,
   Video, Home, Building2, Shield, Award, GraduationCap, X, Sliders,
-  Phone, Calendar, Heart, Share2, Users
+  Phone, Calendar, Heart, Share2, Users, Stethoscope, Scissors
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { SponsoredProviderCard, TopProvidersSection } from './SponsoredProviderCard';
+import { ServiceDashboardHeader } from './ServiceDashboardHeader';
 
 // ============================================================================
 // TYPES
@@ -298,10 +299,10 @@ function ProviderCard({ provider, serviceStyle, onClick }: ProviderCardProps) {
     }
   };
 
-  // Get lowest price from services
+  // Get lowest price from services or provider-level price (discover-services returns price/consultationFee)
   const lowestPrice = provider.services.length > 0
     ? Math.min(...provider.services.map(s => s.price))
-    : null;
+    : ((provider as any).price ?? (provider as any).consultationFee ?? null);
 
   return (
     <Card 
@@ -563,71 +564,114 @@ export function UniversalServiceProviderList({
           vendorName: p.vendorName ? cleanProviderName(p.vendorName) : undefined,
           businessName: p.businessName ? cleanProviderName(p.businessName) : undefined,
         }));
-        setProviders(cleanedProviders);
-        console.log(`✅ Loaded ${cleanedProviders.length} providers for ${category}/${serviceStyle}`);
-      } else {
-        // Try fallback endpoint
-        const fallbackResponse = await apiClient.get(
-          `/customer/discover-services?category=${category}&roleId=${roleId}&serviceStyle=${serviceStyle}${locationParams}${specializationParam}`
-        ) as any;
-
-        const servicesData = fallbackResponse.vendors || fallbackResponse.services || [];
         
-        // Group by provider
-        const providerMap = new Map<string, Provider>();
-        servicesData.forEach((item: any) => {
-          const providerId = item.providerId || item.vendorId || item.id;
-          
-          if (!providerMap.has(providerId)) {
-            // Clean the name to remove trailing IDs/numbers
-            const rawName = item.name || item.vendorName || item.businessName || 'Provider';
-            const cleanedName = cleanProviderName(rawName);
-            
-            providerMap.set(providerId, {
-              providerId,
-              providerType: item.providerType || 'vendor',
-              vendorId: item.vendorId,
-              vendorName: item.vendorName ? cleanProviderName(item.vendorName) : undefined,
-              businessName: item.businessName ? cleanProviderName(item.businessName) : undefined,
-              staffId: item.staffId,
-              name: cleanedName,
-              photo: item.photo,
-              address: item.address,
-              city: item.city,
-              phone: item.phone,
-              email: item.email,
-              role: item.role,
-              specialization: item.specialization,
-              qualifications: item.qualifications,
-              degree: item.degree,
-              experienceYears: item.experienceYears,
-              rating: parseFloat(item.rating || '4.5'),
-              reviewCount: parseInt(item.reviewCount || '0', 10),
-              distance: item.distance || null,
-              isVerified: item.isVerified,
-              isOnline: item.isOnline,
-              nextAvailableSlot: item.nextAvailableSlot,
-              services: [],
-            });
-          }
-          
-          // Add service to provider
-          if (item.serviceName || item.name) {
-            const provider = providerMap.get(providerId)!;
-            provider.services.push({
-              id: item.id || item.serviceId,
-              serviceId: item.serviceId || item.id,
-              name: item.serviceName || item.name,
-              price: item.price || 0,
-              duration: item.duration || 30,
-              description: item.description,
-              serviceStyle: item.serviceStyle || serviceStyle,
-            });
-          }
-        });
-
-        setProviders(Array.from(providerMap.values()));
+        // ✅ FIX: If primary endpoint returns 0 providers, also try fallback
+        if (cleanedProviders.length > 0) {
+          setProviders(cleanedProviders);
+          console.log(`✅ Loaded ${cleanedProviders.length} providers for ${category}/${serviceStyle}`);
+          return; // Exit early if we have providers
+        }
+        
+        console.log(`⚠️ Primary endpoint returned 0 providers for ${category}/${serviceStyle}, trying fallback...`);
       }
+      
+      // Try fallback endpoint (also called when primary returns empty results)
+      // ✅ FIX: Remove roleId from discover-services call - category is sufficient and avoids uuid=text error
+      const fallbackResponse = await apiClient.get(
+        `/customer/discover-services?category=${category}&serviceStyle=${serviceStyle}${locationParams}${specializationParam}`
+      ) as any;
+
+      const servicesData = fallbackResponse.vendors || fallbackResponse.services || [];
+      
+      // Group by provider
+      const providerMap = new Map<string, Provider>();
+      servicesData.forEach((item: any) => {
+        const providerId = item.providerId || item.vendorId || item.id;
+        
+        if (!providerMap.has(providerId)) {
+          // Clean the name to remove trailing IDs/numbers
+          const rawName = item.name || item.vendorName || item.businessName || 'Provider';
+          const cleanedName = cleanProviderName(rawName);
+          
+          providerMap.set(providerId, {
+            providerId,
+            providerType: item.providerType || 'vendor',
+            vendorId: item.vendorId,
+            vendorName: item.vendorName ? cleanProviderName(item.vendorName) : undefined,
+            businessName: item.businessName ? cleanProviderName(item.businessName) : undefined,
+            staffId: item.staffId,
+            name: cleanedName,
+            photo: item.photo || item.photoUrl || item.vendorProfileImage,
+            address: item.address,
+            city: item.city,
+            phone: item.phone,
+            email: item.email,
+            role: item.role,
+            specialization: item.specialization,
+            qualifications: item.qualifications,
+            degree: item.degree,
+            experienceYears: item.experienceYears,
+            rating: parseFloat(item.rating || '4.5'),
+            reviewCount: parseInt(item.reviewCount || '0', 10),
+            distance: item.distance || null,
+            isVerified: item.isVerified,
+            isOnline: item.isOnline,
+            nextAvailableSlot: item.nextAvailability ?? item.nextAvailableSlot?.formattedDisplay ?? item.nextAvailableSlot,
+            services: [],
+          });
+          const prov = providerMap.get(providerId)!;
+          if ((item.price != null || item.consultationFee != null) && prov.services.length === 0) {
+            prov.services = [{
+              id: 'min',
+              serviceId: 'min',
+              name: 'Starting from',
+              price: item.price ?? item.consultationFee ?? 0,
+              duration: 0,
+              serviceStyle,
+            }];
+          }
+        }
+        
+        // Add service to provider
+        // ✅ FIX: Only use serviceName or service_name, avoid using provider name as fallback
+        const serviceName = item.serviceName || item.service_name;
+        const providerName = item.vendorName || item.businessName || item.business_name || item.providerName;
+        
+        // Only add if we have a valid service name that's different from the provider name
+        if (serviceName && serviceName !== providerName) {
+          const provider = providerMap.get(providerId)!;
+          provider.services.push({
+            id: item.id || item.serviceId,
+            serviceId: item.serviceId || item.id,
+            name: serviceName,
+            price: item.price || 0,
+            duration: item.duration || 30,
+            description: item.description,
+            serviceStyle: item.serviceStyle || serviceStyle,
+          });
+        } else if (!serviceName && item.services && Array.isArray(item.services)) {
+          // If no serviceName but has services array, use that
+          const provider = providerMap.get(providerId)!;
+          item.services.forEach((svc: any) => {
+            const svcName = typeof svc === 'string' ? svc : (svc.name || svc.serviceName);
+            if (svcName && svcName !== providerName) {
+              provider.services.push({
+                id: svc.id || `${providerId}-${svcName}`,
+                serviceId: svc.serviceId || svc.id,
+                name: svcName,
+                price: svc.price || item.price || 0,
+                duration: svc.duration || item.duration || 30,
+                description: svc.description,
+                serviceStyle: svc.serviceStyle || item.serviceStyle || serviceStyle,
+              });
+            }
+          });
+        }
+      });
+
+      const fallbackProviders = Array.from(providerMap.values());
+      console.log(`✅ Loaded ${fallbackProviders.length} providers from fallback for ${category}/${serviceStyle}`);
+      setProviders(fallbackProviders);
     } catch (error) {
       console.error('Error loading providers:', error);
       toast.error('Failed to load service providers');
@@ -664,15 +708,18 @@ export function UniversalServiceProviderList({
       return true;
     })
     .sort((a, b) => {
+      const aPrice = a.services.length > 0 ? Math.min(...a.services.map(s => s.price)) : (a as any).price ?? (a as any).consultationFee ?? 999999;
+      const bPrice = b.services.length > 0 ? Math.min(...b.services.map(s => s.price)) : (b as any).price ?? (b as any).consultationFee ?? 999999;
       switch (filters.sortBy) {
         case 'rating':
           return b.rating - a.rating;
         case 'distance':
           return (a.distance || 999) - (b.distance || 999);
+        case 'price':
+          return aPrice - bPrice;
         case 'experience':
           return (b.experienceYears || 0) - (a.experienceYears || 0);
         case 'availability':
-          // Sort by those with next available slot first
           if (a.nextAvailableSlot && !b.nextAvailableSlot) return -1;
           if (!a.nextAvailableSlot && b.nextAvailableSlot) return 1;
           return 0;
@@ -706,33 +753,40 @@ export function UniversalServiceProviderList({
     filters.specialization,
   ].filter(Boolean).length;
 
-  // Debugging: Try simple return first
+  // ✅ FIX: Get icon based on category
+  const getCategoryIcon = () => {
+    switch (category) {
+      case 'vet': return Stethoscope;
+      case 'grooming': return Scissors;
+      case 'training': return GraduationCap;
+      default: return StyleIcon;
+    }
+  };
+  const CategoryIcon = getCategoryIcon();
+
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const dashboardStats = [
+    { value: `${filteredProviders.length}+`, label: category === 'vet' ? 'Vets' : 'Providers', icon: <CategoryIcon className="w-4 h-4" /> },
+    { value: '1K+', label: 'Bookings' },
+    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
+
   return (
-    <div className="min-h-screen bg-orange-500 max-w-md mx-auto">
-      {/* Header - Matching Customer Home Design */}
-      <div className="px-4 pt-12 pb-8">
-        {/* Back Button */}
-        <button
-          onClick={onBack}
-          className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors mb-4"
-        >
-          <ArrowLeft className="w-5 h-5 text-white" />
-        </button>
+    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+      {/* ✅ FIX: Use ServiceDashboardHeader for consistent Frame UI */}
+      <ServiceDashboardHeader
+        serviceName={title || styleConfig.label}
+        serviceSubtitle={subtitle}
+        serviceIcon={getCategoryIcon()}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
+      />
 
-        {/* Title Section with 2D Icon */}
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center flex-shrink-0">
-            <StyleIcon className="w-7 h-7 text-white" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-bold text-white leading-tight">{title || styleConfig.label}</h1>
-            {subtitle && <p className="text-white/80 text-sm mt-0.5">{subtitle}</p>}
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content - White Card with Top Radius */}
-      <div className="bg-white rounded-t-[32px] px-4 pt-6 min-h-[calc(100vh-180px)] pb-8">
+      {/* Main Content */}
+      <div className="px-4 pt-2 pb-8">
         {/* ✅ NEW: Problem Filter Strip */}
         {showProblemFilter && categoryProblems.length > 0 && (
           <div className="mb-4">

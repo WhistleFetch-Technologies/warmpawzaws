@@ -144,57 +144,76 @@ export function HomeServiceProviderListView({
   const loadProviders = async () => {
     try {
       setLoading(true);
-      console.log(`📍 [HOME-SERVICE-LIST] Loading providers for roleId: ${config.roleId}`);
+      console.log(`📍 [HOME-SERVICE-LIST] Loading providers for roleId: ${config.roleId}, serviceType: ${serviceType}`);
 
-      // Use the same API pattern as existing routers - use apiClient
-      // First try universal search, then fall back to customer/services
+      // Map serviceType to discover-services category (vet, grooming, training, walker, etc.)
+      const categoryMap: Record<string, string> = {
+        vet: 'vet',
+        grooming: 'grooming',
+        training: 'training',
+        walker: 'walker',
+        behaviourist: 'behaviourist',
+        sitting: 'sitting',
+        sitter: 'sitting',
+        diagnostics: 'diagnostics',
+        nutrition: 'nutritionist',
+        nutritionist: 'nutritionist',
+      };
+      const category = categoryMap[serviceType] || serviceType;
+
+      let locationParams = '';
       try {
-        const searchData = await apiClient.get<{ success: boolean; results: any[] }>(`/universal/search?serviceCategory=${serviceType}_services&serviceStyle=at_home&limit=50`);
+        const lat = typeof localStorage !== 'undefined' && localStorage.getItem('customer_latitude');
+        const lng = typeof localStorage !== 'undefined' && localStorage.getItem('customer_longitude');
+        if (lat && lng) locationParams = `&latitude=${lat}&longitude=${lng}`;
+      } catch (_) {}
 
-        console.log('📦 [HOME-SERVICE-LIST] Universal search response:', searchData);
+      // Primary: /customer/discover-services (solo providers only, at_home, enriched data)
+      try {
+        const discoverData = await apiClient.get<{ success: boolean; vendors?: any[]; providers?: any[] }>(
+          `/customer/discover-services?category=${category}&serviceStyle=at_home&roleId=${config.roleId || category}${locationParams}`
+        );
 
-        if (searchData.success && searchData.results && searchData.results.length > 0) {
-          const enrichedProviders = searchData.results.map((p: any) => ({
+        const list = discoverData.providers ?? discoverData.vendors ?? [];
+        if (discoverData.success && list.length > 0) {
+          const enrichedProviders: Provider[] = list.map((p: any) => ({
             id: p.id || p.vendorId,
             vendorId: p.vendorId || p.id,
             businessName: p.businessName || p.name || p.fullName,
-            fullName: p.fullName || p.name,
-            name: p.businessName || p.name || p.fullName,
-            photo: p.photo || p.logo || p.profilePhoto,
-            logo: p.logo || p.photo,
-            address: p.address || p.location || 'Location not specified',
-            phone: p.phone,
-            distance: p.distance || calculateDistance(userLocation, p.coordinates) || Math.random() * 5 + 0.5,
-            rating: p.rating || p.avgRating || 4.5,
-            reviewCount: p.reviewCount || p.reviews || 0,
-            specializations: p.specializations || p.services || [],
-            amenities: p.amenities || [],
-            nextAvailableSlot: p.nextAvailableSlot || p.nextSlot || 'Today',
-            consultationFee: p.consultationFee || p.price || p.basePrice || 0,
-            price: p.price || p.consultationFee || p.basePrice || 199,
-            isVerified: p.isVerified || p.verified || false,
-            experience: p.experience || p.yearsOfExperience || 0,
-            serviceCount: p.serviceCount || p.completedServices || 0,
-            previouslyUsed: p.previouslyUsed || false
+            fullName: p.fullName ?? p.name ?? p.businessName,
+            name: p.businessName || p.name || p.fullName || 'Provider',
+            photo: p.photoUrl || p.vendorProfileImage || p.photo || p.logo || '',
+            logo: p.photoUrl || p.vendorProfileImage || p.logo || p.photo || '',
+            address: [p.city, p.state].filter(Boolean).join(', ') || p.address || 'Location not specified',
+            phone: p.phone || '',
+            distance: typeof p.distance === 'number' ? p.distance : (userLocation ? calculateDistance(userLocation, p.latitude != null && p.longitude != null ? { lat: Number(p.latitude), lng: Number(p.longitude) } : undefined) : 999),
+            rating: Number(p.rating) || 4.5,
+            reviewCount: Number(p.totalReviews ?? p.reviewCount ?? 0),
+            specializations: Array.isArray(p.specializations) ? p.specializations : [],
+            amenities: Array.isArray(p.amenities) ? p.amenities : [],
+            nextAvailableSlot: p.nextAvailability ?? p.nextAvailableSlot?.formattedDisplay ?? p.nextAvailableSlot ?? 'Today',
+            consultationFee: Number(p.consultationFee ?? p.price ?? 0),
+            price: Number(p.price ?? p.consultationFee ?? 199),
+            isVerified: Boolean(p.isVerified),
+            experience: Number(p.experience ?? p.yearsExperience ?? 0),
+            serviceCount: Number(p.completedBookings ?? p.serviceCount ?? 0),
+            previouslyUsed: Boolean(p.previouslyUsed),
           }));
 
-          console.log(`✅ [HOME-SERVICE-LIST] Found ${enrichedProviders.length} providers from universal search`);
+          console.log(`✅ [HOME-SERVICE-LIST] Found ${enrichedProviders.length} providers from discover-services`);
           setProviders(enrichedProviders);
           return;
         }
       } catch (e) {
-        console.log('Universal search failed, trying fallback');
+        console.warn('discover-services failed, trying fallback:', e);
       }
 
-      // Fallback: Use customer/services API
-      console.log('📍 [HOME-SERVICE-LIST] Falling back to customer/services API');
-      const data = await apiClient.get<{ services: any[] }>(`/customer/services?roleId=${config.roleId}`);
-
+      // Fallback: /customer/services (extract unique vendors from services)
+      console.log('📍 [HOME-SERVICE-LIST] Fallback: customer/services');
+      const data = await apiClient.get<{ services: any[] }>(`/customer/services?roleId=${config.roleId}&serviceStyle=at_home`).catch(() => ({ services: [] }));
       const services = data.services || [];
-      console.log(`📦 [HOME-SERVICE-LIST] Found ${services.length} services`);
 
-      // Extract unique vendors from services
-      const vendorMap = new Map();
+      const vendorMap = new Map<string, Provider>();
       services.forEach((service: any) => {
         const vendorId = service.vendorId;
         if (vendorId && !vendorMap.has(vendorId)) {
@@ -204,11 +223,11 @@ export function HomeServiceProviderListView({
             businessName: service.vendorName || 'Provider',
             fullName: service.vendorName,
             name: service.vendorName || 'Provider',
-            photo: service.vendorPhoto || service.vendorLogo,
-            logo: service.vendorLogo || service.vendorPhoto,
+            photo: service.vendorPhoto || service.vendorLogo || '',
+            logo: service.vendorLogo || service.vendorPhoto || '',
             address: service.vendorAddress || service.vendorLocation || 'Location not specified',
-            phone: service.vendorPhone,
-            distance: Math.random() * 5 + 0.5, // TODO: Calculate real distance
+            phone: service.vendorPhone || '',
+            distance: 999,
             rating: service.vendorRating || 4.5,
             reviewCount: service.vendorReviewCount || 0,
             specializations: service.specializations || [],
@@ -216,16 +235,16 @@ export function HomeServiceProviderListView({
             nextAvailableSlot: 'Today',
             consultationFee: service.price || 0,
             price: service.price || 199,
-            isVerified: service.vendorVerified || false,
-            experience: service.vendorExperience || 0,
+            isVerified: Boolean(service.vendorVerified),
+            experience: 0,
             serviceCount: service.vendorServiceCount || 0,
-            previouslyUsed: false
+            previouslyUsed: false,
           });
         }
       });
 
       const enrichedProviders = Array.from(vendorMap.values());
-      console.log(`✅ [HOME-SERVICE-LIST] Extracted ${enrichedProviders.length} unique vendors`);
+      console.log(`✅ [HOME-SERVICE-LIST] Fallback: ${enrichedProviders.length} vendors from services`);
       setProviders(enrichedProviders);
     } catch (error) {
       console.error('❌ [HOME-SERVICE-LIST] Exception:', error);

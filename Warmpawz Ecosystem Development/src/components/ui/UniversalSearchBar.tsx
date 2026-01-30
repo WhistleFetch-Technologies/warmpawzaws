@@ -17,7 +17,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Search, X, Clock, TrendingUp, MapPin, Star, Package, User, Building2, Loader2 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface SearchResult {
   type: 'vendor' | 'product' | 'staff' | 'service';
@@ -86,10 +86,10 @@ export function UniversalSearchBar({
       setLoading(true);
       try {
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/advanced-search/autocomplete?query=${encodeURIComponent(query)}&type=all`,
+          `${getApiBaseUrl()}/advanced-search/autocomplete?query=${encodeURIComponent(query)}&type=all`,
           {
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`
+              ...getAuthHeaders()
             }
           }
         );

@@ -19,7 +19,7 @@ import {
   File,
   Film
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface FollowUpModalProps {
   onClose: () => void;
@@ -68,7 +68,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
   // Unread message counts
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     // Update bookings if they change externally
@@ -83,7 +83,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
     for (const booking of bookings) {
       try {
         const response = await fetch(`${API_BASE}/chat/messages/${booking.bookingId}`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         });
         
         if (response.ok) {
@@ -117,7 +117,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
     
     try {
       const response = await fetch(`${API_BASE}/chat/messages/${selectedBooking.bookingId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {
@@ -154,7 +154,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
       const response = await fetch(`${API_BASE}/chat/send`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -226,7 +226,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
       const response = await fetch(`${API_BASE}/chat/upload-file`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: formData
       });
@@ -242,7 +242,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
           await fetch(`${API_BASE}/chat/send`, {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
+              ...getAuthHeaders(),
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -292,7 +292,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
     try {
       const response = await fetch(
         `${API_BASE}/vendor/${selectedBooking.vendorId}/slots/${date}?serviceStyle=at_center`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -316,7 +316,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
       const response = await fetch(`${API_BASE}/followup/create`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({

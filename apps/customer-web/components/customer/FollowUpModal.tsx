@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { 
   X, 
@@ -20,8 +20,10 @@ import {
   Paperclip,
   Image as ImageIcon,
   File,
-  Film
+  Film,
+  Eye
 } from 'lucide-react';
+import { PrescriptionModal } from './PrescriptionModal';
 
 interface FollowUpModalProps {
   onClose: () => void;
@@ -54,6 +56,10 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
   const [selectedBooking, setSelectedBooking] = useState<FollowUpBooking | null>(null);
   const [view, setView] = useState<'list' | 'chat' | 'book-slot'>('list');
   
+  // Prescription modal state
+  const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
+  const [prescriptionBookingId, setPrescriptionBookingId] = useState<string | null>(null);
+  
   // Chat state
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState('');
@@ -70,15 +76,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
   // Unread message counts
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 
-  // Helper function to get base URL (for file downloads)
-  const getBaseUrl = (): string => {
-    if (typeof window !== 'undefined') {
-      const cfg = (window as any).__WARMPAWZ_RUNTIME_CONFIG__ as { apiBaseUrl?: string } | undefined;
-      return cfg?.apiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || '';
-    }
-    return process.env.NEXT_PUBLIC_API_BASE_URL || '';
-  };
-
+  // Note: getApiBaseUrl is now imported from api-client for consistency
 
   useEffect(() => {
     // Update bookings if they change externally
@@ -208,7 +206,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
       formData.append('caption', `Sent a ${file.type.startsWith('image/') ? 'photo' : file.type.startsWith('video/') ? 'video' : 'document'}`);
 
       // Use fetch for FormData (apiClient handles JSON, but FormData needs special handling)
-      const baseUrl = getBaseUrl();
+      const baseUrl = getApiBaseUrl();
       const response = await fetch(`${baseUrl}/chat/upload-file`, {
         method: 'POST',
         body: formData
@@ -467,12 +465,15 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
                               </button>
                             )}
 
-                            {booking.hasPrescription && booking.prescriptionUrl && (
+                            {booking.hasPrescription && (
                               <button
-                                onClick={() => window.open(booking.prescriptionUrl, '_blank')}
+                                onClick={() => {
+                                  setPrescriptionBookingId(booking.bookingId);
+                                  setShowPrescriptionModal(true);
+                                }}
                                 className="flex items-center justify-center gap-2 px-3 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm transition-colors col-span-2"
                               >
-                                <Download className="w-4 h-4" />
+                                <Eye className="w-4 h-4" />
                                 View Prescription
                               </button>
                             )}
@@ -526,7 +527,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
                           {msg.fileId && (
                             <div className="mb-2">
                               <a
-                                href={`${getBaseUrl()}/chat/file/${msg.fileId}`}
+                                href={`${getApiBaseUrl()}/chat/file/${msg.fileId}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className={`flex items-center gap-2 p-2 rounded-lg ${
@@ -695,6 +696,17 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
           )}
         </div>
       </div>
+
+      {/* Prescription Modal */}
+      {showPrescriptionModal && prescriptionBookingId && (
+        <PrescriptionModal
+          bookingId={prescriptionBookingId}
+          onClose={() => {
+            setShowPrescriptionModal(false);
+            setPrescriptionBookingId(null);
+          }}
+        />
+      )}
     </div>
   );
 }

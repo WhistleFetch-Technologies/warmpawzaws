@@ -3,14 +3,24 @@
 /**
  * SPECIALIZATION SELECTOR FOR CENTER PROFILES
  * 
- * Allows centers to select their broad specializations from problem grid categories
- * Uses exact same labels as customer-facing problem grid for perfect matching
+ * Loads specializations from specialization_master (Catalog > Categories) so admin-created
+ * specializations appear. Falls back to problem_grid_mappings if needed.
+ * Uses exact same labels as customer-facing problem grid for perfect matching.
  */
 
 import { useState, useEffect } from 'react';
+import * as LucideIcons from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { Check, Loader2, AlertCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+
+function SpecIcon({ spec }: { spec: { iconName?: string; iconColor?: string; icon?: string } }) {
+  if (spec.iconName && (LucideIcons as any)[spec.iconName]) {
+    const Icon = (LucideIcons as any)[spec.iconName];
+    return <Icon className={`w-6 h-6 ${spec.iconColor || 'text-gray-600'}`} />;
+  }
+  return <span className="text-2xl">{spec.icon || '•'}</span>;
+}
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { toast } from 'sonner';
 
 interface SpecializationSelectorProps {
@@ -52,10 +62,12 @@ export function SpecializationSelector({
       const cleanRoleId = roleId.replace('role_', '');
       console.log('[CENTER SPEC] Loading specializations for role:', cleanRoleId);
 
-      const data = await apiClient.get(`/vendor/problem-grid-specializations/${cleanRoleId}`) as any;
+      // Use specialization_master so admin-created specializations (e.g. hair trimming)
+      // with "show on vendor app" appear. Supports UUID roleId (looked up server-side).
+      const data = await apiClient.get(`/vendor/specializations/${cleanRoleId}`) as any;
 
       if (data && data.specializations) {
-        console.log('[CENTER SPEC] Loaded specializations:', data);
+        console.log('[CENTER SPEC] Loaded specializations:', data.specializations.length, data.specializations);
         setSpecializations(data.specializations || []);
         
         if (data.specializations?.length === 0) {
@@ -204,7 +216,7 @@ export function SpecializationSelector({
                       key={s.id}
                       className="inline-flex items-center gap-1 px-2 py-0.5 bg-white rounded-full text-xs text-green-700"
                     >
-                      {s.icon} {s.displayName || s.name}
+                      <SpecIcon spec={s} /> {s.displayName || s.name}
                     </span>
                   ))}
               </div>

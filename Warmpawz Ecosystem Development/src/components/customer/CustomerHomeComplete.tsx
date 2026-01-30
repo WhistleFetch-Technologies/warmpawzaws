@@ -9,7 +9,7 @@ import {
 import { Button } from '../ui/button';
 import { useCart } from '../../context/CartContext';
 import logoImage from 'figma:asset/da6636b92da744b3db8eed5288ca6da9ab889afe.png';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { AIAssistantChat } from './AIAssistantChat';
 import { CustomerSidebar } from './CustomerSidebar';
 import { EnhancedSearchBar } from './EnhancedSearchBar';
@@ -40,6 +40,31 @@ interface UserData {
 
 import { PreviousProvidersCarousel } from '../PreviousProvidersCarousel';
 import { RadarProviderMap } from '../RadarProviderMap';
+
+/** Default service tiles for "All Services" – used when API has no launch config (dynamic loading by launch plan). */
+const DEFAULT_QUICK_SERVICES = [
+  { icon: Stethoscope, label: 'Vet Care', color: 'bg-blue-100 text-blue-600', screen: 'vet', categoryId: 'veterinary' },
+  { icon: Scissors, label: 'Grooming', color: 'bg-orange-100 text-orange-600', screen: 'grooming', categoryId: 'grooming' },
+  { icon: ShoppingBag, label: 'Shop', color: 'bg-pink-100 text-pink-600', screen: 'shop', categoryId: 'shop' },
+  { icon: GraduationCap, label: 'Training', color: 'bg-purple-100 text-purple-600', screen: 'training', categoryId: 'training' },
+  { icon: Bike, label: 'Walker', color: 'bg-green-100 text-green-600', screen: 'walker', categoryId: 'walking' },
+  { icon: HomeIcon, label: 'Boarding', color: 'bg-indigo-100 text-indigo-600', screen: 'boarding', categoryId: 'boarding' },
+  { icon: Heart, label: 'Adoption', color: 'bg-red-100 text-red-600', screen: 'adoption', categoryId: 'adoption' },
+  { icon: Heart, label: 'Mating & Dating', color: 'bg-pink-100 text-pink-600', screen: 'mating-dating-hub', categoryId: 'mating' },
+  { icon: Coffee, label: 'Pet Cafes', color: 'bg-amber-100 text-amber-600', screen: 'cafes', categoryId: 'cafe' },
+  { icon: Users, label: 'Photography', color: 'bg-purple-100 text-purple-600', screen: 'photography', categoryId: 'photography' },
+  { icon: Shield, label: 'Insurance', color: 'bg-cyan-100 text-cyan-600', screen: 'insurance', categoryId: 'insurance' },
+  { icon: Users, label: 'Breeder', color: 'bg-amber-100 text-amber-600', screen: 'breeder', categoryId: 'breeder' },
+  { icon: Phone, label: 'Ambulance', color: 'bg-red-100 text-red-600', screen: 'ambulance', categoryId: 'emergency' },
+  { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist', categoryId: 'nutrition' },
+  { icon: MapPin, label: 'Relocation', color: 'bg-blue-100 text-blue-600', screen: 'relocation', categoryId: 'relocation' },
+  { icon: Sparkles, label: 'Pet Resort', color: 'bg-teal-100 text-teal-600', screen: 'resort', categoryId: 'resort' },
+  { icon: Palmtree, label: 'Pet Holiday', color: 'bg-cyan-100 text-cyan-600', screen: 'holiday', categoryId: 'holiday' },
+  { icon: Heart, label: 'Sunset Care', color: 'bg-purple-100 text-purple-600', screen: 'sunset', categoryId: 'sunset' },
+  { icon: BedDouble, label: 'Pet Sitting', color: 'bg-pink-100 text-pink-600', screen: 'sitter', categoryId: 'sitter' },
+  { icon: Brain, label: 'Behaviourist', color: 'bg-amber-100 text-amber-600', screen: 'behaviourist', categoryId: 'behavioral' },
+  { icon: FlaskConical, label: 'Diagnostics', color: 'bg-cyan-100 text-cyan-600', screen: 'diagnostics', categoryId: 'diagnostic' },
+];
 
 export function CustomerHome({ 
   phone,
@@ -75,10 +100,87 @@ export function CustomerHome({
   const [currentBanner, setCurrentBanner] = useState(0);
   const [showAIChat, setShowAIChat] = useState(false);
   const { itemCount } = useCart();
+  /** Services to show in "All Services" – filtered by launch plan when API returns config; otherwise full list. */
+  const [displayServices, setDisplayServices] = useState<typeof DEFAULT_QUICK_SERVICES | null>(null);
 
   useEffect(() => {
     loadUserData();
   }, [phone, refreshKey]); // Add refreshKey to dependencies
+
+  // Load service launch config so "All Services" reflects region/launch plan (dynamic widgets).
+  useEffect(() => {
+    if (!phone) {
+      setDisplayServices(null);
+      return;
+    }
+    const loadServiceLaunchConfig = async () => {
+      try {
+        let customerCity: string | undefined;
+        let customerState: string | undefined;
+        const profileRes = await fetch(`${getApiBaseUrl()}/customer/profile/${phone}`, { headers: getAuthHeaders() });
+        if (profileRes.ok) {
+          const profileData = await profileRes.json();
+          const addr = profileData?.profile?.address || profileData?.address;
+          customerCity = typeof addr === 'string' ? undefined : addr?.city;
+          customerState = typeof addr === 'string' ? undefined : addr?.state;
+        }
+        const params = new URLSearchParams();
+        if (customerState) params.append('state', customerState);
+        if (customerCity) params.append('city', customerCity);
+        const configRes = await fetch(`${getApiBaseUrl()}/config/service-launch/customer?${params.toString()}`, { headers: getAuthHeaders() });
+        if (!configRes.ok) {
+          setDisplayServices(null);
+          return;
+        }
+        const config = await configRes.json();
+        if (!config?.success) {
+          setDisplayServices(null);
+          return;
+        }
+        const serviceScreenMap: Record<string, string[]> = {
+          vet: ['vet'], veterinary: ['vet'], grooming: ['grooming'], training: ['training'],
+          walker: ['walker'], walking: ['walker'], boarding: ['boarding'], adoption: ['adoption'],
+          mating: ['mating-dating-hub'], cafes: ['cafes'], photography: ['photography'], insurance: ['insurance'],
+          breeder: ['breeder'], ambulance: ['ambulance'], emergency: ['ambulance'], nutritionist: ['nutritionist'],
+          wellness: ['nutritionist'], relocation: ['relocation'], resort: ['resort'], holiday: ['holiday'],
+          sunset: ['sunset'], shop: ['shop'], diagnostic: ['diagnostics'], diagnostics: ['diagnostics'],
+          behavioral: ['behaviourist'], sitter: ['sitter'], cafe: ['cafes'],
+        };
+        const blocked = new Set<string>();
+        const services = config.services;
+        if (services?.hidden) {
+          for (const s of services.hidden) {
+            const id = (s.serviceId || s.id || '').toLowerCase();
+            blocked.add(id);
+            for (const [key, screens] of Object.entries(serviceScreenMap)) {
+              if (id.includes(key)) (screens as string[]).forEach(sc => blocked.add(sc));
+            }
+          }
+        }
+        const buttons = config.buttons;
+        if (Array.isArray(buttons)) {
+          buttons.forEach((btn: any) => {
+            if (btn.enabled === false) {
+              const id = (btn.id || '').toLowerCase();
+              blocked.add(id);
+              for (const [key, screens] of Object.entries(serviceScreenMap)) {
+                if (id.includes(key)) (screens as string[]).forEach(sc => blocked.add(sc));
+              }
+            }
+          });
+        }
+        const filtered = DEFAULT_QUICK_SERVICES.filter((s) => {
+          const cat = (s.categoryId || s.screen || '').toLowerCase();
+          if (blocked.has(cat)) return false;
+          return !blocked.has((s.screen || '').toLowerCase());
+        });
+        setDisplayServices(filtered.length > 0 ? filtered : DEFAULT_QUICK_SERVICES);
+      } catch {
+        setDisplayServices(null);
+      }
+    };
+    loadServiceLaunchConfig();
+  }, [phone, refreshKey]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -94,12 +196,12 @@ export function CustomerHome({
       // Load user profile and pets in parallel
       const [profileResult, petsResult] = await Promise.all([
         fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/profile/${phone}`,
-          { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+          `${getApiBaseUrl()}/customer/profile/${phone}`,
+          { headers: getAuthHeaders() }
         ).then(res => res.ok ? res.json() : null),
         fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/pets/${phone}`,
-          { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+          `${getApiBaseUrl()}/customer/pets/${phone}`,
+          { headers: getAuthHeaders() }
         ).then(res => res.ok ? res.json() : null)
       ]);
 
@@ -177,38 +279,7 @@ export function CustomerHome({
     }
   ];
 
-  const quickServices = [
-    // PRIMARY SERVICES
-    { icon: Stethoscope, label: 'Vet Care', color: 'bg-blue-100 text-blue-600', screen: 'vet' },
-    { icon: Scissors, label: 'Grooming', color: 'bg-orange-100 text-orange-600', screen: 'grooming' },
-    { icon: ShoppingBag, label: 'Shop', color: 'bg-pink-100 text-pink-600', screen: 'shop' },
-    { icon: GraduationCap, label: 'Training', color: 'bg-purple-100 text-purple-600', screen: 'training' },
-    
-    // CARE SERVICES
-    { icon: Bike, label: 'Walker', color: 'bg-green-100 text-green-600', screen: 'walker' },
-    { icon: HomeIcon, label: 'Boarding', color: 'bg-indigo-100 text-indigo-600', screen: 'boarding' },
-    { icon: Heart, label: 'Adoption', color: 'bg-red-100 text-red-600', screen: 'adoption' },
-    { icon: Heart, label: 'Mating & Dating', color: 'bg-pink-100 text-pink-600', screen: 'mating-dating-hub' },
-    { icon: Coffee, label: 'Pet Cafes', color: 'bg-amber-100 text-amber-600', screen: 'cafes' },
-    
-    // SPECIALIZED SERVICES - NEW
-    { icon: Users, label: 'Photography', color: 'bg-purple-100 text-purple-600', screen: 'photography' },
-    { icon: Shield, label: 'Insurance', color: 'bg-cyan-100 text-cyan-600', screen: 'insurance' },
-    { icon: Users, label: 'Breeder', color: 'bg-amber-100 text-amber-600', screen: 'breeder' },
-    { icon: Phone, label: 'Ambulance', color: 'bg-red-100 text-red-600', screen: 'ambulance' },
-    
-    // WELLNESS SERVICES - NEW
-    { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist' },
-    { icon: MapPin, label: 'Relocation', color: 'bg-blue-100 text-blue-600', screen: 'relocation' },
-    { icon: Sparkles, label: 'Pet Resort', color: 'bg-teal-100 text-teal-600', screen: 'resort' },
-    { icon: Palmtree, label: 'Pet Holiday', color: 'bg-cyan-100 text-cyan-600', screen: 'holiday' },
-    { icon: Heart, label: 'Sunset Care', color: 'bg-purple-100 text-purple-600', screen: 'sunset' },
-    
-    // ✅ NEW HOME SERVICES - Unified booking flow
-    { icon: BedDouble, label: 'Pet Sitting', color: 'bg-pink-100 text-pink-600', screen: 'sitter' },
-    { icon: Brain, label: 'Behaviourist', color: 'bg-amber-100 text-amber-600', screen: 'behaviourist' },
-    { icon: FlaskConical, label: 'Diagnostics', color: 'bg-cyan-100 text-cyan-600', screen: 'diagnostics' },
-  ];
+  const quickServices = displayServices !== null ? displayServices : DEFAULT_QUICK_SERVICES;
 
   const groomingServices = [
     { 

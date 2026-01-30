@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, CheckCircle, XCircle, AlertTriangle, FileText, User, Calendar, Pill, Search, Filter } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface PrescriptionVerificationProps {
@@ -34,7 +34,7 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchPrescriptions();
@@ -46,7 +46,7 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
       const response = await fetch(
         `${API_BASE}/vendor/prescription-verification/${vendorId}?status=${filter === 'all' ? '' : filter}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -69,7 +69,7 @@ export function VendorPrescriptionVerification({ vendorId, onClose }: Prescripti
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

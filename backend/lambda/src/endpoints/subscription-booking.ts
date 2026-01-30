@@ -14,6 +14,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 
@@ -419,9 +420,9 @@ export function registerSubscriptionBookingEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'subscription-booking', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'subscription-booking', functionVersion: '$LATEST' };
     const result = await checkCoverageHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -436,9 +437,9 @@ export function registerSubscriptionBookingEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'subscription-booking', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'subscription-booking', functionVersion: '$LATEST' };
     const result = await createBookingHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -452,9 +453,9 @@ export function registerSubscriptionBookingEndpoints(app: Hono) {
       body: '',
       pathParameters: { subscriptionId: c.req.param('subscriptionId') },
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'subscription-booking', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'subscription-booking', functionVersion: '$LATEST' };
     const result = await usageHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -468,9 +469,9 @@ export function registerSubscriptionBookingEndpoints(app: Hono) {
       body: '',
       pathParameters: {},
       queryStringParameters: { customerId: c.req.param('customerId') },
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'subscription-booking', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'subscription-booking', functionVersion: '$LATEST' };
     const result = await usageHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });

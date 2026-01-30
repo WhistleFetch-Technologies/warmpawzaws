@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { IconSelector } from './IconSelector';
 import { VendorTypeSelector } from './VendorTypeSelector';
 import { ServiceStyleSelector } from './ServiceStyleSelector';
@@ -51,11 +51,11 @@ export function CreateCategoryModal({ isOpen, onClose, onSuccess }: CreateCatego
       console.log('Creating parent category with data:', formData);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/categories/create`,
+        `${getApiBaseUrl()}/admin/catalog/categories/create`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

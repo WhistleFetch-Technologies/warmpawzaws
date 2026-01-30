@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { X, Camera, Upload, MapPin, Plus } from 'lucide-react';
 import { EnhancedAddPetModal } from './EnhancedAddPetModal';
@@ -58,6 +59,8 @@ interface Address {
 interface BookingFlowProps {
   serviceId: string;
   customerPhone: string;
+  onBack?: () => void;
+  onComplete?: (bookingId: string) => void;
 }
 
 declare global {
@@ -142,7 +145,7 @@ const requiresAddress = (service: Service | null, specializedType: string | null
   return ADDRESS_REQUIRED_SERVICES.some(type => serviceName.includes(type) || serviceStyle.includes(type));
 };
 
-export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
+export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: BookingFlowProps) {
   const router = useRouter();
   const [step, setStep] = useState<'details' | 'datetime' | 'pet' | 'address' | 'payment' | 'confirmed'>('details');
   const [loading, setLoading] = useState(true);
@@ -482,6 +485,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
     } catch (err) {
       console.log('No active subscription or check failed');
       setSubscriptionCoverage(null);
+      toast.info('Subscription check unavailable; you can continue to pay normally.');
     } finally {
       setCheckingSubscription(false);
     }
@@ -562,8 +566,13 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
       // Create booking - use /bookings/create endpoint for proper Zod validation
       const bookingRes = await apiClient.post<any>('/bookings/create', bookingData);
 
+      // P2: Treat 200-with-error as failure (resilient parsing)
+      if (bookingRes?.error || bookingRes?.success === false) {
+        const errMsg = typeof bookingRes?.error === 'string' ? bookingRes.error : (bookingRes?.error?.message ?? bookingRes?.error ?? 'Booking creation failed');
+        throw new Error(errMsg);
+      }
       // ✅ FIX: Handle both response formats (new camelCase and legacy snake_case)
-      const newBookingId = bookingRes.data?.bookingId || bookingRes.bookingId || bookingRes.booking_id;
+      const newBookingId = bookingRes.data?.bookingId || bookingRes.bookingId || bookingRes.booking_id || bookingRes.data?.id || bookingRes.booking?.id;
       if (!newBookingId) {
         throw new Error(bookingRes.error || 'Failed to create booking');
       }
@@ -695,7 +704,7 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
       {/* ✅ STANDARD HEADER - Exact match with CustomerHomeComplete */}
       <header className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-sm sticky top-0 z-40">
         <div className="max-w-4xl mx-auto px-4 pt-4 pb-4 flex items-center gap-4">
-          <button onClick={() => step === 'details' ? router.back() : setStep('details')} className="text-2xl text-white">←</button>
+          <button onClick={() => step === 'details' ? (onBack ? onBack() : router.back()) : setStep('details')} className="text-2xl text-white">←</button>
           <div className="flex-1">
             <h1 className="text-lg font-bold text-white">{service.name}</h1>
             <p className="text-sm text-white/80">{service.vendor_name}</p>
@@ -1202,12 +1211,31 @@ export function BookingFlow({ serviceId, customerPhone }: BookingFlowProps) {
             </div>
 
             <div className="flex gap-3 mt-0">
-              <a href="/bookings" className="flex-1 py-0 border rounded-xl font-medium">
-                View Bookings
-              </a>
-              <a href="/" className="flex-1 py-0 bg-orange-500 text-white rounded-xl font-medium">
-                Go Home
-              </a>
+              {onComplete ? (
+                <>
+                  <button 
+                    onClick={() => onComplete(bookingId || '')} 
+                    className="flex-1 py-3 border rounded-xl font-medium"
+                  >
+                    View Bookings
+                  </button>
+                  <button 
+                    onClick={() => onComplete(bookingId || '')} 
+                    className="flex-1 py-3 bg-orange-500 text-white rounded-xl font-medium"
+                  >
+                    Done
+                  </button>
+                </>
+              ) : (
+                <>
+                  <a href="/bookings" className="flex-1 py-0 border rounded-xl font-medium">
+                    View Bookings
+                  </a>
+                  <a href="/" className="flex-1 py-0 bg-orange-500 text-white rounded-xl font-medium">
+                    Go Home
+                  </a>
+                </>
+              )}
             </div>
           </div>
         )}

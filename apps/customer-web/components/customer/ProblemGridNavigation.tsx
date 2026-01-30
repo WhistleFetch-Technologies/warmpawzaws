@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import * as LucideIcons from 'lucide-react';
 import { 
   Stethoscope, Scissors, GraduationCap, Home as HomeIcon, 
   Bone, Heart, Pill, Users, TrendingUp, ChevronRight,
@@ -10,8 +11,9 @@ import {
   Hotel, Sun, Star, Activity, FileText, Eye, Siren, Package
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { apiClient } from '@/lib/api-client';
 
-// Import local problem data from ProblemGridSection
+// Import local problem data from ProblemGridSection (fallback when API has no data)
 import { 
   VET_PROBLEMS, 
   GROOMING_NEEDS, 
@@ -29,6 +31,26 @@ import {
   getMixedDisplayOrder,
   sortItemsWithinCategory 
 } from '@/lib/service-ordering-config';
+
+// Map API categoryId to our category slug and roleId for display
+const CATEGORY_ID_TO_SLUG: Record<string, { category: string; roleId: string }> = {
+  veterinary: { category: 'vet', roleId: 'veterinarian' },
+  grooming: { category: 'grooming', roleId: 'groomer' },
+  training: { category: 'training', roleId: 'trainer' },
+  walking: { category: 'walker', roleId: 'walker' },
+  boarding: { category: 'boarding', roleId: 'boarding' },
+  behavioral: { category: 'behavioral', roleId: 'behaviorist' },
+  wellness: { category: 'nutrition', roleId: 'nutritionist' },
+  nutrition: { category: 'nutrition', roleId: 'nutritionist' },
+};
+
+function DynamicProblemIcon({ iconName, iconColor }: { iconName?: string; iconColor?: string }) {
+  if (!iconName || !(LucideIcons as any)[iconName]) {
+    return <Package className="w-6 h-6 text-gray-500" />;
+  }
+  const Icon = (LucideIcons as any)[iconName];
+  return <Icon className={`w-6 h-6 ${iconColor || 'text-gray-600'}`} />;
+}
 
 interface LocalProblem {
   id: string;
@@ -95,12 +117,44 @@ export function ProblemGridNavigation({
   compact = false
 }: ProblemGridNavigationProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [apiProblems, setApiProblems] = useState<LocalProblem[] | null>(null);
+
+  // Fetch problem grid from Catalog (specialization_master) so admin-created specializations appear
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiClient.get<{ success?: boolean; problems?: any[] }>('/public/problem-grid');
+        if (cancelled || !data?.success || !Array.isArray(data.problems) || data.problems.length === 0) {
+          if (!cancelled && data?.success && Array.isArray(data.problems) && data.problems.length === 0) setApiProblems([]);
+          return;
+        }
+        const mapped: LocalProblem[] = data.problems
+          .filter((p: any) => p.id && p.name)
+          .map((p: any) => {
+            const slug = CATEGORY_ID_TO_SLUG[p.categoryId] || { category: p.categoryId || 'vet', roleId: 'veterinarian' };
+            return {
+              id: p.id,
+              name: p.displayName || p.name,
+              icon: <DynamicProblemIcon iconName={p.iconName} iconColor={p.iconColor} />,
+              category: slug.category,
+              roleId: slug.roleId,
+              priority: p.displayOrder ?? 50,
+            };
+          });
+        if (!cancelled) setApiProblems(mapped);
+      } catch (_) {
+        // Keep apiProblems null so we use hardcoded fallback
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   /**
-   * Build all problems from local data
-   * Problems are collected from all categories
+   * Build all problems: use API data from Catalog when available, else hardcoded
    */
   const allProblems = useMemo(() => {
+    if (apiProblems && apiProblems.length > 0) return apiProblems;
     return [
       ...mapProblemsWithCategory(GROOMING_NEEDS, 'grooming', 'groomer'),
       ...mapProblemsWithCategory(WALKING_NEEDS, 'walker', 'walker'),
@@ -110,7 +164,7 @@ export function ProblemGridNavigation({
       ...mapProblemsWithCategory(BEHAVIORAL_ISSUES, 'behavioral', 'behaviorist'),
       ...mapProblemsWithCategory(VET_PROBLEMS, 'vet', 'veterinarian'),
     ];
-  }, []);
+  }, [apiProblems]);
 
   /**
    * Filter and sort problems based on selected category
@@ -155,9 +209,9 @@ export function ProblemGridNavigation({
   // Compact horizontal slider mode
   if (compact) {
     return (
-      <div className={`${className}`}>
+      <div className={`${className} w-full`}>
         {/* Category Filters - Compact Sliding Pills */}
-        <div className="flex gap-1.5 overflow-x-auto px-4 pb-2 scrollbar-hide">
+        <div className="flex gap-1.5 overflow-x-auto px-4 pb-2 scrollbar-hide" style={{ display: 'flex', flexWrap: 'nowrap' }}>
           {CATEGORIES.map((cat) => {
             const CatIcon = cat.icon;
             const isSelected = selectedCategory === cat.id;
@@ -165,11 +219,12 @@ export function ProblemGridNavigation({
               <button
                 key={cat.id}
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-all ${
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-all flex-shrink-0 ${
                   isSelected
                     ? 'bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white shadow-sm'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
+                style={{ flexShrink: 0 }}
               >
                 <CatIcon className="w-3 h-3" />
                 {cat.name}
@@ -179,7 +234,16 @@ export function ProblemGridNavigation({
         </div>
 
         {/* Problems - Compact Circular Slider */}
-        <div className="flex gap-3 overflow-x-auto px-4 py-2 scrollbar-hide">
+        <div 
+          className="flex gap-3 overflow-x-auto px-4 py-2 scrollbar-hide" 
+          style={{ 
+            display: 'flex', 
+            flexWrap: 'nowrap',
+            width: '100%',
+            overflowX: 'auto',
+            WebkitOverflowScrolling: 'touch'
+          }}
+        >
           {filteredProblems.map((problem) => {
             const config = getCategoryConfig(problem.category);
 
@@ -188,6 +252,12 @@ export function ProblemGridNavigation({
                 key={`${problem.category}-${problem.id}`}
                 onClick={() => handleProblemClick(problem)}
                 className="flex-shrink-0 flex flex-col items-center gap-1 group"
+                style={{ 
+                  minWidth: '60px', 
+                  maxWidth: '60px',
+                  flexShrink: 0,
+                  flexGrow: 0
+                }}
               >
                 {/* Circular Icon */}
                 <div className={`w-12 h-12 rounded-full ${config.bgColor} border-2 ${config.borderColor} flex items-center justify-center group-hover:scale-110 transition-transform shadow-sm`}>

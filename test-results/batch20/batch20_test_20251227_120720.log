@@ -1,8 +1,0 @@
-[12:07:20] Starting comprehensive testing for Batch 20
-[12:07:20] Testing 10 files
-[0;34mℹ[0m Testing syntax: home-sample-collection-endpoints-sql.tsx
-[0;32m✓[0m Syntax check passed: home-sample-collection-endpoints-sql.tsx
-[0;34mℹ[0m Testing syntax: gap-fixes-comprehensive-sql.tsx
-[0;32m✓[0m Syntax check passed: gap-fixes-comprehensive-sql.tsx
-[0;34mℹ[0m Testing syntax: vendor-settings-rules-sql.tsx
-[0;31m✗[0m Syntax issue in vendor-settings-rules-sql.tsx: Found 1 KV operations (should be 0)

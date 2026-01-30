@@ -2,9 +2,16 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { SearchContextProvider } from '@/context/SearchContext';
 import { CartProvider } from '@/context/CartContext';
+
+// Lazy load DevTools - only imported in development mode
+const ReactQueryDevtools = lazy(() =>
+  import('@tanstack/react-query-devtools').then((mod) => ({
+    default: mod.ReactQueryDevtools,
+  }))
+);
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -12,8 +19,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 60 * 1000,
+            staleTime: 60 * 1000, // 1 minute
             refetchOnWindowFocus: false,
+            // Performance optimization: Reduce retries for faster feedback
+            retry: 1,
           },
         },
       })
@@ -25,6 +34,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <SearchContextProvider>
           {children}
           <Toaster position="top-right" />
+          {/* Only load DevTools in development mode - prevents bundle bloat in production */}
+          {process.env.NODE_ENV === 'development' && (
+            <Suspense fallback={null}>
+              <ReactQueryDevtools initialIsOpen={false} />
+            </Suspense>
+          )}
         </SearchContextProvider>
       </CartProvider>
     </QueryClientProvider>

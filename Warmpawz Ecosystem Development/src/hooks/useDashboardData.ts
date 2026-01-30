@@ -4,13 +4,13 @@
  */
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../utils/api-config';
 import { cacheManager } from '../utils/cache-manager';
 import PerformanceMonitor from '../utils/performance-monitor';
 import Analytics from '../utils/analytics';
 import CapabilityHelper from '../utils/capability-helper';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 export interface DashboardStats {
   appointments: number;
@@ -104,32 +104,32 @@ export function useDashboardData(
       const fetchPromises: Promise<Response | null>[] = [
         // 1. Always fetch dashboard stats
         fetch(`${API_BASE}/vendor/dashboard/${vendorId}?timeframe=${timeframe}`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }),
 
         // 2. Fetch schedule if booking enabled
         CapabilityHelper.hasBooking(capabilities)
           ? fetch(`${API_BASE}/vendor/schedule/${vendorId}?date=${today}`, {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+              headers: getAuthHeaders()
             })
           : Promise.resolve(null),
 
         // 3. Fetch watchlist if medical records enabled
         CapabilityHelper.hasMedicalRecords(capabilities)
           ? fetch(`${API_BASE}/vendor/watchlist/${vendorId}`, {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+              headers: getAuthHeaders()
             })
           : Promise.resolve(null),
 
         // 4. Always fetch notifications
         fetch(`${API_BASE}/vendor/notifications/${vendorId}?limit=5`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }),
 
         // 5. Fetch services if catalog or booking enabled
         (CapabilityHelper.hasCatalog(capabilities) || CapabilityHelper.hasBooking(capabilities))
           ? fetch(`${API_BASE}/vendor/services/${vendorId}`, {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+              headers: getAuthHeaders()
             })
           : Promise.resolve(null)
       ];
@@ -232,7 +232,7 @@ export function useDashboardStats(
       const response = await fetch(
         `${API_BASE}/vendor/dashboard/${vendorId}?timeframe=${timeframe}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -267,7 +267,7 @@ export function useTodaySchedule(vendorId?: string, date?: string) {
       const response = await fetch(
         `${API_BASE}/vendor/schedule/${vendorId}?date=${today}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -300,7 +300,7 @@ export function useNotifications(vendorId?: string, limit: number = 10) {
       const response = await fetch(
         `${API_BASE}/vendor/notifications/${vendorId}?limit=${limit}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -354,7 +354,7 @@ export function usePrefetchDashboard() {
         const response = await fetch(
           `${API_BASE}/vendor/dashboard/${vendorId}?timeframe=${timeframe}`,
           {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            headers: getAuthHeaders()
           }
         );
         const data = await response.json();

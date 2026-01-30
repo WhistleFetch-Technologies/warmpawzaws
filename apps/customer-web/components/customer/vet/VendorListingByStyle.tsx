@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Star, MapPin, Video, Home, Building2, ChevronRight, Search, Loader2, Shield, SlidersHorizontal, X, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Star, MapPin, Video, Home, Building2, ChevronRight, Search, Loader2, Shield, SlidersHorizontal, X, TrendingUp, DollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -42,8 +42,8 @@ interface Vendor {
   price?: number;
 }
 
-type FilterType = 'relevance' | 'rating' | 'distance';
-type DistanceRange = 'all' | '5' | '10' | '20' | '50';
+type SortType = 'relevance' | 'rating' | 'distance' | 'price';
+type DistanceRange = 'all' | '5' | '10' | '25' | '50';
 
 export function VendorListingByStyle({ 
   phone, 
@@ -55,7 +55,7 @@ export function VendorListingByStyle({
 }: VendorListingByStyleProps) {
   const [loading, setLoading] = useState(true);
   const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [selectedFilter, setSelectedFilter] = useState<FilterType>('relevance');
+  const [sortBy, setSortBy] = useState<SortType>('relevance');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
@@ -78,7 +78,7 @@ export function VendorListingByStyle({
 
   useEffect(() => {
     loadVendors();
-  }, [serviceStyle, distanceRange, minRating]);
+  }, [serviceStyle, distanceRange, minRating, sortBy]);
 
   // Debounced search using OpenSearch
   const debouncedSearch = useCallback(
@@ -137,16 +137,27 @@ export function VendorListingByStyle({
     try {
       setLoading(true);
       
-      let locationParams = '';
+      // Build query params with all filters
+      const params = new URLSearchParams({
+        style: serviceStyle,
+        category: category,
+        sortBy: sortBy,
+      });
+      
       if (customerLocation) {
-        locationParams = `&latitude=${customerLocation.lat}&longitude=${customerLocation.lng}`;
+        params.set('latitude', customerLocation.lat.toString());
+        params.set('longitude', customerLocation.lng.toString());
         if (distanceRange !== 'all') {
-          locationParams += `&maxDistance=${distanceRange}`;
+          params.set('maxDistance', distanceRange);
         }
       }
       
+      if (minRating > 0) {
+        params.set('minRating', minRating.toString());
+      }
+      
       const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}`
+        `/customer/services/by-style?${params.toString()}`
       ) as any;
 
       if (response.success) {
@@ -158,6 +169,11 @@ export function VendorListingByStyle({
           const providerType = item.providerType || 'vendor';
           
           if (!vendorMap.has(vendorId)) {
+            // Extract minimum price from services array if available
+            const minPrice = item.services?.length > 0 
+              ? Math.min(...item.services.map((s: any) => s.price || 0).filter((p: number) => p > 0))
+              : item.price;
+            
             vendorMap.set(vendorId, {
               id: vendorId,
               name: item.name || item.vendorName || item.businessName || 'Provider',
@@ -174,14 +190,14 @@ export function VendorListingByStyle({
               vendorId: item.vendorId,
               vendorName: item.vendorName,
               specialization: item.specialization,
-              price: item.price,
+              price: minPrice && isFinite(minPrice) ? minPrice : item.price,
             });
           }
         });
         
         let vendorsList = Array.from(vendorMap.values());
         
-        // Apply local filters
+        // Apply local text search filter only (backend handles rating/distance)
         if (searchFilter) {
           const lowerSearch = searchFilter.toLowerCase();
           vendorsList = vendorsList.filter(v => 
@@ -192,24 +208,23 @@ export function VendorListingByStyle({
           );
         }
         
-        if (minRating > 0) {
-          vendorsList = vendorsList.filter(v => v.rating >= minRating);
-        }
-        
-        if (distanceRange !== 'all' && customerLocation) {
-          const maxDist = parseInt(distanceRange);
-          vendorsList = vendorsList.filter(v => 
-            v.distance === null || v.distance === undefined || v.distance <= maxDist
-          );
-        }
-        
         setVendors(vendorsList);
         console.log(`✅ [VendorListing] Loaded ${vendorsList.length} vendors for ${serviceStyle}`);
       } else {
-        // Try fallback
+        // Try fallback with location params
         try {
+          const fallbackParams = new URLSearchParams({
+            category: category,
+            roleId: category === 'vet' ? 'veterinarian' : 'pet_groomer',
+            serviceStyle: serviceStyle,
+          });
+          if (customerLocation) {
+            fallbackParams.set('latitude', customerLocation.lat.toString());
+            fallbackParams.set('longitude', customerLocation.lng.toString());
+          }
+          
           const fallbackResponse = await apiClient.get(
-            `/customer/discover-services?category=${category}&roleId=${category === 'vet' ? 'veterinarian' : 'pet_groomer'}&serviceStyle=${serviceStyle}${locationParams}`
+            `/customer/discover-services?${fallbackParams.toString()}`
           ) as any;
           
           const servicesData = fallbackResponse.vendors || fallbackResponse.services || [];
@@ -234,7 +249,20 @@ export function VendorListingByStyle({
             }
           });
           
-          const vendorsList = Array.from(vendorMap.values());
+          let vendorsList = Array.from(vendorMap.values());
+          
+          // Apply client-side filters for fallback API
+          if (minRating > 0) {
+            vendorsList = vendorsList.filter(v => v.rating >= minRating);
+          }
+          
+          if (distanceRange !== 'all' && customerLocation) {
+            const maxDist = parseInt(distanceRange);
+            vendorsList = vendorsList.filter(v => 
+              v.distance === null || v.distance === undefined || v.distance <= maxDist
+            );
+          }
+          
           setVendors(vendorsList);
           console.log(`✅ [VendorListing] Loaded ${vendorsList.length} vendors from fallback`);
         } catch (fallbackError) {
@@ -279,18 +307,23 @@ export function VendorListingByStyle({
     });
   };
 
+  // Client-side sorting as fallback (backend handles primary sorting)
   const sortedVendors = [...vendors].sort((a, b) => {
-    switch (selectedFilter) {
+    switch (sortBy) {
       case 'rating':
         return b.rating - a.rating;
       case 'distance':
         if (a.distance === null || a.distance === undefined) return 1;
         if (b.distance === null || b.distance === undefined) return -1;
         return a.distance - b.distance;
+      case 'price':
+        const aPrice = a.price || 0;
+        const bPrice = b.price || 0;
+        return aPrice - bPrice;
       case 'relevance':
       default:
-        const scoreA = (a.rating * 10) + (a.reviewCount * 0.1);
-        const scoreB = (b.rating * 10) + (b.reviewCount * 0.1);
+        const scoreA = (a.rating * 10) + (a.reviewCount * 0.1) + (a.distance !== null ? Math.max(0, 50 - (a.distance || 0)) : 0);
+        const scoreB = (b.rating * 10) + (b.reviewCount * 0.1) + (b.distance !== null ? Math.max(0, 50 - (b.distance || 0)) : 0);
         return scoreB - scoreA;
     }
   });
@@ -363,15 +396,16 @@ export function VendorListingByStyle({
           </button>
           
           {[
-            { id: 'relevance' as FilterType, label: 'Relevance', icon: TrendingUp },
-            { id: 'rating' as FilterType, label: 'Top Rated', icon: Star },
-            { id: 'distance' as FilterType, label: 'Nearest', icon: MapPin },
+            { id: 'relevance' as SortType, label: 'Relevance', icon: TrendingUp },
+            { id: 'rating' as SortType, label: 'Top Rated', icon: Star },
+            { id: 'distance' as SortType, label: 'Nearest', icon: MapPin },
+            { id: 'price' as SortType, label: 'Lowest Price', icon: DollarSign },
           ].map((filter) => (
             <button
               key={filter.id}
-              onClick={() => setSelectedFilter(filter.id)}
+              onClick={() => setSortBy(filter.id)}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors border ${
-                selectedFilter === filter.id
+                sortBy === filter.id
                   ? 'bg-[#FF8C42] text-white border-[#FF8C42]'
                   : 'bg-white text-gray-600 border-gray-200 hover:border-[#FF8C42]'
               }`}
@@ -381,6 +415,45 @@ export function VendorListingByStyle({
             </button>
           ))}
         </div>
+
+        {/* Active Filter Chips */}
+        {activeFiltersCount > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            {distanceRange !== 'all' && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-medium">
+                <MapPin className="w-3 h-3" />
+                Within {distanceRange} km
+                <button 
+                  onClick={() => setDistanceRange('all')}
+                  className="ml-0.5 hover:text-orange-600"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {minRating > 0 && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-medium">
+                <Star className="w-3 h-3" />
+                {minRating}+ stars
+                <button 
+                  onClick={() => setMinRating(0)}
+                  className="ml-0.5 hover:text-orange-600"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            <button
+              onClick={() => {
+                setDistanceRange('all');
+                setMinRating(0);
+              }}
+              className="text-xs text-gray-500 hover:text-[#FF8C42] font-medium"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
 
         {/* Advanced Filters Panel */}
         {showFilters && (
@@ -406,7 +479,7 @@ export function VendorListingByStyle({
                     { id: 'all' as DistanceRange, label: 'Any' },
                     { id: '5' as DistanceRange, label: '5 km' },
                     { id: '10' as DistanceRange, label: '10 km' },
-                    { id: '20' as DistanceRange, label: '20 km' },
+                    { id: '25' as DistanceRange, label: '25 km' },
                     { id: '50' as DistanceRange, label: '50 km' },
                   ].map((option) => (
                     <button

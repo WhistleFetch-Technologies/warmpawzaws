@@ -15,7 +15,8 @@ import {
   Tag,
   Info,
   ArrowLeft,
-  Sparkles
+  Sparkles,
+  Pencil
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,7 +25,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { 
   getAllMicroCategoriesForRole, 
   getMicroCategoriesForRole,
@@ -74,6 +75,7 @@ interface VendorCustomServiceCreationProps {
   vendorId: string;
   vendorData?: any;
   serviceStyle?: 'at_center' | 'at_home' | 'tele' | 'both'; // ✅ UPDATED: Support all service styles
+  allowedServiceStyles?: string[]; // ✅ NEW: Allowed styles from role config
   onClose: () => void;
   onServiceCreated: () => void;
 }
@@ -82,10 +84,13 @@ export function VendorCustomServiceCreation({
   vendorId,
   vendorData,
   serviceStyle,
+  allowedServiceStyles = ['at_center', 'at_home', 'tele'], // ✅ Default to all if not specified
   onClose,
   onServiceCreated
 }: VendorCustomServiceCreationProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editingService, setEditingService] = useState<CustomService | null>(null);
   const [customServices, setCustomServices] = useState<CustomService[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -98,6 +103,24 @@ export function VendorCustomServiceCreation({
   const [categoryName, setCategoryName] = useState('');
   const [subCategoryName, setSubCategoryName] = useState('');
   const [isPackage, setIsPackage] = useState(false);
+  
+  // ✅ NEW: Service style selection for this custom service
+  const [selectedServiceStyle, setSelectedServiceStyle] = useState<'at_center' | 'at_home' | 'tele'>(
+    serviceStyle && serviceStyle !== 'both' ? serviceStyle : 'at_center'
+  );
+  
+  // ✅ Determine which service styles this vendor can use
+  const availableStyles = allowedServiceStyles.filter(style => 
+    ['at_center', 'at_home', 'tele'].includes(style)
+  ) as ('at_center' | 'at_home' | 'tele')[];
+  
+  // ✅ Solo providers typically don't have at_center
+  const isSoloProvider = vendorData?.vendorConfiguration === 'solo' || 
+                         vendorData?.isSoloProvider || 
+                         vendorData?.is_solo_provider;
+  const effectiveStyles = isSoloProvider 
+    ? availableStyles.filter(s => s !== 'at_center') 
+    : availableStyles;
   
   // Package details
   const [sessionsPerDay, setSessionsPerDay] = useState(1);
@@ -192,28 +215,21 @@ export function VendorCustomServiceCreation({
     toast.success(`✨ Applied template: ${micro.name}`);
   };
 
-  // ✅ CRITICAL: Validation - Only allow for at_center or both
-  // ❌ EXPLICITLY BLOCKED: at_home and tele service styles
+  // ✅ ROLE-BASED ENFORCEMENT: Only show styles allowed by role config
   useEffect(() => {
-    // ✅ REMOVED: Service style restriction - custom services can be enabled for any service style via role config
-    // Capability check is handled at the component level (useVendorCapabilities)
-    if (false) { // Disabled check - capability-based now
-      console.error('❌ Custom service creation NOT allowed for service style:', serviceStyle);
-      console.error('   ✅ ALLOWED: at_center, both');
-      console.error('   ❌ BLOCKED: at_home, tele');
-      
-      // Specific error messages based on service style
-      if (serviceStyle === 'at_home') {
-        toast.error('Custom services are only available for center-based vendors, not home service providers');
-      } else if (serviceStyle === 'tele') {
-        toast.error('Custom services are only available for physical locations, not tele consultation services');
-      } else {
-        toast.error('Custom services are only available for center-based vendors');
-      }
-      
+    // If there are no effective styles available, close the dialog
+    if (effectiveStyles.length === 0) {
+      console.error('❌ No service styles available for this vendor type');
+      toast.error('Custom services are not available for your vendor configuration');
       onClose();
+      return;
     }
-  }, [serviceStyle]);
+    
+    // Set default service style to first available
+    if (!effectiveStyles.includes(selectedServiceStyle)) {
+      setSelectedServiceStyle(effectiveStyles[0]);
+    }
+  }, [effectiveStyles, selectedServiceStyle, onClose]);
 
   useEffect(() => {
     loadCustomServices();
@@ -281,9 +297,18 @@ export function VendorCustomServiceCreation({
     }
   };
 
-  const validateForm = (): boolean => {
+  const validateForm = (excludeServiceId?: string): boolean => {
     if (!serviceName.trim()) {
       toast.error('Service name is required');
+      return false;
+    }
+    // ✅ Duplicate name validation: service names must be unique per vendor (case-insensitive)
+    const nameNorm = (s: string) => (s || '').trim().toLowerCase();
+    const isDuplicateName = customServices.some(
+      (s) => s.id !== excludeServiceId && nameNorm(s.serviceName || '') === nameNorm(serviceName)
+    );
+    if (isDuplicateName) {
+      toast.error('A service with this name already exists. Please use a different name.');
       return false;
     }
     if (!description.trim()) {
@@ -320,7 +345,7 @@ export function VendorCustomServiceCreation({
   };
 
   const handleCreateService = async () => {
-    if (!validateForm()) return;
+    if (!validateForm(undefined)) return;
     
     try {
       setSaving(true);
@@ -331,14 +356,14 @@ export function VendorCustomServiceCreation({
         ? subCategoryName.trim() // Use custom category name when "other" is selected
         : categoryName.trim(); // Use selected category name otherwise
       
-      const customService: CustomService = {
+      const customService: CustomService & { serviceStyle: string } = {
         serviceName: serviceName.trim(),
         description: description.trim(),
         duration: isPackage ? sessionDuration : duration,
         price: isPackage ? 0 : price,
         categoryName: effectiveCategoryName, // ✅ Use effective category (handles "other" case)
         subCategoryName: categoryName === 'other' ? undefined : (subCategoryName.trim() || undefined), // ✅ Don't send subCategory if "other" was used as category
-        // serviceStyle is handled by the API based on vendor configuration
+        serviceStyle: selectedServiceStyle, // ✅ FIX: Now sending service style to API
         isPackage,
         packageDetails: isPackage ? {
           sessionsPerDay,
@@ -429,6 +454,66 @@ export function VendorCustomServiceCreation({
     }
   };
 
+  // ✅ Open Edit modal with service data (only for draft/rejected)
+  const openEditDialog = (service: CustomService) => {
+    setEditingService(service);
+    setServiceName(service.serviceName || '');
+    setDescription(service.description || '');
+    setDuration(service.duration || 60);
+    setPrice(service.price ?? 0);
+    setCategoryName(service.categoryName || '');
+    setSubCategoryName(service.subCategoryName || '');
+    setIsPackage(!!service.isPackage);
+    if (service.packageDetails) {
+      setSessionsPerDay(service.packageDetails.sessionsPerDay || 1);
+      setSessionDuration(service.packageDetails.sessionDuration || 60);
+      setPackageDuration(service.packageDetails.packageDuration || 7);
+      setSmallPrice(service.packageDetails.pricingBySize?.small ?? 0);
+      setMediumPrice(service.packageDetails.pricingBySize?.medium ?? 0);
+      setLargePrice(service.packageDetails.pricingBySize?.large ?? 0);
+      setExtraLargePrice(service.packageDetails.pricingBySize?.extraLarge ?? 0);
+    }
+    setShowEditDialog(true);
+  };
+
+  const handleUpdateService = async () => {
+    if (!editingService?.id || !validateForm(editingService.id)) return;
+    try {
+      setSaving(true);
+      const payload: any = {
+        serviceName: serviceName.trim(),
+        description: description.trim(),
+        duration: isPackage ? sessionDuration : duration,
+        price: isPackage ? 0 : price,
+      };
+      if (editingService.isPackage && isPackage) {
+        payload.packageDetails = {
+          sessionsPerDay,
+          sessionDuration,
+          packageDuration,
+          totalSessions: sessionsPerDay * packageDuration,
+          pricingBySize: { small: smallPrice, medium: mediumPrice, large: largePrice, extraLarge: extraLargePrice },
+        };
+      }
+      const data = await apiClient.put(`/vendor/${vendorId}/services/${editingService.id}`, payload) as any;
+      if (data && data.success) {
+        toast.success('Service updated. You can submit for approval when ready.');
+        resetForm();
+        setShowEditDialog(false);
+        setEditingService(null);
+        await loadCustomServices();
+        onServiceCreated();
+      } else {
+        toast.error(data?.error || 'Failed to update service');
+      }
+    } catch (error) {
+      console.error('Error updating service:', error);
+      toast.error('Error updating service');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const resetForm = () => {
     setServiceName('');
     setDescription('');
@@ -448,6 +533,17 @@ export function VendorCustomServiceCreation({
     setWhatNotIncluded(['']);
     setPetTypes([]);
     setSelectedMicroCategory(null);
+    // ✅ Reset to first available style
+    if (effectiveStyles.length > 0) {
+      setSelectedServiceStyle(effectiveStyles[0]);
+    }
+  };
+  
+  // ✅ Service style labels for display
+  const SERVICE_STYLE_LABELS: Record<string, { label: string; icon: string; description: string }> = {
+    at_center: { label: 'At Center', icon: '🏥', description: 'Service at your location' },
+    at_home: { label: 'Home Visit', icon: '🏠', description: 'Service at customer\'s home' },
+    tele: { label: 'Tele Consultation', icon: '📹', description: 'Video consultation' },
   };
 
   const getStatusBadge = (status: string) => {
@@ -482,7 +578,7 @@ export function VendorCustomServiceCreation({
             Custom Services
           </h1>
           <Button
-            onClick={() => setShowCreateDialog(true)}
+            onClick={() => { setEditingService(null); resetForm(); setShowCreateDialog(true); }}
             className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white"
             size="sm"
           >
@@ -497,7 +593,7 @@ export function VendorCustomServiceCreation({
             <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
             <div className="text-sm text-blue-800">
               <p className="font-semibold mb-1">Create Your Custom Services</p>
-              <p>As a center-based vendor, you can create custom services tailored to your business. All custom services require admin approval before going live.</p>
+              <p>Create custom services tailored to your business. Choose the service type (at center, home visit, or tele consultation) based on your offerings. All custom services require admin approval before going live.</p>
             </div>
           </div>
         </div>
@@ -515,7 +611,7 @@ export function VendorCustomServiceCreation({
           <p className="text-gray-600 font-semibold mb-2">No Custom Services Yet</p>
           <p className="text-sm text-gray-500 mb-4">Create your first custom service to get started</p>
           <Button
-            onClick={() => setShowCreateDialog(true)}
+            onClick={() => { setEditingService(null); resetForm(); setShowCreateDialog(true); }}
             className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white"
           >
             <Plus className="w-4 h-4 mr-2" />
@@ -587,8 +683,19 @@ export function VendorCustomServiceCreation({
                 </div>
               )}
 
-              {/* Actions */}
-              <div className="flex items-center gap-2">
+              {/* Actions: Edit only for unpublished (draft/rejected); Delete only for unpublished */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {(service.publishStatus === 'draft' || service.publishStatus === 'rejected') && (
+                  <Button
+                    onClick={() => openEditDialog(service)}
+                    size="sm"
+                    variant="outline"
+                    className="text-gray-700 border-gray-200 hover:bg-gray-50"
+                  >
+                    <Pencil className="w-4 h-4 mr-1" />
+                    Edit
+                  </Button>
+                )}
                 {service.publishStatus === 'draft' && (
                   <Button
                     onClick={() => handlePublishService(service.id!)}
@@ -599,7 +706,6 @@ export function VendorCustomServiceCreation({
                     Submit for Approval
                   </Button>
                 )}
-                
                 {(service.publishStatus === 'draft' || service.publishStatus === 'rejected') && (
                   <Button
                     onClick={() => handleDeleteService(service.id!)}
@@ -617,17 +723,27 @@ export function VendorCustomServiceCreation({
         </div>
       )}
 
-      {/* ✅ FIX: Improved Dialog styling to match theme */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent className="max-w-[420px] max-h-[90vh] overflow-y-auto bg-gradient-to-b from-white to-orange-50/30 border-2 border-[#FF8C42]/20">
-          <DialogHeader className="border-b border-orange-100 pb-4 mb-4 space-y-2">
+      {/* Create / Edit Dialog: same form for create and edit */}
+      <Dialog
+        open={showCreateDialog || showEditDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowCreateDialog(false);
+            setShowEditDialog(false);
+            setEditingService(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-[420px] max-h-[90vh] overflow-y-auto bg-white border border-gray-200 shadow-xl rounded-2xl">
+          <DialogHeader className="border-b border-gray-100 pb-4 mb-4 space-y-2 bg-gradient-to-r from-[#FF8C42]/10 to-[#FF6B35]/10 -mx-6 -mt-6 px-6 pt-6 rounded-t-2xl">
             <DialogTitle className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
-              Create Custom Service
+              {editingService ? 'Edit Custom Service' : 'Create Custom Service'}
             </DialogTitle>
-            {/* ✅ FIX: Fixed overlapping warning text by adding proper spacing and margins */}
             <DialogDescription className="text-sm text-gray-600 mt-2 mb-0 leading-relaxed">
-              Add a new custom service for your center. All services require admin approval before going live.
+              {editingService
+                ? 'Update the service details below. After saving, you can submit for approval when ready.'
+                : 'Add a new custom service. All custom services require admin approval before going live.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -653,6 +769,41 @@ export function VendorCustomServiceCreation({
                 placeholder="Describe your service..."
                 rows={3}
               />
+            </div>
+
+            {/* ✅ NEW: Service Style Selector */}
+            <div className="space-y-2">
+              <Label>Service Type *</Label>
+              <p className="text-xs text-gray-500 mb-2">
+                Choose where this service will be provided
+              </p>
+              <div className="grid grid-cols-1 gap-2">
+                {effectiveStyles.map((style) => (
+                  <button
+                    key={style}
+                    type="button"
+                    onClick={() => setSelectedServiceStyle(style)}
+                    className={`flex items-center gap-3 p-3 rounded-lg border-2 transition-all text-left ${
+                      selectedServiceStyle === style
+                        ? 'border-[#FF8C42] bg-orange-50'
+                        : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
+                    }`}
+                  >
+                    <span className="text-xl">{SERVICE_STYLE_LABELS[style]?.icon}</span>
+                    <div className="flex-1">
+                      <p className={`font-medium ${selectedServiceStyle === style ? 'text-[#FF8C42]' : 'text-gray-900'}`}>
+                        {SERVICE_STYLE_LABELS[style]?.label}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {SERVICE_STYLE_LABELS[style]?.description}
+                      </p>
+                    </div>
+                    {selectedServiceStyle === style && (
+                      <CheckCircle className="w-5 h-5 text-[#FF8C42]" />
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Category */}
@@ -926,25 +1077,27 @@ export function VendorCustomServiceCreation({
               onClick={() => {
                 resetForm();
                 setShowCreateDialog(false);
+                setShowEditDialog(false);
+                setEditingService(null);
               }}
               className="border-gray-300 text-gray-700 hover:bg-gray-50"
             >
               Cancel
             </Button>
             <Button
-              onClick={handleCreateService}
+              onClick={editingService ? handleUpdateService : handleCreateService}
               disabled={saving}
               className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white hover:from-[#FF7A2E] hover:to-[#FF5A1F] shadow-md"
             >
               {saving ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                  Creating...
+                  {editingService ? 'Saving...' : 'Creating...'}
                 </>
               ) : (
                 <>
                   <Save className="w-4 h-4 mr-2" />
-                  Create Service
+                  {editingService ? 'Save' : 'Create Service'}
                 </>
               )}
             </Button>

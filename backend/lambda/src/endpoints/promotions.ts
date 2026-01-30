@@ -87,6 +87,7 @@ export function registerPromotionEndpoints(app: Hono) {
         durationDays,
         startDate,
         status,
+        is_active,
         roleId,
         serviceCategory,
         title,
@@ -98,6 +99,7 @@ export function registerPromotionEndpoints(app: Hono) {
         imageUrl,
         ctaText,
         ctaLink,
+        display_order,
       } = body;
 
       // Map vendor spotlight to spotlight_offers table
@@ -115,7 +117,8 @@ export function registerPromotionEndpoints(app: Hono) {
         cta_link: ctaLink || null,
         start_date: startDate ? new Date(startDate) : new Date(),
         end_date: durationDays ? new Date(Date.now() + parseInt(durationDays) * 24 * 60 * 60 * 1000) : null,
-        is_active: status === 'active' || true,
+        is_active: is_active !== false && status !== 'inactive',
+        display_order: display_order ?? 0,
         metadata: vendorId ? { vendorId, vendorName, type } : null,
       });
 
@@ -774,6 +777,7 @@ export function registerPromotionEndpoints(app: Hono) {
       const body = await c.req.json();
       const {
         name,
+        code: codeInput,
         description,
         promotionType,
         type,
@@ -808,6 +812,7 @@ export function registerPromotionEndpoints(app: Hono) {
 
       const promotion = await insert('promotions', {
         name,
+        code: codeInput ? String(codeInput).toUpperCase() : null,
         description: description || '',
         promotion_type: finalPromotionType,
         discount_type: discountType,
@@ -820,7 +825,6 @@ export function registerPromotionEndpoints(app: Hono) {
         applicable_services: finalApplicableServices ? (Array.isArray(finalApplicableServices) ? JSON.stringify(finalApplicableServices) : finalApplicableServices) : null,
         applicable_roles: applicableRoles || null,
         priority: parseInt(priority) || 0,
-        // Phase 0.1: New fields
         is_spotlight: is_spotlight === true,
         published: published === true,
         created_at: new Date().toISOString(),
@@ -856,6 +860,7 @@ export function registerPromotionEndpoints(app: Hono) {
         updated_at: new Date().toISOString(),
       };
       if (body.name !== undefined) updateData.name = body.name;
+      if (body.code !== undefined) updateData.code = String(body.code).toUpperCase();
       if (body.description !== undefined) updateData.description = body.description;
       if (body.promotionType !== undefined) updateData.promotion_type = body.promotionType;
       if (body.type !== undefined) updateData.promotion_type = body.type;

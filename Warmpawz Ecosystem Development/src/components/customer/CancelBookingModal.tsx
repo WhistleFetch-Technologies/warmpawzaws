@@ -5,7 +5,7 @@ import { Textarea } from '../ui/textarea';
 import { Badge } from '../ui/badge';
 import { LoadingState } from '../ui/states';
 import { AlertTriangle, DollarSign, Info, XCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface CancelBookingModalProps {
@@ -26,7 +26,7 @@ export function CancelBookingModal({
   const [loading, setLoading] = useState(false);
   const [loadingRefundInfo, setLoadingRefundInfo] = useState(true);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadRefundEligibility();
@@ -37,7 +37,7 @@ export function CancelBookingModal({
       setLoadingRefundInfo(true);
       const response = await fetch(
         `${API_BASE}/bookings/${bookingId}/refund-eligibility`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -68,7 +68,7 @@ export function CancelBookingModal({
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

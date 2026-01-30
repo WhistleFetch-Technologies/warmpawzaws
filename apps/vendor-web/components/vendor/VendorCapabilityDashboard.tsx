@@ -673,8 +673,11 @@ function BookingsSection({ vendorId }: { vendorId: string }) {
 }
 
 function EarningsSection({ vendorId }: { vendorId: string }) {
+  const router = useRouter();
   const [earnings, setEarnings] = useState<any>(null);
+  const [tierInfo, setTierInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [requestingPayout, setRequestingPayout] = useState(false);
 
   useEffect(() => {
     loadEarnings();
@@ -682,8 +685,25 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
 
   const loadEarnings = async () => {
     try {
-      const data = await apiClient.get<any>(`/vendor/${vendorId}/earnings`);
-      setEarnings(data);
+      const [dayRes, monthRes, totalRes, tierRes] = await Promise.all([
+        apiClient.get<any>(`/vendor/${vendorId}/earnings?period=day`).catch(() => ({})),
+        apiClient.get<any>(`/vendor/${vendorId}/earnings?period=month`).catch(() => ({})),
+        apiClient.get<any>(`/vendor/${vendorId}/earnings?period=lifetime`).catch(() => ({})),
+        apiClient.get<any>(`/vendor/${vendorId}/tier`).catch(() => null)
+      ]);
+      const e = (r: any) => r?.earnings;
+      setEarnings({
+        today: e(dayRes)?.thisPeriod ?? e(dayRes)?.totalEarnings ?? 0,
+        thisWeek: 0,
+        thisMonth: e(monthRes)?.thisPeriod ?? e(monthRes)?.totalEarnings ?? 0,
+        total: e(totalRes)?.totalEarnings ?? 0,
+        pending: e(totalRes)?.pendingSettlement ?? 0,
+        transactions: e(totalRes)?.transactions ?? []
+      });
+      
+      if (tierRes?.tier) {
+        setTierInfo(tierRes.tier);
+      }
     } catch (err) {
       console.error('Error loading earnings:', err);
     } finally {
@@ -691,41 +711,87 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
     }
   };
 
+  const handleRequestPayout = async () => {
+    if (!earnings?.pending || earnings.pending <= 0) return;
+    if (!confirm(`Request payout of ₹${earnings.pending.toLocaleString()}?`)) return;
+    
+    setRequestingPayout(true);
+    try {
+      const response = await apiClient.post<any>('/settlements/request', { vendorId, amount: earnings.pending });
+      if (response?.success) {
+        alert('✅ Payout request submitted!');
+        loadEarnings();
+      }
+    } catch (err) {
+      console.error('Error requesting payout:', err);
+      alert('Failed to request payout');
+    } finally {
+      setRequestingPayout(false);
+    }
+  };
+
   if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
 
   return (
     <div className="space-y-6">
+      {/* Tier Info Banner */}
+      {tierInfo && (
+        <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-xl p-4 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm opacity-90">Current Tier</p>
+              <p className="text-xl font-bold">{tierInfo.name || tierInfo.current || 'Bronze'}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm opacity-90">Commission Rate</p>
+              <p className="text-xl font-bold">{((tierInfo.commissionRate || 0.15) * 100).toFixed(0)}%</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Earnings Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-green-50 rounded-xl p-4">
           <p className="text-sm text-green-600">Today</p>
-          <p className="text-2xl font-bold text-green-700">₹{earnings?.today || 0}</p>
-        </div>
-        <div className="bg-blue-50 rounded-xl p-4">
-          <p className="text-sm text-blue-600">This Week</p>
-          <p className="text-2xl font-bold text-blue-700">₹{earnings?.week || 0}</p>
+          <p className="text-2xl font-bold text-green-700">₹{(earnings?.today || 0).toLocaleString()}</p>
         </div>
         <div className="bg-purple-50 rounded-xl p-4">
           <p className="text-sm text-purple-600">This Month</p>
-          <p className="text-2xl font-bold text-purple-700">₹{earnings?.month || 0}</p>
+          <p className="text-2xl font-bold text-purple-700">₹{(earnings?.thisMonth || 0).toLocaleString()}</p>
         </div>
         <div className="bg-orange-50 rounded-xl p-4">
-          <p className="text-sm text-orange-600">Total</p>
-          <p className="text-2xl font-bold text-orange-700">₹{earnings?.total || 0}</p>
+          <p className="text-sm text-orange-600">Total Earnings</p>
+          <p className="text-2xl font-bold text-orange-700">₹{(earnings?.total || 0).toLocaleString()}</p>
+        </div>
+        <div className="bg-blue-50 rounded-xl p-4">
+          <p className="text-sm text-blue-600">Pending Payout</p>
+          <p className="text-2xl font-bold text-blue-700">₹{(earnings?.pending || 0).toLocaleString()}</p>
+          {(earnings?.pending || 0) > 0 && (
+            <button
+              onClick={handleRequestPayout}
+              disabled={requestingPayout}
+              className="mt-2 text-blue-600 text-sm font-medium hover:underline"
+            >
+              {requestingPayout ? 'Requesting...' : 'Request Payout →'}
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="bg-gray-50 rounded-xl p-1">
+      {/* Recent Transactions */}
+      <div className="bg-gray-50 rounded-xl p-4">
         <h3 className="font-semibold text-gray-900 mb-4">Recent Transactions</h3>
         {earnings?.transactions?.length > 0 ? (
           <div className="space-y-3">
-            {earnings.transactions.map((txn: any) => (
+            {earnings.transactions.slice(0, 5).map((txn: any) => (
               <div key={txn.id} className="flex items-center justify-between py-3 border-b last:border-0">
                 <div>
-                  <p className="font-medium text-gray-900">{txn.description}</p>
-                  <p className="text-sm text-gray-500">{txn.date}</p>
+                  <p className="font-medium text-gray-900">{txn.description || txn.serviceName || 'Transaction'}</p>
+                  <p className="text-sm text-gray-500">{new Date(txn.date || txn.created_at).toLocaleDateString()}</p>
                 </div>
-                <p className={`font-semibold ${txn.type === 'credit' ? 'text-green-600' : 'text-red-600'}`}>
-                  {txn.type === 'credit' ? '+' : '-'}₹{txn.amount}
+                <p className={`font-semibold ${txn.type === 'credit' || txn.type === 'booking' ? 'text-green-600' : 'text-red-600'}`}>
+                  {txn.type === 'credit' || txn.type === 'booking' ? '+' : '-'}₹{(txn.amount || 0).toLocaleString()}
                 </p>
               </div>
             ))}
@@ -734,6 +800,14 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
           <p className="text-gray-500 text-center py-4">No transactions yet</p>
         )}
       </div>
+
+      {/* View Full Dashboard Button */}
+      <button 
+        onClick={() => router.push('/earnings')}
+        className="w-full py-3 bg-orange-500 text-white rounded-xl font-semibold hover:bg-orange-600 transition"
+      >
+        View Full Earnings Dashboard
+      </button>
     </div>
   );
 }
@@ -793,13 +867,19 @@ function ScheduleSection({ vendorId }: { vendorId: string }) {
 }
 
 function ProfileSection({ vendor }: { vendor: Vendor | null }) {
+  const router = useRouter();
+  
   if (!vendor) return null;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <div className="w-24 h-24 bg-gradient-to-br from-orange-100 to-amber-100 rounded-2xl flex items-center justify-center text-4xl">
-          🏪
+        <div className="w-24 h-24 bg-gradient-to-br from-orange-100 to-amber-100 rounded-2xl flex items-center justify-center text-4xl overflow-hidden">
+          {vendor.logo_url ? (
+            <img src={vendor.logo_url} alt="Profile" className="w-full h-full object-cover" />
+          ) : (
+            '🏪'
+          )}
         </div>
         <div>
           <h3 className="text-xl font-bold text-gray-900">{vendor.business_name}</h3>
@@ -823,7 +903,7 @@ function ProfileSection({ vendor }: { vendor: Vendor | null }) {
         </div>
         <div className="p-4 bg-gray-50 rounded-xl">
           <p className="text-sm text-gray-500">Status</p>
-          <p className="font-medium text-green-600">{vendor.status}</p>
+          <p className="font-medium text-green-600 capitalize">{vendor.status}</p>
         </div>
         <div className="p-4 bg-gray-50 rounded-xl">
           <p className="text-sm text-gray-500">Tier</p>
@@ -831,7 +911,11 @@ function ProfileSection({ vendor }: { vendor: Vendor | null }) {
         </div>
       </div>
 
-      <button className="w-full py-1 bg-orange-500 text-white rounded-xl font-semibold hover:bg-orange-600 transition">
+      {/* ✅ Navigate to the enhanced profile page */}
+      <button 
+        onClick={() => router.push('/profile')}
+        className="w-full py-3 bg-orange-500 text-white rounded-xl font-semibold hover:bg-orange-600 transition"
+      >
         Edit Profile
       </button>
     </div>
@@ -1783,23 +1867,43 @@ function NotificationsSection({ vendorId }: { vendorId: string }) {
 
 function SettlementsSection({ vendorId }: { vendorId: string }) {
   const router = useRouter();
-  const [stats, setStats] = useState<{ pending: number; total: number }>({ pending: 0, total: 0 });
+  const [settlements, setSettlements] = useState<any[]>([]);
+  const [summary, setSummary] = useState<any>(null);
+  const [bankVerified, setBankVerified] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadSettlementsStats();
+    loadSettlementsData();
   }, [vendorId]);
 
-  const loadSettlementsStats = async () => {
+  const loadSettlementsData = async () => {
     try {
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/settlements`).catch(() => ({ settlements: [] }));
-      const settlements = response.settlements || [];
-      const pending = settlements.filter((s: any) => s.status === 'pending' || s.status === 'processing').length;
-      setStats({ pending, total: settlements.length });
+      const [settlementsRes, summaryRes, bankRes] = await Promise.all([
+        apiClient.get<any>(`/vendor/${vendorId}/settlements?limit=5`).catch(() => ({ settlements: [] })),
+        apiClient.get<any>(`/vendor/${vendorId}/settlements?summary=true`).catch(() => ({ summary: {} })),
+        apiClient.get<any>(`/vendor/${vendorId}/bank-details`).catch(() => null)
+      ]);
+      
+      setSettlements(settlementsRes.settlements || []);
+      setSummary(summaryRes.summary || {});
+      
+      if (bankRes?.bankDetails) {
+        setBankVerified(bankRes.bankDetails.bank_verified || bankRes.bankDetails.is_verified || false);
+      }
     } catch (err) {
-      console.error('Error loading settlements stats:', err);
+      console.error('Error loading settlements data:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return 'bg-green-100 text-green-700';
+      case 'processing': return 'bg-blue-100 text-blue-700';
+      case 'pending': return 'bg-yellow-100 text-yellow-700';
+      case 'failed': return 'bg-red-100 text-red-700';
+      default: return 'bg-gray-100 text-gray-700';
     }
   };
 
@@ -1807,18 +1911,62 @@ function SettlementsSection({ vendorId }: { vendorId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <div>
-          <p className="text-2xl font-bold text-gray-900">{stats.pending}</p>
-          <p className="text-sm text-gray-500">Pending settlements</p>
-          {stats.total > 0 && <p className="text-sm text-gray-400 mt-1">{stats.total} total</p>}
+      {/* Bank Verification Warning */}
+      {!bankVerified && (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-sm text-amber-800 font-medium">⚠️ Bank account not verified</p>
+          <p className="text-xs text-amber-700 mt-1">Add and verify your bank account to receive settlements.</p>
+          <button
+            onClick={() => router.push('/finance/bank')}
+            className="mt-2 text-amber-700 text-sm font-medium hover:underline"
+          >
+            Add Bank Account →
+          </button>
+        </div>
+      )}
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-green-50 rounded-lg p-3">
+          <p className="text-xs text-green-600">Total Settled</p>
+          <p className="text-lg font-bold text-green-700">₹{(summary?.total_settled || 0).toLocaleString()}</p>
+        </div>
+        <div className="bg-yellow-50 rounded-lg p-3">
+          <p className="text-xs text-yellow-600">Pending</p>
+          <p className="text-lg font-bold text-yellow-700">₹{(summary?.pending_amount || 0).toLocaleString()}</p>
         </div>
       </div>
+
+      {/* Recent Settlements */}
+      <div>
+        <h4 className="text-sm font-semibold text-gray-900 mb-2">Recent Settlements</h4>
+        {settlements.length > 0 ? (
+          <div className="space-y-2">
+            {settlements.slice(0, 3).map((settlement: any) => (
+              <div key={settlement.id} className="flex items-center justify-between py-2 border-b last:border-0">
+                <div>
+                  <p className="font-medium text-gray-900 text-sm">₹{(settlement.net_amount || settlement.amount || 0).toLocaleString()}</p>
+                  <p className="text-xs text-gray-500">
+                    {settlement.period_start ? new Date(settlement.period_start).toLocaleDateString() : 'Processing'}
+                  </p>
+                </div>
+                <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(settlement.status)}`}>
+                  {settlement.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-500 text-center py-3 text-sm">No settlements yet</p>
+        )}
+      </div>
+
+      {/* View Full Dashboard Button */}
       <button 
-        onClick={() => router.push('/finance/settlements')}
+        onClick={() => router.push('/settlements')}
         className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
       >
-        View Settlements
+        View Full Settlements Dashboard
       </button>
     </div>
   );

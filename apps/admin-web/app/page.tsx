@@ -8,10 +8,10 @@ import { NoSSR } from '@/components/NoSSR';
 // Prevent prerendering - this page uses localStorage and React context
 export const dynamic = 'force-dynamic';
 
-// DEV ONLY: Hardcoded credentials for UAT testing
+// UAT credentials loaded from environment variables (never hardcode in source)
 const UAT_CREDENTIALS = {
-  email: 'admin@warmpawz.com',
-  password: 'Warmpawz2025',
+  email: process.env.NEXT_PUBLIC_UAT_ADMIN_EMAIL || '',
+  password: process.env.NEXT_PUBLIC_UAT_ADMIN_PASSWORD || '',
 };
 
 // Helper function to check UAT mode from runtime config
@@ -85,7 +85,7 @@ export default function AdminHomePage() {
           setIsAuthenticated(true);
           return;
         } else {
-          setError(`Invalid credentials. For UAT, use:\nEmail: ${UAT_CREDENTIALS.email}\nPassword: ${UAT_CREDENTIALS.password}`);
+          setError('Invalid credentials. Please check your email and password.');
           return;
         }
       }

@@ -4,8 +4,9 @@ import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, Star, Clock, MapPin, Phone, Video, Home, Building2,
   Shield, Award, GraduationCap, Heart, Share2, Check, X, Calendar,
-  ChevronRight, Plus, User, MessageCircle, Image as ImageIcon
+  ChevronRight, Plus, User, MessageCircle, Image as ImageIcon, Sparkles
 } from 'lucide-react';
+import { AmenitiesSection } from './AmenitiesSection';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -785,6 +786,18 @@ export function UniversalProviderProfile({
                     </a>
                   </Card>
                 )}
+
+                {/* Amenities Section */}
+                <Card className="p-4">
+                  <h3 className="font-medium mb-3 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-orange-500" />
+                    Facilities & Amenities
+                  </h3>
+                  <AmenitiesSection
+                    amenities={provider.amenities || []}
+                    compact={true}
+                  />
+                </Card>
               </div>
             )}
 

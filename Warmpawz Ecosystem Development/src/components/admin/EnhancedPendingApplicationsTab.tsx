@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, Eye, RefreshCw, Check, X, FileText } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { CustomDropdown } from './CustomDropdown';
 
 interface Vendor {
@@ -70,10 +70,10 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
       // Add cache-busting timestamp to force fresh data
       const timestamp = new Date().getTime();
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/all?t=${timestamp}`,
+        `${getApiBaseUrl()}/admin/vendors/all?t=${timestamp}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Cache-Control': 'no-cache'
           }
         }
@@ -118,10 +118,10 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
 
       // Fetch current vendor status from backend to verify it's still pending
       const statusCheckResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/${vendorId}?t=${Date.now()}`,
+        `${getApiBaseUrl()}/admin/vendors/${vendorId}?t=${Date.now()}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Cache-Control': 'no-cache'
           }
         }
@@ -152,11 +152,11 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
       );
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/applications/${vendorId}/approve`,
+        `${getApiBaseUrl()}/admin/vendors/applications/${vendorId}/approve`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -211,10 +211,10 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
 
       // Fetch current vendor status from backend to verify it's still pending
       const statusCheckResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/${vendorId}?t=${Date.now()}`,
+        `${getApiBaseUrl()}/admin/vendors/${vendorId}?t=${Date.now()}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Cache-Control': 'no-cache'
           }
         }
@@ -245,11 +245,11 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
       );
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/applications/${vendorId}/reject`,
+        `${getApiBaseUrl()}/admin/vendors/applications/${vendorId}/reject`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

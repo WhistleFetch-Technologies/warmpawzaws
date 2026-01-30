@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import { CheckCircle, XCircle, Clock, AlertCircle, RefreshCw } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface VendorStatusResponse {
   status: 'pending' | 'approved' | 'rejected' | 'more_info_required' | 'resubmitted' | 'not_found';
@@ -56,10 +56,10 @@ export function VendorStatusChecker({
       console.log('🔍 Checking vendor status for phone:', phone);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/status/${phone}`,
+        `${getApiBaseUrl()}/vendor/status/${phone}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

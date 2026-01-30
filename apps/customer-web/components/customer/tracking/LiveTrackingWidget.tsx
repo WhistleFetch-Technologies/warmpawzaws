@@ -21,7 +21,7 @@ import {
   User, RefreshCw, X, ChevronUp, ChevronDown,
   AlertCircle, CheckCircle2, Car, Loader2
 } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
@@ -113,24 +113,54 @@ export function LiveTrackingWidget({
       setError(null);
 
       // First, check if tracking is active
-      const response = await apiClient.get<any>(`/gps-tracking/booking/${bookingId}`);
+      // ✅ CRITICAL FIX: Use correct endpoint path
+      const response = await apiClient.get<any>(`/tracking/booking/${bookingId}`);
       
-      if (!response.isTracking) {
+      // ✅ CRITICAL FIX: Check response format - endpoint returns { success, tracking }
+      if (!response.success || !response.tracking) {
         setStatus('inactive');
         return;
       }
 
-      if (response.tracking) {
-        setTracking(response.tracking);
-        setLastUpdate(new Date());
-        setStatus('active');
-        
-        // Initialize map
-        await initializeMap(response.tracking);
-        
-        // Start real-time updates
-        startRealtimeUpdates();
-      }
+      // ✅ CRITICAL FIX: Map backend TrackingSession format to frontend TrackingData format
+      const trackingData: TrackingData = {
+        booking_id: response.tracking.bookingId || bookingId,
+        booking_status: response.tracking.status || 'in_transit',
+        staff_name: response.tracking.providerName || 'Service Provider',
+        staff_phone: null,
+        staff_photo_url: null,
+        service_name: 'Service',
+        current_location: response.tracking.currentLocation ? {
+          latitude: response.tracking.currentLocation.latitude,
+          longitude: response.tracking.currentLocation.longitude,
+          timestamp: response.tracking.currentLocation.timestamp || new Date().toISOString(),
+          accuracy: response.tracking.currentLocation.accuracy,
+        } : {
+          latitude: response.tracking.startLocation?.latitude || 0,
+          longitude: response.tracking.startLocation?.longitude || 0,
+          timestamp: new Date().toISOString(),
+        },
+        destination: {
+          latitude: response.tracking.destinationLocation.latitude,
+          longitude: response.tracking.destinationLocation.longitude,
+          address: '',
+        },
+        eta_minutes: response.tracking.estimatedEtaMinutes || null,
+        distance_km: response.tracking.distanceKm || null,
+        status: response.tracking.status === 'in_transit' ? 'on_way' : 
+                response.tracking.status === 'arrived' ? 'arrived' : 
+                response.tracking.status === 'completed' ? 'completed' : 'on_way',
+      };
+      
+      setTracking(trackingData);
+      setLastUpdate(new Date());
+      setStatus('active');
+      
+      // Initialize map
+      await initializeMap(trackingData);
+      
+      // Start real-time updates
+      startRealtimeUpdates();
     } catch (err: any) {
       console.error('Error initializing tracking:', err);
       setError(err.message || 'Failed to load tracking');
@@ -139,11 +169,12 @@ export function LiveTrackingWidget({
   };
 
   const startRealtimeUpdates = () => {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+    const apiBaseUrl = getApiBaseUrl().replace(/\/+$/, '');
     
-    // Try SSE first
+    // Try SSE first (if endpoint exists)
     try {
-      const eventSource = new EventSource(`${apiBaseUrl}/gps-tracking/booking/${bookingId}/stream`);
+      // ✅ Use runtime API base; SSE stream may not exist, fallback to polling on error
+      const eventSource = new EventSource(`${apiBaseUrl}/tracking/booking/${bookingId}/stream`);
       eventSourceRef.current = eventSource;
 
       eventSource.onopen = () => {
@@ -154,7 +185,34 @@ export function LiveTrackingWidget({
         try {
           const data = JSON.parse(event.data);
           if (data.tracking) {
-            updateTracking(data.tracking);
+            // ✅ CRITICAL FIX: Map backend format to frontend format
+            const trackingData: TrackingData = {
+              booking_id: data.tracking.bookingId || bookingId,
+              booking_status: data.tracking.status || 'in_transit',
+              staff_name: data.tracking.providerName || 'Service Provider',
+              staff_phone: null,
+              staff_photo_url: null,
+              service_name: 'Service',
+              current_location: data.tracking.currentLocation ? {
+                latitude: data.tracking.currentLocation.latitude,
+                longitude: data.tracking.currentLocation.longitude,
+                timestamp: data.tracking.currentLocation.timestamp || new Date().toISOString(),
+              } : {
+                latitude: 0,
+                longitude: 0,
+                timestamp: new Date().toISOString(),
+              },
+              destination: {
+                latitude: data.tracking.destinationLocation?.latitude || 0,
+                longitude: data.tracking.destinationLocation?.longitude || 0,
+                address: '',
+              },
+              eta_minutes: data.tracking.estimatedEtaMinutes || null,
+              distance_km: data.tracking.distanceKm || null,
+              status: data.tracking.status === 'in_transit' ? 'on_way' : 
+                      data.tracking.status === 'arrived' ? 'arrived' : 'on_way',
+            };
+            updateTracking(trackingData);
           }
         } catch (e) {
           console.error('Error parsing SSE location:', e);
@@ -174,8 +232,11 @@ export function LiveTrackingWidget({
       });
 
       eventSource.onerror = (err) => {
-        console.warn('SSE error, falling back to polling:', err);
-        eventSource.close();
+        console.warn('SSE connection failed (endpoint might not exist), falling back to polling:', err);
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+        }
         startPolling();
       };
     } catch (err) {
@@ -191,16 +252,47 @@ export function LiveTrackingWidget({
 
     pollIntervalRef.current = setInterval(async () => {
       try {
-        const response = await apiClient.get<any>(`/gps-tracking/booking/${bookingId}`);
+        // ✅ CRITICAL FIX: Use correct endpoint path
+        const response = await apiClient.get<any>(`/tracking/booking/${bookingId}`);
         
-        if (!response.isTracking) {
+        // ✅ CRITICAL FIX: Check response format - endpoint returns { success, tracking }
+        if (!response.tracking) {
           setStatus('inactive');
           cleanup();
           return;
         }
 
+        // ✅ CRITICAL FIX: Map backend response to frontend format
         if (response.tracking) {
-          updateTracking(response.tracking);
+          const trackingData: TrackingData = {
+            booking_id: response.tracking.bookingId || bookingId,
+            booking_status: response.tracking.status || 'in_transit',
+            staff_name: response.tracking.providerName || 'Service Provider',
+            staff_phone: null,
+            staff_photo_url: null,
+            service_name: 'Service',
+            current_location: response.tracking.currentLocation ? {
+              latitude: response.tracking.currentLocation.latitude,
+              longitude: response.tracking.currentLocation.longitude,
+              timestamp: response.tracking.currentLocation.timestamp || new Date().toISOString(),
+              accuracy: response.tracking.currentLocation.accuracy,
+            } : {
+              latitude: response.tracking.startLocation?.latitude || 0,
+              longitude: response.tracking.startLocation?.longitude || 0,
+              timestamp: new Date().toISOString(),
+            },
+            destination: {
+              latitude: response.tracking.destinationLocation.latitude,
+              longitude: response.tracking.destinationLocation.longitude,
+              address: '',
+            },
+            eta_minutes: response.tracking.estimatedEtaMinutes || null,
+            distance_km: response.tracking.distanceKm || null,
+            status: response.tracking.status === 'in_transit' ? 'on_way' : 
+                    response.tracking.status === 'arrived' ? 'arrived' : 
+                    response.tracking.status === 'completed' ? 'completed' : 'on_way',
+          };
+          updateTracking(trackingData);
         }
       } catch (err) {
         console.error('Polling error:', err);

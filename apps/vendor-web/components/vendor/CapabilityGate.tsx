@@ -26,6 +26,21 @@ interface CapabilityGateProps {
   requireAny?: string[];
   
   /**
+   * ✅ NEW: Require specific service styles
+   */
+  allowedServiceStyles?: ('at_center' | 'at_home' | 'tele')[];
+  
+  /**
+   * ✅ NEW: Require specific vendor type
+   */
+  vendorType?: 'solo' | 'business' | 'any';
+  
+  /**
+   * ✅ NEW: Vendor data for type/style checks
+   */
+  vendorData?: any;
+  
+  /**
    * Children to render if capability check passes
    */
   children: React.ReactNode;
@@ -50,6 +65,12 @@ interface CapabilityGateProps {
    * If not provided, uses localStorage fallback
    */
   roleId?: string;
+
+  /**
+   * ✅ Allow access if role name contains this string (case-insensitive)
+   * Bypasses capability check for role-based features (e.g. diagnostics_center)
+   */
+  allowIfRoleContains?: string;
 }
 
 /**
@@ -83,15 +104,40 @@ interface CapabilityGateProps {
  *   <PrescriptionButton />
  * </CapabilityGate>
  */
+// ✅ NEW: Helper to check if vendor is solo provider
+function checkIsSoloProvider(vendorData: any): boolean {
+  if (!vendorData) return false;
+  return (
+    vendorData.vendorConfiguration === 'solo' ||
+    vendorData.isSoloProvider === true ||
+    vendorData.is_solo_provider === true ||
+    vendorData.vendor_type === 'solo' ||
+    vendorData.vendorType === 'solo'
+  );
+}
+
+// ✅ NEW: Helper to get vendor's allowed service styles
+function getVendorServiceStyles(vendorData: any): string[] {
+  if (!vendorData) return ['at_center', 'at_home', 'tele'];
+  return vendorData.allowedServiceStyles || 
+         vendorData.serviceStyles || 
+         vendorData.selectedServiceStyles || 
+         ['at_center', 'at_home', 'tele'];
+}
+
 export function CapabilityGate({
   capability,
   requireAll,
   requireAny,
+  allowedServiceStyles,
+  vendorType,
+  vendorData,
   children,
   fallback = null,
   showDisabledMessage = false,
   disabledMessage,
   roleId,
+  allowIfRoleContains,
 }: CapabilityGateProps) {
   // Use provided roleId or fall back to localStorage lookup in the hook
   const { capabilities, loading, roleName } = useVendorCapabilities(roleId || undefined);
@@ -99,6 +145,51 @@ export function CapabilityGate({
   // Show nothing while loading (prevents flickering)
   if (loading) {
     return null;
+  }
+
+  // ✅ Role-name bypass: if allowIfRoleContains and role matches, show children (e.g. diagnostics_center)
+  if (allowIfRoleContains && roleName) {
+    const r = (roleName || '').toLowerCase().replace(/\s+/g, '_');
+    const patterns = (allowIfRoleContains || '').split(',').map((p: string) => p.trim().toLowerCase().replace(/\s+/g, '_'));
+    if (patterns.some((p: string) => p && r.includes(p))) {
+      return <>{children}</>;
+    }
+  }
+  
+  // ✅ NEW: Check vendor type
+  if (vendorType && vendorType !== 'any' && vendorData) {
+    const isSolo = checkIsSoloProvider(vendorData);
+    const typeMatch = vendorType === 'solo' ? isSolo : !isSolo;
+    
+    if (!typeMatch) {
+      if (showDisabledMessage) {
+        return (
+          <ModuleDisabledMessage
+            moduleName="Vendor Type"
+            reason={disabledMessage || `This feature is only available for ${vendorType} vendors`}
+          />
+        );
+      }
+      return <>{fallback}</>;
+    }
+  }
+  
+  // ✅ NEW: Check service styles
+  if (allowedServiceStyles && allowedServiceStyles.length > 0 && vendorData) {
+    const vendorStyles = getVendorServiceStyles(vendorData);
+    const hasMatchingStyle = allowedServiceStyles.some(style => vendorStyles.includes(style));
+    
+    if (!hasMatchingStyle) {
+      if (showDisabledMessage) {
+        return (
+          <ModuleDisabledMessage
+            moduleName="Service Style"
+            reason={disabledMessage || `This feature requires one of: ${allowedServiceStyles.join(', ')}`}
+          />
+        );
+      }
+      return <>{fallback}</>;
+    }
   }
   
   // Check single capability
@@ -201,3 +292,23 @@ export function useHasAnyCapability(requiredCapabilities: string[], roleId?: str
   
   return requiredCapabilities.some(cap => capabilities[cap] === true);
 }
+
+/**
+ * ✅ NEW: Hook to check if vendor is a solo provider
+ * Provides a single source of truth for solo detection
+ * @param vendorData - Vendor data object
+ */
+export function useIsSoloProvider(vendorData: any): boolean {
+  return checkIsSoloProvider(vendorData);
+}
+
+/**
+ * ✅ NEW: Hook to get vendor's allowed service styles
+ * @param vendorData - Vendor data object
+ */
+export function useVendorServiceStyles(vendorData: any): string[] {
+  return getVendorServiceStyles(vendorData);
+}
+
+// Export helpers for use outside of hooks
+export { checkIsSoloProvider, getVendorServiceStyles };

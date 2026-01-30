@@ -5,7 +5,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { SearchAutocomplete } from './SearchAutocomplete';
 import { SearchFilters, FilterValues } from './SearchFilters';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 export function SearchResultsPage() {
   const [query, setQuery] = useState('');
@@ -17,7 +17,7 @@ export function SearchResultsPage() {
   const [userLocation, setUserLocation] = useState<{lat: number; lng: number} | null>(null);
   const limit = 20;
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   // Get user location
   useEffect(() => {
@@ -67,7 +67,7 @@ export function SearchResultsPage() {
 
       // Use enhanced search endpoint
       const response = await fetch(`${API_BASE}/search/enhanced?${params}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {

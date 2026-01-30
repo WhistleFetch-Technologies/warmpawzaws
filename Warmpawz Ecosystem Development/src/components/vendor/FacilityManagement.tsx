@@ -16,7 +16,7 @@ import {
   Image as ImageIcon,
   Trash2
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { getAmenitiesForVendorType } from '../../utils/master-amenities';
 import { toast } from 'sonner';
 import { SpecializationSelector } from './SpecializationSelector'; // ✅ NEW
@@ -62,7 +62,7 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
   const [newPhotos, setNewPhotos] = useState<PhotoFile[]>([]); // New photos to upload
   const [customAmenityInput, setCustomAmenityInput] = useState('');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
   const MAX_PHOTOS = 10;
 
   // Get applicable amenities for this vendor type
@@ -75,7 +75,7 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
         setLoading(true);
         const response = await fetch(`${API_BASE}/vendor/facility/${vendorId}`, {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         });
 

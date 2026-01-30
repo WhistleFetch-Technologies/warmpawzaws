@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate } from 'lucide-react';
+import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate, GraduationCap, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
+import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 
 interface TrainingBookingRouterProps {
   phone: string;
@@ -541,9 +542,61 @@ export function TrainingBookingRouter({
     );
   };
 
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const dashboardStats = [
+    { value: '45+', label: 'Trainers', icon: <GraduationCap className="w-4 h-4" /> },
+    { value: '800+', label: 'Sessions' },
+    { value: '4.9', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
+
+  // ✅ FIX: Prepare step indicators for header
+  const getStepIndicators = (): StepInfo[] | undefined => {
+    if (step === 'payment' || step === 'confirmation') return undefined;
+    
+    const skipServiceStep = hasServiceContext && selectedVendorService;
+    const baseSteps = selectedServiceType === 'tele' 
+      ? ['Service', 'Date/Time', 'Pet', 'Payment']
+      : ['Service', 'Date/Time', 'Pet', 'Address', 'Payment'];
+    const stepLabels = skipServiceStep ? baseSteps.slice(1) : baseSteps;
+    
+    const currentStepMap: Record<BookingStep, number> = {
+      service: skipServiceStep ? -1 : 0, 
+      datetime: skipServiceStep ? 0 : 1, 
+      pet: skipServiceStep ? 1 : 2, 
+      address: skipServiceStep ? 2 : 3, 
+      payment: skipServiceStep ? (selectedServiceType === 'tele' ? 2 : 3) : (selectedServiceType === 'tele' ? 3 : 4), 
+      confirmation: skipServiceStep ? (selectedServiceType === 'tele' ? 3 : 4) : 5
+    };
+    const currentIdx = currentStepMap[step];
+    
+    return stepLabels.map((label, idx) => {
+      const actualStepIdx = skipServiceStep ? idx + 1 : idx;
+      return {
+        label,
+        isCompleted: actualStepIdx < currentIdx,
+        isCurrent: actualStepIdx === currentIdx
+      };
+    });
+  };
+
   return (
-    <div className="px-4 py-6">
-        {step !== 'confirmation' && renderStepIndicator()}
+    <div className="min-h-screen bg-gray-50">
+      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader - Hide when on payment step */}
+      {step !== 'payment' && (
+        <ServiceDashboardHeader
+          serviceName="Training Booking"
+          serviceSubtitle={trainer?.name ? `Book with ${trainer.name}` : "Book your training session"}
+          serviceIcon={GraduationCap}
+          iconColor="text-white"
+          stats={dashboardStats}
+          steps={getStepIndicators()}
+          onBack={onBack}
+          showBackButton={true}
+          headerColor="bg-[#FF8C42]"
+        />
+      )}
+      <div className="max-w-md mx-auto px-4 py-6">
+        {/* Step indicator moved to header */}
 
         {/* Service Selection */}
         {step === 'service' && (
@@ -1169,6 +1222,7 @@ export function TrainingBookingRouter({
             }}
           />
         )}
+      </div>
     </div>
   );
 }

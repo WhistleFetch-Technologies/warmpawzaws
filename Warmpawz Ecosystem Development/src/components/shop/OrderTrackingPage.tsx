@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Package, Truck, CheckCircle, MapPin, Phone, Clock, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { authenticatedGet } from '../../utils/authenticatedFetch';
-import { projectId } from '../../utils/supabase/info';
+import { getApiBaseUrl } from '../../utils/api-config';
 
 interface TrackingEvent {
   id: string;
@@ -88,7 +88,7 @@ export function OrderTrackingPage() {
       }
 
       const data = await authenticatedGet(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/orders/${orderId}/tracking`,
+        `${getApiBaseUrl()}/customer/orders/${orderId}/tracking`,
         true
       );
       setTracking(data.tracking);

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button } from '../ui/button';
 import { ChevronLeft } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import logoImage from 'figma:asset/da6636b92da744b3db8eed5288ca6da9ab889afe.png';
 
 interface CustomerHavePetJourneyProps {
@@ -107,12 +107,12 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
       console.log('Onboarding data:', onboardingData);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/onboarding`,
+        `${getApiBaseUrl()}/customer/onboarding`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({
             phone: session.phone,

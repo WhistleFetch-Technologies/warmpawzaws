@@ -14,9 +14,10 @@ interface NotificationSettings {
 interface CustomerSettingsProps {
   customerPhone: string;
   onBack?: () => void;
+  onNavigate?: (screen: string) => void;
 }
 
-export function CustomerSettings({ customerPhone, onBack }: CustomerSettingsProps) {
+export function CustomerSettings({ customerPhone, onBack, onNavigate }: CustomerSettingsProps) {
   const [notifications, setNotifications] = useState<NotificationSettings>({
     push_enabled: true,
     booking_reminders: true,
@@ -216,18 +217,27 @@ export function CustomerSettings({ customerPhone, onBack }: CustomerSettingsProp
             </h2>
           </div>
           <div className="divide-y">
-            <a href="/profile" className="flex items-center justify-between p-4 hover:bg-gray-50">
+            <button 
+              onClick={() => onNavigate?.('profile')} 
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left"
+            >
               <span>Edit Profile</span>
               <span className="text-gray-400">→</span>
-            </a>
-            <a href="/addresses" className="flex items-center justify-between p-4 hover:bg-gray-50">
+            </button>
+            <button 
+              onClick={() => onNavigate?.('addresses')} 
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left"
+            >
               <span>Saved Addresses</span>
               <span className="text-gray-400">→</span>
-            </a>
-            <a href="/pets" className="flex items-center justify-between p-4 hover:bg-gray-50">
+            </button>
+            <button 
+              onClick={() => onNavigate?.('pets')} 
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left"
+            >
               <span>My Pets</span>
               <span className="text-gray-400">→</span>
-            </a>
+            </button>
           </div>
         </section>
 
@@ -239,18 +249,27 @@ export function CustomerSettings({ customerPhone, onBack }: CustomerSettingsProp
             </h2>
           </div>
           <div className="divide-y">
-            <a href="/help" className="flex items-center justify-between p-4 hover:bg-gray-50">
+            <button 
+              onClick={() => onNavigate?.('help')} 
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left"
+            >
               <span>Help Center</span>
               <span className="text-gray-400">→</span>
-            </a>
-            <a href="/privacy" className="flex items-center justify-between p-4 hover:bg-gray-50">
+            </button>
+            <button 
+              onClick={() => onNavigate?.('privacy')} 
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left"
+            >
               <span>Privacy Policy</span>
               <span className="text-gray-400">→</span>
-            </a>
-            <a href="/terms" className="flex items-center justify-between p-4 hover:bg-gray-50">
+            </button>
+            <button 
+              onClick={() => onNavigate?.('terms')} 
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left"
+            >
               <span>Terms of Service</span>
               <span className="text-gray-400">→</span>
-            </a>
+            </button>
           </div>
         </section>
 

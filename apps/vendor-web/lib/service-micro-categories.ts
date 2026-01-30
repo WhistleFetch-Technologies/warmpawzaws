@@ -1,5 +1,17 @@
 import { getServiceCatalogForRole, ServiceCatalogItem } from './service-catalogs';
 
+/** Role key for catalog lookup - prefer role name when roleId is UUID */
+export function getRoleKeyForCatalog(roleId?: string | null, roleName?: string | null): string | null {
+  const isUUID = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+  if (roleName) {
+    return String(roleName).toLowerCase().trim().replace(/\s+/g, '_').replace(/-/g, '_');
+  }
+  if (roleId && !isUUID(roleId)) {
+    return String(roleId).toLowerCase().trim().replace(/\s+/g, '_').replace(/-/g, '_');
+  }
+  return roleId || null;
+}
+
 export interface MicroCategory {
   id: string;
   name: string;
@@ -16,11 +28,16 @@ export interface MicroCategory {
 /**
  * Get micro categories for a role based on service catalog
  * Extracts unique categories from service catalog
+ * @param roleIdOrName - Role ID (UUID) or role name/code
+ * @param roleName - Optional role display name (used when roleId is UUID)
  */
-export function getMicroCategoriesForRole(roleId?: string): MicroCategory[] {
-  if (!roleId) return [];
+export function getMicroCategoriesForRole(
+  roleIdOrName?: string | null,
+  roleName?: string | null
+): MicroCategory[] {
+  if (!roleIdOrName && !roleName) return [];
   
-  const services = getServiceCatalogForRole(roleId);
+  const services = getServiceCatalogForRole(roleIdOrName, roleName);
   
   // Extract unique categories
   const categoryMap = new Map<string, MicroCategory>();
@@ -56,8 +73,11 @@ export function getMicroCategoriesForRole(roleId?: string): MicroCategory[] {
   return Array.from(categoryMap.values());
 }
 
-export function getAllMicroCategoriesForRole(roleId?: string): MicroCategory[] {
-  return getMicroCategoriesForRole(roleId);
+export function getAllMicroCategoriesForRole(
+  roleIdOrName?: string | null,
+  roleName?: string | null
+): MicroCategory[] {
+  return getMicroCategoriesForRole(roleIdOrName, roleName);
 }
 
 /**

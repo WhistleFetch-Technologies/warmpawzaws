@@ -29,7 +29,7 @@ interface MedicalRecord {
   id: string;
   pet_id: string;
   pet_name?: string;
-  record_type: 'vaccination' | 'checkup' | 'treatment' | 'prescription' | 'surgery' | 'other';
+  record_type: 'vaccination' | 'checkup' | 'treatment' | 'prescription' | 'surgery' | 'diagnostic_report' | 'other';
   title: string;
   description?: string;
   veterinarian_name?: string;
@@ -37,6 +37,8 @@ interface MedicalRecord {
   date: string;
   attachments?: string[];
   notes?: string;
+  document_url?: string | null;
+  booking_id?: string | null;
 }
 
 export function MedicalRecordsPage(props: MedicalRecordsPageProps) {
@@ -75,6 +77,7 @@ export function MedicalRecordsPage(props: MedicalRecordsPageProps) {
       treatment: Pill,
       prescription: FileText,
       surgery: Stethoscope,
+      diagnostic_report: FileText,
       other: FileText,
     };
     return icons[type] || FileText;
@@ -87,6 +90,7 @@ export function MedicalRecordsPage(props: MedicalRecordsPageProps) {
       treatment: 'bg-orange-100 text-orange-700 border-orange-200',
       prescription: 'bg-purple-100 text-purple-700 border-purple-200',
       surgery: 'bg-red-100 text-red-700 border-red-200',
+      diagnostic_report: 'bg-teal-100 text-teal-700 border-teal-200',
       other: 'bg-gray-100 text-gray-700 border-gray-200',
     };
     return colors[type] || 'bg-gray-100 text-gray-700 border-gray-200';
@@ -122,12 +126,12 @@ export function MedicalRecordsPage(props: MedicalRecordsPageProps) {
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="max-w-md mx-auto bg-white min-h-screen">
-        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3">
+        <div className="sticky top-0 z-10 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 py-3 rounded-b-2xl shadow-md">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full">
+            <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full text-white hover:bg-white/20">
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <h1 className="text-xl font-semibold">Medical Records</h1>
+            <h1 className="text-xl font-semibold text-white">Medical Records</h1>
           </div>
         </div>
 
@@ -144,7 +148,7 @@ export function MedicalRecordsPage(props: MedicalRecordsPageProps) {
               />
             </div>
             <div className="flex gap-2 overflow-x-auto pb-2">
-              {['all', 'vaccination', 'checkup', 'treatment', 'prescription', 'surgery'].map((type) => (
+              {['all', 'vaccination', 'checkup', 'treatment', 'prescription', 'surgery', 'diagnostic_report'].map((type) => (
                 <Button
                   key={type}
                   variant={filterType === type ? 'default' : 'outline'}
@@ -154,7 +158,7 @@ export function MedicalRecordsPage(props: MedicalRecordsPageProps) {
                     filterType === type ? 'bg-[#FF8C42] text-white' : ''
                   }`}
                 >
-                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                  {type === 'diagnostic_report' ? 'Lab Reports' : type.charAt(0).toUpperCase() + type.slice(1)}
                 </Button>
               ))}
             </div>
@@ -215,6 +219,27 @@ export function MedicalRecordsPage(props: MedicalRecordsPageProps) {
                         </div>
                         {record.clinic_name && (
                           <p className="text-xs text-gray-500 mt-1">At: {record.clinic_name}</p>
+                        )}
+                        {(record.document_url || record.record_type === 'diagnostic_report') && (
+                          <div className="mt-3 pt-3 border-t border-gray-100">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full sm:w-auto"
+                              onClick={() => {
+                                const url = record.document_url;
+                                if (url) {
+                                  window.open(url, '_blank');
+                                  toast.success('Opening report...');
+                                } else {
+                                  toast.error('Report link not available');
+                                }
+                              }}
+                            >
+                              <Download className="w-4 h-4 mr-2" />
+                              Download report
+                            </Button>
+                          </div>
                         )}
                       </div>
                     </div>

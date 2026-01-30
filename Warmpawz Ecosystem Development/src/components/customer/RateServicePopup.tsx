@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Star, X, ThumbsUp, MessageSquare, Camera, CheckCircle2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 
 interface RateServicePopupProps {
@@ -48,7 +48,7 @@ export function RateServicePopup({ booking, customerPhone, onSubmit, onSkip, onC
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   const handleTagToggle = (tagId: string) => {
     setSelectedTags(prev => 
@@ -71,7 +71,7 @@ export function RateServicePopup({ booking, customerPhone, onSubmit, onSkip, onC
       const response = await fetch(`${API_BASE}/customer/review`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({

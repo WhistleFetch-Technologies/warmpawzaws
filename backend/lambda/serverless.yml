@@ -117,6 +117,29 @@ provider:
             - bedrock:InvokeModelWithResponseStream
           Resource:
             - arn:aws:bedrock:${self:provider.region}::foundation-model/*
+        
+        # AWS Chime SDK Access (for video calls/tele-consultations)
+        - Effect: Allow
+          Action:
+            - chime:CreateMeeting
+            - chime:DeleteMeeting
+            - chime:GetMeeting
+            - chime:ListMeetings
+            - chime:CreateAttendee
+            - chime:DeleteAttendee
+            - chime:GetAttendee
+            - chime:ListAttendees
+            - chime:BatchCreateAttendee
+            - chime:StartMeetingTranscription
+            - chime:StopMeetingTranscription
+          Resource:
+            - arn:aws:chime:*:*:meeting/*
+        
+        # Chime SDK Meetings specific permissions
+        - Effect: Allow
+          Action:
+            - chime:CreateMeetingWithAttendees
+          Resource: '*'
   
   # VPC Configuration for RDS
   vpc:

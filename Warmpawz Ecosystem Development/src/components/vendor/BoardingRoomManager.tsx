@@ -15,7 +15,7 @@ import {
   Users,
   Home as HomeIcon
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
@@ -103,8 +103,8 @@ export function BoardingRoomManager({
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/boarding/rooms`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/boarding/rooms`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -135,11 +135,11 @@ export function BoardingRoomManager({
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/boarding/rooms`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/boarding/rooms`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -182,11 +182,11 @@ export function BoardingRoomManager({
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/boarding/rooms/${editingRoom.id}`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/boarding/rooms/${editingRoom.id}`,
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -227,10 +227,10 @@ export function BoardingRoomManager({
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/boarding/rooms/${roomId}`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/boarding/rooms/${roomId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -269,12 +269,12 @@ export function BoardingRoomManager({
       formData.append('type', isPhoto ? 'photo' : 'video');
 
       const endpoint = roomId
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/boarding/rooms/${roomId}/media`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/boarding/rooms/temp/media`;
+        ? `${getApiBaseUrl()}/vendor/${vendorId}/boarding/rooms/${roomId}/media`
+        : `${getApiBaseUrl()}/vendor/${vendorId}/boarding/rooms/temp/media`;
 
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` },
+        headers: getAuthHeaders(),
         body: formData
       });
 

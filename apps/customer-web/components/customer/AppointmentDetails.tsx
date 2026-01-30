@@ -403,8 +403,8 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
           </Card>
         )}
 
-        {/* Prescription/Notes - If completed */}
-        {booking.status === 'completed' && (booking.prescriptionId || booking.notes) && (
+        {/* Prescription/Notes - Show for any status if prescription exists */}
+        {(booking.prescriptionId || booking.notes) && (
           <Card className="p-5 border border-gray-200">
             <h3 className="font-semibold mb-4">Service Notes</h3>
             {booking.diagnosis && (

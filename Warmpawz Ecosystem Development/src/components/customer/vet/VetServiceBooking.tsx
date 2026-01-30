@@ -17,7 +17,7 @@ import {
   Check,
   Package
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { VetTimeSlotSelection } from './VetTimeSlotSelection';
 import { VetPaymentScreen } from './VetPaymentScreen';
 import { VetBookingSuccess } from './VetBookingSuccess';
@@ -68,8 +68,8 @@ export function VetServiceBooking({ phone, serviceType, vendorId, onBack, onNavi
       
       // Load pets
       const petsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/pets/${phone}`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/pets/${phone}`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
       if (petsRes.ok) {
         const petsData = await petsRes.json();
@@ -78,8 +78,8 @@ export function VetServiceBooking({ phone, serviceType, vendorId, onBack, onNavi
 
       // Load all services
       const servicesRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/services?roleId=veterinarian`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/services?roleId=veterinarian`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
 
       if (servicesRes.ok) {
@@ -224,12 +224,12 @@ export function VetServiceBooking({ phone, serviceType, vendorId, onBack, onNavi
       
       // Create booking
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/bookings/create`,
+        `${getApiBaseUrl()}/customer/bookings/create`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify(bookingPayload),
         }

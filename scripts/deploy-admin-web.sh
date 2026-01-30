@@ -1,8 +1,19 @@
 #!/bin/bash
 # Direct AWS CLI deployment script for admin-web
-# Usage: ./scripts/deploy-admin-web.sh
+# Usage: ./scripts/deploy-admin-web.sh [--deploy-only]
+#   --deploy-only  Skip build; use existing dist (fails if dist missing).
+#   Default: always build. Do NOT use SKIP_BUILD env (ignored).
 
 set -e
+
+# Only skip build when explicitly requested via flag (ignore SKIP_BUILD env to avoid cross-agent leaks)
+DEPLOY_ONLY=false
+for arg in "$@"; do
+  if [ "$arg" = "--deploy-only" ] || [ "$arg" = "--skip-build" ]; then
+    DEPLOY_ONLY=true
+    break
+  fi
+done
 
 echo "🚀 Deploying admin-web to AWS dev environment..."
 
@@ -18,19 +29,26 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Step 1: Build the app
-echo -e "${BLUE}📦 Building ${APP_NAME}...${NC}"
+# Step 1: Build the app (skip only when --deploy-only was passed and dist exists)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT/apps/${APP_NAME}"
-npm run build
 
-if [ ! -d "dist" ]; then
-  echo -e "${YELLOW}❌ Error: dist directory not found after build!${NC}"
-  exit 1
+if [ "$DEPLOY_ONLY" = true ] && [ -d "dist" ]; then
+  echo -e "${GREEN}✅ Skipping build (--deploy-only, dist exists)${NC}"
+elif [ -d "dist-export" ] && [ ! -d "dist" ]; then
+  echo -e "${BLUE}📦 Using existing dist-export as dist...${NC}"
+  cp -R dist-export dist
+  echo -e "${GREEN}✅ dist ready from dist-export${NC}"
+else
+  echo -e "${BLUE}📦 Building ${APP_NAME}...${NC}"
+  npm run build
+  if [ ! -d "dist" ]; then
+    echo -e "${YELLOW}❌ Error: dist directory not found after build!${NC}"
+    exit 1
+  fi
+  echo -e "${GREEN}✅ Build completed successfully${NC}"
 fi
-
-echo -e "${GREEN}✅ Build completed successfully${NC}"
 
 # Step 1.5: Inject runtime-config.js
 echo -e "${BLUE}🔧 Injecting runtime-config.js...${NC}"

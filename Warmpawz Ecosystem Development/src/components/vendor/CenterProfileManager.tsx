@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Badge } from '../ui/badge';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 import { getAmenitiesForVendorType } from '../../utils/master-amenities';
 import { SpecializationSelector } from './SpecializationSelector';
@@ -87,7 +87,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
   const [newPhotos, setNewPhotos] = useState<File[]>([]);
   const [customAmenityInput, setCustomAmenityInput] = useState('');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
   const availableAmenities = getAmenitiesForVendorType(vendorData?.roleId);
   const MAX_PHOTOS = 10;
 
@@ -101,7 +101,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
       
       // Load facility data
       const facilityRes = await fetch(`${API_BASE}/vendor/facility/${vendorId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (facilityRes.ok) {
@@ -122,7 +122,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
       // Load center availability (timings)
       const availabilityRes = await fetch(
         `${API_BASE}/vendor/${vendorId}/center-availability`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        { headers: getAuthHeaders() }
       );
 
       if (availabilityRes.ok) {
@@ -158,7 +158,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
           `${API_BASE}/vendor/facility/${vendorId}/upload-photos`,
           {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` },
+            headers: getAuthHeaders(),
             body: formData
           }
         );
@@ -178,7 +178,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -206,7 +206,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

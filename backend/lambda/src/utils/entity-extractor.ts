@@ -284,6 +284,23 @@ export function buildVendorResponse(vendor: any, role?: any): Record<string, any
 }
 
 /**
+ * Parse selected_services from DB (JSONB or string) to array for API response
+ */
+export function parseSelectedServices(raw: any): any[] {
+  if (Array.isArray(raw)) return raw;
+  if (raw == null) return [];
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+/**
  * Build standardized booking response
  */
 export function buildBookingResponse(booking: any, extras?: {
@@ -292,6 +309,9 @@ export function buildBookingResponse(booking: any, extras?: {
   customer?: any;
   payment?: any;
 }): Record<string, any> {
+  const selectedServices = parseSelectedServices(
+    booking.selected_services ?? booking.selectedServices
+  );
   return {
     bookingId: booking.id || booking.booking_id || booking.bookingId,
     customerId: booking.customer_id || booking.customerId,
@@ -317,6 +337,12 @@ export function buildBookingResponse(booking: any, extras?: {
       status: extras.payment.status,
       method: extras.payment.method || extras.payment.payment_method,
     } : undefined,
+    // Multi-service: expose selectedServices and totalDurationMinutes
+    selectedServices: selectedServices.length > 0 ? selectedServices : undefined,
+    totalDurationMinutes:
+      booking.total_duration_minutes != null
+        ? Number(booking.total_duration_minutes)
+        : booking.totalDurationMinutes,
   };
 }
 

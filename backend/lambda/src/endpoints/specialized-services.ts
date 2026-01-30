@@ -24,6 +24,7 @@ import { select, insert, update, query } from '../database/rds-connection';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { getDiscoveryRules } from '../lib/rule-engine';
 
 export function registerSpecializedServicesEndpoints(app: Hono) {
   // ============================================
@@ -81,6 +82,53 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    * Customer-facing: Discover available training programs
    * Public endpoint - no capability check
    */
+  /**
+   * GET /public/diagnostics/categories
+   * Diagnostic test categories/specializations for vendor test creation and customer filter.
+   * Sourced from service_catalog (diagnostics) + "Other". Admin Catalog & Service updates flow here.
+   */
+  app.get("/public/diagnostics/categories", async (c) => {
+    try {
+      const rows = await query(`
+        SELECT DISTINCT COALESCE(sc.category_name, sc.category_id, '') AS id,
+               COALESCE(sc.category_name, sc.category_id, 'Other') AS name
+        FROM service_catalog sc
+        WHERE (sc.status = 'active' OR sc.status IS NULL)
+          AND (sc.category_id = 'diagnostic'
+               OR 'diagnostics_center' = ANY(COALESCE(sc.applicable_roles, ARRAY[]::text[]))
+               OR 'diagnostic_center' = ANY(COALESCE(sc.applicable_roles, ARRAY[]::text[]))
+               OR LOWER(COALESCE(sc.category_name, '')) LIKE '%diagnostic%'
+               OR LOWER(COALESCE(sc.category_name, '')) LIKE '%lab%'
+               OR LOWER(COALESCE(sc.category_name, '')) IN ('blood tests', 'imaging', 'allergy', 'hormone', 'urine', 'stool', 'biopsy'))
+        ORDER BY name
+      `).catch(() => ({ rows: [] }));
+      const list = (rows.rows || []).map((r: any) => ({ id: (r.id || '').toLowerCase().replace(/\s+/g, '_'), name: r.name || r.id }));
+      const seen = new Set(list.map((x: any) => x.id));
+      if (!seen.has('blood') && !seen.has('blood_test')) {
+        list.unshift({ id: 'blood', name: 'Blood Test' });
+      }
+      if (!seen.has('other')) {
+        list.push({ id: 'other', name: 'Other' });
+      }
+      return c.json({ success: true, categories: list });
+    } catch (error: any) {
+      console.error('Error fetching diagnostics categories:', error);
+      return c.json({
+        success: true,
+        categories: [
+          { id: 'blood', name: 'Blood Test' },
+          { id: 'urine', name: 'Urine Test' },
+          { id: 'stool', name: 'Stool Test' },
+          { id: 'imaging', name: 'Imaging' },
+          { id: 'biopsy', name: 'Biopsy' },
+          { id: 'allergy', name: 'Allergy Tests' },
+          { id: 'hormone', name: 'Hormone Tests' },
+          { id: 'other', name: 'Other' },
+        ],
+      });
+    }
+  });
+
   app.get("/discover/training-programs", async (c) => {
     try {
       const city = c.req.query('city');
@@ -443,14 +491,116 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         return c.json({ error: 'Vendor does not have diagnostics capability' }, 403);
       }
       
-      const tests = await select('diagnostic_tests', 
+      const rows = await select('diagnostic_tests', 
         { vendor_id: vendorId },
         { orderBy: 'created_at', orderDirection: 'DESC' }
       );
+      // Normalize: some DBs use test_category (migration 057), frontend expects category
+      const tests = rows.map((r: any) => ({
+        ...r,
+        category: r.category ?? r.test_category,
+      }));
       
       return c.json({ success: true, tests, total: tests.length });
     } catch (error: any) {
       console.error('Error fetching diagnostic tests:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/diagnostics/vendors-with-tests
+   * Discovery: vendors (diagnostics_center) with their diagnostic tests (category, service_style).
+   * Used by customer web for lab listing and filter by specialization / at_center vs at_home.
+   */
+  app.get("/customer/diagnostics/vendors-with-tests", async (c) => {
+    try {
+      const category = c.req.query('category');
+      const serviceStyle = c.req.query('serviceStyle');
+      const lat = c.req.query('lat') ? parseFloat(c.req.query('lat')!) : null;
+      const lng = c.req.query('lng') ? parseFloat(c.req.query('lng')!) : null;
+      const maxDistance = c.req.query('maxDistance') ? parseFloat(c.req.query('maxDistance')!) : 50;
+
+      let vendorQuery = `
+        SELECT v.id, v.business_name, v.city, v.state, v.address, v.latitude, v.longitude, v.rating
+        FROM vendors v
+        INNER JOIN roles r ON v.role_id = r.id
+        WHERE v.status = 'approved' AND v.is_active = true
+          AND (LOWER(r.name) IN ('diagnostics_center', 'diagnostic_center'))
+      `;
+      const vendorParams: any[] = [];
+      let pi = 1;
+      if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) {
+        vendorQuery += `
+          AND v.latitude IS NOT NULL AND v.longitude IS NOT NULL
+          AND (6371 * acos(cos(radians($${pi})) * cos(radians(CAST(v.latitude AS FLOAT))) * cos(radians(CAST(v.longitude AS FLOAT)) - radians($${pi + 1})) + sin(radians($${pi})) * sin(radians(CAST(v.latitude AS FLOAT))))) <= $${pi + 2}
+        `;
+        vendorParams.push(lat, lng, maxDistance);
+        pi += 3;
+      }
+      vendorQuery += ` ORDER BY v.business_name`;
+      const vendorsResult = await query(vendorQuery, vendorParams);
+      const vendors = vendorsResult.rows || [];
+
+      const out: any[] = [];
+      for (const v of vendors) {
+        let testQuery = `
+          SELECT id, test_name, price, duration_minutes,
+                 COALESCE(category, test_category) AS category,
+                 COALESCE(service_style, 'at_center') AS service_style,
+                 is_free_home_collection, home_collection_fee
+          FROM diagnostic_tests
+          WHERE vendor_id = $1 AND is_available = true
+        `;
+        const testParams: any[] = [v.id];
+        let ti = 2;
+        if (category) {
+          testQuery += ` AND (LOWER(COALESCE(category, test_category, '')) = LOWER($${ti}) OR COALESCE(category, test_category, '') ILIKE $${ti + 1})`;
+          testParams.push(category, `%${category}%`);
+          ti += 2;
+        }
+        if (serviceStyle) {
+          testQuery += ` AND COALESCE(service_style, 'at_center') = $${ti}`;
+          testParams.push(serviceStyle);
+        }
+        testQuery += ` ORDER BY test_name`;
+        const testsResult = await query(testQuery, testParams);
+        const tests = (testsResult.rows || []).map((t: any) => ({
+          id: t.id,
+          test_name: t.test_name,
+          price: parseFloat(t.price) || 0,
+          duration_minutes: t.duration_minutes,
+          category: t.category,
+          service_style: t.service_style,
+          is_free_home_collection: t.is_free_home_collection,
+          home_collection_fee: t.home_collection_fee,
+        }));
+        if (tests.length === 0 && (category || serviceStyle)) continue;
+        const distanceKm = (v.latitude != null && v.longitude != null && lat != null && lng != null)
+          ? (6371 * Math.acos(
+              Math.cos(lat * Math.PI / 180) * Math.cos(Number(v.latitude) * Math.PI / 180) *
+              Math.cos(Number(v.longitude) * Math.PI / 180 - lng * Math.PI / 180) +
+              Math.sin(lat * Math.PI / 180) * Math.sin(Number(v.latitude) * Math.PI / 180)
+            ))
+          : null;
+        out.push({
+          id: v.id,
+          businessName: v.business_name,
+          city: v.city,
+          state: v.state,
+          address: v.address,
+          latitude: v.latitude,
+          longitude: v.longitude,
+          rating: v.rating,
+          distance: distanceKm != null ? Math.round(distanceKm * 10) / 10 : null,
+          homeCollectionAvailable: tests.some((t: any) => t.service_style === 'at_home'),
+          tests,
+        });
+      }
+
+      return c.json({ success: true, vendors: out });
+    } catch (error: any) {
+      console.error('Error fetching diagnostics vendors-with-tests:', error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -474,20 +624,89 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       
       const testData = await c.req.json();
       
-      const test = await insert('diagnostic_tests', {
-        vendor_id: vendorId,
-        test_name: testData.testName || testData.test_name || testData.name,
-        test_code: testData.testCode || testData.test_code,
-        category: testData.category,
-        description: testData.description,
-        price: testData.price,
-        duration_minutes: testData.durationMinutes || testData.duration_minutes,
-        sample_type: testData.sampleType || testData.sample_type,
-        preparation_instructions: testData.preparationInstructions || testData.preparation_instructions,
-        is_available: testData.isAvailable !== false,
-      });
-      
-      return c.json({ success: true, test: test[0], message: 'Diagnostic test added successfully' });
+      // ✅ FIX: Use raw SQL with only guaranteed columns first, then try with extended columns
+      // This handles the case where migration 503 hasn't been run yet
+      try {
+        // First try with all columns (if migration has been applied)
+        const categoryVal = testData.category === 'other' && (testData.otherCategoryName || testData.other_category_name)
+          ? (testData.otherCategoryName || testData.other_category_name)
+          : (testData.category || testData.test_category);
+        const test = await insert('diagnostic_tests', {
+          vendor_id: vendorId,
+          test_name: testData.testName || testData.test_name || testData.name,
+          test_code: testData.testCode || testData.test_code,
+          category: categoryVal,
+          description: testData.description,
+          price: testData.price,
+          duration_minutes: testData.durationMinutes || testData.duration_minutes,
+          sample_type: testData.sampleType || testData.sample_type,
+          preparation_instructions: testData.preparationInstructions || testData.preparation_instructions,
+          is_available: testData.isAvailable !== false,
+          service_style: testData.serviceStyle || testData.service_style || 'at_center',
+          // Extended fields (may not exist if migration not applied)
+          is_free_home_collection: testData.isFreeHomeCollection || testData.is_free_home_collection || false,
+          home_collection_fee: testData.homeCollectionFee || testData.home_collection_fee || 0,
+          terms_conditions: testData.termsConditions || testData.terms_conditions,
+          turnaround_time_hours: testData.turnaroundTimeHours || testData.turnaround_time_hours,
+          is_package_available: testData.isPackageAvailable || testData.is_package_available || false,
+          package_price: testData.packagePrice || testData.package_price,
+          package_test_count: testData.packageTestCount || testData.package_test_count,
+        });
+        
+        return c.json({ success: true, test: test[0], message: 'Diagnostic test added successfully' });
+      } catch (insertError: any) {
+        // ✅ FIX: If column doesn't exist error, retry with schema-aware fallback
+        // Migration 057 uses test_category; 021 uses category. Some DBs have 057 schema.
+        if (insertError.message?.includes('column') && insertError.message?.includes('does not exist')) {
+          console.warn('⚠️ Column mismatch, retrying with schema-aware insert. Error:', insertError.message);
+          
+          // Try with test_category (057 schema) - minimal columns that exist in 057
+          try {
+            const categoryVal = testData.category === 'other' && (testData.otherCategoryName || testData.other_category_name)
+              ? (testData.otherCategoryName || testData.other_category_name)
+              : (testData.category || testData.test_category);
+            const testCore = await insert('diagnostic_tests', {
+              vendor_id: vendorId,
+              test_name: testData.testName || testData.test_name || testData.name,
+              test_category: categoryVal,
+              description: testData.description,
+              price: testData.price,
+              duration_minutes: testData.durationMinutes || testData.duration_minutes,
+              is_available: testData.isAvailable !== false,
+            });
+            const row = testCore[0] as any;
+            // Normalize response to use category for frontend
+            if (row && row.test_category != null && row.category == null) {
+              row.category = row.test_category;
+            }
+            return c.json({ 
+              success: true, 
+              test: row, 
+              message: 'Diagnostic test added successfully'
+            });
+          } catch (fallbackError: any) {
+            // Last resort: absolute minimal insert (vendor_id, test_name, price required)
+            if (fallbackError.message?.includes('column') && fallbackError.message?.includes('does not exist')) {
+              const catVal = testData.category === 'other' && (testData.otherCategoryName || testData.other_category_name)
+                ? (testData.otherCategoryName || testData.other_category_name)
+                : (testData.category || testData.test_category);
+              const testMin = await insert('diagnostic_tests', {
+                vendor_id: vendorId,
+                test_name: testData.testName || testData.test_name || testData.name,
+                test_category: catVal,
+                price: testData.price ?? 0,
+                is_available: testData.isAvailable !== false,
+              });
+              const row = testMin[0] as any;
+              if (row && row.test_category != null) row.category = row.test_category;
+              return c.json({ success: true, test: row, message: 'Diagnostic test added successfully' });
+            }
+            throw fallbackError;
+          }
+        }
+        
+        throw insertError;
+      }
     } catch (error: any) {
       console.error('Error adding diagnostic test:', error);
       return c.json({ error: error.message }, 500);
@@ -513,28 +732,214 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       
       const testData = await c.req.json();
       
-      const updated = await update('diagnostic_tests',
-        { id: testId },
-        {
-          test_name: testData.testName || testData.test_name,
-          test_code: testData.testCode || testData.test_code,
-          category: testData.category,
-          description: testData.description,
-          price: testData.price,
-          duration_minutes: testData.durationMinutes || testData.duration_minutes,
-          sample_type: testData.sampleType || testData.sample_type,
-          preparation_instructions: testData.preparationInstructions || testData.preparation_instructions,
-          is_available: testData.isAvailable,
-        }
-      );
+      // Build update object with only provided fields - core fields first
+      const coreUpdateFields: any = {};
+      const extendedUpdateFields: any = {};
       
-      if (updated.length === 0) {
-        return c.json({ error: 'Test not found' }, 404);
+      // Core fields (guaranteed to exist)
+      if (testData.testName !== undefined || testData.test_name !== undefined) {
+        coreUpdateFields.test_name = testData.testName || testData.test_name;
+      }
+      if (testData.category !== undefined) {
+        coreUpdateFields.category = testData.category === 'other' && (testData.otherCategoryName || testData.other_category_name)
+          ? (testData.otherCategoryName || testData.other_category_name)
+          : testData.category;
+      }
+      if (testData.serviceStyle !== undefined || testData.service_style !== undefined) {
+        extendedUpdateFields.service_style = testData.serviceStyle ?? testData.service_style;
+      }
+      if (testData.description !== undefined) {
+        coreUpdateFields.description = testData.description;
+      }
+      if (testData.price !== undefined) {
+        coreUpdateFields.price = testData.price;
+      }
+      if (testData.durationMinutes !== undefined || testData.duration_minutes !== undefined) {
+        coreUpdateFields.duration_minutes = testData.durationMinutes || testData.duration_minutes;
+      }
+      if (testData.sampleType !== undefined || testData.sample_type !== undefined) {
+        coreUpdateFields.sample_type = testData.sampleType || testData.sample_type;
+      }
+      if (testData.preparationInstructions !== undefined || testData.preparation_instructions !== undefined) {
+        coreUpdateFields.preparation_instructions = testData.preparationInstructions || testData.preparation_instructions;
+      }
+      if (testData.isAvailable !== undefined) {
+        coreUpdateFields.is_available = testData.isAvailable;
       }
       
-      return c.json({ success: true, test: updated[0], message: 'Test updated successfully' });
+      // Extended fields (may not exist - added in migration 503)
+      if (testData.testCode !== undefined || testData.test_code !== undefined) {
+        extendedUpdateFields.test_code = testData.testCode || testData.test_code;
+      }
+      if (testData.isFreeHomeCollection !== undefined || testData.is_free_home_collection !== undefined) {
+        extendedUpdateFields.is_free_home_collection = testData.isFreeHomeCollection || testData.is_free_home_collection;
+      }
+      if (testData.homeCollectionFee !== undefined || testData.home_collection_fee !== undefined) {
+        extendedUpdateFields.home_collection_fee = testData.homeCollectionFee || testData.home_collection_fee;
+      }
+      if (testData.termsConditions !== undefined || testData.terms_conditions !== undefined) {
+        extendedUpdateFields.terms_conditions = testData.termsConditions || testData.terms_conditions;
+      }
+      if (testData.turnaroundTimeHours !== undefined || testData.turnaround_time_hours !== undefined) {
+        extendedUpdateFields.turnaround_time_hours = testData.turnaroundTimeHours || testData.turnaround_time_hours;
+      }
+      if (testData.isPackageAvailable !== undefined || testData.is_package_available !== undefined) {
+        extendedUpdateFields.is_package_available = testData.isPackageAvailable || testData.is_package_available;
+      }
+      if (testData.packagePrice !== undefined || testData.package_price !== undefined) {
+        extendedUpdateFields.package_price = testData.packagePrice || testData.package_price;
+      }
+      if (testData.packageTestCount !== undefined || testData.package_test_count !== undefined) {
+        extendedUpdateFields.package_test_count = testData.packageTestCount || testData.package_test_count;
+      }
+      
+      // ✅ FIX: Try with all fields first, fallback to core fields only
+      try {
+        const updateFields = { ...coreUpdateFields, ...extendedUpdateFields };
+        const updated = await update('diagnostic_tests',
+          { id: testId },
+          updateFields
+        );
+        
+        if (updated.length === 0) {
+          return c.json({ error: 'Test not found' }, 404);
+        }
+        
+        return c.json({ success: true, test: updated[0], message: 'Test updated successfully' });
+      } catch (updateError: any) {
+        // ✅ FIX: If column doesn't exist error, retry with only core columns
+        if (updateError.message?.includes('column') && updateError.message?.includes('does not exist')) {
+          console.warn('⚠️ Extended columns not found, retrying with core columns only. Run migration 503 to add missing columns.');
+          
+          const updatedCore = await update('diagnostic_tests',
+            { id: testId },
+            coreUpdateFields
+          );
+          
+          if (updatedCore.length === 0) {
+            return c.json({ error: 'Test not found' }, 404);
+          }
+          
+          return c.json({ 
+            success: true, 
+            test: updatedCore[0], 
+            message: 'Test updated successfully (some fields may be unavailable)',
+            warning: 'Extended columns not available. Please run migration 503 to enable all features.'
+          });
+        }
+        
+        throw updateError;
+      }
     } catch (error: any) {
       console.error('Error updating diagnostic test:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/diagnostics/bookings
+   * Get all diagnostics bookings for a vendor
+   * Requires 'diagnostics' or 'diagnostic_results' capability
+   */
+  app.get("/vendor/:vendorId/diagnostics/bookings", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { status, date } = c.req.query();
+      
+      // Check if vendor has diagnostics capability
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostic_results') ||
+                                       await checkVendorCapability(vendorId, 'diagnostics') ||
+                                       await checkVendorCapability(vendorId, 'test_catalog');
+      if (!hasDiagnosticsCapability) {
+        return c.json({ error: 'Vendor does not have diagnostics capability' }, 403);
+      }
+      
+      // Build query conditions: diagnostics bookings have notes with "tests" array (from DiagnosticsBookingFlow)
+      // or may use service_id from diagnostics vendor_services; service_id is UUID so we match by notes
+      let conditions = `b.vendor_id = $1 AND (b.notes IS NOT NULL AND (b.notes::text LIKE '%"tests"%' OR b.notes::text LIKE '%"test_name"%'))`;
+      const params: any[] = [vendorId];
+      let paramIndex = 2;
+      
+      if (status) {
+        conditions += ` AND b.status = $${paramIndex}`;
+        params.push(status);
+        paramIndex++;
+      }
+      
+      if (date) {
+        conditions += ` AND b.booking_date = $${paramIndex}`;
+        params.push(date);
+        paramIndex++;
+      }
+      
+      const { rows: bookings } = await query(`
+        SELECT 
+          b.*,
+          c.full_name as customer_name,
+          c.phone as customer_phone,
+          p.name as pet_name,
+          p.species as pet_type,
+          sca.staff_id as assigned_staff_id,
+          COALESCE(sca.staff_name, sca.agent_name) as assigned_staff_name,
+          COALESCE(sca.staff_phone, sca.agent_phone) as assigned_staff_phone,
+          sca.agent_name as assigned_agent_name,
+          sca.agent_phone as assigned_agent_phone,
+          sca.collection_otp,
+          sca.status as collection_status
+        FROM bookings b
+        LEFT JOIN customers c ON c.id = b.customer_id
+        LEFT JOIN pets p ON p.id = b.pet_id
+        LEFT JOIN sample_collection_assignments sca ON sca.booking_id = b.id
+        WHERE ${conditions}
+        ORDER BY b.booking_date DESC, b.booking_time DESC
+      `, params);
+      
+      // Get reports for each booking (schema-aware: booking_id or diagnostic_booking_id)
+      const bookingIds = bookings.map(b => b.id);
+      let reports: any[] = [];
+      
+      if (bookingIds.length > 0) {
+        try {
+          const { rows: reportRows } = await query(`
+            SELECT * FROM diagnostic_reports 
+            WHERE booking_id = ANY($1)
+          `, [bookingIds]);
+          reports = reportRows;
+        } catch (drErr: any) {
+          if (drErr?.message?.includes('booking_id')) {
+            try {
+              const { rows: reportRows } = await query(`
+                SELECT *, diagnostic_booking_id as booking_id FROM diagnostic_reports 
+                WHERE diagnostic_booking_id = ANY($1)
+              `, [bookingIds]);
+              reports = reportRows;
+            } catch {
+              // diagnostic_reports may not exist or have different schema
+            }
+          }
+        }
+      }
+      
+      // Format response
+      const formattedBookings = bookings.map(b => ({
+        ...b,
+        reports: reports.filter(r => (r.booking_id || r.diagnostic_booking_id) === b.id),
+        assigned_staff: (b.assigned_staff_id || b.assigned_staff_name || b.assigned_agent_name) ? {
+          id: b.assigned_staff_id,
+          name: b.assigned_staff_name || b.assigned_agent_name,
+          phone: b.assigned_staff_phone || b.assigned_agent_phone
+        } : null,
+        collection_otp: b.collection_otp,
+        collection_status: b.collection_status
+      }));
+      
+      return c.json({ 
+        success: true, 
+        bookings: formattedBookings,
+        count: formattedBookings.length 
+      });
+    } catch (error: any) {
+      console.error('Error getting diagnostics bookings:', error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -848,7 +1253,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
       const lat = parseFloat(c.req.query('lat') || '0');
       const lng = parseFloat(c.req.query('lng') || '0');
-      const maxRadius = parseFloat(c.req.query('maxRadius') || '10'); // Default 10km
+      const rules = await getDiscoveryRules('pet_nutritionist', 'meal_search');
+      const defaultRadiusKm = rules.discovery_radius_km ?? 10;
+      const maxRadius = c.req.query('maxRadius') ? parseFloat(c.req.query('maxRadius')!) : defaultRadiusKm;
       const filters = c.req.query('filters')?.split(',') || [];
       
       // Base query
@@ -929,62 +1336,106 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
   /**
    * GET /vendor/:vendorId/meal-products
-   * Get meal products for a nutritionist vendor
+   * Get meal products for a nutritionist vendor (merged from products + meal_plans for consistent list)
    */
   app.get("/vendor/:vendorId/meal-products", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      
-      // Try products table first, then meal_plans as fallback
-      let products: any[] = [];
-      
+      const list: any[] = [];
+
+      // 1) Products table (meal_plan / nutrition / food); fallback if category column missing
       try {
-        const productsResult = await query(
-          `SELECT * FROM products 
-           WHERE vendor_id = $1 AND (category = 'meal_plan' OR category = 'nutrition' OR category = 'food')
-           ORDER BY created_at DESC`,
+        let productsResult: any;
+        try {
+          productsResult = await query(
+            `SELECT * FROM products 
+             WHERE vendor_id = $1 AND (category = 'meal_plan' OR category = 'nutrition' OR category = 'food')
+             ORDER BY created_at DESC`,
+            [vendorId]
+          );
+        } catch (colErr: any) {
+          if (colErr?.message?.includes('category') || colErr?.message?.includes('does not exist')) {
+            productsResult = await query(`SELECT * FROM products WHERE vendor_id = $1 ORDER BY created_at DESC`, [vendorId]);
+            if (productsResult?.rows?.length) {
+              productsResult.rows = productsResult.rows.filter((p: any) => ['meal_plan', 'nutrition', 'food'].includes(p.category));
+            }
+          } else throw colErr;
+        }
+        const rows = productsResult?.rows || [];
+        for (const p of rows) {
+          let meta: any = {};
+          try {
+            meta = typeof p.metadata === 'string' ? JSON.parse(p.metadata) : (p.metadata || {});
+          } catch (_) {}
+          list.push({
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            price: p.price,
+            category: p.category || 'meal_plan',
+            metadata: meta,
+            petTypes: meta.petTypes || [],
+            dietType: meta.dietType,
+            ingredients: meta.ingredients || [],
+            nutritionalValue: meta.nutritionalValue || {},
+            sku: p.sku,
+            stock_quantity: p.stock_quantity,
+            is_active: p.is_active,
+            created_at: p.created_at,
+            updated_at: p.updated_at,
+            _source: 'products',
+          });
+        }
+      } catch (err: any) {
+        console.warn('Products query failed:', err?.message);
+      }
+
+      // 2) meal_plans table (unified shape so names display in list)
+      try {
+        const mealPlansResult = await query(
+          `SELECT * FROM meal_plans WHERE vendor_id = $1 ORDER BY created_at DESC`,
           [vendorId]
         );
-        products = productsResult.rows || [];
-      } catch (error: any) {
-        console.warn('Products table query failed, trying meal_plans:', error.message);
-      }
-      
-      // ✅ FIX: If products table is empty or doesn't have meal products, check meal_plans table
-      if (products.length === 0) {
-        try {
-          const mealPlans = await select('meal_plans', { vendor_id: vendorId });
-          products = mealPlans.map((mp: any) => {
-            // Parse dietary_requirements JSONB if it exists
-            let dietaryReqs = {};
-            try {
-              dietaryReqs = typeof mp.dietary_requirements === 'string' 
-                ? JSON.parse(mp.dietary_requirements) 
-                : (mp.dietary_requirements || {});
-            } catch (e) {
-              console.warn('Failed to parse dietary_requirements:', e);
-            }
-            
-            return {
-              id: mp.id,
-              name: mp.plan_name, 
-              description: mp.description,
-              price: mp.price,
-              category: 'meal_plan',
-              metadata: dietaryReqs,
-              petTypes: dietaryReqs.petTypes || [],
-              dietType: dietaryReqs.dietType,
-              ingredients: dietaryReqs.ingredients || [],
-              nutritionalValue: dietaryReqs.nutritionalValue || {},
-              ...mp,
-            };
+        const rows = mealPlansResult.rows || [];
+        for (const mp of rows) {
+          let dietaryReqs: any = {};
+          try {
+            dietaryReqs = typeof mp.dietary_requirements === 'string'
+              ? JSON.parse(mp.dietary_requirements)
+              : (mp.dietary_requirements || {});
+          } catch (_) {}
+          list.push({
+            id: mp.id,
+            name: mp.plan_name,
+            plan_name: mp.plan_name,
+            description: mp.description,
+            price: mp.price,
+            category: 'meal_plan',
+            metadata: dietaryReqs,
+            petTypes: dietaryReqs.petTypes || [],
+            dietType: dietaryReqs.dietType,
+            ingredients: dietaryReqs.ingredients || [],
+            nutritionalValue: dietaryReqs.nutritionalValue || {},
+            duration_days: mp.duration_days,
+            meals_per_day: mp.meals_per_day,
+            is_active: mp.is_active,
+            created_at: mp.created_at,
+            updated_at: mp.updated_at,
+            _source: 'meal_plans',
           });
-        } catch (error: any) {
-          console.warn('meal_plans table query failed:', error.message);
         }
+      } catch (err: any) {
+        console.warn('meal_plans query failed:', err?.message);
       }
-      
-      return c.json({ success: true, products, total: products.length });
+
+      // Sort by created_at desc (newest first)
+      list.sort((a, b) => {
+        const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return tb - ta;
+      });
+
+      return c.json({ success: true, products: list, total: list.length });
     } catch (error: any) {
       console.error('Error fetching meal products:', error);
       return c.json({ success: true, products: [], total: 0 });
@@ -993,16 +1444,31 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
   /**
    * POST /vendor/:vendorId/meal-products
-   * Create a meal product for a nutritionist vendor
+   * Create a meal product for a nutritionist vendor (products or meal_plans; metadata optional)
    */
   app.post("/vendor/:vendorId/meal-products", async (c) => {
     try {
       const { vendorId } = c.req.param();
       const data = await c.req.json();
-      
-      // Try to insert into products table
+      const dietaryPayload = {
+        petTypes: data.petTypes || ['Dog', 'Cat'],
+        dietType: data.dietType,
+        suitableFor: data.suitableFor || [],
+        ingredients: data.ingredients || [],
+        nutritionalValue: data.nutritionalValue || {},
+        preparationLeadTime: data.preparationLeadTime,
+        storageInstructions: data.storageInstructions,
+        shelfLife: data.shelfLife,
+        packSize: data.packSize,
+      };
+
+      // Try products table first (with metadata if column exists)
+      const hasMetadata = await query(
+        `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'metadata'`
+      ).then((r: any) => (r?.rows?.length ?? 0) > 0);
+
       try {
-        const product = await insert('products', {
+        const productPayload: any = {
           vendor_id: vendorId,
           name: data.name,
           description: data.description,
@@ -1011,55 +1477,34 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           sku: `MP-${Date.now()}`,
           stock_quantity: data.stockQuantity || 100,
           is_active: true,
-          metadata: JSON.stringify({
-            ingredients: data.ingredients,
-            nutritionalValue: data.nutritionalValue,
-            preparationMethod: data.preparationMethod,
-            preparationLeadTime: data.preparationLeadTime,
-            feedingGuidelines: data.feedingGuidelines,
-            storageInstructions: data.storageInstructions,
-            shelfLife: data.shelfLife,
-            packSize: data.packSize,
-            dietType: data.dietType,
-            suitableFor: data.suitableFor,
-            petTypes: data.petTypes,
-          }),
-        });
-        return c.json({ success: true, product: product[0] });
-      } catch {
-        // Fallback to meal_plans table
-        // Note: meal_plans has dietary_requirements JSONB field, not pet_types column
-        const mealPlan = await insert('meal_plans', {
-          vendor_id: vendorId,
-          plan_name: data.name, // ✅ FIX: meal_plans table has 'plan_name' column, not 'name'
-          description: data.description,
-          price: data.price,
-          duration_days: data.durationDays || 7,
-          meals_per_day: data.mealsPerDay || 2,
-          dietary_requirements: JSON.stringify({
-            petTypes: data.petTypes || ['Dog', 'Cat'],
-            dietType: data.dietType,
-            suitableFor: data.suitableFor || [],
-            ingredients: data.ingredients || [],
-            nutritionalValue: data.nutritionalValue || {},
-            preparationLeadTime: data.preparationLeadTime,
-            storageInstructions: data.storageInstructions,
-            shelfLife: data.shelfLife,
-            packSize: data.packSize,
-          }),
-          is_active: true,
-        });
-        
-        // Transform response to match expected format
-        const transformedProduct = {
-          ...mealPlan[0],
-          name: mealPlan[0].plan_name,
-          category: 'meal_plan',
-          metadata: mealPlan[0].dietary_requirements,
         };
-        
-        return c.json({ success: true, product: transformedProduct });
+        if (hasMetadata) productPayload.metadata = JSON.stringify(dietaryPayload);
+        const product = await insert('products', productPayload);
+        return c.json({ success: true, product: product[0] });
+      } catch (productsErr: any) {
+        if (!productsErr?.message?.includes('does not exist') && !productsErr?.message?.includes('metadata')) {
+          throw productsErr;
+        }
       }
+
+      // Fallback to meal_plans table
+      const mealPlan = await insert('meal_plans', {
+        vendor_id: vendorId,
+        plan_name: data.name,
+        description: data.description,
+        price: data.price,
+        duration_days: data.durationDays || 7,
+        meals_per_day: data.mealsPerDay || 2,
+        dietary_requirements: JSON.stringify(dietaryPayload),
+        is_active: true,
+      });
+      const transformedProduct = {
+        ...mealPlan[0],
+        name: mealPlan[0].plan_name,
+        category: 'meal_plan',
+        metadata: mealPlan[0].dietary_requirements,
+      };
+      return c.json({ success: true, product: transformedProduct });
     } catch (error: any) {
       console.error('Error creating meal product:', error);
       return c.json({ error: error.message }, 500);
@@ -1068,31 +1513,86 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
   /**
    * PUT /vendor/:vendorId/meal-products/:productId
-   * Update a meal product
+   * Update a meal product (supports both products and meal_plans; products.metadata optional)
    */
   app.put("/vendor/:vendorId/meal-products/:productId", async (c) => {
     try {
       const { vendorId, productId } = c.req.param();
       const data = await c.req.json();
-      
-      await query(
-        `UPDATE products SET 
-          name = COALESCE($1, name),
-          description = COALESCE($2, description),
-          price = COALESCE($3, price),
-          metadata = COALESCE($4, metadata),
-          updated_at = NOW()
-         WHERE id = $5 AND vendor_id = $6`,
-        [
-          data.name,
-          data.description,
-          data.price,
-          JSON.stringify(data.metadata || {}),
-          productId,
-          vendorId,
-        ]
+      const meta = data.metadata || {};
+      const dietaryPayload = {
+        petTypes: data.petTypes || meta.petTypes || ['Dog', 'Cat'],
+        dietType: data.dietType ?? meta.dietType,
+        suitableFor: data.suitableFor ?? meta.suitableFor ?? [],
+        ingredients: data.ingredients ?? meta.ingredients ?? [],
+        nutritionalValue: data.nutritionalValue ?? meta.nutritionalValue ?? {},
+        preparationLeadTime: data.preparationLeadTime ?? meta.preparationLeadTime,
+        storageInstructions: data.storageInstructions ?? meta.storageInstructions,
+        shelfLife: data.shelfLife ?? meta.shelfLife,
+        packSize: data.packSize ?? meta.packSize,
+      };
+
+      // 1) Try updating meal_plans (id may be from meal_plans when products insert failed or wasn't used)
+      const mealPlanCheck = await query(
+        `SELECT id FROM meal_plans WHERE id = $1 AND vendor_id = $2`,
+        [productId, vendorId]
       );
-      
+      if (mealPlanCheck.rows?.length > 0) {
+        await query(
+          `UPDATE meal_plans SET 
+            plan_name = COALESCE($1, plan_name),
+            description = COALESCE($2, description),
+            price = COALESCE($3, price),
+            dietary_requirements = COALESCE($4, dietary_requirements),
+            updated_at = NOW()
+           WHERE id = $5 AND vendor_id = $6`,
+          [
+            data.name ?? data.plan_name,
+            data.description,
+            data.price,
+            JSON.stringify(dietaryPayload),
+            productId,
+            vendorId,
+          ]
+        );
+        return c.json({ success: true, message: 'Product updated' });
+      }
+
+      // 2) Update products table (avoid metadata if column doesn't exist)
+      const hasMetadata = await query(
+        `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'metadata'`
+      ).then((r: any) => (r?.rows?.length ?? 0) > 0);
+
+      if (hasMetadata) {
+        await query(
+          `UPDATE products SET 
+            name = COALESCE($1, name),
+            description = COALESCE($2, description),
+            price = COALESCE($3, price),
+            metadata = COALESCE($4::jsonb, metadata),
+            updated_at = NOW()
+           WHERE id = $5 AND vendor_id = $6`,
+          [
+            data.name,
+            data.description,
+            data.price,
+            JSON.stringify({ ...meta, ...dietaryPayload }),
+            productId,
+            vendorId,
+          ]
+        );
+      } else {
+        await query(
+          `UPDATE products SET 
+            name = COALESCE($1, name),
+            description = COALESCE($2, description),
+            price = COALESCE($3, price),
+            updated_at = NOW()
+           WHERE id = $4 AND vendor_id = $5`,
+          [data.name, data.description, data.price, productId, vendorId]
+        );
+      }
+
       return c.json({ success: true, message: 'Product updated' });
     } catch (error: any) {
       console.error('Error updating meal product:', error);
@@ -1102,17 +1602,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
   /**
    * DELETE /vendor/:vendorId/meal-products/:productId
-   * Delete a meal product
+   * Delete a meal product (from products or meal_plans)
    */
   app.delete("/vendor/:vendorId/meal-products/:productId", async (c) => {
     try {
       const { vendorId, productId } = c.req.param();
-      
-      await query(
-        `DELETE FROM products WHERE id = $1 AND vendor_id = $2`,
-        [productId, vendorId]
-      );
-      
+      let del = await query(`DELETE FROM products WHERE id = $1 AND vendor_id = $2 RETURNING id`, [productId, vendorId]);
+      if (del.rows?.length === 0) {
+        del = await query(`DELETE FROM meal_plans WHERE id = $1 AND vendor_id = $2 RETURNING id`, [productId, vendorId]);
+      }
+      if (del.rows?.length === 0) {
+        return c.json({ error: 'Meal product not found' }, 404);
+      }
       return c.json({ success: true, message: 'Product deleted' });
     } catch (error: any) {
       console.error('Error deleting meal product:', error);
@@ -1122,46 +1623,43 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
   /**
    * GET /vendor/:vendorId/meal-orders
-   * Get meal/nutrition delivery orders for a vendor
+   * Get meal/nutrition delivery orders for a vendor (Phase 3: from meal_orders table)
    */
   app.get("/vendor/:vendorId/meal-orders", async (c) => {
     try {
       const { vendorId } = c.req.param();
       const status = c.req.query('status');
-      
+
       let ordersQuery = `
-        SELECT 
-          o.*,
-          c.full_name as customer_name,
-          c.phone as customer_phone
-        FROM orders o
-        LEFT JOIN customers c ON o.customer_id = c.id
-        WHERE o.vendor_id = $1
-          AND (o.order_type = 'meal_plan_delivery' OR o.order_type = 'nutrition_delivery' OR o.order_type = 'food_delivery')
+        SELECT mo.id, mo.customer_id, mo.vendor_id, mo.meal_plan_id, mo.pet_id,
+               mo.order_type, mo.quantity, mo.special_instructions, mo.subtotal, mo.delivery_fee,
+               mo.platform_fee, mo.total_amount, mo.status, mo.payment_status,
+               mo.scheduled_delivery_date, mo.scheduled_delivery_slot, mo.delivery_address,
+               mo.preparation_eta_minutes, mo.estimated_preparation_time, mo.accepted_at,
+               mo.prep_started_at, mo.ready_at, mo.created_at,
+               c.full_name as customer_name, c.phone as customer_phone,
+               mp.name as meal_name
+        FROM meal_orders mo
+        LEFT JOIN customers c ON mo.customer_id = c.id
+        LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
+        WHERE mo.vendor_id = $1
       `;
-      
       const params: any[] = [vendorId];
-      
       if (status) {
-        ordersQuery += ` AND o.status = $2`;
         params.push(status);
+        ordersQuery += ` AND mo.status = $${params.length}`;
       }
-      
-      ordersQuery += ` ORDER BY o.created_at DESC LIMIT 100`;
-      
-      const orders = await query(ordersQuery, params);
-      
-      // Get order items for each order
-      const ordersWithItems = await Promise.all(orders.rows.map(async (order: any) => {
-        try {
-          const items = await query(`SELECT * FROM order_items WHERE order_id = $1`, [order.id]);
-          return { ...order, items: items.rows };
-        } catch {
-          return { ...order, items: [] };
-        }
+      ordersQuery += ` ORDER BY mo.created_at DESC LIMIT 100`;
+
+      const result = await query(ordersQuery, params).catch(() => ({ rows: [] }));
+      const orders = result.rows.map((o: any) => ({
+        ...o,
+        order_number: o.id?.toString().slice(-8) || '',
+        items: [],
+        delivery_address: typeof o.delivery_address === 'string' ? (() => { try { return JSON.parse(o.delivery_address); } catch { return {}; } })() : o.delivery_address,
       }));
-      
-      return c.json({ success: true, orders: ordersWithItems, total: ordersWithItems.length });
+
+      return c.json({ success: true, orders, total: orders.length });
     } catch (error: any) {
       console.error('Error fetching meal orders:', error);
       return c.json({ success: true, orders: [], total: 0 });
@@ -1170,18 +1668,24 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
   /**
    * PUT /vendor/:vendorId/meal-orders/:orderId/status
-   * Update meal order status
+   * Update meal order status (Phase 3: updates meal_orders, supports accepted)
    */
   app.put("/vendor/:vendorId/meal-orders/:orderId/status", async (c) => {
     try {
       const { vendorId, orderId } = c.req.param();
       const { status } = await c.req.json();
-      
-      await query(
-        `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 AND vendor_id = $3`,
-        [status, orderId, vendorId]
-      );
-      
+
+      const updatePayload: Record<string, any> = { status };
+      if (status === 'accepted') {
+        updatePayload.accepted_at = new Date().toISOString();
+      }
+
+      const existing = await select('meal_orders', { id: orderId, vendor_id: vendorId });
+      if (existing.length === 0) {
+        return c.json({ error: 'Order not found or not owned by vendor' }, 404);
+      }
+      await update('meal_orders', { id: orderId, vendor_id: vendorId }, updatePayload);
+
       return c.json({ success: true, message: 'Order status updated' });
     } catch (error: any) {
       console.error('Error updating meal order status:', error);

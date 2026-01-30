@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Star, MapPin, Award, Clock, DollarSign, ChevronRight, Filter, TrendingUp } from 'lucide-react';
 import { Button } from '../ui/button';
 import { WalkerDetails } from './WalkerDetails';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface Walker {
   id: string;
@@ -79,12 +79,12 @@ export function WalkerSelection({
       
       // Load walkers from backend
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/walkers`,
+        `${getApiBaseUrl()}/walkers`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             userLocation: userLocation,

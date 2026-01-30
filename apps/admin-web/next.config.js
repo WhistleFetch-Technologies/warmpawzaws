@@ -1,42 +1,62 @@
 const path = require('path');
 
+/**
+ * Next.js config – Admin Web
+ * Retained structure for AWS Serverless: static export → S3 + CloudFront.
+ * Build for performance: compress, tree-shake, chunk splitting.
+ * See docs/NEXTJS_AWS_SERVERLESS_ARCHITECTURE.md
+ */
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Only use static export for production builds, not for dev mode
-  ...(process.env.NODE_ENV === 'production' && process.env.NEXT_EXPORT !== 'false' ? { output: 'export' } : {}),
+  ...(process.env.NODE_ENV === 'production' && process.env.NEXT_EXPORT !== 'false'
+    ? { output: 'export' }
+    : {}),
   distDir: 'dist',
   reactStrictMode: true,
   transpilePackages: ['@warmpawz/ui', '@warmpawz/shared-libs'],
-  // IMPORTANT (Static export constraint):
-  // Deployed to S3/CloudFront as static assets; runtime config is injected
-  // via `/runtime-config.js` (generated during deploy).
-  // For local dev, we disable static export to allow dynamic rendering.
-  
-  // Suppress hydration warnings during static export
-  // Pages using client-side features will be statically generated with minimal content
-  images: {
-    unoptimized: true,
+  swcMinify: true,
+  compress: true,
+  images: { unoptimized: true },
+  typescript: { ignoreBuildErrors: false },
+  eslint: { ignoreDuringBuilds: false },
+  experimental: {
+    outputFileTracingExcludes: process.env.NODE_ENV === 'production' ? { '*': ['**/*'] } : undefined,
+    optimizePackageImports: [
+      'lucide-react',
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-select',
+      '@radix-ui/react-tabs',
+      '@radix-ui/react-checkbox',
+      '@radix-ui/react-radio-group',
+      '@radix-ui/react-switch',
+    ],
   },
-  // Configure webpack to resolve modules from packages/ui/node_modules
+  modularizeImports: {
+    'lucide-react': {
+      transform: 'lucide-react/dist/esm/icons/{{kebabCase member}}',
+    },
+  },
   webpack: (config, { isServer }) => {
-    // Add packages/ui/node_modules to module resolution paths
-    // This ensures Next.js can find dependencies from the linked @warmpawz/ui package
     const uiNodeModulesPath = path.resolve(__dirname, '../../packages/ui/node_modules');
-    
     config.resolve.modules = [
       path.resolve(__dirname, 'node_modules'),
       uiNodeModulesPath,
       ...(config.resolve.modules || []),
     ];
-    
-    // Also add to fallback resolution for better module resolution
-    if (!config.resolve.alias) {
-      config.resolve.alias = {};
+    if (!config.resolve.alias) config.resolve.alias = {};
+    if (!isServer && config.optimization?.splitChunks) {
+      config.optimization.splitChunks.cacheGroups = {
+        ...config.optimization.splitChunks.cacheGroups,
+        vendor: {
+          test: /[\\/]node_modules[\\/]/,
+          name: 'vendors',
+          chunks: 'all',
+          priority: 10,
+        },
+      };
     }
-    
     return config;
   },
 };
 
 module.exports = nextConfig;
-

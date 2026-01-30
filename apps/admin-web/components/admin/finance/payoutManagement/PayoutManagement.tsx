@@ -77,10 +77,12 @@ export function PayoutManagement() {
     setLoading(true);
     try {
       const data = await apiClient.get<any>('/admin/payouts');
-      setPayouts((data as any).data?.payouts || (data as any).payouts || []);
+      const raw = (data as any)?.data?.payouts ?? (data as any)?.payouts;
+      setPayouts(Array.isArray(raw) ? raw : []);
     } catch (error) {
       console.error('Error loading payouts:', error);
       toast.error('Failed to load payouts');
+      setPayouts([]);
     } finally {
       setLoading(false);
     }
@@ -89,33 +91,36 @@ export function PayoutManagement() {
   const loadStats = async () => {
     try {
       const data = await apiClient.get<any>('/admin/payouts/stats');
-      const statsData = (data as any).data?.stats || (data as any).stats || {};
+      const statsData = (data as any)?.data?.stats ?? (data as any)?.stats ?? {};
       setStats({
-        pendingAmount: statsData.pendingAmount || 0,
-        processingAmount: statsData.processingAmount || 0,
-        completedAmount: statsData.completedAmount || 0,
-        pendingCount: statsData.pendingCount || 0,
-        processingCount: statsData.processingCount || 0,
-        completedCount: statsData.completedCount || 0,
+        pendingAmount: Number(statsData.pendingAmount) || 0,
+        processingAmount: Number(statsData.processingAmount) || 0,
+        completedAmount: Number(statsData.completedAmount) || 0,
+        pendingCount: Number(statsData.pendingCount) || 0,
+        processingCount: Number(statsData.processingCount) || 0,
+        completedCount: Number(statsData.completedCount) || 0,
       });
     } catch (error) {
       console.error('Error loading stats:', error);
+      // Keep existing stats on error so UI doesn't break
     }
   };
 
   const filterPayouts = () => {
-    let filtered = payouts;
+    const list = Array.isArray(payouts) ? payouts : [];
+    let filtered = list;
 
     if (searchQuery) {
+      const q = searchQuery.toLowerCase();
       filtered = filtered.filter(
         (p) =>
-          p.vendorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.vendorPhone.includes(searchQuery)
+          (p?.vendorName ?? '').toLowerCase().includes(q) ||
+          (p?.vendorPhone ?? '').includes(searchQuery)
       );
     }
 
     if (statusFilter !== 'all') {
-      filtered = filtered.filter((p) => p.status === statusFilter);
+      filtered = filtered.filter((p) => p && (p.status ?? (p as any).payout_status) === statusFilter);
     }
 
     setFilteredPayouts(filtered);
@@ -144,14 +149,15 @@ export function PayoutManagement() {
   };
 
   const exportPayouts = () => {
+    const list = Array.isArray(filteredPayouts) ? filteredPayouts : [];
     const csv = [
       ['Payout ID', 'Vendor', 'Amount', 'Status', 'Period'],
-      ...filteredPayouts.map((p) => [
-        p.id,
-        p.vendorName,
-        p.netAmount,
-        p.status,
-        p.period,
+      ...list.map((p) => [
+        p?.id ?? '',
+        p?.vendorName ?? (p as any)?.vendor_name ?? '',
+        p?.netAmount ?? (p as any)?.net_amount ?? p?.amount ?? 0,
+        p?.status ?? (p as any)?.payout_status ?? '',
+        p?.period ?? '',
       ]),
     ]
       .map((row) => row.join(','))
@@ -292,7 +298,7 @@ export function PayoutManagement() {
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42] mx-auto"></div>
                   </td>
                 </tr>
-              ) : filteredPayouts.length === 0 ? (
+              ) : (Array.isArray(filteredPayouts) ? filteredPayouts : []).length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                     <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
@@ -300,35 +306,38 @@ export function PayoutManagement() {
                   </td>
                 </tr>
               ) : (
-                filteredPayouts.map((payout) => (
-                  <tr key={payout.id} className="hover:bg-gray-50">
+                (Array.isArray(filteredPayouts) ? filteredPayouts : []).map((payout) => {
+                  if (!payout) return null;
+                  const status = payout.status ?? (payout as any).payout_status ?? 'pending';
+                  return (
+                  <tr key={payout.id ?? (payout as any).payout_id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div>
-                        <p className="font-medium text-gray-900">{payout.vendorName}</p>
-                        <p className="text-sm text-gray-500">{payout.vendorPhone}</p>
+                        <p className="font-medium text-gray-900">{payout.vendorName ?? (payout as any).vendor_name ?? '-'}</p>
+                        <p className="text-sm text-gray-500">{payout.vendorPhone ?? (payout as any).vendor_phone ?? '-'}</p>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-gray-600">{payout.period}</td>
+                    <td className="px-6 py-4 text-gray-600">{payout.period ?? (payout as any).period ?? '-'}</td>
                     <td className="px-6 py-4 text-right text-gray-900">
-                      ₹{payout.amount.toLocaleString()}
+                      ₹{(payout.amount ?? (payout as any).amount ?? 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 text-right text-gray-600">
-                      ₹{payout.commission.toLocaleString()}
+                      ₹{(payout.commission ?? (payout as any).commission ?? 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 text-right font-semibold text-gray-900">
-                      ₹{payout.netAmount.toLocaleString()}
+                      ₹{(payout.netAmount ?? (payout as any).net_amount ?? payout.amount ?? 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 text-center">
                       <Badge
                         variant={
-                          payout.status === 'completed'
+                          status === 'completed'
                             ? 'default'
-                            : payout.status === 'rejected'
+                            : status === 'rejected'
                               ? 'destructive'
                               : 'secondary'
                         }
                       >
-                        {payout.status}
+                        {status}
                       </Badge>
                     </td>
                     <td className="px-6 py-4 text-center">
@@ -343,7 +352,7 @@ export function PayoutManagement() {
                         >
                           <Eye className="w-4 h-4" />
                         </Button>
-                        {payout.status === 'pending' && (
+                        {status === 'pending' && (
                           <Button
                             onClick={() => handleProcessPayout(payout.id)}
                             size="sm"
@@ -355,7 +364,7 @@ export function PayoutManagement() {
                       </div>
                     </td>
                   </tr>
-                ))
+                ); })
               )}
             </tbody>
           </table>

@@ -9,10 +9,20 @@ export default function PharmacyOrdersPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get vendor info from localStorage or session
-    const storedVendorId = localStorage.getItem('vendorId');
-    const storedVendorName = localStorage.getItem('vendorName') || localStorage.getItem('businessName');
-    
+    // Get vendor info from localStorage (set by VendorAuth / VendorApp on login)
+    let storedVendorId = localStorage.getItem('vendorId');
+    let storedVendorName = localStorage.getItem('vendorName') || localStorage.getItem('businessName');
+    // Fallback: parse vendorData so /pharmacy/orders works after refresh before rehydration
+    if (!storedVendorId) {
+      try {
+        const vendorDataStr = localStorage.getItem('vendorData');
+        if (vendorDataStr) {
+          const vendorData = JSON.parse(vendorDataStr);
+          storedVendorId = vendorData.id || vendorData.vendorId || null;
+          storedVendorName = storedVendorName || vendorData.business_name || vendorData.businessName || 'Pharmacy';
+        }
+      } catch (_) {}
+    }
     if (storedVendorId) {
       setVendorId(storedVendorId);
       setVendorName(storedVendorName || 'Pharmacy');

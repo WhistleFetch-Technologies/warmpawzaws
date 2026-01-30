@@ -1,14 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate } from 'lucide-react';
+import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate, Scissors, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { RateServiceModal } from '../RateServiceModal'; // ✅ NEW: Import for rating modal
-// Header frame will be implemented inline
+import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
+import { trackBookingStep, useBookingAnalytics } from '@/lib/analytics';
 
 interface GroomingBookingRouterProps {
   phone: string;
@@ -106,6 +107,37 @@ export function GroomingBookingRouter({
     preFilledPetId ? { id: preFilledPetId, name: preFilledPetName || '', species: '', breed: preFilledPetBreed || '' } : null
   );
   const [selectedAddress, setSelectedAddress] = useState<any>(null);
+  
+  // ✅ ANALYTICS: Track booking steps
+  const analytics = useBookingAnalytics('grooming', selectedServiceType as any);
+  
+  useEffect(() => {
+    const stepToAnalyticsMap: Record<BookingStep, string> = {
+      'service': 'service_selection',
+      'datetime': 'schedule_selection',
+      'pet': 'pet_selection',
+      'address': 'address_selection',
+      'payment': 'payment_initiated',
+      'confirmation': 'booking_confirmed',
+    };
+    
+    const analyticsStep = stepToAnalyticsMap[step];
+    if (analyticsStep) {
+      trackBookingStep({
+        step: analyticsStep as any,
+        serviceCategory: 'grooming',
+        serviceStyle: selectedServiceType as any,
+        vendorId,
+        petId: selectedPet?.id,
+        phone,
+        metadata: {
+          serviceName,
+          price,
+          selectedServicesCount: selectedServices?.length,
+        }
+      });
+    }
+  }, [step, selectedServiceType, vendorId, selectedPet?.id]);
   const [pets, setPets] = useState<Pet[]>([]);
   const [addresses, setAddresses] = useState<any[]>([]);
   const [notes, setNotes] = useState(preFilledNotes || '');
@@ -740,45 +772,67 @@ export function GroomingBookingRouter({
   const headerInfo = getHeaderInfo();
   const HeaderIcon = headerInfo.icon;
 
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const dashboardStats = [
+    { value: '50+', label: 'Groomers', icon: <Scissors className="w-4 h-4" /> },
+    { value: '1K+', label: 'Bookings' },
+    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
+
+  // ✅ FIX: Prepare step indicators for header
+  const getStepIndicators = (): StepInfo[] | undefined => {
+    if (step === 'payment' || step === 'confirmation') return undefined;
+    
+    const skipServiceStep = hasServiceContext && selectedVendorService;
+    const skipAddressStep = selectedServiceType === 'at_center';
+    
+    const stepLabels = (skipServiceStep && skipAddressStep)
+      ? ['Date/Time', 'Pet', 'Payment']
+      : skipServiceStep
+      ? ['Date/Time', 'Pet', 'Address', 'Payment']
+      : skipAddressStep
+      ? ['Service', 'Date/Time', 'Pet', 'Payment']
+      : ['Service', 'Date/Time', 'Pet', 'Address', 'Payment'];
+    
+    const currentStepMap: Record<BookingStep, number> = {
+      service: skipServiceStep ? -1 : 0, 
+      datetime: skipServiceStep ? 0 : 1, 
+      pet: skipServiceStep && skipAddressStep ? 1 : (skipServiceStep ? 1 : (skipAddressStep ? 2 : 2)), 
+      address: (skipServiceStep && skipAddressStep) ? -1 : (skipServiceStep ? 2 : (skipAddressStep ? -1 : 3)), 
+      payment: skipServiceStep && skipAddressStep ? 2 : (skipServiceStep && !skipAddressStep ? 3 : (skipAddressStep ? 3 : 4)), 
+      confirmation: skipServiceStep && skipAddressStep ? 3 : (skipServiceStep || skipAddressStep ? 4 : 5)
+    };
+    const currentIdx = currentStepMap[step];
+    
+    return stepLabels.map((label, idx) => {
+      const actualStepIdx = skipServiceStep ? idx + 1 : idx;
+      return {
+        label,
+        isCompleted: actualStepIdx < currentIdx,
+        isCurrent: actualStepIdx === currentIdx
+      };
+    });
+  };
+
   return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto relative overflow-hidden">
-      {/* Orange Header - Half size (17-18vh) with rounded bottom edge - Hide when on payment step */}
+    <div className="min-h-screen bg-gray-50 relative overflow-hidden">
+      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader - Hide when on payment step */}
       {step !== 'payment' && (
-        <>
-          <div className="relative px-4 pt-8 pb-6" style={{ minHeight: '18vh' }}>
-            {/* Back Button - White circular with black arrow */}
-            <button
-              onClick={handleBack}
-              className="absolute top-8 left-4 w-10 h-10 bg-white rounded-full flex items-center justify-center hover:bg-gray-50 transition-colors shadow-sm z-10"
-            >
-              <ArrowLeft className="w-5 h-5 text-black" />
-            </button>
-
-            {/* Service Icon - Centered horizontally, white circular */}
-            <div className="flex flex-col items-center pt-4">
-              <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-2 shadow-sm">
-                <HeaderIcon className="w-6 h-6 text-[#FF8C42]" />
-              </div>
-              
-              {/* Title and Subtitle - Centered */}
-              <h1 className="text-xl font-bold text-white text-center mb-0.5">
-                {headerInfo.title}
-              </h1>
-              <p className="text-white text-xs text-center opacity-90">
-                {headerInfo.subtitle}
-              </p>
-            </div>
-          </div>
-
-          {/* Rounded Bottom Edge on Header */}
-          <div className="relative -mt-1">
-            <div className="absolute top-0 left-0 right-0 h-6 bg-[#FF8C42] rounded-b-[32px]"></div>
-          </div>
-        </>
+        <ServiceDashboardHeader
+          serviceName={headerInfo.title}
+          serviceSubtitle={headerInfo.subtitle}
+          serviceIcon={HeaderIcon}
+          iconColor="text-white"
+          stats={dashboardStats}
+          steps={getStepIndicators()}
+          onBack={handleBack}
+          showBackButton={true}
+          headerColor="bg-[#FF8C42]"
+        />
       )}
 
-      {/* Main Content - White Card with Top Radius */}
-      <div className={`bg-white rounded-t-[32px] px-4 pt-6 min-h-[calc(82vh)] pb-24 relative z-10 ${step !== 'payment' ? '-mt-1' : ''}`}>
+      {/* Main Content */}
+      <div className="max-w-md mx-auto px-4 pt-6 min-h-[calc(82vh)] pb-24 relative z-10">
         {/* ✅ FIX: Render payment page as full-screen overlay to escape router layout */}
         {step === 'payment' && showPaymentPage ? (
           <div className="fixed inset-0 z-50 bg-white">
@@ -819,7 +873,7 @@ export function GroomingBookingRouter({
         {/* Main booking content - only show when not on payment */}
         {step !== 'payment' && (
           <>
-            {step !== 'confirmation' && renderStepIndicator()}
+            {/* Step indicator moved to header */}
 
             {/* Service Selection */}
         {step === 'service' && (

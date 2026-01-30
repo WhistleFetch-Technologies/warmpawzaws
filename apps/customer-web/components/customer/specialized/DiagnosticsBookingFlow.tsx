@@ -2,13 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { TestTube, Calendar, Clock, FileText } from 'lucide-react';
+import { TestTube, Calendar, Clock, FileText, Truck } from 'lucide-react';
+import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 
 interface DiagnosticsBookingFlowProps {
   vendorId: string;
   customerPhone: string;
   onSuccess?: (bookingId: string) => void;
   onCancel?: () => void;
+  onBack?: () => void;
 }
 
 interface DiagnosticTest {
@@ -22,9 +24,11 @@ interface DiagnosticTest {
   sample_type?: string;
   preparation_instructions?: string;
   is_available: boolean;
+  is_free_home_collection?: boolean;
+  home_collection_fee?: number;
 }
 
-export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onCancel }: DiagnosticsBookingFlowProps) {
+export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onCancel, onBack }: DiagnosticsBookingFlowProps) {
   const [tests, setTests] = useState<DiagnosticTest[]>([]);
   const [selectedTests, setSelectedTests] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,11 +73,23 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
     );
   };
 
-  const getTotalPrice = () => {
-    return selectedTests.reduce((total, testId) => {
+  const getTotalPrice = (): number => {
+    let total = selectedTests.reduce((sum, testId) => {
       const test = tests.find(t => t.id === testId);
-      return total + (test?.price || 0);
+      const price = Number(test?.price) || 0;
+      return sum + price;
     }, 0);
+    // Add home collection fee when customer selects home collection (one fee per visit - use max among selected tests)
+    if (preferredSampleType === 'home') {
+      const homeFees = selectedTests
+        .map(id => tests.find(t => t.id === id))
+        .filter((t): t is DiagnosticTest => !!t && t.is_free_home_collection === false && (Number(t.home_collection_fee) ?? 0) > 0)
+        .map(t => Number(t.home_collection_fee) ?? 0);
+      if (homeFees.length > 0) {
+        total += Math.max(...homeFees);
+      }
+    }
+    return total;
   };
 
   const getCategories = () => {
@@ -119,6 +135,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
 
       const selectedTestDetails = selectedTests.map(id => tests.find(t => t.id === id)).filter(Boolean);
       
+      const totalAmountNum = Number(getTotalPrice());
       const bookingData = {
         serviceId: 'diagnostics',
         vendorId,
@@ -135,13 +152,16 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
             code: t?.test_code,
             category: t?.category,
             price: t?.price,
+            is_free_home_collection: t?.is_free_home_collection,
+            home_collection_fee: t?.home_collection_fee,
           })),
           patientName,
           patientAge,
           preferredSampleType,
+          homeCollectionFee: preferredSampleType === 'home' ? totalAmountNum - selectedTestDetails.reduce((s, t) => s + (Number(t?.price) ?? 0), 0) : 0,
           preparationInstructions: selectedTestDetails.map(t => t?.preparation_instructions).filter(Boolean),
         }),
-        totalAmount: getTotalPrice(),
+        totalAmount: totalAmountNum,
       };
 
       const bookingResponse = await apiClient.post<any>('/bookings/create', bookingData);
@@ -161,19 +181,58 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
     }
   };
 
+  // Prepare stats for ServiceDashboardHeader
+  const dashboardStats = [
+    { value: `${tests.length}+`, label: 'Tests' },
+    { value: '1K+', label: 'Bookings' },
+    { value: '*4.7', label: 'Rating' }
+  ];
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-02">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+      <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+        {onBack && (
+          <ServiceDashboardHeader
+            serviceName="Diagnostic Labs"
+            serviceSubtitle="Lab tests & diagnostics"
+            serviceIcon={TestTube}
+            iconColor="text-white"
+            stats={dashboardStats}
+            onBack={onBack}
+            showBackButton={true}
+            headerColor="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700"
+          />
+        )}
+        <div className="flex items-center justify-center p-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-3"></div>
+            <p className="text-gray-600">Loading diagnostic tests...</p>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-0">
-      <h2 className="text-2xl font-bold text-gray-900 mb-0">Book Diagnostic Tests</h2>
+    <div className="min-h-screen bg-gray-50">
+      {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame */}
+      {onBack && (
+        <ServiceDashboardHeader
+          serviceName="Diagnostic Labs"
+          serviceSubtitle="Lab tests & diagnostics"
+          serviceIcon={TestTube}
+          iconColor="text-white"
+          stats={dashboardStats}
+          onBack={onBack}
+          showBackButton={true}
+          headerColor="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700"
+        />
+      )}
+      
+      <div className="max-w-md mx-auto px-4 pb-24">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4 mt-4">Book Diagnostic Tests</h2>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6">
         {/* Search and Filter */}
         <div className="bg-white rounded-xl p-4 shadow-sm">
           <div className="flex gap-4 mb-4">
@@ -256,9 +315,20 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
                             {test.preparation_instructions}
                           </div>
                         )}
+                        {preferredSampleType === 'home' && test.is_free_home_collection !== undefined && (
+                          <div className="flex items-center gap-1 mt-1 text-xs">
+                            <Truck size={12} />
+                            {test.is_free_home_collection
+                              ? <span className="text-green-600">Free home collection</span>
+                              : <span className="text-gray-600">Home: +₹{test.home_collection_fee ?? 0}</span>}
+                          </div>
+                        )}
                       </div>
                       <div className="text-right ml-4">
                         <p className="text-lg font-bold text-orange-600">₹{test.price}</p>
+                        {preferredSampleType === 'home' && !test.is_free_home_collection && (test.home_collection_fee ?? 0) > 0 && (
+                          <p className="text-xs text-gray-500">+₹{test.home_collection_fee} home</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -271,14 +341,39 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
         {/* Selected Tests Summary */}
         {selectedTests.length > 0 && (
           <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-gray-900">{selectedTests.length} test(s) selected</p>
-                <p className="text-sm text-gray-600 mt-0">
-                  {selectedTests.map(id => tests.find(t => t.id === id)?.test_name).filter(Boolean).join(', ')}
-                </p>
+            <div>
+              <p className="font-semibold text-gray-900">{selectedTests.length} test(s) selected</p>
+              <p className="text-sm text-gray-600 mt-0">
+                {selectedTests.map(id => tests.find(t => t.id === id)?.test_name).filter(Boolean).join(', ')}
+              </p>
+            </div>
+            <div className="mt-3 pt-3 border-t border-orange-200 space-y-1">
+              <div className="flex justify-between text-sm">
+                <span>Tests total</span>
+                <span>₹{selectedTests.reduce((s, id) => s + (tests.find(t => t.id === id)?.price || 0), 0)}</span>
               </div>
-              <p className="text-2xl font-bold text-orange-600">₹{getTotalPrice()}</p>
+              {preferredSampleType === 'home' && (() => {
+                const homeFees = selectedTests
+                  .map(id => tests.find(t => t.id === id))
+                  .filter((t): t is DiagnosticTest => !!t && t.is_free_home_collection === false && (t.home_collection_fee ?? 0) > 0)
+                  .map(t => t.home_collection_fee ?? 0);
+                const homeFee = homeFees.length > 0 ? Math.max(...homeFees) : 0;
+                return homeFee > 0 ? (
+                  <div className="flex justify-between text-sm">
+                    <span className="flex items-center gap-1"><Truck className="h-4 w-4" /> Home collection fee</span>
+                    <span>₹{homeFee}</span>
+                  </div>
+                ) : homeFees.length === 0 ? (
+                  <div className="flex justify-between text-sm text-green-600">
+                    <span className="flex items-center gap-1"><Truck className="h-4 w-4" /> Home collection</span>
+                    <span>Free</span>
+                  </div>
+                ) : null;
+              })()}
+            </div>
+            <div className="flex justify-between items-center mt-2 pt-2 border-t border-orange-200">
+              <span className="font-semibold">Total</span>
+              <p className="text-xl font-bold text-orange-600">₹{getTotalPrice()}</p>
             </div>
           </div>
         )}
@@ -314,25 +409,25 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
 
           {/* Sample Collection Type */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-0">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               Sample Collection
             </label>
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => setPreferredSampleType('center')}
-                className={`px-4 py-0 rounded-lg border-2 transition ${
+                className={`px-4 py-3 rounded-lg border-2 transition ${
                   preferredSampleType === 'center'
                     ? 'border-orange-500 bg-orange-50 text-orange-700'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
-                At Diagnostic Center
+                At Center
               </button>
               <button
                 type="button"
                 onClick={() => setPreferredSampleType('home')}
-                className={`px-4 py-0 rounded-lg border-2 transition ${
+                className={`px-4 py-3 rounded-lg border-2 transition ${
                   preferredSampleType === 'home'
                     ? 'border-orange-500 bg-orange-50 text-orange-700'
                     : 'border-gray-200 hover:border-gray-300'
@@ -341,6 +436,19 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
                 Home Collection
               </button>
             </div>
+            {preferredSampleType === 'home' && selectedTests.length > 0 && (
+              <p className="text-xs text-gray-600 mt-2">
+                {(() => {
+                  const hasCharged = selectedTests.some(id => {
+                    const t = tests.find(x => x.id === id);
+                    return t && !t.is_free_home_collection && (t.home_collection_fee ?? 0) > 0;
+                  });
+                  return hasCharged
+                    ? `Home collection fee will be added based on selected tests`
+                    : `Free home collection for selected tests`;
+                })()}
+              </p>
+            )}
           </div>
 
           {preferredSampleType === 'home' && (
@@ -417,6 +525,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
           </button>
         </div>
       </form>
+      </div>
     </div>
   );
 }

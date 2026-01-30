@@ -471,65 +471,72 @@ export function UniversalHomeServiceRouter({
   const handlePaymentSuccess = async (paymentData: any) => {
     console.log('✅ [HOME-SERVICE-ROUTER] Payment successful:', paymentData);
 
+    if (!customerId) {
+      toast.error('Customer session not found. Please try again.');
+      return;
+    }
+
     try {
-      // Create booking
+      // Build payload for /bookings/create (CreateBookingRequestSchema: bookingDate, bookingTime, customerId, vendorId, serviceId UUID, serviceType enum)
+      const serviceIdRaw = bookingFlow.services[0]?.serviceId || bookingFlow.services[0]?.id;
       const bookingPayload = {
-        customerPhone: phone,
-        customerId: customerId,
-        petId: bookingFlow.pet?.id,
-        petName: bookingFlow.pet?.name,
+        customerId,
         vendorId: bookingFlow.vendorId,
-        vendorName: bookingFlow.vendorName,
-        staffId: bookingFlow.staffId,
-        staffName: bookingFlow.staffName,
-        serviceId: bookingFlow.services[0]?.id || bookingFlow.services[0]?.serviceId,
-        serviceName: bookingFlow.services[0]?.serviceName || bookingFlow.services[0]?.name,
-        serviceType: serviceType,
-        serviceStyle: 'at_home',
-        scheduledDate: bookingFlow.date,
-        scheduledTime: bookingFlow.time,
-        address: bookingFlow.address,
-        addressId: bookingFlow.address?.id,
-        paymentMethod: paymentData.method,
-        transactionId: paymentData.paymentId,
+        serviceId: serviceIdRaw,
+        staffId: bookingFlow.staffId || undefined,
+        bookingDate: bookingFlow.date,
+        bookingTime: bookingFlow.time,
+        serviceType: 'at_home' as const,
+        petId: bookingFlow.pet?.id || undefined,
+        petName: bookingFlow.pet?.name,
+        customerPhone: phone,
+        address: typeof bookingFlow.address === 'string' ? bookingFlow.address : (bookingFlow.address?.addressLine1 || bookingFlow.address?.fullAddress || bookingFlow.address?.address),
         amount: paymentData.amount,
-        addOns: bookingFlow.addOns,
-        walletUsed: paymentData.walletUsed || 0,
-        couponApplied: paymentData.couponApplied || null,
-        notes: bookingFlow.notes,
-        requiresOTP: config.requiresOTP,
-        requiresStartOTP: config.requiresStartOTP,
-        packagePurchaseId: bookingFlow.usePackageSession ? bookingFlow.packageId : null,
+        notes: bookingFlow.notes || undefined,
+        serviceName: bookingFlow.services[0]?.serviceName || bookingFlow.services[0]?.name,
       };
 
       console.log('📤 [HOME-SERVICE-ROUTER] Creating booking:', bookingPayload);
 
-      try {
-        const bookingData = await apiClient.post<{ bookingId?: string; booking?: any; otp?: string; startOTP?: string }>(`/customer/booking`, bookingPayload);
-        console.log('✅ [HOME-SERVICE-ROUTER] Booking created:', bookingData);
+      const endpoints = ['/bookings/create', '/customer/bookings/create', '/booking/create', '/customer/booking/create'];
+      let bookingData: any = null;
+      let lastErr: any = null;
 
-        const otp = bookingData.otp || bookingData.booking?.completionOTP;
-        const startOTP = bookingData.startOTP || bookingData.booking?.startOTP;
-
-        setBookingFlow(prev => ({
-          ...prev,
-          payment: paymentData,
-          booking: {
-            bookingId: bookingData.bookingId || bookingData.booking?.id,
-            ...bookingData.booking,
-            otp,
-            startOTP,
-          }
-        }));
-
-        setCurrentStep('confirmation');
-      } catch (error: any) {
-        console.error('❌ [HOME-SERVICE-ROUTER] Booking creation failed:', error);
-        toast.error(error.message || 'Failed to create booking. Please try again.');
+      for (const endpoint of endpoints) {
+        try {
+          bookingData = await apiClient.post<{ bookingId?: string; booking?: any; otp?: string; startOTP?: string }>(endpoint, bookingPayload);
+          console.log('✅ [HOME-SERVICE-ROUTER] Booking created via', endpoint, bookingData);
+          break;
+        } catch (e: any) {
+          lastErr = e;
+          if (e?.response?.status === 404 || e?.statusCode === 404) continue;
+          throw e;
+        }
       }
-    } catch (error) {
-      console.error('❌ [HOME-SERVICE-ROUTER] Error creating booking:', error);
-      toast.error('An error occurred. Please try again.');
+
+      if (!bookingData) {
+        throw lastErr || new Error('Failed to create booking');
+      }
+
+      const res = bookingData?.data ?? bookingData;
+      const otp = res.otp || res.booking?.completionOTP;
+      const startOTP = res.startOTP || res.booking?.startOTP;
+
+      setBookingFlow(prev => ({
+        ...prev,
+        payment: paymentData,
+        booking: {
+          bookingId: res.bookingId || res.booking?.id,
+          ...res.booking,
+          otp,
+          startOTP,
+        }
+      }));
+
+      setCurrentStep('confirmation');
+    } catch (error: any) {
+      console.error('❌ [HOME-SERVICE-ROUTER] Booking creation failed:', error);
+      toast.error(error?.response?.data?.error || error?.message || 'Failed to create booking. Please try again.');
     }
   };
 

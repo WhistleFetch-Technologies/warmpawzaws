@@ -16,6 +16,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { query, select, insert, update } from '../database/rds-connection';
 import { BaseHandler, HandlerContext, HandlerResponse, createHandler } from '../handler/base-handler';
@@ -730,14 +731,14 @@ function createApiGatewayEvent(req: any): any {
     headers: req.headers,
     body: JSON.stringify(req.body || {}),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'auth-handler',
     functionVersion: '$LATEST',
   };

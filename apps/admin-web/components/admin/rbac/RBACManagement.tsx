@@ -59,13 +59,40 @@ export function RBACManagement() {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [rolesData, permissionsData] = await Promise.all([
-        apiClient.get<any>('/admin/rbac/roles'),
-        apiClient.get<any>('/admin/rbac/permissions'),
+      // Use /admin/roles endpoint which has more complete data
+      // Pass active=false to get ALL roles including inactive ones
+      const [rolesData, capsData] = await Promise.all([
+        apiClient.get<any>('/admin/roles?active=false'),
+        apiClient.get<any>('/admin/capabilities'),
       ]);
 
-      if (rolesData.success) setRoles(rolesData.roles || []);
-      if (permissionsData.success) setPermissions(permissionsData.permissions || []);
+      if (rolesData.success) {
+        // Map the roles to the expected format
+        const mappedRoles = (rolesData.roles || []).map((r: any) => ({
+          roleId: r.id || r.roleId,
+          roleName: r.display_name || r.roleName || r.name,
+          roleCode: r.name || r.roleCode,
+          description: r.description || '',
+          permissions: r.capabilities || [],
+          userCount: r.userCount || 0,
+          isActive: r.isActive !== false && r.is_active !== false,
+          isSystem: r.isSystem || r.is_system_role || false,
+          createdAt: r.createdAt || r.created_at || '',
+        }));
+        setRoles(mappedRoles);
+      }
+      
+      if (capsData.success) {
+        // Map capabilities to permissions format
+        const mappedPermissions = (capsData.capabilities || []).map((c: any) => ({
+          permissionId: c.id,
+          permissionName: c.name,
+          permissionCode: c.id,
+          category: c.category || 'General',
+          description: c.description || '',
+        }));
+        setPermissions(mappedPermissions);
+      }
     } catch (error) {
       console.error('Error loading RBAC data:', error);
       alert('Failed to load RBAC data');
@@ -105,16 +132,17 @@ export function RBACManagement() {
 
     try {
       setSaving(true);
+      // Use the /admin/roles endpoint format
       const payload = {
-        roleName: formData.roleName,
-        roleCode: formData.roleCode,
+        name: formData.roleCode.toLowerCase().replace(/\s+/g, '_'),
+        display_name: formData.roleName,
         description: formData.description,
-        permissions: formData.permissions,
-        isActive: formData.isActive,
+        capabilities: formData.permissions,
+        is_active: formData.isActive,
       };
 
       if (editingRole) {
-        const data = await apiClient.put<any>(`/admin/rbac/roles/${editingRole.roleId}`, payload);
+        const data = await apiClient.put<any>(`/admin/roles/${editingRole.roleId}`, payload);
         if (data.success) {
           alert('Role updated successfully');
           setShowRoleModal(false);
@@ -123,7 +151,7 @@ export function RBACManagement() {
           alert(data.error || 'Failed to update role');
         }
       } else {
-        const data = await apiClient.post<any>('/admin/rbac/roles', payload);
+        const data = await apiClient.post<any>('/admin/roles', payload);
         if (data.success) {
           alert('Role created successfully');
           setShowRoleModal(false);
@@ -140,24 +168,57 @@ export function RBACManagement() {
     }
   };
 
-  const handleDeleteRole = async (roleId: string, isSystem: boolean) => {
+  const handleDeleteRole = async (roleId: string, roleName: string, isSystem: boolean, permanent: boolean = false) => {
     if (isSystem) {
       alert('System roles cannot be deleted');
       return;
     }
-    if (!confirm('Are you sure you want to delete this role?')) return;
+
+    if (permanent) {
+      // Double confirmation for permanent delete
+      const firstConfirm = window.confirm(
+        `⚠️ PERMANENT DELETE\n\nAre you sure you want to PERMANENTLY delete role "${roleName}"?\n\nThis will:\n• Remove the role from the database\n• Delete all associated permissions\n• This action CANNOT be undone!`
+      );
+      if (!firstConfirm) return;
+      
+      const secondConfirm = window.prompt(`To confirm permanent deletion, type the role name: "${roleName}"`);
+      if (secondConfirm !== roleName) {
+        alert('Role name did not match. Deletion cancelled.');
+        return;
+      }
+    } else {
+      if (!confirm(`Are you sure you want to deactivate role "${roleName}"?\n\nThe role will be hidden from new vendors but existing vendors will keep their role.`)) return;
+    }
 
     try {
-      const data = await apiClient.delete<any>(`/admin/rbac/roles/${roleId}`);
+      const endpoint = permanent 
+        ? `/admin/roles/${roleId}?permanent=true`
+        : `/admin/roles/${roleId}`;
+      const data = await apiClient.delete<any>(endpoint);
       if (data.success) {
-        alert('Role deleted successfully');
+        alert(data.message || (permanent ? 'Role permanently deleted' : 'Role deactivated'));
         loadData();
       } else {
         alert(data.error || 'Failed to delete role');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting role:', error);
-      alert('An error occurred while deleting');
+      alert(error.message || 'An error occurred while deleting');
+    }
+  };
+
+  const handleToggleActive = async (roleId: string, currentActive: boolean) => {
+    try {
+      const data = await apiClient.put<any>(`/admin/roles/${roleId}`, { is_active: !currentActive });
+      if (data.success) {
+        alert(currentActive ? 'Role deactivated' : 'Role activated');
+        loadData();
+      } else {
+        alert(data.error || 'Failed to update role');
+      }
+    } catch (error) {
+      console.error('Error toggling role:', error);
+      alert('An error occurred');
     }
   };
 
@@ -223,12 +284,12 @@ export function RBACManagement() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {roles.map((role) => (
-          <div key={role.roleId} className="bg-white rounded-xl border-2 border-gray-200 p-0">
+          <div key={role.roleId} className="bg-white rounded-xl border-2 border-gray-200 p-5">
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className="p-0 bg-indigo-100 rounded-lg">
+                <div className="p-2 bg-indigo-100 rounded-lg">
                   <Shield className="w-5 h-5 text-indigo-600" />
                 </div>
                 <div>
@@ -236,13 +297,13 @@ export function RBACManagement() {
                   <p className="text-sm text-gray-600">{role.roleCode}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 {role.isSystem && (
-                  <span className="px-0 py-0 bg-purple-100 text-purple-700 text-xs font-medium rounded">
+                  <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded">
                     System
                   </span>
                 )}
-                <span className={`px-0 py-0 text-xs font-medium rounded ${
+                <span className={`px-2 py-1 text-xs font-medium rounded ${
                   role.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
                 }`}>
                   {role.isActive ? 'Active' : 'Inactive'}
@@ -250,35 +311,48 @@ export function RBACManagement() {
               </div>
             </div>
 
-            <p className="text-sm text-gray-600 mb-4">{role.description}</p>
+            <p className="text-sm text-gray-600 mb-4">{role.description || 'No description'}</p>
 
             <div className="flex items-center gap-4 mb-4 text-sm">
-              <div className="flex items-center gap-3 text-gray-600">
+              <div className="flex items-center gap-2 text-gray-600">
                 <Users className="w-4 h-4" />
                 <span>{role.userCount} users</span>
               </div>
-              <div className="flex items-center gap-3 text-gray-600">
+              <div className="flex items-center gap-2 text-gray-600">
                 <Key className="w-4 h-4" />
                 <span>{role.permissions.length} permissions</span>
               </div>
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex gap-2 flex-wrap">
               <button
                 onClick={() => handleOpenRoleModal(role)}
-                className="flex-1 flex items-center justify-center gap-3 px-0 py-0 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
               >
                 <Edit2 className="w-4 h-4" />
                 Edit
               </button>
               {!role.isSystem && (
-                <button
-                  onClick={() => handleDeleteRole(role.roleId, role.isSystem)}
-                  className="flex-1 flex items-center justify-center gap-3 px-0 py-0 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 text-sm font-medium"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  Delete
-                </button>
+                <>
+                  <button
+                    onClick={() => handleToggleActive(role.roleId, role.isActive)}
+                    className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
+                      role.isActive 
+                        ? 'bg-orange-50 text-orange-600 hover:bg-orange-100' 
+                        : 'bg-green-50 text-green-600 hover:bg-green-100'
+                    }`}
+                    title={role.isActive ? 'Deactivate role' : 'Activate role'}
+                  >
+                    {role.isActive ? '⏸️' : '▶️'}
+                  </button>
+                  <button
+                    onClick={() => handleDeleteRole(role.roleId, role.roleName, role.isSystem, true)}
+                    className="flex items-center justify-center gap-2 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 text-sm font-medium"
+                    title="Permanently delete role"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </>
               )}
             </div>
           </div>

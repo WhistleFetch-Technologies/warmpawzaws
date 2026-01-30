@@ -137,8 +137,8 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
   };
 
   const handleSubmitVerification = async () => {
-    if (!verifyingStaff || !otp || otp.length !== 6) {
-      toast.error('Please enter a valid 6-digit OTP');
+    if (!verifyingStaff || !otp || otp.length !== 4) {
+      toast.error('Please enter a valid 4-digit OTP');
       return;
     }
 
@@ -459,7 +459,7 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
                 </button>
                 <button
                   onClick={handleSubmitVerification}
-                  disabled={verifying || otp.length !== 6}
+                  disabled={verifying || otp.length !== 4}
                   className="flex-1 py-2 bg-[#FF8C42] text-white rounded-lg font-medium hover:bg-[#FF7A29] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {verifying ? 'Verifying...' : 'Verify'}

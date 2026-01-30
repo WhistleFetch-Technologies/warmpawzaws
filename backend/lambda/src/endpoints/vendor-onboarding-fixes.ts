@@ -325,13 +325,14 @@ export function registerVendorOnboardingFixes(app: Hono) {
     try {
       console.log('📋 [ADMIN] Fetching pending applications...');
       
-      // Query vendor_onboarding_applications with JOIN to vendor_identity
+      // Query vendor_onboarding_applications with JOIN to vendor_identity (include uploaded_documents for admin review)
       const applicationsResult = await query(`
         SELECT 
           voa.id as application_id,
           voa.vendor_identity_id,
           voa.status,
           voa.application_payload,
+          voa.uploaded_documents,
           voa.submitted_at,
           voa.created_at,
           vi.phone,
@@ -369,6 +370,10 @@ export function registerVendorOnboardingFixes(app: Hono) {
           submittedAt: row.submitted_at || row.created_at,
           vendorType: row.vendor_type,
           priority: 'medium',
+          uploaded_documents: row.uploaded_documents ?? undefined,
+          uploadedDocuments: row.uploaded_documents ?? undefined,
+          customFields: payload,
+          formData: payload,
         };
       });
       
@@ -382,6 +387,78 @@ export function registerVendorOnboardingFixes(app: Hono) {
     } catch (error: any) {
       console.error('❌ [ADMIN] Error fetching pending applications:', error);
       return c.json({ error: error.message || 'Failed to fetch applications' }, 500);
+    }
+  });
+
+  /**
+   * ✅ FIX: GET /vendor/application/status/:vendorId
+   * Get vendor application status by vendorId (used by VendorApplicationStatus.tsx)
+   */
+  app.get('/vendor/application/status/:vendorId', async (c) => {
+    const vendorId = c.req.param('vendorId');
+    console.log('📋 [VENDOR-APPLICATION-STATUS] Getting status for vendorId:', vendorId);
+    
+    try {
+      // First try to find by application ID
+      let application = await query(
+        `SELECT va.*, vi.phone, vi.vendor_id, vi.selected_role_id, r.name as role_name
+         FROM vendor_onboarding_applications va
+         LEFT JOIN vendor_identity vi ON va.vendor_identity_id = vi.id
+         LEFT JOIN roles r ON vi.selected_role_id = r.id
+         WHERE va.id = $1 OR va.vendor_identity_id = $1 OR vi.vendor_id = $1
+         ORDER BY va.created_at DESC
+         LIMIT 1`,
+        [vendorId]
+      );
+      
+      if (!application || !application.rows || application.rows.length === 0) {
+        // Try to find by vendor_id in vendors table
+        const vendorRecord = await query(
+          `SELECT v.*, vi.phone, va.id as application_id, va.status as app_status, va.submitted_at
+           FROM vendors v
+           LEFT JOIN vendor_identity vi ON v.phone = vi.phone
+           LEFT JOIN vendor_onboarding_applications va ON vi.id = va.vendor_identity_id
+           WHERE v.id = $1
+           ORDER BY va.created_at DESC
+           LIMIT 1`,
+          [vendorId]
+        );
+        
+        if (vendorRecord && vendorRecord.rows && vendorRecord.rows.length > 0) {
+          const vendor = vendorRecord.rows[0];
+          return c.json({
+            success: true,
+            application: {
+              id: vendor.application_id || vendorId,
+              status: vendor.app_status || vendor.onboarding_status || 'pending',
+              submittedAt: vendor.submitted_at || vendor.created_at,
+              fullName: vendor.owner_name || vendor.full_name,
+              reviewedAt: vendor.reviewed_at,
+              clarificationNotes: vendor.clarification_notes,
+            },
+            canProceedToSetup: vendor.app_status === 'approved' || vendor.onboarding_status === 'APPROVED',
+          });
+        }
+        
+        return c.json({ success: false, error: 'Application not found' }, 404);
+      }
+      
+      const app = application.rows[0];
+      return c.json({
+        success: true,
+        application: {
+          id: app.id,
+          status: app.status,
+          submittedAt: app.submitted_at || app.created_at,
+          fullName: app.form_data?.fullName || app.form_data?.ownerName || app.application_payload?.fullName || 'Vendor',
+          reviewedAt: app.reviewed_at,
+          clarificationNotes: app.clarification_notes || app.admin_comments,
+        },
+        canProceedToSetup: app.status === 'approved' || app.status === 'APPROVED',
+      });
+    } catch (error: any) {
+      console.error('❌ [VENDOR-APPLICATION-STATUS] Error:', error);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 }

@@ -15,7 +15,7 @@ import { VetBookingRouter } from './vet/VetBookingRouter'; // ✅ NEW: Complete 
 import { VetDoctorDetails } from './vet/VetDoctorDetails'; // ✅ NEW: Doctor details
 import { ProblemGridSelector } from './ProblemGridSelector'; // ✅ NEW: Problem grid
 import { VendorDiscoveryByProblem } from './VendorDiscoveryByProblem'; // ✅ NEW: Vendor discovery
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 type ViewType = 
   | 'landing'
@@ -89,7 +89,7 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
   // ✅ NEW: Problem grid state
   const [selectedProblem, setSelectedProblem] = useState<any>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadCustomerData();

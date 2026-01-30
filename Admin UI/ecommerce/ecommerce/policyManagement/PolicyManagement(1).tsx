@@ -45,7 +45,7 @@ import {
 	authenticatedGet,
 	authenticatedPut,
 } from "@repo/utils/authenticatedFetch";
-import { projectId } from "@repo/utils/supabase/info";
+import { getApiBaseUrl } from "@repo/utils/api-config";
 
 interface RefundPolicy {
 	enabledCategories: string[];
@@ -140,7 +140,7 @@ export function PolicyManagement() {
 		try {
 			// Fetch policies from backend
 			const policies = await authenticatedGet(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/policies`,
+				`${getApiBaseUrl()}/admin/policies`,
 				true
 			);
 
@@ -163,7 +163,7 @@ export function PolicyManagement() {
 
 		try {
 			await authenticatedPut(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/policies/${type}`,
+				`${getApiBaseUrl()}/admin/policies/${type}`,
 				data
 			);
 

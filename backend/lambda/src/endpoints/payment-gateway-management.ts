@@ -6,6 +6,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update, deleteRecord } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
@@ -340,7 +341,7 @@ function createApiGatewayEvent(req: any): any {
 
 function createLambdaContext(): any {
   return {
-    awsRequestId: crypto.randomUUID(),
+    awsRequestId: randomUUID(),
     functionName: 'payment-gateway-management',
     functionVersion: '$LATEST',
     invokedFunctionArn: 'arn:aws:lambda:ap-south-1:123456789012:function:payment-gateway-management',

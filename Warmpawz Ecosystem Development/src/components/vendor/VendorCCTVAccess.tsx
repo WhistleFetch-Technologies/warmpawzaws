@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Camera, Play, Pause, Download, RefreshCw, X, Video, Clock, MapPin, Settings } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface CCTVCamera {
@@ -46,7 +46,7 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
   const [shareModal, setShareModal] = useState(false);
   const [selectedCameraForShare, setSelectedCameraForShare] = useState<CCTVCamera | null>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchCameras();
@@ -57,7 +57,7 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
     try {
       setLoading(true);
       const response = await fetch(`${API_BASE}/vendor/cctv/${vendorId}/cameras`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {
@@ -77,7 +77,7 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
   const fetchSharedAccess = async () => {
     try {
       const response = await fetch(`${API_BASE}/vendor/cctv/${vendorId}/shared`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {
@@ -96,7 +96,7 @@ export function VendorCCTVAccess({ vendorId, vendorData, onBack }: VendorCCTVAcc
     try {
       const response = await fetch(`${API_BASE}/vendor/cctv/${vendorId}/cameras/${cameraId}/snapshot`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {

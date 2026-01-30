@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 
 interface CustomerProfile {
   id: string;
@@ -147,11 +148,19 @@ export default function ProfilePage() {
               </div>
               <div>
                 <label className="block text-sm text-gray-500 mb-1">Address</label>
-                <textarea
+                <EnhancedAddressAutocomplete
                   value={editData.address || ''}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditData({ ...editData, address: e.target.value })}
-                  className="w-full p-3 border rounded-lg"
-                  rows={3}
+                  onChange={(address: string, components?: AddressComponents) => {
+                    const updates: Partial<CustomerProfile> = { address };
+                    // Auto-populate city, state, pincode from Google Maps selection
+                    if (components) {
+                      if (components.city) updates.city = components.city;
+                      if (components.state) updates.state = components.state;
+                      if (components.pincode) updates.pincode = components.pincode;
+                    }
+                    setEditData({ ...editData, ...updates });
+                  }}
+                  placeholder="Search address, landmark, city..."
                 />
               </div>
               <div className="flex gap-3 mt-6">

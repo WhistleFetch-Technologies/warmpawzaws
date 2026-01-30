@@ -7,9 +7,22 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Calendar, Clock, MapPin } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, MapPin, Plus } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+
+interface SavedAddress {
+  id: string;
+  label?: string;
+  name?: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  state: string;
+  pincode: string;
+  landmark?: string;
+  isDefault?: boolean;
+}
 
 interface CreateBookingPageProps {
   phone: string;
@@ -22,11 +35,15 @@ interface CreateBookingPageProps {
 export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSuccess }: CreateBookingPageProps) {
   const [loading, setLoading] = useState(false);
   const [loadingPets, setLoadingPets] = useState(true);
+  const [loadingAddresses, setLoadingAddresses] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pets, setPets] = useState<any[]>([]);
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+  const [useNewAddress, setUseNewAddress] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [resolvedServiceId, setResolvedServiceId] = useState<string | null>(null);
-  
+
   const [formData, setFormData] = useState({
     petId: '',
     scheduledDate: '',
@@ -43,12 +60,17 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
   useEffect(() => {
     fetchPets();
     fetchCustomerId();
+    fetchAddresses();
   }, [phone]);
 
+  const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
   useEffect(() => {
-    if (vendorId && !serviceId) {
+    if (vendorId && serviceId && isUuid(serviceId)) {
+      setResolvedServiceId(serviceId);
+    } else if (vendorId && (!serviceId || !isUuid(serviceId))) {
       resolveServiceId();
-    } else if (serviceId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId)) {
+    } else if (serviceId && isUuid(serviceId)) {
       setResolvedServiceId(serviceId);
     }
   }, [serviceId, vendorId]);
@@ -64,6 +86,25 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
       console.error('Error fetching pets:', err);
     } finally {
       setLoadingPets(false);
+    }
+  };
+
+  const fetchAddresses = async () => {
+    try {
+      setLoadingAddresses(true);
+      const data = await apiClient.get<{ addresses?: SavedAddress[] }>(
+        `/customer/addresses?phone=${encodeURIComponent(phone)}`
+      );
+      const list = data.addresses || [];
+      setSavedAddresses(list);
+      if (list.length > 0 && !useNewAddress) {
+        const defaultAddr = list.find((a: SavedAddress) => a.isDefault) || list[0];
+        setSelectedAddressId(defaultAddr.id);
+      }
+    } catch (err) {
+      console.error('Error fetching addresses:', err);
+    } finally {
+      setLoadingAddresses(false);
     }
   };
 
@@ -183,13 +224,30 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
         ? formData.scheduledTime.split(':').slice(0, 2).join(':')
         : formData.scheduledTime;
 
-      // Convert address object to string
-      const addressString = [
-        formData.address.street,
-        formData.address.city,
-        formData.address.state,
-        formData.address.pincode
-      ].filter(Boolean).join(', ');
+      // Ingest address: use selected saved address or manual form
+      let addressString: string;
+      let city: string | undefined;
+      let state: string | undefined;
+      let pincode: string | undefined;
+      if (!useNewAddress && selectedAddressId && savedAddresses.length > 0) {
+        const addr = savedAddresses.find((a) => a.id === selectedAddressId);
+        if (addr) {
+          addressString = [addr.addressLine1, addr.addressLine2, addr.city, addr.state, addr.pincode].filter(Boolean).join(', ');
+          city = addr.city;
+          state = addr.state;
+          pincode = addr.pincode;
+        } else {
+          addressString = [formData.address.street, formData.address.city, formData.address.state, formData.address.pincode].filter(Boolean).join(', ');
+          city = formData.address.city || undefined;
+          state = formData.address.state || undefined;
+          pincode = formData.address.pincode || undefined;
+        }
+      } else {
+        addressString = [formData.address.street, formData.address.city, formData.address.state, formData.address.pincode].filter(Boolean).join(', ');
+        city = formData.address.city || undefined;
+        state = formData.address.state || undefined;
+        pincode = formData.address.pincode || undefined;
+      }
 
       const requestBody = {
         customerId,
@@ -199,9 +257,9 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
         bookingTime,
         serviceType: 'at_home' as const,
         address: addressString || undefined,
-        city: formData.address.city || undefined,
-        state: formData.address.state || undefined,
-        pincode: formData.address.pincode || undefined,
+        city,
+        state,
+        pincode,
         petId: formData.petId || undefined,
         notes: formData.notes || undefined
       };
@@ -293,37 +351,97 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
             </div>
           </div>
 
-          {/* Address */}
+          {/* Service Address: use existing or add new (standard address selection flow) */}
           <div className="space-y-4 border-t pt-4">
             <Label className="flex items-center gap-2">
               <MapPin className="w-4 h-4" /> Service Address
             </Label>
-            <Input
-              placeholder="Street Address"
-              value={formData.address.street}
-              onChange={(e) => setFormData({
-                ...formData,
-                address: { ...formData.address, street: e.target.value }
-              })}
-            />
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                placeholder="City"
-                value={formData.address.city}
-                onChange={(e) => setFormData({
-                  ...formData,
-                  address: { ...formData.address, city: e.target.value }
-                })}
-              />
-              <Input
-                placeholder="Pincode"
-                value={formData.address.pincode}
-                onChange={(e) => setFormData({
-                  ...formData,
-                  address: { ...formData.address, pincode: e.target.value }
-                })}
-              />
-            </div>
+            {loadingAddresses ? (
+              <div className="h-20 bg-gray-100 rounded-lg animate-pulse" />
+            ) : savedAddresses.length > 0 && !useNewAddress ? (
+              <>
+                <p className="text-sm text-gray-600">Use a saved address or add a new one</p>
+                <Select
+                  value={selectedAddressId || ''}
+                  onValueChange={(id) => setSelectedAddressId(id)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select address" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {savedAddresses.map((addr) => (
+                      <SelectItem key={addr.id} value={addr.id}>
+                        {addr.addressLine1}, {addr.city} {addr.pincode}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedAddressId && savedAddresses.find((a) => a.id === selectedAddressId) && (
+                  <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700 border">
+                    {(() => {
+                      const addr = savedAddresses.find((a) => a.id === selectedAddressId)!;
+                      return (
+                        <>
+                          <p className="font-medium">{addr.label || 'Address'}</p>
+                          <p>{addr.addressLine1}</p>
+                          {addr.addressLine2 && <p>{addr.addressLine2}</p>}
+                          <p>{addr.city}, {addr.state} {addr.pincode}</p>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setUseNewAddress(true)}
+                  className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42] hover:text-white"
+                >
+                  <Plus className="w-4 h-4 mr-1" /> Add new address instead
+                </Button>
+              </>
+            ) : (
+              <>
+                {savedAddresses.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { setUseNewAddress(false); setSelectedAddressId(savedAddresses[0]?.id ?? null); }}
+                    className="text-[#FF8C42] hover:bg-orange-50 mb-2"
+                  >
+                    Use saved address
+                  </Button>
+                )}
+                <Input
+                  placeholder="Street Address"
+                  value={formData.address.street}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    address: { ...formData.address, street: e.target.value }
+                  })}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    placeholder="City"
+                    value={formData.address.city}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      address: { ...formData.address, city: e.target.value }
+                    })}
+                  />
+                  <Input
+                    placeholder="Pincode"
+                    value={formData.address.pincode}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      address: { ...formData.address, pincode: e.target.value }
+                    })}
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           {/* Notes */}

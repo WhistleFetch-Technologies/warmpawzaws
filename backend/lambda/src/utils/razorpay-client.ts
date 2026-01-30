@@ -19,7 +19,13 @@ export interface RazorpayConfig {
 }
 
 /**
- * Get Razorpay configuration from AWS Secrets Manager (primary) or database/env (fallback)
+ * Get Razorpay configuration from AWS Secrets Manager (primary) or database/env (fallback).
+ *
+ * AWS Secrets Manager (recommended for production):
+ * - Secret name: warmpawz/{STAGE}/razorpay (e.g. warmpawz/dev/razorpay)
+ * - Value (JSON): { "keyId": "rzp_...", "keySecret": "...", "webhookSecret": "..." }
+ * - Lambda must have IAM permission secretsmanager:GetSecretValue for this secret.
+ * - If Lambda runs in a VPC, ensure NAT Gateway or VPC endpoint for Secrets Manager.
  */
 export async function getRazorpayConfig(): Promise<RazorpayConfig> {
   // ✅ PRIMARY: Try AWS Secrets Manager first (with timeout to prevent hangs)

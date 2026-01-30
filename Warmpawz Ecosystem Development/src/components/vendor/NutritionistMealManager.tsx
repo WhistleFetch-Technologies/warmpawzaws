@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Edit, Trash2, Save, Clock, Package, AlertCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
@@ -53,8 +53,8 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
 
       // Load products
       const productsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/meal-products`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/meal-products`,
+        { headers: getAuthHeaders() }
       );
 
       if (productsRes.ok) {
@@ -64,8 +64,8 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
 
       // Load orders
       const ordersRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/meal-orders`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/meal-orders`,
+        { headers: getAuthHeaders() }
       );
 
       if (ordersRes.ok) {
@@ -88,13 +88,13 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
 
     try {
       const endpoint = editingProduct
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/meal-products/${editingProduct.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/meal-products`;
+        ? `${getApiBaseUrl()}/vendor/${vendorId}/meal-products/${editingProduct.id}`
+        : `${getApiBaseUrl()}/vendor/${vendorId}/meal-products`;
 
       const response = await fetch(endpoint, {
         method: editingProduct ? 'PUT' : 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(formData)
@@ -120,10 +120,10 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/meal-products/${productId}`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/meal-products/${productId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -141,11 +141,11 @@ export function NutritionistMealManager({ vendorId, vendorName, onBack }: Nutrit
   const handleUpdateOrderStatus = async (orderId: string, newStatus: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/meal-orders/${orderId}/status`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/meal-orders/${orderId}/status`,
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ status: newStatus })

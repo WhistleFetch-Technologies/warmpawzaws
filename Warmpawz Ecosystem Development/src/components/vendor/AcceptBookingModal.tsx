@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { CheckCircle, User } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface AcceptBookingModalProps {
@@ -21,7 +21,7 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
   const [loading, setLoading] = useState(false);
   const [loadingStaff, setLoadingStaff] = useState(true);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadStaffMembers();
@@ -31,7 +31,7 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
     try {
       const response = await fetch(
         `${API_BASE}/vendor/${vendorId}/staff?active=true`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -59,7 +59,7 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

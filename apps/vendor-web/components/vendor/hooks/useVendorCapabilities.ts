@@ -76,6 +76,8 @@ function capabilitiesToMap(capabilities: string[]): Record<string, boolean> {
     'prescription_verification': ['prescription_verification', 'rx_verification', 'verify_prescription'],
     'expiry_management': ['expiry_management', 'expiry_tracking', 'expiry_monitoring'],
     'product_catalog': ['product_catalog', 'catalog', 'products', 'product_management'],
+    'diagnostic_results': ['diagnostic_results', 'diagnostics', 'test_catalog', 'diagnostic_lab'],
+    'diagnostics': ['diagnostics', 'diagnostic_results', 'test_catalog'],
   };
   
   // ✅ FIX: Filter out null/undefined capabilities before processing

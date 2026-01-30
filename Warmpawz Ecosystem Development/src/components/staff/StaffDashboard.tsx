@@ -13,7 +13,7 @@ import {
   Briefcase,
   DollarSign
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 import { StaffScheduleManagement } from '../vendor/StaffScheduleManagement'; // ✅ Self-service schedule management
 import { StaffAnalytics } from './StaffAnalytics'; // ✅ Staff analytics view
@@ -42,9 +42,9 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
 
       // Load appointments (all statuses)
       const appointmentsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/appointments`,
+        `${getApiBaseUrl()}/staff/${staff.id}/appointments`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -58,9 +58,9 @@ export function StaffDashboard({ staff, onLogout }: StaffDashboardProps) {
 
       // Load analytics
       const analyticsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/analytics?period=month`,
+        `${getApiBaseUrl()}/staff/${staff.id}/analytics?period=month`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

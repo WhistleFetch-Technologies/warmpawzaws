@@ -16,6 +16,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 import { publishToSNS, sendToSQS } from '../utils/aws-clients';
@@ -395,7 +396,7 @@ async function createApiGatewayEvent(c: any): Promise<any> {
     pathParameters: c.req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
       identity: {},
     },
   };
@@ -403,7 +404,7 @@ async function createApiGatewayEvent(c: any): Promise<any> {
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'admin-governance-handler',
     functionVersion: '$LATEST',
   };

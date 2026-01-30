@@ -570,6 +570,8 @@ class UpdateRoleHandler extends BaseHandler {
 class DeleteRoleHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const roleId = context.event.pathParameters?.roleId;
+    const queryParams = context.event.queryStringParameters || {};
+    const permanent = queryParams.permanent === 'true';
 
     if (!roleId) {
       return this.error('Role ID is required', 400);
@@ -585,16 +587,51 @@ class DeleteRoleHandler extends BaseHandler {
 
     // Prevent deletion of system roles
     if (role.is_system_role) {
-      return this.error('Cannot delete system roles', 403);
+      return this.error('Cannot delete system roles. System roles are protected.', 403);
     }
 
     try {
-      // Soft delete: deactivate instead of deleting
-      await update('roles', { id: roleId }, { is_active: false });
+      if (permanent) {
+        // HARD DELETE: Permanently remove the role and its permissions
+        // First check if any vendors are using this role
+        const vendorsUsingRole = await query(
+          `SELECT COUNT(*) as count FROM vendors WHERE role_id = $1 OR role = $2`,
+          [roleId, role.name]
+        );
+        
+        const vendorCount = parseInt(vendorsUsingRole.rows[0]?.count || '0', 10);
+        if (vendorCount > 0) {
+          return this.error(
+            `Cannot permanently delete this role. ${vendorCount} vendor(s) are currently using it. Please reassign them first or use soft delete.`,
+            400
+          );
+        }
 
-      return this.success({
-        message: 'Role deactivated successfully',
-      });
+        // Delete role permissions first (due to foreign key constraint)
+        await query('DELETE FROM role_permissions WHERE role_id = $1', [roleId]);
+        
+        // Delete the role
+        await query('DELETE FROM roles WHERE id = $1', [roleId]);
+
+        console.log(`[Roles] Role permanently deleted: ${role.name} (${roleId})`);
+
+        return this.success({
+          message: 'Role permanently deleted',
+          roleName: role.display_name || role.name,
+          deleteType: 'permanent',
+        });
+      } else {
+        // SOFT DELETE: Deactivate instead of deleting
+        await update('roles', { id: roleId }, { is_active: false });
+
+        console.log(`[Roles] Role deactivated: ${role.name} (${roleId})`);
+
+        return this.success({
+          message: 'Role deactivated successfully',
+          roleName: role.display_name || role.name,
+          deleteType: 'soft',
+        });
+      }
     } catch (error: any) {
       console.error('Error deleting role:', error);
       return this.error(error.message || 'Failed to delete role', 500);

@@ -102,6 +102,73 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
   });
 
   /**
+   * GET /customer/:phone/bookings/upcoming-calls
+   * Get upcoming video calls within specified minutes
+   * ✅ CRITICAL: Must be registered BEFORE /customer/:customerId/bookings/:bookingId
+   */
+  app.get("/customer/:phone/bookings/upcoming-calls", async (c) => {
+    try {
+      const phone = c.req.param('phone');
+      const minutes = parseInt(c.req.query('minutes') || '5', 10);
+
+      // Get customer by phone with error handling
+      const customerId = await resolveCustomerIdFromPhone(phone);
+      if (!customerId) {
+        return c.json({ success: true, bookings: [] });
+      }
+
+      // Get upcoming video calls within the specified minutes
+      const now = new Date();
+      const futureTime = new Date(now.getTime() + minutes * 60 * 1000);
+
+      let bookingsResult: any;
+      try {
+        bookingsResult = await query(
+          `SELECT b.id, b.booking_date, b.scheduled_at, b.booking_time,
+                  COALESCE(v.business_name, s.name) as vendor_name,
+                  COALESCE(v.profile_photo, s.photo) as vendor_photo,
+                  sv.name as service_name,
+                  p.name as pet_name,
+                  b.video_call_meeting_id
+           FROM bookings b
+           LEFT JOIN vendors v ON b.vendor_id = v.id
+           LEFT JOIN staff s ON b.staff_id = s.id
+           LEFT JOIN services sv ON b.service_id = sv.id
+           LEFT JOIN pets p ON b.pet_id = p.id
+           WHERE b.customer_id = $1
+             AND b.status IN ('confirmed', 'scheduled')
+             AND (b.service_style = 'tele' OR b.service_type = 'tele' OR b.service_type = 'online')
+             AND (b.scheduled_at >= $2 AND b.scheduled_at <= $3)
+           ORDER BY b.scheduled_at ASC
+           LIMIT 10`,
+          [customerId, now.toISOString(), futureTime.toISOString()]
+        );
+      } catch (error: any) {
+        console.warn('Error fetching upcoming calls (returning empty):', error.message);
+        return c.json({ success: true, bookings: [] });
+      }
+
+      return c.json({
+        success: true,
+        bookings: bookingsResult.rows.map((b: any) => ({
+          id: b.id,
+          bookingDate: b.booking_date,
+          scheduledAt: b.scheduled_at,
+          bookingTime: b.booking_time,
+          vendorName: b.vendor_name,
+          vendorPhoto: b.vendor_photo,
+          serviceName: b.service_name,
+          petName: b.pet_name,
+          meetingId: b.video_call_meeting_id
+        }))
+      });
+    } catch (error: any) {
+      console.error('Error getting upcoming calls:', error);
+      return c.json({ success: true, bookings: [] });
+    }
+  });
+
+  /**
    * GET /customer/bookings?phone=...
    * Get bookings by phone (convenience endpoint)
    */
@@ -109,7 +176,8 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
     try {
       const phone = c.req.query('phone');
       const petId = c.req.query('petId');
-      const serviceType = c.req.query('serviceType');
+      // Accept category as alias for serviceType (e.g. share report modal uses category=vet)
+      const serviceType = (c.req.query('serviceType') || c.req.query('category')) as string | undefined;
       const status = c.req.query('status');
 
       if (!phone) {
@@ -145,9 +213,9 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
       }
 
       if (serviceType) {
-        bookingQuery += ` AND s.category = $${paramIndex}`;
-        params.push(serviceType);
-        paramIndex++;
+        bookingQuery += ` AND (s.category ILIKE $${paramIndex} OR s.category = $${paramIndex + 1})`;
+        params.push(`%${String(serviceType)}%`, String(serviceType));
+        paramIndex += 2;
       }
 
       if (status) {
@@ -509,7 +577,38 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[notifications] Error fetching notifications by phone:', error);
-      return c.json({ success: true, notifications: [], unreadCount: 0 }, 200);
+      console.error('[notifications] Error stack:', error?.stack);
+      
+      const errorMessage = error?.message || 'Unknown error';
+      
+      // ✅ FIX: Handle missing table gracefully - return empty notifications
+      if (errorMessage.includes('relation') && errorMessage.includes('does not exist')) {
+        console.log('[notifications] Table does not exist, returning empty notifications');
+        return c.json({
+          success: true,
+          notifications: [],
+          unreadCount: 0,
+        });
+      }
+      
+      // ✅ FIX: Return proper error codes for connection pool exhaustion
+      if (errorMessage.includes('connection pool') || errorMessage.includes('too many clients')) {
+        return c.json({ 
+          success: false, 
+          error: 'Service temporarily busy. Please try again.',
+          code: 'POOL_EXHAUSTED',
+          notifications: [], 
+          unreadCount: 0 
+        }, 503);
+      }
+      
+      // ✅ FIX: Return graceful fallback for other errors - don't break the UI
+      return c.json({ 
+        success: true, 
+        notifications: [], 
+        unreadCount: 0,
+        _error: 'Unable to fetch notifications'
+      });
     }
   });
 

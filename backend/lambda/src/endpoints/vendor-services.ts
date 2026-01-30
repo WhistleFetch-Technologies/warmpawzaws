@@ -24,43 +24,56 @@ import { extractEntityIds, normalizeDbRow, buildVendorResponse } from '../utils/
 import { isValidUUID, normalizeVendorService } from '../types/entities';
 
 /**
- * Map role IDs to service catalog roles
- * Based on reference implementation - matches vendor app roles to catalog roles
+ * Map role IDs/names to service catalog applicable_roles (must match service-catalog.ts)
+ * So vendor service management discovers catalog services for the vendor's role.
  */
 const roleMappings: Record<string, string[]> = {
-  // Healthcare Roles
-  'veterinarian': ['vet', 'veterinarian', 'veterinarian'],
-  'vet_solo': ['vet', 'veterinarian', 'veterinarian', 'vet_solo', 'solo_vet'],
-  'veterinary_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinary_clinic'],
-  'vet_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian'],
-  'pet_pharmacy': ['pharmacy', 'pet_pharmacy', 'pharmacy'],
-  'pet_ambulance': ['ambulance', 'pet_ambulance', 'ambulance'],
-  'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist'],
-  // Center/Clinic Roles - map to vet_clinic for tele consultation access
+  'veterinarian': ['vet', 'veterinarian', 'vet_clinic', 'vet_solo'],
+  'vet_solo': ['vet', 'veterinarian', 'vet_clinic', 'vet_solo', 'solo_vet'],
+  'veterinary_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian'],
+  'vet_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian', 'vet_solo'],
+  'diagnostics_center': ['diagnostics_center', 'vet_clinic', 'veterinarian'],
+  'pet_pharmacy': ['pharmacy', 'pet_pharmacy'],
+  'pet_ambulance': ['ambulance', 'pet_ambulance'],
+  'ambulance': ['ambulance', 'pet_ambulance'],
+  'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
+  'nutritionist_center': ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
+  'pharmacy': ['pharmacy', 'pet_pharmacy'],
+  'insurance': ['insurance', 'pet_insurance'],
   'center': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'center'],
   'testing_center': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'testing_center', 'center'],
   'clinic': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'clinic'],
-  
-  // Service Provider Roles
-  'pet_groomer': ['groomer', 'pet_groomer', 'groomer'],
-  'pet_walker': ['walker', 'pet_walker', 'dog_walker', 'pet_walker'],
-  'pet_trainer': ['trainer', 'pet_trainer', 'trainer'],
-  'pet_behaviorist': ['behaviorist', 'pet_behaviorist', 'behaviorist'],
-  'pet_sitter': ['sitter', 'pet_sitter', 'sitter'],
-  'pet_taxi': ['transport', 'pet_transport', 'pet_taxi', 'pet_transport'],
-  'pet_boarding': ['boarding', 'pet_boarder', 'pet_hotel', 'pet_boarding'],
-  'pet_resort': ['resort', 'pet_resort', 'resort'],
-  'pet_cafe': ['cafe', 'pet_cafe', 'cafe'],
-  'pet_photographer': ['photographer', 'pet_photographer', 'photographer'],
+  'pet_groomer': ['groomer', 'pet_groomer', 'groomer_center', 'groomer_solo', 'pet_spa'],
+  'groomer_center': ['groomer', 'pet_groomer', 'groomer_center', 'groomer_solo', 'pet_spa'],
+  'groomer_solo': ['groomer', 'pet_groomer', 'groomer_center', 'groomer_solo', 'pet_spa'],
+  'pet_walker': ['walker', 'pet_walker', 'dog_walker'],
+  'walker': ['walker', 'pet_walker', 'dog_walker'],
+  'pet_trainer': ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
+  'trainer_center': ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
+  'trainer_solo': ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
+  'pet_behaviorist': ['behaviorist', 'pet_behaviorist', 'trainer_solo', 'trainer_center'],
+  'pet_sitter': ['sitter', 'pet_sitter'],
+  'sitter': ['sitter', 'pet_sitter'],
+  'pet_taxi': ['transport', 'pet_transport', 'pet_taxi', 'relocation'],
+  'relocation': ['pet_transport', 'relocation', 'pet_relocation'],
+  'pet_boarding': ['boarding', 'pet_boarder', 'pet_hotel', 'pet_boarding', 'pet_daycare'],
+  'boarding': ['boarding', 'pet_boarder', 'pet_daycare', 'pet_sitter'],
+  'pet_resort': ['resort', 'pet_resort'],
+  'resort': ['resort', 'pet_resort'],
+  'pet_cafe': ['cafe', 'pet_cafe'],
+  'cafe': ['cafe', 'pet_cafe'],
+  'pet_photographer': ['photographer', 'pet_photographer'],
+  'photographer': ['photographer', 'pet_photographer'],
   'pet_sunset_services': ['sunset', 'pet_sunset_services', 'sunset_services'],
-  
-  // Retail Roles
-  'pet_products_store': ['store', 'pet_store', 'retailer', 'pet_products_store'],
-  'pet_breeder': ['breeder', 'pet_breeder', 'breeder'],
-  
-  // Other Roles
-  'pet_shelter': ['shelter', 'pet_shelter', 'ngo', 'pet_shelter'],
-  'insurance': ['insurance', 'pet_insurance', 'insurance'],
+  'sunset': ['sunset', 'pet_sunset_services'],
+  'holiday': ['holiday'],
+  'pet_products_store': ['store', 'pet_store', 'retailer', 'seller', 'pet_products_store'],
+  'seller': ['store', 'pet_store', 'seller', 'pet_products_store'],
+  'pet_breeder': ['breeder', 'pet_breeder'],
+  'breeder': ['breeder', 'pet_breeder'],
+  'pet_shelter': ['shelter', 'pet_shelter', 'adoption_center', 'pet_adoption_center'],
+  'adoption_center': ['adoption_center', 'pet_shelter', 'pet_adoption_center'],
+  'event_organizer': ['pet_event_organizer', 'event_organizer'],
 };
 
 export function registerVendorServicesEndpoints(app: Hono) {
@@ -179,7 +192,50 @@ export function registerVendorServicesEndpoints(app: Hono) {
       let role = null;
       let capabilities: string[] = [];
       let roleConfig: any = {};
-      let allowedServiceStyles: string[] = ['at_home', 'at_center', 'tele'];
+      // ✅ FIX: Start with empty array, derive from role config or role name
+      let allowedServiceStyles: string[] = [];
+      
+      // ✅ NEW: Role-based service style rules (must match role-seeding.ts)
+      // Used as fallback when role config is missing or empty
+      const ROLE_SERVICE_STYLES: Record<string, string[]> = {
+        'pet_groomer': ['at_center', 'at_home'], // NO tele
+        'groomer': ['at_center', 'at_home'],
+        'groomer_solo': ['at_home'], // Solo groomers only do home visits
+        'groomer_center': ['at_center', 'at_home'],
+        'pet_walker': ['at_home'], // Walkers only do home visits
+        'walker': ['at_home'],
+        'pet_trainer': ['at_home', 'at_center', 'tele'], // Trainers: center, home, online
+        'trainer': ['at_home', 'at_center', 'tele'],
+        'trainer_center': ['at_home', 'at_center', 'tele'], // Training center: both center and home
+        'training_center': ['at_home', 'at_center', 'tele'],
+        'trainer_solo': ['at_home', 'tele'], // Solo trainer: home + online only
+        'pet_sitter': ['at_home'],
+        'sitter': ['at_home'],
+        'pet_taxi': ['at_home'],
+        'pet_boarding': ['at_center'],
+        'pet_resort': ['at_center'],
+        'pet_cafe': ['at_center'],
+        'veterinarian': ['at_center', 'tele', 'at_home'], // Vets have tele
+        'vet': ['at_center', 'tele', 'at_home'],
+        'vet_solo': ['at_home', 'tele'], // Solo vets - no at_center but have tele
+        'veterinary_clinic': ['at_center', 'tele', 'at_home'],
+        'vet_clinic': ['at_center', 'tele', 'at_home'],
+        'nutritionist': ['at_center', 'tele', 'at_home'], // Nutritionists have tele
+        'pet_nutritionist': ['at_center', 'tele', 'at_home'],
+        'pet_behaviorist': ['at_home', 'at_center', 'tele'], // Behaviorists have tele
+        'diagnostics': ['at_home', 'at_center'],
+        'diagnostic_center': ['at_home', 'at_center'], // Diagnostics center: center + home (e.g. lab, sample collection)
+        'diagnostics_center': ['at_home', 'at_center'],
+        'pet_pharmacy': ['delivery', 'pickup'],
+        'pharmacy': ['delivery', 'pickup'],
+        'pet_products_store': ['delivery', 'pickup'],
+        'pet_ambulance': ['at_home'],
+        'pet_photographer': ['at_center', 'at_home'],
+        'pet_sunset_services': ['at_center', 'at_home'],
+        'event_organizer': ['at_center'],
+        'insurance': ['at_center'],
+        'pet_breeder': ['at_center', 'at_home'],
+      };
 
       if (vendor.role_id) {
         try {
@@ -187,7 +243,11 @@ export function registerVendorServicesEndpoints(app: Hono) {
           if (roles.length > 0) {
             role = roles[0];
             roleConfig = role.config || {};
-            const rawStyles = roleConfig?.serviceStyles || roleConfig?.service_styles || ['at_home', 'at_center', 'tele'];
+            // Support both array and object with .selected (e.g. { selected: ['at_center', 'at_home'] })
+            const serviceStylesConfig = roleConfig?.serviceStyles || roleConfig?.service_styles;
+            const rawStyles = Array.isArray(serviceStylesConfig)
+              ? serviceStylesConfig
+              : (serviceStylesConfig?.selected || []);
             
             // Map role config styles to database styles
             // Role config uses: at_clinic, video_consultation, home_visit
@@ -199,14 +259,48 @@ export function registerVendorServicesEndpoints(app: Hono) {
               'tele': 'tele',
               'home_visit': 'at_home',
               'at_home': 'at_home',
+              'online': 'tele', // Map online to tele
             };
-            allowedServiceStyles = rawStyles.map((s: string) => styleMapping[s] || s);
             
-            // ✅ CRITICAL FIX: Solo providers cannot use at_center - filter it out from allowedServiceStyles
+            // ✅ DYNAMIC SERVICE STYLES: Determine from multiple sources in priority order
+            // Priority 1: Role config's explicit serviceStyles (most authoritative)
+            // Priority 2: Role name-based defaults (fallback)
+            // Priority 3: Conservative default (at_home only)
+            
             const vendorConfiguration = roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
-            if (vendorConfiguration === 'solo') {
-              allowedServiceStyles = allowedServiceStyles.filter(style => style !== 'at_center');
-              console.log(`[Vendor Services] Solo provider detected - filtered out at_center. Allowed styles: ${allowedServiceStyles.join(', ')}`);
+            const roleName = (role.name || '').toLowerCase().replace(/\s+/g, '_');
+            
+            // ✅ SOLO PROVIDER ROLES: These roles cannot have at_center even if role config says so
+            // (they physically can't operate from a center - e.g., pet sitters, dog walkers)
+            const SOLO_ONLY_ROLES = ['pet_sitter', 'sitter', 'pet_walker', 'walker', 'pet_taxi'];
+            const isSoloOnlyRole = SOLO_ONLY_ROLES.includes(roleName);
+            
+            // ✅ CENTER-CAPABLE ROLES: These roles CAN operate from a center even as solo
+            // (e.g., solo trainer with training facility, training center, groomer with shop)
+            const CENTER_CAPABLE_SOLO_ROLES = ['pet_trainer', 'trainer', 'trainer_center', 'training_center', 'pet_groomer', 'groomer', 'veterinarian', 'vet'];
+            const isCenterCapableSolo = CENTER_CAPABLE_SOLO_ROLES.includes(roleName);
+            
+            if (Array.isArray(rawStyles) && rawStyles.length > 0) {
+              // Role config has explicit service styles - use them
+              allowedServiceStyles = rawStyles.map((s: string) => styleMapping[s] || s);
+              console.log(`[Vendor Services] Using role config serviceStyles: ${allowedServiceStyles.join(', ')}`);
+              
+              // ✅ Only filter at_center for SOLO-ONLY roles (walkers, sitters, taxi)
+              // Trainers, groomers, vets who are solo CAN still have center services
+              if (vendorConfiguration === 'solo' && isSoloOnlyRole && !isCenterCapableSolo) {
+                allowedServiceStyles = allowedServiceStyles.filter(style => style !== 'at_center');
+                console.log(`[Vendor Services] Solo-only role (${roleName}) - filtered at_center. Allowed: ${allowedServiceStyles.join(', ')}`);
+              }
+            } else {
+              // ✅ FIX: If role config has no serviceStyles, derive from role name
+              console.log(`[Vendor Services] No serviceStyles in role config, deriving from role name: ${roleName}`);
+              allowedServiceStyles = ROLE_SERVICE_STYLES[roleName] || ['at_home']; // Default to at_home only
+              
+              // For derived styles, apply solo filter for non-center-capable roles
+              if (vendorConfiguration === 'solo' && !isCenterCapableSolo) {
+                allowedServiceStyles = allowedServiceStyles.filter(style => style !== 'at_center');
+                console.log(`[Vendor Services] Solo provider (${roleName}) - filtered at_center. Allowed: ${allowedServiceStyles.join(', ')}`);
+              }
             }
             
             // Get capabilities from DB
@@ -225,14 +319,26 @@ export function registerVendorServicesEndpoints(app: Hono) {
           }
         } catch (roleError: any) {
           console.warn(`[Vendor Services] Failed to load role ${vendor.role_id}:`, roleError.message);
-          // Continue with default service styles
+          // ✅ FIX: On error, default to at_home only (safest fallback)
+          allowedServiceStyles = ['at_home'];
         }
+      } else {
+        // ✅ FIX: No role_id - use conservative default
+        console.warn(`[Vendor Services] Vendor ${vendorId} has no role_id, defaulting to at_home only`);
+        allowedServiceStyles = ['at_home'];
       }
       
-      // ✅ CRITICAL FIX: Also check vendor table for solo configuration as fallback
-      if (vendor.vendor_configuration === 'solo' || vendor.vendorConfiguration === 'solo') {
+      // ✅ DYNAMIC SERVICE STYLES: Vendor table solo check (secondary source)
+      // Only filter at_center if vendor is solo AND not a center-capable role
+      const vendorRoleName = role?.name?.toLowerCase().replace(/\s+/g, '_') || '';
+      const vendorCenterCapableRoles = ['pet_trainer', 'trainer', 'trainer_center', 'training_center', 'pet_groomer', 'groomer', 'veterinarian', 'vet'];
+      const isVendorCenterCapable = vendorCenterCapableRoles.includes(vendorRoleName);
+      
+      if ((vendor.vendor_configuration === 'solo' || vendor.vendorConfiguration === 'solo') && !isVendorCenterCapable) {
         allowedServiceStyles = allowedServiceStyles.filter(style => style !== 'at_center');
-        console.log(`[Vendor Services] Solo provider detected from vendor table - filtered out at_center. Allowed styles: ${allowedServiceStyles.join(', ')}`);
+        console.log(`[Vendor Services] Solo vendor (${vendorRoleName}) - not center-capable, filtered at_center. Allowed: ${allowedServiceStyles.join(', ')}`);
+      } else if (vendor.vendor_configuration === 'solo' || vendor.vendorConfiguration === 'solo') {
+        console.log(`[Vendor Services] Solo vendor (${vendorRoleName}) - center-capable, keeping all styles: ${allowedServiceStyles.join(', ')}`);
       }
 
       const serviceStyles = ['at_home', 'at_center', 'tele'];
@@ -328,6 +434,72 @@ export function registerVendorServicesEndpoints(app: Hono) {
   });
 
   /**
+   * GET /vendor/:vendorId/services/enabled
+   * Get all enabled services for a vendor (across all service styles)
+   * IMPORTANT: Must be registered BEFORE the generic :serviceStyle route
+   */
+  app.get("/vendor/:vendorId/services/enabled", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      console.log(`[VendorServices] Fetching enabled services for vendor ${vendorId}...`);
+      
+      // Get all enabled services for this vendor
+      const result = await query(
+        `SELECT 
+          vs.id,
+          vs.service_id,
+          vs.service_name,
+          vs.category,
+          vs.sub_category,
+          vs.service_style,
+          vs.price,
+          vs.custom_price,
+          vs.duration_minutes,
+          vs.custom_duration,
+          vs.is_enabled,
+          vs.publish_status,
+          vs.is_custom_service,
+          vs.created_at,
+          vs.updated_at
+        FROM vendor_services vs
+        WHERE vs.vendor_id = $1
+          AND vs.is_enabled = true
+          AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
+        ORDER BY vs.category, vs.service_name`,
+        [vendorId]
+      );
+      
+      const services = result.rows.map((row: any) => ({
+        id: row.id,
+        serviceId: row.service_id,
+        serviceName: row.service_name,
+        category: row.category,
+        subCategory: row.sub_category,
+        serviceStyle: row.service_style,
+        price: row.price,
+        customPrice: row.custom_price,
+        duration: row.duration_minutes,
+        customDuration: row.custom_duration,
+        isEnabled: row.is_enabled,
+        publishStatus: row.publish_status,
+        isCustomService: row.is_custom_service,
+      }));
+      
+      console.log(`[VendorServices] Found ${services.length} enabled services for vendor ${vendorId}`);
+      
+      return c.json({
+        success: true,
+        services,
+        total: services.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching enabled services:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /vendor/:vendorId/services/:serviceStyle
    * Get services for a specific style
    * ✅ FIX: Validate service style against vendor's allowed styles (solo providers can't use at_center)
@@ -363,7 +535,8 @@ export function registerVendorServicesEndpoints(app: Hono) {
       }
 
       const vendor = vendors[0];
-      let allowedServiceStyles: string[] = ['at_home', 'at_center', 'tele'];
+      // ✅ FIX: Start with empty array, derive from role config or role name
+      let allowedServiceStyles: string[] = [];
 
       // Get role config to check allowed service styles
       if (vendor.role_id) {
@@ -373,18 +546,27 @@ export function registerVendorServicesEndpoints(app: Hono) {
             const role = roles[0];
             const roleConfig = role.config || {};
             const vendorConfiguration = roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
+            const roleName = (role.name || '').toLowerCase().replace(/\s+/g, '_');
             
-            // ✅ CRITICAL: Solo providers cannot use at_center
-            if (vendorConfiguration === 'solo' && serviceStyle === 'at_center') {
+            // ✅ DYNAMIC SERVICE STYLES: Center-capable solo roles
+            const CENTER_CAPABLE_SOLO_ROLES = ['pet_trainer', 'trainer', 'trainer_center', 'training_center', 'pet_groomer', 'groomer', 'veterinarian', 'vet'];
+            const isCenterCapableSolo = CENTER_CAPABLE_SOLO_ROLES.includes(roleName);
+            
+            // ✅ Only block at_center for solo providers who are NOT center-capable
+            if (vendorConfiguration === 'solo' && serviceStyle === 'at_center' && !isCenterCapableSolo) {
               return c.json({
                 success: false,
-                error: 'Solo providers cannot use "at_center" service style. Only "at_home" and "tele" are allowed.',
+                error: 'Solo providers of this type cannot use "at_center" service style. Only "at_home" and "tele" (if applicable) are allowed.',
                 services: [],
                 total: 0,
               }, 400);
             }
 
-            const rawStyles = roleConfig?.serviceStyles || roleConfig?.service_styles || ['at_home', 'at_center', 'tele'];
+            // Support both array and object with .selected (e.g. { selected: ['at_center', 'at_home'] })
+            const serviceStylesConfigPost = roleConfig?.serviceStyles || roleConfig?.service_styles;
+            const rawStyles = Array.isArray(serviceStylesConfigPost)
+              ? serviceStylesConfigPost
+              : (serviceStylesConfigPost?.selected || []);
             
             // Map role config styles to database styles
             const styleMapping: Record<string, string> = {
@@ -394,12 +576,93 @@ export function registerVendorServicesEndpoints(app: Hono) {
               'tele': 'tele',
               'home_visit': 'at_home',
               'at_home': 'at_home',
+              'online': 'tele',
             };
-            allowedServiceStyles = rawStyles.map((s: string) => styleMapping[s] || s);
+            
+            // ✅ SOLO-ONLY ROLES: These cannot have at_center even with role config
+            const SOLO_ONLY_ROLES = ['pet_sitter', 'sitter', 'pet_walker', 'walker', 'pet_taxi'];
+            const isSoloOnlyRole = SOLO_ONLY_ROLES.includes(roleName);
+            
+            if (Array.isArray(rawStyles) && rawStyles.length > 0) {
+              allowedServiceStyles = rawStyles.map((s: string) => styleMapping[s] || s);
+              console.log(`[Vendor Services POST] Using role config serviceStyles: ${allowedServiceStyles.join(', ')}`);
+              
+              // Only filter at_center for solo-only roles
+              if (vendorConfiguration === 'solo' && isSoloOnlyRole && !isCenterCapableSolo) {
+                allowedServiceStyles = allowedServiceStyles.filter(style => style !== 'at_center');
+                console.log(`[Vendor Services POST] Solo-only role - filtered at_center: ${allowedServiceStyles.join(', ')}`);
+              }
+            } else {
+              // ✅ FIX: Derive from role name if config is empty (must match role-seeding.ts)
+              const ROLE_SERVICE_STYLES: Record<string, string[]> = {
+                'pet_groomer': ['at_center', 'at_home'],
+                'groomer': ['at_center', 'at_home'],
+                'pet_walker': ['at_home'],
+                'walker': ['at_home'],
+                'pet_trainer': ['at_home', 'at_center', 'tele'],
+                'trainer': ['at_home', 'at_center', 'tele'],
+                'trainer_center': ['at_home', 'at_center', 'tele'],
+                'training_center': ['at_home', 'at_center', 'tele'],
+                'trainer_solo': ['at_home', 'tele'],
+                'pet_sitter': ['at_home'],
+                'pet_taxi': ['at_home'],
+                'pet_boarding': ['at_center'],
+                'pet_resort': ['at_center'],
+                'pet_cafe': ['at_center'],
+                'veterinarian': ['at_center', 'tele', 'at_home'],
+                'vet': ['at_center', 'tele', 'at_home'],
+                'vet_solo': ['at_home', 'tele'],
+                'veterinary_clinic': ['at_center', 'tele', 'at_home'],
+                'nutritionist': ['at_center', 'tele', 'at_home'],
+                'pet_nutritionist': ['at_center', 'tele', 'at_home'],
+                'pet_behaviorist': ['at_home', 'at_center', 'tele'],
+                'diagnostics': ['at_home', 'at_center'],
+                'diagnostic_center': ['at_home', 'at_center'],
+                'diagnostics_center': ['at_home', 'at_center'],
+                'pet_pharmacy': ['delivery', 'pickup'],
+                'pet_products_store': ['delivery', 'pickup'],
+              };
+              allowedServiceStyles = ROLE_SERVICE_STYLES[roleName] || ['at_home'];
+              console.log(`[Vendor Services POST] Derived from role name ${roleName}: ${allowedServiceStyles.join(', ')}`);
+              
+              // For derived styles, apply solo filter for non-center-capable roles
+              if (vendorConfiguration === 'solo' && !isCenterCapableSolo) {
+                allowedServiceStyles = allowedServiceStyles.filter(style => style !== 'at_center');
+                console.log(`[Vendor Services POST] Solo provider - filtered at_center: ${allowedServiceStyles.join(', ')}`);
+              }
+            }
           }
         } catch (roleError: any) {
           console.warn(`[Vendor Services] Failed to load role ${vendor.role_id}:`, roleError.message);
+          allowedServiceStyles = ['at_home']; // Conservative default on error
         }
+      } else {
+        console.warn(`[Vendor Services] Vendor has no role_id, defaulting to at_home only`);
+        allowedServiceStyles = ['at_home'];
+      }
+      
+      // ✅ DYNAMIC SERVICE STYLES: Vendor table solo check (secondary source)
+      // Get role name for center-capable check
+      let vendorRoleNamePost = '';
+      try {
+        if (vendor.role_id) {
+          const rolesForCheck = await select('roles', { id: vendor.role_id });
+          if (rolesForCheck.length > 0) {
+            vendorRoleNamePost = (rolesForCheck[0].name || '').toLowerCase().replace(/\s+/g, '_');
+          }
+        }
+      } catch (e) {
+        // Ignore error, use empty role name
+      }
+      
+      const vendorCenterCapableRolesPost = ['pet_trainer', 'trainer', 'trainer_center', 'training_center', 'pet_groomer', 'groomer', 'veterinarian', 'vet'];
+      const isVendorCenterCapablePost = vendorCenterCapableRolesPost.includes(vendorRoleNamePost);
+      
+      if ((vendor.vendor_configuration === 'solo' || vendor.vendorConfiguration === 'solo' || vendor.vendor_type === 'solo') && !isVendorCenterCapablePost) {
+        allowedServiceStyles = allowedServiceStyles.filter(style => style !== 'at_center');
+        console.log(`[Vendor Services POST] Solo vendor (${vendorRoleNamePost}) - not center-capable, filtered: ${allowedServiceStyles.join(', ')}`);
+      } else if (vendor.vendor_configuration === 'solo' || vendor.vendorConfiguration === 'solo' || vendor.vendor_type === 'solo') {
+        console.log(`[Vendor Services POST] Solo vendor (${vendorRoleNamePost}) - center-capable, keeping all: ${allowedServiceStyles.join(', ')}`);
       }
 
       // ✅ Validate that the requested service style is allowed
@@ -435,13 +698,15 @@ export function registerVendorServicesEndpoints(app: Hono) {
           if (roles.length > 0) {
             const role = roles[0];
             const roleConfig = role.config || {};
+            const roleNameNorm = role.name?.toLowerCase().replace(/\s+/g, '_');
             const acceptableRoles = [
               role.name,
               role.id,
               role.display_name,
               ...(roleMappings[role.name] || []),
+              ...(roleNameNorm ? (roleMappings[roleNameNorm] || []) : []),
               role.name?.toLowerCase(),
-              role.name?.toLowerCase().replace(/\s+/g, '_'),
+              roleNameNorm,
             ].filter(Boolean);
             const uniqueRoles = [...new Set(acceptableRoles)];
 
@@ -530,7 +795,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
                 address: payload.address || 'Not specified',
                 city: payload.city || 'Not specified',
                 state: payload.state || 'Not specified',
-                pincode: payload.pin || payload.pincode || '000000',
+                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
                 status: 'active',
                 is_active: true,
                 created_at: new Date().toISOString(),
@@ -592,13 +857,14 @@ export function registerVendorServicesEndpoints(app: Hono) {
             const rawStyles = roleConfig?.serviceStyles || roleConfig?.service_styles || [];
             
             // Map role config styles to database styles
-            // Role config uses: at_clinic, video_consultation, home_visit
+            // Role config may use: at_clinic, video_consultation, home_visit, online (admin UI / role-seeding)
             // Database uses: at_center, at_home, tele
             const styleMapping: Record<string, string> = {
               'at_clinic': 'at_center',
               'at_center': 'at_center',
               'video_consultation': 'tele',
               'tele': 'tele',
+              'online': 'tele', // Admin/role config often stores "online" for tele-consultation
               'home_visit': 'at_home',
               'at_home': 'at_home',
             };
@@ -787,10 +1053,15 @@ export function registerVendorServicesEndpoints(app: Hono) {
       if (serviceData.description !== undefined) {
         updateData.custom_description = serviceData.description;
       }
+      // ✅ Allow updating service name (for custom services; only when unpublished in app)
+      if (serviceData.serviceName !== undefined || serviceData.service_name !== undefined) {
+        const name = String(serviceData.serviceName ?? serviceData.service_name ?? '').trim();
+        if (name) updateData.service_name = name;
+      }
 
       // ✅ FIX: Validate that at least one field is being updated
       if (Object.keys(updateData).length === 0) {
-        return c.json({ error: 'No valid fields to update. Please provide at least one field: price, duration, isEnabled, or publishStatus' }, 400);
+        return c.json({ error: 'No valid fields to update. Please provide at least one field: serviceName, price, duration, description, isEnabled, or publishStatus' }, 400);
       }
 
       // ✅ FIX: Handle both UUID and text service identifiers
@@ -937,7 +1208,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
                 address: payload.address || 'Not specified',
                 city: payload.city || 'Not specified',
                 state: payload.state || 'Not specified',
-                pincode: payload.pin || payload.pincode || '000000',
+                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
                 status: 'active',
                 is_active: true,
                 created_at: new Date().toISOString(),
@@ -1068,18 +1339,408 @@ export function registerVendorServicesEndpoints(app: Hono) {
   });
 
   /**
+   * POST /vendor/:vendorId/services/custom
+   * Create custom service
+   * Requires 'services' capability
+   * IMPORTANT: Must be registered BEFORE the generic :serviceId route
+   */
+  app.post("/vendor/:vendorId/services/custom", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      // Check if vendor has services or custom_services capability
+      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
+                                     await checkVendorCapability(vendorId, 'custom_services');
+      if (!hasServicesCapability) {
+        return c.json({ error: 'Vendor does not have services capability' }, 403);
+      }
+      
+      // Get vendor to determine serviceStyle
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      const vendor = vendors[0];
+      
+      const serviceData = await c.req.json();
+      const {
+        serviceName,
+        description,
+        category,
+        categoryName,
+        subCategory,
+        subCategoryName,
+        serviceStyle,
+        price,
+        duration,
+      } = serviceData;
+
+      const effectiveCategory = category || categoryName || null;
+      const effectiveSubCategory = subCategory || subCategoryName || null;
+
+      // Determine serviceStyle from vendor if not provided
+      let effectiveServiceStyle: string;
+      
+      if (serviceStyle && ['at_home', 'at_center', 'tele'].includes(serviceStyle)) {
+        effectiveServiceStyle = serviceStyle;
+        console.log(`[VendorServices] Using explicitly provided serviceStyle: ${effectiveServiceStyle}`);
+      } else {
+        effectiveServiceStyle = vendor.service_style || vendor.serviceStyle || 'at_center';
+        console.log(`[VendorServices] No serviceStyle provided, falling back to: ${effectiveServiceStyle}`);
+      }
+
+      // Validate serviceStyle against role configuration
+      if (vendor.role_id) {
+        try {
+          const roles = await select('roles', { id: vendor.role_id });
+          if (roles.length > 0) {
+            const roleConfig = roles[0].config || {};
+            const rawStyles = roleConfig?.serviceStyles || roleConfig?.service_styles || [];
+            
+            // Map role config styles to DB styles; "online" (admin/role-seeding) = tele
+            const styleMapping: Record<string, string> = {
+              'at_clinic': 'at_center',
+              'at_center': 'at_center',
+              'video_consultation': 'tele',
+              'tele': 'tele',
+              'online': 'tele',
+              'home_visit': 'at_home',
+              'at_home': 'at_home',
+            };
+            const allowedServiceStyles = rawStyles.length > 0 
+              ? rawStyles.map((s: string) => styleMapping[s] || s)
+              : ['at_home', 'at_center', 'tele'];
+            
+            if (!allowedServiceStyles.includes(effectiveServiceStyle)) {
+              return c.json({ 
+                error: `Service style '${effectiveServiceStyle}' is not allowed for this role. Allowed styles: ${allowedServiceStyles.join(', ')}`,
+                allowedStyles: allowedServiceStyles
+              }, 403);
+            }
+            
+            console.log(`[VendorServices] Custom service style validation passed: ${effectiveServiceStyle} is allowed for vendor ${vendorId}`);
+          }
+        } catch (roleError: any) {
+          console.warn(`[VendorServices] Failed to validate custom service style against role config:`, roleError.message);
+        }
+      }
+
+      if (!effectiveCategory) {
+        return c.json({ error: 'category (or categoryName) is required' }, 400);
+      }
+
+      const hasServiceName = serviceName != null && String(serviceName).trim() !== '';
+      const priceNum = price != null ? Number(price) : NaN;
+      const hasValidPrice = !Number.isNaN(priceNum) && priceNum >= 0;
+      // Allow price 0 for packages (pricing in packageDetails)
+      if (!hasServiceName) {
+        return c.json({ error: 'serviceName is required' }, 400);
+      }
+      if (!hasValidPrice) {
+        return c.json({ error: 'price is required and must be a non-negative number' }, 400);
+      }
+
+      // ✅ Duplicate name check: same vendor cannot have two custom services with the same name (case-insensitive)
+      const nameTrimmed = String(serviceName).trim();
+      const duplicateCheck = await query(
+        `SELECT 1 FROM vendor_services 
+         WHERE vendor_id = $1 AND is_custom_service = true 
+         AND LOWER(TRIM(service_name)) = LOWER($2) LIMIT 1`,
+        [vendorId, nameTrimmed]
+      );
+      if (duplicateCheck?.rows?.length > 0) {
+        return c.json(
+          { error: 'A service with this name already exists. Please use a different name.' },
+          400
+        );
+      }
+
+      // Create base service first (use validated priceNum)
+      const baseService = await insert('services', {
+        name: serviceName,
+        description: description || null,
+        category: effectiveCategory,
+        price: priceNum,
+        duration_minutes: duration || 30,
+        is_active: true,
+      });
+
+      const requestedPublishStatus = serviceData.publishStatus || 'pending_approval';
+      const effectivePublishStatus = requestedPublishStatus === 'published' ? 'pending_approval' : requestedPublishStatus;
+      const isEnabled = effectivePublishStatus === 'published';
+
+      // Create vendor service link (use validated priceNum)
+      const vendorService = await insert('vendor_services', {
+        vendor_id: vendorId,
+        service_id: baseService[0].id,
+        service_name: serviceName,
+        category: effectiveCategory,
+        sub_category: effectiveSubCategory || null,
+        service_style: effectiveServiceStyle,
+        price: priceNum,
+        custom_price: price,
+        duration_minutes: duration || 30,
+        custom_duration: duration || 30,
+        is_enabled: isEnabled,
+        publish_status: effectivePublishStatus,
+        is_custom_service: true,
+        submitted_for_approval_at: effectivePublishStatus === 'pending_approval' ? new Date().toISOString() : null,
+      });
+
+      return c.json({
+        success: true,
+        service: vendorService[0],
+        message: effectivePublishStatus === 'draft' 
+          ? 'Custom service saved as draft' 
+          : 'Custom service submitted for admin approval',
+        publishStatus: effectivePublishStatus,
+      });
+    } catch (error: any) {
+      console.error('Error creating custom service:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/services/bulk-update
+   * Bulk update services (enable/disable, update pricing, etc.)
+   * Used by solo provider service management
+   * IMPORTANT: Must be registered BEFORE the generic :serviceId route
+   */
+  app.post("/vendor/:vendorId/services/bulk-update", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
+                                     await checkVendorCapability(vendorId, 'custom_services') ||
+                                     await checkVendorCapability(vendorId, 'booking');
+      if (!hasServicesCapability) {
+        return c.json({ error: 'Vendor does not have services capability' }, 403);
+      }
+      
+      const { services, isSoloProvider } = await c.req.json();
+      
+      if (!services || !Array.isArray(services) || services.length === 0) {
+        return c.json({ error: 'services array is required' }, 400);
+      }
+      
+      const results = await Promise.all(
+        services.map(async (serviceData: any) => {
+          try {
+            const catalogServiceId = serviceData.catalogServiceId || serviceData.catalog_service_id;
+            const serviceStyle = serviceData.serviceStyle || serviceData.service_style;
+            
+            // ✅ For solo providers, skip at_center services
+            if (isSoloProvider && serviceStyle === 'at_center') {
+              return { 
+                catalogServiceId, 
+                success: false, 
+                error: 'Solo providers cannot use at_center service style' 
+              };
+            }
+            
+            // Check if vendor already has this service
+            const existingService = await query(
+              `SELECT id FROM vendor_services 
+               WHERE vendor_id = $1 AND catalog_service_id = $2`,
+              [vendorId, catalogServiceId]
+            );
+            
+            if (existingService.rows.length > 0) {
+              // Update existing service
+              const updateData: any = {
+                is_enabled: serviceData.isEnabled !== false,
+                updated_at: new Date().toISOString(),
+              };
+              
+              if (serviceData.customPrice !== undefined) {
+                updateData.custom_price = serviceData.customPrice;
+              }
+              if (serviceData.customDuration !== undefined) {
+                updateData.custom_duration = serviceData.customDuration;
+              }
+              
+              await update('vendor_services',
+                { id: existingService.rows[0].id },
+                updateData
+              );
+              
+              return { catalogServiceId, success: true, action: 'updated' };
+            } else {
+              // Create new vendor service entry
+              await insert('vendor_services', {
+                id: randomUUID(),
+                vendor_id: vendorId,
+                catalog_service_id: catalogServiceId,
+                service_style: serviceStyle,
+                is_enabled: serviceData.isEnabled !== false,
+                custom_price: serviceData.customPrice || null,
+                custom_duration: serviceData.customDuration || null,
+                publish_status: 'draft',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              });
+              
+              return { catalogServiceId, success: true, action: 'created' };
+            }
+          } catch (err) {
+            return { 
+              catalogServiceId: serviceData.catalogServiceId, 
+              success: false, 
+              error: (err as any).message 
+            };
+          }
+        })
+      );
+      
+      const successCount = results.filter(r => r.success).length;
+      
+      return c.json({
+        success: true,
+        results,
+        message: `Updated ${successCount} of ${services.length} services`,
+      });
+    } catch (error: any) {
+      console.error('Error bulk updating services:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/services/publish
+   * Publish enabled services (makes them visible to customers)
+   * Alias for bulk-publish with publishStatus='published'
+   */
+  app.post("/vendor/:vendorId/services/publish", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
+                                     await checkVendorCapability(vendorId, 'custom_services') ||
+                                     await checkVendorCapability(vendorId, 'booking');
+      if (!hasServicesCapability) {
+        return c.json({ error: 'Vendor does not have services capability' }, 403);
+      }
+      
+      const { serviceIds, isSoloProvider } = await c.req.json();
+      
+      if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0) {
+        return c.json({ error: 'serviceIds array is required' }, 400);
+      }
+      
+      const results = await Promise.all(
+        serviceIds.map(async (serviceId: string) => {
+          try {
+            // First check if service belongs to solo provider and is at_center
+            if (isSoloProvider) {
+              const svc = await query(
+                `SELECT service_style FROM vendor_services WHERE id = $1`,
+                [serviceId]
+              );
+              if (svc.rows.length > 0 && svc.rows[0].service_style === 'at_center') {
+                return { 
+                  serviceId, 
+                  success: false, 
+                  error: 'Solo providers cannot publish at_center services' 
+                };
+              }
+            }
+            
+            const updated = await update('vendor_services',
+              { id: serviceId, vendor_id: vendorId },
+              { 
+                publish_status: 'published',
+                is_enabled: true,
+                published_at: new Date().toISOString(),
+              }
+            );
+            return { serviceId, success: updated.length > 0 };
+          } catch (err) {
+            return { serviceId, success: false, error: (err as any).message };
+          }
+        })
+      );
+      
+      const successCount = results.filter(r => r.success).length;
+      
+      return c.json({
+        success: true,
+        results,
+        message: `Published ${successCount} of ${serviceIds.length} services`,
+      });
+    } catch (error: any) {
+      console.error('Error publishing services:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/services/bulk-publish
+   * Bulk update publish status for multiple services
+   * IMPORTANT: Must be registered BEFORE the generic :serviceId route
+   */
+  app.post("/vendor/:vendorId/services/bulk-publish", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      
+      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
+                                     await checkVendorCapability(vendorId, 'custom_services');
+      if (!hasServicesCapability) {
+        return c.json({ error: 'Vendor does not have services capability' }, 403);
+      }
+      
+      const { serviceIds, publishStatus } = await c.req.json();
+      
+      if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0) {
+        return c.json({ error: 'serviceIds array is required' }, 400);
+      }
+      
+      if (!publishStatus || !['draft', 'pending_approval', 'published'].includes(publishStatus)) {
+        return c.json({ error: 'Valid publishStatus is required (draft, pending_approval, or published)' }, 400);
+      }
+      
+      const results = await Promise.all(
+        serviceIds.map(async (serviceId: string) => {
+          try {
+            const updated = await update('vendor_services',
+              { id: serviceId, vendor_id: vendorId },
+              { 
+                publish_status: publishStatus,
+                is_enabled: publishStatus === 'published',
+                submitted_for_approval_at: publishStatus === 'pending_approval' ? new Date().toISOString() : null,
+              }
+            );
+            return { serviceId, success: updated.length > 0 };
+          } catch (err) {
+            return { serviceId, success: false, error: (err as any).message };
+          }
+        })
+      );
+      
+      return c.json({
+        success: true,
+        results,
+        message: `Updated ${results.filter(r => r.success).length} of ${serviceIds.length} services`,
+      });
+    } catch (error: any) {
+      console.error('Error bulk publishing services:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * POST /vendor/:vendorId/services/:serviceId
    * Update vendor service (alias for PUT to support frontend using POST)
-   * NOTE: This generic route is registered AFTER specific routes
+   * NOTE: This generic route MUST be registered AFTER all specific routes (custom, bulk-publish, add-from-catalog)
    */
   app.post("/vendor/:vendorId/services/:serviceId", async (c) => {
     // Skip if this is a specific route that should have been handled above
     const serviceId = c.req.param('serviceId');
-    if (serviceId === 'custom' || serviceId === 'add-from-catalog') {
+    if (serviceId === 'custom' || serviceId === 'add-from-catalog' || serviceId === 'bulk-publish') {
       // These should have been handled by specific routes above
       // If we get here, something is wrong with route registration
-      console.error(`⚠️ Generic :serviceId route caught specific path: ${serviceId}`);
-      return c.json({ error: 'Route configuration error' }, 500);
+      console.error(`⚠️ Generic :serviceId route caught specific path: ${serviceId}. This should not happen - check route registration order.`);
+      return c.json({ error: 'Internal routing error - please try again' }, 500);
     }
     
     try {
@@ -1248,156 +1909,6 @@ export function registerVendorServicesEndpoints(app: Hono) {
   });
 
   /**
-   * POST /vendor/:vendorId/services/custom
-   * Create custom service
-   * Requires 'services' capability
-   */
-  app.post("/vendor/:vendorId/services/custom", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      
-      // Check if vendor has services or custom_services capability
-      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
-                                     await checkVendorCapability(vendorId, 'custom_services');
-      if (!hasServicesCapability) {
-        return c.json({ error: 'Vendor does not have services capability' }, 403);
-      }
-      
-      // ✅ Get vendor to determine serviceStyle
-      const vendors = await select('vendors', { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({ error: 'Vendor not found' }, 404);
-      }
-      const vendor = vendors[0];
-      
-      const serviceData = await c.req.json();
-      const {
-        serviceName,
-        description,
-        category, // API accepts 'category'
-        categoryName, // ✅ NEW: Also accept 'categoryName' from UI
-        subCategory,
-        subCategoryName, // ✅ NEW: Also accept 'subCategoryName' from UI
-        serviceStyle, // Optional: can be derived from vendor
-        price,
-        duration,
-      } = serviceData;
-
-      // ✅ FIX: Map categoryName to category if category is not provided
-      const effectiveCategory = category || categoryName || null;
-      const effectiveSubCategory = subCategory || subCategoryName || null;
-
-      // ✅ FIX: Determine serviceStyle from vendor if not provided
-      // IMPORTANT: Respect explicitly passed serviceStyle from the UI (at_home, at_center, tele)
-      let effectiveServiceStyle: string;
-      
-      if (serviceStyle && ['at_home', 'at_center', 'tele'].includes(serviceStyle)) {
-        // If serviceStyle is explicitly provided and valid, use it
-        effectiveServiceStyle = serviceStyle;
-        console.log(`[VendorServices] Using explicitly provided serviceStyle: ${effectiveServiceStyle}`);
-      } else {
-        // Fallback: determine from vendor config or default
-        effectiveServiceStyle = vendor.service_style || vendor.serviceStyle || 'at_center';
-        console.log(`[VendorServices] No serviceStyle provided, falling back to: ${effectiveServiceStyle}`);
-      }
-
-      // ✅ PHASE 0.4: Validate serviceStyle against role configuration
-      if (vendor.role_id) {
-        try {
-          const roles = await select('roles', { id: vendor.role_id });
-          if (roles.length > 0) {
-            const roleConfig = roles[0].config || {};
-            const rawStyles = roleConfig?.serviceStyles || roleConfig?.service_styles || [];
-            
-            // Map role config styles to database styles
-            const styleMapping: Record<string, string> = {
-              'at_clinic': 'at_center',
-              'at_center': 'at_center',
-              'video_consultation': 'tele',
-              'tele': 'tele',
-              'home_visit': 'at_home',
-              'at_home': 'at_home',
-            };
-            const allowedServiceStyles = rawStyles.length > 0 
-              ? rawStyles.map((s: string) => styleMapping[s] || s)
-              : ['at_home', 'at_center', 'tele']; // Default if no config
-            
-            // Validate serviceStyle against allowed styles
-            if (!allowedServiceStyles.includes(effectiveServiceStyle)) {
-              return c.json({ 
-                error: `Service style '${effectiveServiceStyle}' is not allowed for this role. Allowed styles: ${allowedServiceStyles.join(', ')}`,
-                allowedStyles: allowedServiceStyles
-              }, 403);
-            }
-            
-            console.log(`[VendorServices] ✅ Custom service style validation passed: ${effectiveServiceStyle} is allowed for vendor ${vendorId}`);
-          }
-        } catch (roleError: any) {
-          console.warn(`[VendorServices] Failed to validate custom service style against role config:`, roleError.message);
-          // Continue without validation if role config lookup fails (graceful degradation)
-        }
-      }
-
-      // ✅ FIX: Category is required in vendor_services table - validate it
-      if (!effectiveCategory) {
-        return c.json({ error: 'category (or categoryName) is required' }, 400);
-      }
-
-      if (!serviceName || !price) {
-        return c.json({ error: 'serviceName and price are required' }, 400);
-      }
-
-      // Create base service first
-      // Note: services table requires price column (not null constraint)
-      const baseService = await insert('services', {
-        name: serviceName,
-        description: description || null,
-        category: effectiveCategory, // ✅ Use effective category
-        price: price, // Required column
-        duration_minutes: duration || 30,
-        is_active: true,
-        // Don't include: service_style, is_global (stored in vendor_services)
-      });
-
-      // ✅ FIX: Extract publishStatus from request - default to 'pending_approval' for approval workflow
-      const requestedPublishStatus = serviceData.publishStatus || 'pending_approval';
-      // Custom services require approval - can be 'draft', 'pending_approval', never directly 'published'
-      const effectivePublishStatus = requestedPublishStatus === 'published' ? 'pending_approval' : requestedPublishStatus;
-      const isEnabled = effectivePublishStatus === 'published'; // Only enabled if published (won't happen for custom)
-
-      // Create vendor service link
-      const vendorService = await insert('vendor_services', {
-        vendor_id: vendorId,
-        service_id: baseService[0].id,
-        service_name: serviceName,
-        category: effectiveCategory, // ✅ Use effective category (required field)
-        sub_category: effectiveSubCategory || null,
-        service_style: effectiveServiceStyle, // ✅ Use effective service style
-        price: price,
-        custom_price: price,
-        duration_minutes: duration || 30,
-        custom_duration: duration || 30,
-        is_enabled: isEnabled, // ✅ FIX: Only enabled when published
-        publish_status: effectivePublishStatus, // ✅ FIX: Respect the publishStatus from request
-        is_custom_service: true,
-        submitted_for_approval_at: effectivePublishStatus === 'pending_approval' ? new Date().toISOString() : null,
-      });
-
-      return c.json({
-        success: true,
-        service: vendorService[0],
-        message: effectivePublishStatus === 'draft' 
-          ? 'Custom service saved as draft' 
-          : 'Custom service submitted for admin approval',
-        publishStatus: effectivePublishStatus,
-      });
-    } catch (error: any) {
-      console.error('Error creating custom service:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-
-  /**
    * POST /vendor/:vendorId/services/custom/:serviceId/publish
    * Submit a draft custom service for admin approval
    * Changes status from 'draft' to 'pending_approval'
@@ -1449,179 +1960,6 @@ export function registerVendorServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error publishing custom service:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-
-  /**
-   * POST /vendor/:vendorId/services/add-from-catalog
-   * Add a platform catalog service to vendor's offerings
-   * This creates a vendor_services record linked to a service_catalog entry
-   */
-  app.post("/vendor/:vendorId/services/add-from-catalog", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      
-      // Check if vendor has services capability
-      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
-                                     await checkVendorCapability(vendorId, 'custom_services');
-      if (!hasServicesCapability) {
-        return c.json({ error: 'Vendor does not have services capability' }, 403);
-      }
-      
-      const body = await c.req.json();
-      const {
-        catalogServiceId,
-        serviceStyle,
-        customPrice,
-        customDuration,
-        isEnabled = true
-      } = body;
-      
-      if (!catalogServiceId) {
-        return c.json({ error: 'catalogServiceId is required' }, 400);
-      }
-      
-      console.log(`➕ Adding catalog service ${catalogServiceId} to vendor ${vendorId}...`);
-      
-      // Get the catalog service details
-      const catalogServices = await query(
-        `SELECT * FROM service_catalog WHERE id = $1`,
-        [catalogServiceId]
-      );
-      
-      if (catalogServices.rows.length === 0) {
-        return c.json({ error: 'Catalog service not found' }, 404);
-      }
-      
-      const catalogService = catalogServices.rows[0];
-      
-      // Check if vendor already has this service
-      const existingServices = await query(
-        `SELECT * FROM vendor_services 
-         WHERE vendor_id = $1 
-         AND (catalog_service_id = $2 OR service_id = $2)
-         AND service_style = $3`,
-        [vendorId, catalogServiceId, serviceStyle || catalogService.service_style]
-      );
-      
-      if (existingServices.rows.length > 0) {
-        // Update existing service to enabled
-        const existingService = existingServices.rows[0];
-        await update('vendor_services', 
-          { 
-            is_enabled: isEnabled,
-            updated_at: new Date().toISOString()
-          },
-          { id: existingService.id }
-        );
-        
-        return c.json({
-          success: true,
-          message: 'Service re-enabled',
-          vendorServiceId: existingService.id,
-          id: existingService.id
-        });
-      }
-      
-      // Create new vendor_services record
-      const vendorServiceId = randomUUID();
-      const finalServiceStyle = serviceStyle || catalogService.service_style || 'at_home';
-      
-      await insert('vendor_services', {
-        id: vendorServiceId,
-        vendor_id: vendorId,
-        service_id: catalogServiceId, // Link to catalog service
-        catalog_service_id: catalogServiceId,
-        service_name: catalogService.service_name || catalogService.name,
-        description: catalogService.description,
-        custom_description: catalogService.description,
-        category: catalogService.category_name || catalogService.category,
-        sub_category: catalogService.sub_category_name || catalogService.sub_category,
-        service_style: finalServiceStyle,
-        price: customPrice || catalogService.base_price || catalogService.price,
-        custom_price: customPrice || catalogService.base_price || catalogService.price,
-        duration_minutes: customDuration || catalogService.duration || 30,
-        custom_duration: customDuration || catalogService.duration || 30,
-        is_enabled: isEnabled,
-        is_custom_service: false, // This is a platform catalog service
-        is_platform_managed: true,
-        publish_status: 'published', // Platform services are auto-published
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
-      
-      console.log(`✅ Added catalog service ${catalogService.service_name} to vendor ${vendorId} as ${vendorServiceId}`);
-      
-      return c.json({
-        success: true,
-        message: 'Service added to your offerings',
-        vendorServiceId: vendorServiceId,
-        id: vendorServiceId
-      });
-    } catch (error: any) {
-      console.error('Error adding catalog service to vendor:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-
-  /**
-   * POST /vendor/:vendorId/services/bulk-publish
-   * Bulk publish multiple services at once
-   * Requires 'services' capability
-   */
-  app.post("/vendor/:vendorId/services/bulk-publish", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const body = await c.req.json();
-      const { serviceIds, publishStatus = 'published' } = body;
-
-      if (!serviceIds || !Array.isArray(serviceIds) || serviceIds.length === 0) {
-        return c.json({ error: 'serviceIds array is required' }, 400);
-      }
-
-      // Check if vendor has services capability
-      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
-                                     await checkVendorCapability(vendorId, 'custom_services');
-      if (!hasServicesCapability) {
-        return c.json({ error: 'Vendor does not have services capability' }, 403);
-      }
-
-      // Validate publishStatus
-      const validStatuses = ['draft', 'published', 'pending_approval'];
-      if (!validStatuses.includes(publishStatus)) {
-        return c.json({ error: `Invalid publishStatus. Must be one of: ${validStatuses.join(', ')}` }, 400);
-      }
-
-      // Bulk update services
-      const placeholders = serviceIds.map((_, i) => `$${i + 2}`).join(', ');
-      const params = [publishStatus, ...serviceIds, vendorId];
-      const updateResult = await query(
-        `UPDATE vendor_services 
-         SET publish_status = $1, 
-             is_enabled = CASE WHEN $1 = 'published' THEN true ELSE is_enabled END,
-             updated_at = NOW()
-         WHERE vendor_id = $${params.length}
-           AND id IN (${placeholders})
-         RETURNING id, service_name, publish_status, is_enabled`,
-        params
-      );
-
-      const updatedServices = updateResult.rows.map((row: any) => ({
-        id: row.id,
-        serviceName: row.service_name,
-        publishStatus: row.publish_status,
-        isEnabled: row.is_enabled,
-      }));
-
-      return c.json({
-        success: true,
-        message: `Successfully updated ${updatedServices.length} service(s)`,
-        updatedServices,
-        count: updatedServices.length,
-      });
-    } catch (error: any) {
-      console.error('Error bulk publishing services:', error);
       return c.json({ error: error.message }, 500);
     }
   });

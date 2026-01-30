@@ -221,7 +221,7 @@ export function EnhancedPackageCreationModal({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-[600px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[600px] max-h-[90vh] overflow-y-auto bg-white z-50">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="w-5 h-5 text-[#FF8C42]" />
@@ -597,9 +597,9 @@ export function EnhancedPackageCreationModal({
         </DialogFooter>
       </DialogContent>
 
-      {/* ✅ Service Selector Dialog */}
+      {/* ✅ Service Selector Dialog - Higher z-index to appear above parent modal */}
       <Dialog open={showServiceSelector} onOpenChange={setShowServiceSelector}>
-        <DialogContent className="max-w-[500px] max-h-[70vh]">
+        <DialogContent className="max-w-[500px] max-h-[70vh] bg-white z-[60]">
           <DialogHeader>
             <DialogTitle>Select Services for Package</DialogTitle>
             <DialogDescription>

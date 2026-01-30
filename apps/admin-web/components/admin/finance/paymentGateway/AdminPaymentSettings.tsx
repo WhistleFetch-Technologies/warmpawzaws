@@ -83,9 +83,11 @@ export function AdminPaymentSettings() {
   const loadGateways = async () => {
     try {
       const data = await apiClient.get<any>('/admin/payments/gateways');
-      setGateways((data as any).gateways || (data as any).data?.gateways || []);
+      const raw = (data as any)?.gateways ?? (data as any)?.data?.gateways;
+      setGateways(Array.isArray(raw) ? raw : []);
     } catch (error) {
       console.error('Error loading gateways:', error);
+      setGateways([]);
     }
   };
 
@@ -313,11 +315,11 @@ export function AdminPaymentSettings() {
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Gateways List */}
-              {gateways.length > 0 ? (
+              {(Array.isArray(gateways) ? gateways : []).length > 0 ? (
                 <div className="space-y-4">
-                  {gateways.map((gateway) => (
+                  {(Array.isArray(gateways) ? gateways : []).filter(Boolean).map((gateway, idx) => (
                     <div
-                      key={gateway.id}
+                      key={gateway?.id ?? `gateway-${idx}`}
                       className="border border-gray-200 rounded-lg p-4 flex items-center justify-between"
                     >
                       <div className="flex-1">
@@ -334,7 +336,7 @@ export function AdminPaymentSettings() {
                           </span>
                         </div>
                         <p className="text-sm text-gray-500 mt-1">
-                          Type: {gateway.type} • Key ID: {gateway.keyId ? `${gateway.keyId.substring(0, 8)}...` : 'Not set'}
+                          Type: {gateway?.type ?? '-'} • Key ID: {gateway?.keyId ? `${String(gateway.keyId).substring(0, 8)}...` : 'Not set'}
                         </p>
                       </div>
                       <div className="flex gap-2">
@@ -352,7 +354,7 @@ export function AdminPaymentSettings() {
                           variant="ghost"
                           size="sm"
                           className="text-red-600 hover:text-red-700"
-                          onClick={() => handleDeleteGateway(gateway.id)}
+                          onClick={() => gateway?.id && handleDeleteGateway(gateway.id)}
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>

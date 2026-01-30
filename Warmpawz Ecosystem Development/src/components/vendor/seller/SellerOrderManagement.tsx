@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ShoppingCart, Search, Filter, Eye, Package, Truck, CheckCircle, XCircle, Clock, LayoutGrid, List as ListIcon } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { Badge } from '../../ui/badge';
 import { Button } from '../../ui/button';
@@ -30,8 +30,8 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
     try {
       setLoading(true);
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/orders?sellerId=${sellerId}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/ecommerce/orders?sellerId=${sellerId}`,
+        { headers: getAuthHeaders() }
       );
       
       if (res.ok) {
@@ -49,11 +49,11 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
   const handleStatusUpdate = async (orderId: string, newStatus: string, trackingNumber?: string) => {
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/order/${orderId}/status`,
+        `${getApiBaseUrl()}/ecommerce/order/${orderId}/status`,
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ status: newStatus, trackingNumber })

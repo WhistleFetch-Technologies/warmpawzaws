@@ -23,6 +23,61 @@ import { isValidUUID } from '../types/entities';
 
 export function registerLoyaltyEndpoints(app: Hono) {
   /**
+   * POST /loyalty/rules/init
+   * Ensure default loyalty rules exist (idempotent)
+   */
+  app.post("/loyalty/rules/init", async (c) => {
+    try {
+      const existing = await query('SELECT id FROM loyalty_rules LIMIT 1').catch(() => ({ rows: [] }));
+      if (!existing.rows || existing.rows.length === 0) {
+        await insert('loyalty_rules', {
+          rule_name: 'default_earn_rule',
+          points_per_rupee: 1,
+          redemption_rate: 1,
+          min_redemption_points: 100,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).catch(() => null);
+      }
+      return c.json({ success: true, message: 'Loyalty rules initialized' });
+    } catch (error: any) {
+      console.error('Error initializing loyalty rules:', error);
+      return c.json({ success: true, message: 'Loyalty rules init skipped' });
+    }
+  });
+
+  /**
+   * GET /loyalty/rules
+   * List loyalty rules for admin UI
+   */
+  app.get("/loyalty/rules", async (c) => {
+    try {
+      const rules = await query(
+        `SELECT * FROM loyalty_action_rules ORDER BY priority ASC, created_at ASC`
+      ).catch(() => ({ rows: [] }));
+      const rows = (rules as { rows: any[] }).rows || [];
+      return c.json({
+        success: true,
+        rules: rows.map((r: any) => ({
+          id: r.id,
+          category: r.action_category || r.category || 'loyalty',
+          action: r.action_name,
+          points: r.points_value ?? 0,
+          type: r.points_type || 'fixed',
+          thresholdAmount: r.base_amount ?? r.threshold_amount,
+          frequency: (r.frequency_type || r.frequency || 'one_time').replace('_', '-'),
+          isActive: r.is_active !== false,
+          description: r.description || '',
+        })),
+      });
+    } catch (error: any) {
+      console.error('Error fetching loyalty rules:', error);
+      return c.json({ success: true, rules: [] });
+    }
+  });
+
+  /**
    * GET /loyalty/profile/:customerId
    * Get customer loyalty profile
    */

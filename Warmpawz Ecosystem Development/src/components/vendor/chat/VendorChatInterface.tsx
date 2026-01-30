@@ -19,7 +19,7 @@ import {
   X,
   History
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface VendorChatInterfaceProps {
@@ -71,7 +71,7 @@ export function VendorChatInterface({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadBooking();
@@ -91,7 +91,7 @@ export function VendorChatInterface({
         `${API_BASE}/vendor/bookings/${vendorPhone.replace(/[^0-9]/g, '')}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -116,7 +116,7 @@ export function VendorChatInterface({
         `${API_BASE}/vendor/customer-history/${booking.customerPhone.replace(/[^0-9]/g, '')}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -138,7 +138,7 @@ export function VendorChatInterface({
         `${API_BASE}/chat/booking/${bookingId}/messages`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -167,7 +167,7 @@ export function VendorChatInterface({
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -227,7 +227,7 @@ export function VendorChatInterface({
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: formData
         }
@@ -259,7 +259,7 @@ export function VendorChatInterface({
         `${API_BASE}/chat/file/${fileId}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -288,7 +288,7 @@ export function VendorChatInterface({
         `${API_BASE}/chat/file/${fileId}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

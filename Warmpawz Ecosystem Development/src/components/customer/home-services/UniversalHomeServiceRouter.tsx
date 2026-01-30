@@ -25,7 +25,7 @@ import { BookingConfirmation } from '../grooming/BookingConfirmation';
 import { HomeServiceProviderListView } from './HomeServiceProviderListView';
 import { HomeServiceProviderProfile } from './HomeServiceProviderProfile';
 import { HomeServiceLanding } from './HomeServiceLanding';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 // Service type definitions
@@ -269,7 +269,7 @@ export function UniversalHomeServiceRouter({
   preSelectedVendorId
 }: UniversalHomeServiceRouterProps) {
   const config = SERVICE_CONFIGS[serviceType];
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   // Router state
   const [currentStep, setCurrentStep] = useState<RouterStep>(preSelectedVendorId ? 'provider_profile' : 'landing');

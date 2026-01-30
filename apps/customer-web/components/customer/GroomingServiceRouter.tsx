@@ -1,13 +1,23 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Scissors, Building2, Home as HomeIcon, Star, MapPin, Sparkles, ChevronRight, RefreshCw } from 'lucide-react';
+import * as LucideIcons from 'lucide-react';
+import { Scissors, Building2, Home as HomeIcon, Star, MapPin, Sparkles, ChevronRight, RefreshCw, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { GROOMING_NEEDS } from './ProblemGridSection';
 import { PromotionBanner } from './shared/PromotionBanner';
+import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+
+function DynamicProblemIcon({ iconName, iconColor }: { iconName?: string; iconColor?: string }) {
+  if (!iconName || !(LucideIcons as any)[iconName]) {
+    return <Scissors className="w-6 h-6 text-gray-500" />;
+  }
+  const Icon = (LucideIcons as any)[iconName];
+  return <Icon className={`w-6 h-6 ${iconColor || 'text-gray-600'}`} />;
+}
 
 interface GroomingServiceRouterProps {
   phone: string;
@@ -16,40 +26,116 @@ interface GroomingServiceRouterProps {
   onNavigate?: (screen: string, data?: any) => void;
 }
 
+const GROOMING_ROLE_IDS = ['groomer', 'groomer_solo', 'groomer_center', 'pet_groomer'];
+
 export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: GroomingServiceRouterProps) {
   const [loading, setLoading] = useState(true);
   const [featuredGroomers, setFeaturedGroomers] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [previousGroomer, setPreviousGroomer] = useState<any>(null);
+  const [groomingNeeds, setGroomingNeeds] = useState<any[]>([]);
 
   useEffect(() => {
     loadGroomingData();
     loadPreviousGroomer();
+    loadGroomingNeeds();
   }, []);
+
+  const loadGroomingNeeds = async () => {
+    try {
+      for (const roleId of GROOMING_ROLE_IDS) {
+        const res = await apiClient.get<{ success?: boolean; problems?: any[] }>(`/public/problem-grid/${roleId}`);
+        if (res?.success && Array.isArray(res.problems) && res.problems.length > 0) {
+          const withViewAll = [
+            ...res.problems.map((p: any) => ({
+              id: p.id || p.problemId,
+              name: p.displayName || p.name,
+              icon: <DynamicProblemIcon iconName={p.iconName} iconColor={p.iconColor} />,
+            })),
+            { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6 text-orange-600" /> },
+          ];
+          setGroomingNeeds(withViewAll);
+          return;
+        }
+      }
+    } catch (_) {
+      // Keep groomingNeeds empty so we use GROOMING_NEEDS fallback
+    }
+  };
 
   const loadGroomingData = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=grooming&roleId=pet_groomer`;
-      const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
-      const groomerServices = data.vendors || data.services || [];
+      
+      // ✅ Align with Vet: discover by category (service discovery respects category/role from dashboard tiles)
+      let groomerServices: any[] = [];
+      
+      // Try 1: discover-services by category (same pattern as VetServiceRouter)
+      try {
+        const endpoint = `/customer/discover-services?category=grooming`;
+        const data = await apiClient.get<any>(endpoint);
+        console.log('🔵 [GroomingServiceRouter] discover-services response:', data);
+        
+        if (Array.isArray(data)) {
+          groomerServices = data;
+        } else if (data?.vendors && Array.isArray(data.vendors)) {
+          groomerServices = data.vendors;
+        } else if (data?.providers && Array.isArray(data.providers)) {
+          groomerServices = data.providers;
+        } else if (data?.services && Array.isArray(data.services)) {
+          groomerServices = data.services;
+        } else if (data?.results && Array.isArray(data.results)) {
+          groomerServices = data.results;
+        } else if (data?.data && Array.isArray(data.data)) {
+          groomerServices = data.data;
+        }
+      } catch (err) {
+        console.warn('⚠️ [GroomingServiceRouter] discover-services failed, trying alternatives:', err);
+      }
+      
+      // Try 2: services/by-style (at_center = grooming centre)
+      if (groomerServices.length === 0) {
+        try {
+          const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_center&category=grooming`);
+          const altData = (altRes as any)?.providers ?? (altRes as any)?.vendors ?? altRes;
+          if (Array.isArray(altData)) groomerServices = altData;
+          else if (altData?.services) groomerServices = altData.services;
+        } catch (err) {
+          console.warn('⚠️ [GroomingServiceRouter] services/by-style failed:', err);
+        }
+      }
+      
+      // Try 3: vendors by category
+      if (groomerServices.length === 0) {
+        try {
+          const vendorsData = await apiClient.get<any>(`/customer/vendors?category=grooming`);
+          if (Array.isArray(vendorsData)) groomerServices = vendorsData;
+          else if (vendorsData?.vendors) groomerServices = vendorsData.vendors;
+        } catch (err) {
+          console.warn('⚠️ [GroomingServiceRouter] vendors endpoint failed:', err);
+        }
+      }
+      
+      console.log('🔵 [GroomingServiceRouter] Final groomerServices length:', groomerServices.length);
       
       const vendorMap = new Map();
       groomerServices.forEach((service: any) => {
-        const vendorId = service.vendorId || service.id;
+        const vendorId = service.vendorId || service.vendor_id || service.id || service.providerId;
+        if (!vendorId) return;
         if (!vendorMap.has(vendorId)) {
           vendorMap.set(vendorId, {
             id: vendorId,
-            businessName: service.vendorName || service.businessName || service.name,
-            rating: service.vendorRating || service.rating || 4.5,
-            completedBookings: service.vendorReviewCount || service.reviewsCount || 0,
-            distance: service.distance || Math.random() * 5 + 0.5,
-            basePrice: service.price || 999
+            businessName: service.vendorName || service.vendor_name || service.businessName || service.business_name || service.name,
+            rating: service.vendorRating || service.vendor_rating || service.rating || 4.5,
+            completedBookings: service.vendorReviewCount || service.vendor_review_count || service.reviewsCount || service.reviews_count || 0,
+            distance: service.distance ?? Math.random() * 5 + 0.5,
+            basePrice: service.price || service.base_price || 999
           });
         }
       });
       
       const allGroomers = Array.from(vendorMap.values());
+      console.log('🔵 [GroomingServiceRouter] Found vendors:', allGroomers.length);
       setFeaturedGroomers(allGroomers.slice(0, 5));
       
       setStats({
@@ -60,7 +146,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           : '-'
       });
     } catch (error) {
-      console.error('Error loading grooming data:', error);
+      console.error('❌ [GroomingServiceRouter] Error loading grooming data:', error);
       // Show zeros on error - no fake data
       setStats({ activeGroomers: 0, sessions: '0', rating: '-' });
     } finally {
@@ -134,34 +220,33 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     );
   }
 
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const dashboardStats = stats ? [
+    { value: `${stats.activeGroomers || 0}+`, label: 'Pros', icon: <Scissors className="w-4 h-4" /> },
+    { value: `${stats.sessions || 0}+`, label: 'Sessions' },
+    { value: `${stats.rating || '-'}`, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ] : [
+    { value: '0+', label: 'Pros', icon: <Scissors className="w-4 h-4" /> },
+    { value: '0+', label: 'Sessions' },
+    { value: '-', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
+
   return (
-    <>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
-      
-      {/* Stats Bar - Moved below header */}
-      {stats && (
-        <div className="px-4 pt-4 pb-2 bg-white">
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-             <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
-                <div className="text-lg font-bold text-orange-600">{stats.activeGroomers}+</div>
-                <div className="text-xs text-orange-700">Pros</div>
-             </div>
-             <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
-                <div className="text-lg font-bold text-orange-600">{stats.sessions}+</div>
-                <div className="text-xs text-orange-700">Sessions</div>
-             </div>
-             <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
-                <div className="flex items-center justify-center gap-1 text-lg font-bold text-orange-600">
-                  {stats.rating} <Star className="w-3.5 h-3.5 fill-orange-500" />
-                </div>
-                <div className="text-xs text-orange-700">Rating</div>
-             </div>
-          </div>
-        </div>
-      )}
+    <div className="min-h-screen bg-gray-50">
+      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
+      <ServiceDashboardHeader
+        serviceName="Grooming Services"
+        serviceSubtitle="Premium pet grooming"
+        serviceIcon={Scissors}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
+      />
 
       {/* Main Content */}
-      <div className="px-4 pt-4 bg-white">
+      <div className="max-w-md mx-auto px-4 pt-4 bg-white">
         <div className="space-y-8">
           
           {/* YOUR GROOMER Section - As per Master Plan */}
@@ -240,13 +325,15 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               </button>
             </div>
 
-            <div className="grid grid-cols-4 gap-3">
-              {GROOMING_NEEDS.map((need) => {
+            <div className="grid grid-cols-4 gap-3" style={{ position: 'relative', zIndex: 1 }}>
+              {(groomingNeeds.length > 0 ? groomingNeeds : GROOMING_NEEDS).map((need) => {
                 const isViewAll = need.id === 'view_all';
                 return (
                   <button
                     key={need.id}
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                       console.log('🔵 [Grooming] Problem grid clicked:', need.id, isViewAll);
                       if (isViewAll) {
                         console.log('🔵 [Grooming] Navigating to problem_grid');
@@ -256,7 +343,12 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                         onNavigate?.('problem_selected', { problemId: need.id, problemTitle: need.name });
                       }
                     }}
-                    className="group flex flex-col items-center gap-2"
+                    className="group flex flex-col items-center gap-2 cursor-pointer"
+                    style={{ 
+                      pointerEvents: 'auto', 
+                      zIndex: 1,
+                      position: 'relative'
+                    }}
                   >
                     <div className={`
                       w-full aspect-square rounded-2xl flex items-center justify-center text-2xl shadow-sm transition-all duration-200
@@ -285,15 +377,22 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           {/* Service Types */}
           <div>
             <h2 className="text-lg font-bold text-slate-900 mb-4">Choose Service Type</h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3" style={{ position: 'relative', zIndex: 1 }}>
               {serviceTypes.map((service) => (
               <button
                 key={service.id}
-                onClick={() => {
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   console.log('🔵 [Grooming] Service style clicked:', service.id);
                   onNavigate?.(service.id);
                 }}
-                className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
+                className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden cursor-pointer"
+                style={{ 
+                  pointerEvents: 'auto', 
+                  zIndex: 1,
+                  position: 'relative'
+                }}
               >
                   <div className={`w-10 h-10 rounded-xl ${service.bg} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
                     <service.icon className={`w-5 h-5 ${service.color}`} />
@@ -353,6 +452,6 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

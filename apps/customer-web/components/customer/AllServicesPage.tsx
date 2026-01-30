@@ -14,7 +14,7 @@
  */
 
 import { ArrowLeft, Search, Stethoscope, Scissors, ShoppingBag, GraduationCap, 
-  Bike, Home as HomeIcon, Heart, Coffee, Users, Shield, Phone, Wheat, MapPin, 
+  Dog, Home as HomeIcon, Heart, Coffee, Users, Shield, Phone, Wheat, MapPin, 
   Sparkles, Palmtree, ChevronRight, PawPrint, Camera, Truck, Sun, X } from 'lucide-react';
 import { useState, useMemo } from 'react';
 
@@ -138,7 +138,7 @@ const SERVICE_CATEGORIES = [
   // CARE SERVICES
   { 
     id: 'walker', 
-    icon: Bike, 
+    icon: Dog, 
     label: 'Dog Walker', 
     description: 'Daily walks & exercise',
     color: 'from-green-50 to-emerald-100/50',

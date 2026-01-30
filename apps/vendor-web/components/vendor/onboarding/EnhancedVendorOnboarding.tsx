@@ -198,7 +198,6 @@ export function EnhancedVendorOnboarding({
           location: submissionData.location || submissionData.coordinates,
           coordinates: submissionData.coordinates || submissionData.location,
           serviceStyles: submissionData.serviceStyles || [],
-          specializations: submissionData.specializations || [],
           agreedToTerms: submissionData.agreedToTerms || false,
           formVersion: submissionData.formVersion || 1,
         },

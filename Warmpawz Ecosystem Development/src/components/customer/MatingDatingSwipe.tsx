@@ -4,7 +4,7 @@ import {
   ChevronLeft, X, Heart, Star, MapPin, Info, Sparkles,
   Calendar, Shield
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface MatingDatingSwipeProps {
@@ -56,11 +56,11 @@ export function MatingDatingSwipe({ phone, mode, onBack, onMatch }: MatingDating
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/discover`,
+        `${getApiBaseUrl()}/dating/discover`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -97,11 +97,11 @@ export function MatingDatingSwipe({ phone, mode, onBack, onMatch }: MatingDating
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/swipe`,
+        `${getApiBaseUrl()}/dating/swipe`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

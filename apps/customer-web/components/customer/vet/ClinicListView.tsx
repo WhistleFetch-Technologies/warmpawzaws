@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Star, MapPin, Clock, Search, ChevronRight, Building2 } from 'lucide-react';
+import { Star, MapPin, Clock, Search, ChevronRight, Building2, Stethoscope } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { StandardizedHeader } from '../shared/StandardizedHeader';
+import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 
 interface ClinicListViewProps {
@@ -75,14 +75,24 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
       
       // Try primary endpoint
       try {
-        const response = await apiClient.get(`/customer/discover-services?category=vet&roleId=veterinarian&serviceStyle=at_center${locationParams}`) as any;
+        const response = await apiClient.get(`/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}`) as any;
         console.log('📋 [CLINIC-LIST] API Response:', response);
         
         const servicesData = response.vendors || response.services || [];
         if (servicesData.length > 0) {
+          // ✅ FIX: Filter out solo vendors - only show clinics
+          const clinicsOnly = servicesData.filter((service: any) => {
+            const vendorType = service.vendorType || service.vendor_type || service.providerType || '';
+            const roleName = (service.role || service.roleName || '').toLowerCase();
+            const isSolo = vendorType === 'solo' || vendorType === 'individual' || 
+                          service.isSoloProvider === true || service.isIndividualProvider === true ||
+                          roleName.includes('solo');
+            return !isSolo; // Only include if NOT solo
+          });
+          
           // Group by vendor to get unique clinics
           const vendorMap = new Map();
-          servicesData.forEach((service: any) => {
+          clinicsOnly.forEach((service: any) => {
             const vendorId = service.vendorId || service.id;
             if (!vendorMap.has(vendorId)) {
               vendorMap.set(vendorId, {
@@ -181,24 +191,29 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
     { id: 'price', label: 'Price' },
   ];
 
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const dashboardStats = [
+    { value: `${filteredClinics.length}+`, label: 'Clinics', icon: <Building2 className="w-4 h-4" /> },
+    { value: '1K+', label: 'Bookings' },
+    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Standardized Header - matches customer home gradient */}
-      <StandardizedHeader
-        userName={userName}
-        userProfilePhoto={userProfilePhoto}
-        title="Clinics"
-        subtitle="Find a veterinary clinic"
-        showBackButton={true}
-        showPets={false}
+      {/* ✅ FIX: Use ServiceDashboardHeader for consistent Frame UI */}
+      <ServiceDashboardHeader
+        serviceName="Vet Clinics"
+        serviceSubtitle="Find a veterinary clinic near you"
+        serviceIcon={Stethoscope}
+        iconColor="text-white"
+        stats={dashboardStats}
         onBack={onBack}
-        onNavigate={onNavigate}
-        onProfileClick={() => onNavigate('profile')}
-        customerPhone={phone}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
       />
       
-      {/* Content - curved top matching customer home (rounded-t-[24px]) */}
-      <div className="max-w-[430px] mx-auto rounded-t-[24px] -mt-1 bg-white min-h-[60vh] px-4 pt-6 pb-28 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+      {/* Content */}
+      <div className="max-w-[430px] mx-auto px-4 pt-4 pb-28">
         {/* Search - design system curves (rounded-2xl), soft bg */}
         <div className="relative mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />

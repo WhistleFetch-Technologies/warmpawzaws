@@ -5,7 +5,7 @@ import { MapPin, Navigation, Phone, X, Clock, Route, RefreshCw, AlertCircle } fr
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 
 interface LiveTrackingMapProps {
   bookingId: string;
@@ -49,14 +49,6 @@ export function LiveTrackingMap({
   const [lastError, setLastError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectAttempts = useRef(0);
-
-  // Get API base URL
-  const getApiBaseUrl = () => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('api_base_url') || process.env.NEXT_PUBLIC_API_URL || '';
-    }
-    return process.env.NEXT_PUBLIC_API_URL || '';
-  };
 
   // Initialize SSE connection for live tracking
   useEffect(() => {
@@ -167,7 +159,7 @@ export function LiveTrackingMap({
     // Load initial tracking data
     const loadInitialData = async () => {
       try {
-        const response = await apiClient.get<any>(`/gps-tracking/booking/${bookingId}`);
+        const response = await apiClient.get<any>(`/tracking/booking/${bookingId}`);
         if (response.success && response.tracking) {
           setTrackingData(prev => ({
             ...prev,

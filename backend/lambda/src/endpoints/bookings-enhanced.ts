@@ -9,7 +9,10 @@
  * - Standardized response format
  * 
  * Endpoints:
- * - POST /bookings/create - Create new booking
+ * - POST /bookings/create - Create new booking. Body: serviceId (required), optional selectedServices[],
+ *   totalDurationMinutes, totalAmount; single-service or multi-service supported (selected_services stored as JSONB).
+ *   Returns 4xx (400/403/404/409) for validation, not found, conflict, or business errors; 2xx only on success.
+ *   All error paths use this.error() so HTTP status is 4xx (never 200 with error body).
  * - GET /bookings/:id - Get booking details
  * - PUT /bookings/:id/status - Update booking status
  * - GET /bookings/:id/history - Get booking status history
@@ -29,8 +32,9 @@ import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
 import { logAuditEntry, logBookingStatusChange } from '../utils/audit-log';
 import { calculateStaffETA } from '../utils/commute-time-calculator';
 import { validateServiceAvailability } from '../utils/service-availability-validator';
-import { normalizeDbRow, buildBookingResponse } from '../utils/entity-extractor';
+import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../utils/entity-extractor';
 import { normalizeBooking, isValidUUID } from '../types/entities';
+import { getDiscoveryRules } from '../lib/rule-engine';
 import {
   CreateBookingRequestSchema,
   UpdateBookingStatusRequestSchema,
@@ -41,7 +45,7 @@ import {
 // ============================================================================
 
 const MAX_ADVANCE_BOOKING_DAYS = 60;
-const MIN_NOTICE_HOURS = 1;
+const DEFAULT_MIN_NOTICE_HOURS = 1;
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -70,7 +74,7 @@ interface ApiGatewayEventLike {
 // VALIDATION UTILITIES
 // ============================================================================
 
-function validateBookingDate(bookingDate: string, bookingTime: string): { valid: boolean; error?: string } {
+function validateBookingDate(bookingDate: string, bookingTime: string, minNoticeHours: number = DEFAULT_MIN_NOTICE_HOURS): { valid: boolean; error?: string } {
   const now = new Date();
   const bookingDateTime = new Date(`${bookingDate}T${bookingTime}`);
   
@@ -78,11 +82,11 @@ function validateBookingDate(bookingDate: string, bookingTime: string): { valid:
     return { valid: false, error: 'Invalid booking date or time format' };
   }
 
-  const minBookingTime = new Date(now.getTime() + MIN_NOTICE_HOURS * 60 * 60 * 1000);
+  const minBookingTime = new Date(now.getTime() + minNoticeHours * 60 * 60 * 1000);
   if (bookingDateTime < minBookingTime) {
     return { 
       valid: false, 
-      error: `Booking must be at least ${MIN_NOTICE_HOURS} hour(s) in the future` 
+      error: `Booking must be at least ${minNoticeHours} hour(s) in the future` 
     };
   }
 
@@ -143,10 +147,18 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       serviceType: rawServiceType,
       address,
       petId,
-      amount,
+      amount: amountFromSchema,
+      totalAmount,
       idempotencyKey,
+      selectedServices, // ✅ NEW: Multiple services support
+      serviceName,
+      customerPhone,
+      customerName,
+      petName,
+      notes: notesFromSchema,
     } = validationResult.data;
 
+    const amount = amountFromSchema ?? totalAmount;
     // ✅ Map legacy 'online' to 'tele' for backward compatibility
     // Note: 'tele' is already used in DB schema (vendor_services.service_style, vendor_availability_v2.service_style)
     const serviceType = rawServiceType === 'online' ? 'tele' : (rawServiceType || 'at_vendor');
@@ -154,6 +166,25 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     // ✅ Phase 2.3: Extract roomId and promotionId from raw body (may not be in schema)
     const roomId = body.roomId || body.room_id;
     const promotionId = body.promotionId || body.promotion_id;
+    
+    // ✅ Calculate total duration and amount from selected services if provided
+    let totalDurationMinutes = 0;
+    let totalSelectedServicesAmount = 0;
+    if (selectedServices && selectedServices.length > 0) {
+      totalDurationMinutes = selectedServices.reduce((sum, s) => {
+        const quantity = s.quantity || 1;
+        const duration = s.duration || 30;
+        return sum + (duration * quantity);
+      }, 0);
+      
+      totalSelectedServicesAmount = selectedServices.reduce((sum, s) => {
+        const quantity = s.quantity || 1;
+        const price = s.price || 0;
+        return sum + (price * quantity);
+      }, 0);
+      
+      console.log(`[BOOKING] Multiple services: ${selectedServices.length} services, total duration: ${totalDurationMinutes}min, total amount: ₹${totalSelectedServicesAmount}`);
+    }
 
     // Check idempotency key first
     if (idempotencyKey) {
@@ -167,8 +198,10 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       }
     }
 
-    // Validate booking date/time
-    const dateValidation = validateBookingDate(bookingDate, bookingTime);
+    // Validate booking date/time (rule engine: booking_min_notice_hours)
+    const bookingRules = await getDiscoveryRules('all', 'booking');
+    const minNoticeHours = bookingRules.booking_min_notice_hours ?? 1;
+    const dateValidation = validateBookingDate(bookingDate, bookingTime, minNoticeHours);
     if (!dateValidation.valid) {
       return this.error(dateValidation.error!, 400, 'VALIDATION_ERROR', undefined, requestId);
     }
@@ -176,7 +209,55 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     // Validate service exists and belongs to vendor
     // ✅ CRITICAL FIX: Frontend sends serviceId which is service.service_id (base service UUID)
     // NOT vendor_services.id. We need to look up by service_id column in vendor_services table.
-    console.log(`[BOOKING] Looking up service ${serviceId} for vendor ${vendorId}`);
+    // ✅ Diagnostics: when serviceId is 'diagnostics', resolve to a diagnostics vendor_service for this vendor
+    let resolvedServiceId = serviceId;
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(serviceId || ''));
+    if (!isUUID && (String(serviceId).toLowerCase() === 'diagnostics' || String(serviceId).toLowerCase() === 'diagnostic')) {
+      const diagResult = await query(
+        `SELECT * FROM vendor_services WHERE vendor_id = $1::uuid AND (is_enabled = true OR is_enabled IS NULL) ORDER BY created_at ASC LIMIT 1`,
+        [vendorId]
+      );
+      if (diagResult.rows?.length > 0) {
+        const row = diagResult.rows[0];
+        resolvedServiceId = row.service_id || row.id;
+        console.log(`[BOOKING] Resolved diagnostics serviceId to ${resolvedServiceId} for vendor ${vendorId}`);
+      } else {
+        // Fallback: diagnostics center has tests but no vendor_services - create service + vendor_service
+        const diagTests = await query(
+          `SELECT id, price FROM diagnostic_tests WHERE vendor_id = $1::uuid LIMIT 1`,
+          [vendorId]
+        );
+        if (diagTests.rows?.length > 0) {
+          const test = diagTests.rows[0];
+          const labServiceId = 'a1b2c3d4-e5f6-4789-a012-345678901234';
+          await query(
+            `INSERT INTO services (id, name, description, category, price, duration_minutes, is_active, created_at, updated_at)
+             VALUES ($1, 'Lab Tests', 'Diagnostic lab tests', 'diagnostics', $2, 30, true, NOW(), NOW())
+             ON CONFLICT (id) DO UPDATE SET updated_at = NOW()`,
+            [labServiceId, test.price || 0]
+          );
+          try {
+            await query(
+              `INSERT INTO vendor_services (vendor_id, service_id, service_name, service_style, publish_status, is_enabled, created_at, updated_at)
+               VALUES ($1, $2, 'Lab Tests', 'at_center', 'published', true, NOW(), NOW())`,
+              [vendorId, labServiceId]
+            );
+          } catch (insErr: any) {
+            if (!insErr.message?.includes('unique') && insErr.code !== '23505') {
+              console.warn('[BOOKING] vendor_services insert:', insErr.message);
+            }
+          }
+          resolvedServiceId = labServiceId;
+          console.log(`[BOOKING] Diagnostics: created lab service + vendor_service for vendor ${vendorId}`);
+        }
+      }
+    }
+    if (!isUUID && resolvedServiceId === serviceId && String(serviceId).toLowerCase() === 'diagnostics') {
+      return this.error('Diagnostics service not found for this vendor. Vendor must have diagnostic tests or services configured.', 404, 'NOT_FOUND', undefined, requestId);
+    }
+    const lookupServiceId = resolvedServiceId;
+
+    console.log(`[BOOKING] Looking up service ${lookupServiceId} for vendor ${vendorId}`);
     
     let service: any = null; // Initialize service variable
     
@@ -191,7 +272,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
        AND (is_enabled = true OR is_enabled IS NULL)
        AND publish_status = 'published'
        LIMIT 1`,
-      [serviceId, vendorId]
+      [lookupServiceId, vendorId]
     );
     
     if (vendorServicesResult.rows.length > 0) {
@@ -206,7 +287,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
          AND vendor_id = $2::uuid 
          AND (is_enabled = true OR is_enabled IS NULL)
          LIMIT 1`,
-        [serviceId, vendorId]
+        [lookupServiceId, vendorId]
       );
       
       if (vendorServicesResult.rows.length > 0) {
@@ -220,7 +301,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
            WHERE service_id = $1::uuid 
            AND vendor_id = $2::uuid 
            LIMIT 1`,
-          [serviceId, vendorId]
+          [lookupServiceId, vendorId]
         );
         
         if (vendorServicesResult.rows.length > 0) {
@@ -234,7 +315,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
              WHERE id = $1::uuid 
              AND vendor_id = $2::uuid 
              LIMIT 1`,
-            [serviceId, vendorId]
+            [lookupServiceId, vendorId]
           );
           
           if (vendorServiceByIdResult.rows.length > 0) {
@@ -242,7 +323,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             service = vendorServiceByIdResult.rows[0];
           } else {
             // FALLBACK 4: Check base services table
-            const services = await select('services', { id: serviceId });
+            const services = await select('services', { id: lookupServiceId });
             console.log(`[BOOKING] Found ${services.length} services in services table`);
             let baseService = services.length > 0 ? services[0] : null;
             
@@ -267,7 +348,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       console.log(`[BOOKING] Checking if service exists for any vendor (without vendor_id check)`);
       const anyVendorServiceResult = await query(
         `SELECT * FROM vendor_services WHERE service_id = $1::uuid LIMIT 1`,
-        [serviceId]
+        [lookupServiceId]
       );
       const anyVendorService = anyVendorServiceResult.rows;
       console.log(`[BOOKING] Found ${anyVendorService.length} vendor_services with service_id=${serviceId} (any vendor)`);
@@ -344,7 +425,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     // Validate service availability (Dashboard UI config + role restrictions)
     if (roleId) {
       const availabilityResult = await validateServiceAvailability(
-        serviceId,
+        lookupServiceId,
         roleId,
         customerId
       );
@@ -486,6 +567,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           console.warn('[BOOKING] Could not check subscriptions (table may not exist):', subError);
         }
         
+        // ✅ Calculate final amounts considering multiple services
+        // Priority: 1. Subscription (free), 2. Selected services total, 3. Single service amount
+        const calculatedBasePrice = totalSelectedServicesAmount > 0 ? totalSelectedServicesAmount : (amount || 0);
+        const calculatedFinalAmount = isSubscriptionBooking ? 0 : calculatedBasePrice;
+        
         const bookingData: Record<string, any> = {
           customer_id: customerId,
           vendor_id: vendorId,
@@ -494,13 +580,23 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           booking_time: bookingTime,
           service_type: serviceType || 'at_vendor',
           address: address,
-          base_price: amount || 0,
-          total_amount: finalAmount, // ✅ Use finalAmount (may be 0 for subscriptions)
+          base_price: calculatedBasePrice,
+          total_amount: calculatedFinalAmount, // ✅ Use calculated amount (may be 0 for subscriptions)
           status: 'pending',
           payment_status: isSubscriptionBooking ? 'paid' : 'pending', // ✅ Mark as paid for subscription
-          notes: petId ? `Pet ID: ${petId}` : null,
+          notes: notesFromSchema || (petName ? `Pet: ${petName}` : null),
           subscription_id: subscriptionId, // ✅ Track subscription used
           subscription_booking: isSubscriptionBooking, // ✅ Flag for subscription booking
+          // ✅ NEW: Store pet_id properly in its own column
+          pet_id: petId || null,
+          // ✅ NEW: Store selected services as JSONB
+          selected_services: selectedServices && selectedServices.length > 0 
+            ? JSON.stringify(selectedServices) 
+            : null,
+          // ✅ NEW: Store total duration
+          total_duration_minutes: totalDurationMinutes || null,
+          // ✅ Store customer phone for easy access
+          customer_phone: customerPhone || null,
         };
 
         // ✅ Phase 2.3: Add roomId if provided (for boarding/resort bookings)
@@ -610,6 +706,35 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         });
       } catch (error) {
         console.error('Failed to publish booking created event:', error);
+      }
+
+      // Rule 4: Notify vendor with in-app notification (large on-screen alert on vendor side)
+      try {
+        const customers = await select('customers', { id: booking.customer_id });
+        const customerName = (customers[0] as any)?.name || (customers[0] as any)?.full_name || 'Customer';
+        const serviceName = service?.service_name || service?.name || 'Service';
+        const serviceTypeLabel = booking.service_type === 'at_home' ? 'Home visit' : booking.service_type === 'tele' ? 'Tele consultation' : 'At center';
+        await insert('notifications', {
+          recipient_id: booking.vendor_id,
+          recipient_type: 'vendor',
+          type: 'new_booking',
+          title: 'New appointment',
+          message: `${customerName} booked ${serviceName} • ${serviceTypeLabel} • ${booking.booking_date} ${booking.booking_time}`,
+          data: JSON.stringify({
+            bookingId: booking.id,
+            customerId: booking.customer_id,
+            customerName,
+            serviceName,
+            serviceType: booking.service_type,
+            bookingDate: booking.booking_date,
+            bookingTime: booking.booking_time,
+            address: booking.address,
+          }),
+          is_read: false,
+          created_at: new Date(),
+        });
+      } catch (notifErr) {
+        console.warn('Failed to create vendor notification for new booking:', notifErr);
       }
 
       const response = {
@@ -914,6 +1039,12 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
       petAge: petInfo?.age || null,
       petPhoto: petInfo?.photo_url || null,
       amount: parseFloat(booking.total_amount || '0'),
+      // Multi-service: expose selectedServices and totalDurationMinutes
+      selectedServices: parseSelectedServices(booking.selected_services),
+      totalDurationMinutes:
+        booking.total_duration_minutes != null
+          ? Number(booking.total_duration_minutes)
+          : null,
     };
 
     return this.success({ booking: enrichedBooking }, requestId);
@@ -964,9 +1095,68 @@ class GetBookingHistoryHandlerEnhanced extends BaseHandlerEnhanced {
       history = [];
     }
 
+    // ✅ CRITICAL FIX: Add prescriptions to booking history
+    let prescriptions: Array<Record<string, unknown>> = [];
+    try {
+      const prescriptionsResult = await query(
+        `SELECT 
+          p.id,
+          p.booking_id,
+          p.medications,
+          p.instructions,
+          p.diagnosis,
+          p.prescription_date,
+          p.follow_up_date,
+          p.created_at,
+          p.created_by,
+          p.created_by_role,
+          v.business_name as vendor_name,
+          s.name as staff_name
+        FROM prescriptions p
+        LEFT JOIN vendors v ON v.id = p.vendor_id
+        LEFT JOIN staff s ON s.id = p.staff_id
+        WHERE p.booking_id = $1 
+          AND p.is_active = true
+        ORDER BY p.created_at ASC`,
+        [bookingId]
+      );
+      
+      // Format prescriptions as history entries
+      prescriptions = prescriptionsResult.rows.map((presc: any) => ({
+        id: `prescription_${presc.id}`,
+        type: 'prescription',
+        booking_id: bookingId,
+        description: `Prescription created${presc.diagnosis ? ` - Diagnosis: ${presc.diagnosis}` : ''}`,
+        actor: presc.staff_name || presc.vendor_name || 'Vendor',
+        actor_type: presc.created_by_role || 'vendor',
+        timestamp: presc.created_at,
+        created_at: presc.created_at,
+        prescription_data: {
+          id: presc.id,
+          medications: presc.medications,
+          instructions: presc.instructions,
+          diagnosis: presc.diagnosis,
+          prescription_date: presc.prescription_date,
+          follow_up_date: presc.follow_up_date,
+        },
+      }));
+    } catch (error: unknown) {
+      const err = error as any;
+      console.warn('[Booking History] Error querying prescriptions:', err?.message || error);
+      prescriptions = [];
+    }
+
+    // Combine status history and prescriptions, sort by timestamp
+    const combinedHistory = [...history, ...prescriptions].sort((a: any, b: any) => {
+      const aTime = new Date(a.created_at || a.timestamp || 0).getTime();
+      const bTime = new Date(b.created_at || b.timestamp || 0).getTime();
+      return aTime - bTime;
+    });
+
     return this.success({
       booking: bookings[0],
-      history,
+      history: combinedHistory,
+      prescriptions: prescriptions, // Also return separately for easy access
     }, requestId);
   }
 }
@@ -1594,8 +1784,10 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
       );
     }
 
-    // Validate new booking date/time
-    const dateValidation = validateBookingDate(newDate, newTime);
+    // Validate new booking date/time (rule engine: booking_min_notice_hours)
+    const rescheduleRules = await getDiscoveryRules('all', 'booking');
+    const rescheduleMinNotice = rescheduleRules.booking_min_notice_hours ?? 1;
+    const dateValidation = validateBookingDate(newDate, newTime, rescheduleMinNotice);
     if (!dateValidation.valid) {
       return this.error(dateValidation.error!, 400, 'VALIDATION_ERROR', undefined, requestId);
     }

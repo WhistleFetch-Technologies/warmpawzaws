@@ -17,6 +17,7 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
+import { getDiscoveryRules } from '../lib/rule-engine';
 
 // ============================================================================
 // TYPES
@@ -124,8 +125,10 @@ class GetUpcomingAppointmentsHandler extends BaseHandler {
 class SendPreAppointmentNotificationsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
+    const rules = await getDiscoveryRules('all', 'booking');
+    const defaultReminderMinutes = rules.appointment_reminder_minutes_before ?? 5;
     const { 
-      reminderMinutes = 5, // Default 5 minutes before
+      reminderMinutes = defaultReminderMinutes, // Rule engine: appointment_reminder_minutes_before
       serviceStyles = ['tele'], // Default to tele consultations
       dryRun = false // If true, don't actually send notifications
     } = body;
@@ -136,13 +139,14 @@ class SendPreAppointmentNotificationsHandler extends BaseHandler {
       const windowEnd = reminderMinutes + 1;
 
       // ✅ FIX: Use customer phone from customers table (b.customer_phone column doesn't exist)
+      // ✅ FIX: fcm_token column doesn't exist, make it optional
       const { rows: appointments } = await query(
         `SELECT 
           b.id,
           b.customer_id,
           c.phone as customer_phone,
           c.full_name as customer_name,
-          c.fcm_token as customer_fcm_token,
+          NULL as customer_fcm_token,
           b.vendor_id,
           v.business_name as vendor_name,
           b.staff_id,
@@ -231,11 +235,34 @@ class SendPreAppointmentNotificationsHandler extends BaseHandler {
           });
         }
 
-        // Mark reminder as sent
-        await update('bookings', { id: apt.id }, {
+        // Mark reminder as sent and activate chat for tele consultations
+        // GAP FIX: Auto-activate chat 5 min before tele consultation
+        const updateData: any = {
           reminder_sent: new Date(),
           reminder_type: `${reminderMinutes}_min`,
-        });
+        };
+        
+        // For tele consultations with 5-min reminder, activate chat
+        if (apt.service_style === 'tele' && reminderMinutes <= 5) {
+          updateData.chat_activated_at = new Date();
+          updateData.chat_auto_activated = true;
+          updateData.reminder_5min_sent = true;
+          updateData.reminder_5min_sent_at = new Date();
+          
+          // Create a welcome message in the chat to notify both parties
+          await insert('chat_messages', {
+            booking_id: apt.id,
+            sender_type: 'system',
+            message: `Chat activated! Your video consultation starts in ${reminderMinutes} minutes. You can now message each other before the call.`,
+            is_read: false,
+            created_at: new Date(),
+          }).catch(() => {
+            // Chat messages table might not exist or have different schema
+            console.log('Could not create system chat message');
+          });
+        }
+        
+        await update('bookings', { id: apt.id }, updateData);
 
         // TODO: Send push notification via FCM
         // if (apt.customer_fcm_token) {
@@ -400,6 +427,76 @@ class ManualTriggerReminderHandler extends BaseHandler {
 }
 
 // ============================================================================
+// CHECK CHAT ACTIVATION STATUS (GAP FIX)
+// ============================================================================
+
+class CheckChatActivationHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const bookingId = context.event.pathParameters?.bookingId;
+
+    if (!bookingId) {
+      return this.error('Booking ID is required', 400);
+    }
+
+    try {
+      const { rows: bookings } = await query(
+        `SELECT 
+          b.id,
+          b.service_type as service_style,
+          b.chat_activated_at,
+          b.chat_auto_activated,
+          b.booking_date,
+          b.booking_time,
+          b.booking_date + b.booking_time::time as scheduled_at,
+          EXTRACT(EPOCH FROM ((b.booking_date + b.booking_time::time) - NOW())) / 60 as minutes_until,
+          b.meeting_id,
+          v.business_name as vendor_name,
+          s.name as staff_name
+        FROM bookings b
+        LEFT JOIN vendors v ON v.id = b.vendor_id
+        LEFT JOIN staff s ON s.id = b.staff_id
+        WHERE b.id = $1`,
+        [bookingId]
+      );
+
+      if (bookings.length === 0) {
+        return this.error('Booking not found', 404);
+      }
+
+      const booking = bookings[0];
+      const minutesUntil = Math.round(parseFloat(booking.minutes_until));
+      const isTele = booking.service_style === 'tele';
+      
+      // Chat is active if:
+      // 1. Already activated via reminder, OR
+      // 2. It's a tele consultation and within 5 minutes of start
+      const isChatActive = booking.chat_auto_activated || 
+                          (isTele && minutesUntil <= 5 && minutesUntil >= -30);
+      
+      // Determine if we should show the reminder notification
+      // Show between 5 minutes before and start time
+      const showTeleReminder = isTele && minutesUntil <= 5 && minutesUntil > 0;
+
+      return this.success({
+        success: true,
+        bookingId,
+        isChatActive,
+        chatActivatedAt: booking.chat_activated_at,
+        wasAutoActivated: booking.chat_auto_activated,
+        isTeleConsultation: isTele,
+        minutesUntilAppointment: minutesUntil,
+        showTeleReminder,
+        meetingId: booking.meeting_id,
+        providerName: booking.staff_name || booking.vendor_name,
+      });
+    } catch (error: any) {
+      console.error('Error checking chat activation:', error);
+      return this.error(error.message || 'Failed to check chat status', 500);
+    }
+  }
+}
+
+// ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
 
@@ -408,6 +505,23 @@ export function registerAppointmentReminderEndpoints(app: Hono) {
   const sendRemindersHandler = new SendPreAppointmentNotificationsHandler();
   const scheduledJobHandler = new ScheduledReminderJobHandler();
   const manualTriggerHandler = new ManualTriggerReminderHandler();
+  const checkChatHandler = new CheckChatActivationHandler(); // GAP FIX
+
+  // Check chat activation status (GAP FIX)
+  app.get('/reminders/chat-status/:bookingId', async (c) => {
+    const event = {
+      httpMethod: 'GET',
+      path: `/reminders/chat-status/${c.req.param('bookingId')}`,
+      headers: {},
+      body: '',
+      pathParameters: { bookingId: c.req.param('bookingId') },
+      queryStringParameters: {},
+      requestContext: { requestId: randomUUID() },
+    };
+    const context = { requestId: randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
+    const result = await checkChatHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
 
   // Get upcoming appointments
   app.get('/reminders/upcoming', async (c) => {

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { 
   MapPin, Package, Truck, CheckCircle, Clock, Phone, 
   MessageCircle, Navigation, ChevronDown, Star, ArrowLeft,
-  AlertCircle, Loader2
+  AlertCircle, Loader2, X
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
@@ -17,8 +17,10 @@ interface DeliveryPerson {
 
 interface TrackingData {
   status: string;
+  deliveryOtp?: string | null;
   currentLat?: number;
   currentLng?: number;
+  eta?: number;
   etaMinutes?: number;
   deliveryPerson?: DeliveryPerson;
 }
@@ -43,6 +45,11 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
   const [tracking, setTracking] = useState<TrackingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showDetails, setShowDetails] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewText, setReviewText] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
 
   useEffect(() => {
     loadOrderAndTracking();
@@ -52,14 +59,18 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
 
   const loadOrderAndTracking = async () => {
     try {
-      const endpoint = orderType === 'pharmacy' 
-        ? `/pharmacy/orders/${orderId}`
-        : `/meal/orders/${orderId}`;
-      
-      const response = await apiClient.get(endpoint) as any;
-      if (response.success) {
-        setOrder(response.order);
-        setTracking(response.tracking);
+      if (orderType === 'meal') {
+        const response = await apiClient.get(`/customer/tracking/${orderId}`) as any;
+        if (response.success) {
+          setOrder(response.order);
+          setTracking(response.tracking);
+        }
+      } else {
+        const response = await apiClient.get(`/pharmacy/orders/${orderId}`) as any;
+        if (response.success) {
+          setOrder(response.order);
+          setTracking(response.tracking);
+        }
       }
     } catch (error) {
       console.error('Error loading order:', error);
@@ -70,7 +81,8 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
 
   const getCurrentStepIndex = () => {
     if (!order) return 0;
-    const idx = statusSteps.findIndex(s => s.key === order.status);
+    const status = order.status || tracking?.status;
+    const idx = statusSteps.findIndex(s => s.key === status);
     return idx >= 0 ? idx : 0;
   };
 
@@ -79,6 +91,24 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
     const hrs = Math.floor(minutes / 60);
     const mins = minutes % 60;
     return `${hrs}h ${mins}m`;
+  };
+
+  const submitReview = async () => {
+    if (orderType !== 'meal' || reviewRating < 1 || reviewRating > 5) return;
+    setReviewSubmitting(true);
+    try {
+      await apiClient.post(`/meal/orders/${orderId}/review`, {
+        rating: reviewRating,
+        review: reviewText || undefined,
+      });
+      setReviewSubmitted(true);
+      setShowReviewModal(false);
+      setOrder((prev: any) => prev ? { ...prev, rating: reviewRating, review: reviewText } : prev);
+    } catch (err) {
+      console.error('Submit review error:', err);
+    } finally {
+      setReviewSubmitting(false);
+    }
   };
 
   if (loading) {
@@ -117,19 +147,19 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
           </button>
           <div className="flex-1">
             <h1 className="font-bold">Track Order</h1>
-            <p className="text-sm text-white/80">#{order.order_number}</p>
+            <p className="text-sm text-white/80">#{order.order_number || order.orderNumber || order.id?.slice(-8)}</p>
           </div>
         </div>
         
         {/* ETA Banner */}
-        {!isDelivered && tracking?.etaMinutes && (
+        {!isDelivered && (tracking?.eta ?? tracking?.etaMinutes) && (
           <div className="bg-white/20 backdrop-blur rounded-xl p-4 flex items-center gap-4">
             <div className="w-14 h-14 bg-white/30 rounded-full flex items-center justify-center">
               <Clock className="w-7 h-7" />
             </div>
             <div>
               <p className="text-sm text-white/80">Arriving in</p>
-              <p className="text-2xl font-bold">{formatETA(tracking.etaMinutes)}</p>
+              <p className="text-2xl font-bold">{formatETA(tracking.eta ?? tracking.etaMinutes ?? 0)}</p>
             </div>
           </div>
         )}
@@ -162,6 +192,25 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
               <div className="w-24 h-24 rounded-full border-4 border-orange-400 animate-ping opacity-30" />
             </div>
           )}
+        </div>
+      )}
+
+      {/* Phase 4: Delivery OTP – show when out for delivery */}
+      {!isDelivered && tracking?.deliveryOtp && (order?.status === 'on_the_way' || order?.status === 'picked_up' || tracking?.status === 'on_the_way' || tracking?.status === 'picked_up') && (
+        <div className="mx-4 mt-4">
+          <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4">
+            <p className="text-sm font-medium text-amber-800 mb-2">Handover OTP – share with delivery partner</p>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-3xl font-mono font-bold text-amber-900 tracking-[0.3em]">{tracking.deliveryOtp}</span>
+              <button
+                type="button"
+                onClick={() => tracking.deliveryOtp && navigator.clipboard?.writeText(tracking.deliveryOtp)}
+                className="px-4 py-2 bg-amber-200 text-amber-900 rounded-lg text-sm font-medium"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -235,9 +284,9 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
                         })}
                       </p>
                     )}
-                    {isCurrent && step.key === 'on_the_way' && tracking?.etaMinutes && (
+                    {isCurrent && step.key === 'on_the_way' && (tracking?.eta ?? tracking?.etaMinutes) && (
                       <p className="text-sm text-orange-500 font-medium mt-1">
-                        ETA: {formatETA(tracking.etaMinutes)}
+                        ETA: {formatETA(tracking.eta ?? tracking.etaMinutes ?? 0)}
                       </p>
                     )}
                   </div>
@@ -257,9 +306,64 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
             <p className="text-sm text-white/80 mb-4">
               Delivered at {order.delivered_at ? new Date(order.delivered_at).toLocaleTimeString('en-IN') : 'N/A'}
             </p>
-            <button className="bg-white text-green-600 px-6 py-2 rounded-full font-medium flex items-center gap-2 mx-auto">
-              <Star className="w-4 h-4" />
-              Rate Your Experience
+            {orderType === 'meal' && !order.rating && !reviewSubmitted ? (
+              <button
+                onClick={() => setShowReviewModal(true)}
+                className="bg-white text-green-600 px-6 py-2 rounded-full font-medium flex items-center gap-2 mx-auto"
+              >
+                <Star className="w-4 h-4" />
+                Rate Your Experience
+              </button>
+            ) : (orderType === 'meal' && (order.rating || reviewSubmitted)) ? (
+              <p className="text-sm text-white/90 flex items-center justify-center gap-1">
+                <Star className="w-4 h-4 fill-current" /> Thank you for your review!
+              </p>
+            ) : (
+              <button className="bg-white text-green-600 px-6 py-2 rounded-full font-medium flex items-center gap-2 mx-auto">
+                <Star className="w-4 h-4" />
+                Rate Your Experience
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Review modal (meal orders only) */}
+      {showReviewModal && orderType === 'meal' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-gray-900">Rate Your Experience</h3>
+              <button onClick={() => setShowReviewModal(false)} className="p-1 rounded-full hover:bg-gray-100">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="flex gap-2 justify-center mb-4">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setReviewRating(n)}
+                  className={`p-2 rounded-full ${reviewRating >= n ? 'bg-amber-400 text-white' : 'bg-gray-100 text-gray-400'}`}
+                >
+                  <Star className={`w-6 h-6 ${reviewRating >= n ? 'fill-current' : ''}`} />
+                </button>
+              ))}
+            </div>
+            <textarea
+              placeholder="Optional: share your experience..."
+              value={reviewText}
+              onChange={(e) => setReviewText(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl p-3 text-sm resize-none h-24 mb-4"
+              maxLength={500}
+            />
+            <button
+              onClick={submitReview}
+              disabled={reviewSubmitting || reviewRating < 1}
+              className="w-full bg-green-600 text-white py-3 rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {reviewSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+              Submit Review
             </button>
           </div>
         </div>

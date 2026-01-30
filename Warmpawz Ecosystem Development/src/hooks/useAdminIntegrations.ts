@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 export function useAdminIntegrations() {
   const [loading, setLoading] = useState(false);
@@ -12,7 +12,7 @@ export function useAdminIntegrations() {
       console.log('[useAdminIntegrations] Fetching settings from:', `${API_BASE}/admin/integrations/settings`);
       
       const res = await fetch(`${API_BASE}/admin/integrations/settings`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (!res.ok) {
@@ -48,7 +48,7 @@ export function useAdminIntegrations() {
       const res = await fetch(`${API_BASE}/admin/integrations/settings`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ type, settings })
@@ -78,7 +78,7 @@ export function useAdminIntegrations() {
   const fetchGateways = async () => {
     try {
       const res = await fetch(`${API_BASE}/admin/integrations/payments/gateways`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (!res.ok) {
@@ -107,7 +107,7 @@ export function useAdminIntegrations() {
       const res = await fetch(`${API_BASE}/admin/integrations/payments/gateways`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(gateway)
@@ -126,7 +126,7 @@ export function useAdminIntegrations() {
     try {
       const res = await fetch(`${API_BASE}/admin/integrations/payments/gateways/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       return await res.json();
     } finally {
@@ -137,7 +137,7 @@ export function useAdminIntegrations() {
   const fetchPayoutRules = async () => {
     try {
       const res = await fetch(`${API_BASE}/admin/integrations/payments/rules`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (!res.ok) {
@@ -166,7 +166,7 @@ export function useAdminIntegrations() {
       const res = await fetch(`${API_BASE}/admin/integrations/payments/rules`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(rules)
@@ -183,7 +183,7 @@ export function useAdminIntegrations() {
   const fetchLogistics = async () => {
     try {
       const res = await fetch(`${API_BASE}/admin/integrations/logistics`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (!res.ok) {
@@ -211,7 +211,7 @@ export function useAdminIntegrations() {
     try {
       const res = await fetch(`${API_BASE}/admin/integrations/logistics`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify(partner)
       });
       const data = await res.json();
@@ -228,7 +228,7 @@ export function useAdminIntegrations() {
       const res = await fetch(`${API_BASE}/ai/test-bedrock`, {
         method: 'POST',
         headers: { 
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(config || {})
@@ -248,7 +248,7 @@ export function useAdminIntegrations() {
       const res = await fetch(`${API_BASE}/admin/integrations/test-connection`, {
         method: 'POST',
         headers: { 
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ type, config })

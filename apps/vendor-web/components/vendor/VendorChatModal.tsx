@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Send, Paperclip, Image, FileText, AlertCircle, Clock, CheckCheck, User, Phone, Calendar, MessageSquare, Headphones } from 'lucide-react';
+import { X, Send, Paperclip, Image, FileText, AlertCircle, Clock, CheckCheck, User, Phone, Calendar, MessageSquare, Headphones, Video, VideoOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -37,6 +37,9 @@ interface BookingInfo {
   bookingDate?: string;
   bookingTime?: string;
   petName?: string;
+  updatedAt?: string;
+  completed_at?: string;
+  [key: string]: any; // Allow additional properties from API
 }
 
 interface VendorChatModalProps {
@@ -48,8 +51,11 @@ interface VendorChatModalProps {
   customerName?: string;
   bookingStatus?: string;
   serviceName?: string;
+  serviceType?: string; // ✅ NEW: Service type (tele, at_home, at_center)
+  meetingId?: string; // ✅ NEW: Meeting ID for video calls
   onClose: () => void;
   onSupportHandoff?: (bookingId: string, reason: string) => void;
+  onVideoCallStart?: (bookingId: string, meetingId?: string) => void; // ✅ NEW: Callback for video call
 }
 
 // ============================================================================
@@ -58,17 +64,44 @@ interface VendorChatModalProps {
 
 const ACTIVE_BOOKING_STATUSES = ['pending', 'confirmed', 'in_progress', 'active'];
 
-function isChatActive(status: string): boolean {
-  return ACTIVE_BOOKING_STATUSES.includes(status?.toLowerCase());
+// ✅ CRITICAL FIX: Enhanced chat availability check
+// - Enabled by default for all service styles
+// - Disabled after 7 days post-completion
+// - Exception: Vets can keep chat for followups (7 days)
+function isChatActive(status: string, chatAvailable?: boolean, completedAt?: string): boolean {
+  // If chatAvailable is explicitly set from backend, use it
+  if (chatAvailable !== undefined) {
+    return chatAvailable;
+  }
+  
+  // For active bookings, chat is always enabled
+  if (ACTIVE_BOOKING_STATUSES.includes(status?.toLowerCase())) {
+    return true;
+  }
+  
+  // For completed bookings, check if within 7 days
+  if (status?.toLowerCase() === 'completed' && completedAt) {
+    const completedDate = new Date(completedAt);
+    const daysSinceCompletion = (Date.now() - completedDate.getTime()) / (1000 * 60 * 60 * 24);
+    return daysSinceCompletion <= 7;
+  }
+  
+  // Cancelled bookings have no chat
+  if (status?.toLowerCase() === 'cancelled') {
+    return false;
+  }
+  
+  // Default: enabled for all other statuses
+  return true;
 }
 
-function getChatStatusMessage(status: string): string {
-  if (isChatActive(status)) {
+function getChatStatusMessage(status: string, chatAvailable?: boolean): string {
+  if (chatAvailable !== false && isChatActive(status, chatAvailable)) {
     return 'Chat is active for this booking';
   }
   switch (status?.toLowerCase()) {
     case 'completed':
-      return 'Booking completed - Chat has ended. Use Support for further assistance.';
+      return 'Booking completed - Chat available for 7 days for followups.';
     case 'cancelled':
       return 'Booking cancelled - Chat is not available.';
     default:
@@ -89,8 +122,11 @@ export function VendorChatModal({
   customerName,
   bookingStatus = 'active',
   serviceName,
+  serviceType, // ✅ NEW: Service type
+  meetingId, // ✅ NEW: Meeting ID
   onClose,
-  onSupportHandoff
+  onSupportHandoff,
+  onVideoCallStart, // ✅ NEW: Video call callback
 }: VendorChatModalProps) {
   // State
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -101,14 +137,17 @@ export function VendorChatModal({
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [status, setStatus] = useState(bookingStatus);
+  const [isVideoCallActive, setIsVideoCallActive] = useState(false); // ✅ NEW: Video call state
+  const [videoCallMeetingId, setVideoCallMeetingId] = useState<string | undefined>(meetingId); // ✅ NEW: Meeting ID state
   
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Check if chat is active based on booking status
-  const chatActive = isChatActive(status);
+  // ✅ CRITICAL FIX: Check chat availability with enhanced rules
+  const [chatAvailableFromBackend, setChatAvailableFromBackend] = useState<boolean | undefined>(undefined);
+  const chatActive = isChatActive(status, chatAvailableFromBackend, booking?.updatedAt || booking?.completed_at);
 
   // ============================================================================
   // DATA LOADING
@@ -130,6 +169,18 @@ export function VendorChatModal({
           if (response.booking.status) {
             setStatus(response.booking.status);
           }
+          // ✅ CRITICAL FIX: Get serviceType and meetingId from booking
+          if (response.booking.service_type || response.booking.serviceType) {
+            // serviceType will be used to show video button
+          }
+          if (response.booking.meeting_id || response.booking.meetingId) {
+            setVideoCallMeetingId(response.booking.meeting_id || response.booking.meetingId);
+          }
+        }
+        
+        // ✅ CRITICAL FIX: Use chatAvailable from backend if provided
+        if (response.chatAvailable !== undefined) {
+          setChatAvailableFromBackend(response.chatAvailable);
         }
       }
     } catch (err: any) {
@@ -310,6 +361,69 @@ export function VendorChatModal({
     }
   };
 
+  // ✅ CRITICAL FIX: Handle video call start (WhatsApp-like experience)
+  const handleStartVideoCall = async () => {
+    try {
+      if (!vendorId) {
+        toast.error('Vendor ID is required');
+        return;
+      }
+
+      // Check if meeting already exists
+      let currentMeetingId = videoCallMeetingId;
+
+      if (!currentMeetingId) {
+        // Create meeting if it doesn't exist
+        const createResponse = await apiClient.post('/video-call/create-meeting', {
+          bookingId,
+          customerId: booking?.customerId || '',
+          vendorId,
+        }) as any;
+
+        if (createResponse?.success || createResponse?.meetingId) {
+          currentMeetingId = createResponse.meetingId || createResponse.meeting_id;
+          setVideoCallMeetingId(currentMeetingId);
+        } else {
+          toast.error('Failed to create video call');
+          return;
+        }
+      }
+
+      // Join the meeting
+      const joinResponse = await apiClient.post<any>('/video-call/join', {
+        bookingId,
+        userId: vendorId,
+        userType: 'vendor',
+        meetingId: currentMeetingId,
+      });
+
+      if (joinResponse?.success) {
+        setIsVideoCallActive(true);
+        
+        // Notify parent component
+        if (onVideoCallStart) {
+          onVideoCallStart(bookingId, currentMeetingId);
+        }
+
+        // Open video call in new window/tab (WhatsApp-like)
+        const videoUrl = `/video/${bookingId}?meetingId=${currentMeetingId}`;
+        window.open(videoUrl, '_blank', 'width=800,height=600');
+        
+        toast.success('Video call started!');
+      } else {
+        toast.error('Failed to join video call');
+      }
+    } catch (err: any) {
+      console.error('Error starting video call:', err);
+      toast.error(err.message || 'Failed to start video call');
+    }
+  };
+
+  // Determine if this is a tele consultation
+  const isTeleConsultation = serviceType === 'tele' || booking?.serviceType === 'tele' || 
+                             serviceName?.toLowerCase().includes('tele') ||
+                             serviceName?.toLowerCase().includes('video');
+
   // ============================================================================
   // HELPERS
   // ============================================================================
@@ -362,11 +476,11 @@ export function VendorChatModal({
         
         {/* Header */}
         <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-1">
             <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
               <User className="w-5 h-5 text-white" />
             </div>
-            <div>
+            <div className="flex-1 min-w-0">
               <h2 className="text-lg font-bold text-white">{customerName || 'Customer'}</h2>
               <div className="flex items-center gap-2 text-white/80 text-sm">
                 {serviceName && <span>{serviceName}</span>}
@@ -382,6 +496,22 @@ export function VendorChatModal({
               </div>
             </div>
           </div>
+          
+          {/* ✅ CRITICAL FIX: Video Call Button in Header (WhatsApp-like) */}
+          {isTeleConsultation && chatActive && (
+            <button
+              onClick={handleStartVideoCall}
+              className="p-2 hover:bg-white/20 rounded-full transition-colors mr-2"
+              title="Start Video Call"
+            >
+              {isVideoCallActive ? (
+                <VideoOff className="w-5 h-5 text-white" />
+              ) : (
+                <Video className="w-5 h-5 text-white" />
+              )}
+            </button>
+          )}
+          
           <button
             onClick={onClose}
             className="p-2 hover:bg-white/20 rounded-full transition-colors"
@@ -398,7 +528,7 @@ export function VendorChatModal({
             <div className="flex items-center gap-2">
               <AlertCircle className={`w-5 h-5 ${status === 'completed' ? 'text-gray-500' : 'text-red-500'}`} />
               <span className={`text-sm ${status === 'completed' ? 'text-gray-600' : 'text-red-600'}`}>
-                {getChatStatusMessage(status)}
+                {getChatStatusMessage(status, chatAvailableFromBackend)}
               </span>
             </div>
             {status === 'completed' && (

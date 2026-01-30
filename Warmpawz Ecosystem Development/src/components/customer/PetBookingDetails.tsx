@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Calendar, Clock, MapPin, Star, Copy, Check, Navigation, Route, Timer, TrendingUp, Play } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { WalkerActiveSession } from './WalkerActiveSession';
 import { BookingDetailModal } from './BookingDetailModal';
 

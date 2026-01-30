@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { VendorChatModal } from './VendorChatModal';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
+import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
 import { 
   ArrowLeft, 
   Search, 
@@ -24,7 +25,7 @@ import {
   RefreshCw, 
   X 
 } from 'lucide-react';
-import { getVendorRoleId, hasVendorRole } from '@/lib/vendor-utils';
+import { getVendorRoleId, hasVendorRole, isSoloVendor } from '@/lib/vendor-utils';
 
 interface VendorBookingManagementProps {
   vendorId: string;
@@ -50,6 +51,7 @@ interface Booking {
   consultationType: 'instant' | 'scheduled';
   communicationType: 'call' | 'video' | 'clinic' | 'at_home'; // ✅ UPDATE
   serviceType?: 'at_center' | 'at_home' | 'tele'; // ✅ ADD
+  service_type?: string; // snake_case from API
   status: 'confirmed' | 'pending' | 'cancelled' | 'completed' | 'in_progress';
   phone: string;
   date: string;
@@ -67,6 +69,13 @@ interface Booking {
   hasPrescription?: boolean;
   prescriptionUrl?: string;
   prescriptionNotes?: string;
+  
+  // ✅ Meeting/video call fields
+  meetingId?: string;
+  meeting_id?: string;
+  
+  // Allow any additional properties from API
+  [key: string]: any;
 }
 
 interface TimeSlot {
@@ -90,10 +99,54 @@ export function VendorBookingManagement({
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
-    calls: 243,
+    calls: 0,
     online: 0,
     phone: 0
   });
+  
+  // Earnings State
+  const [earningsData, setEarningsData] = useState<{
+    today: number;
+    thisWeek: number;
+    thisMonth: number;
+    pending: number;
+    total: number;
+    transactions: Array<{
+      id: string;
+      date: string;
+      service: string;
+      amount: number;
+      status: string;
+      customer: string;
+    }>;
+    dailyTrend: Array<{
+      day: string;
+      amount: number;
+    }>;
+  } | null>(null);
+  const [earningsLoading, setEarningsLoading] = useState(false);
+  
+  // Payouts State
+  const [payoutsData, setPayoutsData] = useState<{
+    availableForPayout: number;
+    pending: number;
+    paidOut: number;
+    bankAccount: {
+      bankName: string;
+      accountNumber: string;
+      accountHolder: string;
+      verified: boolean;
+    } | null;
+    payoutHistory: Array<{
+      id: string;
+      date: string;
+      amount: number;
+      status: string;
+      txnId: string;
+    }>;
+    payoutSchedule: string;
+  } | null>(null);
+  const [payoutsLoading, setPayoutsLoading] = useState(false);
   
   // OTP Modal State
   const [showOTPModal, setShowOTPModal] = useState(false);
@@ -113,6 +166,10 @@ export function VendorBookingManagement({
   // ✅ Appointment Detail Modal State
   const [showAppointmentDetail, setShowAppointmentDetail] = useState(false);
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
+  
+  // ✅ Prescription Modal State
+  const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
+  const [prescriptionBookingId, setPrescriptionBookingId] = useState<string | null>(null);
 
   // ✅ FIX: Load time slots from vendor operating hours and actual bookings
   const generateTimeSlots = (operatingHours?: any, existingBookings?: Booking[]): TimeSlot[] => {
@@ -166,6 +223,20 @@ export function VendorBookingManagement({
   useEffect(() => {
     loadBookings();
   }, [selectedDate, activeFilter]);
+  
+  // Load earnings data when earnings tab is active
+  useEffect(() => {
+    if (activeTab === 'earnings') {
+      loadEarningsData();
+    }
+  }, [activeTab, activeFilter]);
+  
+  // Load payouts data when payouts tab is active
+  useEffect(() => {
+    if (activeTab === 'payouts') {
+      loadPayoutsData();
+    }
+  }, [activeTab]);
 
   const loadBookings = async () => {
     try {
@@ -232,6 +303,16 @@ export function VendorBookingManagement({
         setBookings(mappedBookings);
         console.log(`✅ Loaded ${mappedBookings.length} bookings for vendor ${vendorId}`);
         
+        // Calculate instant consultation stats from actual bookings
+        const callCount = mappedBookings.filter((b: Booking) => b.communicationType === 'call').length;
+        const onlineCount = mappedBookings.filter((b: Booking) => b.communicationType === 'video' || b.serviceType === 'tele').length;
+        // Note: 'phone' is tracked via 'call' type since both are voice-based consultations
+        setStats({
+          calls: callCount + onlineCount, // Total tele consultations
+          online: onlineCount,
+          phone: callCount, // Phone consultations = call type bookings
+        });
+        
         // ✅ FIX: Load operating hours and regenerate time slots based on real data
         let operatingHours = null;
         if (facilityData && facilityData.facility && facilityData.facility.operatingHours) {
@@ -252,6 +333,163 @@ export function VendorBookingManagement({
       setTimeSlots([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadEarningsData = async () => {
+    try {
+      setEarningsLoading(true);
+      console.log('💰 [VENDOR-UI] Loading earnings data for vendor:', vendorId);
+      
+      // Fetch earnings data for different periods in parallel
+      const [todayData, weekData, monthData, totalData, transactionsData] = await Promise.all([
+        apiClient.get(`/vendor/${vendorId}/earnings?period=day`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/earnings?period=week`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/earnings?period=month`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/earnings?period=lifetime`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/transactions?period=month&limit=10`).catch(() => null) as Promise<any>,
+      ]);
+      
+      console.log('📊 [VENDOR-UI] Earnings API responses:', { todayData, weekData, monthData, totalData, transactionsData });
+      
+      // Calculate daily trend from week data
+      const dailyTrend = weekData?.dailyBreakdown || weekData?.dailyEarnings || [
+        { day: 'Mon', amount: 0 },
+        { day: 'Tue', amount: 0 },
+        { day: 'Wed', amount: 0 },
+        { day: 'Thu', amount: 0 },
+        { day: 'Fri', amount: 0 },
+        { day: 'Sat', amount: 0 },
+        { day: 'Sun', amount: 0 },
+      ];
+      
+      // Map transactions to display format
+      const transactions = (transactionsData?.transactions || transactionsData?.data || []).slice(0, 5).map((t: any) => ({
+        id: t.id || t.transactionId,
+        date: t.date || t.createdAt || new Date().toISOString().split('T')[0],
+        service: t.serviceName || t.service || 'Service',
+        amount: t.amount || t.price || 0,
+        status: t.status || 'completed',
+        customer: t.customerName || t.customer || 'Customer',
+      }));
+      
+      setEarningsData({
+        today: todayData?.totalEarnings || todayData?.earnings || 0,
+        thisWeek: weekData?.totalEarnings || weekData?.earnings || 0,
+        thisMonth: monthData?.totalEarnings || monthData?.earnings || 0,
+        pending: totalData?.pendingSettlement || totalData?.pending || monthData?.pendingSettlement || 0,
+        total: totalData?.totalEarnings || totalData?.earnings || 0,
+        transactions,
+        dailyTrend: dailyTrend.map((d: any, index: number) => ({
+          day: d.day || d.date || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index],
+          amount: d.amount || d.earnings || 0,
+        })),
+      });
+      
+      console.log('✅ [VENDOR-UI] Earnings data loaded successfully');
+    } catch (error) {
+      console.error('❌ Error loading earnings:', error);
+      // Set empty data on error
+      setEarningsData({
+        today: 0,
+        thisWeek: 0,
+        thisMonth: 0,
+        pending: 0,
+        total: 0,
+        transactions: [],
+        dailyTrend: [],
+      });
+    } finally {
+      setEarningsLoading(false);
+    }
+  };
+
+  const loadPayoutsData = async () => {
+    try {
+      setPayoutsLoading(true);
+      console.log('🏦 [VENDOR-UI] Loading payouts data for vendor:', vendorId);
+      
+      // Fetch settlements/payouts data and bank details in parallel
+      const [settlementsData, settlementsSummary, bankData, policyData] = await Promise.all([
+        apiClient.get(`/vendor/${vendorId}/settlements?limit=10`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/settlements?summary=true`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/bank-details`).catch(() => apiClient.get(`/vendor/${vendorId}/bank-account`).catch(() => null)) as Promise<any>,
+        apiClient.get(`/settlements/policy`).catch(() => null) as Promise<any>,
+      ]);
+      
+      console.log('📊 [VENDOR-UI] Payouts API responses:', { settlementsData, settlementsSummary, bankData, policyData });
+      
+      // Extract summary totals
+      const summary = settlementsSummary?.summary || settlementsData?.summary || {};
+      
+      // Map payout history
+      const payoutHistory = (settlementsData?.settlements || settlementsData?.data || []).slice(0, 5).map((s: any) => ({
+        id: s.id || s.settlementId,
+        date: s.date || s.createdAt || s.processedAt || new Date().toISOString().split('T')[0],
+        amount: s.amount || s.netAmount || s.payout || 0,
+        status: s.status || 'completed',
+        txnId: s.transactionId || s.txnId || s.utr || `TXN${s.id?.slice(0, 8)?.toUpperCase() || 'XXXXXX'}`,
+      }));
+      
+      // Extract bank account info
+      const bankAccount = bankData?.bankAccount || bankData?.bank || bankData?.data;
+      
+      setPayoutsData({
+        availableForPayout: summary.availableForPayout || summary.available || summary.pendingAmount || 0,
+        pending: summary.pending || summary.holdAmount || summary.onHold || 0,
+        paidOut: summary.paidOut || summary.totalPaidOut || summary.completed || 0,
+        bankAccount: bankAccount ? {
+          bankName: bankAccount.bankName || bankAccount.bank_name || 'Bank',
+          accountNumber: bankAccount.accountNumber || bankAccount.account_number || '••••••••••',
+          accountHolder: bankAccount.accountHolder || bankAccount.account_holder || vendorData?.fullName || 'Account Holder',
+          verified: bankAccount.verified || bankAccount.isVerified || false,
+        } : null,
+        payoutHistory,
+        payoutSchedule: policyData?.schedule || policyData?.payoutSchedule || 'Payouts are processed every Friday. Earnings from completed bookings are held for 48 hours before becoming available.',
+      });
+      
+      console.log('✅ [VENDOR-UI] Payouts data loaded successfully');
+    } catch (error) {
+      console.error('❌ Error loading payouts:', error);
+      // Set empty data on error
+      setPayoutsData({
+        availableForPayout: 0,
+        pending: 0,
+        paidOut: 0,
+        bankAccount: null,
+        payoutHistory: [],
+        payoutSchedule: 'Payouts are processed every Friday.',
+      });
+    } finally {
+      setPayoutsLoading(false);
+    }
+  };
+
+  const handleRequestPayout = async () => {
+    if (!payoutsData?.availableForPayout || payoutsData.availableForPayout <= 0) {
+      alert('No amount available for payout');
+      return;
+    }
+    
+    if (!confirm(`Request payout of ₹${payoutsData.availableForPayout.toLocaleString('en-IN')}?`)) {
+      return;
+    }
+    
+    try {
+      const response = await apiClient.post('/settlements/request', {
+        vendorId,
+        amount: payoutsData.availableForPayout,
+      }) as any;
+      
+      if (response?.success) {
+        alert('✅ Payout request submitted successfully!');
+        loadPayoutsData(); // Refresh data
+      } else {
+        alert(`❌ Failed to request payout: ${response?.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error requesting payout:', error);
+      alert('❌ Error requesting payout. Please try again.');
     }
   };
 
@@ -450,53 +688,12 @@ export function VendorBookingManagement({
     setShowChatModal(true);
   };
   
-  // ✅ Handle Open Prescription
-  const handleOpenPrescription = async (booking: Booking) => {
+  // ✅ Handle Open Prescription - Opens prescription modal for viewing/uploading
+  const handleOpenPrescription = (booking: Booking) => {
     console.log('💊 Opening prescription for booking:', booking.bookingId || booking.id);
-    
     const bookingId = booking.bookingId || booking.id;
-    
-    if (booking.hasPrescription) {
-      // View existing prescription
-      try {
-        const data = await apiClient.get(`/vendor/prescription/${bookingId}`) as any;
-        
-        if (data && data.success) {
-          // data already available
-          const prescription = data.prescription;
-          alert(`📋 Prescription Details\n\nPet: ${booking.petName}\nCustomer: ${booking.customerName}\n\nNotes:\n${prescription.notes}\n\nUploaded: ${new Date(prescription.uploadedAt).toLocaleString()}`);
-        } else {
-          alert('❌ Failed to load prescription');
-        }
-      } catch (error) {
-        console.error('❌ Error fetching prescription:', error);
-        alert('❌ Error loading prescription');
-      }
-    } else {
-      // Upload new prescription
-      const notes = prompt(`Enter prescription notes for ${booking.petName}:\n\n(e.g., Take 2 tablets daily after meals for 7 days)`);
-      if (!notes || notes.trim() === '') return;
-      
-      try {
-        const data = await apiClient.post('/vendor/prescription/upload', {
-          bookingId,
-          vendorId,
-          prescriptionNotes: notes.trim(),
-          prescriptionFile: null // TODO: Add file upload
-        }) as any;
-        
-        if (data && data.success) {
-          alert('✅ Prescription uploaded successfully!');
-          loadBookings(); // Reload to show prescription badge
-        } else {
-          // data already available
-          alert('❌ Failed to upload prescription:\n' + (data.error || 'Unknown error'));
-        }
-      } catch (error) {
-        console.error('❌ Error uploading prescription:', error);
-        alert('❌ Error uploading prescription');
-      }
-    }
+    setPrescriptionBookingId(bookingId);
+    setShowPrescriptionModal(true);
   };
 
   return (
@@ -925,216 +1122,284 @@ export function VendorBookingManagement({
               </div>
             </div>
 
-            {/* Emergency Availability Toggle */}
-            <div className="p-4 bg-white border-t border-gray-100">
-              <div className="flex items-center justify-between p-4 bg-red-50 border border-red-200 rounded-xl">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center">
-                    <span className="text-white text-xl">🚨</span>
+            {/* Emergency Availability Toggle - Only show for ambulance and vet roles, not for solo business types */}
+            {hasVendorRole(vendorData, ['ambulance', 'veterinarian', 'vet_clinic', 'veterinary_clinic', 'vet', 'pet_clinic', 'animal_hospital']) && (
+              <div className="p-4 bg-white border-t border-gray-100">
+                <div className="flex items-center justify-between p-4 bg-red-50 border border-red-200 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xl">🚨</span>
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900">Emergency Availability</h3>
+                      <p className="text-xs text-gray-600">24x7 on-call service</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Emergency Availability</h3>
-                    <p className="text-xs text-gray-600">24x7 on-call service</p>
-                  </div>
+                  <button className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium">
+                    Enable
+                  </button>
                 </div>
-                <button className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium">
-                  Enable
-                </button>
               </div>
-            </div>
+            )}
           </>
         )}
 
         {/* EARNINGS TAB CONTENT */}
         {activeTab === 'earnings' && (
           <>
-            {/* Earnings Summary */}
-            <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-b border-green-200">
-              <div className="grid grid-cols-3 gap-3 mb-3">
-                <div className="bg-white p-3 rounded-lg text-center">
-                  <div className="text-2xl font-bold text-green-600">₹12,450</div>
-                  <div className="text-xs text-gray-600">Today</div>
-                </div>
-                <div className="bg-white p-3 rounded-lg text-center">
-                  <div className="text-2xl font-bold text-green-600">₹89,320</div>
-                  <div className="text-xs text-gray-600">This Week</div>
-                </div>
-                <div className="bg-white p-3 rounded-lg text-center">
-                  <div className="text-2xl font-bold text-green-600">₹3,45,680</div>
-                  <div className="text-xs text-gray-600">This Month</div>
-                </div>
+            {earningsLoading ? (
+              <div className="p-8 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42]"></div>
               </div>
-              <div className="bg-white p-3 rounded-lg">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm text-gray-600">Pending Earnings</span>
-                  <span className="text-lg font-bold text-orange-600">₹24,580</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Total Earnings</span>
-                  <span className="text-lg font-bold text-green-600">₹4,67,230</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Recent Transactions */}
-            <div className="p-4">
-              <h3 className="font-semibold text-gray-900 mb-3">Recent Transactions</h3>
-              <div className="space-y-2">
-                {[
-                  { id: '1', date: '2024-11-15', service: 'Home Visit - Vaccination', amount: 1500, status: 'completed', customer: 'Priya Sharma' },
-                  { id: '2', date: '2024-11-15', service: 'Tele Consultation', amount: 500, status: 'completed', customer: 'Arjun Patel' },
-                  { id: '3', date: '2024-11-14', service: 'Clinic Visit - Checkup', amount: 800, status: 'pending', customer: 'Nitika Verma' },
-                  { id: '4', date: '2024-11-14', service: 'Home Visit - Grooming', amount: 1200, status: 'completed', customer: 'Rajesh Kumar' },
-                  { id: '5', date: '2024-11-13', service: 'Tele Consultation', amount: 500, status: 'completed', customer: 'Meera Singh' },
-                ].map((transaction) => (
-                  <div key={transaction.id} className="border border-gray-200 rounded-xl p-3">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900 text-sm">{transaction.service}</div>
-                        <div className="text-xs text-gray-500">{transaction.customer} • {transaction.date}</div>
+            ) : (
+              <>
+                {/* Earnings Summary */}
+                <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-b border-green-200">
+                  <div className="grid grid-cols-3 gap-3 mb-3">
+                    <div className="bg-white p-3 rounded-lg text-center">
+                      <div className="text-2xl font-bold text-green-600">
+                        ₹{(earningsData?.today || 0).toLocaleString('en-IN')}
                       </div>
-                      <div className="text-right">
-                        <div className="font-bold text-green-600">₹{transaction.amount.toLocaleString()}</div>
-                        <div className={`text-xs px-2 py-0.5 rounded-full inline-block mt-1 ${
-                          transaction.status === 'completed' 
-                            ? 'bg-green-100 text-green-700' 
-                            : 'bg-orange-100 text-orange-700'
-                        }`}>
-                          {transaction.status}
-                        </div>
+                      <div className="text-xs text-gray-600">Today</div>
+                    </div>
+                    <div className="bg-white p-3 rounded-lg text-center">
+                      <div className="text-2xl font-bold text-green-600">
+                        ₹{(earningsData?.thisWeek || 0).toLocaleString('en-IN')}
                       </div>
+                      <div className="text-xs text-gray-600">This Week</div>
+                    </div>
+                    <div className="bg-white p-3 rounded-lg text-center">
+                      <div className="text-2xl font-bold text-green-600">
+                        ₹{(earningsData?.thisMonth || 0).toLocaleString('en-IN')}
+                      </div>
+                      <div className="text-xs text-gray-600">This Month</div>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Earnings Chart */}
-            <div className="p-4 bg-white border-t border-gray-100">
-              <h3 className="font-semibold text-gray-900 mb-3">Earnings Trend (Last 7 Days)</h3>
-              <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-4">
-                <div className="flex items-end justify-between h-32 gap-2">
-                  {[
-                    { day: 'Mon', amount: 2400, height: 60 },
-                    { day: 'Tue', amount: 1800, height: 45 },
-                    { day: 'Wed', amount: 3200, height: 80 },
-                    { day: 'Thu', amount: 2800, height: 70 },
-                    { day: 'Fri', amount: 4000, height: 100 },
-                    { day: 'Sat', amount: 3600, height: 90 },
-                    { day: 'Sun', amount: 2000, height: 50 },
-                  ].map((item, index) => (
-                    <div key={index} className="flex-1 flex flex-col items-center gap-1">
-                      <div className="text-xs text-gray-600 font-medium">₹{item.amount}</div>
-                      <div 
-                        className="w-full bg-gradient-to-t from-green-500 to-green-400 rounded-t-md transition-all hover:from-green-600 hover:to-green-500"
-                        style={{ height: `${item.height}%`, minHeight: '8px' }}
-                      />
-                      <div className="text-xs text-gray-500">{item.day}</div>
+                  <div className="bg-white p-3 rounded-lg">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-gray-600">Pending Earnings</span>
+                      <span className="text-lg font-bold text-orange-600">
+                        ₹{(earningsData?.pending || 0).toLocaleString('en-IN')}
+                      </span>
                     </div>
-                  ))}
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">Total Earnings</span>
+                      <span className="text-lg font-bold text-green-600">
+                        ₹{(earningsData?.total || 0).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-3 pt-3 border-t border-gray-200 flex justify-between text-sm">
-                  <span className="text-gray-600">Weekly Total</span>
-                  <span className="font-bold text-green-600">₹19,800</span>
+
+                {/* Recent Transactions */}
+                <div className="p-4">
+                  <h3 className="font-semibold text-gray-900 mb-3">Recent Transactions</h3>
+                  {(!earningsData?.transactions || earningsData.transactions.length === 0) ? (
+                    <div className="text-center py-8 text-gray-500 text-sm">
+                      No transactions yet
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {earningsData.transactions.map((transaction) => (
+                        <div key={transaction.id} className="border border-gray-200 rounded-xl p-3">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900 text-sm">{transaction.service}</div>
+                              <div className="text-xs text-gray-500">{transaction.customer} • {new Date(transaction.date).toLocaleDateString('en-IN')}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-bold text-green-600">₹{transaction.amount.toLocaleString('en-IN')}</div>
+                              <div className={`text-xs px-2 py-0.5 rounded-full inline-block mt-1 ${
+                                transaction.status === 'completed' 
+                                  ? 'bg-green-100 text-green-700' 
+                                  : 'bg-orange-100 text-orange-700'
+                              }`}>
+                                {transaction.status}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            </div>
+
+                {/* Earnings Chart */}
+                <div className="p-4 bg-white border-t border-gray-100">
+                  <h3 className="font-semibold text-gray-900 mb-3">Earnings Trend (Last 7 Days)</h3>
+                  <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-4">
+                    {(!earningsData?.dailyTrend || earningsData.dailyTrend.length === 0) ? (
+                      <div className="text-center py-8 text-gray-500 text-sm">
+                        No earnings data for this period
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-end justify-between h-32 gap-2">
+                          {(() => {
+                            const maxAmount = Math.max(...earningsData.dailyTrend.map(d => d.amount), 1);
+                            return earningsData.dailyTrend.map((item, index) => {
+                              const heightPercent = maxAmount > 0 ? Math.max((item.amount / maxAmount) * 100, 5) : 5;
+                              return (
+                                <div key={index} className="flex-1 flex flex-col items-center gap-1">
+                                  <div className="text-xs text-gray-600 font-medium">₹{item.amount.toLocaleString('en-IN')}</div>
+                                  <div 
+                                    className="w-full bg-gradient-to-t from-green-500 to-green-400 rounded-t-md transition-all hover:from-green-600 hover:to-green-500"
+                                    style={{ height: `${heightPercent}%`, minHeight: '8px' }}
+                                  />
+                                  <div className="text-xs text-gray-500">{item.day}</div>
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-gray-200 flex justify-between text-sm">
+                          <span className="text-gray-600">Weekly Total</span>
+                          <span className="font-bold text-green-600">
+                            ₹{earningsData.dailyTrend.reduce((sum, d) => sum + d.amount, 0).toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
           </>
         )}
 
         {/* PAYOUTS TAB CONTENT */}
         {activeTab === 'payouts' && (
           <>
-            {/* Payout Summary */}
-            <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-b border-blue-200">
-              <div className="bg-white p-4 rounded-lg mb-3">
-                <div className="text-center mb-3">
-                  <div className="text-3xl font-bold text-blue-600">₹1,23,450</div>
-                  <div className="text-sm text-gray-600">Available for Payout</div>
-                </div>
-                <button className="w-full bg-[#FF8C42] hover:bg-[#ff7a28] text-white rounded-xl h-11 font-medium">
-                  Request Payout
-                </button>
+            {payoutsLoading ? (
+              <div className="p-8 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42]"></div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white p-3 rounded-lg text-center">
-                  <div className="text-xl font-bold text-gray-900">₹24,580</div>
-                  <div className="text-xs text-gray-600">Pending</div>
-                </div>
-                <div className="bg-white p-3 rounded-lg text-center">
-                  <div className="text-xl font-bold text-gray-900">₹4,42,650</div>
-                  <div className="text-xs text-gray-600">Paid Out</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Bank Account Info */}
-            <div className="p-4 bg-white border-b border-gray-100">
-              <h3 className="font-semibold text-gray-900 mb-3">Bank Account</h3>
-              <div className="border border-gray-200 rounded-xl p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <span className="text-xl">🏦</span>
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-medium text-gray-900">HDFC Bank</div>
-                    <div className="text-sm text-gray-600">••••  ••••  ••••  4532</div>
-                  </div>
-                  <button className="text-sm text-[#FF8C42] font-medium">
-                    Change
-                  </button>
-                </div>
-                <div className="text-xs text-gray-500">
-                  Account Holder: {vendorData?.fullName || 'Vendor Name'}
-                </div>
-              </div>
-            </div>
-
-            {/* Payout History */}
-            <div className="p-4">
-              <h3 className="font-semibold text-gray-900 mb-3">Payout History</h3>
-              <div className="space-y-2">
-                {[
-                  { id: '1', date: '2024-11-10', amount: 45000, status: 'completed', txnId: 'TXN123456789' },
-                  { id: '2', date: '2024-11-03', amount: 38500, status: 'completed', txnId: 'TXN123456788' },
-                  { id: '3', date: '2024-10-27', amount: 52300, status: 'completed', txnId: 'TXN123456787' },
-                  { id: '4', date: '2024-10-20', amount: 41200, status: 'completed', txnId: 'TXN123456786' },
-                  { id: '5', date: '2024-10-13', amount: 39800, status: 'completed', txnId: 'TXN123456785' },
-                ].map((payout) => (
-                  <div key={payout.id} className="border border-gray-200 rounded-xl p-3">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900 text-sm">Payout - {payout.date}</div>
-                        <div className="text-xs text-gray-500">TXN ID: {payout.txnId}</div>
+            ) : (
+              <>
+                {/* Payout Summary */}
+                <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-b border-blue-200">
+                  <div className="bg-white p-4 rounded-lg mb-3">
+                    <div className="text-center mb-3">
+                      <div className="text-3xl font-bold text-blue-600">
+                        ₹{(payoutsData?.availableForPayout || 0).toLocaleString('en-IN')}
                       </div>
-                      <div className="text-right">
-                        <div className="font-bold text-blue-600">₹{payout.amount.toLocaleString()}</div>
-                        <div className="text-xs px-2 py-0.5 rounded-full inline-block mt-1 bg-green-100 text-green-700">
-                          {payout.status}
+                      <div className="text-sm text-gray-600">Available for Payout</div>
+                    </div>
+                    <button 
+                      onClick={handleRequestPayout}
+                      disabled={!payoutsData?.availableForPayout || payoutsData.availableForPayout <= 0}
+                      className="w-full bg-[#FF8C42] hover:bg-[#ff7a28] text-white rounded-xl h-11 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Request Payout
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white p-3 rounded-lg text-center">
+                      <div className="text-xl font-bold text-gray-900">
+                        ₹{(payoutsData?.pending || 0).toLocaleString('en-IN')}
+                      </div>
+                      <div className="text-xs text-gray-600">On Hold</div>
+                    </div>
+                    <div className="bg-white p-3 rounded-lg text-center">
+                      <div className="text-xl font-bold text-gray-900">
+                        ₹{(payoutsData?.paidOut || 0).toLocaleString('en-IN')}
+                      </div>
+                      <div className="text-xs text-gray-600">Total Paid Out</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bank Account Info */}
+                <div className="p-4 bg-white border-b border-gray-100">
+                  <h3 className="font-semibold text-gray-900 mb-3">Bank Account</h3>
+                  {payoutsData?.bankAccount ? (
+                    <div className="border border-gray-200 rounded-xl p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                          <span className="text-xl">🏦</span>
                         </div>
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900">{payoutsData.bankAccount.bankName}</div>
+                          <div className="text-sm text-gray-600">{payoutsData.bankAccount.accountNumber}</div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          {payoutsData.bankAccount.verified && (
+                            <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">Verified</span>
+                          )}
+                          <button className="text-sm text-[#FF8C42] font-medium">
+                            Change
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Account Holder: {payoutsData.bankAccount.accountHolder}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border border-dashed border-gray-300 rounded-xl p-4 text-center">
+                      <div className="text-gray-500 mb-2">No bank account linked</div>
+                      <button className="text-sm text-[#FF8C42] font-medium">
+                        + Add Bank Account
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Payout History */}
+                <div className="p-4">
+                  <h3 className="font-semibold text-gray-900 mb-3">Payout History</h3>
+                  {(!payoutsData?.payoutHistory || payoutsData.payoutHistory.length === 0) ? (
+                    <div className="text-center py-8 text-gray-500 text-sm">
+                      No payouts yet
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {payoutsData.payoutHistory.map((payout) => (
+                        <div key={payout.id} className="border border-gray-200 rounded-xl p-3">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900 text-sm">
+                                Payout - {new Date(payout.date).toLocaleDateString('en-IN')}
+                              </div>
+                              <div className="text-xs text-gray-500">TXN ID: {payout.txnId}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-bold text-blue-600">₹{payout.amount.toLocaleString('en-IN')}</div>
+                              <div className={`text-xs px-2 py-0.5 rounded-full inline-block mt-1 ${
+                                payout.status === 'completed' || payout.status === 'processed'
+                                  ? 'bg-green-100 text-green-700'
+                                  : payout.status === 'pending' || payout.status === 'processing'
+                                  ? 'bg-yellow-100 text-yellow-700'
+                                  : 'bg-gray-100 text-gray-700'
+                              }`}>
+                                {payout.status}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Payout Schedule Info */}
+                <div className="p-4 bg-white border-t border-gray-100">
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-xl">ℹ️</span>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-900 mb-1">Payout Schedule</h4>
+                        <p className="text-sm text-gray-600">
+                          {payoutsData?.payoutSchedule || 'Payouts are processed every Friday. Earnings from completed bookings are held for 48 hours before becoming available for payout.'}
+                        </p>
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Payout Schedule Info */}
-            <div className="p-4 bg-white border-t border-gray-100">
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-white text-xl">ℹ️</span>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-1">Payout Schedule</h4>
-                    <p className="text-sm text-gray-600">
-                      Payouts are processed every <strong>Friday</strong>. Earnings from completed bookings are held for 48 hours before becoming available for payout.
-                    </p>
-                  </div>
                 </div>
-              </div>
-            </div>
+              </>
+            )}
           </>
         )}
       </div>
@@ -1239,6 +1504,8 @@ export function VendorBookingManagement({
           customerName={chatBooking.customerName}
           bookingStatus={chatBooking.status}
           serviceName={chatBooking.serviceName}
+          serviceType={chatBooking.serviceType || chatBooking.service_type} // ✅ CRITICAL FIX: Pass service type
+          meetingId={chatBooking.meetingId || chatBooking.meeting_id} // ✅ CRITICAL FIX: Pass meeting ID
           onClose={() => {
             setShowChatModal(false);
             setChatBooking(null);
@@ -1250,6 +1517,11 @@ export function VendorBookingManagement({
             setChatBooking(null);
             // Could navigate to support page or open support modal
             console.log('Support handoff requested for booking:', bookingId, reason);
+          }}
+          onVideoCallStart={(bookingId, meetingId) => {
+            // ✅ CRITICAL FIX: Handle video call start
+            console.log('Video call started for booking:', bookingId, 'Meeting:', meetingId);
+            // Could update booking state or show notification
           }}
         />
       )}
@@ -1264,6 +1536,20 @@ export function VendorBookingManagement({
             setDetailBookingId(null);
           }}
           onRefresh={() => loadBookings()}
+        />
+      )}
+
+      {/* PRESCRIPTION HISTORY MODAL */}
+      {showPrescriptionModal && prescriptionBookingId && (
+        <PrescriptionHistoryModal
+          bookingId={prescriptionBookingId}
+          vendorId={vendorId}
+          vendorPhone={vendorPhone || ''}
+          onClose={() => {
+            setShowPrescriptionModal(false);
+            setPrescriptionBookingId(null);
+          }}
+          onUploadSuccess={() => loadBookings()}
         />
       )}
     </div>

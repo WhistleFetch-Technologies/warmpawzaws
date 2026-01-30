@@ -17,7 +17,7 @@ import {
   Eye,
   X
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner';
 
 interface CustomerChatInterfaceProps {
@@ -64,7 +64,7 @@ export function CustomerChatInterface({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadMessages();
@@ -84,7 +84,7 @@ export function CustomerChatInterface({
         `${API_BASE}/chat/booking/${bookingId}/messages`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -113,7 +113,7 @@ export function CustomerChatInterface({
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -173,7 +173,7 @@ export function CustomerChatInterface({
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: formData
         }
@@ -205,7 +205,7 @@ export function CustomerChatInterface({
         `${API_BASE}/chat/file/${fileId}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -234,7 +234,7 @@ export function CustomerChatInterface({
         `${API_BASE}/chat/file/${fileId}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

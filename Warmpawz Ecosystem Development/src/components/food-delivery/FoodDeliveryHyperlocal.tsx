@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, MapPin, ShoppingBag, Star, Clock, Package, Filter } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 /**
  * 🍽️ FOOD DELIVERY HYPERLOCAL COMPONENT
@@ -81,10 +81,10 @@ export default function FoodDeliveryHyperlocal({
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/food-delivery/available-vendors?lat=${userLocation.lat}&lng=${userLocation.lng}&radius=5`,
+        `${getApiBaseUrl()}/food-delivery/available-vendors?lat=${userLocation.lat}&lng=${userLocation.lng}&radius=5`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -106,10 +106,10 @@ export default function FoodDeliveryHyperlocal({
   const fetchVendorMenu = async (vendorId: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/food-delivery/menu/${vendorId}`,
+        `${getApiBaseUrl()}/food-delivery/menu/${vendorId}`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -157,12 +157,12 @@ export default function FoodDeliveryHyperlocal({
       const { subtotal, deliveryFee, total } = calculateTotal();
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/food-delivery/order/create`,
+        `${getApiBaseUrl()}/food-delivery/order/create`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({
             customerId,

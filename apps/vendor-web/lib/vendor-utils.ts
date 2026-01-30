@@ -62,17 +62,16 @@ export function normalizeServiceStyle(style: string | null | undefined): 'at_hom
 }
 
 /**
- * Get display name for service style
+ * Get display name for service style (generic).
+ * For role-based labels (e.g. "Training center booking") use getServiceStyleLabel from @/lib/service-style-labels.
  */
 export function getServiceStyleDisplayName(style: string): string {
   const normalized = normalizeServiceStyle(style);
-  
   const displayNames: Record<string, string> = {
     'at_home': 'At Home',
     'at_center': 'At Center',
     'tele': 'Tele Consultation',
   };
-  
   return displayNames[normalized] || style;
 }
 
@@ -89,12 +88,15 @@ export function hasVendorRole(
   const rolesToCheck = Array.isArray(roleIdOrName) ? roleIdOrName : [roleIdOrName];
   
   return rolesToCheck.some(role => {
-    const normalizedRole = role.toLowerCase().trim();
+    const normalizedRole = role.toLowerCase().trim().replace(/\s+/g, '_');
+    const vendorRoleNorm = normalizeRoleName(roleName || '');
     return (
       roleId?.toLowerCase() === normalizedRole ||
       roleName?.toLowerCase() === normalizedRole ||
       roleId?.includes(normalizedRole) ||
-      roleName?.includes(normalizedRole)
+      roleName?.includes(normalizedRole) ||
+      vendorRoleNorm === normalizedRole ||
+      (vendorRoleNorm && normalizedRole.includes(vendorRoleNorm))
     );
   });
 }
@@ -202,4 +204,99 @@ export function isServiceApplicableToRole(
   }
   
   return false;
+}
+
+/**
+ * ============================================================================
+ * SOLO VENDOR DETECTION - SINGLE SOURCE OF TRUTH
+ * ============================================================================
+ * Use this function throughout the application to check if a vendor is a solo provider.
+ * Solo providers have different capabilities and restrictions.
+ */
+
+/**
+ * Check if vendor is a solo provider (individual practitioner without a business/center)
+ * Solo providers have restricted capabilities:
+ * - No at_center service style (they don't have a physical location)
+ * - No staff management (they are the only provider)
+ * - Different profile structure (professional profile vs center profile)
+ * 
+ * @param vendorData - Vendor data object from API or state
+ * @returns true if vendor is a solo provider
+ */
+export function isSoloVendor(vendorData: any): boolean {
+  if (!vendorData) return false;
+  
+  // Check explicit vendorConfiguration field (preferred method from backend)
+  if (vendorData.vendorConfiguration === 'solo') return true;
+  
+  // Check various boolean flags
+  if (vendorData.isSoloProvider === true) return true;
+  if (vendorData.is_solo_provider === true) return true;
+  if (vendorData.isIndividualProvider === true) return true;
+  if (vendorData.is_individual_provider === true) return true;
+  
+  // Check vendor_type field
+  if (vendorData.vendor_type === 'solo') return true;
+  if (vendorData.vendorType === 'solo') return true;
+  if (vendorData.vendor_type === 'individual') return true;
+  if (vendorData.vendorType === 'individual') return true;
+  
+  // Check role name patterns (some roles are inherently solo)
+  const roleName = getVendorRoleName(vendorData)?.toLowerCase() || '';
+  const roleId = getVendorRoleId(vendorData)?.toLowerCase() || '';
+  const roleString = `${roleName} ${roleId}`;
+  
+  const soloRolePatterns = [
+    '_solo',
+    'solo_',
+    'individual',
+    'freelance',
+    'independent',
+  ];
+  
+  if (soloRolePatterns.some(pattern => roleString.includes(pattern))) {
+    return true;
+  }
+  
+  return false;
+}
+
+/**
+ * Get the allowed service styles for a vendor based on their configuration
+ * Solo vendors cannot have at_center style
+ * 
+ * @param vendorData - Vendor data object
+ * @returns Array of allowed service style strings
+ */
+export function getVendorAllowedServiceStyles(vendorData: any): ('at_center' | 'at_home' | 'tele')[] {
+  // Get base allowed styles from vendor data
+  const baseStyles = vendorData?.allowedServiceStyles || 
+                     vendorData?.serviceStyles || 
+                     vendorData?.selectedServiceStyles || 
+                     ['at_center', 'at_home', 'tele'];
+  
+  // Filter to valid styles
+  const validStyles = baseStyles.filter((style: string) => 
+    ['at_center', 'at_home', 'tele'].includes(style)
+  ) as ('at_center' | 'at_home' | 'tele')[];
+  
+  // Solo vendors cannot have at_center
+  if (isSoloVendor(vendorData)) {
+    return validStyles.filter(style => style !== 'at_center');
+  }
+  
+  return validStyles;
+}
+
+/**
+ * Check if vendor can use a specific service style
+ * 
+ * @param vendorData - Vendor data object
+ * @param style - Service style to check
+ * @returns true if vendor can use this style
+ */
+export function canVendorUseServiceStyle(vendorData: any, style: 'at_center' | 'at_home' | 'tele'): boolean {
+  const allowedStyles = getVendorAllowedServiceStyles(vendorData);
+  return allowedStyles.includes(style);
 }

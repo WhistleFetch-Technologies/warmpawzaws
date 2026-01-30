@@ -5,7 +5,7 @@ import { Label } from '../ui/label';
 import { Card } from '../ui/card';
 import { Building, CheckCircle, AlertCircle, Loader2, Search } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface BankAccountValidationProps {
   vendorId: string;
@@ -55,7 +55,7 @@ export function BankAccountValidation({
   const [ifscValid, setIfscValid] = useState<boolean | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   // Validate IFSC code with Razorpay API
   const validateIFSC = async (code: string) => {
@@ -73,7 +73,7 @@ export function BankAccountValidation({
       const response = await fetch(`${API_BASE}/vendor/validate-ifsc`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ ifscCode: code.toUpperCase() })
@@ -171,7 +171,7 @@ export function BankAccountValidation({
       const response = await fetch(`${API_BASE}/vendor/${vendorId}/bank-details`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ bankDetails })

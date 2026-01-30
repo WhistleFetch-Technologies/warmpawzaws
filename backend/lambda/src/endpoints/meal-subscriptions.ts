@@ -15,6 +15,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update, withTransaction } from '../database/rds-connection';
 
@@ -615,9 +616,9 @@ export function registerMealSubscriptionEndpoints(app: Hono) {
       body: '',
       pathParameters: {},
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' };
     const result = await getMealPlansHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -632,9 +633,9 @@ export function registerMealSubscriptionEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' };
     const result = await createSubHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -648,9 +649,9 @@ export function registerMealSubscriptionEndpoints(app: Hono) {
       body: '',
       pathParameters: { customerId: c.req.param('customerId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' };
     const result = await getCustomerSubsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -665,9 +666,9 @@ export function registerMealSubscriptionEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: { subscriptionId: c.req.param('subscriptionId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' };
     const result = await manageSubHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -681,9 +682,9 @@ export function registerMealSubscriptionEndpoints(app: Hono) {
       body: '',
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'meal-subscriptions', functionVersion: '$LATEST' };
     const result = await processRenewalsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });

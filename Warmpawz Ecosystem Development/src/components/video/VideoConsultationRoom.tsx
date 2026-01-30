@@ -6,9 +6,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Video, VideoOff, Mic, MicOff, PhoneOff, Monitor, MonitorOff, Users } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 interface VideoConsultationRoomProps {
   consultationId: string;
@@ -98,7 +98,7 @@ export function VideoConsultationRoom({
     try {
       const response = await fetch(`${API_BASE}/video/consultation/${consultationId}`, {
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         }
       });
 
@@ -157,7 +157,7 @@ export function VideoConsultationRoom({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({ participantType: userType })
       });
@@ -206,7 +206,7 @@ export function VideoConsultationRoom({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({ duration: callDuration })
       });

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Clock, Navigation, Phone, MessageCircle, Star, Camera, Play, Pause, CheckCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { WalkerSessionSummary } from './WalkerSessionSummary';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface BookingDetails {
   petId: string;
@@ -93,12 +93,12 @@ export function WalkerActiveSession({
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/session/verify-otp`,
+        `${getApiBaseUrl()}/session/verify-otp`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             bookingId,
@@ -144,12 +144,12 @@ export function WalkerActiveSession({
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/session/${sessionId}/complete`,
+        `${getApiBaseUrl()}/session/${sessionId}/complete`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             distance: sessionData.distance,

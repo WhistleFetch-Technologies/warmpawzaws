@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Clock, MapPin, Calendar, User, Phone, Mail, 
   Activity, TrendingUp, AlertCircle, CheckCircle, XCircle,
@@ -32,17 +32,11 @@ export function VendorActivityTracker() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'booking' | 'payment' | 'review' | 'status_change'>('all');
 
-  useEffect(() => {
-    loadActivities();
-    // Refresh every 30 seconds
-    const interval = setInterval(loadActivities, 30000);
-    return () => clearInterval(interval);
-  }, [filter]);
-
-  const loadActivities = async () => {
+  // ✅ FIX: Use useCallback to memoize loadActivities with filter dependency
+  const loadActivities = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await apiClient.get<any>(`/admin/vendors/activities?filter=${filter}&limit=50`);
+      const data = await apiClient.get<{ activities: VendorActivity[] }>(`/admin/vendors/activities?filter=${filter}&limit=50`);
       
       // Use real data from API
       if (data && data.activities) {
@@ -57,7 +51,14 @@ export function VendorActivityTracker() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter]);
+
+  useEffect(() => {
+    loadActivities();
+    // Refresh every 30 seconds
+    const interval = setInterval(loadActivities, 30000);
+    return () => clearInterval(interval);
+  }, [loadActivities]); // Now properly depends on memoized loadActivities
 
   const getActivityIcon = (type: string) => {
     switch (type) {

@@ -18,6 +18,9 @@
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { isValidUUID } from '../types/entities';
+import { getRazorpayConfig, razorpayRequest } from '../utils/razorpay-client';
+import { getDiscoveryRules } from '../lib/rule-engine';
+import { randomUUID } from 'crypto';
 
 export function registerMealPlanEndpoints(app: Hono) {
 
@@ -202,10 +205,15 @@ export function registerMealPlanEndpoints(app: Hono) {
       const petSize = c.req.query('size');
       const dietType = c.req.query('dietType');
       const mealType = c.req.query('mealType');
+      const purpose = c.req.query('purpose'); // Phase 1: weight_management, maintenance, etc.
       const city = c.req.query('city');
-      const lat = parseFloat(c.req.query('lat') || '0');
-      const lng = parseFloat(c.req.query('lng') || '0');
-      const maxRadius = parseFloat(c.req.query('maxRadius') || '0'); // ✅ FIX GAP-9.1: 10km radius filter
+      const lat = parseFloat(c.req.query('lat') || c.req.query('latitude') || '0');
+      const lng = parseFloat(c.req.query('lng') || c.req.query('longitude') || '0');
+      const maxRadiusRaw = c.req.query('maxRadius') || c.req.query('radius') || '';
+      const rules = await getDiscoveryRules('pet_nutritionist', 'meal_search');
+      const defaultRadiusKm = (lat && lng) ? (rules.discovery_radius_km ?? 10) : 0;
+      const maxRadius = maxRadiusRaw ? parseFloat(maxRadiusRaw) : defaultRadiusKm;
+      const maxResults = rules.discovery_max_results ?? 50;
       const filters = c.req.query('filters'); // ✅ FIX GAP-9.2: Comma-separated filter list
 
       // ✅ FIX GAP-9.1: Calculate distance using Haversine formula
@@ -220,10 +228,11 @@ export function registerMealPlanEndpoints(app: Hono) {
         return R * c;
       };
 
+      // Phase 1: Use v.latitude/v.longitude with fallback to metadata for hyperlocal (10km)
       let queryText = `
         SELECT mp.*, v.business_name as vendor_name, v.city, v.address,
-               CAST(v.metadata->>'lat' AS NUMERIC) as vendor_lat,
-               CAST(v.metadata->>'lng' AS NUMERIC) as vendor_lng,
+               COALESCE(v.latitude, CAST(v.metadata->>'lat' AS NUMERIC), CAST(v.metadata->>'latitude' AS NUMERIC)) as vendor_lat,
+               COALESCE(v.longitude, CAST(v.metadata->>'lng' AS NUMERIC), CAST(v.metadata->>'longitude' AS NUMERIC)) as vendor_lng,
                v.id as vendor_id
         FROM meal_plans mp
         JOIN vendors v ON mp.vendor_id = v.id
@@ -261,19 +270,13 @@ export function registerMealPlanEndpoints(app: Hono) {
         params.push(dietType);
       }
 
-      if (mealType) {
-        paramCount++;
-        queryText += ` AND mp.meal_type = $${paramCount}`;
-        params.push(mealType);
-      }
-
       if (city) {
         paramCount++;
         queryText += ` AND v.city ILIKE $${paramCount}`;
         params.push(`%${city}%`);
       }
 
-      queryText += ` ORDER BY mp.avg_rating DESC, mp.total_orders DESC LIMIT 100`;
+      queryText += ` ORDER BY mp.avg_rating DESC, mp.total_orders DESC LIMIT ${Math.min(100, Math.max(1, maxResults))}`;
 
       const result = await query(queryText, params);
 
@@ -289,17 +292,37 @@ export function registerMealPlanEndpoints(app: Hono) {
         // Sort by distance after filtering
         filteredPlans.sort((a: any, b: any) => (a.distance_km || 999) - (b.distance_km || 999));
       }
+      // Phase 1: Filter by purpose and mealType in memory (columns may not exist in all schemas)
+      if (purpose) {
+        const purposeLower = purpose.toLowerCase();
+        filteredPlans = filteredPlans.filter((mp: any) => {
+          const p = mp.purpose || '';
+          return String(p).toLowerCase().includes(purposeLower);
+        });
+      }
+      if (mealType) {
+        const mealTypeLower = mealType.toLowerCase();
+        filteredPlans = filteredPlans.filter((mp: any) => {
+          const mt = mp.meal_type || '';
+          return String(mt).toLowerCase() === mealTypeLower || String(mt).toLowerCase().includes(mealTypeLower);
+        });
+      }
 
       return c.json({
         success: true,
-        mealPlans: filteredPlans.map((mp: any) => ({
-          ...mp,
-          photos: typeof mp.photos === 'string' ? JSON.parse(mp.photos) : mp.photos,
-          suitableFor: typeof mp.suitable_for === 'string' ? JSON.parse(mp.suitable_for) : mp.suitable_for,
-          ingredients: typeof mp.ingredients === 'string' ? JSON.parse(mp.ingredients) : mp.ingredients,
-          nutritionInfo: typeof mp.nutrition_info === 'string' ? JSON.parse(mp.nutrition_info) : mp.nutrition_info,
-          distanceKm: mp.distance_km || null, // ✅ FIX GAP-9.1: Include distance in response
-        })),
+        mealPlans: filteredPlans.map((mp: any) => {
+          const distanceKm = mp.distance_km || null;
+          const estimatedDeliveryMinutes = distanceKm != null ? Math.round(15 + distanceKm * 3) : null; // Phase 1: ETA ~15min + 3min/km
+          return {
+            ...mp,
+            photos: typeof mp.photos === 'string' ? JSON.parse(mp.photos) : mp.photos,
+            suitableFor: typeof mp.suitable_for === 'string' ? JSON.parse(mp.suitable_for) : mp.suitable_for,
+            ingredients: typeof mp.ingredients === 'string' ? JSON.parse(mp.ingredients) : mp.ingredients,
+            nutritionInfo: typeof mp.nutrition_info === 'string' ? JSON.parse(mp.nutrition_info) : mp.nutrition_info,
+            distanceKm,
+            estimatedDeliveryMinutes, // Phase 1: for customer UI "ETA ~X min"
+          };
+        }),
         filters: {
           maxRadius: maxRadius > 0 ? maxRadius : null,
           appliedFilters: filters ? filters.split(',').map(f => f.trim()) : [],
@@ -354,6 +377,104 @@ export function registerMealPlanEndpoints(app: Hono) {
   // ============================================================================
   // MEAL ORDERS
   // ============================================================================
+
+  /**
+   * GET /meal-plans/:planId/order-preview
+   * Phase 2: Get order breakdown (subtotal, delivery, platform fee, total) for checkout UI
+   */
+  app.get("/meal-plans/:planId/order-preview", async (c) => {
+    try {
+      const { planId } = c.req.param();
+      const quantity = Math.max(1, parseInt(c.req.query('quantity') || '1'));
+      const logisticsType = c.req.query('logisticsType') || 'warmpawz';
+
+      const plans = await select('meal_plans', { id: planId });
+      if (plans.length === 0) {
+        return c.json({ error: 'Meal plan not found' }, 404);
+      }
+      const plan = plans[0];
+      const subtotal = parseFloat(plan.price_per_meal || plan.price || 0) * quantity;
+
+      let deliveryFee = 0;
+      let platformFee = 0;
+      let convenienceFee = 0;
+      try {
+        const logisticsRules = await query(
+          `SELECT * FROM logistics_rules WHERE is_active = true AND ('meal' = ANY(applies_to) OR 'nutritionist' = ANY(applies_to)) LIMIT 1`
+        ).catch(() => ({ rows: [] }));
+        if (logisticsRules.rows.length > 0 && logisticsType === 'warmpawz') {
+          deliveryFee = parseFloat(logisticsRules.rows[0].base_fee || '50');
+        } else if (logisticsType === 'warmpawz') {
+          deliveryFee = 50;
+        }
+        const feeSettings = await query(
+          `SELECT * FROM admin_settings WHERE setting_key IN ('platform_fee_percentage', 'convenience_fee', 'max_platform_fee') AND (service_type = 'meal' OR service_type = 'nutritionist' OR service_type = 'all' OR service_type IS NULL)`
+        ).catch(() => ({ rows: [] }));
+        const feeMap: Record<string, any> = {};
+        for (const row of feeSettings.rows) {
+          feeMap[row.setting_key] = row.setting_value;
+        }
+        const platformFeePercentage = parseFloat(feeMap['platform_fee_percentage'] || '2');
+        const maxPlatformFee = parseFloat(feeMap['max_platform_fee'] || '500');
+        platformFee = Math.round(subtotal * (platformFeePercentage / 100));
+        if (maxPlatformFee > 0 && platformFee > maxPlatformFee) platformFee = maxPlatformFee;
+        convenienceFee = parseFloat(feeMap['convenience_fee'] || '0');
+      } catch (_) {
+        deliveryFee = logisticsType === 'warmpawz' ? 50 : 0;
+        platformFee = Math.round(subtotal * 0.02);
+      }
+      const totalAmount = subtotal + deliveryFee + platformFee + convenienceFee;
+      return c.json({
+        success: true,
+        subtotal,
+        deliveryFee,
+        platformFee,
+        convenienceFee,
+        totalAmount,
+        leadTimeHours: plan.lead_time_hours ?? 24,
+      });
+    } catch (error: any) {
+      console.error('Error meal order preview:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /meal/orders/create-razorpay-order
+   * Phase 2: Create Razorpay order for meal checkout (amount in rupees)
+   */
+  app.post("/meal/orders/create-razorpay-order", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { amountInRupees, receipt, notes } = body;
+      const amountRupees = parseFloat(amountInRupees ?? body.amount ?? 0);
+      if (!amountRupees || amountRupees <= 0) {
+        return c.json({ error: 'amountInRupees must be a positive number' }, 400);
+      }
+      const config = await getRazorpayConfig();
+      if (!config?.keyId || !config?.keySecret) {
+        return c.json({ error: 'Payment gateway not configured' }, 503);
+      }
+      const receiptId = receipt || `meal_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
+      const orderData = {
+        amount: Math.round(amountRupees * 100),
+        currency: 'INR',
+        receipt: receiptId,
+        notes: notes || {},
+      };
+      const razorpayOrder = await razorpayRequest('/orders', 'POST', orderData, 15000);
+      return c.json({
+        success: true,
+        razorpayOrderId: razorpayOrder.id,
+        keyId: config.keyId,
+        amount: Math.round(amountRupees * 100),
+        currency: 'INR',
+      });
+    } catch (error: any) {
+      console.error('Error creating meal Razorpay order:', error);
+      return c.json({ error: error.message || 'Payment gateway error' }, 500);
+    }
+  });
 
   /**
    * POST /meal/orders/create
@@ -520,6 +641,49 @@ export function registerMealPlanEndpoints(app: Hono) {
   });
 
   /**
+   * POST /meal/orders/:orderId/review
+   * Phase 5: Submit rating and optional review for a delivered meal order
+   */
+  app.post("/meal/orders/:orderId/review", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const body = await c.req.json().catch(() => ({}));
+      const rating = typeof body.rating === 'number' ? body.rating : parseInt(body.rating, 10);
+      const review = typeof body.review === 'string' ? body.review.trim() : '';
+
+      if (!rating || rating < 1 || rating > 5) {
+        return c.json({ error: 'rating must be a number between 1 and 5' }, 400);
+      }
+
+      const orders = await select('meal_orders', { id: orderId });
+      if (orders.length === 0) {
+        return c.json({ error: 'Order not found' }, 404);
+      }
+      const order = orders[0];
+      if (order.status !== 'delivered') {
+        return c.json({ error: 'Only delivered orders can be reviewed' }, 400);
+      }
+      if (order.rated_at) {
+        return c.json({ error: 'Order already reviewed' }, 400);
+      }
+
+      await update('meal_orders', { id: orderId }, {
+        rating,
+        review: review || null,
+        rated_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        message: 'Thank you for your review!',
+      });
+    } catch (error: any) {
+      console.error('Error submitting meal order review:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /meal/orders/:orderId
    * Get order details
    */
@@ -664,13 +828,14 @@ export function registerMealPlanEndpoints(app: Hono) {
       const { orderId } = c.req.param();
       const { status, notes } = await c.req.json();
 
-      const validStatuses = ['preparing', 'ready_for_pickup', 'picked_up', 'on_the_way', 'delivered', 'cancelled'];
+      const validStatuses = ['accepted', 'preparing', 'ready_for_pickup', 'picked_up', 'on_the_way', 'delivered', 'cancelled'];
       if (!validStatuses.includes(status)) {
         return c.json({ error: 'Invalid status' }, 400);
       }
 
       const updateData: Record<string, any> = { status };
 
+      if (status === 'accepted') updateData.accepted_at = new Date().toISOString();
       if (status === 'preparing') updateData.prep_started_at = new Date().toISOString();
       if (status === 'ready_for_pickup') updateData.ready_at = new Date().toISOString();
       if (status === 'picked_up') updateData.picked_up_at = new Date().toISOString();
@@ -876,23 +1041,59 @@ export function registerMealPlanEndpoints(app: Hono) {
   /**
    * GET /meal-plans/search/filters
    * Get available filter options for nutritionist meal plans
+   * Phase 1: Returns purpose and mealType options (static + from DB when columns exist)
    */
   app.get("/meal-plans/search/filters", async (c) => {
     try {
-      const filters = await query(`
-        SELECT DISTINCT
-          jsonb_array_elements_text(suitable_for->'species') as species,
-          jsonb_array_elements_text(suitable_for->'sizes') as size,
-          jsonb_array_elements_text(suitable_for->'ages') as age,
-          unnest(diet_type) as diet_type
-        FROM meal_plans
-        WHERE is_active = true
-      `);
+      const staticPurpose = ['weight_management', 'maintenance', 'muscle_gain', 'allergy_management', 'senior_care'];
+      const staticMealType = ['fresh_daily', 'fresh_weekly', 'preserved_monthly', 'frozen', 'instant'];
 
-      const species = [...new Set(filters.rows.map((r: any) => r.species).filter(Boolean))];
-      const sizes = [...new Set(filters.rows.map((r: any) => r.size).filter(Boolean))];
-      const ages = [...new Set(filters.rows.map((r: any) => r.age).filter(Boolean))];
-      const dietTypes = [...new Set(filters.rows.map((r: any) => r.diet_type).filter(Boolean))];
+      let species: string[] = [];
+      let sizes: string[] = [];
+      let ages: string[] = [];
+      let dietTypes: string[] = [];
+      let purpose: string[] = [...staticPurpose];
+      let mealType: string[] = [...staticMealType];
+
+      try {
+        const filters = await query(`
+          SELECT DISTINCT
+            jsonb_array_elements_text(suitable_for->'species') as species,
+            jsonb_array_elements_text(suitable_for->'sizes') as size,
+            jsonb_array_elements_text(suitable_for->'ages') as age,
+            unnest(diet_type) as diet_type
+          FROM meal_plans
+          WHERE is_active = true
+        `);
+        species = [...new Set(filters.rows.map((r: any) => r.species).filter(Boolean))];
+        sizes = [...new Set(filters.rows.map((r: any) => r.size).filter(Boolean))];
+        ages = [...new Set(filters.rows.map((r: any) => r.age).filter(Boolean))];
+        dietTypes = [...new Set(filters.rows.map((r: any) => r.diet_type).filter(Boolean))];
+      } catch (_) {
+        // suitable_for / diet_type may not exist; keep defaults
+      }
+
+      // Phase 1: Add purpose/meal_type from DB if columns exist
+      try {
+        const cols = await query(`
+          SELECT column_name FROM information_schema.columns
+          WHERE table_name = 'meal_plans' AND column_name IN ('purpose', 'meal_type')
+        `);
+        const hasPurpose = cols.rows.some((r: any) => r.column_name === 'purpose');
+        const hasMealType = cols.rows.some((r: any) => r.column_name === 'meal_type');
+        if (hasPurpose) {
+          const res = await query(`SELECT DISTINCT purpose FROM meal_plans WHERE is_active = true AND purpose IS NOT NULL AND purpose != ''`);
+          const fromDb = res.rows.map((r: any) => r.purpose).filter(Boolean);
+          if (fromDb.length) purpose = [...new Set([...staticPurpose, ...fromDb])];
+        }
+        if (hasMealType) {
+          const res = await query(`SELECT DISTINCT meal_type FROM meal_plans WHERE is_active = true AND meal_type IS NOT NULL AND meal_type != ''`);
+          const fromDb = res.rows.map((r: any) => r.meal_type).filter(Boolean);
+          if (fromDb.length) mealType = [...new Set([...staticMealType, ...fromDb])];
+        }
+      } catch (_) {
+        // Keep static purpose/mealType
+      }
 
       return c.json({
         success: true,
@@ -901,10 +1102,129 @@ export function registerMealPlanEndpoints(app: Hono) {
           sizes,
           ages,
           dietTypes,
+          purpose,
+          mealType,
         },
       });
     } catch (error: any) {
       console.error('Error getting filters:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /meal/orders/:orderId/notify-logistics
+   * Phase 3: Notify logistics for meal order (creates delivery_tracking record for pickup)
+   */
+  app.post("/meal/orders/:orderId/notify-logistics", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+
+      const orders = await select('meal_orders', { id: orderId });
+      if (orders.length === 0) {
+        return c.json({ error: 'Meal order not found' }, 404);
+      }
+      const order = orders[0];
+      if (order.vendor_id == null) {
+        return c.json({ error: 'Order has no vendor' }, 400);
+      }
+
+      const existing = await query(
+        'SELECT id FROM delivery_tracking WHERE meal_order_id = $1 LIMIT 1',
+        [orderId]
+      ).catch(() => ({ rows: [] }));
+      if (existing.rows.length > 0) {
+        return c.json({
+          success: true,
+          message: 'Logistics already notified',
+          trackingId: existing.rows[0].id,
+        });
+      }
+
+      const tracking = await insert('delivery_tracking', {
+        meal_order_id: orderId,
+        pharmacy_order_id: null,
+        status: 'assigned',
+        assigned_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        message: 'Logistics notified',
+        trackingId: tracking[0]?.id,
+      });
+    } catch (error: any) {
+      console.error('Error notifying logistics:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /meal/orders/:orderId/assign-delivery
+   * Phase 4: Assign delivery partner to meal order (generates OTP, updates tracking)
+   */
+  app.post("/meal/orders/:orderId/assign-delivery", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const body = await c.req.json();
+      const {
+        deliveryPersonName,
+        deliveryPersonPhone,
+        deliveryPersonPhoto,
+        vehicleNumber,
+        deliveryPartnerId,
+      } = body;
+
+      const orders = await select('meal_orders', { id: orderId });
+      if (orders.length === 0) {
+        return c.json({ error: 'Meal order not found' }, 404);
+      }
+
+      const existing = await query(
+        'SELECT id FROM delivery_tracking WHERE meal_order_id = $1 LIMIT 1',
+        [orderId]
+      ).catch(() => ({ rows: [] }));
+
+      const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
+
+      if (existing.rows.length > 0) {
+        await update('delivery_tracking', { id: existing.rows[0].id }, {
+          delivery_otp: deliveryOtp,
+          delivery_person_name: deliveryPersonName,
+          delivery_person_phone: deliveryPersonPhone,
+          delivery_person_photo: deliveryPersonPhoto,
+          vehicle_number: vehicleNumber,
+          logistics_partner_id: deliveryPartnerId || null,
+          status: 'assigned',
+          assigned_at: new Date().toISOString(),
+        });
+      } else {
+        await insert('delivery_tracking', {
+          meal_order_id: orderId,
+          pharmacy_order_id: null,
+          logistics_partner_id: deliveryPartnerId || null,
+          delivery_person_name: deliveryPersonName,
+          delivery_person_phone: deliveryPersonPhone,
+          delivery_person_photo: deliveryPersonPhoto,
+          vehicle_number: vehicleNumber,
+          status: 'assigned',
+          delivery_otp: deliveryOtp,
+          assigned_at: new Date().toISOString(),
+        });
+      }
+
+      await update('meal_orders', { id: orderId }, {
+        status: 'ready_for_pickup',
+        updated_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        deliveryOtp,
+        message: 'Delivery partner assigned',
+      });
+    } catch (error: any) {
+      console.error('Error assigning delivery:', error);
       return c.json({ error: error.message }, 500);
     }
   });

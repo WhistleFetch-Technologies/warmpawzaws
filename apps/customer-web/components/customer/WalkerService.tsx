@@ -1,13 +1,15 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Bike, Star, MapPin, Clock, Search, Navigation, Radio, Eye, Play, Package, Footprints, Plus } from 'lucide-react';
+import { Dog, Star, MapPin, Clock, Search, Navigation, Radio, Eye, Play, Package, Footprints, Plus, Bike } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { PromotionBanner } from './shared/PromotionBanner';
 import { WALKING_NEEDS } from './ProblemGridSection';
+import { useProblemGridByRole } from './useProblemGridByRole';
+import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 
 interface WalkerServiceProps {
   phone: string;
@@ -26,11 +28,13 @@ interface ActiveWalk {
 }
 
 export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps) {
+  const walkingNeeds = useProblemGridByRole('walker');
   const [loading, setLoading] = useState(true);
   const [walkers, setWalkers] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeWalks, setActiveWalks] = useState<ActiveWalk[]>([]);
   const [activePackages, setActivePackages] = useState<any[]>([]);
+  const [stats, setStats] = useState<any>(null);
 
   useEffect(() => {
     loadWalkers();
@@ -78,19 +82,29 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
   const loadWalkers = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({
-        roleId: 'pet_walker',
-        ...(searchQuery && { query: searchQuery })
-      });
-
-      // Append params to URL query string
-      const endpoint = `/customer/vendors/search${params.toString() ? `?${params.toString()}` : ''}`;
-      const data = await apiClient.get<{ vendors?: any[]; services?: any[]; staff?: any[] }>(endpoint);
-      const walkerList = data.vendors || data.services || data.staff || [];
+      // Rule: Home service = only solo with at_home. Use discover-services with serviceStyle=at_home.
+      const locationParams = (() => {
+        try {
+          const lat = typeof localStorage !== 'undefined' && localStorage.getItem('customer_latitude');
+          const lng = typeof localStorage !== 'undefined' && localStorage.getItem('customer_longitude');
+          if (lat && lng) return `&latitude=${lat}&longitude=${lng}`;
+        } catch (_) {}
+        return '';
+      })();
+      let walkerList: any[] = [];
+      try {
+        const endpoint = `/customer/discover-services?category=walker&serviceStyle=at_home&roleId=walker${locationParams}`;
+        const data = await apiClient.get<{ vendors?: any[]; providers?: any[]; services?: any[]; staff?: any[] }>(endpoint);
+        walkerList = data.vendors || data.providers || data.services || data.staff || [];
+      } catch (_) {
+        // Fallback: vendors/search with serviceStyle=at_home
+        const params = new URLSearchParams({ roleId: 'pet_walker', serviceStyle: 'at_home', ...(searchQuery && { query: searchQuery }) });
+        const data = await apiClient.get<{ vendors?: any[]; services?: any[]; staff?: any[] }>(`/customer/vendors/search?${params.toString()}`);
+        walkerList = data.vendors || data.services || data.staff || [];
+      }
       setWalkers(walkerList);
     } catch (error) {
       console.error('Error loading walkers:', error);
-      // No mock fallback - show empty state when API fails
       setWalkers([]);
     } finally {
       setLoading(false);
@@ -98,15 +112,36 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
   };
 
   const handleWalkerSelect = (walker: any) => {
-    onNavigate?.('create-booking', { vendorId: walker.id || walker.vendorId, serviceType: 'walking' });
+    onNavigate?.('walker-booking', { vendorId: walker.id || walker.vendorId, serviceType: 'walking', serviceStyle: 'at_home' });
   };
 
+  // Prepare stats for ServiceDashboardHeader
+  const dashboardStats = stats ? [
+    { value: `${stats.walkers}+`, label: 'Walkers' },
+    { value: stats.walks, label: 'Walks' },
+    { value: `*${stats.rating}`, label: 'Rating' }
+  ] : [
+    { value: '30+', label: 'Walkers' },
+    { value: '2K+', label: 'Walks' },
+    { value: '*4.8', label: 'Rating' }
+  ];
+
   return (
-    <>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+    <div className="min-h-screen bg-gray-50">
+      {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame */}
+      <ServiceDashboardHeader
+        serviceName="Dog Walking"
+        serviceSubtitle="Professional pet walking services"
+        serviceIcon={Dog}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-gradient-to-r from-green-500 via-green-600 to-green-700"
+      />
       
       {/* Search Bar - Moved below header */}
-      <div className="px-4 pt-4 pb-4 bg-white">
+      <div className="max-w-md mx-auto px-4 pt-4 pb-4 bg-white">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
@@ -119,7 +154,7 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
         </div>
       </div>
 
-      <div className="p-4 space-y-6">
+      <div className="max-w-md mx-auto p-4 space-y-6">
         {/* Active Walk in Progress - GPS Tracking */}
         {activeWalks.filter(w => w.status === 'in_progress').length > 0 && (
           <Card className="bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] text-white p-4 relative overflow-hidden">
@@ -193,7 +228,9 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
               <h2 className="text-xl font-bold text-gray-900 mb-2">Professional Pet Walking</h2>
               <p className="text-gray-700 mb-4">Exercise, companionship & care</p>
             </div>
-            <div className="text-5xl">🚶</div>
+            <div className="flex-shrink-0 w-14 h-14 bg-orange-100 rounded-xl flex items-center justify-center">
+              <Dog className="w-8 h-8 text-orange-600" />
+            </div>
           </div>
         </Card>
 
@@ -217,7 +254,7 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
             </button>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            {WALKING_NEEDS.map((need) => {
+            {(walkingNeeds.length > 0 ? walkingNeeds : WALKING_NEEDS).map((need) => {
               const isViewAll = need.id === 'view_all';
               return (
                 <button
@@ -268,13 +305,13 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
           <h2 className="font-bold text-gray-900 mb-4">Walk Packages</h2>
           <div className="space-y-3">
             {[
-              { icon: '🚶', title: '30 Min Walk', price: '₹199/walk', features: ['Quick exercise', 'Basic walk'] },
-              { icon: '🏃', title: '60 Min Walk', price: '₹349/walk', features: ['Extended exercise', 'Playtime'] },
+              { icon: <Dog className="w-7 h-7 text-orange-600" />, title: '30 Min Walk', price: '₹199/walk', features: ['Quick exercise', 'Basic walk'] },
+              { icon: <Dog className="w-7 h-7 text-orange-600" />, title: '60 Min Walk', price: '₹349/walk', features: ['Extended exercise', 'Playtime'] },
               { icon: '📅', title: 'Weekly Package', price: '₹1,999/week', features: ['5 walks', 'GPS tracking', 'Updates'] }
             ].map((pkg, idx) => (
               <Card key={idx} className="p-4 hover:shadow-md transition-shadow">
                 <div className="flex items-start gap-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center text-2xl">
+                  <div className="w-14 h-14 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center text-2xl [&>svg]:shrink-0">
                     {pkg.icon}
                   </div>
                   <div className="flex-1">
@@ -302,7 +339,7 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
             </div>
           ) : walkers.length === 0 ? (
             <Card className="p-8 text-center">
-              <Bike className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <Dog className="w-16 h-16 text-gray-300 mx-auto mb-4" />
               <h3 className="font-semibold text-gray-900 mb-2">No Walkers Found</h3>
               <p className="text-sm text-gray-500">Try adjusting your search or check back later</p>
             </Card>
@@ -351,7 +388,7 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
                       }}
                       className="w-full bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] hover:from-[#FF7A35] hover:to-[#FF5A25] text-white h-12 text-base font-semibold shadow-lg"
                     >
-                      <Bike className="w-5 h-5 mr-2" />
+                      <Dog className="w-5 h-5 mr-2" />
                       Book Walker
                     </Button>
                   </div>
@@ -384,6 +421,6 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
           </div>
         </Card>
       </div>
-    </>
+    </div>
   );
 }

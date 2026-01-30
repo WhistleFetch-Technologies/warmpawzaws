@@ -64,7 +64,7 @@ import {
   Briefcase
 } from 'lucide-react';
 import { supabase } from '../../utils/supabase/client';
-import { projectId } from '../../utils/supabase/info';
+import { getApiBaseUrl } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 import { MarketingPromotionsTab } from './MarketingPromotionsTab';
@@ -100,7 +100,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
   const loadVendors = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors`,
+        `${getApiBaseUrl()}/admin/vendors`,
         {
           headers: {
             Authorization: `Bearer ${session.access_token}`,
@@ -147,7 +147,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
     setActionLoading(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/${vendorId}/verify`,
+        `${getApiBaseUrl()}/admin/vendors/${vendorId}/verify`,
         {
           method: 'POST',
           headers: {
@@ -183,7 +183,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
     setActionLoading(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/fix/approve-all-vendors`,
+        `${getApiBaseUrl()}/admin/fix/approve-all-vendors`,
         {
           method: 'POST',
           headers: {
@@ -212,7 +212,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
     setActionLoading(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/fix/publish-vendor-services`,
+        `${getApiBaseUrl()}/admin/fix/publish-vendor-services`,
         {
           method: 'POST',
           headers: {

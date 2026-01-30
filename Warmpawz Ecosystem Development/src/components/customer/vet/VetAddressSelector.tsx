@@ -3,7 +3,7 @@ import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { ArrowLeft, MapPin, Plus, Check, Home } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface VetAddressSelectorProps {
   phone: string;
@@ -25,7 +25,7 @@ export function VetAddressSelector({ phone, onBack, onSelect }: VetAddressSelect
     isDefault: false
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadAddresses();

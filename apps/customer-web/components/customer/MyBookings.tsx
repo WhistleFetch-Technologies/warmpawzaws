@@ -73,6 +73,7 @@ interface MyBookingsProps {
   onBack: () => void;
   initialBookingId?: string; // To open a specific booking
   onReorderMedicine?: (medications: any[]) => void;
+  onNavigate?: (screen: string, data?: { bookingId?: string }) => void; // For diagnostics-reports, sample-collection-tracking, etc.
 }
 
 interface RefundPolicy {
@@ -81,7 +82,7 @@ interface RefundPolicy {
   defaultRefundMethod: 'wallet' | 'original';
 }
 
-export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine }: MyBookingsProps) {
+export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine, onNavigate }: MyBookingsProps) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
@@ -350,6 +351,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine 
         phone={phone}
         onClose={() => setSelectedBooking(null)}
         onReorderMedicine={onReorderMedicine}
+        onNavigate={onNavigate}
       />
     );
   }

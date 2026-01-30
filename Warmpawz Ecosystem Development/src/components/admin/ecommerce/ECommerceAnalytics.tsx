@@ -33,8 +33,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../../ui/card';
 import { Button } from '../../ui/button';
 import { authenticatedGet } from '../../../utils/authenticatedFetch';
-import { projectId } from '../../../utils/supabase/info';
-import { publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl } from '../../../utils/api-config';
+import { publicAnonKey } from '../../../utils/api-config';
 
 interface AnalyticsData {
   revenue: {
@@ -78,7 +78,7 @@ export function ECommerceAnalytics() {
     try {
       // Call analytics API
       const data = await authenticatedGet(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/analytics?days=${dateRange}`,
+        `${getApiBaseUrl()}/ecommerce/analytics?days=${dateRange}`,
         publicAnonKey
       );
 

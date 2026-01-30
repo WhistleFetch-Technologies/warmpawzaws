@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Save, Clock, Calendar, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Button } from '../../ui/button';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface ScheduleSettingsManagementProps {
   onBack: () => void;
@@ -21,10 +21,10 @@ export function ScheduleSettingsManagement({ onBack }: ScheduleSettingsManagemen
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/schedule-settings`,
+        `${getApiBaseUrl()}/admin/schedule-settings`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -48,11 +48,11 @@ export function ScheduleSettingsManagement({ onBack }: ScheduleSettingsManagemen
       setSaveMessage(null);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/schedule-settings`,
+        `${getApiBaseUrl()}/admin/schedule-settings`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(settings)

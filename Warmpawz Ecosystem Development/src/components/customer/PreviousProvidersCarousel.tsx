@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Star, MapPin, Calendar, ArrowRight, Clock } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
-const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const BASE_URL = `${getApiBaseUrl()}`;
 
 interface PreviousProvider {
   providerId: string;
@@ -47,7 +47,7 @@ export function PreviousProvidersCarousel({
       const response = await fetch(
         `${BASE_URL}/home-services/providers/previous?${params}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

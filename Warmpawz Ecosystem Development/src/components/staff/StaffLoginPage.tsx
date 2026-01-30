@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button } from '../ui/button';
 import { Stethoscope, Scissors, Heart } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 
 interface StaffLoginPageProps {
@@ -23,12 +23,12 @@ export function StaffLoginPage({ onLoginSuccess }: StaffLoginPageProps) {
       console.log('🔐 Staff login attempt:', phone);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/auth/login`,
+        `${getApiBaseUrl()}/staff/auth/login`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({ phone })
         }

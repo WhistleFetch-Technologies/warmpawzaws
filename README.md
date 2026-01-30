@@ -39,6 +39,18 @@ cd apps/customer-web && npm run dev
 cd apps/vendor-web && npm run dev
 ```
 
+## Official CloudFront URLs (permanent)
+
+Use **only** these CloudFront URLs for the three web apps:
+
+| App      | URL |
+|----------|-----|
+| **Admin**   | https://dfof7mguaa0a5.cloudfront.net |
+| **Vendor**  | https://d1s6ykkj381k58.cloudfront.net |
+| **Customer**| https://d2aoyjj8ine0wk.cloudfront.net |
+
+See `docs/OFFICIAL_CLOUDFRONT_URLS.md` for CORS and deploy script references.
+
 ## Documentation
 
 All documentation is in the `docs/` directory:

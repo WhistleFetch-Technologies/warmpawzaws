@@ -7,7 +7,9 @@ import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { TRAINING_GOALS } from './ProblemGridSection';
+import { useProblemGridByRole } from './useProblemGridByRole';
 import { PromotionBanner } from './shared/PromotionBanner';
+import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 
 interface TrainingServiceRouterProps {
   phone: string;
@@ -34,6 +36,7 @@ interface PetSkillProgress {
 }
 
 export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: TrainingServiceRouterProps) {
+  const trainingGoals = useProblemGridByRole('trainer');
   const [loading, setLoading] = useState(true);
   const [featuredTrainers, setFeaturedTrainers] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
@@ -79,21 +82,70 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   const loadTrainingData = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=training&roleId=pet_trainer`;
-      const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
-      const trainerServices = data.vendors || data.services || [];
+      
+      // ✅ Align with Vet: discover by category (service discovery respects category/role from dashboard tiles)
+      let trainerServices: any[] = [];
+      
+      // Try 1: discover-services by category (same pattern as VetServiceRouter)
+      try {
+        const endpoint = `/customer/discover-services?category=training`;
+        const data = await apiClient.get<any>(endpoint);
+        console.log('🔵 [TrainingServiceRouter] discover-services response:', data);
+        
+        if (Array.isArray(data)) {
+          trainerServices = data;
+        } else if (data?.vendors && Array.isArray(data.vendors)) {
+          trainerServices = data.vendors;
+        } else if (data?.providers && Array.isArray(data.providers)) {
+          trainerServices = data.providers;
+        } else if (data?.services && Array.isArray(data.services)) {
+          trainerServices = data.services;
+        } else if (data?.results && Array.isArray(data.results)) {
+          trainerServices = data.results;
+        } else if (data?.data && Array.isArray(data.data)) {
+          trainerServices = data.data;
+        }
+      } catch (err) {
+        console.warn('⚠️ [TrainingServiceRouter] discover-services failed, trying alternatives:', err);
+      }
+      
+      // Try 2: services/by-style (at_home = at home training)
+      if (trainerServices.length === 0) {
+        try {
+          const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_home&category=training`);
+          const altData = (altRes as any)?.providers ?? (altRes as any)?.vendors ?? altRes;
+          if (Array.isArray(altData)) trainerServices = altData;
+          else if (altData?.services) trainerServices = altData.services;
+        } catch (err) {
+          console.warn('⚠️ [TrainingServiceRouter] services/by-style failed:', err);
+        }
+      }
+      
+      // Try 3: vendors by category
+      if (trainerServices.length === 0) {
+        try {
+          const vendorsData = await apiClient.get<any>(`/customer/vendors?category=training`);
+          if (Array.isArray(vendorsData)) trainerServices = vendorsData;
+          else if (vendorsData?.vendors) trainerServices = vendorsData.vendors;
+        } catch (err) {
+          console.warn('⚠️ [TrainingServiceRouter] vendors endpoint failed:', err);
+        }
+      }
+      
+      console.log('🔵 [TrainingServiceRouter] Final trainerServices length:', trainerServices.length);
       
       const vendorMap = new Map();
       trainerServices.forEach((service: any) => {
-        const vendorId = service.vendorId || service.id;
+        const vendorId = service.vendorId || service.vendor_id || service.id || service.providerId;
+        if (!vendorId) return;
         if (!vendorMap.has(vendorId)) {
           vendorMap.set(vendorId, {
             id: vendorId,
-            businessName: service.vendorName || service.businessName || service.name,
-            rating: service.vendorRating || service.rating || 4.5,
-            completedBookings: service.vendorReviewCount || service.reviewsCount || 0,
-            distance: service.distance || Math.random() * 5 + 0.5,
-            basePrice: service.price || 1500
+            businessName: service.vendorName || service.vendor_name || service.businessName || service.business_name || service.name,
+            rating: service.vendorRating || service.vendor_rating || service.rating || 4.5,
+            completedBookings: service.vendorReviewCount || service.vendor_review_count || service.reviewsCount || service.reviews_count || 0,
+            distance: service.distance ?? Math.random() * 5 + 0.5,
+            basePrice: service.price || service.base_price || 1500
           });
         }
       });
@@ -146,34 +198,33 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     );
   }
 
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const dashboardStats = stats ? [
+    { value: `${stats.activeTrainers || 0}+`, label: 'Trainers', icon: <GraduationCap className="w-4 h-4" /> },
+    { value: `${stats.sessions || 0}`, label: 'Sessions' },
+    { value: `${stats.rating || '-'}`, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ] : [
+    { value: '0+', label: 'Trainers', icon: <GraduationCap className="w-4 h-4" /> },
+    { value: '0', label: 'Sessions' },
+    { value: '-', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
+
   return (
-    <>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
-      
-      {/* Stats Bar - Moved below header */}
-      {stats && (
-        <div className="px-4 pt-4 pb-2 bg-white">
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-            <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
-               <div className="text-lg font-bold text-orange-600">{stats.activeTrainers}+</div>
-               <div className="text-xs text-orange-700">Trainers</div>
-            </div>
-            <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
-               <div className="text-lg font-bold text-orange-600">{stats.sessions}</div>
-               <div className="text-xs text-orange-700">Sessions</div>
-            </div>
-            <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
-               <div className="flex items-center justify-center gap-1 text-lg font-bold text-orange-600">
-                 {stats.rating} <Star className="w-3.5 h-3.5 fill-orange-500" />
-               </div>
-               <div className="text-xs text-orange-700">Rating</div>
-            </div>
-          </div>
-        </div>
-      )}
+    <div className="min-h-screen bg-gray-50">
+      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
+      <ServiceDashboardHeader
+        serviceName="Training Services"
+        serviceSubtitle="Professional pet training"
+        serviceIcon={GraduationCap}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
+      />
 
       {/* Main Content */}
-      <div className="px-4 pt-4 bg-white">
+      <div className="max-w-md mx-auto px-4 pt-4 bg-white">
         <div className="space-y-8">
           
           {/* FREE TRIAL ENTRY POINT - As per Master Plan */}
@@ -340,12 +391,22 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           {/* Service Types */}
           <div>
             <h2 className="text-lg font-bold text-slate-900 mb-4">Choose Training Type</h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3" style={{ position: 'relative', zIndex: 1 }}>
               {serviceTypes.map((service) => (
                 <button
                   key={service.id}
-                  onClick={() => onNavigate?.(service.id)}
-                  className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('🔵 [Training] Service style clicked:', service.id);
+                    onNavigate?.(service.id);
+                  }}
+                  className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden cursor-pointer"
+                  style={{ 
+                    pointerEvents: 'auto', 
+                    zIndex: 1,
+                    position: 'relative'
+                  }}
                 >
                   <div className={`w-10 h-10 rounded-xl ${service.bg} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
                     <service.icon className={`w-5 h-5 ${service.color}`} />
@@ -374,20 +435,28 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               </button>
             </div>
 
-            <div className="grid grid-cols-4 gap-3">
-              {TRAINING_GOALS.map((goal) => {
+            <div className="grid grid-cols-4 gap-3" style={{ position: 'relative', zIndex: 1 }}>
+              {(trainingGoals.length > 0 ? trainingGoals : TRAINING_GOALS).map((goal) => {
                 const isViewAll = goal.id === 'view_all';
                 return (
                   <button
                     key={goal.id}
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log('🔵 [Training] Goal clicked:', goal.id);
                       if (isViewAll) {
                         onNavigate?.('problem_grid');
                       } else {
                         onNavigate?.('problem_selected', { problemId: goal.id });
                       }
                     }}
-                    className="group flex flex-col items-center gap-2"
+                    className="group flex flex-col items-center gap-2 cursor-pointer"
+                    style={{ 
+                      pointerEvents: 'auto', 
+                      zIndex: 1,
+                      position: 'relative'
+                    }}
                   >
                     <div className={`
                       w-full aspect-square rounded-2xl flex items-center justify-center text-2xl shadow-sm transition-all duration-200
@@ -456,6 +525,6 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

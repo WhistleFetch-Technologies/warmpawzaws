@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Eye, Phone, ChevronDown } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { CustomDropdown } from './CustomDropdown';
 
 interface SupportTicket {
@@ -30,10 +30,10 @@ export function SupportVendorTab() {
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/support/tickets`,
+        `${getApiBaseUrl()}/admin/vendors/support/tickets`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

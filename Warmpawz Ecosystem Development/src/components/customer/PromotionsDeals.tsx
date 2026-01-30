@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Tag, Calendar, ChevronRight, X, Sparkles } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 /**
  * 🎯 CUSTOMER MARKETING INTEGRATION - Promotions & Deals
@@ -62,10 +62,10 @@ export function PromotionsDeals({
       if (applicableTo) params.append('applicableTo', applicableTo);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/promotions/active?${params}`,
+        `${getApiBaseUrl()}/promotions/active?${params}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }

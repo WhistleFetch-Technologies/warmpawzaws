@@ -120,14 +120,14 @@ export function ProblemGridSection({
 }
 
 // ========================================
-// PROBLEM GRID DATA FOR ALL VENDOR TYPES
-// Unified Warmpawz Theme
+// PROBLEM GRID DATA FOR ALL VENDOR TYPES (FALLBACK ONLY)
+// Primary source: specialization_master via GET /public/problem-grid and /public/problem-grid/:roleId.
+// These constants are used only when the API returns no data (e.g. offline or empty config).
+// Admin-created specializations (e.g. "Hair Trimming") appear when show_in_problem_grid or show_in_services_dashboard is true.
 // ========================================
 
 /**
- * GROOMING NEEDS - Ordered by daily use frequency
- * Basic hygiene first, luxury/spa last
- * Priority: Lower number = shown first
+ * GROOMING NEEDS - Fallback when API returns empty. Priority: Lower number = shown first.
  */
 export const GROOMING_NEEDS = [
   // Essential/Daily (shown first)

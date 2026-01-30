@@ -10,7 +10,7 @@ import {
   Search, Filter, Send, Paperclip, Eye, Tag, Calendar
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface TicketingSystemProps {
   onBack: () => void;
@@ -262,11 +262,11 @@ export function TicketingSystem({ onBack }: TicketingSystemProps) {
     try {
       // POST /make-server-3dd53475/admin/tickets/{id}/reply
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/tickets/${selectedTicket.id}/reply`,
+        `${getApiBaseUrl()}/admin/tickets/${selectedTicket.id}/reply`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ message: replyMessage })
@@ -291,11 +291,11 @@ export function TicketingSystem({ onBack }: TicketingSystemProps) {
     try {
       // PATCH /make-server-3dd53475/admin/tickets/{id}/status
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/tickets/${ticketId}/status`,
+        `${getApiBaseUrl()}/admin/tickets/${ticketId}/status`,
         {
           method: 'PATCH',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ status })

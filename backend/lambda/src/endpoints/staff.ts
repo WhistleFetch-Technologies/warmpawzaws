@@ -451,6 +451,10 @@ export function registerStaffEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'staff.ts:getVendorStaffHandler',message:'ENTRY - staff endpoint called',data:{vendorId,path:c.req.path,method:c.req.method},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
       console.log(`[GET /staff/vendor/:vendorId] Fetching staff for vendor: ${vendorId}`);
       
       // ✅ FIX: For read operations, skip capability check entirely - just verify vendor exists
@@ -471,84 +475,63 @@ export function registerStaffEndpoints(app: Hono) {
         // Continue anyway - might be a temporary DB issue
       }
       
-      // ✅ FIX: Use the most reliable approach - get ALL staff first, then filter
-      // This ensures we don't miss any due to UUID/text mismatches
+      // ✅ CRITICAL FIX: Query staff ONLY for the specific vendor (proper data isolation)
+      // Staff belongs to a specific vendor and should NOT be shared across vendors
       console.log(`[GET /staff/vendor/:vendorId] Querying staff for vendor: ${vendorId}`);
       let staffResult: any = { rows: [] };
       
       try {
-        // ✅ SIMPLIFIED: Get ALL staff first (no filtering, no JOIN) to verify query works
-        console.log(`[GET /staff/vendor/:vendorId] Fetching ALL staff from database...`);
-        const allStaffQuery = await query(`
-          SELECT * FROM staff
-          ORDER BY created_at DESC
-          LIMIT 500
-        `);
+        // ✅ FIXED: Query staff filtered by vendor_id (proper data isolation)
+        console.log(`[GET /staff/vendor/:vendorId] Fetching staff for vendor ${vendorId}...`);
+        const vendorStaffQuery = await query(`
+          SELECT s.*, v.business_name as vendor_name, v.city as vendor_city, v.state as vendor_state
+          FROM staff s
+          LEFT JOIN vendors v ON s.vendor_id = v.id
+          WHERE s.vendor_id = $1::uuid
+          AND s.is_active = true
+          ORDER BY s.created_at DESC
+        `, [vendorId]);
         
-        console.log(`[GET /staff/vendor/:vendorId] Query returned ${allStaffQuery.rows?.length || 0} rows`);
+        console.log(`[GET /staff/vendor/:vendorId] Query returned ${vendorStaffQuery.rows?.length || 0} staff for vendor ${vendorId}`);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'staff.ts:mainQuery',message:'Main query result',data:{vendorId,rowCount:vendorStaffQuery.rows?.length||0,staffVendorIds:(vendorStaffQuery.rows||[]).slice(0,5).map((s:any)=>({name:s.name,staff_vendor_id:s.vendor_id}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,C'})}).catch(()=>{});
+        // #endregion
+        staffResult.rows = vendorStaffQuery.rows || [];
         
-        if (!allStaffQuery.rows || allStaffQuery.rows.length === 0) {
-          console.log(`[GET /staff/vendor/:vendorId] No staff found in database at all`);
-          staffResult.rows = [];
-        } else {
-          // Get vendor info separately
-          const vendorInfo = await query('SELECT id, business_name, city, state FROM vendors WHERE id = $1::uuid', [vendorId]);
-          const vendor = vendorInfo.rows[0] || null;
-          
-          // Add vendor info to each staff member
-          allStaffQuery.rows.forEach((s: any) => {
-            s.vendor_name = vendor?.business_name || null;
-            s.vendor_city = vendor?.city || null;
-            s.vendor_state = vendor?.state || null;
-            s.vendor_id_text = s.vendor_id?.toString() || '';
-          });
-          
-          console.log(`[GET /staff/vendor/:vendorId] Sample vendor_ids:`, allStaffQuery.rows.slice(0, 3).map((s: any) => ({
-            name: s.name,
-            vendor_id: s.vendor_id?.toString() || 'null'
-          })));
-          
-          // ✅ TEMPORARY FIX: Return ALL staff regardless of vendor_id to verify query works
-          // Once we confirm staff are being returned, we'll add proper filtering
-          console.warn(`[GET /staff/vendor/:vendorId] TEMPORARY: Returning ALL staff (ignoring vendor_id filter) to verify query works`);
-          staffResult.rows = allStaffQuery.rows;
-        }
       } catch (queryError: any) {
         console.error(`[GET /staff/vendor/:vendorId] Query failed:`, queryError.message);
-        console.error(`[GET /staff/vendor/:vendorId] Stack:`, queryError.stack);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'staff.ts:queryError',message:'Main query FAILED - using fallback',data:{vendorId,error:queryError.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         
-        // Fallback: Try simple query without JOIN
+        // Fallback: Try simple query without JOIN (handles UUID/text mismatch)
         try {
           const simpleQuery = await query(`
             SELECT * FROM staff 
             WHERE vendor_id::text = $1
+            AND is_active = true
             ORDER BY created_at DESC
           `, [vendorId]);
           staffResult.rows = simpleQuery.rows || [];
-          console.log(`[GET /staff/vendor/:vendorId] Simple query returned ${staffResult.rows.length} rows`);
+          console.log(`[GET /staff/vendor/:vendorId] Fallback query returned ${staffResult.rows.length} rows`);
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'staff.ts:fallbackQuery',message:'Fallback query result',data:{vendorId,rowCount:simpleQuery.rows?.length||0},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
         } catch (simpleError: any) {
-          console.error(`[GET /staff/vendor/:vendorId] Simple query also failed:`, simpleError.message);
+          console.error(`[GET /staff/vendor/:vendorId] Fallback query also failed:`, simpleError.message);
+          staffResult.rows = [];
         }
       }
 
-      // ✅ FIX: Ensure staff is always an array
+      // ✅ Ensure staff is always an array
       const staffArray = staffResult.rows || [];
       console.log(`[GET /staff/vendor/:vendorId] Final result: ${staffArray.length} staff members for vendor ${vendorId}`);
       
-      // ✅ DEBUG: Log sample data if found
+      // Log result for debugging
       if (staffArray.length > 0) {
-        console.log(`[GET /staff/vendor/:vendorId] Sample staff:`, {
-          id: staffArray[0].id,
-          name: staffArray[0].name,
-          vendor_id: staffArray[0].vendor_id,
-          mobile_verified: staffArray[0].mobile_verified
-        });
+        console.log(`[GET /staff/vendor/:vendorId] Found ${staffArray.length} staff for vendor ${vendorId}`);
       } else {
-        // Debug: Check what staff exist in DB
-        const debugQuery = await query('SELECT id, name, vendor_id, mobile_verified FROM staff LIMIT 5');
-        console.log(`[GET /staff/vendor/:vendorId] Sample staff in DB:`, debugQuery.rows);
-        const vendorStaffCount = await query('SELECT COUNT(*) as count FROM staff WHERE vendor_id::text = $1', [vendorId]);
-        console.log(`[GET /staff/vendor/:vendorId] Staff count with text match: ${vendorStaffCount.rows[0]?.count || 0}`);
+        console.log(`[GET /staff/vendor/:vendorId] No staff found for vendor ${vendorId}`);
       }
 
       // ✅ FIX: Check if service_styles column exists in staff_services table
@@ -590,6 +573,20 @@ export function registerStaffEndpoints(app: Hono) {
           // ✅ FIX: Handle both photo, photo_url, and photos fields
           const photo = s.photo || s.photo_url || (s.photos ? (Array.isArray(s.photos) ? s.photos[0] : JSON.parse(s.photos || '[]')[0]) : null);
           
+          // Parse languages if stored as JSON string or array
+          let languages: string[] = [];
+          if (s.languages) {
+            if (Array.isArray(s.languages)) {
+              languages = s.languages;
+            } else if (typeof s.languages === 'string') {
+              try {
+                languages = JSON.parse(s.languages);
+              } catch {
+                languages = s.languages.split(',').map((l: string) => l.trim()).filter(Boolean);
+              }
+            }
+          }
+          
           return {
             id: s.id,
             name: s.name,
@@ -597,8 +594,10 @@ export function registerStaffEndpoints(app: Hono) {
             email: s.email,
             role: s.role,
             photo: photo,
+            photo_url: photo,
             experience_years: s.experience_years || 0,
             qualifications: s.qualifications || '',
+            languages: languages,
             is_active: s.is_active !== undefined ? s.is_active : true,
             mobile_verified: s.mobile_verified !== undefined ? s.mobile_verified : false,
             mobile_verified_at: s.mobile_verified_at || null,
@@ -625,6 +624,9 @@ export function registerStaffEndpoints(app: Hono) {
         staff: Array.isArray(enrichedStaff) ? enrichedStaff : [], 
         total: Array.isArray(enrichedStaff) ? enrichedStaff.length : 0 
       };
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'staff.ts:RESPONSE',message:'Final response being sent',data:{vendorId,totalStaff:response.total,staffSample:(response.staff||[]).slice(0,3).map((s:any)=>({id:s.id,name:s.name,vendor_id:s.vendor_id}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,E'})}).catch(()=>{});
+      // #endregion
       console.log(`[GET /vendor/:vendorId/staff] Returning ${response.total} staff members`);
       return c.json(response);
     } catch (error: any) {
@@ -654,6 +656,12 @@ export function registerStaffEndpoints(app: Hono) {
       const hasStaffCreateCapability = await checkVendorCapability(vendorId, 'staff_create');
       if (!hasStaffCreateCapability) {
         return c.json({ error: 'Vendor does not have staff creation capability' }, 403);
+      }
+      
+      // ✅ SOLO VENDOR RESTRICTION: Solo vendors cannot add staff members
+      const vendorCheck = await select('vendors', { id: vendorId });
+      if (vendorCheck.length > 0 && vendorCheck[0].vendor_type === 'solo') {
+        return c.json({ error: 'Solo vendors cannot add staff members' }, 403);
       }
       
       const staffData = await c.req.json();
@@ -776,7 +784,9 @@ export function registerStaffEndpoints(app: Hono) {
       const schemaCheck = await query(`
         SELECT 
           EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff' AND column_name = 'photo') as has_photo,
-          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff' AND column_name = 'qualifications') as has_qualifications
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff' AND column_name = 'photo_url') as has_photo_url,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff' AND column_name = 'qualifications') as has_qualifications,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff' AND column_name = 'languages') as has_languages
       `);
       
       const schema = schemaCheck.rows[0] || {};
@@ -794,13 +804,23 @@ export function registerStaffEndpoints(app: Hono) {
       };
       
       // Only include photo if column exists
-      if (schema.has_photo && staffData.photo) {
-        insertData.photo = staffData.photo;
+      if (schema.has_photo && (staffData.photo || staffData.photo_url)) {
+        insertData.photo = staffData.photo || staffData.photo_url;
+      }
+      
+      // Only include photo_url if column exists
+      if (schema.has_photo_url && (staffData.photo_url || staffData.photo)) {
+        insertData.photo_url = staffData.photo_url || staffData.photo;
       }
       
       // Only include qualifications if column exists
       if (schema.has_qualifications && staffData.qualifications) {
         insertData.qualifications = staffData.qualifications;
+      }
+      
+      // Only include languages if column exists
+      if (schema.has_languages && staffData.languages) {
+        insertData.languages = Array.isArray(staffData.languages) ? staffData.languages : [];
       }
       
       const staff = await insert('staff', insertData);
@@ -850,7 +870,13 @@ export function registerStaffEndpoints(app: Hono) {
           SELECT 
             v.business_name,
             v.vendor_type,
-            COALESCE(vi_vendor.vendor_type, v.vendor_type, 'business') as resolved_vendor_type,
+            -- Vendor type derived from role name if vendor_identity.vendor_type is NULL
+            CASE 
+              WHEN vi_vendor.vendor_type IS NOT NULL THEN vi_vendor.vendor_type
+              WHEN v.vendor_type IS NOT NULL THEN v.vendor_type
+              WHEN r.name LIKE '%_solo' OR r.name LIKE 'solo_%' OR LOWER(r.display_name) LIKE '%solo%' THEN 'solo'
+              ELSE 'business'
+            END as resolved_vendor_type,
             COALESCE(vi_vendor.business_name, v.business_name) as resolved_business_name
           FROM vendors v
           LEFT JOIN vendor_identity vi_vendor ON (
@@ -1040,19 +1066,37 @@ export function registerStaffEndpoints(app: Hono) {
       }
       const staffData = await c.req.json();
 
+      // Build update data dynamically
+      const updateData: any = {
+        name: staffData.name,
+        phone: staffData.phone,
+        email: staffData.email,
+        specialization: staffData.specialization,
+        experience_years: staffData.experienceYears || staffData.experience_years,
+        service_styles: staffData.serviceStyles || staffData.service_styles,
+        latitude: staffData.latitude,
+        longitude: staffData.longitude,
+        is_active: staffData.isActive,
+      };
+      
+      // Add photo if provided
+      if (staffData.photo || staffData.photo_url) {
+        updateData.photo = staffData.photo || staffData.photo_url;
+      }
+      
+      // Add qualifications if provided
+      if (staffData.qualifications !== undefined) {
+        updateData.qualifications = staffData.qualifications;
+      }
+      
+      // Add languages if provided
+      if (staffData.languages !== undefined) {
+        updateData.languages = Array.isArray(staffData.languages) ? staffData.languages : [];
+      }
+
       const updated = await update('staff',
         { id: staffId },
-        {
-          name: staffData.name,
-          phone: staffData.phone,
-          email: staffData.email,
-          specialization: staffData.specialization,
-          experience_years: staffData.experienceYears || staffData.experience_years,
-          service_styles: staffData.serviceStyles || staffData.service_styles,
-          latitude: staffData.latitude,
-          longitude: staffData.longitude,
-          is_active: staffData.isActive,
-        }
+        updateData
       );
 
       if (updated.length === 0) {
@@ -1610,13 +1654,15 @@ export function registerStaffEndpoints(app: Hono) {
       // Enrich with services and breaks
       const enrichedSlots = await Promise.all(
         slots.map(async (slot: any) => {
-          // Get services for this slot
+          // Get services for this slot (service_style comes from staff_services, not base services table)
           const servicesResult = await query(
-            `SELECT sss.*, s.name as service_name, s.service_style
+            `SELECT sss.*, s.name as service_name, 
+                    COALESCE(stss.service_style, 'at_center') as service_style
              FROM staff_slot_services sss
              INNER JOIN services s ON sss.service_id = s.id
+             LEFT JOIN staff_services stss ON stss.service_id = sss.service_id AND stss.staff_id = $2
              WHERE sss.slot_id = $1`,
-            [slot.id]
+            [slot.id, staffId]
           );
 
           // Get breaks for this slot
@@ -1820,6 +1866,7 @@ export function registerStaffEndpoints(app: Hono) {
       const endDate = c.req.query('endDate');
 
       // Query to get availability slots with their associated services and styles
+      // Note: service_style comes from staff_services table, not base services table
       let availabilityQuery = `
         SELECT DISTINCT 
           sas.id as slot_id,
@@ -1829,7 +1876,7 @@ export function registerStaffEndpoints(app: Hono) {
           sas.location_override,
           sas.is_available,
           sas.notes,
-          s.service_style,
+          COALESCE(stss.service_style, 'at_center') as service_style,
           s.id as service_id,
           s.name as service_name,
           sss.lead_time_minutes,
@@ -1838,6 +1885,7 @@ export function registerStaffEndpoints(app: Hono) {
         FROM staff_availability_slots sas
         LEFT JOIN staff_slot_services sss ON sas.id = sss.slot_id
         LEFT JOIN services s ON sss.service_id = s.id
+        LEFT JOIN staff_services stss ON stss.service_id = s.id AND stss.staff_id = sas.staff_id
         WHERE sas.staff_id = $1
         AND sas.date >= $2
         AND sas.is_available = true
@@ -1852,12 +1900,12 @@ export function registerStaffEndpoints(app: Hono) {
       }
 
       if (serviceStyle) {
-        availabilityQuery += ` AND s.service_style = $${paramIndex}`;
+        availabilityQuery += ` AND stss.service_style = $${paramIndex}`;
         params.push(serviceStyle);
         paramIndex++;
       }
 
-      availabilityQuery += ` ORDER BY sas.date, sas.start_time, s.service_style`;
+      availabilityQuery += ` ORDER BY sas.date, sas.start_time, COALESCE(stss.service_style, 'at_center')`;
 
       const result = await query(availabilityQuery, params);
 
@@ -1924,7 +1972,7 @@ export function registerStaffEndpoints(app: Hono) {
          FROM staff_services ss
          INNER JOIN services s ON ss.service_id = s.id
          WHERE ss.staff_id = $1 
-         AND s.service_style = $2
+         AND ss.service_style = $2
          AND ss.is_active = true`,
         [staffId, serviceStyle]
       );
@@ -2036,11 +2084,10 @@ export function registerStaffEndpoints(app: Hono) {
       const { staffId } = c.req.param();
 
       const result = await query(
-        `SELECT DISTINCT s.service_style, COUNT(*) as service_count
+        `SELECT DISTINCT ss.service_style, COUNT(*) as service_count
          FROM staff_services ss
-         INNER JOIN services s ON ss.service_id = s.id
-         WHERE ss.staff_id = $1 AND ss.is_active = true
-         GROUP BY s.service_style`,
+         WHERE ss.staff_id = $1 AND ss.is_active = true AND ss.service_style IS NOT NULL
+         GROUP BY ss.service_style`,
         [staffId]
       );
 
@@ -2074,8 +2121,8 @@ export function registerStaffEndpoints(app: Hono) {
       const { staffId } = c.req.param();
 
       const servicesResult = await query(
-        `SELECT ss.*, s.name as service_name, s.description, s.category, s.service_style,
-                s.price as base_price, s.duration_minutes as base_duration
+        `SELECT ss.*, s.name as service_name, s.description, s.category,
+                ss.service_style, s.price as base_price, s.duration_minutes as base_duration
          FROM staff_services ss
          INNER JOIN services s ON ss.service_id = s.id
          WHERE ss.staff_id = $1
@@ -2467,6 +2514,157 @@ export function registerStaffEndpoints(app: Hono) {
     }
   });
 
+  // ============================================
+  // STAFF HOLIDAYS / DAYS OFF
+  // ============================================
+
+  /**
+   * GET /staff/:staffId/holidays
+   * Get staff holidays/days off
+   */
+  app.get("/staff/:staffId/holidays", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const startDate = c.req.query('startDate') || new Date().toISOString().split('T')[0];
+      const endDate = c.req.query('endDate');
+
+      let holidaysQuery = `
+        SELECT id, staff_id, date, name, reason, created_at
+        FROM staff_holidays
+        WHERE staff_id = $1
+        AND date >= $2
+      `;
+      const params: any[] = [staffId, startDate];
+
+      if (endDate) {
+        holidaysQuery += ` AND date <= $3`;
+        params.push(endDate);
+      }
+
+      holidaysQuery += ` ORDER BY date`;
+
+      const holidays = await query(holidaysQuery, params);
+      
+      return c.json({ 
+        success: true, 
+        holidays: holidays.rows.map((h: any) => ({
+          id: h.id,
+          date: h.date,
+          name: h.name || h.reason || 'Day Off',
+          reason: h.reason,
+        }))
+      });
+    } catch (error: any) {
+      // If table doesn't exist, return empty array
+      if (error.message?.includes('does not exist') || error.message?.includes('relation')) {
+        return c.json({ success: true, holidays: [] });
+      }
+      console.error('Error fetching staff holidays:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /staff/:staffId/holidays
+   * Add a holiday/day off for staff
+   */
+  app.post("/staff/:staffId/holidays", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const { date, name, reason } = await c.req.json();
+
+      if (!date) {
+        return c.json({ error: 'date is required' }, 400);
+      }
+
+      // Check if holiday already exists for this date
+      const existing = await query(
+        'SELECT id FROM staff_holidays WHERE staff_id = $1 AND date = $2',
+        [staffId, date]
+      );
+
+      if (existing.rows.length > 0) {
+        return c.json({ error: 'Holiday already exists for this date' }, 400);
+      }
+
+      const holiday = await insert('staff_holidays', {
+        staff_id: staffId,
+        date: date,
+        name: name || 'Day Off',
+        reason: reason || null,
+      });
+
+      return c.json({ 
+        success: true, 
+        holiday: {
+          id: holiday[0].id,
+          date: holiday[0].date,
+          name: holiday[0].name,
+          reason: holiday[0].reason,
+        },
+        message: 'Holiday added successfully'
+      });
+    } catch (error: any) {
+      // If table doesn't exist, create it
+      if (error.message?.includes('does not exist') || error.message?.includes('relation')) {
+        try {
+          await query(`
+            CREATE TABLE IF NOT EXISTS staff_holidays (
+              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+              date DATE NOT NULL,
+              name VARCHAR(255),
+              reason TEXT,
+              created_at TIMESTAMP DEFAULT NOW(),
+              UNIQUE(staff_id, date)
+            )
+          `);
+          
+          // Retry insert
+          const { staffId } = c.req.param();
+          const { date, name, reason } = await c.req.json();
+          const holiday = await insert('staff_holidays', {
+            staff_id: staffId,
+            date: date,
+            name: name || 'Day Off',
+            reason: reason || null,
+          });
+          
+          return c.json({ 
+            success: true, 
+            holiday: holiday[0],
+            message: 'Holiday added successfully'
+          });
+        } catch (createError: any) {
+          console.error('Error creating staff_holidays table:', createError);
+          return c.json({ error: createError.message }, 500);
+        }
+      }
+      console.error('Error adding staff holiday:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /staff/:staffId/holidays/:holidayId
+   * Remove a holiday/day off
+   */
+  app.delete("/staff/:staffId/holidays/:holidayId", async (c) => {
+    try {
+      const { staffId, holidayId } = c.req.param();
+
+      await query(
+        'DELETE FROM staff_holidays WHERE id = $1 AND staff_id = $2',
+        [holidayId, staffId]
+      );
+
+      return c.json({ success: true, message: 'Holiday removed successfully' });
+    } catch (error: any) {
+      console.error('Error deleting staff holiday:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
   /**
    * POST /location/autocomplete
    * Google Places autocomplete (proxy endpoint)
@@ -2571,6 +2769,71 @@ export function registerStaffEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error getting place details:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /location/reverse-geocode
+   * Get address from coordinates (reverse geocoding)
+   */
+  app.post("/location/reverse-geocode", async (c) => {
+    try {
+      const { lat, lng } = await c.req.json();
+
+      if (!lat || !lng) {
+        return c.json({ error: 'lat and lng are required' }, 400);
+      }
+
+      const settings = await select('platform_settings', {
+        setting_key: 'admin:settings:google',
+      });
+
+      let apiKey = process.env.GOOGLE_MAPS_API_KEY;
+      if (settings.length > 0 && settings[0].setting_value?.apiKey) {
+        apiKey = settings[0].setting_value.apiKey;
+      }
+
+      if (!apiKey) {
+        // Return coordinates as address if no API key
+        return c.json({ 
+          success: true, 
+          address: `${lat}, ${lng}`,
+          formatted_address: `${lat}, ${lng}`,
+        });
+      }
+
+      const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+      url.searchParams.set('latlng', `${lat},${lng}`);
+      url.searchParams.set('key', apiKey);
+
+      const response = await fetch(url.toString());
+      const data = await response.json() as any;
+
+      if (data.status !== 'OK' || !data.results || data.results.length === 0) {
+        // Return coordinates as fallback
+        return c.json({ 
+          success: true, 
+          address: `${lat}, ${lng}`,
+          formatted_address: `${lat}, ${lng}`,
+        });
+      }
+
+      const result = data.results[0];
+      return c.json({ 
+        success: true, 
+        address: result.formatted_address,
+        formatted_address: result.formatted_address,
+        place_id: result.place_id,
+      });
+    } catch (error: any) {
+      console.error('Error reverse geocoding:', error);
+      // Return coordinates as fallback on error
+      const { lat, lng } = await c.req.json().catch(() => ({ lat: 0, lng: 0 }));
+      return c.json({ 
+        success: true, 
+        address: `${lat}, ${lng}`,
+        formatted_address: `${lat}, ${lng}`,
+      });
     }
   });
 
@@ -2996,17 +3259,15 @@ export function registerStaffEndpoints(app: Hono) {
           b.booking_time,
           b.status,
           b.total_amount,
-          b.service_style,
-          b.otp,
-          b.customer_address,
+          b.service_type as service_style,
+          b.otp_code as otp,
+          b.address as customer_address,
           b.latitude as customer_lat,
           b.longitude as customer_lng,
           s.name as service_name,
           s.description as service_description,
-          c.name as customer_name,
+          c.full_name as customer_name,
           c.phone as customer_phone,
-          p.name as pet_name,
-          p.type as pet_type,
           v.business_name as vendor_name,
           v.address as vendor_address,
           v.latitude as vendor_lat,
@@ -3014,7 +3275,6 @@ export function registerStaffEndpoints(app: Hono) {
         FROM bookings b
         INNER JOIN services s ON b.service_id = s.id
         INNER JOIN customers c ON b.customer_id = c.id
-        INNER JOIN pets p ON b.pet_id = p.id
         LEFT JOIN vendors v ON b.vendor_id = v.id
         WHERE b.staff_id = $1
       `;
@@ -3091,6 +3351,109 @@ export function registerStaffEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching staff appointments:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================
+  // STAFF NOTIFICATIONS
+  // ============================================
+
+  /**
+   * GET /staff/:staffId/notifications
+   * Get notifications for a staff member
+   */
+  app.get("/staff/:staffId/notifications", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+      const isRead = c.req.query('isRead');
+      const limit = parseInt(c.req.query('limit') || '50', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      // Handle invalid UUIDs gracefully
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(staffId)) {
+        return c.json({
+          success: true,
+          notifications: [],
+          total: 0,
+          unreadCount: 0,
+        });
+      }
+
+      let notificationQuery = `
+        SELECT * FROM notifications
+        WHERE recipient_id = $1 AND recipient_type = 'staff'
+      `;
+
+      const params: any[] = [staffId];
+      let paramIndex = 2;
+
+      if (isRead !== undefined) {
+        notificationQuery += ` AND is_read = $${paramIndex}`;
+        params.push(isRead === 'true');
+        paramIndex++;
+      }
+
+      notificationQuery += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+
+      const notifications = await query(notificationQuery, params);
+
+      // Count unread
+      const unreadCount = await query(
+        'SELECT COUNT(*) as count FROM notifications WHERE recipient_id = $1 AND recipient_type = $2 AND is_read = false',
+        [staffId, 'staff']
+      );
+
+      return c.json({
+        success: true,
+        notifications: notifications.rows,
+        total: notifications.rows.length,
+        unreadCount: parseInt(unreadCount.rows[0]?.count || '0', 10),
+      });
+    } catch (error: any) {
+      console.error('Error fetching staff notifications:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /staff/:staffId/notifications/:notificationId/read
+   * Mark a notification as read
+   */
+  app.put("/staff/:staffId/notifications/:notificationId/read", async (c) => {
+    try {
+      const { staffId, notificationId } = c.req.param();
+
+      await update('notifications', 
+        { id: notificationId, recipient_id: staffId, recipient_type: 'staff' },
+        { is_read: true, read_at: new Date().toISOString() }
+      );
+
+      return c.json({ success: true, message: 'Notification marked as read' });
+    } catch (error: any) {
+      console.error('Error marking notification as read:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /staff/:staffId/notifications/mark-all-read
+   * Mark all notifications as read for staff
+   */
+  app.put("/staff/:staffId/notifications/mark-all-read", async (c) => {
+    try {
+      const { staffId } = c.req.param();
+
+      await query(
+        `UPDATE notifications SET is_read = true, read_at = NOW() 
+         WHERE recipient_id = $1 AND recipient_type = 'staff' AND is_read = false`,
+        [staffId]
+      );
+
+      return c.json({ success: true, message: 'All notifications marked as read' });
+    } catch (error: any) {
+      console.error('Error marking all notifications as read:', error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -3459,7 +3822,7 @@ export function registerStaffEndpoints(app: Hono) {
           startDate = new Date(now.getFullYear(), now.getMonth(), 1);
       }
 
-      // Get booking transactions
+      // Get booking transactions (note: bookings don't have pet_id, removed pet join)
       const bookings = await query(
         `SELECT 
           b.id,
@@ -3467,15 +3830,13 @@ export function registerStaffEndpoints(app: Hono) {
           b.booking_time,
           b.total_amount,
           b.status,
-          b.service_style,
+          b.service_type as service_style,
           s.name as service_name,
-          c.name as customer_name,
-          p.name as pet_name,
+          c.full_name as customer_name,
           'booking' as transaction_type
          FROM bookings b
          INNER JOIN services s ON b.service_id = s.id
          INNER JOIN customers c ON b.customer_id = c.id
-         INNER JOIN pets p ON b.pet_id = p.id
          WHERE b.staff_id = $1
            AND b.status = 'completed'
            AND b.booking_date >= $2
@@ -3575,9 +3936,9 @@ export function registerStaffEndpoints(app: Hono) {
         `SELECT DISTINCT
           b.id as booking_id,
           b.customer_id,
-          c.name as customer_name,
+          c.full_name as customer_name,
           c.phone as customer_phone,
-          c.photo_url as customer_photo,
+          c.profile_photo_url as customer_photo,
           b.booking_date,
           b.status,
           b.created_at
@@ -4017,78 +4378,179 @@ export function registerStaffEndpoints(app: Hono) {
 
   /**
    * POST /staff/:staffId/profile/photo
-   * Upload staff profile photo
+   * Upload staff profile photo to S3
+   * Supports both FormData (multipart) and JSON (base64)
    */
   app.post("/staff/:staffId/profile/photo", async (c) => {
     try {
       const { staffId } = c.req.param();
+      console.log(`[STAFF PHOTO] Starting upload for staff: ${staffId}`);
 
       if (!isValidUUID(staffId)) {
         return c.json({ error: 'Invalid staff ID' }, 400);
       }
 
-      // Verify staff exists
+      // Verify staff exists and get vendor_id for S3 path
       const staffResult = await select('staff', { id: staffId });
       if (staffResult.length === 0) {
         return c.json({ error: 'Staff member not found' }, 404);
       }
+      const staffMember = staffResult[0];
+      const vendorId = staffMember.vendor_id || 'independent';
 
-      // Get form data (photo file)
-      const formData = await c.req.formData();
-      const photoFile = formData.get('photo') as File;
+      let buffer: Buffer;
+      let contentType: string = 'image/jpeg';
+      let extension: string = 'jpg';
 
-      if (!photoFile) {
-        return c.json({ error: 'Photo file is required' }, 400);
+      // Check content type to determine how to parse
+      const requestContentType = c.req.header('content-type') || '';
+      console.log(`[STAFF PHOTO] Request content-type: ${requestContentType}`);
+
+      if (requestContentType.includes('multipart/form-data')) {
+        // Handle FormData upload
+        console.log(`[STAFF PHOTO] Parsing as FormData...`);
+        try {
+          const formData = await c.req.formData();
+          const photoFile = formData.get('photo') as File;
+
+          if (!photoFile) {
+            return c.json({ error: 'Photo file is required (field name: photo)' }, 400);
+          }
+
+          // Validate file type
+          if (!photoFile.type.startsWith('image/')) {
+            return c.json({ error: 'File must be an image' }, 400);
+          }
+
+          contentType = photoFile.type;
+          extension = photoFile.type.split('/')[1] || 'jpg';
+
+          // Validate file size (5MB max)
+          const maxSize = 5 * 1024 * 1024; // 5MB
+          if (photoFile.size > maxSize) {
+            return c.json({ error: 'File size must be less than 5MB' }, 400);
+          }
+
+          // Convert file to buffer for S3 upload
+          const arrayBuffer = await photoFile.arrayBuffer();
+          buffer = Buffer.from(arrayBuffer);
+          console.log(`[STAFF PHOTO] FormData file size: ${buffer.length} bytes`);
+        } catch (formError: any) {
+          console.error('[STAFF PHOTO] FormData parse error:', formError);
+          return c.json({ error: `Failed to parse form data: ${formError.message}` }, 400);
+        }
+      } else {
+        // Handle JSON/base64 upload
+        console.log(`[STAFF PHOTO] Parsing as JSON/base64...`);
+        try {
+          const body = await c.req.json();
+          
+          if (body.photoUrl) {
+            // Direct URL provided - just save it
+            console.log(`[STAFF PHOTO] Direct URL provided: ${body.photoUrl}`);
+            
+            // Update database directly
+            const updateData: any = {
+              photo_url: body.photoUrl,
+              photo: body.photoUrl,
+            };
+            
+            await update('staff', { id: staffId }, updateData);
+            
+            return c.json({
+              success: true,
+              photo_url: body.photoUrl,
+              message: 'Photo URL saved successfully',
+            });
+          }
+          
+          if (!body.photo && !body.base64) {
+            return c.json({ error: 'Photo data is required (photo or base64 field)' }, 400);
+          }
+
+          const base64Data = body.photo || body.base64;
+          
+          // Parse base64 data URL
+          let base64String = base64Data;
+          if (base64Data.includes(',')) {
+            const parts = base64Data.split(',');
+            base64String = parts[1];
+            const mimeMatch = parts[0].match(/data:([^;]+);/);
+            if (mimeMatch) {
+              contentType = mimeMatch[1];
+              extension = contentType.split('/')[1] || 'jpg';
+            }
+          }
+
+          buffer = Buffer.from(base64String, 'base64');
+          console.log(`[STAFF PHOTO] Base64 decoded size: ${buffer.length} bytes`);
+
+          // Validate size
+          const maxSize = 5 * 1024 * 1024; // 5MB
+          if (buffer.length > maxSize) {
+            return c.json({ error: 'File size must be less than 5MB' }, 400);
+          }
+        } catch (jsonError: any) {
+          console.error('[STAFF PHOTO] JSON parse error:', jsonError);
+          return c.json({ error: `Failed to parse photo data: ${jsonError.message}` }, 400);
+        }
       }
 
-      // Validate file type
-      if (!photoFile.type.startsWith('image/')) {
-        return c.json({ error: 'File must be an image' }, 400);
+      // Upload to S3
+      console.log(`[STAFF PHOTO] Uploading to S3...`);
+      const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+      
+      // Generate unique filename
+      const timestamp = Date.now();
+      const randomStr = Math.random().toString(36).substring(2, 15);
+      const s3Key = `staff/${vendorId}/${timestamp}_${randomStr}.${extension}`;
+      
+      const bucket = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+      
+      try {
+        await s3Client.send(new PutObjectCommand({
+          Bucket: bucket,
+          Key: s3Key,
+          Body: buffer,
+          ContentType: contentType,
+          ACL: 'public-read', // Make publicly accessible
+        }));
+      } catch (s3Error: any) {
+        console.error('[STAFF PHOTO] S3 upload error:', s3Error);
+        return c.json({ error: `S3 upload failed: ${s3Error.message}` }, 500);
       }
+      
+      const photoUrl = `https://${bucket}.s3.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com/${s3Key}`;
+      console.log(`[STAFF PHOTO] Uploaded to S3: ${photoUrl}`);
 
-      // Validate file size (5MB max)
-      const maxSize = 5 * 1024 * 1024; // 5MB
-      if (photoFile.size > maxSize) {
-        return c.json({ error: 'File size must be less than 5MB' }, 400);
+      // Update staff photo in database - use all available columns
+      const updateData: any = {
+        photo_url: photoUrl,
+        photo: photoUrl,
+      };
+
+      try {
+        await update('staff', { id: staffId }, updateData);
+        console.log(`[STAFF PHOTO] Database updated for staff: ${staffId}`);
+      } catch (dbError: any) {
+        console.error('[STAFF PHOTO] Database update error:', dbError);
+        // Try with just photo_url
+        try {
+          await update('staff', { id: staffId }, { photo_url: photoUrl });
+        } catch (dbError2: any) {
+          // Try with just photo
+          await update('staff', { id: staffId }, { photo: photoUrl });
+        }
       }
-
-      // Convert file to base64 or upload to S3
-      // For now, we'll store as base64 URL (in production, upload to S3)
-      const arrayBuffer = await photoFile.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const base64 = buffer.toString('base64');
-      const dataUrl = `data:${photoFile.type};base64,${base64}`;
-
-      // Update staff photo
-      // Check which column exists: photo or photo_url
-      const schemaCheck = await query(`
-        SELECT 
-          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff' AND column_name = 'photo') as has_photo,
-          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'staff' AND column_name = 'photo_url') as has_photo_url
-      `);
-      const schema = schemaCheck.rows[0] || {};
-
-      const updateData: any = {};
-      if (schema.has_photo) {
-        updateData.photo = dataUrl;
-      }
-      if (schema.has_photo_url) {
-        updateData.photo_url = dataUrl;
-      }
-
-      if (Object.keys(updateData).length === 0) {
-        return c.json({ error: 'Photo column not found in staff table' }, 500);
-      }
-
-      await update('staff', { id: staffId }, updateData);
 
       return c.json({
         success: true,
-        photo_url: dataUrl,
+        photo_url: photoUrl,
         message: 'Photo uploaded successfully',
       });
     } catch (error: any) {
-      console.error('Error uploading staff photo:', error);
+      console.error('[STAFF PHOTO] Error uploading staff photo:', error);
       return c.json({ error: error.message }, 500);
     }
   });

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Calendar, Clock, User, Phone, Mail, Navigation, X, AlertTriangle, Wallet as WalletIcon } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface AppointmentDetailsViewProps {
   appointmentId: string;
@@ -28,7 +28,7 @@ export function AppointmentDetailsView({
   const [refundMethod, setRefundMethod] = useState<'wallet' | 'original'>('wallet');
   const [cancelling, setCancelling] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadAppointmentDetails();
@@ -40,7 +40,7 @@ export function AppointmentDetailsView({
       const response = await fetch(
         `${API_BASE}/appointment/${appointmentId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -86,7 +86,7 @@ export function AppointmentDetailsView({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             cancelledBy: 'customer',

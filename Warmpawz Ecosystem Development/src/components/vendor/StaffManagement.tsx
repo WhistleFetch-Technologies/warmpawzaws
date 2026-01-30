@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, Edit, Save, X, User, Phone, Mail, MapPin, Calendar, Clock, UserCheck, Upload, CheckCircle, ArrowLeft, Camera, Award, Star, Check, DollarSign, Settings } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
@@ -67,10 +67,10 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
       
       // Fetch staff
       const staffResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/vendor/${vendorId}`,
+        `${getApiBaseUrl()}/staff/vendor/${vendorId}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -86,10 +86,10 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
 
       // Fetch vendor services - using the vendor-service-management endpoint for consistent structure
       const servicesResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/services`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/services`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -189,7 +189,7 @@ export function StaffManagement({ vendorId, vendorData, onBack, onNavigateToServ
     try {
       // ✅ SECURITY FIX: Use authenticated fetch
       const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staffId}`,
+        `${getApiBaseUrl()}/staff/${staffId}`,
         {
           method: 'DELETE'
         }
@@ -531,10 +531,10 @@ function StaffFormModal({ vendorId, vendorData, staff, onClose, onSuccess }: Sta
       
       // ✅ NEW: Use problem-grid-specializations endpoint (same labels as customer app)
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/problem-grid-specializations/${roleId}`,
+        `${getApiBaseUrl()}/vendor/problem-grid-specializations/${roleId}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -596,7 +596,7 @@ function StaffFormModal({ vendorId, vendorData, staff, onClose, onSuccess }: Sta
 
     // ✅ SECURITY FIX: Use authenticatedFetch for photo upload
     const uploadResponse = await authenticatedFetch(
-      `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/storage/upload-multiple`,
+      `${getApiBaseUrl()}/storage/upload-multiple`,
       {
         method: 'POST',
         body: formData
@@ -687,8 +687,8 @@ function StaffFormModal({ vendorId, vendorData, staff, onClose, onSuccess }: Sta
       console.log('[STAFF FORM] Prepared staff data:', JSON.stringify(staffData, null, 2));
 
       const url = staff 
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/create`;
+        ? `${getApiBaseUrl()}/staff/${staff.id}`
+        : `${getApiBaseUrl()}/staff/create`;
       
       const method = staff ? 'PUT' : 'POST';
 
@@ -1019,7 +1019,7 @@ function ServiceAssignmentModal({ vendorId, staff, availableServices, onClose, o
 
       // ✅ SECURITY FIX: Use authenticatedFetch for service assignment
       const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/services`,
+        `${getApiBaseUrl()}/staff/${staff.id}/services`,
         {
           method: 'PUT',
           body: JSON.stringify({ serviceIds: selectedServices })

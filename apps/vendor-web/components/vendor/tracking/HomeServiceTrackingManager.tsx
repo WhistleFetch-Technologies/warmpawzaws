@@ -84,6 +84,9 @@ export function HomeServiceTrackingManager({
   const [trackingActive, setTrackingActive] = useState(false);
   const watchIdRef = useRef<number | null>(null);
   const trackingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const latestLocationRef = useRef<LocationPoint | null>(null);
+  const lastLocationUpdateSentRef = useRef<number>(0);
+  const GPS_THROTTLE_MS = 30000; // Min 30s between server updates (P3 performance)
   
   // Session state
   const [sessionState, setSessionState] = useState<SessionState>({
@@ -180,7 +183,8 @@ export function HomeServiceTrackingManager({
         };
         
         setCurrentLocation(newLocation);
-        
+        latestLocationRef.current = newLocation;
+
         // Add to route if session is active (for walkers)
         if (sessionState.status === 'in_progress' && bookingData?.isWalkerSession) {
           setSessionState(prev => {
@@ -216,6 +220,8 @@ export function HomeServiceTrackingManager({
         if (error.code === error.PERMISSION_DENIED) {
           toast.error('Location permission required for tracking');
           setTrackingActive(false);
+        } else if (error.code === error.POSITION_UNAVAILABLE || error.code === error.TIMEOUT) {
+          toast.error('Location unavailable. Check signal or try again.');
         }
       },
       { 
@@ -225,13 +231,12 @@ export function HomeServiceTrackingManager({
       }
     );
 
-    // Send location updates to server every 30 seconds
+    // Send location updates every 45s, throttled to min 30s between sends (P3 performance)
     trackingIntervalRef.current = setInterval(() => {
-      if (currentLocation) {
-        sendLocationUpdate();
-      }
-    }, 30000);
-  }, [bookingData, sessionState.status, currentLocation]);
+      const latest = latestLocationRef.current;
+      if (latest) sendLocationUpdate(latest);
+    }, 45000);
+  }, [bookingData, sessionState.status]);
 
   // Stop GPS tracking
   const stopLocationTracking = useCallback(() => {
@@ -246,19 +251,28 @@ export function HomeServiceTrackingManager({
     setTrackingActive(false);
   }, []);
 
-  // Send location update to server
-  const sendLocationUpdate = async () => {
-    if (!currentLocation) return;
-    
+  // Send location update to server (throttled: min 30s between sends)
+  const sendLocationUpdate = async (location?: LocationPoint | null) => {
+    const loc = location ?? latestLocationRef.current ?? currentLocation;
+    if (!loc) return;
+    const now = Date.now();
+    if (now - lastLocationUpdateSentRef.current < GPS_THROTTLE_MS) return;
+    lastLocationUpdateSentRef.current = now;
+
     try {
       await apiClient.post(`/vendor/bookings/${bookingId}/location-update`, {
-        ...currentLocation,
+        ...loc,
         eta: sessionState.currentEta,
         distanceRemaining: sessionState.distanceToDestination,
         status: sessionState.status
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to send location update:', error);
+      lastLocationUpdateSentRef.current = 0; // Allow retry sooner on failure
+      const isNetwork = error?.message?.includes('fetch') || error?.code === 'ERR_NETWORK';
+      if (isNetwork) {
+        toast.error('Connection issue. Location update will retry when back online.');
+      }
     }
   };
 
@@ -791,7 +805,7 @@ export function HomeServiceTrackingManager({
                     toast.error('Please enter a valid 6-digit OTP');
                   }
                 }}
-                disabled={otpInput.length !== 6 || processing}
+                disabled={otpInput.length !== 4 || processing}
                 className="flex-1 bg-green-600 hover:bg-green-700"
               >
                 {processing ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Verify'}

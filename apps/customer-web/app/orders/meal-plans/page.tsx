@@ -3,7 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { Package, MapPin, Calendar, Clock, CheckCircle, Truck, Home } from 'lucide-react';
+import { 
+  Package, MapPin, Calendar, Clock, CheckCircle, Truck, Home,
+  Key, Eye, EyeOff, Copy, Check, Phone, User, AlertCircle
+} from 'lucide-react';
+import { toast } from 'sonner';
 
 interface MealPlanOrder {
   id: string;
@@ -20,6 +24,11 @@ interface MealPlanOrder {
   delivery_address: string;
   created_at: string;
   updated_at: string;
+  // Delivery OTP fields
+  delivery_otp?: string;
+  otp_verified?: boolean;
+  delivery_partner_name?: string;
+  delivery_partner_phone?: string;
 }
 
 export default function MealPlanOrdersPage() {
@@ -27,6 +36,10 @@ export default function MealPlanOrdersPage() {
   const [orders, setOrders] = useState<MealPlanOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<MealPlanOrder | null>(null);
+  
+  // OTP display states
+  const [showOTP, setShowOTP] = useState<Record<string, boolean>>({});
+  const [copiedOTP, setCopiedOTP] = useState<string | null>(null);
 
   useEffect(() => {
     loadOrders();
@@ -52,6 +65,24 @@ export default function MealPlanOrdersPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Copy OTP to clipboard
+  const copyOTP = (orderId: string, otp: string) => {
+    navigator.clipboard.writeText(otp);
+    setCopiedOTP(orderId);
+    toast.success('OTP copied to clipboard');
+    setTimeout(() => setCopiedOTP(null), 2000);
+  };
+
+  // Toggle OTP visibility for an order
+  const toggleOTPVisibility = (orderId: string) => {
+    setShowOTP(prev => ({ ...prev, [orderId]: !prev[orderId] }));
+  };
+
+  // Check if order is out for delivery
+  const isOutForDelivery = (status: string) => {
+    return ['out_for_delivery', 'dispatched', 'in_transit', 'arriving', 'on_way'].includes(status.toLowerCase());
   };
 
   const getStatusColor = (status: string) => {
@@ -176,6 +207,110 @@ export default function MealPlanOrdersPage() {
                     <p className="text-sm text-gray-500 mt-1">Qty: {order.quantity}</p>
                   </div>
                 </div>
+
+                {/* Delivery OTP Section - Show when out for delivery */}
+                {isOutForDelivery(order.status) && order.delivery_otp && !order.otp_verified && (
+                  <div className="mt-4 p-4 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl border-2 border-orange-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Key className="w-5 h-5 text-orange-600" />
+                        <span className="font-bold text-orange-800">Your Delivery OTP</span>
+                      </div>
+                      {order.delivery_partner_name && (
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 text-sm text-gray-600">
+                            <User className="w-4 h-4" />
+                            <span>{order.delivery_partner_name}</span>
+                          </div>
+                          {order.delivery_partner_phone && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.location.href = `tel:${order.delivery_partner_phone}`;
+                              }}
+                              className="p-2 bg-orange-100 rounded-full hover:bg-orange-200 transition"
+                            >
+                              <Phone className="w-4 h-4 text-orange-600" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* OTP Display */}
+                    <div className="flex justify-center gap-2 mb-3">
+                      {order.delivery_otp.split('').map((digit, idx) => (
+                        <div
+                          key={idx}
+                          className="w-12 h-14 bg-white rounded-lg shadow-sm border-2 border-orange-300 flex items-center justify-center"
+                        >
+                          <span className="text-2xl font-bold text-orange-600">
+                            {showOTP[order.id] ? digit : '•'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {/* OTP Actions */}
+                    <div className="flex justify-center gap-3">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleOTPVisibility(order.id);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-orange-300 rounded-lg text-orange-700 hover:bg-orange-50 transition text-sm font-medium"
+                      >
+                        {showOTP[order.id] ? (
+                          <>
+                            <EyeOff className="w-4 h-4" />
+                            Hide OTP
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="w-4 h-4" />
+                            Show OTP
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyOTP(order.id, order.delivery_otp!);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-orange-300 rounded-lg text-orange-700 hover:bg-orange-50 transition text-sm font-medium"
+                      >
+                        {copiedOTP === order.id ? (
+                          <>
+                            <Check className="w-4 h-4 text-green-600" />
+                            Copied!
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4" />
+                            Copy OTP
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    
+                    {/* Instructions */}
+                    <div className="mt-3 flex items-start gap-2 text-sm text-orange-700">
+                      <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      <p>Share this OTP with the delivery partner only after receiving your order.</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* OTP Verified Badge */}
+                {order.otp_verified && order.status.toLowerCase() === 'delivered' && (
+                  <div className="mt-4 p-4 bg-green-50 rounded-xl border border-green-200 flex items-center justify-center gap-3">
+                    <CheckCircle className="w-6 h-6 text-green-600" />
+                    <div>
+                      <p className="font-semibold text-green-800">Delivery Confirmed!</p>
+                      <p className="text-sm text-green-600">Your meal plan has been delivered successfully.</p>
+                    </div>
+                  </div>
+                )}
 
                 {selectedOrder?.id === order.id && (
                   <div className="mt-4 pt-4 border-t border-gray-200">

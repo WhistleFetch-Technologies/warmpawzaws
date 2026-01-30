@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Eye, Edit, Trash2, Plus } from 'lucide-react';
 import { Button } from '../../ui/button';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { CreateProductServiceModal } from './CreateProductServiceModal';
 import { EditProductServiceModal } from './EditProductServiceModal';
 
@@ -37,10 +37,10 @@ export function ProductServicesTab() {
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/products`,
+        `${getApiBaseUrl()}/admin/catalog/products`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -60,10 +60,10 @@ export function ProductServicesTab() {
   const loadCategories = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/categories`,
+        `${getApiBaseUrl()}/admin/catalog/categories`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -88,11 +88,11 @@ export function ProductServicesTab() {
     
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/products/${productId}`,
+        `${getApiBaseUrl()}/admin/catalog/products/${productId}`,
         {
           method: 'DELETE',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

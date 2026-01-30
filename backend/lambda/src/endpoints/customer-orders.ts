@@ -13,6 +13,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, insert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
@@ -79,7 +80,7 @@ class CreateCustomerOrderHandler extends BaseHandler {
             actualCustomerId = customers.rows[0].id;
           } else {
             // Create a new customer
-            const newCustomerId = crypto.randomUUID();
+            const newCustomerId = randomUUID();
             const customerName = shippingAddress.name || `Customer ${customerPhone.slice(-4)}`;
             await insert('customers', {
               id: newCustomerId,
@@ -151,7 +152,7 @@ class CreateCustomerOrderHandler extends BaseHandler {
       }
 
       // Create order
-      const orderId = crypto.randomUUID();
+      const orderId = randomUUID();
       const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       
       // Calculate amounts (use provided or calculate)

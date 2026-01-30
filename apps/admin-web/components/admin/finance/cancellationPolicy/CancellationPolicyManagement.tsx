@@ -155,14 +155,15 @@ export function CancellationPolicyManagement() {
     }
   };
 
-  const filteredPolicies = policies.filter((policy) => {
+  const filteredPolicies = (policies || []).filter((policy) => {
+    if (!policy) return false;
     if (searchQuery) {
       const matchesSearch =
-        policy.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        policy.description.toLowerCase().includes(searchQuery.toLowerCase());
+        (policy.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (policy.description || '').toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
     }
-    if (filterType !== 'all' && policy.policyType !== filterType) return false;
+    if (filterType !== 'all' && (policy.policyType || 'standard') !== filterType) return false;
     return true;
   });
 
@@ -290,7 +291,7 @@ export function CancellationPolicyManagement() {
                       <Badge variant={policy.isActive ? 'default' : 'outline'}>
                         {policy.isActive ? 'Active' : 'Inactive'}
                       </Badge>
-                      <Badge variant="outline">{policy.policyType.replace('_', ' ')}</Badge>
+                      <Badge variant="outline">{(policy.policyType || 'standard').replace('_', ' ')}</Badge>
                     </div>
                     <p className="text-sm text-gray-600">{policy.description}</p>
                   </div>

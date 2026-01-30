@@ -5,7 +5,7 @@ import {
   MapPin, User, Upload, Heart, AlertCircle, Check,
   ChevronRight, Package
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { BookingDetailModal } from './BookingDetailModal';
 
 interface Pet {
@@ -80,9 +80,9 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
       setLoading(true);
       // Fetch specific pet by ID
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/pet/${petId}`,
+        `${getApiBaseUrl()}/pet/${petId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -106,9 +106,9 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
     try {
       setLoadingBookings(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${phone}`,
+        `${getApiBaseUrl()}/bookings/${phone}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -144,9 +144,9 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
     try {
       // Load all pets first
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/pets/${phone}`,
+        `${getApiBaseUrl()}/customer/pets/${phone}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -168,12 +168,12 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
 
         // Save back
         const saveResponse = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/pets`,
+          `${getApiBaseUrl()}/customer/pets`,
           {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              Authorization: `Bearer ${publicAnonKey}`,
+              Authorization: (getAuthHeaders().Authorization || ""),
             },
             body: JSON.stringify({
               phone: phone,
@@ -214,11 +214,11 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
       console.log(`=== DELETING PET ${petId} ===`);
       
       const deleteResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/pets/${phone}/${petId}`,
+        `${getApiBaseUrl()}/customer/pets/${phone}/${petId}`,
         {
           method: 'DELETE',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

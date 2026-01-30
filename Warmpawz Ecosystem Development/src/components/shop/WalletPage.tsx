@@ -39,7 +39,7 @@ import {
 } from "../ui/dialog";
 import { Badge } from '../ui/badge';
 import { authenticatedGet, authenticatedPost, getCurrentUserId } from '../../utils/authenticatedFetch';
-import { projectId } from '../../utils/supabase/info';
+import { getApiBaseUrl } from '../../utils/api-config';
 
 interface Transaction {
   id: string;
@@ -85,7 +85,7 @@ export function WalletPage({ onNavigate }: WalletPageProps) {
 
       // Fetch wallet data from real API
       const walletData = await authenticatedGet(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${customerId}/wallet`,
+        `${getApiBaseUrl()}/customer/${customerId}/wallet`,
         true // Require auth
       );
 
@@ -122,7 +122,7 @@ export function WalletPage({ onNavigate }: WalletPageProps) {
 
       // Initiate wallet top-up
       const initiateResponse = await authenticatedPost(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${customerId}/wallet/topup/initiate`,
+        `${getApiBaseUrl()}/customer/${customerId}/wallet/topup/initiate`,
         { amount }
       );
 
@@ -149,7 +149,7 @@ export function WalletPage({ onNavigate }: WalletPageProps) {
           try {
             // Verify payment
             const verifyResponse = await authenticatedPost(
-              `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${customerId}/wallet/topup/verify`,
+              `${getApiBaseUrl()}/customer/${customerId}/wallet/topup/verify`,
               {
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,

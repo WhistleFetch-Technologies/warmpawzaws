@@ -64,24 +64,30 @@ export function registerSettlementEndpoints(app: Hono) {
 
       const settlements = await query(queryStr, params).catch(() => ({ rows: [] }));
 
-      const safeSettlements = (settlements.rows || []).map((s: any) => ({
-        id: String(s.id || ''),
-        vendor_id: String(s.vendor_id || ''),
-        vendor_name: String(s.vendor_name || ''),
-        vendor_phone: String(s.vendor_phone || ''),
-        period_start: s.period_start ? String(s.period_start) : '',
-        period_end: s.period_end ? String(s.period_end) : '',
-        gross_amount: parseFloat(s.gross_amount || '0'),
-        commission_amount: parseFloat(s.commission_amount || '0'),
-        net_amount: parseFloat(s.net_amount || '0'),
-        booking_count: parseInt(s.booking_count || '0', 10),
-        status: String(s.status || 'pending'),
-        payout_reference: s.payout_reference || undefined,
-        payout_date: s.payout_date ? String(s.payout_date) : undefined,
-        failure_reason: s.failure_reason || undefined,
-        created_at: String(s.created_at || ''),
-        updated_at: String(s.updated_at || ''),
-      }));
+      // Align with DB: settlements table uses total_amount, vendor_amount (from settlement-processor); some code uses gross_amount, net_amount
+      const safeSettlements = (settlements.rows || []).map((s: any) => {
+        const gross = parseFloat(s.gross_amount ?? s.total_amount ?? '0');
+        const net = parseFloat(s.net_amount ?? s.vendor_amount ?? '0');
+        const commission = parseFloat(s.commission_amount || '0');
+        return {
+          id: String(s.id || ''),
+          vendor_id: String(s.vendor_id || ''),
+          vendor_name: String(s.vendor_name || ''),
+          vendor_phone: String(s.vendor_phone || ''),
+          period_start: s.period_start ? String(s.period_start) : '',
+          period_end: s.period_end ? String(s.period_end) : '',
+          gross_amount: gross,
+          commission_amount: commission,
+          net_amount: net,
+          booking_count: parseInt(s.booking_count || '0', 10),
+          status: String(s.status || 'pending'),
+          payout_reference: s.payout_reference || undefined,
+          payout_date: s.payout_date ? String(s.payout_date) : undefined,
+          failure_reason: s.failure_reason || undefined,
+          created_at: String(s.created_at || ''),
+          updated_at: String(s.updated_at || ''),
+        };
+      });
 
       return c.json({
         success: true,
@@ -106,8 +112,8 @@ export function registerSettlementEndpoints(app: Hono) {
           COUNT(*) FILTER (WHERE status = 'processing') as total_processing,
           COUNT(*) FILTER (WHERE status = 'completed') as total_completed,
           COUNT(*) FILTER (WHERE status = 'failed') as total_failed,
-          COALESCE(SUM(net_amount) FILTER (WHERE status = 'pending'), 0) as pending_amount,
-          COALESCE(SUM(net_amount) FILTER (WHERE status = 'completed'), 0) as completed_amount
+          COALESCE(SUM(COALESCE(net_amount, vendor_amount)) FILTER (WHERE status = 'pending'), 0) as pending_amount,
+          COALESCE(SUM(COALESCE(net_amount, vendor_amount)) FILTER (WHERE status = 'completed'), 0) as completed_amount
         FROM settlements
       `).catch(() => ({ rows: [{
         total_pending: '0',
@@ -140,6 +146,88 @@ export function registerSettlementEndpoints(app: Hono) {
           totalFailed: 0,
           pendingAmount: 0,
           completedAmount: 0,
+        },
+      });
+    }
+  });
+
+  /**
+   * GET /settlements/policy
+   * Get settlement policy for vendors to see
+   * This is the same policy for ALL vendors
+   * ✅ CRITICAL: This must be BEFORE /settlements/:id to avoid matching "policy" as an ID
+   */
+  app.get("/settlements/policy", async (c) => {
+    try {
+      // Get payout rules from platform settings
+      const payoutRules = await select('platform_settings', { setting_key: 'admin:settings:payout_rules' });
+      const rules = payoutRules.length > 0
+        ? (payoutRules[0].setting_value as any)
+        : {
+            holdPeriodDays: 7,
+            minimumPayout: 1000,
+            autoPayout: true,
+            defaultCommission: 10,
+          };
+      
+      // Get settlement schedule
+      const scheduleSettings = await query(`
+        SELECT * FROM platform_settings 
+        WHERE setting_key LIKE 'admin:finance:settlement%' 
+        LIMIT 1
+      `).catch(() => ({ rows: [] }));
+      
+      const schedule = scheduleSettings.rows.length > 0 
+        ? scheduleSettings.rows[0].setting_value 
+        : {
+            scheduleType: 'weekly',
+            settlementPeriodDays: rules.holdPeriodDays,
+            minPayoutAmount: rules.minimumPayout,
+          };
+      
+      return c.json({
+        success: true,
+        policy: {
+          // Hold period - how long earnings are held before settlement
+          holdPeriodDays: rules.holdPeriodDays || 7,
+          
+          // Minimum amount required for payout
+          minimumPayoutAmount: rules.minimumPayout || 1000,
+          
+          // Platform commission percentage (based on tier, but default shown)
+          defaultCommissionRate: rules.defaultCommission || 10,
+          
+          // Whether auto-payout is enabled
+          autoPayoutEnabled: rules.autoPayout !== false,
+          
+          // Settlement schedule
+          settlementSchedule: typeof schedule === 'string' ? JSON.parse(schedule) : schedule,
+          
+          // Bank verification requirement
+          bankVerificationRequired: true,
+          
+          // Razorpay integration info
+          paymentProcessor: 'Razorpay',
+          
+          // Policy description for vendors
+          description: `Earnings are held for ${rules.holdPeriodDays || 7} days before becoming eligible for settlement. ` +
+            `Minimum payout amount is ₹${rules.minimumPayout || 1000}. ` +
+            `Platform commission is deducted based on your tier (default ${rules.defaultCommission || 10}%). ` +
+            `Bank account must be verified via Razorpay to receive payouts.`,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching settlement policy:', error);
+      return c.json({
+        success: true,
+        policy: {
+          holdPeriodDays: 7,
+          minimumPayoutAmount: 1000,
+          defaultCommissionRate: 10,
+          autoPayoutEnabled: true,
+          bankVerificationRequired: true,
+          paymentProcessor: 'Razorpay',
+          description: 'Earnings are held for 7 days before settlement. Minimum payout is ₹1000. Bank verification required.',
         },
       });
     }
@@ -842,7 +930,7 @@ export function registerSettlementEndpoints(app: Hono) {
                 address: payload.address || 'Not specified',
                 city: payload.city || 'Not specified',
                 state: payload.state || 'Not specified',
-                pincode: payload.pin || payload.pincode || '000000',
+                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
                 status: 'active',
                 is_active: true,
                 created_at: new Date().toISOString(),
@@ -920,87 +1008,6 @@ export function registerSettlementEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error fetching bank details:', error);
       return c.json({ error: error.message }, 500);
-    }
-  });
-
-  /**
-   * GET /settlements/policy
-   * Get settlement policy for vendors to see
-   * This is the same policy for ALL vendors
-   */
-  app.get("/settlements/policy", async (c) => {
-    try {
-      // Get payout rules from platform settings
-      const payoutRules = await select('platform_settings', { setting_key: 'admin:settings:payout_rules' });
-      const rules = payoutRules.length > 0
-        ? (payoutRules[0].setting_value as any)
-        : {
-            holdPeriodDays: 7,
-            minimumPayout: 1000,
-            autoPayout: true,
-            defaultCommission: 10,
-          };
-      
-      // Get settlement schedule
-      const scheduleSettings = await query(`
-        SELECT * FROM platform_settings 
-        WHERE setting_key LIKE 'admin:finance:settlement%' 
-        LIMIT 1
-      `).catch(() => ({ rows: [] }));
-      
-      const schedule = scheduleSettings.rows.length > 0 
-        ? scheduleSettings.rows[0].setting_value 
-        : {
-            scheduleType: 'weekly',
-            settlementPeriodDays: rules.holdPeriodDays,
-            minPayoutAmount: rules.minimumPayout,
-          };
-      
-      return c.json({
-        success: true,
-        policy: {
-          // Hold period - how long earnings are held before settlement
-          holdPeriodDays: rules.holdPeriodDays || 7,
-          
-          // Minimum amount required for payout
-          minimumPayoutAmount: rules.minimumPayout || 1000,
-          
-          // Platform commission percentage (based on tier, but default shown)
-          defaultCommissionRate: rules.defaultCommission || 10,
-          
-          // Whether auto-payout is enabled
-          autoPayoutEnabled: rules.autoPayout !== false,
-          
-          // Settlement schedule
-          settlementSchedule: typeof schedule === 'string' ? JSON.parse(schedule) : schedule,
-          
-          // Bank verification requirement
-          bankVerificationRequired: true,
-          
-          // Razorpay integration info
-          paymentProcessor: 'Razorpay',
-          
-          // Policy description for vendors
-          description: `Earnings are held for ${rules.holdPeriodDays || 7} days before becoming eligible for settlement. ` +
-            `Minimum payout amount is ₹${rules.minimumPayout || 1000}. ` +
-            `Platform commission is deducted based on your tier (default ${rules.defaultCommission || 10}%). ` +
-            `Bank account must be verified via Razorpay to receive payouts.`,
-        },
-      });
-    } catch (error: any) {
-      console.error('Error fetching settlement policy:', error);
-      return c.json({
-        success: true,
-        policy: {
-          holdPeriodDays: 7,
-          minimumPayoutAmount: 1000,
-          defaultCommissionRate: 10,
-          autoPayoutEnabled: true,
-          bankVerificationRequired: true,
-          paymentProcessor: 'Razorpay',
-          description: 'Earnings are held for 7 days before settlement. Minimum payout is ₹1000. Bank verification required.',
-        },
-      });
     }
   });
 

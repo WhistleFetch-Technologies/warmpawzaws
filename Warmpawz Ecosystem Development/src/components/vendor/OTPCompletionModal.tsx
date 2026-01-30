@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button } from '../ui/button';
 import { X, CheckCircle, AlertCircle, Loader } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
 
 interface OTPCompletionModalProps {
@@ -96,7 +96,7 @@ export function OTPCompletionModal({
       }
 
       const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475${endpoint}`,
+        `${getApiBaseUrl()}${endpoint}`,
         {
           method: 'POST',
           body: JSON.stringify({

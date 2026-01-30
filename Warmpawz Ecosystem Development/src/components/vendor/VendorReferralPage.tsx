@@ -3,7 +3,7 @@ import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Coins, Share2, Copy, Users, Check, ChevronRight } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface VendorReferralPageProps {
@@ -23,9 +23,9 @@ export function VendorReferralPage({ vendorId, onBack }: VendorReferralPageProps
   const loadLoyaltyProfile = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/loyalty/profile/${vendorId}?type=vendor`,
+        `${getApiBaseUrl()}/loyalty/profile/${vendorId}?type=vendor`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
       const data = await response.json();

@@ -8,7 +8,7 @@ import {
   ArrowUpCircle, Award, DollarSign, Info 
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface VendorTierData {
   currentTier: 'SILVER' | 'GOLD' | 'PLATINUM';
@@ -42,8 +42,8 @@ export function TierManagement({ vendorId }: { vendorId: string }) {
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/tier`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/tier`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -91,10 +91,10 @@ export function TierManagement({ vendorId }: { vendorId: string }) {
       try {
           setUpgrading(true);
           const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/tier/calculate`,
+            `${getApiBaseUrl()}/vendor/${vendorId}/tier/calculate`,
             {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+                headers: getAuthHeaders()
             }
           );
           if (response.ok) {

@@ -30,3 +30,4 @@ __exportStar(require("./bookings"), exports);
 __exportStar(require("./vendors"), exports);
 __exportStar(require("./customers"), exports);
 __exportStar(require("./payments"), exports);
+__exportStar(require("./discovery"), exports);

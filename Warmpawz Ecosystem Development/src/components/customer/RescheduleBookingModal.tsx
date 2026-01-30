@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Calendar } from '../ui/calendar';
 import { LoadingState } from '../ui/states';
 import { Calendar as CalendarIcon, Clock } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface RescheduleBookingModalProps {
@@ -29,7 +29,7 @@ export function RescheduleBookingModal({
   const [loading, setLoading] = useState(false);
   const [loadingSlots, setLoadingSlots] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     if (selectedDate) {
@@ -42,7 +42,7 @@ export function RescheduleBookingModal({
       setLoadingSlots(true);
       const response = await fetch(
         `${API_BASE}/bookings/${bookingId}/available-slots?date=${date}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -72,7 +72,7 @@ export function RescheduleBookingModal({
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

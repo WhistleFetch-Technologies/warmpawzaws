@@ -189,7 +189,8 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
       ...COMMON_SECTIONS.map(s => ({ ...s, requiresCapability: s.id === 'bookings' ? 'booking_view' : undefined })),
       ...HEALTHCARE_SECTIONS.map(s => ({ ...s })),
       ...STAFF_SECTIONS.map(s => ({ ...s, requiresCapability: 'staff_create' })),
-      { id: 'specialized', label: 'Specialized Services', icon: '🔬', priority: 4.5, requiresCapability: 'diagnostic_results' },
+      // ✅ REMOVED: Diagnostics section - diagnostics are only for diagnostics_center role
+      // { id: 'specialized', label: 'Specialized Services', icon: '🔬', priority: 4.5, requiresCapability: 'diagnostic_results' },
     ],
     primaryActions: ['view_appointments', 'create_prescription', 'start_consultation'],
     quickStats: ['today_appointments', 'pending_consultations', 'monthly_revenue', 'patient_count'],

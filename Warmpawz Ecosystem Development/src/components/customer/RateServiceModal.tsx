@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X, Star, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { awardReviewPoints } from '../../utils/loyalty-helper'; // ✅ NEW
 
@@ -58,12 +58,12 @@ export function RateServiceModal({
       };
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/reviews/create`,
+        `${getApiBaseUrl()}/reviews/create`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(payload)
         }

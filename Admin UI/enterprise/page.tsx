@@ -15,7 +15,7 @@ import {
 	RefreshCw,
 	BarChart3,
 } from "lucide-react";
-import { projectId } from "@repo/utils/supabase/info";
+import { getApiBaseUrl } from "@repo/utils/api-config";
 import { authenticatedGet } from "@repo/utils/authenticatedFetch";
 import { toast, Toaster } from "sonner";
 
@@ -64,7 +64,7 @@ export default function EnterpriseRevenue() {
 
 			// Load revenue stats
 			const statsRes = await authenticatedGet(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/enterprise/revenue/stats?range=${dateRange}`
+				`${getApiBaseUrl()}/admin/enterprise/revenue/stats?range=${dateRange}`
 			);
 
 			if (statsRes.success) {
@@ -73,7 +73,7 @@ export default function EnterpriseRevenue() {
 
 			// Load enterprise customers
 			const customersRes = await authenticatedGet(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/enterprise/customers`
+				`${getApiBaseUrl()}/admin/enterprise/customers`
 			);
 
 			if (customersRes.success) {

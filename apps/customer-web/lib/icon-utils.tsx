@@ -35,12 +35,19 @@ export const iconMap: Record<string, React.ComponentType<{ className?: string }>
   'shopping': ShoppingBag,
   'health': Stethoscope,
   'medicine': Pill,
+  'stethoscope': Stethoscope,
   'training': GraduationCap,
+  'graduationcap': GraduationCap,
   'camera': Camera,
   'delivery': Truck,
   'insurance': Shield,
   'nutrition': Wheat,
+  'wheat': Wheat,
   'book': BookOpen,
+  'building2': Building2,
+  'utensilscrossed': UtensilsCrossed,
+  'videocall': Video,
+  'sparkles': Sparkles,
 };
 
 // Get icon component from string identifier

@@ -42,7 +42,7 @@ import {
 	TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 
 interface SettlementRule {
 	id: string;
@@ -85,7 +85,7 @@ export function DynamicSettlementRulesManager() {
 	const [editingRule, setEditingRule] = useState<SettlementRule | null>(null);
 	const [showAddForm, setShowAddForm] = useState(false);
 
-	const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+	const API_BASE = `${getApiBaseUrl()}`;
 
 	useEffect(() => {
 		loadRules();
@@ -97,7 +97,7 @@ export function DynamicSettlementRulesManager() {
 			const response = await fetch(
 				`${API_BASE}/admin/finance/settlement-rules`,
 				{
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 
@@ -125,7 +125,7 @@ export function DynamicSettlementRulesManager() {
 				method,
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${publicAnonKey}`,
+					...getAuthHeaders(),
 				},
 				body: JSON.stringify(rule),
 			});
@@ -154,7 +154,7 @@ export function DynamicSettlementRulesManager() {
 				`${API_BASE}/admin/finance/settlement-rules/${ruleId}`,
 				{
 					method: "DELETE",
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 

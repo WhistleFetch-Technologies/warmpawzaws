@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Calendar, Clock, ChevronRight, AlertCircle, MapPin, User, ChevronLeft, Home as HomeIcon, ShoppingCart, User as UserIcon } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { useCart } from '../../../context/CartContext';
 
 interface SmartTimeSlotSelectionProps {
@@ -56,7 +56,7 @@ export function SmartTimeSlotSelection({
   const [autoSelectingDate, setAutoSelectingDate] = useState(false); // ✅ NEW: Track auto-selection
   const { itemCount } = useCart();
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   const serviceDuration = selectedService?.duration || selectedService?.customDuration || 30;
 
@@ -108,7 +108,7 @@ export function SmartTimeSlotSelection({
       const response = await fetch(
         `${API_BASE}/vendor/${vendorId}/staff`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -125,7 +125,7 @@ export function SmartTimeSlotSelection({
           const staffServicesRes = await fetch(
             `${API_BASE}/staff/${staff.id}/services`,
             {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+              headers: getAuthHeaders()
             }
           );
 
@@ -181,7 +181,7 @@ export function SmartTimeSlotSelection({
       }
       
       const res = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       console.log('📡 Response status:', res.status);
@@ -243,7 +243,7 @@ export function SmartTimeSlotSelection({
         }
         
         const res = await fetch(url, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         });
 
         if (res.ok) {

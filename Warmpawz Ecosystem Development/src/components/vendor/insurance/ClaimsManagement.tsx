@@ -5,7 +5,7 @@ import { Badge } from '../../ui/badge';
 import { Card } from '../../ui/card';
 import { Textarea } from '../../ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../../ui/dialog';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface Claim {
   id: string;
@@ -59,9 +59,9 @@ export function ClaimsManagement({
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/insurance/claims/${claimId}`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/insurance/claims/${claimId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -86,11 +86,11 @@ export function ClaimsManagement({
       setProcessing(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/insurance/claims/${claimId}/action`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/insurance/claims/${claimId}/action`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

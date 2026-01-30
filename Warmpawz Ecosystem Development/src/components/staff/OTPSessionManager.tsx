@@ -9,7 +9,7 @@ import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface OTPSessionManagerProps {
   booking: any;
@@ -89,9 +89,9 @@ export function OTPSessionManager({ booking, onSessionComplete }: OTPSessionMana
       setLoading(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${booking.id}/session`,
+        `${getApiBaseUrl()}/bookings/${booking.id}/session`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -113,11 +113,11 @@ export function OTPSessionManager({ booking, onSessionComplete }: OTPSessionMana
   const generateOTP = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${booking.id}/generate-otp`,
+        `${getApiBaseUrl()}/bookings/${booking.id}/generate-otp`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -157,11 +157,11 @@ export function OTPSessionManager({ booking, onSessionComplete }: OTPSessionMana
       setVerifyingOtp(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${booking.id}/verify-otp`,
+        `${getApiBaseUrl()}/bookings/${booking.id}/verify-otp`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -292,11 +292,11 @@ export function OTPSessionManager({ booking, onSessionComplete }: OTPSessionMana
     // Send to server for real-time updates
     try {
       await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${booking.id}/update-location`,
+        `${getApiBaseUrl()}/bookings/${booking.id}/update-location`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -387,11 +387,11 @@ export function OTPSessionManager({ booking, onSessionComplete }: OTPSessionMana
 
       // Upload to S3
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/sessions/upload-to-s3`,
+        `${getApiBaseUrl()}/sessions/upload-to-s3`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -417,11 +417,11 @@ export function OTPSessionManager({ booking, onSessionComplete }: OTPSessionMana
   const updatePetProfile = async (s3Url: string) => {
     try {
       await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/pets/${booking.petId}/add-session`,
+        `${getApiBaseUrl()}/pets/${booking.petId}/add-session`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

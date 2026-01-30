@@ -1,10 +1,18 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, Upload, FileText, Calendar, Image, File, Download, Eye, Share2, ShoppingCart, Radio } from 'lucide-react';
+import { X, Upload, FileText, Calendar, Image, File, Download, Eye, Share2, ShoppingCart, Radio, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import dynamic from 'next/dynamic';
+import { transformPrescriptionData } from './PrescriptionDocument';
+
+// Dynamically import PrescriptionDocument for A4 view
+const PrescriptionDocument = dynamic(() => import('./PrescriptionDocument'), {
+  loading: () => <div className="flex items-center justify-center p-8">Loading document...</div>,
+  ssr: false
+});
 
 interface PrescriptionHistoryModalProps {
   bookingId: string;
@@ -42,11 +50,13 @@ export function PrescriptionHistoryModal({
   onOrderMedicine, // ✅ FIX: Add pharmacy ordering callback
 }: PrescriptionHistoryModalProps) {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [fullPrescriptionData, setFullPrescriptionData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
   const [showViewer, setShowViewer] = useState(false);
+  const [showA4Document, setShowA4Document] = useState(false);
   const [loadingPrescriptionView, setLoadingPrescriptionView] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [recordDate, setRecordDate] = useState('');
@@ -75,9 +85,9 @@ export function PrescriptionHistoryModal({
         console.warn('Failed to load medical records:', error);
       }
       
-      // 2. Fetch published prescriptions from vendors
+      // 2. Fetch published prescriptions from vendors (with full details for A4 document)
       try {
-        const prescriptionResult = await apiClient.get(`/prescriptions/booking/${bookingId}`) as any;
+        const prescriptionResult = await apiClient.get(`/prescriptions/booking/${bookingId}?includeDetails=true`) as any;
         const prescriptions = prescriptionResult.prescriptions || [];
         prescriptions.forEach((prescription: any) => {
           prescription.recordType = 'prescription';
@@ -86,6 +96,11 @@ export function PrescriptionHistoryModal({
             allPrescriptions.push(prescription);
           }
         });
+        
+        // Store full data for A4 document view
+        if (prescriptions.length > 0) {
+          setFullPrescriptionData(prescriptionResult);
+        }
       } catch (error) {
         console.warn('Failed to load prescriptions:', error);
       }
@@ -124,7 +139,7 @@ export function PrescriptionHistoryModal({
     if (typeof window !== 'undefined' && (window as any).__WARMPAWZ_RUNTIME_CONFIG__?.apiBaseUrl) {
       return (window as any).__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl;
     }
-    return process.env.NEXT_PUBLIC_API_BASE_URL || '';
+    return process.env.NEXT_PUBLIC_API_BASE_URL || getApiBaseUrl() || '';
   };
 
   const handleUpload = async () => {
@@ -195,17 +210,43 @@ export function PrescriptionHistoryModal({
       // This ensures images/files are properly accessible
       try {
         const result = await apiClient.get(`/medical-records/booking/${bookingId}/view/${prescription.id}`) as any;
-        if (result.fileUrl) {
-          // Update with fresh signed URL
-          setSelectedPrescription({ ...prescription, file_url: result.fileUrl });
-        } else if (result.record) {
-          // Update with record data if available
-          setSelectedPrescription({ 
-            ...prescription, 
-            file_url: result.record.file_url || prescription.file_url,
-            content_data: result.record.content_data || prescription.content_data
-          });
+        
+        // ✅ FIX: Handle both camelCase (contentData) and snake_case (content_data) responses
+        // The API returns contentData (camelCase) but we store as content_data (snake_case)
+        let contentData = result.contentData || result.content_data || prescription.content_data;
+        
+        // ✅ FIX: If contentData has medications array, ensure it's properly formatted
+        if (contentData && typeof contentData === 'string') {
+          try {
+            contentData = JSON.parse(contentData);
+          } catch (e) {
+            // Keep as string if not valid JSON
+          }
         }
+        
+        // ✅ FIX: Also check record object for nested content_data
+        if (result.record) {
+          const recordContentData = result.record.content_data || result.record.contentData;
+          if (recordContentData && !contentData) {
+            contentData = typeof recordContentData === 'string' 
+              ? JSON.parse(recordContentData) 
+              : recordContentData;
+          }
+        }
+        
+        // Build updated prescription with all available data
+        const updatedPrescription: Prescription = {
+          ...prescription,
+          file_url: result.fileUrl || result.record?.file_url || prescription.file_url,
+          content_data: contentData,
+          // ✅ FIX: Also map medication fields from prescriptions table
+          diagnosis: contentData?.diagnosis || result.record?.diagnosis || prescription.diagnosis,
+          medication_name: contentData?.medications?.[0]?.name || result.record?.medication_name || prescription.medication_name,
+          instructions: contentData?.notes || result.record?.instructions || prescription.instructions,
+        };
+        
+        setSelectedPrescription(updatedPrescription);
+        console.log('✅ Loaded prescription:', updatedPrescription);
       } catch (fetchError) {
         console.warn('Could not fetch prescription details, using cached data:', fetchError);
         // Continue with existing prescription data
@@ -470,6 +511,19 @@ export function PrescriptionHistoryModal({
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="font-bold text-gray-800">{selectedPrescription.title}</h3>
               <div className="flex items-center gap-2">
+                {/* View A4 Document Button - Only for published prescriptions with full data */}
+                {selectedPrescription.recordType === 'prescription' && (
+                  <button
+                    onClick={() => {
+                      setShowViewer(false);
+                      setShowA4Document(true);
+                    }}
+                    className="p-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-lg transition-colors"
+                    title="View Full Prescription (A4)"
+                  >
+                    <Printer className="w-4 h-4" />
+                  </button>
+                )}
                 <button
                   onClick={async () => {
                     try {
@@ -651,43 +705,129 @@ export function PrescriptionHistoryModal({
                     )}
                   </div>
                 )
-              ) : selectedPrescription.content_data ? (
+              ) : selectedPrescription.content_data || selectedPrescription.diagnosis || selectedPrescription.medication_name ? (
                 <div className="space-y-4">
-                  {selectedPrescription.content_data.diagnosis && (
-                    <div>
-                      <h4 className="font-semibold text-gray-800 mb-2">Diagnosis</h4>
-                      <p className="text-gray-700">{selectedPrescription.content_data.diagnosis}</p>
+                  {/* Diagnosis section */}
+                  {(selectedPrescription.content_data?.diagnosis || selectedPrescription.diagnosis) && (
+                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                      <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                        <FileText className="w-4 h-4" />
+                        Diagnosis
+                      </h4>
+                      <p className="text-blue-800">{selectedPrescription.content_data?.diagnosis || selectedPrescription.diagnosis}</p>
                     </div>
                   )}
-                  {selectedPrescription.content_data.medications && (
+                  
+                  {/* Medications section - handle both array format and single medication */}
+                  {(selectedPrescription.content_data?.medications || selectedPrescription.medication_name) && (
                     <div>
-                      <h4 className="font-semibold text-gray-800 mb-2">Medications</h4>
-                      <div className="space-y-2">
-                        {Array.isArray(selectedPrescription.content_data.medications) &&
+                      <h4 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-green-600" />
+                        Medications
+                      </h4>
+                      <div className="space-y-3">
+                        {Array.isArray(selectedPrescription.content_data?.medications) ? (
                           selectedPrescription.content_data.medications.map((med: any, idx: number) => (
-                            <div key={idx} className="bg-gray-50 p-3 rounded-lg">
-                              <p className="font-medium">{med.name}</p>
-                              <p className="text-sm text-gray-600">
-                                {med.dosage} • {med.frequency} • {med.duration}
-                              </p>
+                            <div key={idx} className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
+                              <p className="font-semibold text-gray-900 text-lg">{med.name}</p>
+                              <div className="grid grid-cols-3 gap-3 mt-3 text-sm">
+                                <div className="bg-gray-50 p-2 rounded-lg">
+                                  <p className="text-gray-500 text-xs">Dosage</p>
+                                  <p className="font-medium text-gray-800">{med.dosage || '-'}</p>
+                                </div>
+                                <div className="bg-gray-50 p-2 rounded-lg">
+                                  <p className="text-gray-500 text-xs">Frequency</p>
+                                  <p className="font-medium text-gray-800">{med.frequency || '-'}</p>
+                                </div>
+                                <div className="bg-gray-50 p-2 rounded-lg">
+                                  <p className="text-gray-500 text-xs">Duration</p>
+                                  <p className="font-medium text-gray-800">{med.duration || '-'}</p>
+                                </div>
+                              </div>
+                              {med.instructions && (
+                                <div className="mt-3 pt-3 border-t border-gray-100">
+                                  <p className="text-xs text-gray-500 mb-1">Instructions</p>
+                                  <p className="text-sm text-gray-700">{med.instructions}</p>
+                                </div>
+                              )}
                             </div>
-                          ))}
+                          ))
+                        ) : selectedPrescription.medication_name ? (
+                          <div className="bg-white border border-gray-200 p-4 rounded-xl shadow-sm">
+                            <p className="font-semibold text-gray-900 text-lg">{selectedPrescription.medication_name}</p>
+                            {selectedPrescription.instructions && (
+                              <p className="text-sm text-gray-600 mt-2">{selectedPrescription.instructions}</p>
+                            )}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   )}
-                  {selectedPrescription.content_data.notes && (
-                    <div>
-                      <h4 className="font-semibold text-gray-800 mb-2">Notes</h4>
-                      <p className="text-gray-700">{selectedPrescription.content_data.notes}</p>
+                  
+                  {/* Notes/Instructions section */}
+                  {(selectedPrescription.content_data?.notes || selectedPrescription.instructions) && (
+                    <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-100">
+                      <h4 className="font-semibold text-yellow-900 mb-2">Special Instructions</h4>
+                      <p className="text-yellow-800">{selectedPrescription.content_data?.notes || selectedPrescription.instructions}</p>
+                    </div>
+                  )}
+                  
+                  {/* Follow-up date if available */}
+                  {selectedPrescription.content_data?.followUpDate && (
+                    <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
+                      <h4 className="font-semibold text-purple-900 mb-2 flex items-center gap-2">
+                        <Calendar className="w-4 h-4" />
+                        Follow-up Date
+                      </h4>
+                      <p className="text-purple-800">{formatDate(selectedPrescription.content_data.followUpDate)}</p>
+                    </div>
+                  )}
+                  
+                  {/* Doctor name if available */}
+                  {selectedPrescription.content_data?.doctorName && (
+                    <div className="mt-4 pt-4 border-t border-gray-200 text-sm text-gray-600">
+                      <p>Prescribed by: <span className="font-medium text-gray-800">{selectedPrescription.content_data.doctorName}</span></p>
                     </div>
                   )}
                 </div>
               ) : (
-                <p className="text-gray-600">No content available</p>
+                <div className="text-center py-8">
+                  <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-600">No content available</p>
+                  <p className="text-sm text-gray-500 mt-1">The prescription details could not be loaded</p>
+                </div>
               )}
             </div>
           </div>
         </div>
+      )}
+
+      {/* A4 Prescription Document Modal */}
+      {showA4Document && selectedPrescription && selectedPrescription.recordType === 'prescription' && (
+        <PrescriptionDocument
+          prescription={transformPrescriptionData({
+            ...selectedPrescription,
+            ...fullPrescriptionData,
+            // Combine medications if available
+            medications: selectedPrescription.content_data?.medications || 
+              (selectedPrescription.medication_name ? [{
+                name: selectedPrescription.medication_name,
+                dosage: (selectedPrescription as any).dosage,
+                frequency: (selectedPrescription as any).frequency,
+                duration: (selectedPrescription as any).duration,
+                instructions: selectedPrescription.instructions
+              }] : [])
+          })}
+          onClose={() => setShowA4Document(false)}
+          onOrderMedicine={() => {
+            if (onOrderMedicine) {
+              const medications = selectedPrescription.content_data?.medications || [];
+              onOrderMedicine(selectedPrescription.id, bookingId, medications);
+              setShowA4Document(false);
+              onClose();
+            }
+          }}
+        />
       )}
     </>
   );

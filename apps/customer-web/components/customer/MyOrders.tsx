@@ -117,10 +117,10 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
       {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-40">
+      <header className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-md sticky top-0 z-40 rounded-b-2xl">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-4">
-          <a href="/" className="text-2xl">←</a>
-          <h1 className="text-xl font-bold text-gray-900">My Orders</h1>
+          <a href="/" className="text-2xl text-white hover:opacity-90">←</a>
+          <h1 className="text-xl font-bold text-white">My Orders</h1>
         </div>
       </header>
 

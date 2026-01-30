@@ -11,10 +11,10 @@ import {
   Activity
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { GoogleMapsTracking } from './GoogleMapsTracking';
 
-const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const BASE_URL = `${getApiBaseUrl()}`;
 
 interface RealTimeTrackingProps {
   bookingId: string;
@@ -53,7 +53,7 @@ export function AmbulanceRealTimeTracking({ bookingId }: RealTimeTrackingProps) 
       const response = await fetch(
         `${BASE_URL}/ambulance/booking/${bookingId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -75,7 +75,7 @@ export function AmbulanceRealTimeTracking({ bookingId }: RealTimeTrackingProps) 
       const response = await fetch(
         `${BASE_URL}/ambulance/track/${bookingId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

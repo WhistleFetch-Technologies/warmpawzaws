@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, MapPin, Phone, MessageCircle, Navigation, Play, Pause, AlertCircle, Camera, ChevronDown, ChevronUp, Maximize2, Minimize2, Clock, Timer, Star } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface LiveTrackingProps {
   sessionId: string;
@@ -47,9 +47,9 @@ export function LiveTracking({ sessionId, onBack }: LiveTrackingProps) {
   const fetchGoogleMapsApiKey = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/google-maps-key`,
+        `${getApiBaseUrl()}/config/google-maps-key`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -199,9 +199,9 @@ export function LiveTracking({ sessionId, onBack }: LiveTrackingProps) {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/session/${sessionId}/tracking`,
+        `${getApiBaseUrl()}/session/${sessionId}/tracking`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Calendar, Plus, Clock } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface TimeSlot {
   start: string;
@@ -122,12 +122,12 @@ export function VendorAvailabilitySetup({ vendorId, onComplete }: VendorAvailabi
     setIsSubmitting(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/setup/availability`,
+        `${getApiBaseUrl()}/vendor/setup/availability`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({
             vendorId,

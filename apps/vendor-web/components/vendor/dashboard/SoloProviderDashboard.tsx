@@ -16,6 +16,7 @@ import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { useVendorCapabilities } from '../hooks/useVendorCapabilities';
 import { getRoleIcon, getRoleColorScheme } from '@/lib/vendor-icon-themes';
+import { hasVendorRole } from '@/lib/vendor-utils';
 import CapabilityHelper from '@/lib/capability-helper';
 import { 
   Calendar, 
@@ -43,7 +44,8 @@ import {
   CheckCircle2,
   X,
   DollarSign,
-  Briefcase
+  Briefcase,
+  ClipboardList
 } from 'lucide-react';
 import { Badge } from '../../ui/badge';
 import { VendorAnalytics } from '../VendorAnalytics';
@@ -177,14 +179,23 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   };
   
   // Load capabilities from role
-  const { capabilities, loading: capsLoading, roleName, initialLoadComplete } = useVendorCapabilities(vendorData?.roleId);
+  // ✅ CRITICAL FIX: Check both roleId formats (camelCase and snake_case)
+  const effectiveRoleId = vendorData?.roleId || vendorData?.role_id || vendorData?.selected_role_id;
+  const { capabilities, loading: capsLoading, roleName, initialLoadComplete } = useVendorCapabilities(effectiveRoleId);
   
   // Service styles allowed for solo provider (no at_center)
   const allowedServiceStyles = vendorData?.allowedServiceStyles || vendorData?.serviceStyles || ['at_home', 'tele'];
   
   // Check if custom_services capability is enabled
   const hasCustomServices = capabilities.custom_services || capabilities.customServices || false;
-  const hasPackages = capabilities.package_management || capabilities.packages || false;
+  const hasPackagesCapability = capabilities.package_management || capabilities.packages || false;
+  
+  // ✅ Check if trainer/walker/sitter/groomer who can create session packages (solo trainer, solo groomer)
+  const isTrainerWalkerSitter = hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter', 'pet_groomer', 'groomer', 'groomer_solo']);
+  const isPharmacy = hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy']);
+  
+  // ✅ Solo trainers/walkers/sitters CAN create session packages even without explicit package capability
+  const hasPackages = hasPackagesCapability || isTrainerWalkerSitter;
   
   // Get role theme
   const roleIcon = getRoleIcon(vendorData?.roleId);
@@ -242,8 +253,9 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         }
       }
       
-      // Fetch services (only custom services for solo provider)
-      if (hasCustomServices || CapabilityHelper.hasBooking(capabilities)) {
+      // Fetch services (catalog/custom) for solo provider - include pharmacy, cafe, insurance, etc.
+      const hasServiceManagement = CapabilityHelper.hasBooking(capabilities) || CapabilityHelper.hasCapability(capabilities, 'services') || hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy', 'pet_cafe', 'cafe', 'pet_insurance', 'insurance', 'pet_holidays', 'holidays', 'pet_resort', 'resort', 'pet_ambulance', 'ambulance']);
+      if (hasCustomServices || hasServiceManagement) {
         const servicesRes = await apiClient.get<any>(`/vendor/${vendorId}/services`).catch(() => ({ success: false, services: [] }));
         if (servicesRes && servicesRes.success) {
           // Only show custom services (not from predefined catalog)
@@ -302,11 +314,21 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
     }
   }, [vendorId, activeTab, capabilities, hasCustomServices, services.length]);
 
+  // ✅ FIX: Load dashboard data immediately, don't wait for capabilities
   useEffect(() => {
-    if (vendorId && !capsLoading) {
+    if (vendorId) {
       fetchDashboardData();
     }
-  }, [vendorId, activeTab, capsLoading, fetchDashboardData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId, activeTab]);
+  
+  // ✅ FIX: Refresh when capabilities are loaded for capability-specific data
+  useEffect(() => {
+    if (vendorId && initialLoadComplete && !capsLoading) {
+      fetchDashboardData(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialLoadComplete]);
 
   // GPS tracking functions
   const startLocationTracking = async (bookingId: string, customerLat: string, customerLng: string) => {
@@ -340,8 +362,11 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               },
             }));
 
-            // Update location every 30 seconds
+            // Update location every 45s, throttled to min 30s between server updates (P3 performance)
+            const throttleKey = `gps_last_sent_${bookingId}`;
             const interval = setInterval(async () => {
+              const now = Date.now();
+              if ((window as any)[throttleKey] && now - (window as any)[throttleKey] < 30000) return;
               if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                   async (pos) => {
@@ -355,6 +380,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                         bookingId,
                         location: loc,
                       });
+                      (window as any)[throttleKey] = Date.now();
 
                       setTrackingLocation(prev => ({
                         ...prev,
@@ -364,16 +390,24 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                           updated: new Date().toISOString(),
                         },
                       }));
-                    } catch (error) {
+                    } catch (error: any) {
                       console.error('Error updating location:', error);
+                      const isNetwork = error?.message?.includes('fetch') || error?.code === 'ERR_NETWORK' || error?.name === 'TypeError';
+                      if (isNetwork && !(window as any)[`gps_network_toast_${bookingId}`]) {
+                        (window as any)[`gps_network_toast_${bookingId}`] = true;
+                        toast.error('Connection issue. Location will retry when back online.');
+                      }
                     }
                   },
                   (error) => {
                     console.error('Error getting location:', error);
+                    if (error?.code === error?.TIMEOUT || error?.code === 3) {
+                      toast.error('Location timed out. Check signal; tracking will retry.');
+                    }
                   }
                 );
               }
-            }, 30000);
+            }, 45000);
 
             // Store interval ID for cleanup
             (window as any)[`tracking_${bookingId}`] = interval;
@@ -386,7 +420,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
       }
     } catch (error: any) {
       console.error('Error starting location tracking:', error);
-      toast.error('Failed to start GPS tracking');
+      toast.error('Failed to start GPS tracking. Check connection and try again.');
     }
   };
 
@@ -434,8 +468,8 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   // OTP handler for starting/completing appointments
   const handleOtpAction = async () => {
     if (!selectedAppointment) return;
-    if (otp.length !== 6) {
-      setOtpError('Please enter a valid 6-digit OTP');
+    if (otp.length !== 4) {
+      setOtpError('Please enter a valid 4-digit OTP');
       return;
     }
 
@@ -506,6 +540,13 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
     );
   }
 
+  const displayAddress = (() => {
+    const a = vendor?.address ?? vendorData?.address;
+    if (!a) return '';
+    if (typeof a === 'string') return a;
+    return [a.line1, a.line2, a.city, a.state].filter(Boolean).join(', ') || '';
+  })();
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
@@ -521,6 +562,12 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                   {vendor?.ownerName || vendor?.owner_name || vendor?.fullName || vendor?.full_name || session.ownerName || 'Solo Provider'}
                 </h1>
                 <p className="text-xs text-gray-500">Solo Provider • {session.roleName || roleName || 'Service Provider'}</p>
+                {displayAddress && (
+                  <p className="text-xs text-gray-600 mt-1 flex items-center gap-1">
+                    <MapPin className="w-3 h-3 shrink-0" />
+                    <span>{displayAddress}</span>
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -601,8 +648,29 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               <span className="font-semibold text-sm">My Profile</span>
             </button>
             
-            {/* Schedule Management - NEW */}
-            {capabilities.booking && (
+            {/* ✅ PHARMA: Pharmacy solo vendors get Orders — NOT Manage Services */}
+            {isPharmacy && (
+              <button
+                onClick={() => router.push('/pharmacy/orders')}
+                className="flex-1 min-w-[140px] bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
+              >
+                <ClipboardList className="w-6 h-6 mb-2" />
+                <span className="font-semibold text-sm">Orders</span>
+              </button>
+            )}
+            {/* Manage Services - For non-pharmacy solo vendors */}
+            {!isPharmacy && (capabilities.booking || CapabilityHelper.hasCapability(capabilities, 'services') || hasVendorRole(vendorData, ['pet_cafe', 'cafe', 'pet_insurance', 'insurance', 'pet_holidays', 'holidays', 'pet_resort', 'resort', 'pet_ambulance', 'ambulance'])) && (
+              <button
+                onClick={() => router.push('/services/manage')}
+                className="flex-1 min-w-[140px] bg-white border-2 border-indigo-500 text-indigo-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-indigo-500 hover:text-white transition-colors group text-center"
+              >
+                <Package className="w-6 h-6 mb-2" />
+                <span className="font-semibold text-sm">Manage Services</span>
+              </button>
+            )}
+            
+            {/* Schedule Management - hidden for pharmacy (Orders + Profile only) */}
+            {!isPharmacy && capabilities.booking && (
               <button
                 onClick={() => router.push('/solo/schedule')}
                 className="flex-1 min-w-[140px] bg-white border-2 border-green-500 text-green-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-green-500 hover:text-white transition-colors group text-center"
@@ -612,8 +680,8 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               </button>
             )}
             
-            {/* Custom Services - Only show if capability is enabled */}
-            {hasCustomServices && (
+            {/* Custom Services - hidden for pharmacy */}
+            {!isPharmacy && hasCustomServices && (
               <button
                 onClick={() => router.push('/services')}
                 className="flex-1 min-w-[140px] bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
@@ -623,108 +691,37 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               </button>
             )}
             
-            {/* Packages - Only show if capability is enabled */}
-            {hasPackages && (
+            {/* Session Packages - hidden for pharmacy */}
+            {!isPharmacy && hasPackages && (
               <button
                 onClick={() => router.push('/packages')}
-                className="flex-1 min-w-[140px] bg-white border-2 border-purple-500 text-purple-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-purple-500 hover:text-white transition-colors group text-center"
+                className={`flex-1 min-w-[140px] bg-white border-2 ${isTrainerWalkerSitter ? 'border-green-500 text-green-600 hover:bg-green-500' : 'border-purple-500 text-purple-600 hover:bg-purple-500'} rounded-xl p-4 flex flex-col items-center justify-center hover:text-white transition-colors group text-center`}
               >
                 <Gift className="w-6 h-6 mb-2" />
-                <span className="font-semibold text-sm">Packages</span>
+                <span className="font-semibold text-sm">
+                  {isTrainerWalkerSitter ? 'Session Packages' : 'Packages'}
+                </span>
+                {isTrainerWalkerSitter && (
+                  <span className="text-xs mt-1 opacity-70 group-hover:opacity-100">Track sessions & usage</span>
+                )}
               </button>
             )}
           </div>
           
-          {/* Info Banner for Solo Provider */}
+          {/* Info Banner - Pharmacy: Orders + proforma only; others: Solo Provider */}
           <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
             <p className="text-sm text-blue-800">
-              <strong>Solo Provider Mode:</strong> You provide services directly to customers. 
-              {!hasCustomServices && ' Enable "Custom Services" capability to create your own service offerings.'}
+              {isPharmacy ? (
+                <><strong>Pharmacy:</strong> Receive prescription orders, confirm availability, and send proforma invoice. Customer approves and pays; then track delivery.</>
+              ) : (
+                <><strong>Solo Provider Mode:</strong> You provide services directly to customers via home visits or tele-consultation. Use "Manage Services" to enable and publish services from the platform catalog.{hasCustomServices && ' You can also create custom services using the "Custom Services" option.'}</>
+              )}
             </p>
           </div>
         </div>
-        
-        {/* Dashboard Warnings Section */}
-        {(warnings.profileIncomplete || warnings.bankNotVerified || warnings.servicesNotConfigured) && (
-          <div className="p-4 border-b border-gray-100 bg-amber-50">
-            <h3 className="text-sm font-semibold text-amber-800 mb-3 flex items-center gap-2">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              Action Required for Settlements
-            </h3>
-            <div className="space-y-2">
-              {/* Profile Incomplete Warning */}
-              {warnings.profileIncomplete && (
-                <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-200">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                      <User className="w-4 h-4 text-red-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Professional Profile Incomplete</p>
-                      <p className="text-xs text-gray-500">Add your specializations and qualifications</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => router.push('/profile')}
-                    className="px-3 py-1.5 bg-red-500 text-white text-xs font-medium rounded-lg hover:bg-red-600"
-                  >
-                    Complete
-                  </button>
-                </div>
-              )}
-              
-              {/* Bank Not Verified Warning */}
-              {warnings.bankNotVerified && (
-                <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-200">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
-                      <Briefcase className="w-4 h-4 text-orange-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Bank Account Not Verified</p>
-                      <p className="text-xs text-gray-500">Add and verify your bank for Razorpay settlements</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => router.push('/settings?tab=bank')}
-                    className="px-3 py-1.5 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600"
-                  >
-                    Add Bank
-                  </button>
-                </div>
-              )}
-              
-              {/* Services Not Configured Warning */}
-              {warnings.servicesNotConfigured && hasCustomServices && (
-                <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-200">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
-                      <Activity className="w-4 h-4 text-yellow-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">No Custom Services Added</p>
-                      <p className="text-xs text-gray-500">Create services to start receiving bookings</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => router.push('/services')}
-                    className="px-3 py-1.5 bg-yellow-500 text-white text-xs font-medium rounded-lg hover:bg-yellow-600"
-                  >
-                    Add Services
-                  </button>
-                </div>
-              )}
-            </div>
-            <p className="text-xs text-amber-700 mt-3">
-              ⚠️ Complete all requirements to enable settlement payouts via Razorpay
-            </p>
-          </div>
-        )}
 
-        {/* Additional Capabilities Section (if enabled) */}
-        {(capabilities.progress_tracking || capabilities.distance_pricing || capabilities.counseling) && (
+        {/* Additional Capabilities Section - hidden for pharmacy */}
+        {!isPharmacy && (capabilities.progress_tracking || capabilities.distance_pricing || capabilities.counseling) && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 mb-3">Additional Features</h2>
             <div className="grid grid-cols-3 gap-2">
@@ -946,8 +943,19 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           </div>
         )}
 
-        {/* Your Services (Custom Services Only) */}
-        {hasCustomServices && (
+        {/* ✅ PHARMA: Prescription Orders — for pharmacy solo vendors */}
+        {isPharmacy && (
+          <div className="p-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 text-center mb-3">Prescription Orders</h2>
+            <div className="flex items-center justify-center mb-2">
+              <button className="text-sm text-[#FF8C42]" onClick={() => router.push('/pharmacy/orders')}>View Orders →</button>
+            </div>
+            <p className="text-xs text-gray-500 text-center">Accept orders, confirm availability, raise proforma invoice.</p>
+          </div>
+        )}
+
+        {/* Your Services (Custom Services Only) — not for pharmacy */}
+        {hasCustomServices && !isPharmacy && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 text-center mb-3">Your Services</h2>
             <div className="flex items-center justify-center mb-2">
@@ -1123,7 +1131,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               </button>
               <button
                 onClick={handleOtpAction}
-                disabled={otp.length !== 6 || processingOtp}
+                disabled={otp.length !== 4 || processingOtp}
                 className={`flex-1 px-4 py-2 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
                   otpAction === 'start' 
                     ? 'bg-blue-500 hover:bg-blue-600' 

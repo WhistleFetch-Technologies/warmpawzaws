@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Star, Heart, Share2, MapPin, Phone, Clock, Navigation, Award, CheckCircle2, Stethoscope, Calendar, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Star, Heart, Share2, MapPin, Phone, Clock, Navigation, Award, CheckCircle2, Stethoscope, Calendar, TrendingUp, Sparkles } from 'lucide-react';
+import { AmenitiesSection } from '../shared/AmenitiesSection';
 import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
 import { formatOperatingHours } from '@/lib/format-utils';
@@ -43,7 +44,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
   const [rating, setRating] = useState<any>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'services' | 'reviews'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'amenities' | 'services' | 'reviews'>('overview');
 
   useEffect(() => {
     loadCenterData();
@@ -218,11 +219,11 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
 
         {/* Tabs */}
         <div className="flex border-b border-gray-200 sticky top-0 bg-white z-10">
-          {['overview', 'services', 'reviews'].map((tab) => (
+          {['overview', 'amenities', 'services', 'reviews'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab as any)}
-              className={`flex-1 py-0 text-sm font-medium capitalize transition-colors ${
+              className={`flex-1 py-3 text-sm font-medium capitalize transition-colors ${
                 activeTab === tab
                   ? 'text-primary border-b-2 border-primary'
                   : 'text-gray-500'
@@ -313,6 +314,20 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
                 <Phone className="w-4 h-4" />
                 Call Now
               </button>
+            </div>
+          )}
+
+          {activeTab === 'amenities' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-4">
+                <Sparkles className="w-5 h-5 text-primary" />
+                <h3 className="font-semibold text-gray-900">Facilities & Amenities</h3>
+              </div>
+              <AmenitiesSection
+                amenities={facility?.amenities || []}
+                customAmenities={facility?.customAmenities || []}
+                showCategories={true}
+              />
             </div>
           )}
 

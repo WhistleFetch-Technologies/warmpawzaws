@@ -115,7 +115,7 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
                 address: payload.address || 'Not specified',
                 city: payload.city || 'Not specified',
                 state: payload.state || 'Not specified',
-                pincode: payload.pin || payload.pincode || '000000',
+                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
                 status: 'active',
                 is_active: true,
                 created_at: new Date().toISOString(),

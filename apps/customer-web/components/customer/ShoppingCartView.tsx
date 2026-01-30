@@ -223,12 +223,12 @@ export function ShoppingCartView({ onBack, onCheckout, onContinueShopping }: Sho
 
   if (cart.length === 0 && savedItems.length === 0) {
     return (
-      <div className="min-h-screen bg-white flex flex-col max-w-md mx-auto relative">
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 z-10">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex flex-col max-w-md mx-auto relative">
+        <div className="sticky top-0 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 py-3 flex items-center gap-3 z-10 rounded-b-2xl shadow-md">
+          <button onClick={onBack} className="p-2 hover:bg-white/20 rounded-full transition-colors text-white">
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="font-bold text-lg">Shopping Cart</h1>
+          <h1 className="font-bold text-lg text-white">Shopping Cart</h1>
         </div>
 
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">

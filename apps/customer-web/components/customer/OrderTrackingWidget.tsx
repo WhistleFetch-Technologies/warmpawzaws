@@ -56,10 +56,14 @@ export function OrderTrackingWidget({
 
   const loadTracking = async () => {
     try {
-      const response = await apiClient.get(`/pharmacy/orders/${orderId}/tracking`) as any;
+      const endpoint = orderType === 'meal'
+        ? `/customer/tracking/${orderId}`
+        : `/pharmacy/orders/${orderId}/tracking`;
+      const response = await apiClient.get(endpoint) as any;
       if (response.success) {
-        setTracking(response.tracking);
-        setEta(response.tracking?.eta || null);
+        const tr = response.tracking || response;
+        setTracking(tr);
+        setEta(tr?.eta ?? tr?.etaToDelivery ?? null);
         setLoading(false);
       }
     } catch (error: any) {
@@ -72,7 +76,8 @@ export function OrderTrackingWidget({
     return null;
   }
 
-  const currentStepIndex = TRACKING_STEPS.findIndex(step => step.id === tracking.status);
+  const statusForStep = tracking.status === 'confirmed' ? 'accepted' : tracking.status === 'ready_for_pickup' ? 'ready' : tracking.status;
+  const currentStepIndex = TRACKING_STEPS.findIndex(step => step.id === statusForStep);
   const isActive = ['picked_up', 'on_the_way'].includes(tracking.status);
 
   return (
@@ -142,6 +147,24 @@ export function OrderTrackingWidget({
                 {tracking.deliveryPerson?.name ? `Delivered by ${tracking.deliveryPerson.name}` : 'On the way'}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Phase 4: Delivery OTP – show when out for delivery */}
+        {isActive && tracking.deliveryOtp && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <div className="text-xs font-medium text-amber-800 mb-1">Handover OTP</div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-2xl font-mono font-bold text-amber-900 tracking-widest">{tracking.deliveryOtp}</span>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard?.writeText(tracking.deliveryOtp)}
+                className="text-xs text-amber-700 font-medium"
+              >
+                Copy
+              </button>
+            </div>
+            <p className="text-xs text-amber-700 mt-1">Share with delivery partner at handover</p>
           </div>
         )}
 

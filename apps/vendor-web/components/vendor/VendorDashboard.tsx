@@ -51,7 +51,8 @@ import {
   CheckCircle2,
   User,
   X,
-  DollarSign
+  DollarSign,
+  ClipboardList
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { VendorNotificationModal } from './VendorNotificationModal';
@@ -60,6 +61,8 @@ import { AppointmentDetailModal } from './AppointmentDetailModal';
 import { VendorAnalytics } from './VendorAnalytics';
 import { VendorSettingsScreen } from './VendorSettingsScreen';
 import { ChatWidget } from '../customer/ChatWidget';
+import { PharmacyOrderAlerts } from './pharmacy/PharmacyOrderAlerts';
+import { PendingReportsPanel } from './appointments/PendingReportsPanel';
 
 // Dashboard warnings status interface
 interface DashboardWarnings {
@@ -283,8 +286,9 @@ export function VendorDashboard({
   };
   
   // 🔌 CORE: Load dynamic capabilities
-  // ✅ FIX: Use initialLoadComplete to prevent flickering - wait for DB response before rendering
-  const { capabilities, loading: capsLoading, roleName, initialLoadComplete } = useVendorCapabilities(vendorData?.roleId);
+  // ✅ CRITICAL FIX: Pass both roleId formats (camelCase and snake_case) to useVendorCapabilities
+  const effectiveRoleId = vendorData?.roleId || vendorData?.role_id || (vendorData as any)?.selected_role_id;
+  const { capabilities, loading: capsLoading, roleName, initialLoadComplete } = useVendorCapabilities(effectiveRoleId);
   
   // ✅ NEW: Extract new backend fields (from updated vendor-profile endpoint)
   const vendorConfiguration = vendorData?.vendorConfiguration || null;
@@ -357,8 +361,8 @@ export function VendorDashboard({
         // 4. Always fetch notifications
         apiClient.get(`/vendor/${vendorId}/notifications?limit=5`).catch(() => ({ success: false, notifications: [] })),
         
-        // 5. Fetch services if catalog or booking enabled - USE UTILITY
-        (CapabilityHelper.hasCatalog(capabilities) || CapabilityHelper.hasBooking(capabilities))
+        // 5. Fetch services if catalog, booking, services capability, or service-offering role - USE UTILITY
+        (CapabilityHelper.hasCatalog(capabilities) || CapabilityHelper.hasBooking(capabilities) || CapabilityHelper.hasCapability(capabilities, 'services') || hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy', 'pet_cafe', 'cafe', 'pet_insurance', 'insurance', 'pet_holidays', 'holidays', 'pet_resort', 'resort', 'pet_ambulance', 'ambulance']))
           ? apiClient.get(`/vendor/${vendorId}/services`).catch(() => ({ success: false, services: [] }))
           : Promise.resolve({ success: false, services: [] })
       ];
@@ -668,103 +672,42 @@ export function VendorDashboard({
             </div>
           )}
         </div>
-        
-        {/* ✅ NEW: Dashboard Warnings Section */}
-        {(warnings.profileIncomplete || warnings.bankNotVerified || warnings.servicesNotConfigured) && (
-          <div className="p-4 border-b border-gray-100 bg-amber-50">
-            <h3 className="text-sm font-semibold text-amber-800 mb-3 flex items-center gap-2">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              Action Required for Settlements
-            </h3>
-            <div className="space-y-2">
-              {/* Profile Incomplete Warning */}
-              {warnings.profileIncomplete && (
-                <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-200">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                      <User className="w-4 h-4 text-red-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
-                        Profile Incomplete
-                      </p>
-                      <p className="text-xs text-gray-500">{warnings.reasonProfileIncomplete || 'Complete your profile to receive bookings'}</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => {
-                      // Use Profile Manager (works for both center and solo)
-                      if (onNavigateToProfile) {
-                        onNavigateToProfile();
-                      } else {
-                        router.push('/profile');
-                      }
-                    }}
-                    className="px-3 py-1.5 bg-red-500 text-white text-xs font-medium rounded-lg hover:bg-red-600"
-                  >
-                    Complete
-                  </button>
-                </div>
-              )}
-              
-              {/* Bank Not Verified Warning */}
-              {warnings.bankNotVerified && (
-                <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-200">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
-                      <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Bank Account Not Verified</p>
-                      <p className="text-xs text-gray-500">Add and verify your bank account for settlements via Razorpay</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={() => setActiveBottomTab('settings')}
-                    className="px-3 py-1.5 bg-orange-500 text-white text-xs font-medium rounded-lg hover:bg-orange-600"
-                  >
-                    Add Bank
-                  </button>
-                </div>
-              )}
-              
-              {/* Services Not Configured Warning */}
-              {warnings.servicesNotConfigured && (
-                <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-200">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
-                      <Activity className="w-4 h-4 text-yellow-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">No Services Configured</p>
-                      <p className="text-xs text-gray-500">Add services from catalog to start receiving bookings</p>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={onNavigateToServiceManagement}
-                    className="px-3 py-1.5 bg-yellow-500 text-white text-xs font-medium rounded-lg hover:bg-yellow-600"
-                  >
-                    Add Services
-                  </button>
-                </div>
-              )}
-            </div>
-            <p className="text-xs text-amber-700 mt-3">
-              ⚠️ Complete all requirements above to enable settlement payouts via Razorpay
-            </p>
+
+        {/* ✅ PHARMACY: Incoming Order Alerts for Pharmacy Vendors */}
+        {isPharmacy && vendorId && (
+          <div className="border-b border-gray-200">
+            <PharmacyOrderAlerts 
+              pharmacyId={vendorId} 
+              pharmacyName={vendor?.businessName || vendor?.business_name || 'Pharmacy'} 
+            />
+          </div>
+        )}
+
+        {/* ✅ VET: Pending Lab Reports for Review (shared by customers) */}
+        {isVet && vendorId && (
+          <div className="border-b border-gray-200">
+            <PendingReportsPanel
+              vetId={vendorId}
+              onReportReviewed={() => fetchDashboardData(true)}
+            />
           </div>
         )}
 
         {/* 🧱 DYNAMIC QUICK ACTIONS */}
         <div className="p-4 border-b border-gray-100">
           <div className="flex flex-wrap gap-3">
-            {/* Service Management - For all vendors with catalog or booking */}
-            {/* ✅ FIX: Show service management button for vendors with catalog or booking capabilities */}
-            {onNavigateToServiceManagement && (CapabilityHelper.hasCatalog(capabilities) || CapabilityHelper.hasBooking(capabilities)) && (
+            {/* ✅ PHARMA: Pharmacy vendors get Orders (accept orders, prescriptions, proforma) — NOT Service Management */}
+            {isPharmacy && (
+              <button
+                onClick={() => router.push('/pharmacy/orders')}
+                className="flex-1 min-w-[140px] bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
+              >
+                <ClipboardList className="w-6 h-6 mb-2" />
+                <span className="font-semibold text-sm">Orders</span>
+              </button>
+            )}
+            {/* Service Management - For non-pharmacy vendors with catalog, booking, or services */}
+            {!isPharmacy && onNavigateToServiceManagement && (CapabilityHelper.hasCatalog(capabilities) || CapabilityHelper.hasBooking(capabilities) || CapabilityHelper.hasCapability(capabilities, 'services') || hasVendorRole(vendorData, ['pet_cafe', 'cafe', 'pet_insurance', 'insurance', 'pet_holidays', 'holidays', 'pet_resort', 'resort', 'pet_ambulance', 'ambulance'])) && (
               <button
                 onClick={onNavigateToServiceManagement}
                 className="flex-1 min-w-[140px] bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
@@ -810,11 +753,9 @@ export function VendorDashboard({
               </button>
             )}
             
-            {/* Inventory/Store - ONLY for product-oriented roles (pharmacy, pet store, seller) */}
-            {/* ✅ FIX: Removed capabilities.catalog - that's for SERVICE catalog, not PRODUCT inventory */}
-            {/* Service-oriented roles (vet, groomer, trainer, etc.) should NOT see this */}
-            {onNavigateToBusinessHub && (
-              (hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy', 'pet_products_store', 'seller', 'retailer', 'pet_seller']) || 
+            {/* Inventory/Store - For product-oriented roles EXCEPT pharmacy (pharmacy has no inventory management) */}
+            {onNavigateToBusinessHub && !isPharmacy && (
+              (hasVendorRole(vendorData, ['pet_products_store', 'seller', 'retailer', 'pet_seller']) || 
                capabilities.inventory) && (
                 <button
                   onClick={onNavigateToBusinessHub}
@@ -828,8 +769,8 @@ export function VendorDashboard({
           </div>
         </div>
         
-        {/* ✅ CANONICAL: VET-SPECIFIC SERVICES SECTION - For all veterinary roles */}
-        {(
+        {/* ✅ CANONICAL: VET-SPECIFIC SERVICES SECTION - For veterinary roles only (not pharmacy-only) */}
+        {!isPharmacy && (
           vendorData?.roleId === 'pet_clinic' || 
           vendorData?.roleId === 'veterinarian' || 
           vendorData?.roleId === 'veterinary_clinic' ||
@@ -883,9 +824,8 @@ export function VendorDashboard({
           </div>
         )}
 
-        {/* ✅ NEW: ADDITIONAL CAPABILITIES QUICK ACTIONS */}
-        {/* ✅ PHARMACY FIX: Filter out irrelevant capabilities for Pharmacy */}
-        {((!isPharmacy && (capabilities.gallery || capabilities.portfolio || capabilities.cctv_access || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services || capabilities.diet_charts || capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing)) ||
+        {/* ✅ NEW: ADDITIONAL CAPABILITIES QUICK ACTIONS — hidden for pharmacy (flow is Orders + Profile only) */}
+        {!isPharmacy && ((capabilities.gallery || capabilities.portfolio || capabilities.cctv_access || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services || capabilities.diet_charts || capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing) ||
           capabilities.controlled_substances ||
           capabilities.prescription ||
           capabilities.prescription_verification ||
@@ -965,16 +905,16 @@ export function VendorDashboard({
                 )}
               </CapabilityGate>
               
-              {/* Diagnostic Results */}
-              <CapabilityGate capability="diagnostic_results">
+              {/* Diagnostic Results - Show for diagnostic_results capability OR diagnostics_center/diagnostic role */}
+              <CapabilityGate capability="diagnostic_results" allowIfRoleContains="diagnostic">
                 {onNavigateToDiagnostics && (
                   <button
                     onClick={onNavigateToDiagnostics}
                     className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
-                    title="Diagnostic Tests"
+                    title="Lab Orders & Diagnostic Tests"
                   >
                     <Monitor className="w-6 h-6 text-purple-600 mb-1" />
-                    <span className="text-xs font-medium text-gray-900">Tests</span>
+                    <span className="text-xs font-medium text-gray-900">Lab / Tests</span>
                   </button>
                 )}
               </CapabilityGate>
@@ -1004,16 +944,21 @@ export function VendorDashboard({
                 </button>
               )}
               
-              {/* Package Management - Hidden for Pharmacy */}
-              {!isPharmacy && onNavigateToPackages && capabilities.package_management && (
-                <button
-                  onClick={onNavigateToPackages}
-                  className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
-                >
-                  <Gift className="w-6 h-6 text-purple-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Packages</span>
-                </button>
-              )}
+              {/* Package Management - Hidden for Pharmacy AND Solo Providers (EXCEPT trainers/walkers/sitters) */}
+              {/* ✅ FIX: Solo trainers/walkers/sitters CAN create session packages */}
+              {(() => {
+                const isTrainerWalkerSitter = hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter', 'pet_groomer', 'groomer', 'groomer_solo']);
+                const canShowPackages = !isPharmacy && onNavigateToPackages && capabilities.package_management && (!isSoloProvider || isTrainerWalkerSitter);
+                return canShowPackages && (
+                  <button
+                    onClick={onNavigateToPackages}
+                    className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
+                  >
+                    <Gift className="w-6 h-6 text-purple-600 mb-1" />
+                    <span className="text-xs font-medium text-gray-900">Packages</span>
+                  </button>
+                );
+              })()}
               
               {/* Custom Services - Hidden for Pharmacy */}
               {!isPharmacy && onNavigateToCustomServices && capabilities.custom_services && (
@@ -1494,8 +1439,21 @@ export function VendorDashboard({
           </div>
         )}
 
-        {/* 📦 YOUR SERVICES / PRODUCTS */}
-        {(capabilities.catalog || capabilities.booking) && (
+        {/* 📦 YOUR SERVICES / PRODUCTS — for pharmacy show Orders instead */}
+        {isPharmacy && (
+          <div className="p-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-900 text-center mb-3">Prescription Orders</h2>
+            <div className="flex items-center justify-center mb-2">
+              <button className="text-sm text-[#FF8C42]" onClick={() => router.push('/pharmacy/orders')}>
+                View Orders →
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 text-center">
+              Accept orders, confirm availability, and raise proforma invoice.
+            </p>
+          </div>
+        )}
+        {(capabilities.catalog || capabilities.booking || capabilities.services || hasVendorRole(vendorData, ['pet_cafe', 'cafe', 'pet_insurance', 'insurance', 'pet_holidays', 'holidays', 'pet_resort', 'resort', 'pet_ambulance', 'ambulance'])) && !isPharmacy && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 text-center mb-3">
               {capabilities.catalog && !capabilities.booking ? 'Your Products' : 'Your Services'}
@@ -1574,19 +1532,13 @@ export function VendorDashboard({
               <span className="text-xs">Home</span>
             </button>
             
-            {/* ✅ PHARMACY FIX: Hide Bookings tab for Pharmacy, show Orders instead */}
-            {isPharmacy && capabilities.orders ? (
+            {/* ✅ PHARMACY: Orders tab goes to Pharmacy Orders page (accept orders, prescriptions, proforma) */}
+            {isPharmacy ? (
               <button 
-                onClick={() => {
-                  // Navigate to orders page for pharmacy
-                  onNavigateToDeliveryManagement?.();
-                  setActiveBottomTab('bookings'); // Reuse bookings tab state
-                }}
-                className={`flex flex-col items-center gap-1 ${
-                  activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
-                }`}
+                onClick={() => router.push('/pharmacy/orders')}
+                className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#FF8C42]"
               >
-                <ShoppingBag className="w-6 h-6" />
+                <ClipboardList className="w-6 h-6" />
                 <span className="text-xs">Orders</span>
               </button>
             ) : capabilities.booking && (

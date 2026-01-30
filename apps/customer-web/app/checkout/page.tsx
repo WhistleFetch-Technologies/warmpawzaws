@@ -7,6 +7,8 @@ import {
   Truck, Shield, Tag, Plus, ChevronRight, AlertCircle, Package
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 
 interface CartItem {
   id: string;
@@ -55,6 +57,13 @@ export default function CheckoutPage() {
   const [showAddAddress, setShowAddAddress] = useState(false);
   const [newAddress, setNewAddress] = useState<Partial<Address>>({
     addressType: 'home',
+  });
+  const [countryCode, setCountryCode] = useState(() => {
+    // Get saved country code or default to +91
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('customerCountryCode') || '+91';
+    }
+    return '+91';
   });
   
   // Payment state
@@ -479,20 +488,39 @@ export default function CheckoutPage() {
                         onChange={e => setNewAddress({ ...newAddress, fullName: e.target.value })}
                         className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                       />
-                      <input
-                        type="tel"
-                        placeholder="Phone Number *"
-                        value={newAddress.phone || ''}
-                        onChange={e => setNewAddress({ ...newAddress, phone: e.target.value })}
-                        className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Address Line 1 *"
-                        value={newAddress.addressLine1 || ''}
-                        onChange={e => setNewAddress({ ...newAddress, addressLine1: e.target.value })}
-                        className="sm:col-span-2 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                      />
+                      <div className="flex items-stretch border border-gray-300 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-orange-500 focus-within:border-orange-500 bg-white">
+                        <CountryCodeSelector
+                          selectedCode={countryCode}
+                          onSelect={setCountryCode}
+                          disabled={false}
+                        />
+                        <input
+                          type="tel"
+                          inputMode="numeric"
+                          placeholder="Phone Number *"
+                          value={newAddress.phone || ''}
+                          onChange={e => setNewAddress({ ...newAddress, phone: e.target.value.replace(/[^0-9]/g, '') })}
+                          maxLength={10}
+                          className="flex-1 px-4 py-3 outline-none"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <EnhancedAddressAutocomplete
+                          value={newAddress.addressLine1 || ''}
+                          onChange={(address: string, components?: AddressComponents) => {
+                            const updates: Partial<Address> = { addressLine1: address };
+                            // Auto-populate city, state, pincode from Google Maps selection
+                            if (components) {
+                              if (components.city) updates.city = components.city;
+                              if (components.state) updates.state = components.state;
+                              if (components.pincode) updates.pincode = components.pincode;
+                              if (components.landmark) updates.landmark = components.landmark;
+                            }
+                            setNewAddress({ ...newAddress, ...updates });
+                          }}
+                          placeholder="Search address, landmark, city... *"
+                        />
+                      </div>
                       <input
                         type="text"
                         placeholder="Address Line 2"
@@ -518,7 +546,8 @@ export default function CheckoutPage() {
                         type="text"
                         placeholder="Pincode *"
                         value={newAddress.pincode || ''}
-                        onChange={e => setNewAddress({ ...newAddress, pincode: e.target.value })}
+                        onChange={e => setNewAddress({ ...newAddress, pincode: e.target.value.replace(/[^0-9]/g, '').slice(0, 6) })}
+                        maxLength={6}
                         className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                       />
                       <input

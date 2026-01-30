@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Shield, Check, Info } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface TravelInsuranceSelectorProps {
   bookingId?: string;
@@ -15,7 +15,7 @@ export function TravelInsuranceSelector({ bookingId, petIds, onSelect }: TravelI
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchInsurancePlans();
@@ -24,7 +24,7 @@ export function TravelInsuranceSelector({ bookingId, petIds, onSelect }: TravelI
   const fetchInsurancePlans = async () => {
     try {
       const response = await fetch(`${API_BASE}/travel/insurance-options`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {
@@ -53,7 +53,7 @@ export function TravelInsuranceSelector({ bookingId, petIds, onSelect }: TravelI
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             bookingId,

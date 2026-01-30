@@ -387,28 +387,62 @@ export function registerProblemGridEndpoints(app: Hono) {
         r && r.length > 0 && !/^[0-9a-f]{8}-[0-9a-f]{4}/i.test(r)
       );
 
-      // Get problems for this role from problem_grid_mappings
-      const placeholders = uniqueRoles.map((_, i) => `$${i + 1}`).join(', ');
-      const problemsResult = await query(
-        `SELECT DISTINCT
-          problem_id as id,
-          problem_name as name,
-          problem_display_name as displayName,
-          MIN(order_index) as min_order
-        FROM problem_grid_mappings
-        WHERE role_id IN (${placeholders})
-        GROUP BY problem_id, problem_name, problem_display_name
-        ORDER BY min_order ASC, problem_name ASC`,
-        uniqueRoles
-      ).catch((err) => {
-        console.error('[PROBLEM-GRID-SPEC] Query error:', err);
-        return { rows: [] };
-      });
-      
-      console.log('[PROBLEM-GRID-SPEC] Found', problemsResult.rows.length, 'specializations for roles:', uniqueRoles);
+      // 1) Prefer specializations from specialization_master (Catalog > Categories) so admin-created specs appear
+      let specializations: any[] = [];
+      try {
+        const specMasterResult = await query(
+          `SELECT specialization_id, name, display_name, icon_name, icon_color, display_order
+           FROM specialization_master
+           WHERE is_active = true AND show_in_vendor_profile = true
+           AND applicable_roles && $1::text[]
+           ORDER BY display_order ASC, name ASC`,
+          [uniqueRoles]
+        );
+        if (specMasterResult.rows && specMasterResult.rows.length > 0) {
+          console.log('[PROBLEM-GRID-SPEC] Using specialization_master:', specMasterResult.rows.length, 'for roles:', uniqueRoles);
+          specializations = specMasterResult.rows.map((row: any) => ({
+            id: row.specialization_id,
+            name: row.name,
+            displayName: row.display_name || row.name,
+            icon: getProblemIconEmoji(row.specialization_id),
+            iconName: row.icon_name,
+            iconColor: row.icon_color,
+            shortDescription: `${row.display_name || row.name} services`,
+          }));
+        }
+      } catch (specErr: any) {
+        console.warn('[PROBLEM-GRID-SPEC] specialization_master query failed, falling back to problem_grid_mappings:', specErr.message);
+      }
 
-      if (problemsResult.rows.length === 0) {
-        // Return empty array if no problems found
+      // 2) Fallback to problem_grid_mappings if no rows from specialization_master
+      if (specializations.length === 0) {
+        const placeholders = uniqueRoles.map((_, i) => `$${i + 1}`).join(', ');
+        const problemsResult = await query(
+          `SELECT DISTINCT
+            problem_id as id,
+            problem_name as name,
+            problem_display_name as displayName,
+            MIN(order_index) as min_order
+          FROM problem_grid_mappings
+          WHERE role_id IN (${placeholders})
+          GROUP BY problem_id, problem_name, problem_display_name
+          ORDER BY min_order ASC, problem_name ASC`,
+          uniqueRoles
+        ).catch((err) => {
+          console.error('[PROBLEM-GRID-SPEC] Query error:', err);
+          return { rows: [] };
+        });
+        console.log('[PROBLEM-GRID-SPEC] Fallback problem_grid_mappings:', problemsResult.rows.length, 'for roles:', uniqueRoles);
+        specializations = (problemsResult.rows || []).map((row: any) => ({
+          id: row.id,
+          name: row.name,
+          displayName: row.displayName || row.name,
+          icon: getProblemIconEmoji(row.id),
+          shortDescription: `${row.displayName || row.name} services`,
+        }));
+      }
+
+      if (specializations.length === 0) {
         return c.json({
           success: true,
           specializations: [],
@@ -418,15 +452,6 @@ export function registerProblemGridEndpoints(app: Hono) {
           message: 'No specializations available for this vendor type'
         });
       }
-
-      // Map to format expected by SpecializationSelector
-      const specializations = problemsResult.rows.map((row: any) => ({
-        id: row.id,
-        name: row.name,
-        displayName: row.displayName || row.name,
-        icon: getProblemIconEmoji(row.id), // Use emoji for UI
-        shortDescription: `${row.displayName || row.name} services`,
-      }));
 
       return c.json({
         success: true,
@@ -487,11 +512,16 @@ export function registerProblemGridEndpoints(app: Hono) {
   /**
    * GET /customer/services/by-problem
    * Get services that match a specific problem
+   * Query params:
+   *   - problemId or problemGridId (required): The problem to find services for
+   *   - serviceStyle (optional): Filter by service style (at_home, at_center, tele)
+   *   - lat/lng (optional): Customer location for distance calculation
    */
   app.get("/customer/services/by-problem", async (c) => {
     try {
       // Support both problemId and problemGridId for compatibility
       const problemId = c.req.query('problemId') || c.req.query('problemGridId');
+      const serviceStyle = c.req.query('serviceStyle');
       const latitude = c.req.query('lat') || c.req.query('latitude');
       const longitude = c.req.query('lng') || c.req.query('longitude');
 
@@ -499,9 +529,20 @@ export function registerProblemGridEndpoints(app: Hono) {
         return c.json({ error: 'problemId or problemGridId is required' }, 400);
       }
 
-      // Get problem mappings to find relevant subcategories
+      // Validate serviceStyle if provided
+      const validServiceStyles = ['at_home', 'at_center', 'tele'];
+      if (serviceStyle && !validServiceStyles.includes(serviceStyle)) {
+        return c.json({ 
+          error: `Invalid serviceStyle. Must be one of: ${validServiceStyles.join(', ')}` 
+        }, 400);
+      }
+
+      // Get problem mappings to find relevant subcategories and allowed service styles
       const mappingsResult = await query(
-        `SELECT DISTINCT sub_category_id, role_id
+        `SELECT DISTINCT 
+           sub_category_id, 
+           role_id,
+           COALESCE(allowed_service_styles, '["at_home", "at_center", "tele"]'::jsonb) as allowed_service_styles
          FROM problem_grid_mappings
          WHERE problem_id = $1`,
         [problemId]
@@ -515,10 +556,44 @@ export function registerProblemGridEndpoints(app: Hono) {
         });
       }
 
+      // Check if requested serviceStyle is allowed for this problem
+      if (serviceStyle) {
+        let isStyleAllowed = false;
+        for (const mapping of mappingsResult.rows) {
+          let allowedStyles: string[] = ['at_home', 'at_center', 'tele'];
+          try {
+            if (mapping.allowed_service_styles) {
+              if (typeof mapping.allowed_service_styles === 'string') {
+                allowedStyles = JSON.parse(mapping.allowed_service_styles);
+              } else if (Array.isArray(mapping.allowed_service_styles)) {
+                allowedStyles = mapping.allowed_service_styles;
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to parse allowed_service_styles');
+          }
+          
+          if (allowedStyles.includes(serviceStyle)) {
+            isStyleAllowed = true;
+            break;
+          }
+        }
+
+        if (!isStyleAllowed) {
+          return c.json({
+            success: false,
+            error: `Service style '${serviceStyle}' is not available for this problem`,
+            services: [],
+            total: 0,
+          }, 400);
+        }
+      }
+
       const subCategoryIds = mappingsResult.rows.map((r: any) => r.sub_category_id);
       const roleIds = [...new Set(mappingsResult.rows.map((r: any) => r.role_id))];
 
       // Get vendors with matching specializations or roles
+      // Use rev for reviews (is_published works when is_approved column is missing); join roles for role name filter (problem_grid_mappings.role_id is role name TEXT, vendors.role_id is UUID)
       let servicesQuery = `
         SELECT DISTINCT
           vs.id as service_id,
@@ -526,47 +601,56 @@ export function registerProblemGridEndpoints(app: Hono) {
           vs.service_name as description,
           vs.price,
           vs.duration_minutes as duration,
+          vs.service_style,
           vs.vendor_id,
           v.business_name as vendor_name,
-          COALESCE(AVG(r.rating), 0) as vendor_rating,
-          COUNT(DISTINCT r.id) as vendor_reviews,
+          COALESCE(AVG(rev.rating), 0) as vendor_rating,
+          COUNT(DISTINCT rev.id) as vendor_reviews,
           v.city,
           v.state
         FROM vendor_services vs
         INNER JOIN vendors v ON vs.vendor_id = v.id
-        LEFT JOIN reviews r ON r.vendor_id = v.id AND r.is_approved = true
+        LEFT JOIN roles r ON v.role_id = r.id
+        LEFT JOIN reviews rev ON rev.vendor_id = v.id AND (rev.is_published = true OR rev.is_published IS NULL)
         WHERE v.status = 'approved' 
           AND v.is_active = true
-          AND vs.is_active = true
+          AND vs.is_enabled = true
       `;
 
       const params: any[] = [];
       let paramIndex = 1;
 
-      // Match by subcategory in service name or vendor specializations
+      // Filter by service_style if provided
+      if (serviceStyle) {
+        servicesQuery += ` AND vs.service_style = $${paramIndex}`;
+        params.push(serviceStyle);
+        paramIndex++;
+      }
+
+      // Match by subcategory: ILIKE on service_name (with %), exact match on vendor_specializations.specialization (no %)
       if (subCategoryIds.length > 0) {
+        const searchTerms = subCategoryIds.map((id: string) => `%${id}%`);
         servicesQuery += ` AND (
           vs.service_name ILIKE ANY($${paramIndex}::text[]) OR
           vs.vendor_id IN (
             SELECT vendor_id 
             FROM vendor_specializations 
-            WHERE specialization = ANY($${paramIndex}::text[])
+            WHERE specialization = ANY($${paramIndex + 1}::text[])
           )
         )`;
-        const searchTerms = subCategoryIds.map(id => `%${id}%`);
-        params.push(searchTerms);
-        paramIndex++;
+        params.push(searchTerms, subCategoryIds);
+        paramIndex += 2;
       }
 
-      // Filter by role if available
+      // Filter by role: problem_grid_mappings.role_id is role name (TEXT); match via roles.name
       if (roleIds.length > 0) {
-        servicesQuery += ` AND v.role_id::text = ANY($${paramIndex}::text[])`;
+        servicesQuery += ` AND r.name = ANY($${paramIndex}::text[])`;
         params.push(roleIds);
         paramIndex++;
       }
 
       servicesQuery += `
-        GROUP BY vs.id, vs.service_name, vs.price, vs.duration_minutes, 
+        GROUP BY vs.id, vs.service_name, vs.price, vs.duration_minutes, vs.service_style,
                  vs.vendor_id, v.business_name, v.city, v.state, vs.created_at
         ORDER BY vendor_rating DESC, vs.created_at DESC
         LIMIT 50
@@ -582,6 +666,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           description: service.description,
           price: parseFloat(service.price || '0'),
           duration: parseInt(service.duration || '0'),
+          serviceStyle: service.service_style,
           vendorId: service.vendor_id,
           vendorName: service.vendor_name,
           vendorRating: parseFloat(service.vendor_rating || '0'),
@@ -615,6 +700,7 @@ export function registerProblemGridEndpoints(app: Hono) {
         services,
         total: services.length,
         problemId,
+        serviceStyle: serviceStyle || 'all',
       });
     } catch (error: any) {
       console.error('Error fetching services by problem:', error);
@@ -1015,6 +1101,7 @@ export function registerProblemGridEndpoints(app: Hono) {
    * Get problems for problem grid selector (used by ProblemGridSelector.tsx)
    * Query params: roleId (required) - e.g., 'vet', 'groomer', 'trainer'
    * Note: This is a PUBLIC endpoint (no auth required) since problem grid is shown to all users
+   * Returns: { id, name, displayName, icon, description, roleId, allowedServiceStyles: [...] }
    */
   app.get("/public/problems", async (c) => {
     try {
@@ -1029,6 +1116,7 @@ export function registerProblemGridEndpoints(app: Hono) {
       }
 
       // Query problem_grid_mappings for problems matching the role
+      // Include allowed_service_styles for service style filtering
       let problemsResult;
       try {
         problemsResult = await query(
@@ -1037,6 +1125,13 @@ export function registerProblemGridEndpoints(app: Hono) {
             problem_name as name,
             problem_display_name as "displayName",
             role_id as "roleId",
+            COALESCE(
+              (SELECT allowed_service_styles FROM problem_grid_mappings pgm2 
+               WHERE pgm2.problem_id = problem_grid_mappings.problem_id 
+               AND pgm2.role_id = problem_grid_mappings.role_id 
+               LIMIT 1),
+              '["at_home", "at_center", "tele"]'::jsonb
+            ) as allowed_service_styles,
             MIN(order_index) as order_index
           FROM problem_grid_mappings
           WHERE role_id = $1
@@ -1066,16 +1161,33 @@ export function registerProblemGridEndpoints(app: Hono) {
         });
       }
 
-      // Format problems with icons and descriptions
-      const problems = problemsResult.rows.map((row: any) => ({
-        id: row.id,
-        name: row.name,
-        displayName: row.displayName || row.name,
-        icon: getProblemEmoji(row.id, roleId),
-        description: `Find ${row.displayName || row.name} specialists`,
-        roleId: row.roleId,
-        keywords: [row.name.toLowerCase(), row.id.toLowerCase()]
-      }));
+      // Format problems with icons, descriptions, and allowed service styles
+      const problems = problemsResult.rows.map((row: any) => {
+        // Parse allowed_service_styles - handle both string and array formats
+        let allowedServiceStyles: string[] = ['at_home', 'at_center', 'tele'];
+        try {
+          if (row.allowed_service_styles) {
+            if (typeof row.allowed_service_styles === 'string') {
+              allowedServiceStyles = JSON.parse(row.allowed_service_styles);
+            } else if (Array.isArray(row.allowed_service_styles)) {
+              allowedServiceStyles = row.allowed_service_styles;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to parse allowed_service_styles for problem:', row.id);
+        }
+
+        return {
+          id: row.id,
+          name: row.name,
+          displayName: row.displayName || row.name,
+          icon: getProblemEmoji(row.id, roleId),
+          description: `Find ${row.displayName || row.name} specialists`,
+          roleId: row.roleId,
+          allowedServiceStyles,
+          keywords: [row.name.toLowerCase(), row.id.toLowerCase()]
+        };
+      });
 
       return c.json({
         success: true,

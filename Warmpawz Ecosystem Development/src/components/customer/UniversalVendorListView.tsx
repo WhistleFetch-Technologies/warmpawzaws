@@ -16,7 +16,7 @@ import {
   UserCircle2,
   Building2
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface UniversalVendorListViewProps {
@@ -41,7 +41,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
   // User location
   const [userLocation, setUserLocation] = useState<{ lat: number; lon: number } | null>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -100,7 +100,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
       // Reusing doctor search endpoint which is generic enough
       const response = await fetch(
         `${API_BASE}/customer/doctors/search?${params.toString()}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -129,7 +129,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
 
       const response = await fetch(
         `${API_BASE}/customer/clinics/search?${params.toString()}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {

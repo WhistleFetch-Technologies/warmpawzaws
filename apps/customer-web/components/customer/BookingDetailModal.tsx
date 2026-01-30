@@ -37,6 +37,15 @@ function getServiceStyleLabel(serviceStyle: string | null | undefined): string {
   return styleMap[serviceStyle] || serviceStyle.replace('_', ' ');
 }
 
+// Wireframe: Prescription and medical records only for vet, diagnostics, nutritionist (tele). Not for grooming, training, walker, behaviourist, sitter.
+const SERVICE_TYPES_WITH_PRESCRIPTION = ['vet', 'veterinarian', 'diagnostics', 'nutritionist', 'pet_nutritionist'];
+
+function showPrescriptionAndMedicalRecords(serviceType: string | undefined): boolean {
+  if (!serviceType) return false;
+  const normalized = (serviceType || '').toLowerCase().replace(/\s/g, '_');
+  return SERVICE_TYPES_WITH_PRESCRIPTION.some(t => normalized.includes(t) || t.includes(normalized));
+}
+
 interface Prescription {
   id: string;
   bookingId: string;
@@ -144,6 +153,10 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         // OTP fields
         completionOTP: rawBooking.completionOTP || rawBooking.otp_code,
         otpVerified: rawBooking.otpVerified || rawBooking.otp_verified,
+        // Multi-service: pass through for list display and total
+        selectedServices: rawBooking.selectedServices ?? (Array.isArray(rawBooking.selected_services) ? rawBooking.selected_services : []),
+        totalDurationMinutes: rawBooking.totalDurationMinutes ?? rawBooking.total_duration_minutes,
+        totalAmount: rawBooking.totalAmount ?? rawBooking.total_amount ?? rawBooking.amount,
       };
       console.log('✅ [BOOKING-DETAIL] Transformed booking:', bookingData);
       setBooking(bookingData);
@@ -207,12 +220,10 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
 
   const checkTrackingStatus = async (bookingId: string) => {
     try {
-      const result = await apiClient.get(`/bookings/${bookingId}/tracking/status`) as any;
-      if (result.tracking && result.tracking.active) {
-        setHasTracking(true);
-      } else {
-        setHasTracking(false);
-      }
+      // Backend: GET /tracking/booking/:bookingId (gps-tracking.ts)
+      const result = await apiClient.get(`/tracking/booking/${bookingId}`) as any;
+      const active = result?.tracking && (result.tracking.status === 'in_transit' || result.tracking.status === 'active' || result.tracking.status === 'en_route');
+      setHasTracking(!!active);
     } catch (error) {
       console.debug('Tracking not available:', error);
       setHasTracking(false);
@@ -312,13 +323,13 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         style={{ animation: 'slideUp 0.3s ease-out' }}
       >
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
-          <h2 className="font-bold text-gray-800">Booking Details</h2>
+        <div className="sticky top-0 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10 shadow-md">
+          <h2 className="font-bold text-white">Booking Details</h2>
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors text-white"
           >
-            <X className="w-5 h-5 text-gray-600" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -450,26 +461,57 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               </h3>
               
               <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 bg-gradient-to-br from-orange-100 to-pink-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
-                    {booking.serviceType === 'walker' ? '🐕' : 
-                     booking.serviceType === 'grooming' ? '✂️' : 
-                     booking.serviceType === 'vet' ? '🏥' : 
-                     booking.serviceType === 'boarding' ? '🏠' : '🐾'}
+                {(booking.selectedServices && Array.isArray(booking.selectedServices) && booking.selectedServices.length > 0) ? (
+                  <>
+                    {booking.selectedServices.map((s: any, i: number) => (
+                      <div key={s.id || s.serviceId || i} className="flex items-start gap-3">
+                        <div className="w-12 h-12 bg-gradient-to-br from-orange-100 to-pink-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
+                          {booking.serviceType === 'walker' ? '🐕' : 
+                           booking.serviceType === 'grooming' ? '✂️' : 
+                           booking.serviceType === 'vet' ? '🏥' : 
+                           booking.serviceType === 'boarding' ? '🏠' : '🐾'}
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-gray-800">{s.name || s.serviceName || 'Service'}</h4>
+                          <p className="text-sm text-gray-600">
+                            {s.duration != null ? `${s.duration} min` : ''}
+                            {booking.serviceStyle && ` • ${getServiceStyleLabel(booking.serviceStyle)}`}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-[#FF8C42]">₹{(s.price || 0) * (s.quantity || 1)}</p>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex justify-between items-center pt-2 border-t border-gray-100">
+                      <span className="font-semibold text-gray-800">
+                        {booking.totalDurationMinutes ? `Total: ${booking.totalDurationMinutes} min` : 'Total'}
+                      </span>
+                      <span className="font-bold text-[#FF8C42]">₹{booking.totalAmount ?? booking.selectedServices.reduce((sum: number, s: any) => sum + (s.price || 0) * (s.quantity || 1), 0)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-start gap-3">
+                    <div className="w-12 h-12 bg-gradient-to-br from-orange-100 to-pink-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
+                      {booking.serviceType === 'walker' ? '🐕' : 
+                       booking.serviceType === 'grooming' ? '✂️' : 
+                       booking.serviceType === 'vet' ? '🏥' : 
+                       booking.serviceType === 'boarding' ? '🏠' : '🐾'}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-800">
+                        {booking.serviceName || 'Service'}
+                      </h4>
+                      <p className="text-sm text-gray-600">
+                        {booking.duration ? `${booking.duration} min` : ''} 
+                        {booking.serviceStyle && ` • ${getServiceStyleLabel(booking.serviceStyle)}`}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-[#FF8C42]">₹{booking.totalAmount ?? booking.price ?? 0}</p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-gray-800">
-                      {booking.serviceName || 'Service'}
-                    </h4>
-                    <p className="text-sm text-gray-600">
-                      {booking.duration ? `${booking.duration} min` : ''} 
-                      {booking.serviceStyle && ` • ${getServiceStyleLabel(booking.serviceStyle)}`}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-[#FF8C42]">₹{booking.price || 0}</p>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
 
@@ -743,31 +785,92 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 </Button>
               )}
 
-              {/* Prescription History Button - Always visible */}
-              <Button
-                onClick={() => setShowPrescriptionHistory(true)}
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
-                disabled={loadingPrescription}
-              >
-                <FileText className="w-5 h-5" />
-                Prescription History
-                {prescription && <span className="ml-auto bg-blue-700 px-2 py-0.5 rounded-full text-xs">Available</span>}
-              </Button>
-
-              {/* Medical Records Button - Show if records exist */}
-              {medicalRecords.length > 0 && (
+              {/* Prescription History - Only for vet, diagnostics, nutritionist (not grooming/training/walker/behaviourist/sitter) */}
+              {showPrescriptionAndMedicalRecords(booking.serviceType) && (
                 <Button
-                  onClick={() => {
-                    // Navigate to medical records view or show modal
-                    toast.info(`${medicalRecords.length} medical record(s) available`);
-                  }}
-                  className="w-full bg-purple-500 hover:bg-purple-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                  onClick={() => setShowPrescriptionHistory(true)}
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                  disabled={loadingPrescription}
                 >
                   <FileText className="w-5 h-5" />
-                  Medical Records
-                  <span className="ml-auto bg-purple-700 px-2 py-0.5 rounded-full text-xs">
-                    {medicalRecords.length} {medicalRecords.length === 1 ? 'record' : 'records'}
-                  </span>
+                  Prescription History
+                  {prescription && <span className="ml-auto bg-blue-700 px-2 py-0.5 rounded-full text-xs">Available</span>}
+                </Button>
+              )}
+
+              {/* Medical Records & Lab Reports - Only for vet/diagnostics/nutritionist */}
+              {showPrescriptionAndMedicalRecords(booking.serviceType) && medicalRecords.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-gray-700 px-1">Medical records & reports</p>
+                  {medicalRecords.map((rec: any) => (
+                    <div
+                      key={rec.id}
+                      className="flex items-center justify-between gap-2 p-3 rounded-xl bg-purple-50 border border-purple-100"
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <FileText className="w-5 h-5 text-purple-600 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-900 truncate">{rec.title || rec.record_type || 'Report'}</p>
+                          {rec.record_type && (
+                            <p className="text-xs text-gray-500 capitalize">{rec.record_type.replace('_', ' ')}</p>
+                          )}
+                        </div>
+                      </div>
+                      {(rec.document_url || rec.record_type === 'diagnostic_report') && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-shrink-0 border-purple-200 text-purple-700 hover:bg-purple-100"
+                          onClick={() => {
+                            const url = rec.document_url;
+                            if (url) {
+                              window.open(url, '_blank');
+                              toast.success('Opening report...');
+                            } else {
+                              toast.info('View in Medical Records');
+                              onNavigate?.('medical-records', {});
+                            }
+                          }}
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          Download
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Diagnostics: View Reports Button - For diagnostics bookings with ready reports */}
+              {(booking.serviceId === 'diagnostics' || booking.serviceType === 'diagnostics') && 
+               ['reports_ready', 'completed'].includes(booking.status) && (
+                <Button
+                  onClick={() => {
+                    onNavigate?.('diagnostics-reports', { bookingId: booking.id });
+                    onClose();
+                  }}
+                  className="w-full bg-teal-500 hover:bg-teal-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                >
+                  <FileText className="w-5 h-5" />
+                  View Lab Reports
+                  <span className="ml-auto bg-teal-700 px-2 py-0.5 rounded-full text-xs">Ready</span>
+                </Button>
+              )}
+
+              {/* Diagnostics: Track Sample Collection - For home collection bookings */}
+              {(booking.serviceId === 'diagnostics' || booking.serviceType === 'diagnostics') && 
+               booking.serviceStyle === 'at_home' &&
+               ['scheduled', 'sample_collected'].includes(booking.status) && (
+                <Button
+                  onClick={() => {
+                    onNavigate?.('sample-collection-tracking', { bookingId: booking.id });
+                    onClose();
+                  }}
+                  className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors animate-pulse"
+                >
+                  <Navigation className="w-5 h-5" />
+                  Track Sample Collection
+                  <span className="ml-auto bg-amber-700 px-2 py-0.5 rounded-full text-xs">Live</span>
                 </Button>
               )}
 
@@ -868,7 +971,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         />
       )}
 
-      {/* Communication Hub (Unified Chat/Video) */}
+      {/* Communication Hub (Unified Chat/Video) - Rule 2: Video from chat; customer start = create + notify vendor then navigate */}
       {communicationMode && booking && (
         <CommunicationHub
           mode={communicationMode}
@@ -879,8 +982,24 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           userType="customer"
           onClose={() => setCommunicationMode(null)}
           onBookFollowUp={() => setShowFollowUp(true)}
-          onNavigate={onNavigate} // ✅ FIX: Pass navigation handler for video calls
-          meetingId={booking.meetingId} // ✅ FIX: Pass meeting ID if available
+          onNavigate={onNavigate}
+          meetingId={booking.meetingId}
+          onStartVideoCall={async (bid, existingMeetingId) => {
+            try {
+              const createRes = await apiClient.post('/video-call/create-meeting', {
+                bookingId: bid,
+                customerId: booking.customerId || phone,
+                vendorId: booking.vendorId,
+              }) as any;
+              if (createRes?.success || createRes?.meetingId) {
+                await apiClient.post('/video-call/notify-ready', {
+                  bookingId: bid,
+                  participantType: 'customer',
+                  participantId: booking.customerId || phone,
+                }).catch(() => {});
+              }
+            } catch (_) {}
+          }}
         />
       )}
 

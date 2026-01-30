@@ -8,7 +8,7 @@ import { Badge } from '../../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { Truck, CheckCircle, XCircle, Package, MapPin, Shield, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 export function DelhiveryConfig() {
   const [config, setConfig] = useState({
@@ -34,8 +34,8 @@ export function DelhiveryConfig() {
 
   const loadConfig = async () => {
     try {
-      const partners = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/integrations/logistics`, {
-        headers: { Authorization: `Bearer ${publicAnonKey}` }
+      const partners = await fetch(`${getApiBaseUrl()}/admin/integrations/logistics`, {
+        headers: { Authorization: (getAuthHeaders().Authorization || "") }
       }).then(r => r.json());
 
       const delhivery = partners.partners?.find((p: any) => p.id === 'delhivery');
@@ -74,10 +74,10 @@ export function DelhiveryConfig() {
         apiEndpoint: 'https://track.delhivery.com/api'
       };
 
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/integrations/logistics/partner`, {
+      const response = await fetch(`${getApiBaseUrl()}/admin/integrations/logistics/partner`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${publicAnonKey}`,
+          Authorization: (getAuthHeaders().Authorization || ""),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(partner)
@@ -107,8 +107,8 @@ export function DelhiveryConfig() {
       setTesting(true);
       setConnectionStatus('unknown');
 
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/delhivery/config`, {
-        headers: { Authorization: `Bearer ${publicAnonKey}` }
+      const response = await fetch(`${getApiBaseUrl()}/delhivery/config`, {
+        headers: { Authorization: (getAuthHeaders().Authorization || "") }
       });
 
       const data = await response.json();
@@ -135,10 +135,10 @@ export function DelhiveryConfig() {
     }
 
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/delhivery/pincode/check`, {
+      const response = await fetch(`${getApiBaseUrl()}/delhivery/pincode/check`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${publicAnonKey}`,
+          Authorization: (getAuthHeaders().Authorization || ""),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ pincode })

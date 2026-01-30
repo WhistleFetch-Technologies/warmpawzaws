@@ -14,6 +14,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 
@@ -384,9 +385,9 @@ export function registerReviewsEnhancedEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'reviews', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'reviews', functionVersion: '$LATEST' };
     const result = await createHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -401,9 +402,9 @@ export function registerReviewsEnhancedEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'reviews', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'reviews', functionVersion: '$LATEST' };
     const result = await skipHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -417,9 +418,9 @@ export function registerReviewsEnhancedEndpoints(app: Hono) {
       body: '',
       pathParameters: { vendorId: c.req.param('vendorId') },
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'reviews', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'reviews', functionVersion: '$LATEST' };
     const result = await getVendorReviewsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -433,9 +434,9 @@ export function registerReviewsEnhancedEndpoints(app: Hono) {
       body: '',
       pathParameters: { customerId: c.req.param('customerId') },
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'reviews', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'reviews', functionVersion: '$LATEST' };
     const result = await getPendingHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });

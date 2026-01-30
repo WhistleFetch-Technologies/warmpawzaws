@@ -31,9 +31,7 @@ export function useFlexibleTaxRules(options: UseFlexibleTaxRulesOptions = {}) {
       // Try to fetch from API, fallback to default config
       try {
         const response = await apiClient.get<{ rules?: TaxRule[]; configuration?: TaxConfiguration }>('/admin/tax/flexible/rules');
-        if (response.rules) {
-          setTaxRules(response.rules);
-        }
+        setTaxRules(Array.isArray(response.rules) ? response.rules : []);
         if (response.configuration) {
           setTaxConfig(response.configuration);
         }

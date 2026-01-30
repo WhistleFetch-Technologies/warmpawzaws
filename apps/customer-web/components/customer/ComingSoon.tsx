@@ -316,15 +316,15 @@ export function ComingSoon({ serviceName, onBack }: ComingSoonProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-pink-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="bg-white shadow-sm sticky top-0 z-10">
+      <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-md sticky top-0 z-10 rounded-b-2xl">
         <div className="flex items-center gap-3 px-6 py-4">
           <button
             onClick={onBack}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            className="p-2 hover:bg-white/20 rounded-full transition-colors text-white"
           >
-            <ArrowLeft className="w-5 h-5 text-gray-700" />
+            <ArrowLeft className="w-5 h-5" />
           </button>
-          <h1 className="text-lg font-semibold text-gray-900">{formattedName}</h1>
+          <h1 className="text-lg font-semibold text-white">{formattedName}</h1>
         </div>
       </div>
 

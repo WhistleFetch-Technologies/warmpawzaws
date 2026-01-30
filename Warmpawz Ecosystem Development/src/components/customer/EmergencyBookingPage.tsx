@@ -13,7 +13,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { AlertCircle, MapPin, Phone, Clock, Navigation, Ambulance, Activity, Shield, ChevronRight, CheckCircle } from 'lucide-react';
 
 interface EmergencyType {
@@ -118,10 +118,10 @@ export function EmergencyBookingPage({ customerPhone, customerId }: EmergencyBoo
   const loadPets = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${customerId}/pets`,
+        `${getApiBaseUrl()}/customer/${customerId}/pets`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -187,11 +187,11 @@ export function EmergencyBookingPage({ customerPhone, customerId }: EmergencyBoo
       setError(null);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/emergency`,
+        `${getApiBaseUrl()}/bookings/emergency`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

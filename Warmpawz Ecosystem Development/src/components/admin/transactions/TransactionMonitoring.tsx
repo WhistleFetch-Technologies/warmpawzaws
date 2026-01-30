@@ -12,9 +12,9 @@ import {
   CreditCard, Search, Filter, TrendingUp, AlertCircle, CheckCircle,
   XCircle, Clock, ArrowLeft, Download, RefreshCw, DollarSign, Activity
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 interface TransactionStats {
   totalTransactions: number;
@@ -65,7 +65,7 @@ export function TransactionMonitoring({ onBack }: TransactionMonitoringProps) {
       // Load stats
       const statsRes = await fetch(
         `${API_BASE}/admin/transactions/stats?range=${dateRange}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` }}
+        { headers: getAuthHeaders()}
       );
       if (statsRes.ok) {
         const statsData = await statsRes.json();
@@ -75,7 +75,7 @@ export function TransactionMonitoring({ onBack }: TransactionMonitoringProps) {
       // Load transactions (paginated)
       const txnRes = await fetch(
         `${API_BASE}/admin/transactions?page=${currentPage}&perPage=${perPage}&status=${statusFilter}&range=${dateRange}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` }}
+        { headers: getAuthHeaders()}
       );
       if (txnRes.ok) {
         const txnData = await txnRes.json();
@@ -93,7 +93,7 @@ export function TransactionMonitoring({ onBack }: TransactionMonitoringProps) {
     try {
       const response = await fetch(
         `${API_BASE}/admin/transactions/export?range=${dateRange}&status=${statusFilter}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` }}
+        { headers: getAuthHeaders()}
       );
       
       if (response.ok) {
@@ -119,7 +119,7 @@ export function TransactionMonitoring({ onBack }: TransactionMonitoringProps) {
         `${API_BASE}/admin/transactions/${txnId}/retry`,
         {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
       

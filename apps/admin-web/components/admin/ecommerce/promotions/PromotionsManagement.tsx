@@ -57,6 +57,16 @@ export function PromotionsManagement() {
     }
   };
 
+  const deleteCoupon = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this coupon?')) return;
+    try {
+      await apiClient.delete(`/admin/coupons/${id}`);
+      loadData();
+    } catch (error) {
+      console.error('Error deleting coupon:', error);
+    }
+  };
+
   const filteredPromotions = promotions.filter(p => 
     p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     p.code?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -310,10 +320,19 @@ export function PromotionsManagement() {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex justify-end gap-2">
-                        <button className="p-2 hover:bg-orange-50 text-slate-600 hover:text-orange-600 rounded-lg transition-colors">
+                        <button 
+                          onClick={() => {
+                            setEditingItem(coupon);
+                            setShowModal(true);
+                          }}
+                          className="p-2 hover:bg-orange-50 text-slate-600 hover:text-orange-600 rounded-lg transition-colors"
+                        >
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button className="p-2 hover:bg-red-50 text-slate-600 hover:text-red-600 rounded-lg transition-colors">
+                        <button 
+                          onClick={() => deleteCoupon(coupon.id)}
+                          className="p-2 hover:bg-red-50 text-slate-600 hover:text-red-600 rounded-lg transition-colors"
+                        >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>

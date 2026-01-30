@@ -121,14 +121,31 @@ async function testCreateBooking() {
   }
 }
 
-// Test 2: Create Razorpay Order
+// Test 2a: Razorpay create-order validation (empty body → 400)
+async function testRazorpayCreateOrderValidation() {
+  console.log('\n' + '='.repeat(60));
+  console.log('🧪 TEST 2a: Razorpay create-order validation (empty body)');
+  console.log('='.repeat(60));
+  try {
+    await apiRequest('/razorpay/create-order', 'POST', {});
+    console.log('❌ Expected 400 for empty body, request succeeded');
+  } catch (error: any) {
+    if (error.message.includes('400') || error.message.includes('Missing required')) {
+      console.log('✅ Correctly rejected with 400 (Missing required fields)');
+    } else {
+      console.log(`⚠️ Rejected but with: ${error.message}`);
+    }
+  }
+}
+
+// Test 2b: Create Razorpay Order (requires valid bookingId from Test 1)
 async function testCreateRazorpayOrder(bookingId: string) {
   console.log('\n' + '='.repeat(60));
-  console.log('🧪 TEST 2: Create Razorpay Order');
+  console.log('🧪 TEST 2b: Create Razorpay Order');
   console.log('='.repeat(60));
 
   if (!bookingId) {
-    console.log('⏭️  Skipping Razorpay order test - no booking ID');
+    console.log('⏭️  Skipping Razorpay order test - no booking ID (use real TEST_* IDs for full flow)');
     return null;
   }
 
@@ -237,10 +254,13 @@ async function runTests() {
   console.log(`🔧 Test Service ID: ${TEST_SERVICE_ID}`);
 
   try {
-    // Test 1: Create Booking
+    // Test 2a: Razorpay create-order validation (no DB needed)
+    await testRazorpayCreateOrderValidation();
+
+    // Test 1: Create Booking (needs real customer/vendor/service UUIDs in DB)
     const bookingId = await testCreateBooking();
 
-    // Test 2: Create Razorpay Order (only if booking was created)
+    // Test 2b: Create Razorpay Order (only if booking was created)
     if (bookingId) {
       await testCreateRazorpayOrder(bookingId);
     }

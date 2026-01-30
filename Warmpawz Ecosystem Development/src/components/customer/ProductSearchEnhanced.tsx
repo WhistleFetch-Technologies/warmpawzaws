@@ -19,7 +19,7 @@ import { useState, useEffect } from 'react';
 import { ShoppingCart, Heart, Star, Grid, List as ListIcon, Filter, Package } from 'lucide-react';
 import { UniversalSearchBar } from '../ui/UniversalSearchBar';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface ProductResult {
   id: string;
@@ -65,11 +65,11 @@ export function ProductSearchEnhanced() {
     setLoading(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/advanced-search/products`,
+        `${getApiBaseUrl()}/advanced-search/products`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

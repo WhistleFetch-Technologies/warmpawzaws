@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Clock, Calendar, Ambulance, Home, Pill, Activity, Save, ArrowLeft } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 
@@ -30,8 +30,8 @@ export function CenterAvailabilityManager({
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/center-availability`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/center-availability`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -52,11 +52,11 @@ export function CenterAvailabilityManager({
     try {
       setSaving(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/center-availability`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/center-availability`,
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(availability)

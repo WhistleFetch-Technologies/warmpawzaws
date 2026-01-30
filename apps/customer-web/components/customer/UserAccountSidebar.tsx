@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 // Removed Supabase imports - using apiClient with Cognito auth
 import { apiClient } from '@/lib/api-client';
+import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 
 interface UserProfile {
   firstName: string;
@@ -149,6 +151,13 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const [loadingAddresses, setLoadingAddresses] = useState(true);
   const [showAddressForm, setShowAddressForm] = useState(false);
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
+  const [addressCountryCode, setAddressCountryCode] = useState(() => {
+    // Get saved country code or default to +91
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('customerCountryCode') || '+91';
+    }
+    return '+91';
+  });
   
   // Payment states
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
@@ -1727,6 +1736,7 @@ function AddressForm({ address, onSave, onCancel }: {
   });
 
   const [detectingLocation, setDetectingLocation] = useState(false);
+  const [addressCountryCode, setAddressCountryCode] = useState('+91');
 
   const detectCurrentLocation = () => {
     if (!navigator.geolocation) {
@@ -1879,22 +1889,57 @@ function AddressForm({ address, onSave, onCancel }: {
 
       <div>
         <label className="block text-xs font-semibold text-gray-500 mb-2.5">Phone</label>
-        <input
-          type="tel"
-          value={formData.phone}
-          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
-          required
-        />
+        <div className="flex items-stretch border-2 border-gray-200 rounded-xl overflow-hidden focus-within:border-[#FF8C42] transition-all bg-white">
+          <CountryCodeSelector
+            selectedCode={addressCountryCode}
+            onSelect={setAddressCountryCode}
+            disabled={false}
+          />
+          <input
+            type="tel"
+            inputMode="numeric"
+            value={formData.phone}
+            onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/[^0-9]/g, '') })}
+            maxLength={10}
+            className="flex-1 px-4 py-3.5 outline-none"
+            required
+          />
+        </div>
       </div>
 
       <div>
         <label className="block text-xs font-semibold text-gray-500 mb-2.5">Address Line 1</label>
-        <input
-          type="text"
+        <EnhancedAddressAutocomplete
           value={formData.addressLine1}
-          onChange={(e) => setFormData({ ...formData, addressLine1: e.target.value })}
-          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+          onChange={(address: string, components?: AddressComponents) => {
+            setFormData(prev => ({ ...prev, addressLine1: address }));
+            
+            // Auto-populate city, state, pincode from Google Maps
+            if (components) {
+              const updates: any = {};
+              if (components.city && !formData.city) {
+                updates.city = components.city;
+              }
+              if (components.state && !formData.state) {
+                updates.state = components.state;
+              }
+              if (components.pincode && !formData.pincode) {
+                updates.pincode = components.pincode;
+              }
+              if (components.street && !formData.addressLine2) {
+                updates.addressLine2 = components.street;
+              }
+              if (components.landmark && !formData.landmark) {
+                updates.landmark = components.landmark;
+              }
+              
+              if (Object.keys(updates).length > 0) {
+                setFormData(prev => ({ ...prev, ...updates }));
+              }
+            }
+          }}
+          placeholder="Search address, landmark, city..."
+          className="w-full"
           required
         />
       </div>

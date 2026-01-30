@@ -15,6 +15,7 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
+import { parseSelectedServices } from '../utils/entity-extractor';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -280,6 +281,45 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
           sgst = taxAmount / 2;
         }
 
+        // Multi-service: build line items from selected_services when present
+        const selectedServices = parseSelectedServices(booking.selected_services);
+        const items = selectedServices.length > 0
+          ? selectedServices.map((s: any) => {
+              const qty = s.quantity ?? 1;
+              const unitPrice = parseFloat(s.price) || 0;
+              const taxableValue = unitPrice * qty;
+              const itemTax = taxAmount > 0 && basePrice > 0 ? (taxableValue / basePrice) * taxAmount : 0;
+              const itemCgst = isInterState ? 0 : itemTax / 2;
+              const itemSgst = isInterState ? 0 : itemTax / 2;
+              const itemIgst = isInterState ? itemTax : 0;
+              return {
+                name: s.name || s.serviceName || 'Service',
+                description: (s.description || '').toString(),
+                quantity: qty,
+                unitPrice,
+                taxableValue,
+                hsnCode: '998314',
+                cgst: itemCgst,
+                sgst: itemSgst,
+                igst: itemIgst,
+                taxRate: gstRate,
+                total: taxableValue + itemTax,
+              };
+            })
+          : [{
+              name: booking.service_name || 'Service',
+              description: booking.service_description || '',
+              quantity: 1,
+              unitPrice: basePrice,
+              taxableValue: basePrice,
+              hsnCode: '998314',
+              cgst: cgst,
+              sgst: sgst,
+              igst: igst,
+              taxRate: gstRate,
+              total: basePrice + taxAmount,
+            }];
+
         const invoiceData = {
           invoiceNumber,
           invoiceDate: new Date(booking.created_at || new Date()).toLocaleDateString('en-IN'),
@@ -303,19 +343,7 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
             phone: booking.customer_phone || '',
             email: booking.customer_email || '',
           },
-          items: [{
-            name: booking.service_name || 'Service',
-            description: booking.service_description || '',
-            quantity: 1,
-            unitPrice: basePrice,
-            taxableValue: basePrice,
-            hsnCode: '998314', // Service HSN code
-            cgst: cgst,
-            sgst: sgst,
-            igst: igst,
-            taxRate: gstRate,
-            total: basePrice + taxAmount,
-          }],
+          items,
           subtotal: basePrice,
           cgst: cgst,
           sgst: sgst,

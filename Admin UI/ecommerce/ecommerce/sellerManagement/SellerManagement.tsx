@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Store, Search, Eye, CheckCircle, XCircle } from "lucide-react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 
 export function SellerManagement() {
 	const [sellers, setSellers] = useState<any[]>([]);
@@ -17,8 +17,8 @@ export function SellerManagement() {
 			setLoading(true);
 			// Load all vendors with pet_product role
 			const res = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor/list`,
-				{ headers: { Authorization: `Bearer ${publicAnonKey}` } }
+				`${getApiBaseUrl()}/admin/vendor/list`,
+				{ headers: { ...getAuthHeaders() } }
 			);
 
 			if (res.ok) {

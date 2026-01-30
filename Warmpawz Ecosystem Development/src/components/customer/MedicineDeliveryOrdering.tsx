@@ -4,7 +4,7 @@ import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Upload, Pill, FileText, CheckCircle, Search, Plus, Minus, ShoppingCart } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface MedicineDeliveryProps {
   customerId: string;
@@ -70,11 +70,11 @@ export function MedicineDeliveryOrdering({ customerId, petId, onBack, onSuccess 
           }
 
           // 2. Create Order
-          const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/integrated-services/medicine/order`, {
+          const response = await fetch(`${getApiBaseUrl()}/integrated-services/medicine/order`, {
               method: 'POST',
               headers: {
                   'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${publicAnonKey}`
+                  ...getAuthHeaders()
               },
               body: JSON.stringify({
                   customerId,

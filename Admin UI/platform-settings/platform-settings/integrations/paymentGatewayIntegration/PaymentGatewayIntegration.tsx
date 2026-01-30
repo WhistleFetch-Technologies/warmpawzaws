@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Save, Check, AlertCircle, Key, CreditCard } from "lucide-react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import { toast } from "sonner";
 
 interface PaymentSettings {
@@ -79,10 +79,10 @@ export function PaymentGatewayIntegration() {
 		try {
 			setLoading(true);
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/settings/payment-gateway`,
+				`${getApiBaseUrl()}/admin/settings/payment-gateway`,
 				{
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 				}
 			);
@@ -142,12 +142,12 @@ export function PaymentGatewayIntegration() {
 			toast.info("Saving payment settings...");
 
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/settings/payment-gateway`,
+				`${getApiBaseUrl()}/admin/settings/payment-gateway`,
 				{
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 					body: JSON.stringify(settings),
 				}
@@ -353,8 +353,7 @@ export function PaymentGatewayIntegration() {
 									className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
 								/>
 								<p className="mt-1 text-xs text-gray-500">
-									Webhook URL:
-									https://vpvpbdwtyugbknrntkho.supabase.co/functions/v1/make-server-3dd53475/payments/razorpay/webhook
+									Webhook URL: {getApiBaseUrl()}/payments/razorpay/webhook
 								</p>
 							</div>
 

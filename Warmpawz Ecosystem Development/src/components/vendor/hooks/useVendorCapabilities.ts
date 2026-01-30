@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 export interface VendorCapabilities {
@@ -249,10 +249,10 @@ export function useVendorCapabilities(roleId?: string) {
         console.log('🔌 [CAPABILITIES] Fetching role config for:', roleId);
         
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`,
+          `${getApiBaseUrl()}/config/roles`,
           {
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`
+              ...getAuthHeaders()
             }
           }
         );

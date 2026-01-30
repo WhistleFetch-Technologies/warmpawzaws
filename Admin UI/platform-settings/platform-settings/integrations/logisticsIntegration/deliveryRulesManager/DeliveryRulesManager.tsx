@@ -40,7 +40,7 @@ import {
 	Play,
 } from "lucide-react";
 import { toast } from "sonner";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 
 interface DeliveryRule {
 	id: string;
@@ -127,9 +127,9 @@ export function DeliveryRulesManager() {
 	const loadRules = async () => {
 		try {
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/logistics/delivery-rules`,
+				`${getApiBaseUrl()}/logistics/delivery-rules`,
 				{
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 			const data = await response.json();
@@ -145,11 +145,11 @@ export function DeliveryRulesManager() {
 		try {
 			setLoading(true);
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/logistics/delivery-rules`,
+				`${getApiBaseUrl()}/logistics/delivery-rules`,
 				{
 					method: "POST",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify(rules),
@@ -190,11 +190,11 @@ export function DeliveryRulesManager() {
 		try {
 			setLoading(true);
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/logistics/test-routing`,
+				`${getApiBaseUrl()}/logistics/test-routing`,
 				{
 					method: "POST",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({

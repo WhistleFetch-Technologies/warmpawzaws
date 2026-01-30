@@ -23,7 +23,7 @@
         "validateOnSynth": false,
         "assumeRoleArn": "arn:${AWS::Partition}:iam::057442119249:role/cdk-hnb659fds-deploy-role-057442119249-ap-south-1",
         "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::057442119249:role/cdk-hnb659fds-cfn-exec-role-057442119249-ap-south-1",
-        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-057442119249-ap-south-1/be8cecb98a18f443c2c3583e1e78bbdb3326d94510854689b1f3d2755decdcc1.json",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-057442119249-ap-south-1/40487821c366fbfc609a720336dababb24b582e48d3dc14fc82b829f951b7747.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
         "additionalDependencies": [
@@ -56,12 +56,6 @@
                 "Value": "Warmpawz"
               }
             ]
-          }
-        ],
-        "/WarmpawzStack-dev/AuroraStack/AuroraSecret/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "AuroraStackAuroraSecret2E11B886"
           }
         ],
         "/WarmpawzStack-dev/CognitoStack/CustomerUserPool/smsRole/Resource": [
@@ -320,76 +314,6 @@
           {
             "type": "aws:cdk:logicalId",
             "data": "SnsStackAnalyticsTopic7094CF54"
-          }
-        ],
-        "/WarmpawzStack-dev/DynamoDbStack/LogsTable": [
-          {
-            "type": "aws:cdk:hasPhysicalName",
-            "data": {
-              "Ref": "DynamoDbStackLogsTable96BE4B9D"
-            }
-          }
-        ],
-        "/WarmpawzStack-dev/DynamoDbStack/LogsTable/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "DynamoDbStackLogsTable96BE4B9D"
-          }
-        ],
-        "/WarmpawzStack-dev/DynamoDbStack/AnalyticsTable": [
-          {
-            "type": "aws:cdk:hasPhysicalName",
-            "data": {
-              "Ref": "DynamoDbStackAnalyticsTable19FB8467"
-            }
-          }
-        ],
-        "/WarmpawzStack-dev/DynamoDbStack/AnalyticsTable/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "DynamoDbStackAnalyticsTable19FB8467"
-          }
-        ],
-        "/WarmpawzStack-dev/DynamoDbStack/ReportsTable": [
-          {
-            "type": "aws:cdk:hasPhysicalName",
-            "data": {
-              "Ref": "DynamoDbStackReportsTableB844EC92"
-            }
-          }
-        ],
-        "/WarmpawzStack-dev/DynamoDbStack/ReportsTable/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "DynamoDbStackReportsTableB844EC92"
-          }
-        ],
-        "/WarmpawzStack-dev/DynamoDbStack/ChatMessagesTable": [
-          {
-            "type": "aws:cdk:hasPhysicalName",
-            "data": {
-              "Ref": "DynamoDbStackChatMessagesTable8D237DC2"
-            }
-          }
-        ],
-        "/WarmpawzStack-dev/DynamoDbStack/ChatMessagesTable/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "DynamoDbStackChatMessagesTable8D237DC2"
-          }
-        ],
-        "/WarmpawzStack-dev/DynamoDbStack/AiConversationsTable": [
-          {
-            "type": "aws:cdk:hasPhysicalName",
-            "data": {
-              "Ref": "DynamoDbStackAiConversationsTable8F2402AA"
-            }
-          }
-        ],
-        "/WarmpawzStack-dev/DynamoDbStack/AiConversationsTable/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "DynamoDbStackAiConversationsTable8F2402AA"
           }
         ],
         "/WarmpawzStack-dev/ChimeStack/ChimeRole/Resource": [
@@ -1215,7 +1139,7 @@
         "validateOnSynth": false,
         "assumeRoleArn": "arn:${AWS::Partition}:iam::057442119249:role/cdk-hnb659fds-deploy-role-057442119249-ap-south-1",
         "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::057442119249:role/cdk-hnb659fds-cfn-exec-role-057442119249-ap-south-1",
-        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-057442119249-ap-south-1/16365522d9f1f384272c3e1a36f58d7b7645c3c776c49e754bb51b01ecf09895.json",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-057442119249-ap-south-1/42dd35eca57bede1ffbeac4f61efd6a5cdd802bdbdb25905cf711b090924bd74.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
         "additionalDependencies": [
@@ -1248,12 +1172,6 @@
                 "Value": "Warmpawz"
               }
             ]
-          }
-        ],
-        "/WarmpawzStack-staging/AuroraStack/AuroraSecret/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "AuroraStackAuroraSecret2E11B886"
           }
         ],
         "/WarmpawzStack-staging/CognitoStack/CustomerUserPool/smsRole/Resource": [
@@ -1512,76 +1430,6 @@
           {
             "type": "aws:cdk:logicalId",
             "data": "SnsStackAnalyticsTopic7094CF54"
-          }
-        ],
-        "/WarmpawzStack-staging/DynamoDbStack/LogsTable": [
-          {
-            "type": "aws:cdk:hasPhysicalName",
-            "data": {
-              "Ref": "DynamoDbStackLogsTable96BE4B9D"
-            }
-          }
-        ],
-        "/WarmpawzStack-staging/DynamoDbStack/LogsTable/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "DynamoDbStackLogsTable96BE4B9D"
-          }
-        ],
-        "/WarmpawzStack-staging/DynamoDbStack/AnalyticsTable": [
-          {
-            "type": "aws:cdk:hasPhysicalName",
-            "data": {
-              "Ref": "DynamoDbStackAnalyticsTable19FB8467"
-            }
-          }
-        ],
-        "/WarmpawzStack-staging/DynamoDbStack/AnalyticsTable/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "DynamoDbStackAnalyticsTable19FB8467"
-          }
-        ],
-        "/WarmpawzStack-staging/DynamoDbStack/ReportsTable": [
-          {
-            "type": "aws:cdk:hasPhysicalName",
-            "data": {
-              "Ref": "DynamoDbStackReportsTableB844EC92"
-            }
-          }
-        ],
-        "/WarmpawzStack-staging/DynamoDbStack/ReportsTable/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "DynamoDbStackReportsTableB844EC92"
-          }
-        ],
-        "/WarmpawzStack-staging/DynamoDbStack/ChatMessagesTable": [
-          {
-            "type": "aws:cdk:hasPhysicalName",
-            "data": {
-              "Ref": "DynamoDbStackChatMessagesTable8D237DC2"
-            }
-          }
-        ],
-        "/WarmpawzStack-staging/DynamoDbStack/ChatMessagesTable/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "DynamoDbStackChatMessagesTable8D237DC2"
-          }
-        ],
-        "/WarmpawzStack-staging/DynamoDbStack/AiConversationsTable": [
-          {
-            "type": "aws:cdk:hasPhysicalName",
-            "data": {
-              "Ref": "DynamoDbStackAiConversationsTable8F2402AA"
-            }
-          }
-        ],
-        "/WarmpawzStack-staging/DynamoDbStack/AiConversationsTable/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "DynamoDbStackAiConversationsTable8F2402AA"
           }
         ],
         "/WarmpawzStack-staging/ChimeStack/ChimeRole/Resource": [
@@ -2407,7 +2255,7 @@
         "validateOnSynth": false,
         "assumeRoleArn": "arn:${AWS::Partition}:iam::057442119249:role/cdk-hnb659fds-deploy-role-057442119249-ap-south-1",
         "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::057442119249:role/cdk-hnb659fds-cfn-exec-role-057442119249-ap-south-1",
-        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-057442119249-ap-south-1/628325f5688143e6b678a80963b9e25992093b3f7efabc1984bd3e956068e5f6.json",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-057442119249-ap-south-1/5a76fbc3d0588132d1c170571543efeb170a0fd03bc199a77d182d86d453ed4b.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
         "additionalDependencies": [
@@ -2440,12 +2288,6 @@
                 "Value": "Warmpawz"
               }
             ]
-          }
-        ],
-        "/WarmpawzStack-prod/AuroraStack/AuroraSecret/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "AuroraStackAuroraSecret2E11B886"
           }
         ],
         "/WarmpawzStack-prod/CognitoStack/CustomerUserPool/smsRole/Resource": [
@@ -2704,76 +2546,6 @@
           {
             "type": "aws:cdk:logicalId",
             "data": "SnsStackAnalyticsTopic7094CF54"
-          }
-        ],
-        "/WarmpawzStack-prod/DynamoDbStack/LogsTable": [
-          {
-            "type": "aws:cdk:hasPhysicalName",
-            "data": {
-              "Ref": "DynamoDbStackLogsTable96BE4B9D"
-            }
-          }
-        ],
-        "/WarmpawzStack-prod/DynamoDbStack/LogsTable/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "DynamoDbStackLogsTable96BE4B9D"
-          }
-        ],
-        "/WarmpawzStack-prod/DynamoDbStack/AnalyticsTable": [
-          {
-            "type": "aws:cdk:hasPhysicalName",
-            "data": {
-              "Ref": "DynamoDbStackAnalyticsTable19FB8467"
-            }
-          }
-        ],
-        "/WarmpawzStack-prod/DynamoDbStack/AnalyticsTable/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "DynamoDbStackAnalyticsTable19FB8467"
-          }
-        ],
-        "/WarmpawzStack-prod/DynamoDbStack/ReportsTable": [
-          {
-            "type": "aws:cdk:hasPhysicalName",
-            "data": {
-              "Ref": "DynamoDbStackReportsTableB844EC92"
-            }
-          }
-        ],
-        "/WarmpawzStack-prod/DynamoDbStack/ReportsTable/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "DynamoDbStackReportsTableB844EC92"
-          }
-        ],
-        "/WarmpawzStack-prod/DynamoDbStack/ChatMessagesTable": [
-          {
-            "type": "aws:cdk:hasPhysicalName",
-            "data": {
-              "Ref": "DynamoDbStackChatMessagesTable8D237DC2"
-            }
-          }
-        ],
-        "/WarmpawzStack-prod/DynamoDbStack/ChatMessagesTable/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "DynamoDbStackChatMessagesTable8D237DC2"
-          }
-        ],
-        "/WarmpawzStack-prod/DynamoDbStack/AiConversationsTable": [
-          {
-            "type": "aws:cdk:hasPhysicalName",
-            "data": {
-              "Ref": "DynamoDbStackAiConversationsTable8F2402AA"
-            }
-          }
-        ],
-        "/WarmpawzStack-prod/DynamoDbStack/AiConversationsTable/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "DynamoDbStackAiConversationsTable8F2402AA"
           }
         ],
         "/WarmpawzStack-prod/ChimeStack/ChimeRole/Resource": [

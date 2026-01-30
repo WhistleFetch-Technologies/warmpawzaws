@@ -18,7 +18,7 @@ import {
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Card, CardContent } from '../ui/card';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface ServiceProvider {
   providerId: string;
@@ -117,9 +117,9 @@ export function IntegratedServicesComplete({
       }
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/integrated-services/available?${params}`,
+        `${getApiBaseUrl()}/integrated-services/available?${params}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -152,9 +152,9 @@ export function IntegratedServicesComplete({
     // Check availability before proceeding
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/integrated-services/${provider.providerId}/availability`,
+        `${getApiBaseUrl()}/integrated-services/${provider.providerId}/availability`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

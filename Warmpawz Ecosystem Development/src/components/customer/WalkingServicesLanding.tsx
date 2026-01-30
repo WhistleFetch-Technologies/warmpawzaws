@@ -13,7 +13,7 @@ import {
   Clock,
   Trophy
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { WALKING_NEEDS } from './ProblemGridSection';
 
 interface WalkingServicesLandingProps {
@@ -28,7 +28,7 @@ export function WalkingServicesLanding({ onBack, onNavigate, customerId, phone }
   const [featuredWalkers, setFeaturedWalkers] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadWalkingData();

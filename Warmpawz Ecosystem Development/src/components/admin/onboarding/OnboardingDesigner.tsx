@@ -9,11 +9,11 @@ import { Badge } from '../../ui/badge';
 import { Switch } from '../../ui/switch';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../../ui/accordion';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { Loader2, Plus, Trash2, Save, RefreshCw, Eye, Code, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../../ui/dialog';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 interface Role {
   id: string;
@@ -93,7 +93,7 @@ export function OnboardingDesigner() {
     try {
       setLoading(true);
       const response = await fetch(`${API_BASE}/config/roles`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       if (response.ok) {
         const data = await response.json();
@@ -111,7 +111,7 @@ export function OnboardingDesigner() {
     try {
       setLoading(true);
       const response = await fetch(`${API_BASE}/vendor/onboarding-form/${roleId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       if (response.ok) {
         const data = await response.json();
@@ -139,7 +139,7 @@ export function OnboardingDesigner() {
       setSeeding(true);
       const response = await fetch(`${API_BASE}/admin/roles/seed?missingOnly=${missingOnly}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (response.ok) {
@@ -165,7 +165,7 @@ export function OnboardingDesigner() {
       const response = await fetch(`${API_BASE}/admin/role-config/save`, {
         method: 'POST',
         headers: { 
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({

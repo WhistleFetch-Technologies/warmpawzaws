@@ -1,9 +1,16 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Baloo_2 } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 
-const inter = Inter({ subsets: ['latin'] });
+// Optimized font loading with next/font - self-hosted for better performance
+const baloo2 = Baloo_2({ 
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
+  display: 'swap',
+  preload: true,
+  variable: '--font-baloo2',
+});
 
 export const metadata: Metadata = {
   title: 'Warmpawz - Pet Care Services',
@@ -16,37 +23,40 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className={inter.className}>
-        {/* Runtime config: Inline fallback + external script for deploy-time override */}
+    <html lang="en" className={baloo2.variable}>
+      <head>
+        {/* Preconnect to Google Fonts for Material Symbols (non-blocking) */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* Material Symbols loaded with font-display: swap for non-blocking */}
+        <link 
+          rel="stylesheet" 
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
+          // @ts-ignore - media trick for non-blocking CSS
+          media="print"
+          // @ts-ignore
+          onLoad="this.media='all'"
+        />
+      </head>
+      <body className={baloo2.className}>
+        {/* Runtime config: Inline fallback + async external script for deploy-time override */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              // Inline fallback config (ensures API URL is always available)
+              // Inline fallback config (ensures API URL is always available immediately)
+              // Uses serverless API (z0b3obweb6) - supports UAT tokens for phone-based login
+              // Official: Admin dfof7mguaa0a5 | Vendor d1s6ykkj381k58 | Customer d2aoyjj8ine0wk
               if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
                 window.__WARMPAWZ_RUNTIME_CONFIG__ = {
                   apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
                   uatMode: true
                 };
-                console.log('🔧 Runtime config loaded (inline fallback):', window.__WARMPAWZ_RUNTIME_CONFIG__);
               }
-              // Load external runtime-config.js to override if needed (deploy-time)
-              (function() {
-                var script = document.createElement('script');
-                script.src = '/runtime-config.js';
-                script.async = false;
-                script.defer = false;
-                script.onload = function() {
-                  console.log('🔧 External runtime-config.js loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
-                };
-                script.onerror = function() {
-                  console.warn('⚠️ Failed to load runtime-config.js, using fallback');
-                };
-                document.head.appendChild(script);
-              })();
             `,
           }}
         />
+        {/* External config loaded async - won't block rendering */}
+        <script src="/runtime-config.js" async />
         <Providers>{children}</Providers>
       </body>
     </html>

@@ -4,7 +4,7 @@ import {
   TrendingUp, DollarSign, Calendar, Package, Clock,
   ChevronLeft, RefreshCw, Download, TrendingDown
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface EarningsData {
   totalBookings: number;
@@ -41,9 +41,9 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
         : `/staff/${id}/earnings`;
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475${endpoint}?period=${activePeriod}`,
+        `${getApiBaseUrl()}${endpoint}?period=${activePeriod}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

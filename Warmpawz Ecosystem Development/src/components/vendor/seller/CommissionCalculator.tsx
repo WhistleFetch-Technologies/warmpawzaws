@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Calculator, DollarSign, Percent, TrendingUp, Info, Calendar } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface CommissionCalculatorProps {
   sellerId: string;
@@ -24,8 +24,8 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
       
       // Load commission settings
       const settingsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/commission/settings`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/ecommerce/commission/settings`,
+        { headers: getAuthHeaders() }
       );
       
       if (settingsRes.ok) {
@@ -35,8 +35,8 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
 
       // Load seller analytics
       const analyticsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/analytics/seller/${sellerId}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/ecommerce/analytics/seller/${sellerId}`,
+        { headers: getAuthHeaders() }
       );
       
       if (analyticsRes.ok) {
@@ -56,11 +56,11 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
 
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/commission/calculate`,
+        `${getApiBaseUrl()}/ecommerce/commission/calculate`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ sellerId, amount })

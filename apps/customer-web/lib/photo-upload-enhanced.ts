@@ -3,7 +3,7 @@
  * Provides upload progress, retry logic, and success verification
  */
 
-import { apiClient } from './api-client';
+import { apiClient, getApiBaseUrl } from './api-client';
 
 export interface PhotoUploadOptions {
   onProgress?: (progress: number) => void;
@@ -125,7 +125,7 @@ async function uploadWithXHR(
 ): Promise<PhotoUploadResult> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    const apiBaseUrl = getApiBaseUrl() || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
     const url = `${apiBaseUrl}${endpoint}`;
 
     xhr.upload.addEventListener('progress', (e) => {

@@ -1,7 +1,7 @@
 import { X, Download } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface AdminProfile {
   id: string;
@@ -56,10 +56,10 @@ export function SuperAdminProfileModal({ isOpen, onClose, adminId = 'admin_1' }:
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/profile/${adminId}`,
+        `${getApiBaseUrl()}/admin/profile/${adminId}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -80,11 +80,11 @@ export function SuperAdminProfileModal({ isOpen, onClose, adminId = 'admin_1' }:
       setSaving(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/profile/${adminId}`,
+        `${getApiBaseUrl()}/admin/profile/${adminId}`,
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(updates)
@@ -130,11 +130,11 @@ export function SuperAdminProfileModal({ isOpen, onClose, adminId = 'admin_1' }:
   const handleGenerateApiKey = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/profile/${adminId}/api-key`,
+        `${getApiBaseUrl()}/admin/profile/${adminId}/api-key`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -151,10 +151,10 @@ export function SuperAdminProfileModal({ isOpen, onClose, adminId = 'admin_1' }:
   const handleExport = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/profile/${adminId}/export`,
+        `${getApiBaseUrl()}/admin/profile/${adminId}/export`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

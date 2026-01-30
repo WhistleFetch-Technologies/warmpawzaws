@@ -3,7 +3,7 @@ import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { ArrowLeft, Plus, Check, Home as HomeIcon, ShoppingCart, Calendar, User } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { useCart } from '../../../context/CartContext';
 
 interface PetSelectorProps {
@@ -20,7 +20,7 @@ export function PetSelector({ phone, onBack, onSelect, preSelectedPetId, onNavig
   const [selectedPet, setSelectedPet] = useState<any>(null);
   const { itemCount } = useCart();
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadPets();

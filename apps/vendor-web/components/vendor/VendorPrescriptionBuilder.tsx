@@ -1,8 +1,24 @@
 'use client';
 
+/**
+ * ============================================================================
+ * @DEPRECATED - Use VendorPrescriptionModal instead
+ * ============================================================================
+ * This component is a placeholder and has no functionality.
+ * 
+ * For prescription creation, use:
+ * - VendorPrescriptionModal (apps/vendor-web/components/vendor/modals/VendorPrescriptionModal.tsx)
+ * 
+ * For prescription listing, use:
+ * - PrescriptionList (apps/vendor-web/components/vendor/prescription/PrescriptionList.tsx)
+ * 
+ * This file is kept for backward compatibility but should not be used in new code.
+ * ============================================================================
+ */
+
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Settings, Plus, Search, Filter, Edit, Trash2 } from 'lucide-react';
+import { ArrowLeft, Settings, Plus, Search, Filter, Edit, Trash2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface VendorPrescriptionBuilderProps {
@@ -10,6 +26,9 @@ interface VendorPrescriptionBuilderProps {
   onBack?: () => void;
 }
 
+/**
+ * @deprecated Use VendorPrescriptionModal or PrescriptionList instead
+ */
 export function VendorPrescriptionBuilder({ vendorId, onBack }: VendorPrescriptionBuilderProps) {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<any[]>([]);

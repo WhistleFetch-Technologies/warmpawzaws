@@ -15,9 +15,9 @@ import {
   X
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
-const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const BASE_URL = `${getApiBaseUrl()}`;
 
 interface NotificationTemplate {
   templateId: string;
@@ -68,7 +68,7 @@ export function NotificationTemplateManager() {
         : `${BASE_URL}/notification-templates`;
 
       const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {
@@ -89,7 +89,7 @@ export function NotificationTemplateManager() {
         `${BASE_URL}/notification-templates/${templateId}/toggle`,
         {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -110,7 +110,7 @@ export function NotificationTemplateManager() {
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ variables: sampleData })

@@ -79,19 +79,30 @@ export function CenterBookingPage({
 
     setLoading(true);
     try {
-      const response = await apiClient.post<{ bookingId: string }>('/booking/create', {
-        phone,
-        petId: selectedPetId,
+      const customerRes = await apiClient.get<{ customer?: { id: string }; id?: string }>(`/customer/by-phone?phone=${encodeURIComponent(phone)}`);
+      const customerId = customerRes?.customer?.id ?? customerRes?.id;
+      if (!customerId) {
+        alert('Customer not found. Please try again.');
+        setLoading(false);
+        return;
+      }
+      const response = await apiClient.post<{ bookingId?: string; data?: { bookingId?: string }; booking?: { id?: string } }>('/booking/create', {
+        customerId,
         vendorId,
         serviceId,
+        bookingDate: selectedDate,
+        bookingTime: selectedTimeSlot.includes(':') ? selectedTimeSlot.split(':').slice(0, 2).join(':') : selectedTimeSlot,
         serviceType: 'at_center',
-        scheduledDate: selectedDate,
-        scheduledTime: selectedTimeSlot
+        petId: selectedPetId,
+        customerPhone: phone,
       });
 
-      if (response.bookingId) {
+      const bookingId = response?.data?.bookingId ?? response?.bookingId ?? response?.booking?.id;
+      if (bookingId) {
         alert('Booking created successfully!');
-        onSuccess(response.bookingId);
+        onSuccess(bookingId);
+      } else {
+        alert('Booking created but no booking ID returned.');
       }
     } catch (err) {
       console.error('Error creating booking:', err);

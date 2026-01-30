@@ -1,0 +1,840 @@
+/**
+ * ============================================================================
+ * SPECIALIZATION MASTER ENDPOINTS
+ * ============================================================================
+ * 
+ * API endpoints for managing specializations (problem grid items):
+ * - Admin: CRUD operations for specializations and symptoms
+ * - Public: Problem grid data for customer app
+ * - Vendor: Specialization options for profile configuration
+ * 
+ * Date: 2026-01-29
+ * ============================================================================
+ */
+
+import { Hono } from 'hono';
+import { query, select, insert, update } from '../database/rds-connection';
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface Specialization {
+  id: string;
+  specialization_id: string;
+  name: string;
+  display_name: string;
+  description: string;
+  category_id: string;
+  applicable_roles: string[];
+  icon_name: string;
+  icon_color: string;
+  display_order: number;
+  is_active: boolean;
+  show_in_problem_grid: boolean;
+  show_in_vendor_profile: boolean;
+  show_in_services_dashboard: boolean;
+  allowed_service_styles: string[];
+  symptoms?: Symptom[];
+  symptom_count?: number;
+}
+
+interface Symptom {
+  id: string;
+  specialization_id: string;
+  symptom_name: string;
+  symptom_display_name: string;
+  symptom_keywords: string[];
+  display_order: number;
+  is_active: boolean;
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Get role display name from role ID
+ */
+function getRoleDisplayName(roleId: string): string {
+  const roleNames: Record<string, string> = {
+    'vet_solo': 'Veterinarian (Solo)',
+    'vet_clinic': 'Veterinary Clinic',
+    'veterinarian': 'Veterinarian',
+    'groomer_solo': 'Groomer (Solo)',
+    'groomer_center': 'Grooming Center',
+    'pet_groomer': 'Pet Groomer',
+    'trainer_solo': 'Trainer (Solo)',
+    'trainer_center': 'Training Center',
+    'pet_trainer': 'Pet Trainer',
+    'walker': 'Pet Walker',
+    'pet_walker': 'Pet Walker',
+    'boarding': 'Pet Boarding',
+    'pet_boarder': 'Pet Boarder',
+    'pet_boarding': 'Pet Boarding',
+    'nutritionist': 'Pet Nutritionist',
+    'nutritionist_center': 'Nutritionist Center',
+    'pet_behaviorist': 'Pet Behaviorist',
+  };
+  return roleNames[roleId] || roleId;
+}
+
+/**
+ * Get category display name
+ */
+function getCategoryDisplayName(categoryId: string): string {
+  const categoryNames: Record<string, string> = {
+    'veterinary': 'Veterinary',
+    'grooming': 'Grooming',
+    'training': 'Training',
+    'walking': 'Walking',
+    'boarding': 'Boarding',
+    'behavioral': 'Behavioral',
+    'wellness': 'Wellness & Nutrition',
+    'diagnostic': 'Diagnostics',
+    'pharmacy': 'Pharmacy',
+    'emergency': 'Emergency',
+  };
+  return categoryNames[categoryId] || categoryId;
+}
+
+// ============================================================================
+// ENDPOINTS
+// ============================================================================
+
+export function registerSpecializationMasterEndpoints(app: Hono) {
+  
+  // ========================================================================
+  // ADMIN: LIST ALL SPECIALIZATIONS
+  // ========================================================================
+  
+  /**
+   * GET /admin/specializations
+   * List all specializations with optional filtering
+   * By default, only returns active specializations unless includeInactive=true
+   */
+  app.get('/admin/specializations', async (c) => {
+    try {
+      const categoryId = c.req.query('categoryId');
+      const includeSymptoms = c.req.query('includeSymptoms') === 'true';
+      const includeInactive = c.req.query('includeInactive') === 'true';
+      
+      let sqlQuery = `
+        SELECT 
+          sm.*,
+          (SELECT COUNT(*) FROM specialization_symptoms ss WHERE ss.specialization_id = sm.specialization_id AND ss.is_active = true) as symptom_count
+        FROM specialization_master sm
+        WHERE 1=1
+      `;
+      const params: any[] = [];
+      
+      // ✅ FIX: Filter out inactive by default
+      if (!includeInactive) {
+        sqlQuery += ` AND sm.is_active = true`;
+      }
+      
+      if (categoryId) {
+        params.push(categoryId);
+        sqlQuery += ` AND sm.category_id = $${params.length}`;
+      }
+      
+      sqlQuery += ` ORDER BY sm.category_id, sm.display_order, sm.name`;
+      
+      const result = await query(sqlQuery, params);
+      
+      let specializations = result.rows.map((row: any) => ({
+        id: row.id,
+        specializationId: row.specialization_id,
+        name: row.name,
+        displayName: row.display_name || row.name,
+        description: row.description,
+        categoryId: row.category_id,
+        categoryName: getCategoryDisplayName(row.category_id),
+        applicableRoles: row.applicable_roles || [],
+        applicableRoleNames: (row.applicable_roles || []).map(getRoleDisplayName),
+        iconName: row.icon_name,
+        iconColor: row.icon_color,
+        displayOrder: row.display_order,
+        isActive: row.is_active,
+        showInProblemGrid: row.show_in_problem_grid,
+        showInVendorProfile: row.show_in_vendor_profile,
+        showInServicesDashboard: row.show_in_services_dashboard,
+        allowedServiceStyles: row.allowed_service_styles || ['at_home', 'at_center', 'tele'],
+        symptomCount: parseInt(row.symptom_count) || 0,
+      }));
+      
+      // Include symptoms if requested
+      if (includeSymptoms) {
+        const symptomsResult = await query(`
+          SELECT * FROM specialization_symptoms 
+          WHERE is_active = true 
+          ORDER BY specialization_id, display_order
+        `);
+        
+        const symptomsBySpec: Record<string, any[]> = {};
+        symptomsResult.rows.forEach((row: any) => {
+          if (!symptomsBySpec[row.specialization_id]) {
+            symptomsBySpec[row.specialization_id] = [];
+          }
+          symptomsBySpec[row.specialization_id].push({
+            id: row.id,
+            symptomName: row.symptom_name,
+            symptomDisplayName: row.symptom_display_name || row.symptom_name,
+            symptomKeywords: row.symptom_keywords || [],
+            displayOrder: row.display_order,
+          });
+        });
+        
+        specializations = specializations.map((spec: any) => ({
+          ...spec,
+          symptoms: symptomsBySpec[spec.specializationId] || [],
+        }));
+      }
+      
+      // Group by category for admin UI
+      const byCategory: Record<string, any[]> = {};
+      specializations.forEach((spec: any) => {
+        if (!byCategory[spec.categoryId]) {
+          byCategory[spec.categoryId] = [];
+        }
+        byCategory[spec.categoryId].push(spec);
+      });
+      
+      return c.json({
+        success: true,
+        data: specializations,
+        byCategory,
+        total: specializations.length,
+      });
+    } catch (error: any) {
+      console.error('[SPEC-MASTER] List error:', error.message);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  
+  // ========================================================================
+  // ADMIN: GET SINGLE SPECIALIZATION
+  // ========================================================================
+  
+  /**
+   * GET /admin/specializations/:id
+   * Get single specialization with symptoms
+   */
+  app.get('/admin/specializations/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      
+      const result = await query(`
+        SELECT * FROM specialization_master 
+        WHERE specialization_id = $1 OR id::text = $1
+      `, [id]);
+      
+      if (result.rows.length === 0) {
+        return c.json({ success: false, error: 'Specialization not found' }, 404);
+      }
+      
+      const row = result.rows[0];
+      
+      // Get symptoms
+      const symptomsResult = await query(`
+        SELECT * FROM specialization_symptoms 
+        WHERE specialization_id = $1 
+        ORDER BY display_order
+      `, [row.specialization_id]);
+      
+      return c.json({
+        success: true,
+        data: {
+          id: row.id,
+          specializationId: row.specialization_id,
+          name: row.name,
+          displayName: row.display_name || row.name,
+          description: row.description,
+          categoryId: row.category_id,
+          categoryName: getCategoryDisplayName(row.category_id),
+          applicableRoles: row.applicable_roles || [],
+          applicableRoleNames: (row.applicable_roles || []).map(getRoleDisplayName),
+          iconName: row.icon_name,
+          iconColor: row.icon_color,
+          displayOrder: row.display_order,
+          isActive: row.is_active,
+          showInProblemGrid: row.show_in_problem_grid,
+          showInVendorProfile: row.show_in_vendor_profile,
+          showInServicesDashboard: row.show_in_services_dashboard,
+          allowedServiceStyles: row.allowed_service_styles || ['at_home', 'at_center', 'tele'],
+          symptoms: symptomsResult.rows.map((s: any) => ({
+            id: s.id,
+            symptomName: s.symptom_name,
+            symptomDisplayName: s.symptom_display_name || s.symptom_name,
+            symptomKeywords: s.symptom_keywords || [],
+            displayOrder: s.display_order,
+            isActive: s.is_active,
+          })),
+        },
+      });
+    } catch (error: any) {
+      console.error('[SPEC-MASTER] Get error:', error.message);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  
+  // ========================================================================
+  // ADMIN: CREATE SPECIALIZATION
+  // ========================================================================
+  
+  /**
+   * POST /admin/specializations
+   * Create new specialization
+   */
+  app.post('/admin/specializations', async (c) => {
+    try {
+      const body = await c.req.json();
+      const {
+        specializationId,
+        name,
+        displayName,
+        description,
+        categoryId,
+        applicableRoles,
+        iconName,
+        iconColor,
+        displayOrder,
+        showInProblemGrid = true,
+        showInVendorProfile = true,
+        showInServicesDashboard = true,
+        allowedServiceStyles = ['at_home', 'at_center', 'tele'],
+      } = body;
+      
+      if (!specializationId || !name || !categoryId) {
+        return c.json({
+          success: false,
+          error: 'specializationId, name, and categoryId are required',
+        }, 400);
+      }
+      
+      // Check if specialization ID already exists
+      const existing = await query(
+        'SELECT id FROM specialization_master WHERE specialization_id = $1',
+        [specializationId]
+      );
+      
+      if (existing.rows.length > 0) {
+        return c.json({
+          success: false,
+          error: 'Specialization ID already exists',
+        }, 400);
+      }
+      
+      const result = await query(`
+        INSERT INTO specialization_master (
+          specialization_id, name, display_name, description, category_id,
+          applicable_roles, icon_name, icon_color, display_order,
+          show_in_problem_grid, show_in_vendor_profile, show_in_services_dashboard,
+          allowed_service_styles
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        RETURNING *
+      `, [
+        specializationId,
+        name,
+        displayName || name,
+        description,
+        categoryId,
+        applicableRoles || [],
+        iconName,
+        iconColor,
+        displayOrder || 0,
+        showInProblemGrid,
+        showInVendorProfile,
+        showInServicesDashboard,
+        JSON.stringify(allowedServiceStyles),
+      ]);
+      
+      return c.json({
+        success: true,
+        message: 'Specialization created',
+        data: {
+          id: result.rows[0].id,
+          specializationId: result.rows[0].specialization_id,
+        },
+      });
+    } catch (error: any) {
+      console.error('[SPEC-MASTER] Create error:', error.message);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  
+  // ========================================================================
+  // ADMIN: UPDATE SPECIALIZATION
+  // ========================================================================
+  
+  /**
+   * PUT /admin/specializations/:id
+   * Update specialization
+   */
+  app.put('/admin/specializations/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      const body = await c.req.json();
+      
+      const updates: string[] = [];
+      const values: any[] = [];
+      let paramIndex = 1;
+      
+      const fields = [
+        'name', 'display_name', 'description', 'category_id',
+        'applicable_roles', 'icon_name', 'icon_color', 'display_order',
+        'is_active', 'show_in_problem_grid', 'show_in_vendor_profile',
+        'show_in_services_dashboard', 'allowed_service_styles'
+      ];
+      
+      const fieldMapping: Record<string, string> = {
+        displayName: 'display_name',
+        categoryId: 'category_id',
+        applicableRoles: 'applicable_roles',
+        iconName: 'icon_name',
+        iconColor: 'icon_color',
+        displayOrder: 'display_order',
+        isActive: 'is_active',
+        showInProblemGrid: 'show_in_problem_grid',
+        showInVendorProfile: 'show_in_vendor_profile',
+        showInServicesDashboard: 'show_in_services_dashboard',
+        allowedServiceStyles: 'allowed_service_styles',
+      };
+      
+      for (const [key, value] of Object.entries(body)) {
+        const dbField = fieldMapping[key] || key;
+        if (fields.includes(dbField) && value !== undefined) {
+          updates.push(`${dbField} = $${paramIndex}`);
+          if (dbField === 'allowed_service_styles') {
+            values.push(JSON.stringify(value));
+          } else if (Array.isArray(value)) {
+            values.push(value);
+          } else {
+            values.push(value);
+          }
+          paramIndex++;
+        }
+      }
+      
+      if (updates.length === 0) {
+        return c.json({ success: false, error: 'No fields to update' }, 400);
+      }
+      
+      values.push(id);
+      
+      await query(`
+        UPDATE specialization_master 
+        SET ${updates.join(', ')}, updated_at = NOW()
+        WHERE specialization_id = $${paramIndex} OR id::text = $${paramIndex}
+      `, values);
+      
+      return c.json({
+        success: true,
+        message: 'Specialization updated',
+      });
+    } catch (error: any) {
+      console.error('[SPEC-MASTER] Update error:', error.message);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  
+  // ========================================================================
+  // ADMIN: DELETE SPECIALIZATION
+  // ========================================================================
+  
+  /**
+   * DELETE /admin/specializations/:id
+   * Soft delete specialization
+   */
+  app.delete('/admin/specializations/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      
+      await query(`
+        UPDATE specialization_master 
+        SET is_active = false, updated_at = NOW()
+        WHERE specialization_id = $1 OR id::text = $1
+      `, [id]);
+      
+      return c.json({
+        success: true,
+        message: 'Specialization deactivated',
+      });
+    } catch (error: any) {
+      console.error('[SPEC-MASTER] Delete error:', error.message);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  
+  // ========================================================================
+  // ADMIN: MANAGE SYMPTOMS
+  // ========================================================================
+  
+  /**
+   * GET /admin/specializations/:id/symptoms
+   * List symptoms for a specialization
+   */
+  app.get('/admin/specializations/:id/symptoms', async (c) => {
+    try {
+      const id = c.req.param('id');
+      
+      const result = await query(`
+        SELECT * FROM specialization_symptoms 
+        WHERE specialization_id = $1 
+        ORDER BY display_order, symptom_name
+      `, [id]);
+      
+      return c.json({
+        success: true,
+        data: result.rows.map((row: any) => ({
+          id: row.id,
+          specializationId: row.specialization_id,
+          symptomName: row.symptom_name,
+          symptomDisplayName: row.symptom_display_name || row.symptom_name,
+          symptomKeywords: row.symptom_keywords || [],
+          petTypes: row.pet_types || [],
+          displayOrder: row.display_order,
+          isActive: row.is_active,
+        })),
+      });
+    } catch (error: any) {
+      console.error('[SPEC-MASTER] List symptoms error:', error.message);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  
+  /**
+   * POST /admin/specializations/:id/symptoms
+   * Add symptom to specialization
+   */
+  app.post('/admin/specializations/:id/symptoms', async (c) => {
+    try {
+      const specializationId = c.req.param('id');
+      const body = await c.req.json();
+      const { symptomName, symptomDisplayName, symptomKeywords, petTypes, displayOrder } = body;
+      
+      if (!symptomName) {
+        return c.json({ success: false, error: 'symptomName is required' }, 400);
+      }
+      
+      const result = await query(`
+        INSERT INTO specialization_symptoms (
+          specialization_id, symptom_name, symptom_display_name, 
+          symptom_keywords, pet_types, display_order
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (specialization_id, symptom_name) DO UPDATE SET
+          symptom_display_name = EXCLUDED.symptom_display_name,
+          symptom_keywords = EXCLUDED.symptom_keywords,
+          pet_types = EXCLUDED.pet_types,
+          display_order = EXCLUDED.display_order
+        RETURNING *
+      `, [
+        specializationId,
+        symptomName,
+        symptomDisplayName || symptomName,
+        symptomKeywords || [],
+        petTypes || [],
+        displayOrder || 0,
+      ]);
+      
+      return c.json({
+        success: true,
+        message: 'Symptom added',
+        data: { id: result.rows[0].id },
+      });
+    } catch (error: any) {
+      console.error('[SPEC-MASTER] Add symptom error:', error.message);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  
+  /**
+   * DELETE /admin/symptoms/:id
+   * Delete symptom
+   */
+  app.delete('/admin/symptoms/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      
+      await query('DELETE FROM specialization_symptoms WHERE id = $1', [id]);
+      
+      return c.json({
+        success: true,
+        message: 'Symptom deleted',
+      });
+    } catch (error: any) {
+      console.error('[SPEC-MASTER] Delete symptom error:', error.message);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  
+  // ========================================================================
+  // PUBLIC: PROBLEM GRID FOR CUSTOMERS
+  // ========================================================================
+  
+  /**
+   * GET /public/problem-grid
+   * Get ALL problem grid items for customer home "What's your need?" (no auth).
+   * Shows items where show_in_problem_grid OR show_in_services_dashboard = true
+   * so admin-created specializations with "show on customer app" appear.
+   * Optional query: categoryId to filter by category.
+   */
+  app.get('/public/problem-grid', async (c) => {
+    try {
+      const categoryId = c.req.query('categoryId');
+      let sqlQuery = `
+        SELECT sm.specialization_id, sm.name, sm.display_name, sm.description,
+               sm.category_id, sm.icon_name, sm.icon_color, sm.display_order,
+               sm.applicable_roles, sm.allowed_service_styles
+        FROM specialization_master sm
+        WHERE sm.is_active = true
+          AND (sm.show_in_problem_grid = true OR sm.show_in_services_dashboard = true)
+      `;
+      const params: any[] = [];
+      if (categoryId) {
+        params.push(categoryId);
+        sqlQuery += ` AND sm.category_id = $${params.length}`;
+      }
+      sqlQuery += ` ORDER BY sm.category_id, sm.display_order, sm.name`;
+      const result = await query(sqlQuery, params);
+      const problems = result.rows.map((row: any) => ({
+        id: row.specialization_id,
+        problemId: row.specialization_id,
+        name: row.name,
+        displayName: row.display_name || row.name,
+        description: row.description,
+        categoryId: row.category_id,
+        categoryName: getCategoryDisplayName(row.category_id),
+        iconName: row.icon_name,
+        iconColor: row.icon_color,
+        displayOrder: row.display_order,
+        applicableRoles: row.applicable_roles || [],
+        allowedServiceStyles: row.allowed_service_styles || ['at_home', 'at_center', 'tele'],
+      }));
+      return c.json({ success: true, problems, byCategory: problems.reduce((acc: any, p: any) => {
+        if (!acc[p.categoryId]) acc[p.categoryId] = [];
+        acc[p.categoryId].push(p);
+        return acc;
+      }, {}) });
+    } catch (err: any) {
+      console.error('[SPEC-MASTER] Public problem-grid all error:', err.message);
+      return c.json({ success: false, error: err.message }, 500);
+    }
+  });
+
+  /**
+   * GET /public/problem-grid/:roleId
+   * Get problem grid items for customer app (filtered by role).
+   * Shows items where show_in_problem_grid OR show_in_services_dashboard = true.
+   */
+  app.get('/public/problem-grid/:roleId', async (c) => {
+    try {
+      const roleId = c.req.param('roleId');
+      
+      const result = await query(`
+        SELECT sm.*, 
+          (SELECT json_agg(json_build_object(
+            'name', ss.symptom_name,
+            'displayName', COALESCE(ss.symptom_display_name, ss.symptom_name)
+          ) ORDER BY ss.display_order)
+          FROM specialization_symptoms ss 
+          WHERE ss.specialization_id = sm.specialization_id AND ss.is_active = true
+          ) as symptoms
+        FROM specialization_master sm
+        WHERE sm.is_active = true 
+          AND (sm.show_in_problem_grid = true OR sm.show_in_services_dashboard = true)
+          AND $1 = ANY(sm.applicable_roles)
+        ORDER BY sm.display_order, sm.name
+      `, [roleId]);
+      
+      return c.json({
+        success: true,
+        problems: result.rows.map((row: any) => ({
+          id: row.specialization_id,
+          problemId: row.specialization_id,
+          name: row.name,
+          displayName: row.display_name || row.name,
+          description: row.description,
+          iconName: row.icon_name,
+          iconColor: row.icon_color,
+          allowedServiceStyles: row.allowed_service_styles || ['at_home', 'at_center', 'tele'],
+          symptoms: row.symptoms || [],
+          categoryId: row.category_id,
+        })),
+      });
+    } catch (error: any) {
+      console.error('[SPEC-MASTER] Public problem grid error:', error.message);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  
+  // ========================================================================
+  // PUBLIC: SEARCH SYMPTOMS
+  // ========================================================================
+  
+  /**
+   * GET /public/search/symptoms
+   * Search symptoms and return matching specializations
+   */
+  app.get('/public/search/symptoms', async (c) => {
+    try {
+      const q = c.req.query('q') || '';
+      const roleId = c.req.query('roleId');
+      
+      if (!q || q.length < 2) {
+        return c.json({ success: true, results: [] });
+      }
+      
+      let sqlQuery = `
+        SELECT DISTINCT 
+          sm.specialization_id,
+          sm.name,
+          sm.display_name,
+          sm.display_order,
+          sm.icon_name,
+          sm.icon_color,
+          sm.category_id,
+          ss.symptom_name as matched_symptom
+        FROM specialization_master sm
+        JOIN specialization_symptoms ss ON ss.specialization_id = sm.specialization_id
+        WHERE sm.is_active = true 
+          AND sm.show_in_problem_grid = true
+          AND ss.is_active = true
+          AND (
+            ss.symptom_name ILIKE $1 
+            OR ss.symptom_display_name ILIKE $1
+            OR $2 = ANY(ss.symptom_keywords)
+          )
+      `;
+      const params: any[] = [`%${q}%`, q.toLowerCase()];
+      
+      if (roleId) {
+        params.push(roleId);
+        sqlQuery += ` AND $${params.length} = ANY(sm.applicable_roles)`;
+      }
+      
+      sqlQuery += ` ORDER BY sm.display_order, sm.name LIMIT 10`;
+      
+      const result = await query(sqlQuery, params);
+      
+      return c.json({
+        success: true,
+        results: result.rows.map((row: any) => ({
+          specializationId: row.specialization_id,
+          name: row.display_name || row.name,
+          matchedSymptom: row.matched_symptom,
+          iconName: row.icon_name,
+          iconColor: row.icon_color,
+          categoryId: row.category_id,
+        })),
+      });
+    } catch (error: any) {
+      console.error('[SPEC-MASTER] Search symptoms error:', error.message);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  
+  // ========================================================================
+  // VENDOR: SPECIALIZATION OPTIONS FOR PROFILE
+  // ========================================================================
+  
+  /**
+   * GET /vendor/specializations/:roleId
+   * Get specialization options for vendor profile configuration
+   */
+  app.get('/vendor/specializations/:roleId', async (c) => {
+    try {
+      const roleId = c.req.param('roleId');
+      
+      // Handle UUID role IDs by looking up role name
+      let actualRoleId = roleId;
+      if (roleId.includes('-')) {
+        const roleResult = await query(
+          'SELECT name FROM roles WHERE id::text = $1',
+          [roleId]
+        );
+        if (roleResult.rows.length > 0) {
+          actualRoleId = roleResult.rows[0].name;
+        }
+      }
+      
+      const result = await query(`
+        SELECT sm.*
+        FROM specialization_master sm
+        WHERE sm.is_active = true 
+          AND sm.show_in_vendor_profile = true
+          AND $1 = ANY(sm.applicable_roles)
+        ORDER BY sm.display_order, sm.name
+      `, [actualRoleId]);
+      
+      return c.json({
+        success: true,
+        specializations: result.rows.map((row: any) => ({
+          id: row.specialization_id,
+          name: row.name,
+          displayName: row.display_name || row.name,
+          description: row.description,
+          iconName: row.icon_name,
+          iconColor: row.icon_color,
+          categoryId: row.category_id,
+          shortDescription: row.short_description || row.description,
+        })),
+      });
+    } catch (error: any) {
+      console.error('[SPEC-MASTER] Vendor specializations error:', error.message);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  
+  // ========================================================================
+  // ADMIN: CATEGORIES WITH SPECIALIZATION COUNTS
+  // ========================================================================
+  
+  /**
+   * GET /admin/categories/with-specializations
+   * Get categories with specialization and symptom counts for admin UI
+   */
+  app.get('/admin/categories/with-specializations', async (c) => {
+    try {
+      const result = await query(`
+        SELECT 
+          sc.id,
+          sc.category_id,
+          sc.name,
+          sc.description,
+          sc.icon,
+          sc.icon_color,
+          sc.is_active,
+          sc.display_order,
+          COUNT(DISTINCT sm.id) as specialization_count,
+          COUNT(DISTINCT ss.id) as symptom_count
+        FROM service_categories sc
+        LEFT JOIN specialization_master sm ON sm.category_id = sc.category_id AND sm.is_active = true
+        LEFT JOIN specialization_symptoms ss ON ss.specialization_id = sm.specialization_id AND ss.is_active = true
+        WHERE sc.is_active = true
+        GROUP BY sc.id, sc.category_id, sc.name, sc.description, sc.icon, sc.icon_color, sc.is_active, sc.display_order
+        ORDER BY sc.display_order NULLS LAST, sc.name
+      `);
+      
+      return c.json({
+        success: true,
+        categories: result.rows.map((row: any) => ({
+          id: row.id,
+          categoryId: row.category_id,
+          name: row.name,
+          description: row.description,
+          icon: row.icon,
+          iconColor: row.icon_color,
+          isActive: row.is_active,
+          specializationCount: parseInt(row.specialization_count) || 0,
+          symptomCount: parseInt(row.symptom_count) || 0,
+        })),
+      });
+    } catch (error: any) {
+      console.error('[SPEC-MASTER] Categories with specializations error:', error.message);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  
+  console.log('[SPEC-MASTER] Specialization Master endpoints registered');
+}

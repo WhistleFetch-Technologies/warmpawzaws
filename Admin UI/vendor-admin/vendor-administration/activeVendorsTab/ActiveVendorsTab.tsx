@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { Eye, Phone, RefreshCw, Plus } from "lucide-react";
 import { Button } from "@repo/ui";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import { CustomDropdown } from "../CustomDropdown";
 import { VendorDetailsModal } from "../";
 
 interface ActiveVendor {
 	id: string;
+	roleId: string;
 	name: string;
 	tier: string;
 	tierColor: string;
@@ -39,10 +40,10 @@ export function ActiveVendorsTab() {
 			setLoading(true);
 
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/active`,
+				`${getApiBaseUrl()}/admin/vendors/active`,
 				{
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 				}
 			);
@@ -54,6 +55,7 @@ export function ActiveVendorsTab() {
 				// Map the vendor data to match the expected format
 				const mappedVendors = (data.vendors || []).map((v: any) => ({
 					id: v.id,
+					roleId: v.roleId ?? v.role_id ?? "",
 					name: v.businessName || v.ownerName,
 					tier: v.tier || "Bronze",
 					tierColor: v.tier?.toLowerCase() || "bronze",

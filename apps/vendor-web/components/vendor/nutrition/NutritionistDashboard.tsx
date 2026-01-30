@@ -265,9 +265,33 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   const handleUpdateOrderStatus = async (orderId: string, status: string) => {
     try {
       await apiClient.put(`/vendor/${vendorId}/meal-orders/${orderId}/status`, { status });
+      toast.success('Order status updated');
       await fetchOrders();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating order status:', error);
+      toast.error(error?.message || 'Failed to update status');
+    }
+  };
+
+  const handleSetPreparationEta = async (orderId: string, minutes: number) => {
+    try {
+      await apiClient.post(`/meal-orders/${orderId}/update-preparation-eta`, { preparationEtaMinutes: minutes });
+      toast.success(`ETA set: ${minutes} min`);
+      await fetchOrders();
+    } catch (error: any) {
+      console.error('Error setting ETA:', error);
+      toast.error(error?.message || 'Failed to set ETA');
+    }
+  };
+
+  const handleNotifyLogistics = async (orderId: string) => {
+    try {
+      await apiClient.post(`/meal/orders/${orderId}/notify-logistics`);
+      toast.success('Logistics notified');
+      await fetchOrders();
+    } catch (error: any) {
+      console.error('Error notifying logistics:', error);
+      toast.error(error?.message || 'Failed to notify logistics');
     }
   };
 
@@ -310,9 +334,13 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     switch (status) {
       case 'pending': return 'bg-amber-50 text-amber-700 border-amber-200';
       case 'confirmed': return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'accepted': return 'bg-teal-50 text-teal-700 border-teal-200';
       case 'preparing': return 'bg-indigo-50 text-indigo-700 border-indigo-200';
-      case 'ready': return 'bg-purple-50 text-purple-700 border-purple-200';
-      case 'dispatched': return 'bg-violet-50 text-violet-700 border-violet-200';
+      case 'ready':
+      case 'ready_for_pickup': return 'bg-purple-50 text-purple-700 border-purple-200';
+      case 'dispatched':
+      case 'picked_up':
+      case 'on_the_way': return 'bg-violet-50 text-violet-700 border-violet-200';
       case 'delivered': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
       case 'cancelled': return 'bg-red-50 text-red-700 border-red-200';
       default: return 'bg-slate-50 text-slate-700 border-slate-200';
@@ -331,34 +359,34 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
-      {/* Header */}
-      <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200 sticky top-0 z-40">
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-amber-50">
+      {/* Frame UI: Orange header (vet service dashboard style) */}
+      <header className="bg-gradient-to-r from-[#FF8C42] to-orange-500 border-b border-orange-200 sticky top-0 z-40 shadow-md">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => router.push('/')}
-                className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-600 hover:text-slate-800"
+                className="p-2 hover:bg-white/20 rounded-lg transition-colors text-white"
                 title="Back to Dashboard"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
                   <path d="M19 12H5M12 19l-7-7 7-7" />
                 </svg>
               </button>
-              <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center text-white">
+              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-white">
                 {Icons.leaf}
               </div>
               <div>
-                <h1 className="text-lg font-semibold text-slate-800">{vendorName || 'Nutritionist Kitchen'}</h1>
-                <p className="text-sm text-slate-500">Fresh Pet Meals</p>
+                <h1 className="text-lg font-semibold text-white">{vendorName || 'Nutritionist Kitchen'}</h1>
+                <p className="text-sm text-white/90">Fresh Pet Meals</p>
               </div>
             </div>
 
             <button
               onClick={handleRefresh}
               disabled={refreshing}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-white transition-colors"
             >
               <span className={refreshing ? 'animate-spin' : ''}>{Icons.refresh}</span>
               <span className="text-sm font-medium">Refresh</span>
@@ -376,14 +404,14 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id
-                    ? 'bg-emerald-600 text-white shadow-md'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'bg-white text-orange-600 shadow-md'
+                    : 'bg-white/20 text-white hover:bg-white/30'
                   }`}
               >
                 {tab.icon}
                 <span>{tab.label}</span>
                 {tab.count > 0 && (
-                  <span className={`px-1.5 py-0.5 text-xs rounded-full ${activeTab === tab.id ? 'bg-white/20' : 'bg-slate-200'
+                  <span className={`px-1.5 py-0.5 text-xs rounded-full ${activeTab === tab.id ? 'bg-orange-100' : 'bg-white/20'
                     }`}>
                     {tab.count}
                   </span>
@@ -514,12 +542,23 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                       <span className="text-lg font-semibold text-slate-800">₹{order.total_amount || 0}</span>
                     </div>
 
-                    {/* Order Actions */}
-                    <div className="flex gap-2">
+                    {/* Order Actions – Phase 3: accept, ETA, notify logistics */}
+                    <div className="flex flex-wrap gap-2">
                       {order.status === 'pending' && (
                         <>
                           <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'confirmed')}
+                            onClick={() => handleUpdateOrderStatus(order.id, 'cancelled')}
+                            className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
+                          >
+                            {Icons.x}
+                            <span className="text-sm ml-1">Cancel</span>
+                          </button>
+                        </>
+                      )}
+                      {order.status === 'confirmed' && (
+                        <>
+                          <button
+                            onClick={() => handleUpdateOrderStatus(order.id, 'accepted')}
                             className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
                           >
                             {Icons.check}
@@ -533,34 +572,64 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                           </button>
                         </>
                       )}
-                      {order.status === 'confirmed' && (
+                      {order.status === 'accepted' && (
                         <button
                           onClick={() => handleUpdateOrderStatus(order.id, 'preparing')}
-                          className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                          className="py-2 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
                         >
                           {Icons.utensils}
                           <span className="text-sm">Start Preparing</span>
                         </button>
                       )}
+                      {(order.status === 'accepted' || order.status === 'preparing') && (
+                        <>
+                          <button
+                            onClick={() => handleSetPreparationEta(order.id, 30)}
+                            className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm"
+                          >
+                            ETA 30m
+                          </button>
+                          <button
+                            onClick={() => handleSetPreparationEta(order.id, 45)}
+                            className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm"
+                          >
+                            ETA 45m
+                          </button>
+                          <button
+                            onClick={() => handleSetPreparationEta(order.id, 60)}
+                            className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm"
+                          >
+                            ETA 60m
+                          </button>
+                        </>
+                      )}
                       {order.status === 'preparing' && (
                         <button
-                          onClick={() => handleUpdateOrderStatus(order.id, 'ready')}
-                          className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                          onClick={() => handleUpdateOrderStatus(order.id, 'ready_for_pickup')}
+                          className="py-2 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
                         >
                           {Icons.package}
                           <span className="text-sm">Ready for Pickup</span>
                         </button>
                       )}
-                      {order.status === 'ready' && (
-                        <button
-                          onClick={() => handleUpdateOrderStatus(order.id, 'dispatched')}
-                          className="flex-1 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                        >
-                          {Icons.truck}
-                          <span className="text-sm">Dispatch</span>
-                        </button>
+                      {order.status === 'ready_for_pickup' && (
+                        <>
+                          <button
+                            onClick={() => handleNotifyLogistics(order.id)}
+                            className="flex-1 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                          >
+                            {Icons.truck}
+                            <span className="text-sm">Notify Logistics</span>
+                          </button>
+                          <button
+                            onClick={() => handleUpdateOrderStatus(order.id, 'picked_up')}
+                            className="py-2 px-4 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                          >
+                            <span className="text-sm">Dispatched</span>
+                          </button>
+                        </>
                       )}
-                      {order.status === 'dispatched' && (
+                      {(order.status === 'picked_up' || order.status === 'on_the_way' || order.status === 'dispatched') && (
                         <button
                           onClick={() => handleUpdateOrderStatus(order.id, 'delivered')}
                           className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"

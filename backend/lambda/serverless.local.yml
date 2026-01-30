@@ -73,7 +73,7 @@ custom:
     httpPort: 3000
     host: 0.0.0.0
     noPrependStageInUrl: true
-    lambdaPort: 3002
+    lambdaPort: 3003
     # CORS configuration
     # cors:
     #   origin: '*'

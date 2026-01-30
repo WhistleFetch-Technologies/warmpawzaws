@@ -17,7 +17,7 @@ import {
   Calendar,
   User
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { useCart } from '../../../context/CartContext';
 
@@ -49,7 +49,7 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess, onNa
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('upi');
   const { itemCount } = useCart();
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadWalletBalance();

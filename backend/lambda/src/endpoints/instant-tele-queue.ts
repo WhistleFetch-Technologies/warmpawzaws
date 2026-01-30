@@ -141,43 +141,74 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
     try {
       const { staffId } = c.req.param();
 
-      const result = await query(`
-        SELECT 
-          sta.is_available,
-          sta.available_services,
-          sta.last_status_change,
-          s.name as staff_name,
-          s.mobile_verified,
-          (SELECT COUNT(*) FROM tele_queue WHERE staff_id = $1 AND status = 'waiting') as queue_count
-        FROM staff_tele_availability sta
-        INNER JOIN staff s ON sta.staff_id = s.id
-        WHERE sta.staff_id = $1
-      `, [staffId]);
-
-      if (result.rows.length === 0) {
-        // Check if staff exists
-        const staffCheck = await select('staff', { id: staffId });
-        if (staffCheck.length === 0) {
-          return c.json({ error: 'Staff not found' }, 404);
-        }
-        
+      // Handle invalid UUIDs gracefully
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(staffId)) {
         return c.json({
           success: true,
           isAvailable: false,
           queueCount: 0,
-          mobileVerified: staffCheck[0].mobile_verified,
+          mobileVerified: false,
         });
       }
 
-      const availability = result.rows[0];
-      
+      // First check if staff exists
+      const staffCheck = await select('staff', { id: staffId });
+      if (staffCheck.length === 0) {
+        // Return default response for non-existent staff (don't error)
+        return c.json({
+          success: true,
+          isAvailable: false,
+          queueCount: 0,
+          mobileVerified: false,
+          staffExists: false,
+        });
+      }
+
+      const staff = staffCheck[0];
+
+      // Check for tele availability status
+      // Use dynamic column check for compatibility
+      let teleAvailability = null;
+      try {
+        const result = await query(`
+          SELECT 
+            sta.is_available,
+            sta.available_until,
+            sta.last_online,
+            sta.updated_at
+          FROM staff_tele_availability sta
+          WHERE sta.staff_id = $1
+        `, [staffId]);
+        
+        if (result.rows.length > 0) {
+          teleAvailability = result.rows[0];
+        }
+      } catch (e) {
+        // Table might not exist, continue with default
+        console.log('staff_tele_availability table query failed, using defaults');
+      }
+
+      // Get queue count if tele_queue table exists
+      let queueCount = 0;
+      try {
+        const queueResult = await query(
+          `SELECT COUNT(*) as count FROM tele_queue WHERE staff_id = $1 AND status = 'waiting'`,
+          [staffId]
+        );
+        queueCount = parseInt(queueResult.rows[0]?.count) || 0;
+      } catch (e) {
+        // tele_queue table might not exist
+      }
+
       return c.json({
         success: true,
-        isAvailable: availability.is_available,
-        availableServices: availability.available_services,
-        lastStatusChange: availability.last_status_change,
-        queueCount: parseInt(availability.queue_count) || 0,
-        mobileVerified: availability.mobile_verified,
+        isAvailable: teleAvailability?.is_available || false,
+        availableUntil: teleAvailability?.available_until,
+        lastOnline: teleAvailability?.last_online,
+        queueCount,
+        mobileVerified: staff.mobile_verified || false,
+        staffExists: true,
+        staffName: staff.name,
       });
     } catch (error: any) {
       console.error('Error fetching tele availability:', error);
@@ -1163,17 +1194,18 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
       const staffResult = await select('staff', { id: staffId });
       const vendorId = staffResult[0]?.vendor_id;
 
-      // Create instant booking
+      // Create instant booking with pending_payment status
+      // ✅ FIX: Booking should be pending_payment until payment is verified
       const bookingResult = await query(`
         INSERT INTO bookings (
           customer_id, vendor_id, staff_id, service_id, pet_id,
           service_type, booking_date, booking_time,
-          total_amount, status, notes, is_instant_tele,
+          total_amount, status, payment_status, notes, is_instant_tele,
           created_at, updated_at
         ) VALUES (
           $1, $2, $3, $4, $5,
           'tele', CURRENT_DATE, CURRENT_TIME,
-          $6, 'confirmed', $7, true,
+          $6, 'pending_payment', 'pending', $7, true,
           NOW(), NOW()
         )
         RETURNING *
@@ -1209,6 +1241,56 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
           AND position > $2
       `, [staffId, queueEntry.position]);
 
+      // ✅ CRITICAL FIX: Create video call meeting when queue is accepted
+      // Use the video-call endpoint to create meeting properly
+      let meetingId: string | null = null;
+      try {
+        // Create meeting via video call endpoint (will create Chime meeting)
+        // Note: This should ideally call the video-call endpoint, but for now we'll create session record
+        // The actual Chime meeting will be created when user joins
+        const meetingResponse = await insert('video_call_sessions', {
+          booking_id: booking.id,
+          customer_id: queueEntry.customer_id,
+          vendor_id: vendorId,
+          staff_id: staffId,
+          status: 'waiting',
+          created_at: new Date().toISOString(),
+        }).catch(() => []);
+        
+        if (meetingResponse && meetingResponse.length > 0) {
+          meetingId = meetingResponse[0].meeting_id || meetingResponse[0].id;
+        }
+      } catch (error) {
+        console.warn('Could not create video call meeting:', error);
+        // Continue without meeting ID - can be created later when user joins
+      }
+
+      // ✅ CRITICAL FIX: Send call notification to customer (like phone ringing)
+      try {
+        // Use correct column names: recipient_id and recipient_type (not user_id/user_type)
+        await insert('notifications', {
+          recipient_id: queueEntry.customer_id,
+          recipient_type: 'customer',
+          type: 'tele_call_incoming',
+          title: '📞 Incoming Video Call',
+          message: `${staffResult[0]?.name || 'Provider'} is calling you for ${queueEntry.service_name || 'consultation'}`,
+          data: JSON.stringify({
+            booking_id: booking.id,
+            meeting_id: meetingId,
+            staff_id: staffId,
+            staff_name: staffResult[0]?.name,
+            call_type: 'incoming',
+            action: 'answer_call',
+          }),
+          is_read: false,
+          requires_action: true,
+          action_url: `/video/${booking.id}`,
+          created_at: new Date(),
+        });
+      } catch (error) {
+        console.warn('Could not send call notification:', error);
+      }
+
       return c.json({
         success: true,
         booking: {
@@ -1218,7 +1300,9 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
           serviceId: booking.service_id,
           status: booking.status,
           totalAmount: booking.total_amount,
+          meetingId: meetingId, // ✅ CRITICAL FIX: Include meeting ID
         },
+        meetingId: meetingId, // ✅ CRITICAL FIX: Include in response
         message: 'Customer accepted. Booking created. Ready to start video call.',
       });
     } catch (error: any) {
@@ -1297,19 +1381,43 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
       let isActive = true;
       let lastStatus = '';
       let lastPosition = -1;
+      
+      // Track intervals for proper cleanup
+      let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+      let pollInterval: ReturnType<typeof setInterval> | null = null;
+      
+      // Cleanup function to ensure all intervals are cleared
+      const cleanup = () => {
+        isActive = false;
+        if (heartbeatInterval) {
+          clearInterval(heartbeatInterval);
+          heartbeatInterval = null;
+        }
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
+        console.log(`[TeleQueue] Cleaned up intervals for queue ${queueId}`);
+      };
 
       // Send initial connection
-      await stream.writeSSE({
-        data: JSON.stringify({
-          type: 'connected',
-          message: 'Queue stream connected',
-          timestamp: new Date().toISOString(),
-        }),
-        event: 'connection',
-      });
+      try {
+        await stream.writeSSE({
+          data: JSON.stringify({
+            type: 'connected',
+            message: 'Queue stream connected',
+            timestamp: new Date().toISOString(),
+          }),
+          event: 'connection',
+        });
+      } catch (err) {
+        console.warn(`[TeleQueue] Failed to send initial connection for ${queueId}:`, err);
+        cleanup();
+        return;
+      }
 
       // Heartbeat
-      const heartbeatInterval = setInterval(async () => {
+      heartbeatInterval = setInterval(async () => {
         if (isActive) {
           try {
             await stream.writeSSE({
@@ -1323,10 +1431,9 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
       }, 30000);
 
       // Poll for updates
-      const pollInterval = setInterval(async () => {
+      pollInterval = setInterval(async () => {
         if (!isActive) {
-          clearInterval(pollInterval);
-          clearInterval(heartbeatInterval);
+          cleanup();
           return;
         }
 
@@ -1426,10 +1533,12 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
         }
       }, 2000); // Poll every 2 seconds
 
-      c.req.raw.signal?.addEventListener('abort', () => {
-        isActive = false;
-        clearInterval(pollInterval);
-        clearInterval(heartbeatInterval);
+      // Register cleanup on request abort
+      c.req.raw.signal?.addEventListener('abort', cleanup);
+      
+      // Ensure cleanup even if stream errors
+      stream.onAbort?.(() => {
+        cleanup();
       });
     });
   });
@@ -1518,17 +1627,41 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
     return streamSSE(c, async (stream) => {
       let isActive = true;
       let lastQueueHash = '';
+      
+      // Track intervals for proper cleanup
+      let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+      let pollInterval: ReturnType<typeof setInterval> | null = null;
+      
+      // Cleanup function to ensure all intervals are cleared
+      const cleanup = () => {
+        isActive = false;
+        if (heartbeatInterval) {
+          clearInterval(heartbeatInterval);
+          heartbeatInterval = null;
+        }
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
+        console.log(`[TeleQueue] Cleaned up intervals for staff ${staffId}`);
+      };
 
-      await stream.writeSSE({
-        data: JSON.stringify({
-          type: 'connected',
-          message: 'Queue stream connected',
-          timestamp: new Date().toISOString(),
-        }),
-        event: 'connection',
-      });
+      try {
+        await stream.writeSSE({
+          data: JSON.stringify({
+            type: 'connected',
+            message: 'Queue stream connected',
+            timestamp: new Date().toISOString(),
+          }),
+          event: 'connection',
+        });
+      } catch (err) {
+        console.warn(`[TeleQueue] Failed to send initial connection for staff ${staffId}:`, err);
+        cleanup();
+        return;
+      }
 
-      const heartbeatInterval = setInterval(async () => {
+      heartbeatInterval = setInterval(async () => {
         if (isActive) {
           try {
             await stream.writeSSE({
@@ -1541,10 +1674,9 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
         }
       }, 30000);
 
-      const pollInterval = setInterval(async () => {
+      pollInterval = setInterval(async () => {
         if (!isActive) {
-          clearInterval(pollInterval);
-          clearInterval(heartbeatInterval);
+          cleanup();
           return;
         }
 
@@ -1612,10 +1744,12 @@ export function registerInstantTeleQueueEndpoints(app: Hono) {
         }
       }, 2000);
 
-      c.req.raw.signal?.addEventListener('abort', () => {
-        isActive = false;
-        clearInterval(pollInterval);
-        clearInterval(heartbeatInterval);
+      // Register cleanup on request abort
+      c.req.raw.signal?.addEventListener('abort', cleanup);
+      
+      // Ensure cleanup even if stream errors
+      stream.onAbort?.(() => {
+        cleanup();
       });
     });
   });

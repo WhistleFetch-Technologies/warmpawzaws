@@ -22,43 +22,64 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { isValidUUID } from '../types/entities';
 
 /**
- * Map role IDs to service catalog roles
- * Based on reference implementation - matches vendor app roles to catalog roles
+ * Map role IDs/names to service catalog applicable_roles
+ * Canonical roles (groomer_center, vet_solo, etc.) must map to names used in service_catalog.applicable_roles
+ * so that catalog discovery shows the right services per vendor role.
  */
 const roleMappings: Record<string, string[]> = {
-  // Healthcare Roles
-  'veterinarian': ['vet', 'veterinarian', 'veterinarian'],
-  'vet_solo': ['vet', 'veterinarian', 'veterinarian', 'vet_solo', 'solo_vet'], // ✅ FIX: Add vet_solo mapping
-  'veterinary_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinary_clinic'],
-  'vet_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian'],
-  'pet_pharmacy': ['pharmacy', 'pet_pharmacy', 'pharmacy'],
-  'pet_ambulance': ['ambulance', 'pet_ambulance', 'ambulance'],
-  'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist'],
-  // Center/Clinic Roles - map to vet_clinic for tele consultation access
+  // Healthcare – vet solo and vet clinic both see vet services
+  'veterinarian': ['vet', 'veterinarian', 'vet_clinic', 'vet_solo'],
+  'vet_solo': ['vet', 'veterinarian', 'vet_clinic', 'vet_solo', 'solo_vet'],
+  'veterinary_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian'],
+  'vet_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian', 'vet_solo'],
+  'diagnostics_center': ['diagnostics_center', 'vet_clinic', 'veterinarian'],
+  'pet_pharmacy': ['pharmacy', 'pet_pharmacy'],
+  'pet_ambulance': ['ambulance', 'pet_ambulance'],
+  'ambulance': ['ambulance', 'pet_ambulance'],
+  'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
+  'nutritionist_center': ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
+  'pharmacy': ['pharmacy', 'pet_pharmacy'],
+  'insurance': ['insurance', 'pet_insurance'],
   'center': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'center'],
   'testing_center': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'testing_center', 'center'],
   'clinic': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'clinic'],
-  
-  // Service Provider Roles
-  'pet_groomer': ['groomer', 'pet_groomer', 'groomer'],
-  'pet_walker': ['walker', 'pet_walker', 'dog_walker', 'pet_walker'],
-  'pet_trainer': ['trainer', 'pet_trainer', 'trainer'],
-  'pet_behaviorist': ['behaviorist', 'pet_behaviorist', 'behaviorist'],
-  'pet_sitter': ['sitter', 'pet_sitter', 'sitter'],
-  'pet_taxi': ['transport', 'pet_transport', 'pet_taxi', 'pet_transport'],
-  'pet_boarding': ['boarding', 'pet_boarder', 'pet_hotel', 'pet_boarding'],
-  'pet_resort': ['resort', 'pet_resort', 'resort'],
-  'pet_cafe': ['cafe', 'pet_cafe', 'cafe'],
-  'pet_photographer': ['photographer', 'pet_photographer', 'photographer'],
+
+  // Service provider – canonical + legacy so catalog matches
+  'pet_groomer': ['groomer', 'pet_groomer', 'groomer_center', 'groomer_solo', 'pet_spa'],
+  'groomer_center': ['groomer', 'pet_groomer', 'groomer_center', 'groomer_solo', 'pet_spa'],
+  'groomer_solo': ['groomer', 'pet_groomer', 'groomer_center', 'groomer_solo', 'pet_spa'],
+  'pet_walker': ['walker', 'pet_walker', 'dog_walker'],
+  'walker': ['walker', 'pet_walker', 'dog_walker'],
+  'pet_trainer': ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
+  'trainer_center': ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
+  'trainer_solo': ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
+  'pet_behaviorist': ['behaviorist', 'pet_behaviorist', 'trainer_solo', 'trainer_center'],
+  'pet_sitter': ['sitter', 'pet_sitter'],
+  'sitter': ['sitter', 'pet_sitter'],
+  'pet_taxi': ['transport', 'pet_transport', 'pet_taxi', 'relocation'],
+  'relocation': ['pet_transport', 'relocation', 'pet_relocation'],
+  'pet_boarding': ['boarding', 'pet_boarder', 'pet_hotel', 'pet_boarding', 'pet_daycare'],
+  'boarding': ['boarding', 'pet_boarder', 'pet_daycare', 'pet_sitter'],
+  'pet_resort': ['resort', 'pet_resort'],
+  'resort': ['resort', 'pet_resort'],
+  'pet_cafe': ['cafe', 'pet_cafe'],
+  'cafe': ['cafe', 'pet_cafe'],
+  'pet_photographer': ['photographer', 'pet_photographer'],
+  'photographer': ['photographer', 'pet_photographer'],
   'pet_sunset_services': ['sunset', 'pet_sunset_services', 'sunset_services'],
-  
-  // Retail Roles
-  'pet_products_store': ['store', 'pet_store', 'retailer', 'pet_products_store'],
-  'pet_breeder': ['breeder', 'pet_breeder', 'breeder'],
-  
-  // Other Roles
-  'pet_shelter': ['shelter', 'pet_shelter', 'ngo', 'pet_shelter'],
-  'insurance': ['insurance', 'pet_insurance', 'insurance'],
+  'sunset': ['sunset', 'pet_sunset_services'],
+  'holiday': ['holiday'],
+
+  // Retail
+  'pet_products_store': ['store', 'pet_store', 'retailer', 'seller', 'pet_products_store'],
+  'seller': ['store', 'pet_store', 'seller', 'pet_products_store'],
+  'pet_breeder': ['breeder', 'pet_breeder'],
+  'breeder': ['breeder', 'pet_breeder'],
+
+  // Other
+  'pet_shelter': ['shelter', 'pet_shelter', 'adoption_center', 'pet_adoption_center'],
+  'adoption_center': ['adoption_center', 'pet_shelter', 'pet_adoption_center'],
+  'event_organizer': ['pet_event_organizer', 'event_organizer'],
 };
 
 export function registerServiceCatalogEndpoints(app: Hono) {
@@ -225,13 +246,22 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         });
       }
 
-      // Use role from DB if available, otherwise use mappings
-      const acceptableRoles = role 
-        ? [role.name, role.id, ...(roleMappings[role.name] || []), ...(roleMappings[roleId] || [])]
+      // Use role from DB if available, otherwise use mappings (include display_name for matching)
+      const roleNameNorm = role?.name?.toLowerCase().replace(/\s+/g, '_');
+      const acceptableRoles = role
+        ? [
+            role.name,
+            role.id,
+            role.display_name,
+            ...(roleMappings[role.name] || []),
+            ...(roleMappings[roleId] || []),
+            ...(roleNameNorm ? (roleMappings[roleNameNorm] || []) : []),
+            ...(role.display_name ? [role.display_name.toLowerCase().replace(/\s+/g, '_')] : []),
+          ]
         : (roleMappings[roleId] || [roleId]);
 
-      // Remove duplicates
-      const uniqueRoles = [...new Set(acceptableRoles)];
+      // Remove duplicates and null/undefined
+      const uniqueRoles = [...new Set(acceptableRoles.filter(Boolean))];
 
       let catalogQuery = `
         SELECT * FROM service_catalog
@@ -249,10 +279,19 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         catalogQuery += ` AND (service_style != 'at_center' OR service_style = 'all' OR service_style IS NULL)`;
       }
 
+      // ✅ FIX: Support comma-separated serviceStyle (e.g. at_home,tele) so solo providers get both styles
       if (serviceStyle) {
-        catalogQuery += ` AND (service_style = $${paramIndex} OR service_style = 'all' OR service_style IS NULL)`;
-        params.push(serviceStyle);
-        paramIndex++;
+        const styles = serviceStyle.split(',').map((s: string) => s.trim()).filter(Boolean);
+        const validStyles = styles.filter((s: string) => ['at_home', 'at_center', 'tele', 'all'].includes(s));
+        if (validStyles.length > 1) {
+          catalogQuery += ` AND (service_style = ANY($${paramIndex}::text[]) OR service_style = 'all' OR service_style IS NULL)`;
+          params.push(validStyles);
+          paramIndex++;
+        } else if (validStyles.length === 1) {
+          catalogQuery += ` AND (service_style = $${paramIndex} OR service_style = 'all' OR service_style IS NULL)`;
+          params.push(validStyles[0]);
+          paramIndex++;
+        }
       }
 
       catalogQuery += ` ORDER BY display_order ASC`;
@@ -316,21 +355,37 @@ export function registerServiceCatalogEndpoints(app: Hono) {
       // CRITICAL: If serviceId is 'categories', return graceful response
       // The specific /service-catalog/categories route should handle this, but due to
       // route registration order, this parameterized route may match first
+      // When parameterized route matches /service-catalog/categories, return full payload (icon, icon_color, is_active)
+      // so customer web dynamic categories work even when this route is registered before the specific route
       if (serviceId === 'categories') {
-        console.log('[Service Catalog] Parameterized route caught categories request, returning graceful 200');
+        console.log('[Service Catalog] Parameterized route caught categories request, returning full payload');
         try {
-          // Try to get actual categories
           const categories = await query(`
-            SELECT id::text, COALESCE(name::text, '') as name, COALESCE(description::text, '') as description
-            FROM service_categories LIMIT 100
+            SELECT 
+              id::text as id,
+              COALESCE(category_id::text, '') as category_id,
+              name::text as name,
+              COALESCE(description::text, '') as description,
+              COALESCE(icon::text, '') as icon,
+              COALESCE(icon_color::text, 'text-gray-500') as icon_color,
+              COALESCE(display_order::integer, 0) as display_order,
+              COALESCE(created_at::text, '') as created_at
+            FROM service_categories
+            WHERE (is_active = true OR is_active IS NULL)
+            LIMIT 1000
           `).catch(() => ({ rows: [] }));
+          const sorted = (categories.rows || []).sort((a: any, b: any) => {
+            const orderA = parseInt(a.display_order) || 0;
+            const orderB = parseInt(b.display_order) || 0;
+            if (orderA !== orderB) return orderA - orderB;
+            return (a.name || '').localeCompare(b.name || '');
+          });
           return c.json({
             success: true,
-            categories: categories.rows || [],
-            total: categories.rows?.length || 0,
+            categories: sorted,
+            total: sorted.length,
           }, 200);
         } catch (catError: any) {
-          // Return empty array gracefully on any error
           return c.json({
             success: true,
             categories: [],
@@ -465,9 +520,12 @@ export function registerServiceCatalogEndpoints(app: Hono) {
               COALESCE(category_id::text, '') as category_id,
               name::text as name,
               COALESCE(description::text, '') as description,
+              COALESCE(icon::text, '') as icon,
+              COALESCE(icon_color::text, 'text-gray-500') as icon_color,
               COALESCE(display_order::integer, 0) as display_order,
               COALESCE(created_at::text, '') as created_at
             FROM service_categories
+            WHERE (is_active = true OR is_active IS NULL)
             LIMIT 1000
           `).catch((queryErr: any) => {
             // If .catch() catches it, throw to be caught by try-catch
@@ -661,22 +719,38 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         params.push(uniqueRoles);
         paramIndex++;
         
-        // ✅ CRITICAL FIX: Filter out at_center services for solo providers
+        // ✅ DYNAMIC SERVICE STYLES: Only filter at_center for solo-only roles
         const vendorConfiguration = roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
-        if (vendorConfiguration === 'solo') {
+        const targetRoleName = (role?.name || vendorRole?.name || '').toLowerCase().replace(/\s+/g, '_');
+        const CENTER_CAPABLE_SOLO_ROLES = ['pet_trainer', 'trainer', 'pet_groomer', 'groomer', 'veterinarian', 'vet'];
+        const SOLO_ONLY_ROLES = ['pet_sitter', 'sitter', 'pet_walker', 'walker', 'pet_taxi'];
+        const isCenterCapableSolo = CENTER_CAPABLE_SOLO_ROLES.includes(targetRoleName);
+        const isSoloOnlyRole = SOLO_ONLY_ROLES.includes(targetRoleName);
+        
+        if (vendorConfiguration === 'solo' && isSoloOnlyRole && !isCenterCapableSolo) {
           catalogQuery += ` AND (service_style != $${paramIndex} OR service_style IS NULL)`;
           params.push('at_center');
           paramIndex++;
-          console.log(`[Admin Service Catalog] Solo provider detected - filtering out at_center services`);
+          console.log(`[Admin Service Catalog] Solo-only role (${targetRoleName}) - filtering at_center services`);
+        } else if (vendorConfiguration === 'solo' && isCenterCapableSolo) {
+          console.log(`[Admin Service Catalog] Center-capable solo (${targetRoleName}) - showing all services`);
         }
       } else {
         // ✅ Also check roleConfig even if roleId wasn't provided but vendorRole was loaded
         const vendorConfiguration = roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
-        if (vendorConfiguration === 'solo') {
+        const vendorRoleNameAlt = (vendorRole?.name || '').toLowerCase().replace(/\s+/g, '_');
+        const CENTER_CAPABLE_SOLO_ROLES_ALT = ['pet_trainer', 'trainer', 'pet_groomer', 'groomer', 'veterinarian', 'vet'];
+        const SOLO_ONLY_ROLES_ALT = ['pet_sitter', 'sitter', 'pet_walker', 'walker', 'pet_taxi'];
+        const isCenterCapableSoloAlt = CENTER_CAPABLE_SOLO_ROLES_ALT.includes(vendorRoleNameAlt);
+        const isSoloOnlyRoleAlt = SOLO_ONLY_ROLES_ALT.includes(vendorRoleNameAlt);
+        
+        if (vendorConfiguration === 'solo' && isSoloOnlyRoleAlt && !isCenterCapableSoloAlt) {
           catalogQuery += ` AND (service_style != $${paramIndex} OR service_style IS NULL)`;
           params.push('at_center');
           paramIndex++;
-          console.log(`[Admin Service Catalog] Solo provider detected (from vendorRole) - filtering out at_center services`);
+          console.log(`[Admin Service Catalog] Solo-only role (${vendorRoleNameAlt}) - filtering at_center services`);
+        } else if (vendorConfiguration === 'solo' && isCenterCapableSoloAlt) {
+          console.log(`[Admin Service Catalog] Center-capable solo (${vendorRoleNameAlt}) - showing all services`);
         }
       }
 
@@ -843,6 +917,23 @@ export function registerServiceCatalogEndpoints(app: Hono) {
             roleConfig = role.config || {};
             allowedServiceStyles = roleConfig?.serviceStyles || roleConfig?.service_styles || ['at_home', 'at_center', 'tele'];
             
+            // ✅ DYNAMIC SERVICE STYLES: Handle center-capable solo roles correctly
+            const vendorConfiguration = roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
+            const roleName = (role.name || '').toLowerCase().replace(/\s+/g, '_');
+            
+            // Center-capable roles CAN have at_center even as solo
+            const CENTER_CAPABLE_SOLO_ROLES = ['pet_trainer', 'trainer', 'pet_groomer', 'groomer', 'veterinarian', 'vet'];
+            const SOLO_ONLY_ROLES = ['pet_sitter', 'sitter', 'pet_walker', 'walker', 'pet_taxi'];
+            const isCenterCapableSolo = CENTER_CAPABLE_SOLO_ROLES.includes(roleName);
+            const isSoloOnlyRole = SOLO_ONLY_ROLES.includes(roleName);
+            
+            if (vendorConfiguration === 'solo' && isSoloOnlyRole && !isCenterCapableSolo) {
+              allowedServiceStyles = allowedServiceStyles.filter((style: string) => style !== 'at_center');
+              console.log(`[Service Catalog Complete] Solo-only role (${roleName}) - filtered at_center. Allowed: ${allowedServiceStyles.join(', ')}`);
+            } else if (vendorConfiguration === 'solo' && isCenterCapableSolo) {
+              console.log(`[Service Catalog Complete] Center-capable solo (${roleName}) - keeping all: ${allowedServiceStyles.join(', ')}`);
+            }
+            
             // Get capabilities
             try {
               const allPermissions = await query(
@@ -860,6 +951,18 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         } catch (roleError: any) {
           console.warn(`[Vendor Catalog Complete] Failed to load role:`, roleError.message);
         }
+      }
+      
+      // ✅ DYNAMIC SERVICE STYLES: Vendor table solo check (secondary source)
+      const vendorRoleNameCat = role?.name?.toLowerCase().replace(/\s+/g, '_') || '';
+      const vendorCenterCapableRolesCat = ['pet_trainer', 'trainer', 'pet_groomer', 'groomer', 'veterinarian', 'vet'];
+      const isVendorCenterCapableCat = vendorCenterCapableRolesCat.includes(vendorRoleNameCat);
+      
+      if ((vendor.vendor_configuration === 'solo' || vendor.vendorConfiguration === 'solo' || vendor.vendor_type === 'solo') && !isVendorCenterCapableCat) {
+        allowedServiceStyles = allowedServiceStyles.filter((style: string) => style !== 'at_center');
+        console.log(`[Service Catalog Complete] Solo vendor (${vendorRoleNameCat}) - not center-capable, filtered: ${allowedServiceStyles.join(', ')}`);
+      } else if (vendor.vendor_configuration === 'solo' || vendor.vendorConfiguration === 'solo' || vendor.vendor_type === 'solo') {
+        console.log(`[Service Catalog Complete] Solo vendor (${vendorRoleNameCat}) - center-capable, keeping all: ${allowedServiceStyles.join(', ')}`);
       }
 
       // ✅ Get vendor's existing services

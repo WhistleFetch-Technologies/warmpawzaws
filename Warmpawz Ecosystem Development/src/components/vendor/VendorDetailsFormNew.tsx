@@ -9,7 +9,7 @@ import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Checkbox } from '../ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface VendorDetailsFormProps {
@@ -103,9 +103,9 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
   const fetchGoogleMapsApiKey = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/google-maps-key`,
+        `${getApiBaseUrl()}/config/google-maps-key`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -140,9 +140,9 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
       if (!formData.gstNumber) return toast.error("Enter GST Number first");
       setVerifyingGST(true);
       try {
-          const res = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/verify/gst`, {
+          const res = await fetch(`${getApiBaseUrl()}/verify/gst`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
+              headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
               body: JSON.stringify({ gstNumber: formData.gstNumber, businessName: formData.businessName })
           });
           const data = await res.json();
@@ -164,9 +164,9 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
       if (!bankDetails.accountNumber || !bankDetails.ifscCode) return toast.error("Enter Account Number and IFSC first");
       setVerifyingBank(true);
       try {
-          const res = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/verify/bank`, {
+          const res = await fetch(`${getApiBaseUrl()}/verify/bank`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${publicAnonKey}` },
+              headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
               body: JSON.stringify({ accountNumber: bankDetails.accountNumber, ifsc: bankDetails.ifscCode, accountHolderName: formData.fullName })
           });
           const data = await res.json();

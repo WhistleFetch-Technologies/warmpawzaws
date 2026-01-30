@@ -17,6 +17,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { select, insert, update, query, upsert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -212,7 +213,7 @@ export function registerEcommerceEndpoints(app: Hono) {
           customerId = customers.rows[0].id;
         } else {
           // Create a new customer
-          const newCustomerId = crypto.randomUUID();
+          const newCustomerId = randomUUID();
           const customerName = shippingAddress.name || `Customer ${customerPhone.slice(-4)}`;
           await insert('customers', {
             id: newCustomerId,
@@ -232,7 +233,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         console.log('Could not find/create customer by phone:', e.message);
         // Try to create minimal customer record
         try {
-          const newCustomerId = crypto.randomUUID();
+          const newCustomerId = randomUUID();
           await insert('customers', {
             id: newCustomerId,
             name: shippingAddress.name || `Customer ${customerPhone.slice(-4)}`,
@@ -285,7 +286,7 @@ export function registerEcommerceEndpoints(app: Hono) {
       }
 
       // Create order
-      const orderId = crypto.randomUUID();
+      const orderId = randomUUID();
       const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       
       // Calculate amounts

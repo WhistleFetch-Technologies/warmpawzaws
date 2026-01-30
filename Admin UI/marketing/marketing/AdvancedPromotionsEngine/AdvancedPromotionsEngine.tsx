@@ -40,7 +40,7 @@ import {
 
 import { toast, Toaster } from "sonner";
 
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 
 interface AdvancedPromotionsEngineProps {
 	onBack: () => void;
@@ -271,14 +271,14 @@ export function AdvancedPromotionsEngine({
 		try {
 			const method = editingPromotion ? "PUT" : "POST";
 			const url = editingPromotion
-				? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/promotions/${editingPromotion.id}`
-				: `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/promotions`;
+				? `${getApiBaseUrl()}/admin/promotions/${editingPromotion.id}`
+				: `${getApiBaseUrl()}/admin/promotions`;
 
 			const response = await fetch(url, {
 				method,
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${publicAnonKey}`,
+					...getAuthHeaders(),
 				},
 				body: JSON.stringify(formData),
 			});
@@ -306,10 +306,10 @@ export function AdvancedPromotionsEngine({
 		try {
 			// ✅ FIXED: Actually call the backend endpoint
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/marketing/admin/promotions/${promotionId}`,
+				`${getApiBaseUrl()}/marketing/admin/promotions/${promotionId}`,
 				{
 					method: "DELETE",
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 

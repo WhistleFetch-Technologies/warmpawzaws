@@ -44,6 +44,13 @@ import {
   Brain,
   UserCheck,
   TrendingUp as TrendingUpIcon,
+  RotateCcw,
+  Clock,
+  CheckCircle,
+  XCircle,
+  IndianRupee,
+  AlertTriangle,
+  Headphones,
 } from 'lucide-react';
 import {
   PieChart,
@@ -72,11 +79,68 @@ interface KPICard {
   color: string;
 }
 
+// Refund stats interface
+interface RefundStats {
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+  totalAmount: number;
+  pendingAmount: number;
+}
+
+interface RefundItem {
+  id: string;
+  bookingId: string;
+  customerId: string;
+  customerName: string;
+  vendorName: string;
+  amount: number;
+  reason: string;
+  status: string;
+  requestedAt: string;
+  processedAt: string;
+}
+
+// Peak times data interface
+interface PeakTimeData {
+  time: string;
+  bookings: number;
+}
+
+// Funnel data interface
+interface FunnelData {
+  visitors: number;
+  registeredUsers: number;
+  firstBooking: number;
+  repeatCustomers: number;
+  registrationRate: number;
+  bookingRate: number;
+  retentionRate: number;
+}
+
+// Sales by role interface
+interface SalesByRoleData {
+  role: string;
+  revenue: number;
+  orders: number;
+  percentage: number;
+}
+
 export default function AnalyticsPage() {
   const [dateRange, setDateRange] = useState('7d');
   const [activeTab, setActiveTab] = useState('overview');
   const [savedReports, setSavedReports] = useState<any[]>([]);
   const [loadingReports, setLoadingReports] = useState(false);
+  const [refundStats, setRefundStats] = useState<RefundStats | null>(null);
+  const [refunds, setRefunds] = useState<RefundItem[]>([]);
+  const [loadingRefunds, setLoadingRefunds] = useState(false);
+  
+  // New state for behavioral analytics
+  const [peakTimesData, setPeakTimesData] = useState<PeakTimeData[]>([]);
+  const [funnelData, setFunnelData] = useState<FunnelData | null>(null);
+  const [salesByRoleData, setSalesByRoleData] = useState<SalesByRoleData[]>([]);
+  const [loadingBehavioral, setLoadingBehavioral] = useState(false);
 
   // Use real data from hook
   const {
@@ -89,11 +153,72 @@ export default function AnalyticsPage() {
     refresh,
   } = useAnalyticsData(dateRange);
 
+  // Load behavioral analytics data
+  const loadBehavioralData = async () => {
+    setLoadingBehavioral(true);
+    try {
+      const [peakTimesRes, funnelRes, salesByRoleRes] = await Promise.all([
+        apiClient.get<any>(`/admin/analytics/peak-times?period=${dateRange}`).catch(() => ({ data: [] })),
+        apiClient.get<any>(`/admin/analytics/funnel?period=${dateRange}`).catch(() => ({ data: null })),
+        apiClient.get<any>(`/admin/analytics/sales-by-role?period=${dateRange}`).catch(() => ({ data: [] })),
+      ]);
+
+      if (peakTimesRes?.data) {
+        setPeakTimesData(peakTimesRes.data);
+      }
+      if (funnelRes?.data) {
+        setFunnelData(funnelRes.data);
+      }
+      if (salesByRoleRes?.data) {
+        setSalesByRoleData(salesByRoleRes.data);
+      }
+    } catch (error) {
+      console.error('Error loading behavioral data:', error);
+    } finally {
+      setLoadingBehavioral(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'reports') {
       loadSavedReports();
     }
-  }, [activeTab]);
+    if (activeTab === 'refunds') {
+      loadRefundData();
+    }
+    if (activeTab === 'behavioral' || activeTab === 'sales') {
+      loadBehavioralData();
+    }
+  }, [activeTab, dateRange]);
+
+  const loadRefundData = async () => {
+    setLoadingRefunds(true);
+    try {
+      const [statsRes, refundsRes] = await Promise.all([
+        apiClient.get<any>('/admin/refunds/stats'),
+        apiClient.get<any>('/admin/refunds?limit=50'),
+      ]);
+      
+      if (statsRes) {
+        setRefundStats({
+          total: statsRes.total || 0,
+          pending: statsRes.pending || 0,
+          approved: statsRes.approved || 0,
+          rejected: statsRes.rejected || 0,
+          totalAmount: parseFloat(statsRes.totalAmount || statsRes.total_amount || '0'),
+          pendingAmount: parseFloat(statsRes.pendingAmount || statsRes.pending_amount || '0'),
+        });
+      }
+      
+      if (refundsRes?.refunds) {
+        setRefunds(refundsRes.refunds);
+      }
+    } catch (error) {
+      console.error('Error loading refund data:', error);
+    } finally {
+      setLoadingRefunds(false);
+    }
+  };
 
   // Add null checks and default values
   const safeKpiData = kpiData || {
@@ -416,6 +541,7 @@ export default function AnalyticsPage() {
             <TabsList className="mb-6 flex-wrap">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="revenue">Revenue</TabsTrigger>
+              <TabsTrigger value="refunds">Refunds & Support</TabsTrigger>
               <TabsTrigger value="vendors">Vendor Performance</TabsTrigger>
               <TabsTrigger value="customers">Customer Reports</TabsTrigger>
               <TabsTrigger value="behavioral">Behavioral Patterns</TabsTrigger>
@@ -498,6 +624,216 @@ export default function AnalyticsPage() {
                 data={revenueData}
                 title="Detailed Revenue Analysis"
               />
+            </TabsContent>
+
+            {/* Refunds & Support Tab */}
+            <TabsContent value="refunds" className="space-y-6">
+              {loadingRefunds ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42]"></div>
+                </div>
+              ) : (
+                <>
+                  {/* Refund Stats Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <Card className="p-6 border-l-4 border-l-blue-500">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="bg-blue-100 text-blue-600 p-3 rounded-lg">
+                          <RotateCcw className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <h3 className="text-3xl font-bold text-gray-900">{refundStats?.total || 0}</h3>
+                      <p className="text-sm text-gray-500">Total Refund Requests</p>
+                    </Card>
+
+                    <Card className="p-6 border-l-4 border-l-yellow-500">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="bg-yellow-100 text-yellow-600 p-3 rounded-lg">
+                          <Clock className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <h3 className="text-3xl font-bold text-yellow-600">{refundStats?.pending || 0}</h3>
+                      <p className="text-sm text-gray-500">Pending Approval</p>
+                      <p className="text-xs text-yellow-600 mt-1">
+                        ₹{(refundStats?.pendingAmount || 0).toLocaleString()} pending
+                      </p>
+                    </Card>
+
+                    <Card className="p-6 border-l-4 border-l-green-500">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="bg-green-100 text-green-600 p-3 rounded-lg">
+                          <CheckCircle className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <h3 className="text-3xl font-bold text-green-600">{refundStats?.approved || 0}</h3>
+                      <p className="text-sm text-gray-500">Approved/Processed</p>
+                      <p className="text-xs text-green-600 mt-1">
+                        ₹{(refundStats?.totalAmount || 0).toLocaleString()} processed
+                      </p>
+                    </Card>
+
+                    <Card className="p-6 border-l-4 border-l-red-500">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="bg-red-100 text-red-600 p-3 rounded-lg">
+                          <XCircle className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <h3 className="text-3xl font-bold text-red-600">{refundStats?.rejected || 0}</h3>
+                      <p className="text-sm text-gray-500">Rejected</p>
+                    </Card>
+                  </div>
+
+                  {/* Refund Rate & Support Connection */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <Card className="p-6">
+                      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <IndianRupee className="w-5 h-5 text-[#FF8C42]" />
+                        Refund Analytics
+                      </h3>
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                          <span className="text-gray-600">Total Refund Value</span>
+                          <span className="text-xl font-bold text-[#FF8C42]">
+                            ₹{((refundStats?.totalAmount || 0) + (refundStats?.pendingAmount || 0)).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                          <span className="text-gray-600">Approval Rate</span>
+                          <span className="text-xl font-bold text-green-600">
+                            {refundStats?.total ? Math.round((refundStats.approved / refundStats.total) * 100) : 0}%
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                          <span className="text-gray-600">Rejection Rate</span>
+                          <span className="text-xl font-bold text-red-600">
+                            {refundStats?.total ? Math.round((refundStats.rejected / refundStats.total) * 100) : 0}%
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                          <span className="text-gray-600">Avg. Refund Amount</span>
+                          <span className="text-xl font-bold text-blue-600">
+                            ₹{refundStats?.approved ? Math.round((refundStats.totalAmount || 0) / refundStats.approved) : 0}
+                          </span>
+                        </div>
+                      </div>
+                    </Card>
+
+                    <Card className="p-6">
+                      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <Headphones className="w-5 h-5 text-[#FF8C42]" />
+                        Support CRM Integration
+                      </h3>
+                      <div className="space-y-4">
+                        <div className="p-4 bg-[#FFF3E8] border border-[#FF8C42]/20 rounded-xl">
+                          <div className="flex items-center gap-3 mb-2">
+                            <AlertTriangle className="w-5 h-5 text-[#FF8C42]" />
+                            <span className="font-semibold text-gray-800">Refunds from Support Tickets</span>
+                          </div>
+                          <p className="text-sm text-gray-600">
+                            Refunds initiated through Support CRM are tracked here and linked to their originating tickets.
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="p-3 bg-purple-50 rounded-lg text-center">
+                            <p className="text-2xl font-bold text-purple-600">
+                              {refunds.filter(r => r.reason?.includes('Support') || r.reason?.includes('ticket')).length}
+                            </p>
+                            <p className="text-xs text-gray-500">From Support</p>
+                          </div>
+                          <div className="p-3 bg-blue-50 rounded-lg text-center">
+                            <p className="text-2xl font-bold text-blue-600">
+                              {refunds.filter(r => r.reason?.includes('cancellation') || r.reason?.includes('cancel')).length}
+                            </p>
+                            <p className="text-xs text-gray-500">Cancellations</p>
+                          </div>
+                        </div>
+                        <Button
+                          variant="outline"
+                          className="w-full border-[#FF8C42]/30 text-[#FF8C42] hover:bg-[#FFF3E8]"
+                          onClick={() => window.location.href = '/support'}
+                        >
+                          <Headphones className="w-4 h-4 mr-2" />
+                          Go to Support CRM
+                        </Button>
+                      </div>
+                    </Card>
+                  </div>
+
+                  {/* Recent Refunds Table */}
+                  <Card className="p-6">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-semibold">Recent Refund Requests</h3>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={loadRefundData}>
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Refresh
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => window.location.href = '/finance?tab=refund-policies'}>
+                          Manage Policies
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Refund ID</TableHead>
+                            <TableHead>Customer</TableHead>
+                            <TableHead>Vendor</TableHead>
+                            <TableHead>Amount</TableHead>
+                            <TableHead>Reason</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Requested</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {refunds.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={7} className="text-center py-8">
+                                <RotateCcw className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                                <p className="text-gray-500">No refund requests found</p>
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            refunds.slice(0, 10).map((refund) => (
+                              <TableRow key={refund.id}>
+                                <TableCell className="font-mono text-xs">
+                                  {refund.id.slice(0, 8)}...
+                                </TableCell>
+                                <TableCell>{refund.customerName || 'N/A'}</TableCell>
+                                <TableCell>{refund.vendorName || 'N/A'}</TableCell>
+                                <TableCell className="font-semibold text-[#FF8C42]">
+                                  ₹{refund.amount?.toLocaleString() || 0}
+                                </TableCell>
+                                <TableCell className="max-w-[200px] truncate" title={refund.reason}>
+                                  {refund.reason || 'No reason provided'}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge className={
+                                    refund.status === 'approved' || refund.status === 'completed' || refund.status === 'processed'
+                                      ? 'bg-green-100 text-green-700'
+                                      : refund.status === 'pending'
+                                        ? 'bg-yellow-100 text-yellow-700'
+                                        : refund.status === 'rejected'
+                                          ? 'bg-red-100 text-red-700'
+                                          : 'bg-gray-100 text-gray-700'
+                                  }>
+                                    {refund.status}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-sm text-gray-500">
+                                  {refund.requestedAt ? new Date(refund.requestedAt).toLocaleDateString() : '-'}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </Card>
+                </>
+              )}
             </TabsContent>
 
             {/* Vendors Tab */}
@@ -615,26 +951,32 @@ export default function AnalyticsPage() {
                   <h3 className="text-lg font-semibold mb-4">
                     Peak Booking Times
                   </h3>
-                  <div className="h-[250px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={[
-                          { time: '6-9 AM', bookings: 45 },
-                          { time: '9-12 PM', bookings: 120 },
-                          { time: '12-3 PM', bookings: 85 },
-                          { time: '3-6 PM', bookings: 150 },
-                          { time: '6-9 PM', bookings: 180 },
-                          { time: '9-12 AM', bookings: 60 },
-                        ]}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="time" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="bookings" fill="#4F46E5" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                  {loadingBehavioral ? (
+                    <div className="h-[250px] flex items-center justify-center">
+                      <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                    </div>
+                  ) : (
+                    <div className="h-[250px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={peakTimesData.length > 0 ? peakTimesData : [
+                            { time: '6-9 AM', bookings: 0 },
+                            { time: '9-12 PM', bookings: 0 },
+                            { time: '12-3 PM', bookings: 0 },
+                            { time: '3-6 PM', bookings: 0 },
+                            { time: '6-9 PM', bookings: 0 },
+                            { time: '9-12 AM', bookings: 0 },
+                          ]}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="time" />
+                          <YAxis />
+                          <Tooltip />
+                          <Bar dataKey="bookings" fill="#4F46E5" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                 </Card>
 
                 <Card className="p-6">
@@ -674,27 +1016,33 @@ export default function AnalyticsPage() {
                 <h3 className="text-lg font-semibold mb-4">
                   Customer Journey Funnel
                 </h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
-                    <span className="font-medium">Visitors</span>
-                    <span className="text-2xl font-bold">10,000</span>
+                {loadingBehavioral ? (
+                  <div className="h-[200px] flex items-center justify-center">
+                    <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
                   </div>
-                  <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
-                    <span className="font-medium">Registered Users</span>
-                    <span className="text-2xl font-bold">3,500</span>
-                    <Badge className="bg-green-100 text-green-800">35%</Badge>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
+                      <span className="font-medium">Visitors</span>
+                      <span className="text-2xl font-bold">{(funnelData?.visitors || 0).toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
+                      <span className="font-medium">Registered Users</span>
+                      <span className="text-2xl font-bold">{(funnelData?.registeredUsers || 0).toLocaleString()}</span>
+                      <Badge className="bg-green-100 text-green-800">{funnelData?.registrationRate || 0}%</Badge>
+                    </div>
+                    <div className="flex items-center justify-between p-4 bg-yellow-50 rounded-lg">
+                      <span className="font-medium">First Booking</span>
+                      <span className="text-2xl font-bold">{(funnelData?.firstBooking || 0).toLocaleString()}</span>
+                      <Badge className="bg-yellow-100 text-yellow-800">{funnelData?.bookingRate || 0}%</Badge>
+                    </div>
+                    <div className="flex items-center justify-between p-4 bg-orange-50 rounded-lg">
+                      <span className="font-medium">Repeat Customers</span>
+                      <span className="text-2xl font-bold">{(funnelData?.repeatCustomers || 0).toLocaleString()}</span>
+                      <Badge className="bg-orange-100 text-orange-800">{funnelData?.retentionRate || 0}%</Badge>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between p-4 bg-yellow-50 rounded-lg">
-                    <span className="font-medium">First Booking</span>
-                    <span className="text-2xl font-bold">1,200</span>
-                    <Badge className="bg-yellow-100 text-yellow-800">34%</Badge>
-                  </div>
-                  <div className="flex items-center justify-between p-4 bg-orange-50 rounded-lg">
-                    <span className="font-medium">Repeat Customers</span>
-                    <span className="text-2xl font-bold">850</span>
-                    <Badge className="bg-orange-100 text-orange-800">71%</Badge>
-                  </div>
-                </div>
+                )}
               </Card>
             </TabsContent>
 
@@ -722,39 +1070,39 @@ export default function AnalyticsPage() {
                   <h3 className="text-lg font-semibold mb-4">
                     Sales by Vendor Role
                   </h3>
-                  <div className="space-y-3">
-                    {[
-                      { role: 'Veterinarian', revenue: 450000, orders: 320 },
-                      { role: 'Groomer', revenue: 280000, orders: 450 },
-                      { role: 'Trainer', revenue: 180000, orders: 120 },
-                      { role: 'Boarding', revenue: 220000, orders: 180 },
-                      { role: 'Pharmacy', revenue: 350000, orders: 890 },
-                    ].map((item, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                      >
-                        <div>
-                          <p className="font-medium">{item.role}</p>
-                          <p className="text-sm text-gray-500">
-                            {item.orders} orders
-                          </p>
+                  {loadingBehavioral ? (
+                    <div className="h-[200px] flex items-center justify-center">
+                      <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+                    </div>
+                  ) : salesByRoleData.length > 0 ? (
+                    <div className="space-y-3">
+                      {salesByRoleData.map((item, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                        >
+                          <div>
+                            <p className="font-medium">{item.role}</p>
+                            <p className="text-sm text-gray-500">
+                              {item.orders} orders
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-[#FF8C42]">
+                              ₹{item.revenue >= 1000 ? (item.revenue / 1000).toFixed(0) + 'K' : item.revenue.toFixed(0)}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {item.percentage}%
+                            </p>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <p className="font-bold text-[#FF8C42]">
-                            ₹{(item.revenue / 1000).toFixed(0)}K
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {(
-                              (item.revenue / (safeKpiData.totalRevenue || 1)) *
-                              100
-                            ).toFixed(1)}
-                            %
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      No sales data available for this period
+                    </div>
+                  )}
                 </Card>
               </div>
 

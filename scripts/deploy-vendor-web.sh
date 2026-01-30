@@ -6,21 +6,12 @@ set -e
 
 echo "🚀 Deploying vendor-web to AWS dev environment..."
 
-# Configuration
+# Configuration - ONLY use official Vendor CloudFront URL
 APP_NAME="vendor-web"
 S3_BUCKET="warmpawz-dev-vendor-frontend-ap-south-1"
-CLOUDFRONT_DIST_ID=$(aws cloudfront list-distributions \
-  --query "DistributionList.Items[?Origins.Items[?DomainName==\`${S3_BUCKET}.s3.ap-south-1.amazonaws.com\`]].Id" \
-  --output text | awk '{print $1}' | head -1)
-
-if [ -z "$CLOUDFRONT_DIST_ID" ] || [ "$CLOUDFRONT_DIST_ID" = "None" ]; then
-  echo "❌ Error: Could not find CloudFront distribution for ${S3_BUCKET}"
-  exit 1
-fi
-
-CLOUDFRONT_URL=$(aws cloudfront list-distributions \
-  --query "DistributionList.Items[?Id==\`${CLOUDFRONT_DIST_ID}\`].DomainName" \
-  --output text | awk '{print $1}' | head -1)
+# Official Vendor CloudFront (ONLY this URL for vendor component)
+CLOUDFRONT_DIST_ID="E95171GX1I6HN"
+CLOUDFRONT_URL="https://d1s6ykkj381k58.cloudfront.net"
 
 # Colors for output
 GREEN='\033[0;32m'

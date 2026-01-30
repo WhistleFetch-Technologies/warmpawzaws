@@ -13,11 +13,12 @@
  * - PH-5: Live Tracking with Google Maps
  * 
  * Date: 2026-01-21
+ * Updated: 2026-01-29 - Added UAT mode fallback for missing coordinates
  * ============================================================================
  */
 
 import { Hono } from 'hono';
-import { select, query } from '../database/rds-connection';
+import { select, query, insert, update } from '../database/rds-connection';
 import { 
   gpsTrackingService, 
   startTracking, 
@@ -28,6 +29,13 @@ import {
   calculateETA,
   Location,
 } from '../lib/services/gps-tracking-service';
+import { isUATMode } from '../lib/utils/uat-mode';
+
+// Default/Mock coordinates for UAT mode (Mumbai central)
+const UAT_DEFAULT_DESTINATION: Location = {
+  latitude: 19.0760,
+  longitude: 72.8777,
+};
 
 export function registerGpsTrackingEndpoints(app: Hono) {
   
@@ -39,53 +47,107 @@ export function registerGpsTrackingEndpoints(app: Hono) {
    * POST /tracking/start
    * Start GPS tracking for a booking (vendor/staff initiates journey)
    * Fixes GAP: HS-3 - Start with GPS/ETA button
+   * 
+   * UAT Mode: Uses mock destination if no address configured
    */
   app.post("/tracking/start", async (c) => {
     try {
+      // Safe body parse to avoid unhandled rejection (prevents 503 from API Gateway)
+      let body: Record<string, unknown>;
+      try {
+        const raw = await c.req.text();
+        body = raw ? JSON.parse(raw) : {};
+      } catch (parseErr) {
+        return c.json({ error: 'Invalid JSON body. Send bookingId and vendorId.' }, 400);
+      }
       const { 
         bookingId, 
         vendorId, 
         staffId,
         startLatitude,
         startLongitude,
-      } = await c.req.json();
+      } = body as { bookingId?: string; vendorId?: string; staffId?: string; startLatitude?: number; startLongitude?: number };
 
-    if (!bookingId || !vendorId) {
+      // Check UAT mode from headers or environment
+      const uatMode = isUATMode({ 
+        isUAT: false, 
+        headers: Object.fromEntries(c.req.raw.headers.entries()) 
+      });
+
+      if (!bookingId || !vendorId) {
         return c.json({ error: 'bookingId and vendorId are required' }, 400);
       }
 
-      if (!startLatitude || !startLongitude) {
+      // ✅ UAT MODE: Allow starting without current location (use mock)
+      let startLocation: Location;
+      if (startLatitude && startLongitude) {
+        startLocation = {
+          latitude: parseFloat(startLatitude),
+          longitude: parseFloat(startLongitude),
+        };
+      } else if (uatMode) {
+        // Use default Mumbai location in UAT mode
+        startLocation = {
+          latitude: 19.0596,  // Slightly different from destination for realistic ETA
+          longitude: 72.8295,
+        };
+        console.log('[GPS Tracking] UAT Mode: Using mock start location');
+      } else {
         return c.json({ error: 'Current location (startLatitude, startLongitude) is required' }, 400);
       }
 
       // Get booking to find destination
-    const bookings = await select('bookings', { id: bookingId });
-    if (bookings.length === 0) {
+      const bookings = await select('bookings', { id: bookingId });
+      if (bookings.length === 0) {
         return c.json({ error: 'Booking not found' }, 404);
-    }
+      }
 
-    const booking = bookings[0];
+      const booking = bookings[0];
 
-      // Get customer address for destination
-      let destinationLocation: Location;
-      
+      // Get destination: address_id → customer_addresses, then booking coords, then booking address fallback
+      let destinationLocation: Location | null = null;
+
       if (booking.address_id) {
         const addresses = await select('customer_addresses', { id: booking.address_id });
         if (addresses.length > 0) {
-          destinationLocation = {
-            latitude: parseFloat(addresses[0].latitude),
-            longitude: parseFloat(addresses[0].longitude),
-          };
-        } else {
-          return c.json({ error: 'Customer address not found' }, 400);
+          const addr = addresses[0] as any;
+          const lat = addr.latitude ?? addr.coordinates?.lat ?? (typeof addr.coordinates === 'string' ? (() => { try { const c = JSON.parse(addr.coordinates); return c?.lat; } catch { return null; } })() : null);
+          const lng = addr.longitude ?? addr.coordinates?.lng ?? (typeof addr.coordinates === 'string' ? (() => { try { const c = JSON.parse(addr.coordinates); return c?.lng; } catch { return null; } })() : null);
+          if (lat != null && lng != null) {
+            destinationLocation = { latitude: parseFloat(String(lat)), longitude: parseFloat(String(lng)) };
+          }
         }
-      } else if (booking.delivery_latitude && booking.delivery_longitude) {
+      }
+
+      if (!destinationLocation && (booking.delivery_latitude != null && booking.delivery_longitude != null)) {
         destinationLocation = {
-          latitude: parseFloat(booking.delivery_latitude),
-          longitude: parseFloat(booking.delivery_longitude),
+          latitude: parseFloat(String(booking.delivery_latitude)),
+          longitude: parseFloat(String(booking.delivery_longitude)),
         };
-      } else {
-        return c.json({ error: 'No destination address configured for this booking' }, 400);
+      }
+
+      // Booking main location (at_home: address is stored with latitude/longitude on booking)
+      if (!destinationLocation && (booking.latitude != null && booking.longitude != null)) {
+        destinationLocation = {
+          latitude: parseFloat(String(booking.latitude)),
+          longitude: parseFloat(String(booking.longitude)),
+        };
+      }
+
+      // If booking has address text but no coords, use default so Start Travel works (address displayed in UI)
+      if (!destinationLocation && (booking.address || (booking as any).destination_address)) {
+        console.log('[GPS Tracking] No coordinates for booking; using default destination (address text present)');
+        destinationLocation = { ...UAT_DEFAULT_DESTINATION };
+      }
+
+      // ✅ UAT MODE: Use mock destination if no address configured
+      if (!destinationLocation) {
+        if (uatMode) {
+          console.log('[GPS Tracking] UAT Mode: Using mock destination (no address configured)');
+          destinationLocation = { ...UAT_DEFAULT_DESTINATION };
+        } else {
+          return c.json({ error: 'No destination address configured for this booking' }, 400);
+        }
       }
 
       // Start tracking session
@@ -93,19 +155,65 @@ export function registerGpsTrackingEndpoints(app: Hono) {
         bookingId,
         vendorId,
         staffId || null,
-        { latitude: parseFloat(startLatitude), longitude: parseFloat(startLongitude) },
+        startLocation,
         destinationLocation
       );
+
+      // ✅ Update booking status to indicate vendor is on the way
+      try {
+        await update('bookings', { id: bookingId }, {
+          status: 'vendor_on_way',
+          vendor_departed_at: new Date().toISOString(),
+        });
+      } catch (e) {
+        // Non-critical, status column might not exist
+        console.warn('[GPS Tracking] Could not update booking status:', e);
+      }
+
+      // ✅ Send push notification to customer
+      try {
+        const { publishNotification } = await import('../utils/sns-client');
+        await publishNotification({
+          userId: booking.customer_id,
+          userType: 'customer',
+          type: 'vendor_on_the_way',
+          title: 'Your service provider is on the way! 🚗',
+          message: `Track their live location to know exactly when they'll arrive.`,
+          data: {
+            bookingId,
+            sessionId: session.id,
+            vendorId,
+            action: 'track_live',
+          },
+        });
+      } catch (notifError) {
+        console.warn('[GPS Tracking] Failed to send notification:', notifError);
+      }
 
       return c.json({
         success: true,
         session,
+        uatMode: uatMode ? true : undefined,
         message: 'Tracking started. Customer has been notified.',
       });
 
     } catch (error: any) {
       console.error('Error starting tracking:', error);
-      return c.json({ error: error.message }, 500);
+      const msg = error?.message || '';
+      // Return 503 with JSON so API Gateway does not replace with generic 503 (table missing / DB unavailable)
+      if (msg.includes('relation') && msg.includes('does not exist')) {
+        return c.json({
+          error: 'Tracking service is being set up. Please try again in a few minutes.',
+          code: 'TRACKING_UNAVAILABLE',
+        }, 503);
+      }
+      if (msg.includes('connection') || msg.includes('timeout') || msg.includes('ECONNREFUSED')) {
+        return c.json({
+          error: 'Service temporarily unavailable. Please try again.',
+          code: 'SERVICE_UNAVAILABLE',
+        }, 503);
+      }
+      return c.json({ error: msg || 'Failed to start tracking' }, 500);
     }
   });
 
@@ -442,6 +550,241 @@ export function registerGpsTrackingEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error getting active sessions:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================
+  // CUSTOMER ACTIVE SESSIONS ENDPOINT
+  // ============================================
+
+  /**
+   * GET /tracking/customer/:customerId/active
+   * Get all active GPS tracking sessions for a customer
+   * Returns sessions where vendor is en-route or has arrived
+   * Fixes GAP: HS-4 - "Vendor on the way" popup
+   */
+  app.get("/tracking/customer/:customerId/active", async (c) => {
+    try {
+      const { customerId } = c.req.param();
+
+      if (!customerId) {
+        return c.json({ error: 'customerId is required' }, 400);
+      }
+
+      const queryText = `
+        SELECT 
+          gts.id as session_id,
+          gts.booking_id,
+          gts.vendor_id,
+          gts.staff_id,
+          gts.status,
+          gts.current_latitude,
+          gts.current_longitude,
+          gts.destination_latitude,
+          gts.destination_longitude,
+          gts.estimated_eta_minutes,
+          gts.distance_remaining_km,
+          gts.started_at,
+          gts.arrived_at,
+          gts.last_update_at,
+          b.service_type,
+          b.booking_date,
+          b.booking_time,
+          COALESCE(s.name, v.business_name) as provider_name,
+          COALESCE(s.phone, v.phone) as provider_phone,
+          s.photo_url as provider_photo,
+          svc.name as service_name,
+          p.name as pet_name
+        FROM gps_tracking_sessions gts
+        JOIN bookings b ON gts.booking_id = b.id
+        LEFT JOIN vendors v ON gts.vendor_id = v.id
+        LEFT JOIN staff s ON gts.staff_id = s.id
+        LEFT JOIN services svc ON b.service_id = svc.id
+        LEFT JOIN pets p ON b.pet_id = p.id
+        WHERE gts.customer_id = $1
+          AND gts.status IN ('in_transit', 'arrived')
+        ORDER BY gts.started_at DESC
+      `;
+
+      const result = await query(queryText, [customerId]);
+      const sessions = (result as any).rows || [];
+
+      // Format the response for the popup
+      const activeSessions = sessions.map((session: any) => ({
+        sessionId: session.session_id,
+        bookingId: session.booking_id,
+        vendorId: session.vendor_id,
+        staffId: session.staff_id,
+        status: session.status, // 'in_transit' or 'arrived'
+        vendorName: session.provider_name || 'Service Provider',
+        vendorPhone: session.provider_phone,
+        vendorPhoto: session.provider_photo,
+        serviceName: session.service_name || session.service_type || 'Service',
+        petName: session.pet_name,
+        eta: session.estimated_eta_minutes || null,
+        distance: session.distance_remaining_km || null,
+        currentLocation: session.current_latitude ? {
+          latitude: parseFloat(session.current_latitude),
+          longitude: parseFloat(session.current_longitude),
+        } : null,
+        destinationLocation: {
+          latitude: parseFloat(session.destination_latitude),
+          longitude: parseFloat(session.destination_longitude),
+        },
+        startedAt: session.started_at,
+        arrivedAt: session.arrived_at,
+        lastUpdateAt: session.last_update_at,
+      }));
+
+      return c.json({
+        success: true,
+        hasActiveTracking: activeSessions.length > 0,
+        sessions: activeSessions,
+        count: activeSessions.length,
+      });
+
+    } catch (error: any) {
+      console.error('Error getting customer active sessions:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /tracking/customer/phone/:phone/active
+   * Get all active GPS tracking sessions for a customer by phone
+   * Alternative endpoint using phone instead of customerId
+   */
+  app.get("/tracking/customer/phone/:phone/active", async (c) => {
+    try {
+      const { phone } = c.req.param();
+
+      if (!phone) {
+        return c.json({ error: 'phone is required' }, 400);
+      }
+
+      // First get customer ID from phone
+      const customers = await select('customers', { phone: decodeURIComponent(phone) });
+      if (customers.length === 0) {
+        return c.json({
+          success: true,
+          hasActiveTracking: false,
+          sessions: [],
+          count: 0,
+        });
+      }
+
+      const customerId = customers[0].id;
+
+      const queryText = `
+        SELECT 
+          gts.id as session_id,
+          gts.booking_id,
+          gts.vendor_id,
+          gts.staff_id,
+          gts.status,
+          gts.current_latitude,
+          gts.current_longitude,
+          gts.destination_latitude,
+          gts.destination_longitude,
+          gts.estimated_eta_minutes,
+          gts.distance_remaining_km,
+          gts.started_at,
+          gts.arrived_at,
+          gts.last_update_at,
+          b.service_type,
+          b.booking_date,
+          b.booking_time,
+          COALESCE(s.name, v.business_name) as provider_name,
+          COALESCE(s.phone, v.phone) as provider_phone,
+          s.photo_url as provider_photo,
+          svc.name as service_name,
+          p.name as pet_name
+        FROM gps_tracking_sessions gts
+        JOIN bookings b ON gts.booking_id = b.id
+        LEFT JOIN vendors v ON gts.vendor_id = v.id
+        LEFT JOIN staff s ON gts.staff_id = s.id
+        LEFT JOIN services svc ON b.service_id = svc.id
+        LEFT JOIN pets p ON b.pet_id = p.id
+        WHERE gts.customer_id = $1
+          AND gts.status IN ('in_transit', 'arrived')
+        ORDER BY gts.started_at DESC
+      `;
+
+      const result = await query(queryText, [customerId]);
+      const sessions = (result as any).rows || [];
+
+      // Format the response for the popup
+      const activeSessions = sessions.map((session: any) => ({
+        sessionId: session.session_id,
+        bookingId: session.booking_id,
+        vendorId: session.vendor_id,
+        staffId: session.staff_id,
+        status: session.status, // 'in_transit' or 'arrived'
+        vendorName: session.provider_name || 'Service Provider',
+        vendorPhone: session.provider_phone,
+        vendorPhoto: session.provider_photo,
+        serviceName: session.service_name || session.service_type || 'Service',
+        petName: session.pet_name,
+        eta: session.estimated_eta_minutes || null,
+        distance: session.distance_remaining_km || null,
+        currentLocation: session.current_latitude ? {
+          latitude: parseFloat(session.current_latitude),
+          longitude: parseFloat(session.current_longitude),
+        } : null,
+        destinationLocation: {
+          latitude: parseFloat(session.destination_latitude),
+          longitude: parseFloat(session.destination_longitude),
+        },
+        startedAt: session.started_at,
+        arrivedAt: session.arrived_at,
+        lastUpdateAt: session.last_update_at,
+      }));
+
+      return c.json({
+        success: true,
+        hasActiveTracking: activeSessions.length > 0,
+        sessions: activeSessions,
+        count: activeSessions.length,
+      });
+
+    } catch (error: any) {
+      console.error('Error getting customer active sessions by phone:', error);
+      console.error('Error stack:', error?.stack);
+      
+      const errorMessage = error?.message || 'Unknown error';
+      
+      // ✅ FIX: Handle missing table gracefully - return empty sessions
+      if (errorMessage.includes('relation') && errorMessage.includes('does not exist')) {
+        console.log('[GPS Tracking] Table does not exist, returning empty sessions');
+        return c.json({
+          success: true,
+          hasActiveTracking: false,
+          sessions: [],
+          count: 0,
+        });
+      }
+      
+      // ✅ FIX: Handle connection pool exhaustion
+      if (errorMessage.includes('connection pool') || errorMessage.includes('too many clients')) {
+        return c.json({ 
+          success: false, 
+          error: 'Service temporarily busy. Please try again.',
+          code: 'POOL_EXHAUSTED',
+          hasActiveTracking: false,
+          sessions: [],
+          count: 0,
+        }, 503);
+      }
+      
+      // ✅ FIX: Return graceful fallback for any other errors
+      return c.json({
+        success: false,
+        error: 'Unable to fetch tracking sessions',
+        code: 'INTERNAL_ERROR',
+        hasActiveTracking: false,
+        sessions: [],
+        count: 0,
+      }, 500);
     }
   });
 }

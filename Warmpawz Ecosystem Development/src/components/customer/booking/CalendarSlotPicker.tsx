@@ -3,7 +3,7 @@ import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Calendar, Clock, AlertCircle, Check, Loader2, Palmtree } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface CalendarSlotPickerProps {
   vendorId: string;
@@ -27,7 +27,7 @@ export function CalendarSlotPicker({ vendorId, onSlotSelected, serviceStyle = 'a
   const [vacationMessage, setVacationMessage] = useState('');
   const [dates, setDates] = useState<{ date: string; label: string; day: string }[]>([]);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     generateNext7Days();
@@ -70,7 +70,7 @@ export function CalendarSlotPicker({ vendorId, onSlotSelected, serviceStyle = 'a
         `${API_BASE}/vendor/${vendorId}/slots/${date}?serviceStyle=${serviceStyle}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

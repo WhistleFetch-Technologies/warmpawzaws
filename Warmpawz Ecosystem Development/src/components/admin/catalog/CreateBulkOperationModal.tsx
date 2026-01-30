@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { authenticatedPost } from '../../../utils/authenticatedFetch'; // ✅ FIX: Add authenticated fetch
 
 interface CreateBulkOperationModalProps {
@@ -31,7 +31,7 @@ export function CreateBulkOperationModal({ isOpen, onClose, onSuccess }: CreateB
       
       // ✅ FIX: Use authenticatedPost instead of fetch with publicAnonKey
       const response = await authenticatedPost(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/bulk-operations/create`,
+        `${getApiBaseUrl()}/admin/catalog/bulk-operations/create`,
         {
           ...formData,
           items: parseInt(formData.items) || 0,

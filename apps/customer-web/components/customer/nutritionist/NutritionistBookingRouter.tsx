@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { UtensilsCrossed, Apple, Heart, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Video, Home, Building2 } from 'lucide-react';
+import { UtensilsCrossed, Apple, Heart, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Video, Home, Building2, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
+import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 
 interface NutritionistBookingRouterProps {
   phone: string;
@@ -416,25 +417,47 @@ export function NutritionistBookingRouter({
           return; // Don't proceed to confirmation on error
         }
       } else {
-        // Regular booking
+        // Regular booking: CreateBookingRequestSchema expects camelCase (customerId, vendorId, serviceId UUID, bookingDate, bookingTime, serviceType)
+        const vendorIdValue = effectiveVendorId || '';
+        const opt = selectedServiceOption as { serviceId?: string; service_id?: string } | undefined;
+        const serviceIdValue = opt?.serviceId ?? opt?.service_id ?? serviceId ?? selectedServiceOption?.id ?? '';
+        if (!vendorIdValue || !serviceIdValue) {
+          toast.error('Missing vendor or service. Please go back and select a service.');
+          setProcessing(false);
+          return;
+        }
+        const customerIdValue = customerId;
+        if (!customerIdValue) {
+          toast.error('Could not load your profile. Please try again.');
+          setProcessing(false);
+          return;
+        }
+        const serviceTypeEnum = selectedServiceType === 'at_center' ? 'at_center' : selectedServiceType === 'at_home' ? 'at_home' : 'tele';
         const bookingData = {
-          customer_phone: phone,
-          vendor_id: effectiveVendorId || '',
-          service_type: selectedServiceType,
-          service_name: selectedServiceOption?.name,
-          price: usePackageSession ? 0 : selectedServiceOption?.price,
-          scheduled_date: selectedDate,
-          scheduled_time: selectedTime,
-          pet_id: selectedPet?.id,
-          pet_name: selectedPet?.name,
-          address_id: selectedAddress?.id,
-          notes,
-          status: 'pending',
+          customerId: customerIdValue,
+          vendorId: vendorIdValue,
+          serviceId: serviceIdValue,
+          bookingDate: selectedDate,
+          bookingTime: selectedTime,
+          serviceType: serviceTypeEnum,
+          amount: usePackageSession ? 0 : (selectedServiceOption?.price ?? 0),
+          petId: selectedPet?.id || undefined,
+          petName: selectedPet?.name,
+          notes: notes || undefined,
+          serviceName: selectedServiceOption?.name,
+          customerPhone: phone,
+          ...(selectedServiceType === 'at_home' && selectedAddress && {
+            address: [selectedAddress.addressLine1, selectedAddress.city, selectedAddress.state, selectedAddress.pincode].filter(Boolean).join(', '),
+            city: selectedAddress.city,
+            state: selectedAddress.state,
+            pincode: selectedAddress.pincode,
+          }),
         };
 
         try {
           const response = await apiClient.post('/bookings/create', bookingData) as any;
-          setBookingId(response.booking?.id || 'BK-' + Date.now());
+          const res = response?.data ?? response;
+          setBookingId(res?.bookingId || res?.booking?.id || res?.id || 'BK-' + Date.now());
         } catch (err: any) {
           console.error('Error creating booking:', err);
           const errorMessage = err?.response?.data?.error || err?.message || 'Failed to create booking';
@@ -455,40 +478,63 @@ export function NutritionistBookingRouter({
 
   const selectedServiceOption = serviceOptions.find(s => s.id === selectedServiceType);
 
-  const renderStepIndicator = () => {
-    const steps = selectedServiceType === 'tele' 
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const dashboardStats = [
+    { value: '45+', label: 'Experts' },
+    { value: '1.5K+', label: 'Consultations' },
+    { value: '*4.9', label: 'Rating' }
+  ];
+
+  const getServiceTitle = () => {
+    if (nutritionist?.name) return `Book with ${nutritionist.name}`;
+    return 'Pet Nutrition';
+  };
+
+  const getServiceSubtitle = () => {
+    if (selectedServiceType === 'tele') return 'Video consultation';
+    if (selectedServiceType === 'at_home') return 'Nutritionist comes to you';
+    return 'Expert nutrition consultation';
+  };
+
+  // ✅ FIX: Prepare step indicators for header
+  const getStepIndicators = (): StepInfo[] | undefined => {
+    if (step === 'payment' || step === 'confirmation') return undefined;
+    
+    const stepLabels = selectedServiceType === 'tele' 
       ? ['Service', 'Date/Time', 'Pet', 'Payment']
       : ['Service', 'Date/Time', 'Pet', 'Address', 'Payment'];
     const currentStepMap: Record<BookingStep, number> = {
       service: 0, datetime: 1, pet: 2, address: 3, payment: selectedServiceType === 'tele' ? 3 : 4, confirmation: 5
     };
     const currentIdx = currentStepMap[step];
-
-    return (
-      <div className="flex items-center justify-center gap-2 mb-6">
-        {steps.map((s, idx) => (
-          <div key={s} className="flex items-center">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-              idx <= currentIdx ? 'bg-[#FF8C42] text-white' : 'bg-gray-200 text-gray-500'
-            }`}>
-              {idx < currentIdx ? <CheckCircle2 className="w-5 h-5" /> : idx + 1}
-            </div>
-            {idx < steps.length - 1 && (
-              <div className={`w-8 h-0.5 ${idx < currentIdx ? 'bg-[#FF8C42]' : 'bg-gray-200'}`} />
-            )}
-          </div>
-        ))}
-      </div>
-    );
+    
+    return stepLabels.map((label, idx) => ({
+      label,
+      isCompleted: idx < currentIdx,
+      isCurrent: idx === currentIdx
+    }));
   };
 
   return (
-    <div>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+    <div className="min-h-screen bg-gray-50">
+      {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame - Hide when on payment step */}
+      {step !== 'payment' && (
+        <ServiceDashboardHeader
+          serviceName={getServiceTitle()}
+          serviceSubtitle={getServiceSubtitle()}
+          serviceIcon={Apple}
+          iconColor="text-white"
+          stats={dashboardStats}
+          steps={getStepIndicators()}
+          onBack={onBack}
+          showBackButton={true}
+          headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+        />
+      )}
       
       {/* Content */}
-      <div className="px-4 py-6 max-w-md mx-auto">
-        {step !== 'confirmation' && renderStepIndicator()}
+      <div className="max-w-md mx-auto px-4 py-6">
+        {/* Step indicator moved to header */}
 
         {/* Service Selection */}
         {step === 'service' && (

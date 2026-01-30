@@ -128,15 +128,23 @@ export function CustomerApp({ initialSession }: CustomerAppProps) {
 
   const handleNavigate = (screen: string) => {
     if (screen === 'logout') {
-      // Clear all session data
-      localStorage.removeItem('customerPhone');
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('customerData');
-      localStorage.removeItem('customerProfile');
-      localStorage.removeItem('customerPets');
-      localStorage.removeItem('customerOnboardingComplete');
-      localStorage.removeItem('customerJourneyStage');
-      router.push('/auth');
+      // Clear all session data and redirect immediately (no async - lands on customer auth)
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('customerPhone');
+        localStorage.removeItem('customerId');
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('customerData');
+        localStorage.removeItem('customerProfile');
+        localStorage.removeItem('customerPets');
+        localStorage.removeItem('customerOnboardingComplete');
+        localStorage.removeItem('customerJourneyStage');
+        localStorage.removeItem('cognitoAccessToken');
+        localStorage.removeItem('cognitoIdToken');
+        localStorage.removeItem('cognitoRefreshToken');
+        localStorage.removeItem('cognitoTokenExpiry');
+        localStorage.removeItem('cognitoUserInfo');
+        window.location.href = '/auth';
+      }
       return;
     }
     setCurrentScreen(screen);
@@ -188,19 +196,27 @@ export function CustomerApp({ initialSession }: CustomerAppProps) {
       phone={session.phone}
       initialScreen={currentScreen === 'home' ? 'home' : undefined}
       onNavigate={(screen: string) => {
-        // Handle logout - clear all data and redirect
+        // Handle logout - clear all data and redirect immediately to customer auth
         if (screen === 'logout') {
-          localStorage.removeItem('customerPhone');
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('customerData');
-          localStorage.removeItem('customerProfile');
-          localStorage.removeItem('customerPets');
-          localStorage.removeItem('customerOnboardingComplete');
-          localStorage.removeItem('customerJourneyStage');
-          router.push('/auth');
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('customerPhone');
+            localStorage.removeItem('customerId');
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('customerData');
+            localStorage.removeItem('customerProfile');
+            localStorage.removeItem('customerPets');
+            localStorage.removeItem('customerOnboardingComplete');
+            localStorage.removeItem('customerJourneyStage');
+            localStorage.removeItem('cognitoAccessToken');
+            localStorage.removeItem('cognitoIdToken');
+            localStorage.removeItem('cognitoRefreshToken');
+            localStorage.removeItem('cognitoTokenExpiry');
+            localStorage.removeItem('cognitoUserInfo');
+            window.location.href = '/auth';
+          }
+          return;
         }
         // All other navigation is handled internally by CustomerHomeWrapper
-        // via its handleNavigateToService function
       }}
     />
   );

@@ -20,6 +20,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, update, insert } from '../database/rds-connection';
 import crypto from 'crypto';
@@ -64,7 +65,7 @@ class CreateWebhookHandler extends BaseHandler {
 
     try {
       const webhook = await insert('webhooks', {
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         name,
         url,
         events: JSON.stringify(events),
@@ -299,7 +300,7 @@ async function deliverWebhook(webhook: any, payload: any): Promise<void> {
   }
 
   // Record webhook event
-  const eventId = crypto.randomUUID();
+  const eventId = randomUUID();
   await insert('webhook_events', {
     id: eventId,
     webhook_id: webhook.id,

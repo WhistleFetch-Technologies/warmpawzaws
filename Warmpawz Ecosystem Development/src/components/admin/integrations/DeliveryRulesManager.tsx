@@ -13,7 +13,7 @@ import { ScrollArea } from '../../ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { Plus, Edit2, Trash2, ArrowRight, Package, MapPin, Zap, DollarSign, AlertCircle, Play } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface DeliveryRule {
   id: string;
@@ -83,8 +83,8 @@ export function DeliveryRulesManager() {
 
   const loadRules = async () => {
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/logistics/delivery-rules`, {
-        headers: { Authorization: `Bearer ${publicAnonKey}` }
+      const response = await fetch(`${getApiBaseUrl()}/logistics/delivery-rules`, {
+        headers: { Authorization: (getAuthHeaders().Authorization || "") }
       });
       const data = await response.json();
       if (data.success) {
@@ -98,10 +98,10 @@ export function DeliveryRulesManager() {
   const saveRules = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/logistics/delivery-rules`, {
+      const response = await fetch(`${getApiBaseUrl()}/logistics/delivery-rules`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${publicAnonKey}`,
+          Authorization: (getAuthHeaders().Authorization || ""),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(rules)
@@ -140,10 +140,10 @@ export function DeliveryRulesManager() {
   const testRouting = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/logistics/test-routing`, {
+      const response = await fetch(`${getApiBaseUrl()}/logistics/test-routing`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${publicAnonKey}`,
+          Authorization: (getAuthHeaders().Authorization || ""),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({

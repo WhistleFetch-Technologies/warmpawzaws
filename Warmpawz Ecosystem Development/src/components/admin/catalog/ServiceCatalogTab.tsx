@@ -15,7 +15,7 @@ import {
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface ServiceCatalogItem {
@@ -114,10 +114,10 @@ export function ServiceCatalogTab() {
   const loadRoleConfigs = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`,
+        `${getApiBaseUrl()}/config/roles`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -135,10 +135,10 @@ export function ServiceCatalogTab() {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/service-catalog`,
+        `${getApiBaseUrl()}/admin/service-catalog`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -157,10 +157,10 @@ export function ServiceCatalogTab() {
   const loadRoles = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`,
+        `${getApiBaseUrl()}/config/roles`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -308,12 +308,12 @@ export function ServiceCatalogTab() {
       toast.info('Seeding catalog with 150+ comprehensive services...', { duration: 2000 });
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/seed-all-services`,
+        `${getApiBaseUrl()}/admin/catalog/seed-all-services`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           }
         }
       );
@@ -351,12 +351,12 @@ export function ServiceCatalogTab() {
       toast.info('Updating prices with realistic Indian market rates...', { duration: 2000 });
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/update-realistic-prices`,
+        `${getApiBaseUrl()}/admin/catalog/update-realistic-prices`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           }
         }
       );
@@ -400,14 +400,14 @@ export function ServiceCatalogTab() {
       setSaving(true);
       
       const endpoint = editingService
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/service-catalog/${editingService.catalogId}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/service-catalog`;
+        ? `${getApiBaseUrl()}/admin/service-catalog/${editingService.catalogId}`
+        : `${getApiBaseUrl()}/admin/service-catalog`;
 
       const response = await fetch(endpoint, {
         method: editingService ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${publicAnonKey}`,
+          Authorization: (getAuthHeaders().Authorization || ""),
         },
         body: JSON.stringify(formData)
       });
@@ -435,11 +435,11 @@ export function ServiceCatalogTab() {
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/service-catalog/${catalogId}`,
+        `${getApiBaseUrl()}/admin/service-catalog/${catalogId}`,
         {
           method: 'DELETE',
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           }
         }
       );

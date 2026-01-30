@@ -787,31 +787,47 @@ export function registerVendorScheduleEndpoints(app: Hono) {
 
       // Update services (delete and recreate)
       if (slotData.services !== undefined) {
-        await query('DELETE FROM vendor_slot_services WHERE slot_id = $1', [slotId]).catch(() => {});
+        try {
+          await query('DELETE FROM vendor_slot_services WHERE slot_id = $1', [slotId]);
+        } catch (err) {
+          console.warn(`[VendorSchedule] Failed to delete slot services for ${slotId}:`, err instanceof Error ? err.message : err);
+        }
         if (Array.isArray(slotData.services)) {
           for (const service of slotData.services) {
-            await insert('vendor_slot_services', {
-              slot_id: slotId,
-              service_id: service.serviceId,
-              lead_time_minutes: service.leadTimeMinutes || 0,
-              buffer_time_minutes: service.bufferTimeMinutes || 0,
-              radius_km: service.radiusKm || null,
-            }).catch(() => {});
+            try {
+              await insert('vendor_slot_services', {
+                slot_id: slotId,
+                service_id: service.serviceId,
+                lead_time_minutes: service.leadTimeMinutes || 0,
+                buffer_time_minutes: service.bufferTimeMinutes || 0,
+                radius_km: service.radiusKm || null,
+              });
+            } catch (err) {
+              console.warn(`[VendorSchedule] Failed to insert slot service for ${slotId}:`, err instanceof Error ? err.message : err);
+            }
           }
         }
       }
 
       // Update breaks (delete and recreate)
       if (slotData.breaks !== undefined) {
-        await query('DELETE FROM vendor_slot_breaks WHERE slot_id = $1', [slotId]).catch(() => {});
+        try {
+          await query('DELETE FROM vendor_slot_breaks WHERE slot_id = $1', [slotId]);
+        } catch (err) {
+          console.warn(`[VendorSchedule] Failed to delete slot breaks for ${slotId}:`, err instanceof Error ? err.message : err);
+        }
         if (Array.isArray(slotData.breaks)) {
           for (const breakItem of slotData.breaks) {
-            await insert('vendor_slot_breaks', {
-              slot_id: slotId,
-              start_time: breakItem.startTime,
-              end_time: breakItem.endTime,
-              reason: breakItem.reason || null,
-            }).catch(() => {});
+            try {
+              await insert('vendor_slot_breaks', {
+                slot_id: slotId,
+                start_time: breakItem.startTime,
+                end_time: breakItem.endTime,
+                reason: breakItem.reason || null,
+              });
+            } catch (err) {
+              console.warn(`[VendorSchedule] Failed to insert slot break for ${slotId}:`, err instanceof Error ? err.message : err);
+            }
           }
         }
       }
@@ -832,9 +848,21 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       const { vendorId, slotId } = c.req.param();
 
       // Delete related records first
-      await query('DELETE FROM vendor_slot_services WHERE slot_id = $1', [slotId]).catch(() => {});
-      await query('DELETE FROM vendor_slot_breaks WHERE slot_id = $1', [slotId]).catch(() => {});
-      await query('DELETE FROM vendor_availability_slots WHERE id = $1 AND vendor_id = $2', [slotId, vendorId]).catch(() => {});
+      try {
+        await query('DELETE FROM vendor_slot_services WHERE slot_id = $1', [slotId]);
+      } catch (err) {
+        console.warn(`[VendorSchedule] Failed to delete slot services for ${slotId}:`, err instanceof Error ? err.message : err);
+      }
+      try {
+        await query('DELETE FROM vendor_slot_breaks WHERE slot_id = $1', [slotId]);
+      } catch (err) {
+        console.warn(`[VendorSchedule] Failed to delete slot breaks for ${slotId}:`, err instanceof Error ? err.message : err);
+      }
+      try {
+        await query('DELETE FROM vendor_availability_slots WHERE id = $1 AND vendor_id = $2', [slotId, vendorId]);
+      } catch (err) {
+        console.warn(`[VendorSchedule] Failed to delete availability slot ${slotId}:`, err instanceof Error ? err.message : err);
+      }
 
       return c.json({ success: true, message: 'Slot deleted successfully' });
     } catch (error: any) {
@@ -933,6 +961,482 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       return c.json({ success: true, message: 'Holiday removed successfully' });
     } catch (error: any) {
       console.error('Error deleting vendor holiday:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================================================
+  // ADVANCED AVAILABILITY ENDPOINTS (Phase 4 Enhancement)
+  // ============================================================================
+
+  /**
+   * GET /vendor/:vendorId/breaks
+   * Get all breaks for a vendor
+   */
+  app.get("/vendor/:vendorId/breaks", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      const breaksResult = await query(
+        `SELECT * FROM vendor_breaks
+         WHERE vendor_id = $1
+           AND is_active = true
+         ORDER BY day_of_week ASC, start_time ASC`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({ 
+        success: true, 
+        breaks: breaksResult.rows.map((b: any) => ({
+          id: b.id,
+          dayOfWeek: b.day_of_week,
+          breakDate: b.break_date,
+          startTime: b.start_time,
+          endTime: b.end_time,
+          breakType: b.break_type,
+          reason: b.reason,
+          isRecurring: b.is_recurring,
+        }))
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendor breaks:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/breaks
+   * Save breaks for a vendor (replaces all breaks)
+   */
+  app.post("/vendor/:vendorId/breaks", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { breaks } = await c.req.json();
+
+      if (!Array.isArray(breaks)) {
+        return c.json({ error: 'breaks array is required' }, 400);
+      }
+
+      // Ensure vendor_breaks table exists
+      try {
+        await query(`
+          CREATE TABLE IF NOT EXISTS vendor_breaks (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+            slot_id UUID,
+            day_of_week INTEGER,
+            break_date DATE,
+            start_time TIME NOT NULL,
+            end_time TIME NOT NULL,
+            break_type VARCHAR(50) DEFAULT 'custom',
+            reason TEXT,
+            is_recurring BOOLEAN DEFAULT true,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+          )
+        `);
+      } catch (createErr: any) {
+        console.log('[BREAKS] Table likely exists:', createErr.message);
+      }
+
+      // Delete existing breaks
+      await query(
+        'DELETE FROM vendor_breaks WHERE vendor_id = $1',
+        [vendorId]
+      ).catch((err) => {
+        console.warn('[BREAKS] Delete error (may be OK):', err.message);
+      });
+
+      // Insert new breaks - track results
+      const insertedBreaks: any[] = [];
+      const insertErrors: string[] = [];
+
+      for (const breakItem of breaks) {
+        try {
+          const result = await query(
+            `INSERT INTO vendor_breaks (
+              vendor_id, day_of_week, break_date, start_time, end_time,
+              break_type, reason, is_recurring, is_active
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+            RETURNING id`,
+            [
+              vendorId,
+              breakItem.dayOfWeek ?? breakItem.day_of_week ?? null,
+              breakItem.breakDate || breakItem.break_date || null,
+              breakItem.startTime || breakItem.start_time,
+              breakItem.endTime || breakItem.end_time,
+              breakItem.breakType || breakItem.break_type || 'custom',
+              breakItem.reason || null,
+              breakItem.isRecurring ?? breakItem.is_recurring ?? true,
+            ]
+          );
+          if (result.rows.length > 0) {
+            insertedBreaks.push(result.rows[0]);
+          }
+        } catch (e: any) {
+          console.error('[BREAKS] Error inserting break:', e.message, breakItem);
+          insertErrors.push(`Break ${breakItem.startTime}-${breakItem.endTime}: ${e.message}`);
+        }
+      }
+
+      return c.json({ 
+        success: true, 
+        message: `Breaks saved successfully (${insertedBreaks.length} breaks)`,
+        insertedCount: insertedBreaks.length,
+        errorCount: insertErrors.length
+      });
+    } catch (error: any) {
+      console.error('Error saving vendor breaks:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/holidays-enhanced
+   * Get enhanced holidays with vacation support
+   */
+  app.get("/vendor/:vendorId/holidays-enhanced", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      const holidaysResult = await query(
+        `SELECT * FROM vendor_holidays_enhanced
+         WHERE vendor_id = $1
+           AND is_active = true
+           AND (end_date >= CURRENT_DATE OR is_recurring_yearly = true)
+         ORDER BY start_date ASC`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({ 
+        success: true, 
+        holidays: holidaysResult.rows.map((h: any) => ({
+          id: h.id,
+          startDate: h.start_date,
+          endDate: h.end_date,
+          holidayType: h.holiday_type,
+          reason: h.reason,
+          isRecurringYearly: h.is_recurring_yearly,
+        }))
+      });
+    } catch (error: any) {
+      console.error('Error fetching enhanced holidays:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/holidays-enhanced
+   * Save enhanced holidays (replaces all holidays)
+   */
+  app.post("/vendor/:vendorId/holidays-enhanced", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { holidays } = await c.req.json();
+
+      if (!Array.isArray(holidays)) {
+        return c.json({ error: 'holidays array is required' }, 400);
+      }
+
+      // Ensure vendor_holidays_enhanced table exists
+      try {
+        await query(`
+          CREATE TABLE IF NOT EXISTS vendor_holidays_enhanced (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            holiday_type VARCHAR(50) DEFAULT 'holiday',
+            reason TEXT,
+            is_recurring_yearly BOOLEAN DEFAULT false,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+          )
+        `);
+      } catch (createErr: any) {
+        console.log('[HOLIDAYS] Table likely exists:', createErr.message);
+      }
+
+      // Delete existing holidays
+      await query(
+        'DELETE FROM vendor_holidays_enhanced WHERE vendor_id = $1',
+        [vendorId]
+      ).catch((err) => {
+        console.warn('[HOLIDAYS] Delete error (may be OK):', err.message);
+      });
+
+      // Insert new holidays - track results
+      const insertedHolidays: any[] = [];
+      const insertErrors: string[] = [];
+
+      for (const holiday of holidays) {
+        try {
+          const result = await query(
+            `INSERT INTO vendor_holidays_enhanced (
+              vendor_id, start_date, end_date, holiday_type, reason, is_recurring_yearly, is_active
+            ) VALUES ($1, $2, $3, $4, $5, $6, true)
+            RETURNING id`,
+            [
+              vendorId,
+              holiday.startDate || holiday.start_date,
+              holiday.endDate || holiday.end_date,
+              holiday.holidayType || holiday.holiday_type || 'holiday',
+              holiday.reason || null,
+              holiday.isRecurringYearly ?? holiday.is_recurring_yearly ?? false,
+            ]
+          );
+          if (result.rows.length > 0) {
+            insertedHolidays.push(result.rows[0]);
+          }
+        } catch (e: any) {
+          console.error('[HOLIDAYS] Error inserting holiday:', e.message, holiday);
+          insertErrors.push(`Holiday ${holiday.startDate}: ${e.message}`);
+        }
+      }
+
+      return c.json({ 
+        success: true, 
+        message: `Holidays saved successfully (${insertedHolidays.length} holidays)`,
+        insertedCount: insertedHolidays.length,
+        errorCount: insertErrors.length
+      });
+    } catch (error: any) {
+      console.error('Error saving enhanced holidays:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/toggle-online
+   * Toggle vendor online status (for solo providers)
+   */
+  app.post("/vendor/:vendorId/toggle-online", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { isOnline } = await c.req.json();
+
+      if (typeof isOnline !== 'boolean') {
+        return c.json({ error: 'isOnline boolean is required' }, 400);
+      }
+
+      await query(
+        `UPDATE vendors SET 
+          is_online = $1, 
+          went_offline_at = $2,
+          updated_at = NOW()
+         WHERE id = $3`,
+        [
+          isOnline,
+          isOnline ? null : new Date(),
+          vendorId
+        ]
+      );
+
+      return c.json({ 
+        success: true, 
+        isOnline,
+        message: isOnline ? 'You are now online' : 'You are now offline' 
+      });
+    } catch (error: any) {
+      console.error('Error toggling online status:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/availability
+   * Save advanced availability slots with service_styles
+   */
+  app.post("/vendor/:vendorId/availability", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const { slots } = await c.req.json();
+
+      if (!Array.isArray(slots)) {
+        return c.json({ error: 'slots array is required' }, 400);
+      }
+
+      // Ensure vendor_availability_v2 has the required columns (add individually to avoid conflicts)
+      try {
+        await query(`ALTER TABLE vendor_availability_v2 ADD COLUMN IF NOT EXISTS service_styles TEXT[] DEFAULT '{}'`).catch(() => {});
+        await query(`ALTER TABLE vendor_availability_v2 ADD COLUMN IF NOT EXISTS location_data JSONB`).catch(() => {});
+        await query(`ALTER TABLE vendor_availability_v2 ADD COLUMN IF NOT EXISTS buffer_time INTEGER DEFAULT 15`).catch(() => {});
+        // max_capacity column already exists per schema check
+      } catch (alterErr: any) {
+        console.log('[AVAILABILITY] Column migration note:', alterErr.message);
+      }
+
+      // Delete existing availability for this vendor
+      await query(
+        'DELETE FROM vendor_availability_v2 WHERE vendor_id = $1',
+        [vendorId]
+      ).catch((err) => {
+        console.warn('[AVAILABILITY] Delete error (may be OK):', err.message);
+      });
+
+      // Insert new slots - track errors properly
+      const insertedSlots: any[] = [];
+      const insertErrors: string[] = [];
+
+      for (const slot of slots) {
+        const serviceStyles = slot.serviceStyles || slot.service_styles || ['at_center'];
+        const locationData = slot.locationData || slot.location_data || null;
+        const startTime = slot.timeWindowStart || slot.time_window_start || slot.startTime;
+        const endTime = slot.timeWindowEnd || slot.time_window_end || slot.endTime;
+        
+        try {
+          // Use correct column names for the vendor_availability_v2 table
+          // Table has: service_type (not service_style), is_available (not is_enabled)
+          // Also has both start_time/end_time AND time_window_start/time_window_end
+          const result = await query(
+            `INSERT INTO vendor_availability_v2 (
+              vendor_id, day_of_week, 
+              start_time, end_time,
+              time_window_start, time_window_end,
+              service_styles, service_type, 
+              location_data, buffer_time, max_capacity, is_available
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            RETURNING id`,
+            [
+              vendorId,
+              slot.dayOfWeek ?? slot.day_of_week,
+              startTime,
+              endTime,
+              startTime, // Also populate time_window_start for backwards compat
+              endTime,   // Also populate time_window_end for backwards compat
+              serviceStyles,
+              serviceStyles[0] || 'at_center', // service_type for backwards compat
+              locationData ? JSON.stringify(locationData) : null,
+              slot.bufferTime ?? slot.buffer_time ?? 15,
+              slot.maxCapacity ?? slot.max_capacity ?? 1,
+              slot.isEnabled ?? slot.is_enabled ?? true,
+            ]
+          );
+          if (result.rows.length > 0) {
+            insertedSlots.push(result.rows[0]);
+          }
+        } catch (e: any) {
+          console.error('[AVAILABILITY] Error inserting slot:', e.message, slot);
+          insertErrors.push(`Slot day ${slot.dayOfWeek}: ${e.message}`);
+        }
+      }
+
+      // Return detailed response
+      if (insertErrors.length > 0 && insertedSlots.length === 0) {
+        return c.json({ 
+          success: false, 
+          error: 'Failed to save all slots',
+          details: insertErrors,
+          message: 'No slots were saved. Please check your data and try again.'
+        }, 500);
+      }
+
+      return c.json({ 
+        success: true, 
+        message: `Availability saved successfully (${insertedSlots.length} slots)`,
+        insertedCount: insertedSlots.length,
+        errorCount: insertErrors.length,
+        errors: insertErrors.length > 0 ? insertErrors : undefined
+      });
+    } catch (error: any) {
+      console.error('Error saving availability:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/availability
+   * Get full availability including slots, breaks, and holidays
+   */
+  app.get("/vendor/:vendorId/availability", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      // Get availability slots (use is_available column, not is_enabled)
+      const slotsResult = await query(
+        `SELECT * FROM vendor_availability_v2
+         WHERE vendor_id = $1 AND (is_available = true OR is_available IS NULL)
+         ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+
+      // Get breaks
+      const breaksResult = await query(
+        `SELECT * FROM vendor_breaks
+         WHERE vendor_id = $1 AND is_active = true
+         ORDER BY day_of_week ASC, start_time ASC`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+
+      // Get holidays (try enhanced table first, fallback to basic)
+      let holidaysResult: any = { rows: [] };
+      try {
+        holidaysResult = await query(
+          `SELECT * FROM vendor_holidays_enhanced
+           WHERE vendor_id = $1
+             AND is_active = true
+             AND (end_date >= CURRENT_DATE OR is_recurring_yearly = true)
+           ORDER BY start_date ASC`,
+          [vendorId]
+        );
+      } catch {
+        // Fallback to basic holidays
+        holidaysResult = await query(
+          `SELECT id, date as start_date, date as end_date, name as reason, 
+                  'holiday' as holiday_type, false as is_recurring_yearly
+           FROM vendor_holidays
+           WHERE vendor_id = $1 AND date >= CURRENT_DATE
+           ORDER BY date ASC`,
+          [vendorId]
+        ).catch(() => ({ rows: [] }));
+      }
+
+      // Get vendor online status
+      const vendorResult = await select('vendors', { id: vendorId });
+      const vendor = vendorResult[0] || {};
+
+      return c.json({
+        success: true,
+        availability: {
+          slots: slotsResult.rows.map((s: any) => ({
+            id: s.id,
+            dayOfWeek: s.day_of_week,
+            startTime: s.time_window_start || s.start_time,
+            endTime: s.time_window_end || s.end_time,
+            serviceStyles: s.service_styles || (s.service_type ? [s.service_type] : ['at_center']),
+            locationData: typeof s.location_data === 'string' 
+              ? JSON.parse(s.location_data) 
+              : s.location_data,
+            bufferTime: s.buffer_time || s.buffer_time_minutes || 15,
+            maxCapacity: s.max_capacity || 1,
+            isEnabled: s.is_available ?? s.is_enabled ?? true,
+          })),
+          breaks: breaksResult.rows.map((b: any) => ({
+            id: b.id,
+            dayOfWeek: b.day_of_week,
+            breakDate: b.break_date,
+            startTime: b.start_time,
+            endTime: b.end_time,
+            breakType: b.break_type,
+            reason: b.reason,
+            isRecurring: b.is_recurring,
+          })),
+          holidays: holidaysResult.rows.map((h: any) => ({
+            id: h.id,
+            startDate: h.start_date,
+            endDate: h.end_date,
+            holidayType: h.holiday_type,
+            reason: h.reason,
+            isRecurringYearly: h.is_recurring_yearly,
+          })),
+        },
+        isOnline: vendor.is_online ?? true,
+        vendorType: vendor.vendor_type || 'business',
+      });
+    } catch (error: any) {
+      console.error('Error fetching availability:', error);
       return c.json({ error: error.message }, 500);
     }
   });

@@ -73,28 +73,25 @@ class WarmpawzStack extends cdk.Stack {
         super(scope, id, props);
         const environment = props?.environment || 'dev';
         // Use existing VPC instead of creating new one (to avoid VPC limit)
-        // Lookup existing VPC - try default VPC first, then lookup by ID if provided
-        const vpcId = this.node.tryGetContext('vpcId') || process.env.VPC_ID;
-        if (vpcId) {
-            // Import existing VPC by ID
-            this.vpc = ec2.Vpc.fromLookup(this, 'ExistingVpc', {
-                vpcId: vpcId,
-            });
-        }
-        else {
-            // Try to lookup default VPC (most common case)
-            // If this fails, user needs to provide VPC ID via: cdk deploy --context vpcId=vpc-xxxxx
-            this.vpc = ec2.Vpc.fromLookup(this, 'DefaultVpc', {
-                isDefault: true,
-            });
-        }
+        // IMPORTANT: Must use the same VPC as RDS for database connectivity
+        // The RDS VPC has Secrets Manager VPC endpoint configured
+        const vpcId = this.node.tryGetContext('vpcId') || process.env.VPC_ID || 'vpc-02a4893e5e582c4d8'; // RDS VPC
+        // Import existing VPC by ID
+        this.vpc = ec2.Vpc.fromLookup(this, 'ExistingVpc', {
+            vpcId: vpcId,
+        });
+        // Note: Secrets Manager VPC Endpoint already exists in the RDS VPC (vpc-02a4893e5e582c4d8)
+        // Lambda security group (sg-04f3c12d9c3f4fb64) has ingress to SM endpoint (sg-029fd9f75cf25da6f)
+        // and RDS security groups (sg-0f873d37e561cdfb0)
         // Deploy Aurora RDS (use existing if cluster identifier provided)
         const existingClusterId = this.node.tryGetContext('existingRdsClusterId') ||
             process.env.EXISTING_RDS_CLUSTER_ID;
         const existingClusterEndpoint = this.node.tryGetContext('existingRdsClusterEndpoint') ||
             process.env.EXISTING_RDS_CLUSTER_ENDPOINT;
+        // Use the correct RDS master secret (not the CDK-generated one)
         const existingSecretArn = this.node.tryGetContext('existingRdsSecretArn') ||
-            process.env.EXISTING_RDS_SECRET_ARN;
+            process.env.EXISTING_RDS_SECRET_ARN ||
+            'arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-dev-rds-master-20260106164510791100000002-WqZcjI';
         const existingProxyName = this.node.tryGetContext('existingRdsProxyName') ||
             process.env.EXISTING_RDS_PROXY_NAME;
         this.auroraStack = new aurora_stack_1.AuroraStack(this, 'AuroraStack', {
@@ -140,9 +137,10 @@ class WarmpawzStack extends cdk.Stack {
             sqsStack: this.sqsStack,
             environment: environment,
         });
-        // Deploy DynamoDB Tables
+        // Deploy DynamoDB Tables (use existing tables to avoid conflicts)
         this.dynamoDbStack = new dynamodb_stack_1.DynamoDbStack(this, 'DynamoDbStack', {
             environment: environment,
+            useExistingTables: true, // Tables already exist in AWS
         });
         // Deploy Chime Stack (for video calls)
         this.chimeStack = new chime_stack_1.ChimeStack(this, 'ChimeStack', {

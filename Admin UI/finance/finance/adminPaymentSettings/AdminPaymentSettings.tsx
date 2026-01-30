@@ -25,7 +25,7 @@ import {
 	Percent,
 } from "lucide-react";
 import { toast } from "sonner";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import { PaymentRulesSection } from "../PaymentRulesSection/PaymentRulesSection";
 import { RefundPoliciesSection } from "../RefundPoliciesSection/RefundPoliciesSection";
 import { SettlementScheduleSettings } from "../SettlementScheduleSettings/SettlementScheduleSettings";
@@ -62,7 +62,7 @@ export function AdminPaymentSettings() {
 		enabled: true,
 	});
 
-	const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+	const API_BASE = `${getApiBaseUrl()}`;
 
 	useEffect(() => {
 		loadRefundRules();
@@ -72,7 +72,7 @@ export function AdminPaymentSettings() {
 		setLoading(true);
 		try {
 			const response = await fetch(`${API_BASE}/admin/payments/refund-rules`, {
-				headers: { Authorization: `Bearer ${publicAnonKey}` },
+				headers: { ...getAuthHeaders() },
 			});
 
 			if (response.ok) {
@@ -112,7 +112,7 @@ export function AdminPaymentSettings() {
 				method: "PUT",
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${publicAnonKey}`,
+					...getAuthHeaders(),
 				},
 				body: JSON.stringify(refundConfig),
 			});

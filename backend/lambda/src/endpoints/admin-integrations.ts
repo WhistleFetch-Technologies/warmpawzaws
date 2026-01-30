@@ -18,7 +18,7 @@
  */
 
 import { Hono } from 'hono';
-import { select, upsert, query } from '../database/rds-connection';
+import { select, upsert, query, insert, update } from '../database/rds-connection';
 import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { getSecret, getSecretJson, putSecret } from '../utils/secrets-manager';
@@ -174,45 +174,147 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
   /**
    * GET /config/google-maps-key
    * Public endpoint to get Google Maps API key for frontend use
-   * Retrieves API key from AWS Secrets Manager
-   * Returns the API key in the format expected by frontend components
+   * 
+   * Priority order:
+   * 1. Database (platform_settings) - fastest, no VPC endpoint needed
+   * 2. Environment variable - fallback
+   * 3. Secrets Manager - requires VPC endpoint (may timeout)
    */
+  // Cache for Google Maps API key (in-memory, per Lambda instance)
+  let cachedGoogleMapsKey: string | null = null;
+  let cacheExpiry: number = 0;
+  const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
   app.get("/config/google-maps-key", async (c) => {
     try {
-      console.log('[CONFIG] Fetching Google Maps API key from Secrets Manager...');
+      console.log('[CONFIG] Fetching Google Maps API key...');
       
-      // Get API key from Secrets Manager
-      const apiKey = await getSecret('google-maps/api-key');
-      
-      console.log('[CONFIG] API key fetched:', apiKey ? `${apiKey.substring(0, 10)}...` : 'null');
-
-      // Validate that it's not a project number (all digits)
-      if (apiKey && /^\d+$/.test(apiKey)) {
-        console.error('[CONFIG] Invalid API Key: Looks like a project number, not an API key');
-        return c.json({ 
-          error: 'Invalid API key: Please use a Google Maps API key (starts with AIza...), not a project number' 
-        }, 500);
+      // Check cache first
+      if (cachedGoogleMapsKey && Date.now() < cacheExpiry) {
+        console.log('[CONFIG] Returning cached API key');
+        return c.json({ apiKey: cachedGoogleMapsKey });
       }
 
+      let apiKey: string | null = null;
+
+      // 1. Try database first (platform_settings table)
+      try {
+        console.log('[CONFIG] Checking database for Google Maps API key...');
+        const settings = await select('platform_settings', { setting_key: 'google_maps_api_key' });
+        if (settings.length > 0 && settings[0].setting_value) {
+          const value = settings[0].setting_value;
+          apiKey = typeof value === 'string' ? value : (value as any).apiKey || (value as any).key || null;
+          if (apiKey) {
+            console.log('[CONFIG] Found API key in database');
+          }
+        }
+      } catch (dbError) {
+        console.warn('[CONFIG] Database lookup failed:', dbError);
+      }
+
+      // 2. Try environment variable
       if (!apiKey) {
-        console.warn('[CONFIG] Google Maps API key not configured in Secrets Manager');
-        return c.json({ 
-          error: 'Google Maps API key not configured',
-          hint: 'Please configure Google Maps API key in Platform Settings'
-        }, 404);
+        apiKey = process.env.GOOGLE_MAPS_API_KEY || null;
+        if (apiKey) {
+          console.log('[CONFIG] Found API key in environment variable');
+        }
       }
 
-      console.log('[CONFIG] Returning API key to client');
-      return c.json({ apiKey });
+      // 3. Try Secrets Manager with short timeout (may not work without VPC endpoint)
+      if (!apiKey) {
+        try {
+          console.log('[CONFIG] Checking Secrets Manager...');
+          // Use Promise.race to add a 5-second timeout
+          const secretPromise = getSecret('google-maps/api-key');
+          const timeoutPromise = new Promise<null>((_, reject) => 
+            setTimeout(() => reject(new Error('Secrets Manager timeout')), 5000)
+          );
+          
+          apiKey = await Promise.race([secretPromise, timeoutPromise]) as string | null;
+          if (apiKey) {
+            console.log('[CONFIG] Found API key in Secrets Manager');
+          }
+        } catch (smError: any) {
+          console.warn('[CONFIG] Secrets Manager access failed (expected if no VPC endpoint):', smError.message);
+        }
+      }
+
+      // Validate API key format
+      if (apiKey) {
+        // Validate that it's not a project number (all digits)
+        if (/^\d+$/.test(apiKey)) {
+          console.error('[CONFIG] Invalid API Key: Looks like a project number, not an API key');
+          return c.json({ 
+            error: 'Invalid API key: Please use a Google Maps API key (starts with AIza...), not a project number' 
+          }, 500);
+        }
+
+        // Cache the key
+        cachedGoogleMapsKey = apiKey;
+        cacheExpiry = Date.now() + CACHE_TTL_MS;
+        
+        console.log('[CONFIG] Returning API key to client:', `${apiKey.substring(0, 10)}...`);
+        return c.json({ apiKey });
+      }
+
+      // No API key found anywhere
+      console.warn('[CONFIG] Google Maps API key not found in any source');
+      return c.json({ 
+        error: 'Google Maps API key not configured',
+        hint: 'Please configure Google Maps API key in Admin > Platform Settings or via API'
+      }, 404);
+
     } catch (error: any) {
-      console.error('[CONFIG] Error fetching Google Maps API key from Secrets Manager:', error);
-      console.error('[CONFIG] Error name:', error.name);
-      console.error('[CONFIG] Error message:', error.message);
-      console.error('[CONFIG] Error stack:', error.stack);
+      console.error('[CONFIG] Error fetching Google Maps API key:', error);
       return c.json({ 
         error: error.message || 'Failed to fetch Google Maps API key',
         details: error.name || 'Unknown error'
       }, 500);
+    }
+  });
+
+  /**
+   * PUT /config/google-maps-key
+   * Save Google Maps API key to database (admin only)
+   */
+  app.put("/config/google-maps-key", async (c) => {
+    try {
+      const { apiKey } = await c.req.json();
+      
+      if (!apiKey || typeof apiKey !== 'string') {
+        return c.json({ error: 'API key is required' }, 400);
+      }
+
+      // Validate format (should start with AIza)
+      if (!apiKey.startsWith('AIza')) {
+        return c.json({ 
+          error: 'Invalid API key format. Google Maps API keys should start with "AIza"' 
+        }, 400);
+      }
+
+      // Save to database - setting_value is JSONB, so wrap in JSON
+      const settingValue = JSON.stringify({ apiKey });
+      
+      // Use upsert via raw query for proper JSONB handling
+      // setting_type must be 'string' or 'object'
+      await query(
+        `INSERT INTO platform_settings (setting_key, setting_value, setting_type, is_public, created_at, updated_at)
+         VALUES ($1, $2::jsonb, 'object', true, NOW(), NOW())
+         ON CONFLICT (setting_key) 
+         DO UPDATE SET setting_value = $2::jsonb, updated_at = NOW()`,
+        ['google_maps_api_key', settingValue]
+      );
+
+      // Clear cache
+      cachedGoogleMapsKey = null;
+      cacheExpiry = 0;
+
+      console.log('[CONFIG] Google Maps API key saved to database');
+      return c.json({ success: true, message: 'API key saved successfully' });
+
+    } catch (error: any) {
+      console.error('[CONFIG] Error saving Google Maps API key:', error);
+      return c.json({ error: error.message }, 500);
     }
   });
 

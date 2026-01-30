@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { BookingDetailModal } from './BookingDetailModal';
 import { apiClient } from '@/lib/api-client';
+import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 
 interface UserProfile {
   firstName: string;
@@ -594,11 +595,19 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-2">Address</label>
                     {editMode ? (
-                      <textarea
+                      <EnhancedAddressAutocomplete
                         value={profile.address}
-                        onChange={(e) => setProfile({ ...profile, address: e.target.value })}
-                        rows={3}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none"
+                        onChange={(address: string, components?: AddressComponents) => {
+                          setProfile(prev => {
+                            if (!prev) return null;
+                            const updated: UserProfile = { ...prev, address };
+                            if (components?.pincode) updated.pincode = components.pincode;
+                            return updated;
+                          });
+                        }}
+                        placeholder="Search address, landmark, city..."
+                        className="w-full"
+                        required
                       />
                     ) : (
                       <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">{profile.address}</p>

@@ -21,6 +21,7 @@ import { Hono } from 'hono';
 import { select, query, insert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { getDiscoveryRules } from '../lib/rule-engine';
 
 /**
  * Calculate distance between two coordinates (Haversine formula)
@@ -38,28 +39,110 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 
 function getCategoryFromRole(roleId: string): string {
   const roleCategoryMap: Record<string, string> = {
-    'vet_clinic': 'vet',
-    'veterinarian': 'vet',
-    'grooming_salon': 'grooming',
-    'pet_groomer': 'grooming',
-    'groomer': 'grooming',
-    'trainer': 'training',
-    'pet_trainer': 'training',
-    'dog_walker': 'walker',
-    'pet_walker': 'walker',
-    'boarding_resort': 'boarding',
-    'pet_boarding': 'boarding',
-    'nutritionist': 'nutrition',
-    'pet_nutritionist': 'nutrition',
-    'ngo': 'adoption',
-    'shelter': 'adoption',
-    'breeder': 'adoption',
+    'vet_clinic': 'vet', 'veterinarian': 'vet', 'vet_solo': 'vet',
+    'grooming_salon': 'grooming', 'pet_groomer': 'grooming', 'groomer': 'grooming', 'groomer_solo': 'grooming', 'groomer_center': 'grooming', 'grooming_solo': 'grooming',
+    'trainer': 'training', 'pet_trainer': 'training', 'trainer_solo': 'training', 'trainer_center': 'training', 'training_solo': 'training',
+    'dog_walker': 'walker', 'pet_walker': 'walker', 'walker': 'walker', 'walker_solo': 'walker',
+    'boarding_resort': 'boarding', 'pet_boarding': 'boarding',
+    'nutritionist': 'nutrition', 'pet_nutritionist': 'nutrition', 'nutritionist_center': 'nutrition', 'nutritionist_solo': 'nutrition',
+    'ngo': 'adoption', 'shelter': 'adoption', 'breeder': 'adoption',
     'pet_store': 'marketplace',
+    'diagnostics_center': 'diagnostics', 'diagnostics_provider': 'diagnostics', 'diagnostics_solo': 'diagnostics',
+    'pharmacy': 'pharmacy',
+    'cafe': 'cafe',
+    'behaviourist': 'behaviourist', 'pet_behaviourist': 'behaviourist', 'behaviourist_solo': 'behaviourist',
+    'pet_sitter': 'sitting', 'sitter': 'sitting', 'sitter_solo': 'sitting',
   };
-  return roleCategoryMap[roleId] || 'other';
+  return roleCategoryMap[roleId] || roleCategoryMap[roleId?.toLowerCase?.()] || 'other';
+}
+
+/** DB-driven: role names that have at least one approved vendor with published services */
+async function getDiscoverableRoleNames(): Promise<string[]> {
+  const result = await query(`
+    SELECT DISTINCT r.name AS role_name
+    FROM vendors v
+    INNER JOIN roles r ON v.role_id = r.id
+    INNER JOIN vendor_services vs ON vs.vendor_id = v.id
+    WHERE v.status = 'approved' AND v.is_active = true AND r.is_active = true
+      AND vs.is_enabled = true AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
+    ORDER BY r.name
+  `);
+  return (result.rows || []).map((r: any) => r.role_name).filter(Boolean);
+}
+
+/** Role ID aliases: customer web / UI may send alternate spellings; DB uses canonical role names */
+const ROLE_ID_ALIASES: Record<string, string> = {
+  diagnostic_center: 'diagnostics_center',
+  diagnostics: 'diagnostics_center',
+};
+
+/** Resolve target role names for discovery: from category or roleId, restricted to DB-discoverable roles */
+async function resolveTargetRolesForDiscovery(category?: string | null, roleId?: string | null): Promise<string[]> {
+  const discoverable = await getDiscoverableRoleNames();
+  if (roleId) {
+    const lower = roleId.toLowerCase().trim();
+    const canonical = ROLE_ID_ALIASES[lower] || lower;
+    const match = discoverable.find((r) => r.toLowerCase() === canonical || r.toLowerCase() === lower);
+    return match ? [match] : [];
+  }
+  if (category) {
+    const cat = category.toLowerCase();
+    return discoverable.filter((role) => getCategoryFromRole(role) === cat);
+  }
+  return discoverable;
 }
 
 export function registerServiceDiscoveryEndpoints(app: Hono) {
+  /**
+   * GET /customer/discovery/meta
+   * DB-driven discovery meta: roles and service styles that have discoverable vendors.
+   * Use this to populate dashboard filters so only options with data are shown.
+   */
+  app.get('/customer/discovery/meta', async (c) => {
+    try {
+      const rolesResult = await query(`
+        SELECT DISTINCT r.name AS roleName, r.display_name AS roleDisplayName
+        FROM vendors v
+        INNER JOIN roles r ON v.role_id = r.id
+        INNER JOIN vendor_services vs ON vs.vendor_id = v.id
+        WHERE v.status = 'approved' AND v.is_active = true AND r.is_active = true
+          AND vs.is_enabled = true AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
+        ORDER BY r.name
+      `);
+      const stylesResult = await query(`
+        SELECT DISTINCT vs.service_style AS serviceStyle
+        FROM vendor_services vs
+        INNER JOIN vendors v ON v.id = vs.vendor_id
+        WHERE v.status = 'approved' AND v.is_active = true
+          AND vs.is_enabled = true AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
+          AND vs.service_style IS NOT NULL
+        ORDER BY vs.service_style
+      `);
+      const roles = (rolesResult.rows || []).map((r: any) => ({
+        roleId: r.rolename,
+        roleName: r.rolename,
+        displayName: r.roledisplayname || r.rolename,
+        category: getCategoryFromRole(r.rolename || ''),
+      }));
+      const serviceStyles = (stylesResult.rows || []).map((s: any) => s.servicestyle).filter(Boolean);
+      const categories = [...new Set(roles.map((r: any) => r.category).filter(Boolean))].sort();
+      return c.json({
+        success: true,
+        roles,
+        serviceStyles: serviceStyles.length ? serviceStyles : ['at_center', 'at_home', 'tele'],
+        categories,
+      });
+    } catch (error: any) {
+      console.error('[discovery/meta] Error:', error);
+      return c.json({
+        success: true,
+        roles: [],
+        serviceStyles: ['at_center', 'at_home', 'tele'],
+        categories: ['vet', 'grooming', 'training', 'walker', 'nutrition', 'boarding', 'diagnostics'],
+      }, 200);
+    }
+  });
+
   /**
    * GET /customer/services
    * Get customer services list (alias for discover-services)
@@ -78,7 +161,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const serviceStyle = c.req.query('serviceStyle');
 
       // Build vendor query
-      // ✅ LIVE STATUS FILTER: Only show vendors eligible for customer listing
+      // Only require: approved, active, lat/lng, and published vendor_services.
+      // Do NOT require vendor_availability_v2 — discovery must show vendors with published
+      // services; availability is enforced at booking. Requiring availability here excluded
+      // diagnostics_center (and other) vendors that had no availability rows, returning [].
       let vendorQuery = `
         SELECT v.*, r.name as role_name, r.display_name as role_display_name
         FROM vendors v
@@ -91,43 +177,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               AND vs.is_enabled = true 
               AND vs.publish_status = 'published'
           )
-          AND EXISTS (
-            SELECT 1 FROM vendor_availability_v2 va 
-            WHERE va.vendor_id = v.id
-          )
       `;
 
       const params: any[] = [];
       let paramIndex = 1;
 
-      // Filter by category (role)
-      if (category) {
-        const categoryRoleMap: Record<string, string[]> = {
-          'vet': ['vet_clinic', 'veterinarian', 'vet_solo', 'vet', 'Veterinarian'],
-          'grooming': ['grooming_salon', 'pet_groomer', 'groomer', 'grooming_solo'],
-          'training': ['trainer', 'pet_trainer', 'training_solo'],
-          'walker': ['dog_walker', 'pet_walker', 'walker', 'walker_solo'],
-          'boarding': ['boarding_resort', 'pet_boarding'],
-          'nutrition': ['nutritionist', 'pet_nutritionist', 'nutritionist_solo'],
-          'adoption': ['ngo', 'shelter', 'breeder'],
-          'marketplace': ['pet_store'],
-          'behaviourist': ['behaviourist', 'pet_behaviourist', 'behaviourist_solo'],
-          'sitting': ['pet_sitter', 'sitter', 'sitter_solo'],
-          'diagnostics': ['diagnostics_provider', 'diagnostics_solo'],
-        };
-
-        const targetRoles = categoryRoleMap[category] || [];
-        if (targetRoles.length > 0) {
-          vendorQuery += ` AND (r.name = ANY($${paramIndex}::text[]) OR r.id::text = $${paramIndex + 1})`;
-          params.push(targetRoles, category);
-          paramIndex += 2;
-        }
-      }
-
-      if (roleId) {
-        vendorQuery += ` AND (r.id::text = $${paramIndex} OR r.name = $${paramIndex + 1})`;
-        params.push(roleId, roleId);
-        paramIndex += 2;
+      // DB-driven: filter by category and/or roleId (only discoverable roles)
+      const targetRoles = await resolveTargetRolesForDiscovery(category || null, roleId || null);
+      if (targetRoles.length > 0) {
+        vendorQuery += ` AND r.name = ANY($${paramIndex}::text[])`;
+        params.push(targetRoles);
+        paramIndex++;
       }
 
       // Get vendors
@@ -231,7 +291,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           LEFT JOIN roles r ON v.role_id = r.id
           WHERE vs.is_enabled = true
             AND vs.publish_status = 'published'
-            AND (r.name = $1 OR r.id::text = $1)
+            AND (LOWER(r.name) = LOWER($1) OR LOWER(r.display_name) = LOWER($1))
         `;
         
         const fallbackParams: any[] = [roleId];
@@ -398,128 +458,160 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const serviceStyle = c.req.query('serviceStyle'); // ⚠️ NEW: Filter by service style
       const roleId = c.req.query('roleId'); // ⚠️ NEW: Filter by role
 
-      // ⚠️ CRITICAL: For at_home and tele services, return staff members and vendors with these services
+      // ⚠️ CRITICAL: For at_home and tele services, return ONLY solo providers
+      // Staff has been decommissioned - now only vendor_type='solo' providers serve home/tele
       if (serviceStyle === 'at_home' || serviceStyle === 'tele') {
         const allProviders: any[] = [];
+        const targetRoles = await resolveTargetRolesForDiscovery(category || null, roleId || null);
         
-        // ========== 1. Get staff with staff_services ==========
-        const staffQuery = `
-          SELECT DISTINCT s.*, 
-                 COALESCE(v.business_name, s.name) as vendor_name,
-                 COALESCE(v.city, '') as city,
-                 COALESCE(v.state, '') as state,
-                 s.default_location as location,
-                 v.id as vendor_id
-          FROM staff s
-          LEFT JOIN vendors v ON s.vendor_id = v.id
-          WHERE s.is_active = true
-            AND (s.vendor_id IS NULL OR (v.status = 'approved' AND v.is_active = true))
-            AND (
-              EXISTS (
-                SELECT 1 FROM staff_services ss 
-                WHERE ss.staff_id = s.id
-                  AND ss.is_active = true
-                  AND $1 = ANY(ss.service_styles)
-              )
-              OR
-              EXISTS (
-                SELECT 1 FROM vendor_services vs
-                WHERE vs.vendor_id = s.vendor_id
-                  AND vs.is_enabled = true
-                  AND vs.publish_status = 'published'
-                  AND vs.service_style = $1
-              )
-            )
-        `;
-        
-        const staffParamsArray: any[] = [serviceStyle];
-        let staffParamIndex = 2;
-        
-        let staffQueryFinal = staffQuery;
-        if (roleId) {
-          const role = await query('SELECT name, id FROM roles WHERE name = $1 OR id = $1', [roleId]);
-          if (role.rows.length > 0) {
-            staffQueryFinal += ` AND s.role = $${staffParamIndex}`;
-            staffParamsArray.push(role.rows[0].name);
-            staffParamIndex++;
-          }
+        // ========== Get ONLY solo vendors with at_home/tele services (DB-driven role filter) ==========
+        // ✅ Include vendor_type='solo' OR role name contains 'solo' OR role in category (e.g. pet_trainer for training)
+        const vendorParams: any[] = [serviceStyle];
+        let vendorParamIdx = 2;
+        const soloOrCategoryRole = targetRoles.length > 0
+          ? ` OR r.name = ANY($${vendorParamIdx})`
+          : '';
+        if (targetRoles.length > 0) {
+          vendorParams.push(targetRoles);
+          vendorParamIdx++;
         }
-        
-        const staffResults = await query(staffQueryFinal, staffParamsArray).catch(() => ({ rows: [] }));
-        
-        // Format staff as providers
-        for (const staff of staffResults.rows) {
-          allProviders.push({
-            id: staff.id,
-            vendorId: staff.vendor_id || staff.id,
-            businessName: staff.vendor_name,
-            name: staff.name,
-            role: staff.role,
-            phone: staff.phone,
-            email: staff.email,
-            photo: staff.photo,
-            isStaffMember: true,
-            isIndividualProvider: !staff.vendor_id,
-            vendor: staff.vendor_id ? {
-              id: staff.vendor_id,
-              businessName: staff.vendor_name,
-            } : null,
-            location: staff.location,
-            city: staff.city,
-            state: staff.state,
-          });
-        }
-        
-        // ========== 2. FALLBACK: Get vendors directly with at_home/tele services (no staff required) ==========
-        const vendorIdsWithStaff = new Set(allProviders.map(p => p.vendorId).filter(Boolean));
-        
-        const categoryRoleMap: Record<string, string[]> = {
-          'vet': ['veterinarian', 'vet_clinic', 'vet_solo', 'vet', 'Veterinarian'],
-          'grooming': ['groomer', 'grooming_salon', 'pet_groomer', 'grooming_solo'],
-          'training': ['trainer', 'pet_trainer', 'training_solo'],
-          'walker': ['walker', 'pet_walker', 'dog_walker', 'walker_solo'],
-          'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist_solo'],
-          'behaviourist': ['behaviourist', 'pet_behaviourist', 'behaviourist_solo'],
-          'sitting': ['pet_sitter', 'sitter', 'sitter_solo'],
-          'diagnostics': ['diagnostics_provider', 'diagnostics_solo'],
-        };
-        
+
         let vendorQuery = `
           SELECT DISTINCT v.id, v.business_name, v.owner_name, v.phone, v.city, v.state,
-                 v.latitude, v.longitude, r.name as role_name, r.display_name as role_display_name
+                 v.latitude, v.longitude, r.name as role_name, r.display_name as role_display_name,
+                 v.languages, v.is_verified, v.profile_image, v.specializations, v.is_online,
+                 v.vendor_type, v.metadata
           FROM vendors v
           LEFT JOIN roles r ON v.role_id = r.id
           INNER JOIN vendor_services vs ON vs.vendor_id = v.id
           WHERE v.status = 'approved' 
             AND v.is_active = true
+            AND COALESCE(v.is_online, true) = true
+            AND (
+              v.vendor_type = 'solo' 
+              OR r.name LIKE '%_solo' 
+              OR r.name LIKE '%Solo%'
+              OR LOWER(r.name) LIKE '%solo%'${soloOrCategoryRole}
+            )
+            -- ✅ EXCLUDE business/clinic keywords from at_home/tele listings
+            AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%clinic%'
+            AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%hospital%'
+            AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%center%'
+            AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%centre%'
+            AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%salon%'
+            AND COALESCE(LOWER(v.business_name), '') NOT LIKE '% business%'
             AND vs.service_style = $1
             AND vs.is_enabled = true
-            AND vs.publish_status = 'published'
+            AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
         `;
-        
-        const vendorParams: any[] = [serviceStyle];
-        let vendorParamIdx = 2;
-        
-        if (roleId && categoryRoleMap[roleId]) {
-          vendorQuery += ` AND r.name = ANY($${vendorParamIdx})`;
-          vendorParams.push(categoryRoleMap[roleId]);
-          vendorParamIdx++;
-        } else if (category) {
-          const targetRoles = categoryRoleMap[category.toLowerCase()];
-          if (targetRoles) {
-            vendorQuery += ` AND r.name = ANY($${vendorParamIdx})`;
-            vendorParams.push(targetRoles);
-            vendorParamIdx++;
-          }
-        }
-        
+
         vendorQuery += ` LIMIT 50`;
         
         const vendorResults = await query(vendorQuery, vendorParams).catch(() => ({ rows: [] }));
         
         for (const vendor of vendorResults.rows) {
-          // Skip vendors that already have staff
-          if (vendorIdsWithStaff.has(vendor.id)) continue;
+          // ✅ ENRICHED: Get next available slot for solo vendor
+          let nextAvailableSlot: { date: string; time: string; formattedDisplay: string } | null = null;
+          try {
+            const today = new Date();
+            const todayStr = today.toISOString().split('T')[0];
+            const nextSlotsResult = await query(
+              `SELECT va.day_of_week, va.time_window_start, va.time_window_end
+               FROM vendor_availability_v2 va
+               WHERE va.vendor_id = $1 
+                 AND va.is_enabled = true
+                 AND ($2 = ANY(va.service_styles) OR va.service_style = $2)
+               ORDER BY va.day_of_week ASC, va.time_window_start ASC 
+               LIMIT 1`,
+              [vendor.id, serviceStyle]
+            );
+            
+            if (nextSlotsResult.rows.length > 0) {
+              const slot = nextSlotsResult.rows[0];
+              const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+              const dayOfWeek = slot.day_of_week;
+              const timeStr = slot.time_window_start?.substring(0, 5) || '09:00';
+              const formattedTime = new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', {
+                hour: 'numeric', minute: '2-digit', hour12: true
+              });
+              
+              // Calculate next occurrence of this day
+              const todayDayOfWeek = today.getDay();
+              let daysUntil = dayOfWeek - todayDayOfWeek;
+              if (daysUntil < 0) daysUntil += 7;
+              if (daysUntil === 0) daysUntil = 0; // Today
+              
+              const nextDate = new Date(today);
+              nextDate.setDate(today.getDate() + daysUntil);
+              
+              nextAvailableSlot = {
+                date: nextDate.toISOString().split('T')[0],
+                time: timeStr,
+                formattedDisplay: daysUntil === 0 ? `Today ${formattedTime}` : 
+                                  daysUntil === 1 ? `Tomorrow ${formattedTime}` :
+                                  `${dayNames[dayOfWeek]} ${formattedTime}`
+              };
+            }
+          } catch (slotError) { /* Continue without */ }
+
+          // ✅ ENRICHED: Get completed bookings
+          let completedBookings = 0;
+          try {
+            const bookingsResult = await query(
+              `SELECT COUNT(*) as count FROM bookings WHERE vendor_id = $1 AND status = 'completed'`,
+              [vendor.id]
+            );
+            completedBookings = parseInt(bookingsResult.rows[0]?.count || '0', 10);
+          } catch (bookErr) { /* Continue */ }
+          
+          // ✅ FIX: Calculate distance if customer coordinates provided
+          let distance: number | null = null;
+          let distanceText: string | null = null;
+          if (latitude && longitude && vendor.latitude && vendor.longitude) {
+            const lat1 = parseFloat(latitude as string);
+            const lon1 = parseFloat(longitude as string);
+            const lat2 = parseFloat(vendor.latitude);
+            const lon2 = parseFloat(vendor.longitude);
+            
+            // Haversine formula
+            const R = 6371; // Earth's radius in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            distance = R * c;
+            distanceText = distance < 1 ? `${Math.round(distance * 1000)}m away` : `${distance.toFixed(1)} km away`;
+          }
+          
+          // ✅ FIX: Get rating from reviews
+          let avgRating = 0;
+          let totalReviews = 0;
+          try {
+            const reviewsResult = await query(
+              `SELECT AVG(rating) as avg_rating, COUNT(*) as review_count
+               FROM reviews WHERE vendor_id = $1 AND is_approved = true`,
+              [vendor.id]
+            );
+            avgRating = parseFloat(reviewsResult.rows[0]?.avg_rating || '0');
+            totalReviews = parseInt(reviewsResult.rows[0]?.review_count || '0', 10);
+          } catch (reviewErr) { /* Continue */ }
+
+          // ✅ ENRICHED: Consultation price (min price from vendor_services for this style)
+          let consultationFee = 0;
+          let minPrice = 0;
+          try {
+            const priceResult = await query(
+              `SELECT MIN(COALESCE(vs.custom_price, vs.price, 0))::numeric as min_price
+               FROM vendor_services vs
+               WHERE vs.vendor_id = $1 AND vs.service_style = $2 AND vs.is_enabled = true
+                 AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)`,
+              [vendor.id, serviceStyle]
+            );
+            minPrice = parseFloat(priceResult.rows[0]?.min_price || '0') || 0;
+            consultationFee = minPrice;
+          } catch (priceErr) { /* Continue */ }
           
           allProviders.push({
             id: vendor.id,
@@ -529,22 +621,52 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             role: vendor.role_display_name || vendor.role_name,
             phone: vendor.phone,
             isStaffMember: false,
-            isIndividualProvider: false,
+            isIndividualProvider: true, // Solo providers are individual providers
+            isSoloProvider: true,
             vendor: {
               id: vendor.id,
               businessName: vendor.business_name || vendor.owner_name,
             },
             city: vendor.city,
             state: vendor.state,
+            latitude: vendor.latitude,
+            longitude: vendor.longitude,
+            // ✅ FIX: Add distance and rating fields
+            distance,
+            distanceText,
+            rating: avgRating,
+            totalReviews,
+            // ✅ ENRICHED: Consultation price for service provider discovery
+            consultationFee,
+            price: minPrice,
+            // ✅ ENRICHED: Additional fields for UniversalVendorCard
+            nextAvailableSlot,
+            nextAvailability: nextAvailableSlot?.formattedDisplay || null,
+            completedBookings,
+            isVerified: vendor.is_verified ?? (vendor.status === 'approved'),
+            isOnline: vendor.is_online ?? true,
+            languages: vendor.languages ? (Array.isArray(vendor.languages) ? vendor.languages : JSON.parse(vendor.languages || '[]')) : ['English', 'Hindi'],
+            photoUrl: vendor.profile_image || null,
+            vendorProfileImage: vendor.profile_image || null,
+            specializations: vendor.specializations ? (Array.isArray(vendor.specializations) ? vendor.specializations : JSON.parse(vendor.specializations || '[]')) : [],
+            // ✅ ENRICHED: Amenities for discovery card (from metadata)
+            amenities: (() => {
+              try {
+                const meta = vendor.metadata;
+                if (!meta) return [];
+                const m = typeof meta === 'string' ? JSON.parse(meta) : meta;
+                return Array.isArray(m?.amenities) ? m.amenities : [];
+              } catch (_) { return []; }
+            })(),
           });
         }
         
-        console.log(`[Discover Services] Found ${allProviders.length} providers for style=${serviceStyle}`);
+        console.log(`[Discover Services] Found ${allProviders.length} solo providers for style=${serviceStyle}`);
         
         return c.json({
           success: true,
           vendors: allProviders,
-          staff: allProviders.filter(p => p.isStaffMember),
+          providers: allProviders, // Alias for compatibility
           total: allProviders.length,
         });
       }
@@ -568,58 +690,28 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // ✅ FIX: When serviceStyle=at_center, exclude solo vendors and only include vendors with at_center services
       if (serviceStyle === 'at_center') {
         // Exclude solo vendors (individual providers, not clinics/centers)
-        vendorQuery += ` AND r.name NOT LIKE '%_solo'`;
+        // ✅ SOLO VENDOR RESTRICTION: Exclude vendors with vendor_type = 'solo' from at_center listings
+        vendorQuery += ` AND r.name NOT LIKE '%_solo' AND r.name NOT LIKE '%Solo%' AND COALESCE(r.display_name, '') NOT LIKE '%Solo%'`;
+        vendorQuery += ` AND (v.vendor_type IS NULL OR v.vendor_type != 'solo')`;
         
-        // Only include vendors that have at_center services
+        // Only include vendors that have at_center services (relaxed publish_status for discovery)
         vendorQuery += ` AND EXISTS (
           SELECT 1 FROM vendor_services vs
           WHERE vs.vendor_id = v.id
             AND vs.service_style = $${paramIndex}
             AND vs.is_enabled = true
-            AND vs.publish_status = 'published'
+            AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
         )`;
         params.push('at_center');
         paramIndex++;
       }
 
-      // Filter by category (role)
-      if (category) {
-        const categoryRoleMap: Record<string, string[]> = {
-          'vet': serviceStyle === 'at_center' 
-            ? ['vet_clinic', 'veterinarian', 'vet', 'Veterinarian'] // Exclude vet_solo for at_center
-            : ['vet_clinic', 'veterinarian', 'vet_solo', 'vet', 'Veterinarian'],
-          'grooming': serviceStyle === 'at_center'
-            ? ['grooming_salon', 'pet_groomer', 'groomer'] // Exclude grooming_solo for at_center
-            : ['grooming_salon', 'pet_groomer', 'groomer', 'grooming_solo'],
-          'training': serviceStyle === 'at_center'
-            ? ['trainer', 'pet_trainer'] // Exclude training_solo for at_center
-            : ['trainer', 'pet_trainer', 'training_solo'],
-          'walker': serviceStyle === 'at_center'
-            ? ['dog_walker', 'pet_walker', 'walker'] // Exclude walker_solo for at_center
-            : ['dog_walker', 'pet_walker', 'walker', 'walker_solo'],
-          'boarding': ['boarding_resort', 'pet_boarding'],
-          'nutrition': serviceStyle === 'at_center'
-            ? ['nutritionist', 'pet_nutritionist'] // Exclude nutritionist_solo for at_center
-            : ['nutritionist', 'pet_nutritionist', 'nutritionist_solo'],
-          'adoption': ['ngo', 'shelter', 'breeder'],
-          'marketplace': ['pet_store'],
-          'behaviourist': serviceStyle === 'at_center'
-            ? ['behaviourist', 'pet_behaviourist'] // Exclude behaviourist_solo for at_center
-            : ['behaviourist', 'pet_behaviourist', 'behaviourist_solo'],
-          'sitting': serviceStyle === 'at_center'
-            ? ['pet_sitter', 'sitter'] // Exclude sitter_solo for at_center
-            : ['pet_sitter', 'sitter', 'sitter_solo'],
-          'diagnostics': serviceStyle === 'at_center'
-            ? ['diagnostics_provider'] // Exclude diagnostics_solo for at_center
-            : ['diagnostics_provider', 'diagnostics_solo'],
-        };
-
-        const targetRoles = categoryRoleMap[category] || [];
-        if (targetRoles.length > 0) {
-          vendorQuery += ` AND r.name = ANY($${paramIndex})`;
-          params.push(targetRoles);
-          paramIndex++;
-        }
+      // DB-driven: filter by category and/or roleId (only discoverable roles)
+      const targetRoles = await resolveTargetRolesForDiscovery(category || null, roleId || null);
+      if (targetRoles.length > 0) {
+        vendorQuery += ` AND r.name = ANY($${paramIndex})`;
+        params.push(targetRoles);
+        paramIndex++;
       }
 
       // Filter by location (text match)
@@ -641,24 +733,33 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // Enrich vendors with services, reviews, and availability
       const enrichedVendors = await Promise.all(
         vendors.map(async (vendor: any) => {
-          // Get services - ✅ FIX: Filter by serviceStyle if provided
-          let servicesQuery = `
-            SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled, vs.service_style
-             FROM services s
-             LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
-             WHERE vs.vendor_id = $1
-             AND s.is_active = true
-             AND (vs.is_enabled IS NULL OR vs.is_enabled = true)
-          `;
+          // Get services - ✅ FIX: Query vendor_services directly (includes custom services)
           const servicesParams: any[] = [vendor.id];
+          let servicesQuery = `
+            SELECT 
+              vs.id,
+              vs.service_id,
+              vs.service_name as name,
+              vs.custom_description as description,
+              vs.custom_price as price,
+              vs.custom_duration as duration_minutes,
+              vs.service_style,
+              vs.is_enabled,
+              vs.publish_status,
+              vs.category
+            FROM vendor_services vs
+            WHERE vs.vendor_id = $1
+              AND vs.is_enabled = true
+          `;
           
-          // ✅ FIX: When serviceStyle=at_center, only show at_center services
-          if (serviceStyle === 'at_center') {
-            servicesQuery += ` AND vs.service_style = $2 AND vs.publish_status = 'published'`;
-            servicesParams.push('at_center');
+          // ✅ FIX: When serviceStyle is specified, filter by it
+          if (serviceStyle && serviceStyle !== 'all') {
+            servicesQuery += ` AND vs.service_style = $2`;
+            servicesParams.push(serviceStyle);
           }
           
-          servicesQuery += ` LIMIT 10`;
+          servicesQuery += ` AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)`;
+          servicesQuery += ` ORDER BY vs.publish_status DESC, vs.service_name LIMIT 10`;
           
           const services = await query(servicesQuery, servicesParams);
 
@@ -746,13 +847,124 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             console.debug('Could not fetch vendor promotions:', promoError);
           }
 
+          // ✅ FIX: Detect if vendor is solo/individual
+          const isSoloProvider = 
+            (vendor.role_name || '').toLowerCase().includes('solo') ||
+            (vendor.role_display_name || '').toLowerCase().includes('solo') ||
+            (vendor.role_name || '').includes('_solo');
+
+          // ✅ ENRICHED: Get next available slot
+          let nextAvailableSlot: { date: string; time: string; formattedDisplay: string } | null = null;
+          try {
+            const today = new Date();
+            const todayStr = today.toISOString().split('T')[0];
+            const nextSlotsResult = await query(
+              `SELECT date, start_time, end_time 
+               FROM vendor_availability_slots 
+               WHERE vendor_id = $1 
+                 AND date >= $2
+                 AND is_available = true
+               ORDER BY date ASC, start_time ASC
+               LIMIT 1`,
+              [vendor.id, todayStr]
+            );
+            
+            if (nextSlotsResult.rows.length > 0) {
+              const slot = nextSlotsResult.rows[0];
+              const slotDate = new Date(slot.date);
+              const isToday = slotDate.toISOString().split('T')[0] === todayStr;
+              const isTomorrow = slotDate.toISOString().split('T')[0] === 
+                new Date(today.getTime() + 86400000).toISOString().split('T')[0];
+              
+              const timeStr = slot.start_time?.substring(0, 5) || '09:00';
+              const formattedTime = new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: true
+              });
+              
+              nextAvailableSlot = {
+                date: slot.date,
+                time: timeStr,
+                formattedDisplay: isToday ? `Today ${formattedTime}` : 
+                                  isTomorrow ? `Tomorrow ${formattedTime}` :
+                                  `${slotDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} ${formattedTime}`
+              };
+            }
+          } catch (slotError) {
+            // Silently continue if slots not available
+          }
+
+          // ✅ ENRICHED: Get specializations from vendor profile or services
+          let specializations: string[] = [];
+          try {
+            // Try to get from vendor profile metadata
+            if (vendor.specializations) {
+              specializations = Array.isArray(vendor.specializations) ? 
+                vendor.specializations : JSON.parse(vendor.specializations || '[]');
+            } else {
+              // Derive from services as fallback
+              const uniqueCategories = [...new Set(services.rows.map((s: any) => s.category).filter(Boolean))];
+              specializations = uniqueCategories.slice(0, 3) as string[];
+            }
+          } catch (specError) {
+            // Continue without specializations
+          }
+
+          // ✅ ENRICHED: Get completed bookings count
+          let completedBookings = 0;
+          try {
+            const bookingsResult = await query(
+              `SELECT COUNT(*) as count FROM appointments 
+               WHERE vendor_id = $1 AND status = 'completed'`,
+              [vendor.id]
+            );
+            completedBookings = parseInt(bookingsResult.rows[0]?.count || '0', 10);
+          } catch (bookingsError) {
+            // Continue without bookings count
+          }
+
+          // ✅ ENRICHED: Get experience (from vendor profile or calculate)
+          let experience = '';
+          try {
+            if (vendor.years_of_experience) {
+              const years = parseInt(vendor.years_of_experience, 10);
+              experience = years >= 10 ? '10+ years' : years >= 5 ? '5+ years' : years >= 2 ? '2+ years' : '1+ years';
+            } else if (vendor.created_at) {
+              const yearsActive = Math.floor((Date.now() - new Date(vendor.created_at).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+              if (yearsActive > 0) {
+                experience = `${yearsActive}+ years on platform`;
+              }
+            }
+          } catch (expError) {
+            // Continue without experience
+          }
+
+          // ✅ ENRICHED: Get languages
+          let languages: string[] = [];
+          try {
+            if (vendor.languages) {
+              languages = Array.isArray(vendor.languages) ? vendor.languages : JSON.parse(vendor.languages || '[]');
+            } else {
+              languages = ['English', 'Hindi']; // Default for India
+            }
+          } catch (langError) {
+            languages = ['English', 'Hindi'];
+          }
+
+          // ✅ ENRICHED: Check verification status
+          const isVerified = vendor.is_verified === true || vendor.status === 'approved';
+
           return {
             id: vendor.id,
             vendorId: vendor.id,
             businessName: vendor.business_name,
             roleId: vendor.role_id,
             roleName: vendor.role_name,
+            roleDisplayName: vendor.role_display_name,
             category: getCategoryFromRole(vendor.role_name),
+            isSoloProvider,
+            vendorType: isSoloProvider ? 'solo' : 'clinic',
             address: vendor.address,
             city: vendor.city,
             state: vendor.state,
@@ -765,15 +977,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             totalOfferings: services.rows.length,
             featuredOfferings: services.rows.slice(0, 3).map((s: any) => ({
               id: s.id,
-              name: s.name,
-              price: s.custom_price || s.base_price || 0,
-              duration: s.custom_duration || s.duration_minutes || 0,
-              serviceStyle: s.service_style || (serviceStyle || 'at_home'), // Use vs.service_style or fallback
+              name: s.name || s.service_name,
+              price: s.price || s.custom_price || 0,
+              duration: s.duration_minutes || s.custom_duration || 30,
+              serviceStyle: s.service_style || (serviceStyle || 'at_home'),
               category: s.category,
             })),
             availabilityScore: isAvailableToday ? 100 : 0,
             isAvailableToday,
             distance,
+            // ✅ ENRICHED: Format distance for display
+            distanceText: distance !== null ? (distance < 1 ? `${Math.round(distance * 1000)}m away` : `${distance.toFixed(1)} km away`) : null,
             phone: vendor.phone,
             email: vendor.email,
             operatingHours: vendor.operating_hours ? JSON.parse(vendor.operating_hours) : null,
@@ -781,6 +995,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             hasActivePromotions: activePromotions.length > 0,
             promotions: activePromotions,
             topPromotion: activePromotions[0] || null,
+            // ✅ ENRICHED: Additional fields for UniversalVendorCard
+            nextAvailableSlot,
+            nextAvailability: nextAvailableSlot?.formattedDisplay || null,
+            specializations,
+            experience,
+            completedBookings,
+            languages,
+            isVerified,
+            photoUrl: vendor.profile_image || vendor.logo_url || null,
+            vendorProfileImage: vendor.profile_image || vendor.logo_url || null,
           };
         })
       );
@@ -833,7 +1057,42 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[discover-services] Error discovering services:', error);
-      return c.json({ success: true, vendors: [], total: 0 }, 200);
+      console.error('[discover-services] Error stack:', error?.stack);
+      
+      // ✅ FIX: Return proper error codes instead of masking with 200 OK
+      // This allows frontend to handle errors properly and enables better debugging
+      const errorMessage = error?.message || 'Unknown error discovering services';
+      
+      // Check for specific error types
+      if (errorMessage.includes('connection pool') || errorMessage.includes('too many clients')) {
+        return c.json({ 
+          success: false, 
+          error: 'Service temporarily busy. Please try again in a moment.',
+          code: 'POOL_EXHAUSTED',
+          vendors: [], 
+          total: 0 
+        }, 503);
+      }
+      
+      if (errorMessage.includes('timeout') || errorMessage.includes('Timeout')) {
+        return c.json({ 
+          success: false, 
+          error: 'Request timed out. Please try again.',
+          code: 'TIMEOUT',
+          vendors: [], 
+          total: 0 
+        }, 504);
+      }
+      
+      // Return 500 for other errors (with fallback empty data for graceful degradation)
+      return c.json({ 
+        success: false, 
+        error: 'Failed to discover services. Please try again.',
+        code: 'INTERNAL_ERROR',
+        _debug: process.env.NODE_ENV !== 'production' ? errorMessage : undefined,
+        vendors: [], 
+        total: 0 
+      }, 500);
     }
   });
 
@@ -1189,23 +1448,23 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         return c.json({ error: 'Vendor not found', success: false }, 404);
       }
 
-      // Build query for services
+      // Build query for services (services table has category TEXT; service_categories has category_id TEXT, not id UUID for join)
       let servicesQuery = `
         SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled, vs.service_style,
-               sc.name as category_name, sc.slug as category_slug
+               sc.name as category_name, sc.category_id as category_slug
         FROM services s
         LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
-        LEFT JOIN service_categories sc ON s.category_id = sc.id
+        LEFT JOIN service_categories sc ON sc.category_id = s.category OR sc.name = s.category
         WHERE (vs.vendor_id = $1 OR s.vendor_id = $1)
         AND s.is_active = true
         AND (vs.is_enabled IS NULL OR vs.is_enabled = true)
       `;
       const queryParams: any[] = [vendorId];
 
-      // Filter by category if provided
+      // Filter by category if provided (match on category_id or name; services has category TEXT)
       if (category) {
         queryParams.push(category);
-        servicesQuery += ` AND (sc.slug = $${queryParams.length} OR LOWER(sc.name) LIKE '%' || LOWER($${queryParams.length}) || '%')`;
+        servicesQuery += ` AND (sc.category_id = $${queryParams.length} OR LOWER(sc.name) LIKE '%' || LOWER($${queryParams.length}) || '%' OR s.category = $${queryParams.length})`;
       }
 
       // Filter by service style if provided
@@ -1375,10 +1634,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let paramIndex = 1;
 
       // Filter by roleId (primary filter)
+      // ✅ FIX: Use only role name comparison (case-insensitive), not id::text to avoid uuid = text error
       if (roleId) {
-        vendorQuery += ` AND (r.id::text = $${paramIndex} OR r.name = $${paramIndex + 1})`;
-        params.push(roleId, roleId);
-        paramIndex += 2;
+        vendorQuery += ` AND (LOWER(r.name) = LOWER($${paramIndex}) OR LOWER(r.display_name) = LOWER($${paramIndex}))`;
+        params.push(roleId);
+        paramIndex++;
+      }
+
+      // ✅ Vendor discovery rules: filter by service style (at_center = business only; at_home/tele = solo with matching services)
+      if (serviceStyle === 'at_center') {
+        vendorQuery += ` AND (v.vendor_type IS NULL OR v.vendor_type != 'solo')`;
+        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true)`;
+        params.push(serviceStyle);
+        paramIndex++;
+      } else if (serviceStyle === 'at_home' || serviceStyle === 'tele') {
+        vendorQuery += ` AND (v.vendor_type = 'solo' OR r.name LIKE '%_solo' OR LOWER(r.name) LIKE '%solo%')`;
+        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true)`;
+        params.push(serviceStyle);
+        paramIndex++;
       }
 
       // Filter by search query (name, business_name, specialization)
@@ -1473,10 +1746,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           WHERE s.is_active = true
             AND v.status = 'approved'
             AND v.is_active = true
-            AND (r.id::text = $1 OR r.name = $2)
-          LIMIT $3
+            AND (LOWER(r.name) = LOWER($1) OR LOWER(r.display_name) = LOWER($1))
+          LIMIT $2
         `;
-        const staffResults = await query(staffQuery, [roleId, roleId, limit]);
+        const staffResults = await query(staffQuery, [roleId, limit]);
         staff = staffResults.rows.map((s: any) => ({
           ...s,
           id: s.id,
@@ -1566,7 +1839,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     try {
       const lat = parseFloat(c.req.query('lat') || '0');
       const lng = parseFloat(c.req.query('lng') || '0');
-      const radius = parseFloat(c.req.query('radius') || '10'); // km
+      const roleId = c.req.query('roleId');
+      const rules = await getDiscoveryRules(roleId || 'all', 'discover');
+      const defaultRadiusKm = rules.discovery_radius_km ?? 10;
+      const radius = c.req.query('radius') ? parseFloat(c.req.query('radius')!) : defaultRadiusKm;
       const serviceType = c.req.query('serviceType') || '';
 
       if (!lat || !lng) {
@@ -1648,9 +1924,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       paramIdx++;
 
       if (roleId) {
-        queryText += ` AND (r.id::text = $${paramIdx} OR r.name = $${paramIdx})`;
-        params.push(roleId, roleId);
-        paramIdx += 2;
+        // ✅ FIX: Use only role name comparison (case-insensitive), not id::text
+        queryText += ` AND (LOWER(r.name) = LOWER($${paramIdx}) OR LOWER(r.display_name) = LOWER($${paramIdx}))`;
+        params.push(roleId);
+        paramIdx++;
       }
 
       // Add distance calculation if location provided
@@ -1733,7 +2010,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 address: payload.address || 'Not specified',
                 city: payload.city || 'Not specified',
                 state: payload.state || 'Not specified',
-                pincode: payload.pin || payload.pincode || '000000',
+                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
                 status: 'active',
                 is_active: true,
                 created_at: new Date().toISOString(),
@@ -2559,7 +2836,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const specialization = c.req.query('specialization'); // ✅ FIX: Support specialization parameter
       const latitude = c.req.query('latitude');
       const longitude = c.req.query('longitude');
-      const radius = parseInt(c.req.query('radius') || '50', 10); // km
+      const rules = await getDiscoveryRules(
+        roleId || category || 'all',
+        'discover',
+        serviceStyle || undefined,
+        category || undefined
+      );
+      const defaultRadiusKm = rules.discovery_radius_km ?? 50;
+      const maxResults = rules.discovery_max_results ?? 50;
+      const radius = c.req.query('radius') ? parseInt(c.req.query('radius')!, 10) : defaultRadiusKm;
+      const maxDistance = c.req.query('maxDistance'); // ✅ NEW: Maximum distance filter in km
+      const minRating = c.req.query('minRating'); // ✅ NEW: Minimum rating filter
+      const sortBy = c.req.query('sortBy') || (rules.discovery_sort_default as string) || 'relevance'; // ✅ Rule engine: default sort
       
       if (!serviceStyle) {
         return c.json({ error: 'Service style is required (tele, at_home, at_center)', success: false }, 400);
@@ -2567,6 +2855,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       const customerLat = latitude ? parseFloat(latitude) : null;
       const customerLng = longitude ? parseFloat(longitude) : null;
+      const maxDistanceKm = maxDistance ? parseFloat(maxDistance) : null;
+      const minRatingValue = minRating ? parseFloat(minRating) : null;
 
       // ========== FOR AT_CENTER: Return vendors directly ==========
       if (serviceStyle === 'at_center') {
@@ -2594,22 +2884,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             AND vs.is_enabled = true
             AND vs.publish_status = 'published'
             AND (r.name IS NULL OR r.name NOT LIKE '%_solo')
+            AND (v.vendor_type IS NULL OR v.vendor_type != 'solo')
         `;
         
         const params: any[] = [serviceStyle];
         let paramIndex = 2;
 
         if (category) {
-          // ✅ FIX: For at_center (clinics), exclude solo vendors - they are individual providers, not organizations
+          // ✅ FIX: Align with getCategoryFromRole - include all center/solo role name variants so discoverable vendors populate.
+          // Vet center uses discover-services; by-style must match same role set for grooming/training/walker.
           const categoryRoles: Record<string, string[]> = {
-            'vet': ['veterinarian', 'vet_clinic', 'vet', 'Veterinarian'], // Excluded 'vet_solo'
-            'grooming': ['groomer', 'grooming_salon', 'pet_groomer'], // Excluded 'grooming_solo'
-            'training': ['trainer', 'pet_trainer'], // Excluded 'training_solo'
-            'nutritionist': ['nutritionist', 'pet_nutritionist'], // Excluded 'nutritionist_solo'
-            'walker': ['walker', 'pet_walker', 'dog_walker'], // Excluded 'walker_solo'
-            'behaviourist': ['behaviourist', 'pet_behaviourist'], // Excluded 'behaviourist_solo'
-            'sitting': ['pet_sitter', 'sitter'], // Excluded 'sitter_solo'
-            'diagnostics': ['diagnostics_provider'], // Excluded 'diagnostics_solo'
+            'vet': ['veterinarian', 'vet_clinic', 'vet', 'Veterinarian'],
+            'grooming': ['groomer', 'grooming_salon', 'pet_groomer', 'groomer_center', 'groomer_solo', 'grooming_solo'],
+            'training': ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo', 'training_solo'],
+            'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist_center', 'nutritionist_solo'],
+            'walker': ['walker', 'pet_walker', 'dog_walker', 'walker_solo'],
+            'behaviourist': ['behaviourist', 'pet_behaviourist', 'behaviourist_solo'],
+            'sitting': ['pet_sitter', 'sitter', 'sitter_solo'],
+            'diagnostics': ['diagnostics_provider', 'diagnostics_center', 'diagnostics_solo'],
           };
           const roles = categoryRoles[category.toLowerCase()];
           if (roles) {
@@ -2658,7 +2950,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           }
         }
 
-        vendorsQuery += ` ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT 50`;
+        vendorsQuery += ` ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT ${Math.min(100, Math.max(1, maxResults))}`;
 
         const vendorsResult = await query(vendorsQuery, params);
 
@@ -2713,13 +3005,55 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           })
         );
 
-        const filteredVendors = vendorsWithServices.filter(v => v.services.length > 0);
+        let filteredVendors = vendorsWithServices.filter(v => v.services.length > 0);
+
+        // ✅ Apply minRating filter
+        if (minRatingValue !== null && minRatingValue > 0) {
+          filteredVendors = filteredVendors.filter(v => parseFloat(v.rating) >= minRatingValue);
+        }
+
+        // ✅ Apply maxDistance filter
+        if (maxDistanceKm !== null && customerLat && customerLng) {
+          filteredVendors = filteredVendors.filter(v => 
+            v.distance === null || v.distance <= maxDistanceKm
+          );
+        }
+
+        // ✅ Sort based on sortBy parameter
+        filteredVendors.sort((a, b) => {
+          switch (sortBy) {
+            case 'distance':
+              if (a.distance === null && b.distance === null) return 0;
+              if (a.distance === null) return 1;
+              if (b.distance === null) return -1;
+              return a.distance - b.distance;
+            
+            case 'rating':
+              return parseFloat(b.rating) - parseFloat(a.rating);
+            
+            case 'price':
+              const aPrice = a.services[0]?.price || 0;
+              const bPrice = b.services[0]?.price || 0;
+              return aPrice - bPrice;
+            
+            case 'relevance':
+            default:
+              const aScore = (parseFloat(a.rating) * 10) + (a.reviewCount * 0.5) + (a.distance !== null ? Math.max(0, 50 - a.distance) : 0);
+              const bScore = (parseFloat(b.rating) * 10) + (b.reviewCount * 0.5) + (b.distance !== null ? Math.max(0, 50 - b.distance) : 0);
+              return bScore - aScore;
+          }
+        });
 
         return c.json({
           success: true,
           style: serviceStyle,
           providers: filteredVendors,
           total: filteredVendors.length,
+          appliedFilters: {
+            minRating: minRatingValue,
+            maxDistance: maxDistanceKm,
+            sortBy,
+          },
         });
       }
 
@@ -2773,16 +3107,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         ? 'COALESCE((SELECT COUNT(*) FROM reviews WHERE staff_id = s.id), 0)' 
         : '0';
 
-      // Category role mapping - comprehensive list including solo providers
+      // Category role mapping - comprehensive list including solo providers and display names
       const categoryRoles: Record<string, string[]> = {
-        'vet': ['Veterinarian', 'veterinarian', 'vet', 'vet_clinic', 'vet_solo'],
-        'grooming': ['Groomer', 'groomer', 'pet_groomer', 'grooming_salon', 'grooming_solo'],
-        'training': ['Trainer', 'trainer', 'pet_trainer', 'training_solo'],
-        'walker': ['Walker', 'walker', 'pet_walker', 'dog_walker', 'walker_solo'],
-        'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist_solo'],
-        'behaviourist': ['behaviourist', 'pet_behaviourist', 'behaviourist_solo'],
-        'sitting': ['pet_sitter', 'sitter', 'sitter_solo'],
-        'diagnostics': ['diagnostics_provider', 'diagnostics_solo'],
+        'vet': ['Veterinarian', 'veterinarian', 'vet', 'vet_clinic', 'vet_solo', 'Veterinarian (Solo)', 'Vet Solo', 'Veterinary Clinic'],
+        'grooming': ['Groomer', 'groomer', 'pet_groomer', 'grooming_salon', 'grooming_solo', 'Groomer (Solo)', 'Grooming Salon'],
+        'training': ['Trainer', 'trainer', 'pet_trainer', 'training_solo', 'Trainer (Solo)', 'Pet Trainer'],
+        'walker': ['Walker', 'walker', 'pet_walker', 'dog_walker', 'walker_solo', 'Dog Walker', 'Walker (Solo)'],
+        'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist_solo', 'Pet Nutritionist', 'Nutritionist (Solo)'],
+        'nutrition': ['nutritionist', 'pet_nutritionist', 'nutritionist_solo', 'Pet Nutritionist', 'Nutritionist (Solo)'],
+        'behaviourist': ['behaviourist', 'pet_behaviourist', 'behaviourist_solo', 'Pet Behaviourist', 'Behaviourist (Solo)'],
+        'sitting': ['pet_sitter', 'sitter', 'sitter_solo', 'Pet Sitter', 'Sitter (Solo)'],
+        'diagnostics': ['diagnostics_provider', 'diagnostics_solo', 'Diagnostics Provider', 'Diagnostics (Solo)'],
       };
 
       // ✅ FIX: Use roleId if provided, otherwise use category mapping
@@ -2790,9 +3125,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let targetRoles: string[] = [];
       if (roleId) {
         // If roleId is provided, try to get role name from database
+        // ✅ FIX: Avoid uuid = text comparison - only compare name/display_name with text
         try {
           const roles = await query(
-            `SELECT name, display_name FROM roles WHERE id = $1 OR name = $1`,
+            `SELECT name, display_name FROM roles WHERE LOWER(name) = LOWER($1) OR LOWER(display_name) = LOWER($1)`,
             [roleId]
           );
           if (roles.rows.length > 0) {
@@ -2891,6 +3227,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       )`;
       individualParams.push(serviceStyle);
       individualParamIdx++;
+
+      // NOTE: Availability check removed - providers appear based on service style enablement
+      // Availability is validated at booking time, not at discovery time
 
       // ✅ FIX: Filter by specialization if provided (check staff_specializations table)
       if (specialization) {
@@ -3064,6 +3403,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       staffParams.push(serviceStyle);
       staffParamIdx++;
 
+      // NOTE: Availability check removed - providers appear based on service style enablement
+      // Availability is validated at booking time, not at discovery time
+
       // ✅ FIX: Filter by specialization if provided (check staff_specializations table)
       if (specialization) {
         const hasStaffSpecializationsTable = await query(`
@@ -3181,9 +3523,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         });
       }
 
-      // ========== 3. FALLBACK: Get vendors directly with at_home/tele services (no staff required) ==========
-      // ✅ FIX: Some vendors publish at_home/tele services but don't have staff set up
-      // Include them as providers so they appear in discovery
+      // ========== 3. FALLBACK: Get SOLO vendors only with at_home/tele services ==========
+      // ✅ RULE: Home/Tele listing = only solo providers (same as discover-services)
       const vendorIdsWithStaff = new Set(providers.map(p => p.vendorId).filter(Boolean));
       
       let vendorFallbackQuery = `
@@ -3196,6 +3537,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           v.city,
           v.latitude,
           v.longitude,
+          v.profile_image,
+          v.specializations,
+          v.metadata,
           r.name as role_name,
           r.display_name as role_display_name,
           (SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id) as avg_rating,
@@ -3205,6 +3549,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         INNER JOIN vendor_services vs ON vs.vendor_id = v.id
         WHERE v.status = 'approved' 
           AND v.is_active = true
+          AND (
+            v.vendor_type = 'solo'
+            OR r.name LIKE '%_solo'
+            OR r.name LIKE '%Solo%'
+            OR LOWER(r.name) LIKE '%solo%'
+          )
+          AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%clinic%'
+          AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%hospital%'
+          AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%center%'
+          AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%centre%'
+          AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%salon%'
+          AND COALESCE(LOWER(v.business_name), '') NOT LIKE '% business%'
           AND vs.service_style = $1
           AND vs.is_enabled = true
           AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
@@ -3224,7 +3580,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         vendorFallbackParamIdx++;
       }
 
-      vendorFallbackQuery += ` ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT 50`;
+      // NOTE: Availability check removed - vendors appear based on service style enablement
+      // Availability is validated at booking time, not at discovery time
+
+      vendorFallbackQuery += ` ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT ${Math.min(100, Math.max(1, maxResults))}`;
 
       console.log(`[Services By Style] Vendor fallback query:`, vendorFallbackQuery.substring(0, 200));
       console.log(`[Services By Style] Vendor fallback params:`, vendorFallbackParams);
@@ -3264,6 +3623,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           distance = calculateDistance(customerLat, customerLng, parseFloat(vendor.latitude), parseFloat(vendor.longitude));
         }
 
+        const minPrice = servicesResult.rows.length > 0
+          ? Math.min(...servicesResult.rows.map((s: any) => parseFloat(s.price || 0)))
+          : 0;
+        let amenities: string[] = [];
+        try {
+          const meta = vendor.metadata;
+          if (meta) {
+            const m = typeof meta === 'string' ? JSON.parse(meta) : meta;
+            if (Array.isArray(m?.amenities)) amenities = m.amenities;
+          }
+        } catch (_) {}
+        const specializations = vendor.specializations
+          ? (Array.isArray(vendor.specializations) ? vendor.specializations : JSON.parse(vendor.specializations || '[]'))
+          : [];
+
         providers.push({
           providerId: vendor.vendor_id,
           providerType: 'vendor',
@@ -3271,7 +3645,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vendorName: vendor.business_name || vendor.owner_name,
           name: vendor.business_name || vendor.owner_name,
           phone: vendor.phone,
-          photo: null,
+          photo: vendor.profile_image || null,
+          photoUrl: vendor.profile_image || null,
           role: vendor.role_display_name || vendor.role_name,
           experienceYears: null,
           qualifications: null,
@@ -3281,7 +3656,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           reviewCount: parseInt(vendor.review_count || '0', 10),
           distance: distance ? parseFloat(distance.toFixed(2)) : null,
           isVerified: true,
-          isIndividualProvider: false,
+          isIndividualProvider: true,
+          price: minPrice,
+          consultationFee: minPrice,
+          specializations,
+          amenities,
           services: servicesResult.rows.map(s => ({
             id: s.id,
             serviceId: s.service_id,
@@ -3294,18 +3673,51 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         });
       }
 
-      // Filter providers with at least one service and sort by distance
-      const filteredProviders = providers
-        .filter(p => p.services.length > 0)
-        .sort((a, b) => {
-          // Sort by distance if available, otherwise by rating
-          if (a.distance !== null && b.distance !== null) {
-            return a.distance - b.distance;
-          }
-          return parseFloat(b.rating) - parseFloat(a.rating);
-        });
+      // Filter providers with at least one service
+      let filteredProviders = providers.filter(p => p.services.length > 0);
 
-      console.log(`[Services By Style] Found ${filteredProviders.length} providers for style=${serviceStyle}, category=${category}`);
+      // ✅ Apply minRating filter
+      if (minRatingValue !== null && minRatingValue > 0) {
+        filteredProviders = filteredProviders.filter(p => parseFloat(p.rating) >= minRatingValue);
+      }
+
+      // ✅ Apply maxDistance filter
+      if (maxDistanceKm !== null && customerLat && customerLng) {
+        filteredProviders = filteredProviders.filter(p => 
+          p.distance === null || p.distance <= maxDistanceKm
+        );
+      }
+
+      // ✅ Sort based on sortBy parameter
+      filteredProviders.sort((a, b) => {
+        switch (sortBy) {
+          case 'distance':
+            // Sort by distance ascending (nearest first)
+            if (a.distance === null && b.distance === null) return 0;
+            if (a.distance === null) return 1;
+            if (b.distance === null) return -1;
+            return a.distance - b.distance;
+          
+          case 'rating':
+            // Sort by rating descending (highest first)
+            return parseFloat(b.rating) - parseFloat(a.rating);
+          
+          case 'price':
+            // Sort by lowest service price
+            const aPrice = a.services[0]?.price || 0;
+            const bPrice = b.services[0]?.price || 0;
+            return aPrice - bPrice;
+          
+          case 'relevance':
+          default:
+            // Relevance: weighted score of rating + review count + distance bonus
+            const aScore = (parseFloat(a.rating) * 10) + (a.reviewCount * 0.5) + (a.distance !== null ? Math.max(0, 50 - a.distance) : 0);
+            const bScore = (parseFloat(b.rating) * 10) + (b.reviewCount * 0.5) + (b.distance !== null ? Math.max(0, 50 - b.distance) : 0);
+            return bScore - aScore;
+        }
+      });
+
+      console.log(`[Services By Style] Found ${filteredProviders.length} providers for style=${serviceStyle}, category=${category}, sortBy=${sortBy}`);
 
       return c.json({
         success: true,
@@ -3314,6 +3726,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         total: filteredProviders.length,
         // Also return as vendors for backward compatibility
         vendors: filteredProviders,
+        appliedFilters: {
+          minRating: minRatingValue,
+          maxDistance: maxDistanceKm,
+          sortBy,
+        },
       });
     } catch (error: any) {
       console.error('Error fetching services by style:', error);

@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Save, Check, AlertCircle, Key, CreditCard } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface PaymentSettings {
@@ -75,10 +75,10 @@ export default function PaymentGatewayIntegration() {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/settings/payment-gateway`,
+        `${getApiBaseUrl()}/admin/settings/payment-gateway`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -138,12 +138,12 @@ export default function PaymentGatewayIntegration() {
       toast.info('Saving payment settings...');
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/settings/payment-gateway`,
+        `${getApiBaseUrl()}/admin/settings/payment-gateway`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(settings)
         }

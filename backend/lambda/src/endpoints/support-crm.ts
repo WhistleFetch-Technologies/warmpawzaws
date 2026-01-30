@@ -141,7 +141,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       }
 
       if (agentId) {
-        ticketsQuery += ` AND assigned_agent_id = $${paramIndex}`;
+        ticketsQuery += ` AND assigned_to = $${paramIndex}`;
         params.push(agentId);
         paramIndex++;
       }
@@ -311,8 +311,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       const updated = await update('support_tickets',
         { id: ticketId },
         {
-          assigned_agent_id: agentId,
-          assigned_agent_name: agentName || null,
+          assigned_to: agentId,
           status: 'in_progress',
           assigned_at: new Date().toISOString(),
           last_updated_at: new Date().toISOString(),
@@ -414,13 +413,14 @@ export function registerSupportCrmEndpoints(app: Hono) {
       let queryStr = `
         SELECT 
           t.*,
-          c.name as customer_name,
+          c.full_name as customer_name,
           c.phone as customer_phone,
           c.email as customer_email,
-          s.name as assigned_agent_name
+          s.name as assigned_agent_name,
+          t.assigned_to as assigned_agent_id
         FROM support_tickets t
         LEFT JOIN customers c ON t.customer_id = c.id
-        LEFT JOIN staff s ON t.assigned_agent_id = s.id
+        LEFT JOIN staff s ON t.assigned_to = s.id
         WHERE 1=1
       `;
       const params: any[] = [];
@@ -447,7 +447,8 @@ export function registerSupportCrmEndpoints(app: Hono) {
         id: String(t.id || ''),
         customerId: t.customer_id ? String(t.customer_id) : '',
         subject: String(t.subject || ''),
-        description: String(t.description || ''),
+        // Use message as primary content, fallback to description
+        description: String(t.message || t.description || ''),
         status: String(t.status || 'open'),
         priority: String(t.priority || 'medium'),
         source: String(t.source || 'customer'),
@@ -523,8 +524,8 @@ export function registerSupportCrmEndpoints(app: Hono) {
           END as resolution_rate,
           COALESCE(AVG(EXTRACT(EPOCH FROM (t.resolved_at - t.created_at)) / 3600), 0) as avg_resolution_time_hours
         FROM staff s
-        LEFT JOIN support_tickets t ON s.id = t.assigned_agent_id
-        WHERE s.role = 'support' OR s.can_handle_support = true
+        LEFT JOIN support_tickets t ON s.id = t.assigned_to
+        WHERE (s.role = 'support' OR s.can_handle_support = true)
         AND s.is_active = true
         GROUP BY s.id, s.name
         ORDER BY total_tickets DESC
@@ -575,18 +576,91 @@ export function registerSupportCrmEndpoints(app: Hono) {
 
       switch (action) {
         case 'assign':
-          if (actionData.agentId) {
-            updateData.assigned_agent_id = actionData.agentId;
+          if (actionData.assignTo || actionData.agentId) {
+            updateData.assigned_to = actionData.assignTo || actionData.agentId;
+            updateData.assigned_at = new Date().toISOString();
             updateData.status = 'in_progress';
           }
           break;
         case 'escalate':
-          updateData.priority = 'high';
+          updateData.priority = 'urgent';
           updateData.status = 'escalated';
+          updateData.escalated_at = new Date().toISOString();
+          updateData.escalation_reason = actionData.reason || 'Escalated by admin';
+          break;
+        case 'reopen':
+          updateData.status = 'open';
+          updateData.resolved_at = null;
           break;
         case 'close':
           updateData.status = 'closed';
           updateData.resolved_at = new Date().toISOString();
+          updateData.resolution_notes = actionData.reason || null;
+          break;
+        case 'refund':
+        case 'partial_refund':
+          // Process actual refund through Razorpay if booking has payment
+          const ticket = tickets[0];
+          let refundResult = null;
+          
+          if (ticket.booking_id) {
+            try {
+              // Get payment for this booking
+              const payments = await query(
+                `SELECT * FROM payments WHERE booking_id = $1 AND status = 'captured' ORDER BY created_at DESC LIMIT 1`,
+                [ticket.booking_id]
+              );
+              
+              if (payments.rows.length > 0) {
+                const payment = payments.rows[0];
+                const refundAmount = actionData.amount || payment.amount;
+                
+                // Create refund record
+                const refundRecord = await insert('refunds', {
+                  payment_id: payment.id,
+                  booking_id: ticket.booking_id,
+                  customer_id: ticket.customer_id,
+                  vendor_id: ticket.vendor_id,
+                  refund_amount: refundAmount,
+                  refund_reason: actionData.reason || 'Support ticket refund',
+                  refund_status: 'pending',
+                  support_ticket_id: ticketId,
+                  requested_at: new Date().toISOString(),
+                });
+                
+                // Update ticket with refund info
+                updateData.refund_id = refundRecord[0]?.id;
+                updateData.refund_amount = refundAmount;
+                updateData.refund_status = 'pending';
+                
+                refundResult = {
+                  refundId: refundRecord[0]?.id,
+                  amount: refundAmount,
+                  status: 'pending',
+                  message: 'Refund request created. Will be processed within 5-7 business days.',
+                };
+                
+                console.log(`✅ [CRM] Refund created for ticket ${ticketId}: ₹${refundAmount}`);
+              } else {
+                // No payment found - just log the request
+                console.log(`⚠️ [CRM] No captured payment found for booking ${ticket.booking_id}`);
+              }
+            } catch (refundError: any) {
+              console.error('Error processing refund:', refundError);
+              // Continue with metadata logging even if refund creation fails
+            }
+          }
+          
+          // Always update metadata for audit trail
+          updateData.metadata = {
+            ...(ticket.metadata || {}),
+            refund_requested: true,
+            refund_amount: actionData.amount,
+            refund_reason: actionData.reason,
+            refund_type: action === 'partial_refund' ? 'partial' : 'full',
+            refund_requested_at: new Date().toISOString(),
+            refund_result: refundResult,
+          };
           break;
         default:
           return c.json({ error: `Unknown action: ${action}` }, 400);
@@ -688,22 +762,26 @@ export function registerSupportCrmEndpoints(app: Hono) {
    */
   app.post("/crm/tickets/auto-route", async (c) => {
     try {
-      // Get unassigned open tickets
-      const unassigned = await query(`
-        SELECT * FROM support_tickets
-        WHERE status = 'open' AND assigned_agent_id IS NULL
-        ORDER BY created_at ASC
-        LIMIT 10
-      `).catch(() => ({ rows: [] }));
+      const body = await c.req.json().catch(() => ({}));
+      const { ticketId } = body;
+
+      // If a specific ticketId is provided, route only that ticket
+      // Otherwise, route all unassigned open tickets
+      const unassigned = await query(
+        ticketId 
+          ? `SELECT * FROM support_tickets WHERE id = $1 AND status = 'open' AND assigned_to IS NULL`
+          : `SELECT * FROM support_tickets WHERE status = 'open' AND assigned_to IS NULL ORDER BY created_at ASC LIMIT 10`,
+        ticketId ? [ticketId] : []
+      ).catch(() => ({ rows: [] }));
 
       // Get available agents (sorted by current workload)
       const agents = await query(`
         SELECT s.id, s.name,
           COUNT(t.id) as current_workload
         FROM staff s
-        LEFT JOIN support_tickets t ON s.id = t.assigned_agent_id 
+        LEFT JOIN support_tickets t ON s.id = t.assigned_to 
           AND t.status IN ('open', 'in_progress')
-        WHERE s.role = 'support' OR s.can_handle_support = true
+        WHERE (s.role = 'support' OR s.can_handle_support = true)
         AND s.is_active = true
         GROUP BY s.id, s.name
         ORDER BY current_workload ASC
@@ -718,22 +796,26 @@ export function registerSupportCrmEndpoints(app: Hono) {
       }
 
       let routed = 0;
-      for (let i = 0; i < unassigned.rows.length && i < agents.rows.length; i++) {
+      let assignedAgent = null;
+      for (let i = 0; i < unassigned.rows.length; i++) {
         const ticket = unassigned.rows[i];
         const agent = agents.rows[i % agents.rows.length];
 
         await update('support_tickets', { id: ticket.id }, {
-          assigned_agent_id: agent.id,
+          assigned_to: agent.id,
+          assigned_at: new Date().toISOString(),
           status: 'in_progress',
           last_updated_at: new Date().toISOString(),
         });
         routed++;
+        assignedAgent = agent.name;
       }
 
       return c.json({
         success: true,
         message: `Routed ${routed} ticket(s)`,
         routed,
+        assignedAgent: assignedAgent,
       });
     } catch (error: any) {
       console.error('Error auto-routing tickets:', error);
@@ -1014,6 +1096,390 @@ export function registerSupportCrmEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error fetching ticket context:', error);
       return c.json({ error: error.message || 'Failed to fetch ticket context' }, 500);
+    }
+  });
+
+  // ============================================================================
+  // SUPPORT SETTINGS ENDPOINTS
+  // ============================================================================
+
+  /**
+   * GET /support/settings/agents
+   * Get all support agents with their details
+   */
+  app.get("/support/settings/agents", async (c) => {
+    try {
+      const result = await query(`
+        SELECT 
+          sa.*,
+          s.name,
+          s.email,
+          s.phone,
+          s.role as staff_role,
+          (SELECT COUNT(*) FROM support_tickets WHERE assigned_to = sa.staff_id AND status NOT IN ('closed', 'resolved')) as active_tickets
+        FROM support_agents sa
+        JOIN staff s ON sa.staff_id = s.id
+        WHERE sa.is_active = true
+        ORDER BY s.name
+      `);
+
+      return c.json({
+        success: true,
+        agents: result.rows.map(a => ({
+          id: a.id,
+          staffId: a.staff_id,
+          name: a.name,
+          email: a.email,
+          phone: a.phone,
+          role: a.role,
+          staffRole: a.staff_role,
+          maxConcurrentTickets: a.max_concurrent_tickets,
+          specialties: a.specialties || [],
+          availabilityStatus: a.availability_status,
+          lastActiveAt: a.last_active_at,
+          activeTickets: parseInt(a.active_tickets) || 0,
+          isActive: a.is_active,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Error fetching support agents:', error);
+      return c.json({ error: error.message || 'Failed to fetch agents' }, 500);
+    }
+  });
+
+  /**
+   * POST /support/settings/agents
+   * Create or update a support agent
+   */
+  app.post("/support/settings/agents", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { staffId, role, maxConcurrentTickets, specialties } = body;
+
+      if (!staffId) {
+        return c.json({ error: 'staffId is required' }, 400);
+      }
+
+      // Check if agent already exists
+      const existing = await query('SELECT id FROM support_agents WHERE staff_id = $1', [staffId]);
+      
+      if (existing.rows.length > 0) {
+        // Update existing
+        const updated = await query(`
+          UPDATE support_agents 
+          SET role = COALESCE($2, role),
+              max_concurrent_tickets = COALESCE($3, max_concurrent_tickets),
+              specialties = COALESCE($4, specialties),
+              is_active = true
+          WHERE staff_id = $1
+          RETURNING *
+        `, [staffId, role, maxConcurrentTickets, specialties]);
+        
+        // Also update staff can_handle_support flag
+        await query('UPDATE staff SET can_handle_support = true WHERE id = $1', [staffId]);
+        
+        return c.json({ success: true, agent: updated.rows[0], message: 'Agent updated' });
+      } else {
+        // Create new
+        const created = await query(`
+          INSERT INTO support_agents (staff_id, role, max_concurrent_tickets, specialties, is_active)
+          VALUES ($1, $2, $3, $4, true)
+          RETURNING *
+        `, [staffId, role || 'agent', maxConcurrentTickets || 10, specialties || ['general']]);
+        
+        // Update staff can_handle_support flag
+        await query('UPDATE staff SET can_handle_support = true WHERE id = $1', [staffId]);
+        
+        return c.json({ success: true, agent: created.rows[0], message: 'Agent created' });
+      }
+    } catch (error: any) {
+      console.error('Error saving support agent:', error);
+      return c.json({ error: error.message || 'Failed to save agent' }, 500);
+    }
+  });
+
+  /**
+   * DELETE /support/settings/agents/:agentId
+   * Deactivate a support agent
+   */
+  app.delete("/support/settings/agents/:agentId", async (c) => {
+    try {
+      const { agentId } = c.req.param();
+
+      const result = await query(`
+        UPDATE support_agents SET is_active = false WHERE id = $1 OR staff_id = $1 RETURNING staff_id
+      `, [agentId]);
+
+      if (result.rows.length > 0) {
+        await query('UPDATE staff SET can_handle_support = false WHERE id = $1', [result.rows[0].staff_id]);
+      }
+
+      return c.json({ success: true, message: 'Agent deactivated' });
+    } catch (error: any) {
+      console.error('Error deactivating agent:', error);
+      return c.json({ error: error.message || 'Failed to deactivate agent' }, 500);
+    }
+  });
+
+  /**
+   * GET /support/settings/sla
+   * Get all SLA configurations
+   */
+  app.get("/support/settings/sla", async (c) => {
+    try {
+      const result = await query(`
+        SELECT * FROM support_sla_config 
+        WHERE is_active = true 
+        ORDER BY first_response_minutes
+      `);
+
+      return c.json({
+        success: true,
+        slaConfigs: result.rows.map(s => ({
+          id: s.id,
+          name: s.name,
+          priority: s.priority,
+          firstResponseMinutes: s.first_response_minutes,
+          resolutionMinutes: s.resolution_minutes,
+          escalationAfterMinutes: s.escalation_after_minutes,
+          isActive: s.is_active,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Error fetching SLA configs:', error);
+      return c.json({ error: error.message || 'Failed to fetch SLA configs' }, 500);
+    }
+  });
+
+  /**
+   * POST /support/settings/sla
+   * Create or update SLA configuration
+   */
+  app.post("/support/settings/sla", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { id, name, priority, firstResponseMinutes, resolutionMinutes, escalationAfterMinutes } = body;
+
+      if (!priority || !firstResponseMinutes || !resolutionMinutes) {
+        return c.json({ error: 'priority, firstResponseMinutes, and resolutionMinutes are required' }, 400);
+      }
+
+      if (id) {
+        // Update existing
+        const updated = await query(`
+          UPDATE support_sla_config 
+          SET name = $2, priority = $3, first_response_minutes = $4, 
+              resolution_minutes = $5, escalation_after_minutes = $6, updated_at = NOW()
+          WHERE id = $1
+          RETURNING *
+        `, [id, name, priority, firstResponseMinutes, resolutionMinutes, escalationAfterMinutes]);
+        
+        return c.json({ success: true, slaConfig: updated.rows[0], message: 'SLA updated' });
+      } else {
+        // Create new
+        const created = await query(`
+          INSERT INTO support_sla_config (name, priority, first_response_minutes, resolution_minutes, escalation_after_minutes)
+          VALUES ($1, $2, $3, $4, $5)
+          RETURNING *
+        `, [name || `${priority} SLA`, priority, firstResponseMinutes, resolutionMinutes, escalationAfterMinutes]);
+        
+        return c.json({ success: true, slaConfig: created.rows[0], message: 'SLA created' });
+      }
+    } catch (error: any) {
+      console.error('Error saving SLA config:', error);
+      return c.json({ error: error.message || 'Failed to save SLA config' }, 500);
+    }
+  });
+
+  /**
+   * GET /support/settings/categories
+   * Get all support categories
+   */
+  app.get("/support/settings/categories", async (c) => {
+    try {
+      const result = await query(`
+        SELECT sc.*, s.name as auto_assign_name
+        FROM support_categories sc
+        LEFT JOIN staff s ON sc.auto_assign_to = s.id
+        WHERE sc.is_active = true 
+        ORDER BY sc.display_order
+      `);
+
+      return c.json({
+        success: true,
+        categories: result.rows.map(cat => ({
+          id: cat.id,
+          name: cat.name,
+          description: cat.description,
+          defaultPriority: cat.default_priority,
+          autoAssignTo: cat.auto_assign_to,
+          autoAssignName: cat.auto_assign_name,
+          displayOrder: cat.display_order,
+          isActive: cat.is_active,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Error fetching categories:', error);
+      return c.json({ error: error.message || 'Failed to fetch categories' }, 500);
+    }
+  });
+
+  /**
+   * POST /support/settings/categories
+   * Create or update support category
+   */
+  app.post("/support/settings/categories", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { id, name, description, defaultPriority, autoAssignTo, displayOrder } = body;
+
+      if (!name) {
+        return c.json({ error: 'name is required' }, 400);
+      }
+
+      if (id) {
+        const updated = await query(`
+          UPDATE support_categories 
+          SET name = $2, description = $3, default_priority = $4, 
+              auto_assign_to = $5, display_order = $6
+          WHERE id = $1
+          RETURNING *
+        `, [id, name, description, defaultPriority || 'medium', autoAssignTo, displayOrder || 0]);
+        
+        return c.json({ success: true, category: updated.rows[0], message: 'Category updated' });
+      } else {
+        const created = await query(`
+          INSERT INTO support_categories (name, description, default_priority, auto_assign_to, display_order)
+          VALUES ($1, $2, $3, $4, $5)
+          RETURNING *
+        `, [name, description, defaultPriority || 'medium', autoAssignTo, displayOrder || 0]);
+        
+        return c.json({ success: true, category: created.rows[0], message: 'Category created' });
+      }
+    } catch (error: any) {
+      console.error('Error saving category:', error);
+      return c.json({ error: error.message || 'Failed to save category' }, 500);
+    }
+  });
+
+  /**
+   * GET /support/settings/escalation-rules
+   * Get all escalation rules
+   */
+  app.get("/support/settings/escalation-rules", async (c) => {
+    try {
+      const result = await query(`
+        SELECT er.*, s.name as escalate_to_name
+        FROM support_escalation_rules er
+        LEFT JOIN staff s ON er.escalate_to = s.id
+        WHERE er.is_active = true 
+        ORDER BY er.trigger_value
+      `);
+
+      return c.json({
+        success: true,
+        rules: result.rows.map(rule => ({
+          id: rule.id,
+          name: rule.name,
+          triggerType: rule.trigger_type,
+          triggerValue: rule.trigger_value,
+          priorityFilter: rule.priority_filter,
+          categoryFilter: rule.category_filter,
+          escalateTo: rule.escalate_to,
+          escalateToName: rule.escalate_to_name,
+          newPriority: rule.new_priority,
+          notifyEmail: rule.notify_email,
+          isActive: rule.is_active,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Error fetching escalation rules:', error);
+      return c.json({ error: error.message || 'Failed to fetch escalation rules' }, 500);
+    }
+  });
+
+  /**
+   * POST /support/settings/escalation-rules
+   * Create or update escalation rule
+   */
+  app.post("/support/settings/escalation-rules", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { id, name, triggerType, triggerValue, priorityFilter, categoryFilter, escalateTo, newPriority, notifyEmail } = body;
+
+      if (!name || !triggerType || triggerValue === undefined) {
+        return c.json({ error: 'name, triggerType, and triggerValue are required' }, 400);
+      }
+
+      if (id) {
+        const updated = await query(`
+          UPDATE support_escalation_rules 
+          SET name = $2, trigger_type = $3, trigger_value = $4, priority_filter = $5,
+              category_filter = $6, escalate_to = $7, new_priority = $8, notify_email = $9
+          WHERE id = $1
+          RETURNING *
+        `, [id, name, triggerType, triggerValue, priorityFilter, categoryFilter, escalateTo, newPriority, notifyEmail]);
+        
+        return c.json({ success: true, rule: updated.rows[0], message: 'Rule updated' });
+      } else {
+        const created = await query(`
+          INSERT INTO support_escalation_rules (name, trigger_type, trigger_value, priority_filter, category_filter, escalate_to, new_priority, notify_email)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          RETURNING *
+        `, [name, triggerType, triggerValue, priorityFilter, categoryFilter, escalateTo, newPriority, notifyEmail]);
+        
+        return c.json({ success: true, rule: created.rows[0], message: 'Rule created' });
+      }
+    } catch (error: any) {
+      console.error('Error saving escalation rule:', error);
+      return c.json({ error: error.message || 'Failed to save escalation rule' }, 500);
+    }
+  });
+
+  /**
+   * DELETE /support/settings/escalation-rules/:ruleId
+   * Delete an escalation rule
+   */
+  app.delete("/support/settings/escalation-rules/:ruleId", async (c) => {
+    try {
+      const { ruleId } = c.req.param();
+
+      await query('UPDATE support_escalation_rules SET is_active = false WHERE id = $1', [ruleId]);
+
+      return c.json({ success: true, message: 'Rule deleted' });
+    } catch (error: any) {
+      console.error('Error deleting escalation rule:', error);
+      return c.json({ error: error.message || 'Failed to delete rule' }, 500);
+    }
+  });
+
+  /**
+   * GET /support/settings/staff-list
+   * Get list of all staff for agent selection
+   */
+  app.get("/support/settings/staff-list", async (c) => {
+    try {
+      const result = await query(`
+        SELECT id, name, email, phone, role, can_handle_support
+        FROM staff 
+        WHERE is_active = true
+        ORDER BY name
+      `);
+
+      return c.json({
+        success: true,
+        staff: result.rows.map(s => ({
+          id: s.id,
+          name: s.name,
+          email: s.email,
+          phone: s.phone,
+          role: s.role,
+          canHandleSupport: s.can_handle_support,
+        })),
+      });
+    } catch (error: any) {
+      console.error('Error fetching staff list:', error);
+      return c.json({ error: error.message || 'Failed to fetch staff list' }, 500);
     }
   });
 }

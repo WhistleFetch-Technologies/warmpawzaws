@@ -90,8 +90,8 @@ export function GSTConfigurationManagement() {
         apiClient.get<any>('/admin/finance/gst/tax-categories'),
       ]);
 
-      setHsnCodes(hsnData.data?.hsnCodes || hsnData.hsnCodes || []);
-      setTaxCategories(categoryData.data?.categories || categoryData.categories || []);
+      setHsnCodes(hsnData.data?.hsnCodes ?? hsnData.hsnCodes ?? hsnData.codes ?? []);
+      setTaxCategories(categoryData.data?.categories ?? categoryData.data?.taxCategories ?? categoryData.categories ?? categoryData.taxCategories ?? []);
     } catch (error) {
       console.error('Error loading GST data:', error);
       toast.error('Failed to load GST configuration');
@@ -156,10 +156,12 @@ export function GSTConfigurationManagement() {
     }
   };
 
-  const filteredHSN = hsnCodes.filter(
+  const safeHsnCodes = hsnCodes ?? [];
+  const safeTaxCategories = taxCategories ?? [];
+  const filteredHSN = safeHsnCodes.filter(
     (hsn) =>
-      hsn.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      hsn.description.toLowerCase().includes(searchQuery.toLowerCase())
+      (hsn.code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (hsn.description || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -351,7 +353,7 @@ export function GSTConfigurationManagement() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {taxCategories.map((category) => (
+            {safeTaxCategories.map((category) => (
               <Card key={category.id}>
                 <CardHeader>
                   <div className="flex items-center justify-between">
@@ -370,7 +372,7 @@ export function GSTConfigurationManagement() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-gray-600">Applicable Services</span>
-                      <span className="font-semibold">{category.applicableServices.length}</span>
+                      <span className="font-semibold">{(category.applicableServices ?? []).length}</span>
                     </div>
                   </div>
                   <div className="flex gap-2 mt-4">

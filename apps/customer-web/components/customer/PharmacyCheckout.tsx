@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, CreditCard, CheckCircle2, AlertCircle, FileText } from 'lucide-react';
+import { PolicyDisplay } from './shared/PolicyDisplay';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useCart } from '@/context/CartContext';
@@ -9,6 +10,24 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { calculateTax } from '@/lib/tax-system';
 import { cartItemsToTaxableItems } from '@/lib/tax-system/taxCalculatorUtils';
+
+interface Address {
+  id: string;
+  type: 'home' | 'office' | 'other';
+  label?: string;
+  name?: string;
+  street?: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  state: string;
+  pincode: string;
+  landmark?: string;
+  latitude?: number;
+  longitude?: number;
+  isDefault?: boolean;
+  phone?: string;
+}
 
 interface PharmacyCheckoutProps {
   phone: string;
@@ -19,9 +38,11 @@ interface PharmacyCheckoutProps {
 export function PharmacyCheckout({ phone, onBack, onSuccess }: PharmacyCheckoutProps) {
   const { cart, clearCart, getTotal } = useCart();
   const [processing, setProcessing] = useState(false);
-  const [selectedAddress, setSelectedAddress] = useState<any>(null);
+  const [selectedAddress, setSelectedAddress] = useState<Address | null>(null);
   const [prescriptionVerified, setPrescriptionVerified] = useState(false);
   const [loadingAddress, setLoadingAddress] = useState(true);
+  const [addressError, setAddressError] = useState<string | null>(null);
+  // Note: Terms acceptance moved to payment page - no checkbox needed here
 
   useEffect(() => {
     loadDefaultAddress();
@@ -30,12 +51,53 @@ export function PharmacyCheckout({ phone, onBack, onSuccess }: PharmacyCheckoutP
   const loadDefaultAddress = async () => {
     try {
       setLoadingAddress(true);
-      const response = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(phone)}`);
-      if (response.addresses && response.addresses.length > 0) {
-        setSelectedAddress(response.addresses.find((a: any) => a.isDefault) || response.addresses[0]);
+      setAddressError(null);
+      
+      // Add timeout to prevent infinite loading
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Address loading timeout')), 10000)
+      );
+      
+      // Try alternative endpoint format if the first one fails
+      let response: any;
+      try {
+        // Try /customer/addresses?phone= first
+        const apiPromise = apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(phone)}`);
+        response = await Promise.race([apiPromise, timeoutPromise]) as any;
+      } catch (firstError: any) {
+        // If 404, try alternative endpoint format
+        if (firstError.status === 404 || firstError.message?.includes('404')) {
+          console.log('[PharmacyCheckout] Trying alternative address endpoint format...');
+          const altApiPromise = apiClient.get<any>(`/customer/${encodeURIComponent(phone)}/addresses`);
+          response = await Promise.race([altApiPromise, timeoutPromise]) as any;
+        } else {
+          throw firstError;
+        }
       }
-    } catch (error) {
+      
+      if (response && response.addresses && response.addresses.length > 0) {
+        const defaultAddr = response.addresses.find((a: any) => a.isDefault) || response.addresses[0];
+        setSelectedAddress(defaultAddr);
+        setAddressError(null);
+      } else if (response && response.addresses && response.addresses.length === 0) {
+        // No addresses found - not an error, just need to add one
+        setSelectedAddress(null);
+        setAddressError('no_addresses');
+      } else {
+        // Unexpected response format
+        setSelectedAddress(null);
+        setAddressError('Failed to load addresses. Please try again.');
+      }
+    } catch (error: any) {
       console.error('Error loading address:', error);
+      setSelectedAddress(null);
+      if (error.message?.includes('timeout')) {
+        setAddressError('Request timed out. Please check your connection and try again.');
+      } else if (error.status === 404 || error.message?.includes('404')) {
+        setAddressError('Address endpoint not found. Please contact support.');
+      } else {
+        setAddressError(error.message || 'Failed to load addresses. Please check your connection.');
+      }
     } finally {
       setLoadingAddress(false);
     }
@@ -64,6 +126,8 @@ export function PharmacyCheckout({ phone, onBack, onSuccess }: PharmacyCheckoutP
       toast.error('Prescription verification required for this order');
       return;
     }
+
+    // Note: Terms acceptance moved to payment page policies
 
     try {
       setProcessing(true);
@@ -128,17 +192,17 @@ export function PharmacyCheckout({ phone, onBack, onSuccess }: PharmacyCheckoutP
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="max-w-md mx-auto">
         {/* Header */}
-        <div className="bg-white sticky top-0 z-10 border-b border-gray-200 px-4 py-4">
+        <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-10 px-4 py-4 rounded-b-2xl shadow-md">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="icon"
               onClick={onBack}
-              className="rounded-full"
+              className="rounded-full text-white hover:bg-white/20"
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <h1 className="text-xl font-semibold">Pharmacy Checkout</h1>
+            <h1 className="text-xl font-semibold text-white">Pharmacy Checkout</h1>
           </div>
         </div>
 
@@ -187,8 +251,18 @@ export function PharmacyCheckout({ phone, onBack, onSuccess }: PharmacyCheckoutP
                 size="sm"
                 onClick={async () => {
                   try {
-                    // Reload addresses
-                    const response = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(phone)}`);
+                    // Reload addresses - try both endpoint formats
+                    let response: any;
+                    try {
+                      response = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(phone)}`);
+                    } catch (error: any) {
+                      if (error.status === 404) {
+                        response = await apiClient.get<any>(`/customer/${encodeURIComponent(phone)}/addresses`);
+                      } else {
+                        throw error;
+                      }
+                    }
+                    
                     const addressList = response.addresses || response || [];
                     
                     if (addressList.length > 1) {
@@ -209,19 +283,53 @@ export function PharmacyCheckout({ phone, onBack, onSuccess }: PharmacyCheckoutP
                 Change
               </Button>
             </div>
-            {selectedAddress ? (
+            {loadingAddress ? (
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#FF8C42]"></div>
+                <span>Loading address...</span>
+              </div>
+            ) : addressError === 'no_addresses' ? (
+              <div className="text-sm">
+                <p className="text-gray-600 mb-3">No delivery address found. Please add an address to continue.</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    // Navigate to address book or show add address modal
+                    toast.info('Please add an address in your account settings');
+                  }}
+                  className="w-full border-[#FF8C42] text-[#FF8C42] hover:bg-[#FF8C42] hover:text-white"
+                >
+                  Add Address
+                </Button>
+              </div>
+            ) : addressError ? (
+              <div className="text-sm">
+                <p className="text-red-600 mb-2">{addressError}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={loadDefaultAddress}
+                  className="w-full"
+                >
+                  Retry
+                </Button>
+              </div>
+            ) : selectedAddress ? (
               <div className="text-sm text-gray-600">
-                <p className="font-medium text-gray-900">{selectedAddress.name || 'Default Address'}</p>
+                <p className="font-medium text-gray-900">{selectedAddress.name || selectedAddress.label || 'Default Address'}</p>
                 <p>{selectedAddress.street || selectedAddress.addressLine1}</p>
+                {selectedAddress.addressLine2 && <p>{selectedAddress.addressLine2}</p>}
                 <p>{selectedAddress.city}, {selectedAddress.state} {selectedAddress.pincode}</p>
+                {selectedAddress.landmark && <p className="text-gray-500">Landmark: {selectedAddress.landmark}</p>}
                 <p className="mt-1">Phone: {selectedAddress.phone || phone}</p>
               </div>
             ) : (
-              <p className="text-sm text-gray-500">Loading address...</p>
+              <p className="text-sm text-gray-500">No address selected</p>
             )}
           </Card>
 
-          {/* Order Summary */}
+          {/* Order Summary - Prices will be set by pharmacy */}
           <Card className="p-4">
             <h2 className="font-semibold text-gray-900 mb-4">Order Summary</h2>
             
@@ -230,7 +338,7 @@ export function PharmacyCheckout({ phone, onBack, onSuccess }: PharmacyCheckoutP
                 <div key={item.id} className="flex items-center justify-between text-sm">
                   <div className="flex-1">
                     <p className="font-medium text-gray-900">{item.name}</p>
-                    <p className="text-gray-500">Qty: {item.quantity} × ₹{item.price}</p>
+                    <p className="text-gray-500">Qty: {item.quantity}</p>
                     {item.prescription_required && (
                       <span className="inline-flex items-center gap-1 text-xs text-orange-600 mt-1">
                         <AlertCircle className="w-3 h-3" />
@@ -238,44 +346,66 @@ export function PharmacyCheckout({ phone, onBack, onSuccess }: PharmacyCheckoutP
                       </span>
                     )}
                   </div>
-                  <p className="font-semibold text-gray-900">
-                    ₹{(item.price * item.quantity).toFixed(2)}
-                  </p>
                 </div>
               ))}
             </div>
 
-            <div className="border-t border-gray-200 pt-4 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Subtotal</span>
-                <span className="text-gray-900">₹{subtotal.toFixed(2)}</span>
-              </div>
-              {taxResult.byType.map((taxType) => (
-                <div key={taxType.taxType} className="flex justify-between text-sm">
-                  <span className="text-gray-600">
-                    {taxType.taxType === 'gst' ? 'GST' : 
-                     taxType.taxType === 'service_tax' ? 'Service Tax' :
-                     taxType.taxType === 'education_cess' ? 'Education Cess' :
-                     taxType.taxType === 'infrastructure_cess' ? 'Infrastructure Cess' :
-                     taxType.taxType.toUpperCase()} 
-                    {taxType.breakdown.length > 0 && ` (${taxType.breakdown[0].rate}%)`}
-                  </span>
-                  <span className="text-gray-900">₹{taxType.totalAmount.toFixed(2)}</span>
+            {/* Info banner about pricing */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-blue-900">Pharmacy will provide final quote</p>
+                  <p className="text-xs text-blue-700 mt-1">
+                    After you place this order, nearby pharmacies will review your prescription and 
+                    send you a proforma invoice with the exact prices. You can then approve and pay.
+                  </p>
                 </div>
-              ))}
+              </div>
+            </div>
+
+            {/* Pricing breakdown will be added by pharmacy */}
+            <div className="border-t border-gray-200 pt-4 mt-4 space-y-2">
+              <div className="flex justify-between text-sm text-gray-500">
+                <span>Medicine Cost</span>
+                <span className="italic">To be confirmed</span>
+              </div>
+              <div className="flex justify-between text-sm text-gray-500">
+                <span>Delivery Charges</span>
+                <span className="italic">To be calculated</span>
+              </div>
+              <div className="flex justify-between text-sm text-gray-500">
+                <span>Platform Fee</span>
+                <span className="italic">To be added</span>
+              </div>
               <div className="flex justify-between text-lg font-bold border-t border-gray-200 pt-2">
                 <span className="text-gray-900">Total</span>
-                <span className="text-[#FF8C42]">₹{total.toFixed(2)}</span>
+                <span className="text-gray-500 italic text-base font-normal">Awaiting pharmacy quote</span>
               </div>
             </div>
           </Card>
+
+          {/* ✅ ENRICHED: Policy Display - Terms acceptance moved to payment page */}
+          <PolicyDisplay 
+            serviceType="pharmacy" 
+            showPolicies={['delivery', 'cancellation', 'refund', 'tax']}
+            className="mb-20"
+            showTermsCheckbox={false}
+          />
 
           {/* Payment Button */}
           <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 max-w-md mx-auto shadow-lg">
             <Button
               onClick={handlePayment}
               disabled={processing || !selectedAddress || (requiresPrescription && !prescriptionVerified)}
-              className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white h-14 text-lg font-semibold shadow-lg shadow-[#FF8C42]/30 disabled:opacity-50"
+              className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white h-14 text-lg font-semibold shadow-lg shadow-[#FF8C42]/30 disabled:opacity-50 disabled:cursor-not-allowed"
+              title={
+                !selectedAddress 
+                  ? 'Please select a delivery address'
+                  : (requiresPrescription && !prescriptionVerified)
+                    ? 'Prescription verification required'
+                    : ''
+              }
             >
               {processing ? (
                 <span className="flex items-center gap-2">
@@ -283,12 +413,12 @@ export function PharmacyCheckout({ phone, onBack, onSuccess }: PharmacyCheckoutP
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
-                  Processing...
+                  Finding Nearby Pharmacies...
                 </span>
               ) : (
                 <>
                   <CreditCard className="w-5 h-5 mr-2" />
-                  Place Order ₹{total.toFixed(2)}
+                  Request Quote from Pharmacies
                 </>
               )}
             </Button>

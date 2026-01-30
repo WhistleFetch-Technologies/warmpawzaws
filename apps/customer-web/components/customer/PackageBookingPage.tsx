@@ -55,9 +55,10 @@ interface PackageBookingPageProps {
   customerPhone: string;
   customerId: string;
   petId?: string;
+  onBack?: () => void;
 }
 
-export function PackageBookingPage({ customerPhone, customerId, petId }: PackageBookingPageProps) {
+export function PackageBookingPage({ customerPhone, customerId, petId, onBack }: PackageBookingPageProps) {
   const [view, setView] = useState<'browse' | 'schedule' | 'my-packages'>('browse');
   const [packages, setPackages] = useState<PackageItem[]>([]);
   const [myPackages, setMyPackages] = useState<PackageBooking[]>([]);
@@ -219,6 +220,12 @@ export function PackageBookingPage({ customerPhone, customerId, petId }: Package
     <div className="min-h-screen bg-gray-50 p-4 pb-24">
       {/* Header */}
       <div className="bg-white rounded-xl p-4 shadow-sm mb-6">
+        {onBack && (
+          <button type="button" onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-2 -ml-1" aria-label="Go back">
+            <ChevronRight className="w-5 h-5 rotate-180" />
+            <span className="text-sm font-medium">Back</span>
+          </button>
+        )}
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Service Packages</h1>
         <p className="text-sm text-gray-600">
           Save more with multi-session packages

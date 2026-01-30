@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { X, Calendar, Clock, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 
 interface FollowUpBookingModalProps {
@@ -85,12 +85,12 @@ export function FollowUpBookingModal({
 
       // Call booking creation API
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/bookings/create`,
+        `${getApiBaseUrl()}/customer/bookings/create`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             phone: customerPhone,

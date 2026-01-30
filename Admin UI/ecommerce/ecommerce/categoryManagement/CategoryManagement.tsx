@@ -25,7 +25,7 @@ import {
 	List,
 } from "lucide-react";
 import { Button, Badge } from "@repo/ui";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import { toast, Toaster } from "sonner";
 
 interface Category {
@@ -94,8 +94,8 @@ export function CategoryManagement() {
 		try {
 			setLoading(true);
 			const res = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/categories`,
-				{ headers: { Authorization: `Bearer ${publicAnonKey}` } }
+				`${getApiBaseUrl()}/ecommerce/categories`,
+				{ headers: { ...getAuthHeaders() } }
 			);
 
 			if (res.ok) {
@@ -308,11 +308,11 @@ export function CategoryManagement() {
 		try {
 			setSaving(true);
 			const res = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/categories`,
+				`${getApiBaseUrl()}/ecommerce/categories`,
 				{
 					method: "PUT",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({ categories }),

@@ -4,7 +4,7 @@ import {
   Building, Map as MapIcon, Check, ChevronDown, ChevronUp, Home, Video,
   Navigation, Timer, Users, AlertCircle, Calendar
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -126,8 +126,8 @@ export function EnhancedScheduleEditor({
 
       // Load staff availability slots
       const slotsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/availability-slots`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/staff/${staff.id}/availability-slots`,
+        { headers: getAuthHeaders() }
       );
 
       if (slotsRes.ok) {
@@ -156,8 +156,8 @@ export function EnhancedScheduleEditor({
     try {
       // Get all catalog services
       const catalogRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/catalog/services`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/catalog/services`,
+        { headers: getAuthHeaders() }
       );
 
       if (!catalogRes.ok) {
@@ -181,8 +181,8 @@ export function EnhancedScheduleEditor({
       // If vendor has centres, also load centre-published services
       if (hasCentres) {
         const centreServicesRes = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorData.id}/published-services`,
-          { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+          `${getApiBaseUrl()}/vendor/${vendorData.id}/published-services`,
+          { headers: getAuthHeaders() }
         );
 
         if (centreServicesRes.ok) {
@@ -370,11 +370,11 @@ export function EnhancedScheduleEditor({
       setSaving(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/availability-slots`,
+        `${getApiBaseUrl()}/staff/${staff.id}/availability-slots`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -414,10 +414,10 @@ export function EnhancedScheduleEditor({
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/availability-slots/${slotId}`,
+        `${getApiBaseUrl()}/staff/${staff.id}/availability-slots/${slotId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

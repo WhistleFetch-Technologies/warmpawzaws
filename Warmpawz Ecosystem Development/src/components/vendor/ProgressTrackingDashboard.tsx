@@ -12,7 +12,7 @@ import {
   Clock, Heart, Activity, Weight, Ruler, Brain, Bone,
   Search, Filter, Download, Upload, Video, Image as ImageIcon
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface ProgressTracker {
   id: string;
@@ -143,9 +143,9 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/progress-trackers`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -187,11 +187,11 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/notes`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/notes`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -227,11 +227,11 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/milestones`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/milestones`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -256,11 +256,11 @@ export function ProgressTrackingDashboard({ vendorId, roleType }: { vendorId: st
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/measurements`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/progress-trackers/${selectedTracker.id}/measurements`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

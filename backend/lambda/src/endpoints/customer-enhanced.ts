@@ -30,6 +30,7 @@ import {
 } from '@warmpawz/api-contracts/customers';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { getDiscoveryRules } from '../lib/rule-engine';
 
 // ============================================================================
 // CUSTOMER HANDLERS
@@ -386,6 +387,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
   // Otherwise /customer/by-phone would be matched by /customer/:customerId with customerId="by-phone"
   
   app.get('/customer/by-phone', async (c) => {
+    const startTime = Date.now();
     try {
       const phone = c.req.query('phone');
       
@@ -403,13 +405,24 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       try {
         const result: any = await getByPhoneHandler.execute(event, context);
         const body = JSON.parse(result.body);
+        const duration = Date.now() - startTime;
+        if (duration > 2000) {
+          console.warn(`[by-phone] Slow response: ${duration}ms for phone ${phone.substring(0, 4)}****`);
+        }
         return c.json(body, result.statusCode);
       } catch (error: any) {
-        console.error('[by-phone] Error in getByPhoneHandler:', error);
+        const duration = Date.now() - startTime;
+        const errorMessage = error?.message || String(error);
+        console.error(`[by-phone] Error after ${duration}ms:`, errorMessage);
+        // ✅ Enhanced logging for 503 diagnosis
+        if (errorMessage.includes('connection pool') || errorMessage.includes('too many clients')) {
+          console.error('[by-phone] ⚠️ Connection pool exhausted');
+        }
         return c.json({ success: false, customer: null }, 200);
       }
     } catch (error: any) {
-      console.error('[by-phone] Error in /customer/by-phone endpoint:', error);
+      const duration = Date.now() - startTime;
+      console.error(`[by-phone] Error after ${duration}ms:`, error?.message || error);
       return c.json({ success: false, customer: null }, 200);
     }
   });
@@ -475,7 +488,28 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       });
     } catch (error: any) {
       console.error('[pets] Error fetching customer pets by phone:', error);
-      return c.json({ success: true, pets: [], count: 0 }, 200);
+      console.error('[pets] Error stack:', error?.stack);
+      
+      // ✅ FIX: Return proper error codes instead of masking with 200 OK
+      const errorMessage = error?.message || 'Unknown error';
+      
+      if (errorMessage.includes('connection pool') || errorMessage.includes('too many clients')) {
+        return c.json({ 
+          success: false, 
+          error: 'Service temporarily busy. Please try again.',
+          code: 'POOL_EXHAUSTED',
+          pets: [], 
+          count: 0 
+        }, 503);
+      }
+      
+      return c.json({ 
+        success: false, 
+        error: 'Failed to fetch pets. Please try again.',
+        code: 'INTERNAL_ERROR',
+        pets: [], 
+        count: 0 
+      }, 500);
     }
   });
 
@@ -584,7 +618,38 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       });
     } catch (error: any) {
       console.error('[pets/:phone] Error fetching customer pets by phone:', error);
-      return c.json({ success: true, pets: [], count: 0 }, 200);
+      console.error('[pets/:phone] Error stack:', error?.stack);
+      
+      const errorMessage = error?.message || 'Unknown error';
+      
+      // ✅ FIX: Handle missing table gracefully - return empty pets
+      if (errorMessage.includes('relation') && errorMessage.includes('does not exist')) {
+        console.log('[pets/:phone] Table does not exist, returning empty pets');
+        return c.json({
+          success: true,
+          pets: [],
+          count: 0,
+        });
+      }
+      
+      // ✅ FIX: Handle connection pool exhaustion
+      if (errorMessage.includes('connection pool') || errorMessage.includes('too many clients')) {
+        return c.json({ 
+          success: false, 
+          error: 'Service temporarily busy. Please try again.',
+          code: 'POOL_EXHAUSTED',
+          pets: [], 
+          count: 0 
+        }, 503);
+      }
+      
+      // ✅ FIX: Return graceful fallback for other errors - don't break the UI
+      return c.json({ 
+        success: true, 
+        pets: [], 
+        count: 0,
+        _error: 'Unable to fetch pets'
+      });
     }
   });
 
@@ -1152,8 +1217,9 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       }
 
       const customer = customers[0];
+      const rules = await getDiscoveryRules('all', 'reviews');
+      const reviewEligibleDays = rules.review_eligible_days ?? 7;
 
-      // Get completed bookings without reviews from last 7 days
       const bookingsResult = await query(
         `SELECT b.id, b.booking_date, b.completed_at,
                 COALESCE(v.business_name, s.name) as vendor_name,
@@ -1168,11 +1234,11 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
          WHERE b.customer_id = $1
            AND b.status = 'completed'
            AND (b.has_review IS NOT TRUE OR b.has_review = false)
-           AND b.completed_at > NOW() - INTERVAL '7 days'
+           AND b.completed_at > NOW() - ($2::text || ' days')::interval
            AND (b.review_skipped_at IS NULL)
          ORDER BY b.completed_at DESC
          LIMIT 5`,
-        [customer.id]
+        [customer.id, reviewEligibleDays]
       );
 
       const bookings = (bookingsResult as any).rows.map((b: any) => ({
@@ -1298,92 +1364,9 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
     }
   });
 
-  /**
-   * GET /customer/:phone/bookings/upcoming-calls
-   * Get upcoming video calls within specified minutes
-   */
-  app.get('/customer/:phone/bookings/upcoming-calls', async (c) => {
-    try {
-      const phone = c.req.param('phone');
-      const minutes = parseInt(c.req.query('minutes') || '5', 10);
-
-      // Get customer by phone with error handling
-      let customers: any[];
-      try {
-        customers = await select('customers', { phone: phone.replace(/\D/g, '') });
-      } catch (error: any) {
-        console.error('Error fetching customer:', error);
-        return c.json({ 
-          success: true, 
-          bookings: [],
-          error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-      }
-
-      if (customers.length === 0) {
-        return c.json({ success: true, bookings: [] });
-      }
-
-      const customer = customers[0];
-
-      // Get upcoming video calls within the specified minutes
-      const now = new Date();
-      const futureTime = new Date(now.getTime() + minutes * 60 * 1000);
-
-      let bookingsResult: any;
-      try {
-        bookingsResult = await query(
-          `SELECT b.id, b.booking_date, b.scheduled_at,
-                  COALESCE(v.business_name, s.name) as vendor_name,
-                  COALESCE(v.profile_photo, s.photo) as vendor_photo,
-                  sv.name as service_name,
-                  p.name as pet_name,
-                  b.video_call_meeting_id
-           FROM bookings b
-           LEFT JOIN vendors v ON b.vendor_id = v.id
-           LEFT JOIN staff s ON b.staff_id = s.id
-           LEFT JOIN services sv ON b.service_id = sv.id
-           LEFT JOIN pets p ON b.pet_id = p.id
-           WHERE b.customer_id = $1
-             AND b.status IN ('confirmed', 'scheduled')
-             AND b.service_style = 'tele'
-             AND b.scheduled_at >= $2
-             AND b.scheduled_at <= $3
-           ORDER BY b.scheduled_at ASC
-           LIMIT 10`,
-          [customer.id, now.toISOString(), futureTime.toISOString()]
-        );
-      } catch (error: any) {
-        console.warn('Error fetching upcoming calls (returning empty):', error.message);
-        // Return empty array if query fails (table might not exist or schema issue)
-        return c.json({ success: true, bookings: [] });
-      }
-
-      const bookings = ((bookingsResult as any)?.rows || []).map((b: any) => ({
-        id: b.id,
-        vendorName: b.vendor_name,
-        vendorPhoto: b.vendor_photo,
-        serviceName: b.service_name,
-        petName: b.pet_name,
-        scheduledAt: b.scheduled_at,
-        meetingId: b.video_call_meeting_id,
-        minutesUntil: Math.round((new Date(b.scheduled_at).getTime() - now.getTime()) / 60000),
-      }));
-
-      return c.json({
-        success: true,
-        bookings,
-      });
-    } catch (error: any) {
-      console.error('Error fetching upcoming calls:', error);
-      // Return empty array instead of error to prevent frontend crashes
-      return c.json({ 
-        success: true, 
-        bookings: [],
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
-    }
-  });
+  // ✅ MOVED to customer-phone-convenience.ts to fix route conflict
+  // The /customer/:phone/bookings/upcoming-calls endpoint is now registered earlier
+  // to prevent /customer/:customerId/bookings/:bookingId from catching it
 
   /**
    * GET /customer/:phone/orders/pharmacy/active
@@ -1555,7 +1538,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           orderNumber: order.order_number,
           orderType: 'meal',
           status: order.status,
-          trackingStatus: order.tracking_status || order.status,
+          trackingStatus: order.status,
           vendorName: order.vendor_name,
           vendorPhoto: order.vendor_photo,
           deliveryAddress,
@@ -1646,6 +1629,221 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         subscriptions: [],
         error: error.message 
       });
+    }
+  });
+
+  // ============================================
+  // DIAGNOSTIC PACKAGES ENDPOINT
+  // ============================================
+  app.get('/customer/diagnostic-packages', async (c) => {
+    try {
+      // Get popular diagnostic packages
+      const { rows: packages } = await query(`
+        SELECT 
+          dt.id,
+          dt.test_name as name,
+          dt.description,
+          dt.price,
+          dt.category,
+          dt.sample_type,
+          dt.turnaround_time_hours,
+          dt.is_package_available,
+          dt.package_price,
+          dt.package_test_count,
+          dt.is_free_home_collection,
+          dt.home_collection_fee,
+          v.business_name as vendor_name,
+          v.id as vendor_id
+        FROM diagnostic_tests dt
+        LEFT JOIN vendors v ON v.id = dt.vendor_id
+        WHERE dt.is_available = true 
+          AND dt.is_package_available = true
+        ORDER BY dt.price ASC
+        LIMIT 20
+      `);
+
+      // Format as health packages
+      const formattedPackages = packages.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        tests: p.package_test_count ? [`Includes ${p.package_test_count} tests`] : [p.category || 'General'],
+        price: p.package_price || p.price,
+        originalPrice: p.price > (p.package_price || p.price) ? p.price : undefined,
+        homeCollection: p.is_free_home_collection || p.home_collection_fee === 0,
+        turnaroundHours: p.turnaround_time_hours || 24,
+        vendorName: p.vendor_name,
+        vendorId: p.vendor_id,
+      }));
+
+      // If no packages found, return mock data
+      if (formattedPackages.length === 0) {
+        return c.json({
+          success: true,
+          packages: [
+            {
+              id: 'pkg-mock-1',
+              name: 'Full Body Health Checkup',
+              description: 'Comprehensive pet health screening',
+              tests: ['CBC', 'LFT', 'KFT', 'Thyroid', 'Urine Analysis'],
+              price: 2499,
+              originalPrice: 3500,
+              homeCollection: true,
+              turnaroundHours: 24
+            },
+            {
+              id: 'pkg-mock-2',
+              name: 'Senior Pet Package',
+              description: 'For pets above 7 years',
+              tests: ['CBC', 'LFT', 'KFT', 'X-Ray', 'ECG', 'Thyroid'],
+              price: 3999,
+              originalPrice: 5500,
+              homeCollection: true,
+              turnaroundHours: 48
+            },
+            {
+              id: 'pkg-mock-3',
+              name: 'Basic Blood Panel',
+              description: 'Essential blood tests',
+              tests: ['CBC', 'Blood Glucose', 'Hemoglobin'],
+              price: 799,
+              originalPrice: 1200,
+              homeCollection: true,
+              turnaroundHours: 12
+            }
+          ]
+        });
+      }
+
+      return c.json({
+        success: true,
+        packages: formattedPackages,
+      });
+    } catch (error: any) {
+      console.error('Error getting diagnostic packages:', error);
+      // Return mock packages on error
+      return c.json({
+        success: true,
+        packages: [
+          {
+            id: 'pkg-mock-1',
+            name: 'Full Body Health Checkup',
+            description: 'Comprehensive pet health screening',
+            tests: ['CBC', 'LFT', 'KFT', 'Thyroid', 'Urine Analysis'],
+            price: 2499,
+            originalPrice: 3500,
+            homeCollection: true,
+            turnaroundHours: 24
+          }
+        ]
+      });
+    }
+  });
+
+  // ============================================
+  // PHARMACY ORDER STATUS ENDPOINT
+  // ============================================
+  app.get('/customer/orders/:orderId/pharmacy-status', async (c) => {
+    try {
+      const orderId = c.req.param('orderId');
+
+      // Get pharmacy order details + delivery_tracking (OTP, partner) for tracking step
+      const { rows: orders } = await query(`
+        SELECT 
+          po.*,
+          v.business_name as pharmacy_name,
+          v.phone as pharmacy_phone,
+          v.address as pharmacy_address,
+          dt.delivery_otp as dt_delivery_otp,
+          dt.otp_verified as dt_otp_verified,
+          dt.delivery_person_name as dt_partner_name,
+          dt.delivery_person_phone as dt_partner_phone
+        FROM pharmacy_orders po
+        LEFT JOIN vendors v ON v.id = po.pharmacy_id
+        LEFT JOIN delivery_tracking dt ON dt.pharmacy_order_id = po.id
+        WHERE po.id = $1
+      `, [orderId]);
+
+      if (orders.length === 0) {
+        // Try to find in regular orders table
+        const { rows: regularOrders } = await query(
+          `SELECT * FROM orders WHERE id = $1`,
+          [orderId]
+        );
+
+        if (regularOrders.length === 0) {
+          return c.json({ success: false, error: 'Order not found' }, 404);
+        }
+
+        const order = regularOrders[0];
+        return c.json({
+          success: true,
+          order: {
+            id: order.id,
+            status: order.status,
+            medicines: JSON.parse(order.items || '[]'),
+            totalAmount: order.total_amount,
+          }
+        });
+      }
+
+      const order = orders[0];
+
+      const items = (() => {
+        try {
+          const arr = typeof order.items === 'string' ? JSON.parse(order.items) : (order.items || []);
+          return arr.map((item: any) => ({
+            name: item.medicine_name || item.name,
+            quantity: item.quantity,
+            price: item.unit_price ?? item.price,
+            available: item.available !== false,
+          }));
+        } catch { return []; }
+      })();
+
+      return c.json({
+        success: true,
+        order: {
+          id: order.id,
+          status: order.status,
+          pharmacyId: order.pharmacy_id,
+          pharmacyName: order.pharmacy_name,
+          pharmacyPhone: order.pharmacy_phone,
+          pharmacyAddress: order.pharmacy_address,
+          estimatedTime: order.estimated_delivery_minutes,
+          broadcastTime: order.broadcast_started_at,
+          acceptedTime: order.accepted_at,
+          medicines: items,
+          subtotal: order.subtotal,
+          deliveryFee: order.delivery_fee,
+          platformFee: order.platform_fee,
+          convenienceFee: order.convenience_fee,
+          totalAmount: order.total_amount,
+          total_amount: order.total_amount,
+          proformaInvoice: order.proforma_invoice_id ? {
+            id: order.proforma_invoice_id,
+            total: order.invoice_amount,
+            items,
+          } : undefined,
+          deliveryOtp: order.dt_delivery_otp ?? order.delivery_otp,
+          otpVerified: order.dt_otp_verified ?? order.otp_verified,
+          deliveryPartnerName: order.dt_partner_name ?? order.partner_name,
+          deliveryPartnerPhone: order.dt_partner_phone ?? order.partner_phone,
+          deliveryAddress: (() => {
+            try {
+              return typeof order.delivery_address === 'string'
+                ? JSON.parse(order.delivery_address)
+                : order.delivery_address;
+            } catch { return order.delivery_address; }
+          })(),
+          currentRadius: order.current_broadcast_radius || 5,
+          maxRadius: order.max_broadcast_radius || 20,
+          broadcastStartedAt: order.broadcast_started_at,
+        }
+      });
+    } catch (error: any) {
+      console.error('Error getting pharmacy order status:', error);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 }

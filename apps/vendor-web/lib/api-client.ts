@@ -89,6 +89,11 @@ export class ApiClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
     
+    // ✅ UAT Mode: Send header to backend so it knows to use mock data
+    if (UAT_MODE) {
+      headers['X-UAT-Mode'] = 'true';
+    }
+    
     // UAT Mode: Log API requests for debugging
     if (UAT_MODE && typeof window !== 'undefined') {
       console.log(`🌐 [UAT] API Request: ${options.method || 'GET'} ${endpoint}`);

@@ -30,7 +30,7 @@ import {
   Sparkles,
   Package
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 const logoImage = "/logo.png";
 import { toast } from 'sonner';
 import { RegionActivePackagesTab } from './catalog/RegionActivePackagesTab';
@@ -160,12 +160,12 @@ export function RegionManager({ onBack }: RegionManagerProps = {}) {
   const loadRegions = async () => {
     try {
       setLoading(true);
-      const url = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/regions`;
+      const url = `${getApiBaseUrl()}/regions`;
       console.log('🌍 [REGION] Loading regions from:', url);
       
       const response = await fetch(url, {
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
         },
       });
       
@@ -253,11 +253,11 @@ export function RegionManager({ onBack }: RegionManagerProps = {}) {
       toast('Seeding default regions...');
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/regions/seed-all`,
+        `${getApiBaseUrl()}/admin/regions/seed-all`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json',
           },
         }
@@ -286,11 +286,11 @@ export function RegionManager({ onBack }: RegionManagerProps = {}) {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/regions/init-${templateId}`,
+        `${getApiBaseUrl()}/admin/regions/init-${templateId}`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json',
           },
         }
@@ -334,11 +334,11 @@ export function RegionManager({ onBack }: RegionManagerProps = {}) {
   const handleToggleStatus = async (regionId: string, currentStatus: boolean) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/regions/${regionId}/status`,
+        `${getApiBaseUrl()}/admin/regions/${regionId}/status`,
         {
           method: 'PATCH',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ isActive: !currentStatus }),
@@ -396,11 +396,11 @@ export function RegionManager({ onBack }: RegionManagerProps = {}) {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/regions/${editingRegion.regionId}`,
+        `${getApiBaseUrl()}/admin/regions/${editingRegion.regionId}`,
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(editingRegion),

@@ -3,7 +3,7 @@ import { Star, MapPin, Clock, Phone, ChevronRight, ArrowLeft, Filter } from 'luc
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Card, CardContent } from '../ui/card';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface Service {
   serviceId: string;
@@ -72,9 +72,9 @@ export function ServicesByProblem({
       }
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/services-by-problem/${problemId}?${params}`,
+        `${getApiBaseUrl()}/customer/services-by-problem/${problemId}?${params}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

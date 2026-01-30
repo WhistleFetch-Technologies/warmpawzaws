@@ -4,7 +4,7 @@ import { Badge } from '../ui/badge';
 import { Card, CardContent } from '../ui/card';
 import { MapPin, Clock, Star, Calendar, ChevronRight, Heart, TrendingUp, Navigation, User, Radar, Filter, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { motion, AnimatePresence } from 'motion/react';
 import { RadarProviderMap } from '../RadarProviderMap';
 import { PreviousProvidersCarousel } from '../PreviousProvidersCarousel';
@@ -106,8 +106,8 @@ export function HomeServiceSelectionEnhanced({
 
       // Search for providers based on service type and time window using Radar endpoint for comprehensive data
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/home-services/providers/radar?serviceType=${serviceType}&lat=${userLocation.lat}&lng=${userLocation.lng}&radius=15`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/home-services/providers/radar?serviceType=${serviceType}&lat=${userLocation.lat}&lng=${userLocation.lng}&radius=15`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -122,11 +122,11 @@ export function HomeServiceSelectionEnhanced({
             let commuteTime = 30; // default
             try {
                  const commuteRes = await fetch(
-                    `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/home-services/calculate-commute-time`,
+                    `${getApiBaseUrl()}/home-services/calculate-commute-time`,
                     {
                         method: 'POST',
                         headers: { 
-                            'Authorization': `Bearer ${publicAnonKey}`,
+                            ...getAuthHeaders(),
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
@@ -214,12 +214,12 @@ export function HomeServiceSelectionEnhanced({
       };
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings`,
+        `${getApiBaseUrl()}/bookings`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(bookingData)
         }

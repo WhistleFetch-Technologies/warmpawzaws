@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, Clock, TrendingUp, MapPin, Star, ChevronRight } from 'lucide-react';
 import { Badge } from '../ui/badge';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface SearchResult {
   id: string;
@@ -82,9 +82,9 @@ export function EnhancedSearchBar({
     if (customerId) {
       try {
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${customerId}/search-history`,
+          `${getApiBaseUrl()}/customer/${customerId}/search-history`,
           {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            headers: getAuthHeaders()
           }
         );
 
@@ -116,9 +116,9 @@ export function EnhancedSearchBar({
       if (customerId) params.append('customerId', customerId);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/search-suggestions?${params}`,
+        `${getApiBaseUrl()}/customer/search-suggestions?${params}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -168,9 +168,9 @@ export function EnhancedSearchBar({
       }
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/search/enhanced?${params}`,
+        `${getApiBaseUrl()}/search/enhanced?${params}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -195,11 +195,11 @@ export function EnhancedSearchBar({
     if (customerId) {
       try {
         await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/search-history`,
+          `${getApiBaseUrl()}/customer/search-history`,
           {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
+              ...getAuthHeaders(),
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({

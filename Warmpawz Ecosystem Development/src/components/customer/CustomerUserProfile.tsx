@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { Button } from '../ui/button';
 import { Camera } from 'lucide-react';
 import logoImage from 'figma:asset/da6636b92da744b3db8eed5288ca6da9ab889afe.png';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface UserProfile {
   firstName: string;
@@ -70,12 +70,12 @@ export function CustomerUserProfile({ session, journeyStage, onComplete }: Custo
     try {
       // Save user profile to backend
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/profile`,
+        `${getApiBaseUrl()}/customer/profile`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({
             phone: session.phone,

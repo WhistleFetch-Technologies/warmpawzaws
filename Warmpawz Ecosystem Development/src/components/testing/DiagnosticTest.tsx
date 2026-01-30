@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 export function DiagnosticTest() {
   const [results, setResults] = useState<any[]>([]);
   const [isRunning, setIsRunning] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   const addResult = (test: string, status: string, details: any) => {
     setResults(prev => [...prev, { test, status, details, timestamp: new Date().toISOString() }]);
@@ -34,7 +34,7 @@ export function DiagnosticTest() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           phone: '+919999999999',
@@ -79,7 +79,7 @@ export function DiagnosticTest() {
       const response = await fetch(`${API_BASE}/health`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         }
       });
 
@@ -202,7 +202,7 @@ export function DiagnosticTest() {
           <Card className="p-6 mt-6 bg-yellow-50 border-yellow-500">
             <h3 className="text-lg font-semibold mb-3">📋 Next Steps Based on Results:</h3>
             <ul className="list-disc list-inside space-y-2 text-sm">
-              <li>If <strong>Environment Variables</strong> failed: Check /utils/supabase/info.tsx</li>
+              <li>If <strong>Environment Variables</strong> failed: Check /utils/api-config.tsx</li>
               <li>If <strong>Backend Reachability</strong> failed with 404: Endpoint not deployed</li>
               <li>If <strong>Backend Reachability</strong> failed with 500: Backend code error</li>
               <li>If <strong>Backend Reachability</strong> failed with CORS: Backend not configured correctly</li>

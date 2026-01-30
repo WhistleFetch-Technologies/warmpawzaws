@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { 
-  ChevronRight, Upload, MapPin, Eye, CheckCircle2, Building2, ArrowLeft, AlertCircle, Loader2 
+  ChevronRight, Upload, MapPin, Eye, CheckCircle2, Building2, ArrowLeft, AlertCircle, Loader2, FileText 
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
@@ -12,8 +12,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { toast } from 'sonner';
+import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { EnhancedBankAccountForm } from '@/components/shared/EnhancedBankAccountForm';
 
 interface VendorDetailsFormProps {
   vendorId?: string;
@@ -342,15 +344,137 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
 
         <div>
             <Label className="mb-1.5 block text-gray-700">Address *</Label>
-            <Textarea value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className={errors.address ? 'border-red-500' : ''} />
+            <EnhancedAddressAutocomplete
+              value={formData.address}
+              onChange={(address: string, components?: AddressComponents) => {
+                // Single state update: address + city, state, pincode from search (like customer profile)
+                setFormData(prev => ({
+                  ...prev,
+                  address,
+                  ...(components?.city != null && { city: components.city || '' }),
+                  ...(components?.state != null && { state: components.state || '' }),
+                  ...(components?.pincode != null && { pincode: components.pincode || '' }),
+                }));
+              }}
+              placeholder="Search address, landmark, city..."
+              className={errors.address ? 'border-red-500' : ''}
+              required
+            />
             
             <div className="mt-2 flex gap-2">
                 <button onClick={detectCurrentLocation} disabled={detectingLocation} className="flex-1 bg-blue-50 text-blue-600 text-xs py-2 rounded-lg flex items-center justify-center gap-1 font-medium">
-                   {detectingLocation ? <Loader2 className="w-3 h-3 animate-spin"/> : <MapPin className="w-3 h-3" />} Detect
+                   {detectingLocation ? <Loader2 className="w-3 h-3 animate-spin"/> : <MapPin className="w-3 h-3" />} Detect Current Location
                 </button>
-                <button onClick={initializeMap} className="flex-1 bg-gray-100 text-gray-600 text-xs py-2 rounded-lg font-medium">Show Map</button>
             </div>
-            <div ref={mapRef} className="w-full h-40 mt-2 rounded-lg bg-gray-100 border overflow-hidden" />
+        </div>
+
+        {/* ✅ FIX: City, State, Pincode inputs (required for validation) */}
+        <div className="grid grid-cols-3 gap-3">
+            <div>
+                <Label className="mb-1.5 block text-gray-700">City *</Label>
+                <Input 
+                    value={formData.city} 
+                    onChange={e => setFormData({...formData, city: e.target.value})} 
+                    placeholder="City"
+                    className={errors.city ? 'border-red-500' : ''} 
+                />
+            </div>
+            <div>
+                <Label className="mb-1.5 block text-gray-700">State *</Label>
+                <Input 
+                    value={formData.state} 
+                    onChange={e => setFormData({...formData, state: e.target.value})} 
+                    placeholder="State"
+                    className={errors.state ? 'border-red-500' : ''} 
+                />
+            </div>
+            <div>
+                <Label className="mb-1.5 block text-gray-700">Pincode *</Label>
+                <Input 
+                    value={formData.pincode} 
+                    onChange={e => setFormData({...formData, pincode: e.target.value.replace(/[^0-9]/g, '').slice(0, 6)})} 
+                    placeholder="560001"
+                    maxLength={6}
+                    className={errors.pincode ? 'border-red-500' : ''} 
+                />
+            </div>
+        </div>
+
+        {/* ✅ FIX: Experience input (required for validation) */}
+        <div>
+            <Label className="mb-1.5 block text-gray-700">Years of Experience *</Label>
+            <Input 
+                value={formData.experience} 
+                onChange={e => setFormData({...formData, experience: e.target.value})} 
+                placeholder="e.g., 5 years"
+                className={errors.experience ? 'border-red-500' : ''} 
+            />
+        </div>
+
+        {/* ✅ FIX: Identity Documents Section */}
+        <div className="space-y-3 pt-4 border-t">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-[#FF8C42]" /> Identity Documents
+            </h3>
+            
+            {/* Aadhaar Number */}
+            <div>
+                <Label className="mb-1.5 block text-gray-700">Aadhaar Number *</Label>
+                <Input 
+                    value={formData.aadhaarNumber} 
+                    onChange={e => setFormData({...formData, aadhaarNumber: e.target.value.replace(/[^0-9]/g, '').slice(0, 12)})} 
+                    placeholder="123456789012"
+                    maxLength={12}
+                    className={errors.aadhaarNumber ? 'border-red-500' : ''} 
+                />
+                {errors.aadhaarNumber && <p className="text-xs text-red-500 mt-1">{errors.aadhaarNumber}</p>}
+            </div>
+            
+            {/* Aadhaar Front & Back Upload */}
+            <div className="grid grid-cols-2 gap-3">
+                <div>
+                    <Label className="mb-1.5 block text-gray-700">Aadhaar Front *</Label>
+                    <div 
+                        className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-[#FF8C42] ${errors.aadhaar ? 'border-red-500' : 'border-gray-200'}`} 
+                        onClick={() => document.getElementById('aadhaar-front-upload')?.click()}
+                    >
+                        <input id="aadhaar-front-upload" type="file" accept="image/*" className="hidden" onChange={e => handleFileUpload('aadhaar', e.target.files?.[0] || null, 'front')} />
+                        {aadhaarFiles.front ? (
+                            <span className="text-green-600 text-xs font-medium">{aadhaarFiles.front.name}</span>
+                        ) : (
+                            <span className="text-gray-500 text-xs">Upload front</span>
+                        )}
+                    </div>
+                </div>
+                <div>
+                    <Label className="mb-1.5 block text-gray-700">Aadhaar Back *</Label>
+                    <div 
+                        className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-[#FF8C42] ${errors.aadhaar ? 'border-red-500' : 'border-gray-200'}`} 
+                        onClick={() => document.getElementById('aadhaar-back-upload')?.click()}
+                    >
+                        <input id="aadhaar-back-upload" type="file" accept="image/*" className="hidden" onChange={e => handleFileUpload('aadhaar', e.target.files?.[0] || null, 'back')} />
+                        {aadhaarFiles.back ? (
+                            <span className="text-green-600 text-xs font-medium">{aadhaarFiles.back.name}</span>
+                        ) : (
+                            <span className="text-gray-500 text-xs">Upload back</span>
+                        )}
+                    </div>
+                </div>
+            </div>
+            {errors.aadhaar && <p className="text-xs text-red-500">{errors.aadhaar}</p>}
+            
+            {/* PAN Number */}
+            <div>
+                <Label className="mb-1.5 block text-gray-700">PAN Number *</Label>
+                <Input 
+                    value={formData.panNumber} 
+                    onChange={e => setFormData({...formData, panNumber: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10)})} 
+                    placeholder="ABCDE1234F"
+                    maxLength={10}
+                    className={errors.panNumber ? 'border-red-500' : ''} 
+                />
+                {errors.panNumber && <p className="text-xs text-red-500 mt-1">{errors.panNumber}</p>}
+            </div>
         </div>
 
         {/* GST Section */}
@@ -402,7 +526,32 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
             <div>
                 <Label className="mb-1.5 block text-gray-700">IFSC Code *</Label>
                 <div className="flex gap-2">
-                    <Input value={bankDetails.ifscCode} onChange={e => setBankDetails({...bankDetails, ifscCode: e.target.value.toUpperCase(), verified: false})} className={errors.ifscCode ? 'border-red-500' : ''} />
+                    <div className="flex-1 relative">
+                        <Input 
+                          value={bankDetails.ifscCode} 
+                          onChange={async (e) => {
+                            const ifscValue = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 11);
+                            setBankDetails({...bankDetails, ifscCode: ifscValue, verified: false});
+                            
+                            // Auto-validate IFSC when 11 characters entered
+                            if (ifscValue.length === 11 && /^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifscValue)) {
+                              try {
+                                const response = await apiClient.get<any>(`/razorpay/ifsc/${ifscValue}`);
+                                if (response.success && response.bank) {
+                                  // Auto-populate bank name
+                                  setBankDetails(prev => ({ ...prev, bankName: response.bank || prev.bankName }));
+                                  toast.success(`IFSC validated: ${response.bank}`);
+                                }
+                              } catch (err) {
+                                // IFSC not found - that's okay, user can still proceed
+                              }
+                            }
+                          }} 
+                          placeholder="HDFC0001234"
+                          maxLength={11}
+                          className={errors.ifscCode ? 'border-red-500' : ''} 
+                        />
+                    </div>
                     <Button 
                         type="button" 
                         onClick={verifyBank} 
@@ -412,7 +561,8 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
                         {verifyingBank ? <Loader2 className="w-4 h-4 animate-spin" /> : bankDetails.verified ? <CheckCircle2 className="w-4 h-4" /> : 'Verify'}
                     </Button>
                 </div>
-                 {bankDetails.verified && <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> Beneficiary Validated</p>}
+                {bankDetails.verified && <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> Beneficiary Validated</p>}
+                <p className="text-xs text-gray-500 mt-1">IFSC code will auto-validate and populate bank name</p>
             </div>
             <div>
                 <Label className="mb-1.5 block text-gray-700">Cancelled Cheque *</Label>

@@ -11,7 +11,7 @@ import {
   X,
   Search
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
 import { Input } from '../ui/input';
@@ -87,9 +87,9 @@ export function StaffAvailabilityManagement({ staff, onBack }: StaffAvailability
 
       // Load locations
       const locationsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/locations`,
+        `${getApiBaseUrl()}/staff/${staff.id}/locations`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -100,9 +100,9 @@ export function StaffAvailabilityManagement({ staff, onBack }: StaffAvailability
 
       // Load schedule
       const scheduleRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/schedule`,
+        `${getApiBaseUrl()}/staff/${staff.id}/schedule`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -115,9 +115,9 @@ export function StaffAvailabilityManagement({ staff, onBack }: StaffAvailability
 
       // Load holidays
       const holidaysRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/holidays`,
+        `${getApiBaseUrl()}/staff/${staff.id}/holidays`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -142,11 +142,11 @@ export function StaffAvailabilityManagement({ staff, onBack }: StaffAvailability
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/locations`,
+        `${getApiBaseUrl()}/staff/${staff.id}/locations`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -209,11 +209,11 @@ export function StaffAvailabilityManagement({ staff, onBack }: StaffAvailability
   const handleSaveSchedule = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/schedule`,
+        `${getApiBaseUrl()}/staff/${staff.id}/schedule`,
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ schedule })
@@ -408,10 +408,10 @@ export function StaffAvailabilityManagement({ staff, onBack }: StaffAvailability
                     if (confirm('Remove this location?')) {
                       try {
                         const response = await fetch(
-                          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/locations/${location.id}`,
+                          `${getApiBaseUrl()}/staff/${staff.id}/locations/${location.id}`,
                           {
                             method: 'DELETE',
-                            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+                            headers: getAuthHeaders()
                           }
                         );
                         if (response.ok) {

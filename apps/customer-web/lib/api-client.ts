@@ -19,7 +19,12 @@ function getRuntimeConfig(): RuntimeConfig {
   return window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
 }
 
-function getApiBaseUrl(): string {
+/**
+ * Get the API Base URL from runtime config (deployed) or environment (local dev)
+ * This is the ONLY function that should be used to get the API URL
+ * Priority: runtime-config.js (deploy-time) → build-time env (local dev)
+ */
+export function getApiBaseUrl(): string {
   // Priority: runtime-config.js (deploy-time) → build-time env (local dev)
   const cfg = getRuntimeConfig();
   return (
@@ -89,8 +94,17 @@ export class ApiClient {
     const base = this.baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
     const path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
     const url = `${base}${path}`;
-    const token = this.getAuthToken();
-    
+    let token = this.getAuthToken();
+
+    // ✅ UAT fallback: if no auth token but we have customer phone (e.g. after refresh), build a UAT token so authorizer allows profile/address routes
+    if (typeof window !== 'undefined' && UAT_MODE && (!token || !String(token).startsWith('uat-token-'))) {
+      const customerPhone = localStorage.getItem('customerPhone');
+      if (customerPhone && customerPhone.length >= 10) {
+        const fallbackToken = `uat-token-customer-${customerPhone}-${Date.now()}`;
+        token = token || fallbackToken;
+      }
+    }
+
     const headers: Record<string, string> = {
       ...(options.headers as Record<string, string>),
     };
@@ -103,6 +117,15 @@ export class ApiClient {
 
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    // ✅ UAT Mode: Send headers so API Gateway authorizer allows the request (phone-based login has no Cognito JWT)
+    if (UAT_MODE) {
+      headers['X-UAT-Mode'] = 'true';
+      // Authorizer requires X-UAT-Token when using UAT; send token so profile, add-address and other customer routes pass
+      if (token && typeof token === 'string' && token.startsWith('uat-token-')) {
+        headers['X-UAT-Token'] = token;
+      }
     }
     
     // UAT Mode: Log API requests for debugging

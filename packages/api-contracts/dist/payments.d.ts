@@ -130,7 +130,7 @@ export declare const PaymentSchema: z.ZodObject<{
     couponCode: string | null;
     promotionId: string | null;
     discountAmount: number;
-    paymentStatus: "pending" | "completed" | "refunded" | "failed" | "processing" | "partially_refunded";
+    paymentStatus: "pending" | "completed" | "processing" | "refunded" | "failed" | "partially_refunded";
     createdAt: string;
     updatedAt: string;
     completedAt: string | null;
@@ -153,7 +153,7 @@ export declare const PaymentSchema: z.ZodObject<{
     couponCode: string | null;
     promotionId: string | null;
     discountAmount: number;
-    paymentStatus: "pending" | "completed" | "refunded" | "failed" | "processing" | "partially_refunded";
+    paymentStatus: "pending" | "completed" | "processing" | "refunded" | "failed" | "partially_refunded";
     createdAt: string;
     updatedAt: string;
     completedAt: string | null;
@@ -190,7 +190,7 @@ export declare const RefundSchema: z.ZodObject<{
     updatedAt: string;
     bookingId: string | null;
     refundType: "partial" | "full";
-    refundStatus: "pending" | "completed" | "failed" | "rejected" | "processing" | "auto_approved";
+    refundStatus: "pending" | "completed" | "processing" | "failed" | "rejected" | "auto_approved";
     razorpayRefundId: string | null;
     processedAt: string | null;
 }, {
@@ -202,7 +202,7 @@ export declare const RefundSchema: z.ZodObject<{
     updatedAt: string;
     bookingId: string | null;
     refundType: "partial" | "full";
-    refundStatus: "pending" | "completed" | "failed" | "rejected" | "processing" | "auto_approved";
+    refundStatus: "pending" | "completed" | "processing" | "failed" | "rejected" | "auto_approved";
     razorpayRefundId: string | null;
     processedAt: string | null;
 }>;
@@ -318,7 +318,7 @@ export declare const VerifyPaymentResponseSchema: z.ZodObject<{
             couponCode: string | null;
             promotionId: string | null;
             discountAmount: number;
-            paymentStatus: "pending" | "completed" | "refunded" | "failed" | "processing" | "partially_refunded";
+            paymentStatus: "pending" | "completed" | "processing" | "refunded" | "failed" | "partially_refunded";
             createdAt: string;
             updatedAt: string;
             completedAt: string | null;
@@ -341,7 +341,7 @@ export declare const VerifyPaymentResponseSchema: z.ZodObject<{
             couponCode: string | null;
             promotionId: string | null;
             discountAmount: number;
-            paymentStatus: "pending" | "completed" | "refunded" | "failed" | "processing" | "partially_refunded";
+            paymentStatus: "pending" | "completed" | "processing" | "refunded" | "failed" | "partially_refunded";
             createdAt: string;
             updatedAt: string;
             completedAt: string | null;
@@ -368,7 +368,7 @@ export declare const VerifyPaymentResponseSchema: z.ZodObject<{
             couponCode: string | null;
             promotionId: string | null;
             discountAmount: number;
-            paymentStatus: "pending" | "completed" | "refunded" | "failed" | "processing" | "partially_refunded";
+            paymentStatus: "pending" | "completed" | "processing" | "refunded" | "failed" | "partially_refunded";
             createdAt: string;
             updatedAt: string;
             completedAt: string | null;
@@ -394,7 +394,7 @@ export declare const VerifyPaymentResponseSchema: z.ZodObject<{
             couponCode: string | null;
             promotionId: string | null;
             discountAmount: number;
-            paymentStatus: "pending" | "completed" | "refunded" | "failed" | "processing" | "partially_refunded";
+            paymentStatus: "pending" | "completed" | "processing" | "refunded" | "failed" | "partially_refunded";
             createdAt: string;
             updatedAt: string;
             completedAt: string | null;
@@ -423,7 +423,7 @@ export declare const VerifyPaymentResponseSchema: z.ZodObject<{
             couponCode: string | null;
             promotionId: string | null;
             discountAmount: number;
-            paymentStatus: "pending" | "completed" | "refunded" | "failed" | "processing" | "partially_refunded";
+            paymentStatus: "pending" | "completed" | "processing" | "refunded" | "failed" | "partially_refunded";
             createdAt: string;
             updatedAt: string;
             completedAt: string | null;
@@ -452,7 +452,7 @@ export declare const VerifyPaymentResponseSchema: z.ZodObject<{
             couponCode: string | null;
             promotionId: string | null;
             discountAmount: number;
-            paymentStatus: "pending" | "completed" | "refunded" | "failed" | "processing" | "partially_refunded";
+            paymentStatus: "pending" | "completed" | "processing" | "refunded" | "failed" | "partially_refunded";
             createdAt: string;
             updatedAt: string;
             completedAt: string | null;
@@ -505,7 +505,7 @@ export declare const CreatePaymentResponseSchema: z.ZodObject<{
             couponCode: string | null;
             promotionId: string | null;
             discountAmount: number;
-            paymentStatus: "pending" | "completed" | "refunded" | "failed" | "processing" | "partially_refunded";
+            paymentStatus: "pending" | "completed" | "processing" | "refunded" | "failed" | "partially_refunded";
             createdAt: string;
             updatedAt: string;
             completedAt: string | null;
@@ -528,7 +528,7 @@ export declare const CreatePaymentResponseSchema: z.ZodObject<{
             couponCode: string | null;
             promotionId: string | null;
             discountAmount: number;
-            paymentStatus: "pending" | "completed" | "refunded" | "failed" | "processing" | "partially_refunded";
+            paymentStatus: "pending" | "completed" | "processing" | "refunded" | "failed" | "partially_refunded";
             createdAt: string;
             updatedAt: string;
             completedAt: string | null;
@@ -554,7 +554,7 @@ export declare const CreatePaymentResponseSchema: z.ZodObject<{
             couponCode: string | null;
             promotionId: string | null;
             discountAmount: number;
-            paymentStatus: "pending" | "completed" | "refunded" | "failed" | "processing" | "partially_refunded";
+            paymentStatus: "pending" | "completed" | "processing" | "refunded" | "failed" | "partially_refunded";
             createdAt: string;
             updatedAt: string;
             completedAt: string | null;
@@ -580,7 +580,7 @@ export declare const CreatePaymentResponseSchema: z.ZodObject<{
             couponCode: string | null;
             promotionId: string | null;
             discountAmount: number;
-            paymentStatus: "pending" | "completed" | "refunded" | "failed" | "processing" | "partially_refunded";
+            paymentStatus: "pending" | "completed" | "processing" | "refunded" | "failed" | "partially_refunded";
             createdAt: string;
             updatedAt: string;
             completedAt: string | null;
@@ -609,7 +609,7 @@ export declare const CreatePaymentResponseSchema: z.ZodObject<{
             couponCode: string | null;
             promotionId: string | null;
             discountAmount: number;
-            paymentStatus: "pending" | "completed" | "refunded" | "failed" | "processing" | "partially_refunded";
+            paymentStatus: "pending" | "completed" | "processing" | "refunded" | "failed" | "partially_refunded";
             createdAt: string;
             updatedAt: string;
             completedAt: string | null;
@@ -638,7 +638,7 @@ export declare const CreatePaymentResponseSchema: z.ZodObject<{
             couponCode: string | null;
             promotionId: string | null;
             discountAmount: number;
-            paymentStatus: "pending" | "completed" | "refunded" | "failed" | "processing" | "partially_refunded";
+            paymentStatus: "pending" | "completed" | "processing" | "refunded" | "failed" | "partially_refunded";
             createdAt: string;
             updatedAt: string;
             completedAt: string | null;

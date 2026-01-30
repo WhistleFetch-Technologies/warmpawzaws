@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -133,20 +134,103 @@ export function GroomingServicesByStyle({
     } catch (e) {
       console.log('Could not get customer location');
     }
-    
+
     try {
       setLoading(true);
-      
-      const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}`
-      ) as any;
+      console.log(`🔵 [Grooming] Discovering providers: category=${category}, serviceStyle=${serviceStyle}`);
+
+      // ✅ RULE: Same as vet center/home – call discover-services first (standard service provider discovery).
+      let providerData: any[] = [];
+      try {
+        const discoverUrl = `/customer/discover-services?category=${category}&serviceStyle=${serviceStyle}${locationParams}`;
+        console.log(`🔵 [Grooming] API: GET ${discoverUrl}`);
+        const discoverResponse = await apiClient.get(discoverUrl) as any;
+        const rawVendors = discoverResponse?.vendors || discoverResponse?.providers || [];
+        if (rawVendors.length > 0) {
+          // Map discover-services response (vendors with featuredOfferings) to provider shape with services array
+          providerData = rawVendors.map((v: any) => {
+            const offerings = v.featuredOfferings || v.services || [];
+            const services = offerings.map((s: any) => ({
+              id: s.id || s.serviceId,
+              serviceId: s.id || s.serviceId,
+              name: s.name || s.serviceName || 'Grooming',
+              price: Number(s.price ?? s.custom_price ?? 0),
+              duration: Number(s.duration ?? s.duration_minutes ?? 30),
+              description: s.description || s.custom_description,
+              category: s.category_name || s.category,
+            }));
+            return {
+              providerId: v.id || v.vendorId,
+              providerType: 'vendor',
+              vendorId: v.id || v.vendorId,
+              name: v.businessName || v.name || v.owner_name || 'Grooming',
+              phone: v.phone,
+              address: v.address,
+              city: v.city,
+              role: v.role || v.role_display_name,
+              rating: String(v.rating ?? v.avgRating ?? '0'),
+              reviewCount: Number(v.reviewCount ?? v.review_count ?? 0),
+              distance: v.distance != null ? Number(v.distance) : null,
+              isVerified: v.isVerified !== false,
+              services,
+              specialisation: v.specialisation || v.specialization,
+              amenities: Array.isArray(v.amenities) ? v.amenities : [],
+            };
+          });
+          console.log(`✅ [Grooming] discover-services returned ${providerData.length} provider(s)`);
+        }
+      } catch (discoverErr) {
+        console.warn('⚠️ [Grooming] discover-services failed, trying by-style:', discoverErr);
+      }
+
+      // When discover-services returned providers, apply promotions and set
+      if (providerData.length > 0) {
+        const enrichedProviders = await Promise.all(
+          providerData.map(async (p: any) => {
+            if (p.services && Array.isArray(p.services) && p.services.length > 0 && promotions.length > 0) {
+              const enrichedServices = await Promise.all(
+                p.services.map((s: any) => {
+                  const basePrice = s.price || 0;
+                  const applicablePromo = promotions.find((promo: any) => {
+                    const appliesToService = !promo.applicable_services?.length || promo.applicable_services.includes(s.id || s.serviceId);
+                    const appliesToCategory = !promo.applicable_roles?.length || promo.applicable_roles.includes(category);
+                    const now = new Date();
+                    const startDate = new Date(promo.start_date);
+                    const endDate = promo.end_date ? new Date(promo.end_date) : null;
+                    return appliesToService && appliesToCategory && now >= startDate && (!endDate || now <= endDate) && promo.is_active;
+                  });
+                  if (!applicablePromo) return s;
+                  let finalPrice = basePrice;
+                  let discountAmount: number | undefined;
+                  if (applicablePromo.discount_type === 'percentage') {
+                    discountAmount = (basePrice * parseFloat(applicablePromo.discount_value || '0')) / 100;
+                    if (applicablePromo.max_discount_amount) discountAmount = Math.min(discountAmount, parseFloat(applicablePromo.max_discount_amount));
+                    finalPrice = Math.max(0, basePrice - discountAmount);
+                  } else {
+                    discountAmount = parseFloat(applicablePromo.discount_value || '0');
+                    finalPrice = Math.max(0, basePrice - discountAmount);
+                  }
+                  return { ...s, price: finalPrice, originalPrice: basePrice, discountAmount, promotionId: applicablePromo.id };
+                })
+              );
+              return { ...p, services: enrichedServices };
+            }
+            return p;
+          })
+        );
+        setProviders(enrichedProviders);
+      } else {
+        // Fallback: by-style (same as vet center / UniversalServicesByStyle)
+        const response = await apiClient.get(
+          `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}`
+        ) as any;
+        console.log(`🔵 [Grooming] API: GET by-style?style=${serviceStyle}&category=${category}`);
 
       if (response.success) {
-        // New API returns 'providers' array, fallback to 'vendors' for backward compatibility
-        let providerData = response.providers || response.vendors || [];
+        let byStyleProviders = response.providers || response.vendors || [];
         
         // ✅ FIX: Enhance provider data with specialisation and amenities
-        providerData = providerData.map((p: any) => ({
+        byStyleProviders = byStyleProviders.map((p: any) => ({
           ...p,
           specialisation: p.specialisation || p.vendorSpecialisation || p.vendor?.specialisation || p.specialization,
           amenities: Array.isArray(p.amenities) ? p.amenities : 
@@ -157,14 +241,14 @@ export function GroomingServicesByStyle({
         
         // Filter to specific vendor if vendorId is provided (vendor profile mode)
         if (vendorId) {
-          providerData = providerData.filter((p: any) => 
+          byStyleProviders = byStyleProviders.filter((p: any) => 
             (p.providerId || p.vendorId || p.id) === vendorId
           );
         }
         
         // ✅ NEW: Apply promotions to services in providerData
         const enrichedProviders = await Promise.all(
-          providerData.map(async (p: any) => {
+          byStyleProviders.map(async (p: any) => {
             if (p.services && Array.isArray(p.services)) {
               const enrichedServices = await Promise.all(
                 p.services.map(async (s: any) => {
@@ -230,10 +314,11 @@ export function GroomingServicesByStyle({
         );
 
         setProviders(enrichedProviders);
-        console.log(`✅ [Grooming] Loaded ${enrichedProviders.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
+        console.log(`✅ [Grooming] Loaded ${enrichedProviders.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services (by-style)`);
       } else {
-        console.warn('⚠️ [Grooming] API returned success=false');
+        console.warn('⚠️ [Grooming] by-style API returned success=false');
         setProviders([]);
+      }
       }
     } catch (error) {
       console.error('❌ [Grooming] Error loading services by style:', error);
@@ -572,9 +657,39 @@ export function GroomingServicesByStyle({
     const phoneNumber = vendor?.phone || facility?.phone || profileProvider.phone || '';
     const description = vendor?.description || facility?.description || `${salonName} is a professional pet grooming salon offering premium grooming services.`;
 
+    // ✅ FIX: Prepare stats for ServiceDashboardHeader
+    const dashboardStats = [
+      { value: '50+', label: 'Salons', icon: <Scissors className="w-4 h-4" /> },
+      { value: '1K+', label: 'Bookings' },
+      { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+    ];
+    
+    const getServiceTitle = () => {
+      if (serviceStyle === 'at_center') return 'Grooming Center';
+      if (serviceStyle === 'at_home') return 'At Home Grooming';
+      return 'Grooming Services';
+    };
+    
+    const getServiceSubtitle = () => {
+      if (serviceStyle === 'at_center') return 'Visit our premium grooming salons';
+      if (serviceStyle === 'at_home') return 'Professional groomer comes to you';
+      return 'Premium pet grooming services';
+    };
+
     return (
-      <>
-        {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      <div className="min-h-screen bg-gray-50">
+        {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
+        <ServiceDashboardHeader
+          serviceName={getServiceTitle()}
+          serviceSubtitle={getServiceSubtitle()}
+          serviceIcon={Scissors}
+          iconColor="text-white"
+          stats={dashboardStats}
+          onBack={onBack}
+          showBackButton={true}
+          headerColor="bg-[#FF8C42]"
+        />
+        <div>
 
         {/* Large Hero Photo Gallery - Grooming Salon Style */}
         {hasPhotos ? (
@@ -1048,19 +1163,49 @@ export function GroomingServicesByStyle({
                 : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (₹${totalPrice})`
               }
             </Button>
-          </div>
         </div>
-      </>
-    );
-  }
+      </div>
+        </div>
+    </div>
+  );
+}
+
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const dashboardStats = [
+    { value: '50+', label: 'Salons', icon: <Scissors className="w-4 h-4" /> },
+    { value: '1K+', label: 'Bookings' },
+    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
+  
+  const getServiceTitle = () => {
+    if (serviceStyle === 'at_center') return 'Grooming Center';
+    if (serviceStyle === 'at_home') return 'At Home Grooming';
+    return 'Grooming Services';
+  };
+  
+  const getServiceSubtitle = () => {
+    if (serviceStyle === 'at_center') return 'Visit our premium grooming salons';
+    if (serviceStyle === 'at_home') return 'Professional groomer comes to you';
+    return 'Premium pet grooming services';
+  };
 
   // Listing View Mode (when vendorId not provided or multiple providers)
   return (
-    <>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+    <div className="min-h-screen bg-gray-50">
+      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
+      <ServiceDashboardHeader
+        serviceName={getServiceTitle()}
+        serviceSubtitle={getServiceSubtitle()}
+        serviceIcon={Scissors}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
+      />
       
       {/* Info section */}
-      <div className="px-6 pt-4 pb-2">
+      <div className="max-w-md mx-auto px-6 pt-4 pb-2 bg-white">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-11 h-11 bg-orange-100 rounded-2xl flex items-center justify-center">
             {getStyleIcon()}
@@ -1085,7 +1230,7 @@ export function GroomingServicesByStyle({
       </div>
 
       {/* Content */}
-      <div className="px-4 pb-24">
+      <div className="max-w-md mx-auto px-4 pb-24">
         {providers.length === 0 ? (
           <Card className="p-8 text-center bg-white">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1384,6 +1529,6 @@ export function GroomingServicesByStyle({
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }

@@ -4,9 +4,11 @@ import { CreatePackageFlow } from './CreatePackageFlow';
 
 export function PackageManagementContainer({
   vendorId,
+  vendorData,
   onBack
 }: {
   vendorId: string;
+  vendorData?: any;
   onBack: () => void;
 }) {
   const [currentScreen, setCurrentScreen] = useState<'list' | 'create'>('list');
@@ -27,6 +29,7 @@ export function PackageManagementContainer({
     return (
       <CreatePackageFlow
         vendorId={vendorId}
+        vendorData={vendorData}
         onBack={handleBackToList}
         onSuccess={handleSuccess}
       />

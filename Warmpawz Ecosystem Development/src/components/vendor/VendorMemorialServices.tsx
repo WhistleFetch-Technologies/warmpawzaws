@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Heart, Plus, Calendar, Package, Image as ImageIcon, Edit2, Trash2, Eye, CheckCircle, Clock, XCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -91,7 +91,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
   const [editingService, setEditingService] = useState<MemorialService | null>(null);
   const [editingProduct, setEditingProduct] = useState<MemorialProduct | null>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/memorial`;
+  const API_BASE = `${getApiBaseUrl()}/vendor/memorial`;
 
   useEffect(() => {
     loadData();
@@ -117,7 +117,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
 
   const loadServices = async () => {
     const response = await fetch(`${API_BASE}/${vendorId}/services`, {
-      headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      headers: getAuthHeaders()
     });
     if (response.ok) {
       const data = await response.json();
@@ -127,7 +127,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
 
   const loadTributes = async () => {
     const response = await fetch(`${API_BASE}/${vendorId}/tributes`, {
-      headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      headers: getAuthHeaders()
     });
     if (response.ok) {
       const data = await response.json();
@@ -137,7 +137,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
 
   const loadProducts = async () => {
     const response = await fetch(`${API_BASE}/${vendorId}/products`, {
-      headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+      headers: getAuthHeaders()
     });
     if (response.ok) {
       const data = await response.json();
@@ -150,7 +150,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
       const response = await fetch(`${API_BASE}/${vendorId}/services/${serviceId}/status`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ status })
@@ -174,7 +174,7 @@ export function VendorMemorialServices({ vendorId, vendorData, onBack }: VendorM
     try {
       const response = await fetch(`${API_BASE}/${vendorId}/products/${productId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {

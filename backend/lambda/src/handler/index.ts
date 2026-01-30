@@ -17,6 +17,8 @@ import { cors } from 'hono/cors';
 import { initializeErrorTracking, captureException, setUserContext, getErrorTrackingConfig } from '../utils/error-tracking';
 import { validateEnvironmentOrThrow, getValidationReport, validateEnvironment } from '../utils/env-validation';
 import { checkDbHealth } from '../database/rds-connection';
+import { requireAuth, requireAdmin, authAuditLog } from '../middleware/auth-middleware';
+import { rateLimit, rateLimitAuth, rateLimitOtp, slidingWindowRateLimit } from '../middleware/rate-limit-middleware';
 // Enhanced handlers (Phase 2-5)
 import { registerAuthEndpointsEnhanced } from '../endpoints/auth-enhanced';
 import { registerVendorOnboardingEndpointsEnhanced } from '../endpoints/vendor-onboarding-enhanced';
@@ -46,7 +48,8 @@ import { registerWalletEndpoints } from '../endpoints/wallet';
 import { registerSpecializedServicesEndpoints } from '../endpoints/specialized-services';
 import { registerSpecializedServiceFlows } from '../endpoints/specialized-service-flows';
 import { registerAdminGovernanceEndpoints } from '../endpoints/admin-governance';
-import { registerStaffEndpoints } from '../endpoints/staff';
+// ❌ DECOMMISSIONED: Staff management has been removed
+// import { registerStaffEndpoints } from '../endpoints/staff';
 import { registerServiceDiscoveryEndpoints } from '../endpoints/service-discovery';
 import { registerReviewEndpoints } from '../endpoints/reviews';
 import { registerNotificationEndpoints } from '../endpoints/notifications';
@@ -115,7 +118,9 @@ import { registerRazorpaySettlementEndpoints } from '../endpoints/razorpay-settl
 import { registerRefundPolicyEngineEndpoints } from '../endpoints/refund-policy-engine';
 import { registerAdminGovernanceEnhancedEndpoints } from '../endpoints/admin-governance-enhanced';
 import { registerAdminAdvancedEndpoints } from '../endpoints/admin-advanced';
+import { registerDiscoveryRulesAdminEndpoints } from '../endpoints/discovery-rules-admin';
 import { registerVendorSetupEndpoints } from '../endpoints/vendor-setup';
+import { registerConfigPoliciesEndpoints } from '../endpoints/config-policies';
 import { registerCustomerAppointmentsEndpoints } from '../endpoints/customer-appointments';
 import { registerCustomerOrdersEndpoints } from '../endpoints/customer-orders';
 import { registerVendorAnalyticsEndpoints } from '../endpoints/vendor-analytics';
@@ -142,15 +147,17 @@ import { registerAdminComprehensiveEndpoints } from '../endpoints/admin-comprehe
 import { registerProblemGridEndpoints } from '../endpoints/problem-grid';
 import { registerVendorDashboardMissingEndpoints } from '../endpoints/vendor-dashboard-missing';
 import { registerUIDashboardConfigEndpoints } from '../endpoints/ui-dashboard-config';
+import { registerServiceLaunchConfigEndpoints } from '../endpoints/service-launch-config';
 import { registerCarePlansEndpoints } from '../endpoints/care-plans';
 import { registerVendorSupportEndpoints } from '../endpoints/vendor-support';
-import { registerPharmacyOrderEndpoints } from '../endpoints/pharmacy-orders';
+import { registerPharmacyOrderEndpoints, registerAdditionalPharmacyEndpoints } from '../endpoints/pharmacy-orders';
 import { registerPharmacyInventoryEndpoints } from '../endpoints/pharmacy-inventory';
 import { registerDeliveryPartnerAutomationEndpoints } from '../endpoints/delivery-partner-automation';
 import { registerMealPlanEndpoints } from '../endpoints/meal-plans';
 import { registerNutritionOrderEndpoints } from '../endpoints/nutrition-orders';
 import { registerVendorBankAccountEndpoints } from '../endpoints/vendor-bank-accounts';
 import { registerDeliveryTrackingEndpoints } from '../endpoints/delivery-tracking';
+import { registerDeliveryOtpEndpoints } from '../endpoints/delivery-otp';
 import { registerInstantTeleQueueEndpoints } from '../endpoints/instant-tele-queue';
 import { registerRoomsEndpoints } from '../endpoints/rooms';
 import { registerVendorLiveStatusEndpoints } from '../endpoints/vendor-live-status';
@@ -168,31 +175,30 @@ import { registerSelfManagedLogisticsEndpoints } from '../endpoints/self-managed
 import { registerTaxInvoicePdfEndpoints } from '../endpoints/tax-invoice-pdf';
 import { registerReviewsEnhancedEndpoints } from '../endpoints/reviews-enhanced';
 import { registerReturnsEnhancedEndpoints } from '../endpoints/returns-enhanced';
+import { registerFeeConfigEndpoints } from '../endpoints/fee-config';
+import { registerKYCVerificationEndpoints } from '../endpoints/kyc-verification';
+import { registerSpecializationMasterEndpoints } from '../endpoints/specialization-master';
+import platformPoliciesApp from '../endpoints/platform-policies';
 
 // Create Hono app
 const app = new Hono();
 
-// Configure CORS - Match API Gateway CORS settings
-// OFFICIAL CloudFront distributions (as per infrastructure)
-// These are the ONLY CloudFront distributions that should exist
+// Configure CORS - ONLY these 3 CloudFront URLs for Admin, Vendor, Customer (as per requirement)
+// Admin: https://dfof7mguaa0a5.cloudfront.net | Vendor: https://d1s6ykkj381k58.cloudfront.net | Customer: https://d2aoyjj8ine0wk.cloudfront.net
 const allowedOrigins = [
-  // Admin Web CloudFront (OFFICIAL - E1WPXL8WBOWOE8)
-  'https://dfof7mguaa0a5.cloudfront.net',
-  // Customer Web CloudFront (OFFICIAL - E2RDORGXSWJJ87)
-  'https://d2aoyjj8ine0wk.cloudfront.net',
-  // Vendor Web CloudFront (OFFICIAL - E95171GX1I6HN)
-  'https://d1s6ykkj381k58.cloudfront.net',
+  'https://dfof7mguaa0a5.cloudfront.net', // Admin (E1WPXL8WBOWOE8)
+  'https://d1s6ykkj381k58.cloudfront.net', // Vendor (E95171GX1I6HN)
+  'https://d2aoyjj8ine0wk.cloudfront.net', // Customer (E2RDORGXSWJJ87)
   // Local development
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:3002',
   'http://localhost:3003',
   'http://localhost:5173',
-  // Dev domains
+  // Dev/prod custom domains (optional)
   'https://dev.admin.warmpawz.com',
   'https://dev.vendor.warmpawz.com',
   'https://dev.customer.warmpawz.com',
-  // Production domains (for prod environment)
   'https://admin.warmpawz.com',
   'https://vendor.warmpawz.com',
   'https://customer.warmpawz.com',
@@ -292,6 +298,18 @@ app.use('*', async (c, next) => {
   await next();
 });
 
+// Authentication audit logging (for security monitoring)
+app.use('*', authAuditLog());
+
+// Require authentication for admin endpoints
+app.use('/admin/*', requireAdmin());
+
+// Rate limiting for sensitive endpoints
+app.use('/auth/*', rateLimitAuth());
+app.use('/otp/*', slidingWindowRateLimit({ windowMs: 60000, maxRequests: 5, keyPrefix: 'otp' }));
+app.use('/bookings/generate-otp', slidingWindowRateLimit({ windowMs: 60000, maxRequests: 5, keyPrefix: 'booking-otp' }));
+app.use('/payments/*', rateLimit({ windowMs: 60000, maxRequests: 30, keyPrefix: 'payments' }));
+
 // Initialize CloudWatch error tracking (India data residency compliant)
 const environment = process.env.NODE_ENV || process.env.ENVIRONMENT || 'development';
 initializeErrorTracking({
@@ -384,6 +402,7 @@ registerCustomerContentEndpoints(app); // /customer/banners, /customer/articles,
 registerCustomerPhoneConvenienceEndpoints(app); // /customer/bookings/active, /customer/bookings?phone=, /customer/cart/:phone, /customer/wallet?phone=, etc. - before /customer/:customerId
 registerCustomerProfileEndpoints(app); // /customer/profile, /customer/profile/unified/:id, /customer/profile/:id - before /customer/:customerId
 registerCustomerBookingHistoryEndpoints(app); // /customer/bookings/:bookingId, /customer/:customerId/bookings - before /customer/:customerId
+registerAddressEndpoints(app); // /customer/addresses - MUST be before /customer/:customerId to avoid route conflicts
 // Now register parameterized routes
 registerCustomerEndpointsEnhanced(app); // /customer/:customerId (parameterized - must be last)
 registerGpsTrackingEndpoints(app);
@@ -396,7 +415,8 @@ registerWalletEndpoints(app);
 registerSpecializedServicesEndpoints(app);
 registerSpecializedServiceFlows(app);
 registerAdminGovernanceEndpoints(app);
-registerStaffEndpoints(app);
+// ❌ DECOMMISSIONED: Staff management has been removed - solo vendors handle their own availability
+// registerStaffEndpoints(app);
 registerInstantTeleQueueEndpoints(app); // Instant tele consultation queue
 registerRoomsEndpoints(app); // Consultation rooms management (Phase 1.1)
 registerReviewEndpoints(app);
@@ -404,12 +424,14 @@ registerTrackingEndpoints(app);
 registerVendorScheduleEndpoints(app);
 registerPrescriptionEndpoints(app);
 registerPharmacyOrderEndpoints(app);
+registerAdditionalPharmacyEndpoints(app); // ✅ FIX: Register additional pharmacy endpoints (invoice, logistics, tracking)
 registerPharmacyInventoryEndpoints(app);
 registerDeliveryPartnerAutomationEndpoints(app);
 registerMealPlanEndpoints(app);
 registerNutritionOrderEndpoints(app); // ✅ FIX GAP-9.3 & 9.4: Nutrition order tracking
 registerVendorBankAccountEndpoints(app);
 registerDeliveryTrackingEndpoints(app);
+registerDeliveryOtpEndpoints(app); // Delivery OTP verification for pharmacy and meal orders
 registerMedicalRecordsEndpoints(app);
 registerEcommerceEndpoints(app);
 registerAnalyticsEndpoints(app);
@@ -441,7 +463,7 @@ registerEventEndpoints(app);
 registerHealthEndpoints(app);
 registerDonationEndpoints(app);
 registerReportEndpoints(app);
-registerAddressEndpoints(app);
+// registerAddressEndpoints already registered above before parameterized routes
 registerCustomerPasswordEndpoints(app);
 registerAdminIntegrationEndpoints(app);
 registerLogisticsEndpoints(app);
@@ -453,6 +475,7 @@ registerSmsNotificationEndpoints(app);
 registerVendorProfileEndpoints(app);
 // registerCustomerProfileEndpoints already registered above before parameterized routes
 registerSystemHealthEndpoints(app);
+registerConfigPoliciesEndpoints(app); // /config/policies, /config/fees, /config/logistics-rules
 registerVendorSettingsEndpoints(app);
 registerVendorPoliciesEndpoints(app);
 registerVendorBookingsEndpoints(app);
@@ -473,6 +496,7 @@ registerBookingEndpointsEnhanced(app); // Moved here to test route order (after 
 registerBookingOTPEndpoint(app); // Booking OTP generation for home/center services
 registerAdminGovernanceEnhancedEndpoints(app);
 registerAdminAdvancedEndpoints(app);
+registerDiscoveryRulesAdminEndpoints(app);
 // registerVendorSetupEndpoints moved above (before vendor-services) to fix route ordering
 registerCustomerAppointmentsEndpoints(app);
 registerCustomerOrdersEndpoints(app);
@@ -499,7 +523,8 @@ registerSchedulingPolicyEndpoints(app);
 registerAdminComprehensiveEndpoints(app);
 registerProblemGridEndpoints(app);
 registerVendorDashboardMissingEndpoints(app);
-registerUIDashboardConfigEndpoints(app); // UI Dashboard Configuration (Marketing > Dashboard UI)
+registerUIDashboardConfigEndpoints(app); // UI Dashboard Configuration (Marketing > Dashboard UI) - LEGACY, kept for backward compatibility
+registerServiceLaunchConfigEndpoints(app); // Service Launch Config by Geography (Marketing > Dashboard UI) - NEW
 registerCarePlansEndpoints(app); // Care Plans Generation (Support/CRM > Complete Plan)
 registerVendorSupportEndpoints(app); // Vendor Support Tickets
 registerVendorLiveStatusEndpoints(app); // Vendor/Staff Live Status Eligibility for Customer App Listing
@@ -518,6 +543,12 @@ registerSelfManagedLogisticsEndpoints(app); // Self-managed logistics with track
 registerTaxInvoicePdfEndpoints(app); // GST tax invoice PDF generation
 registerReviewsEnhancedEndpoints(app); // Enhanced booking reviews
 registerReturnsEnhancedEndpoints(app); // Complete return/refund management
+registerFeeConfigEndpoints(app); // Platform and convenience fee configuration
+registerKYCVerificationEndpoints(app); // KYC verification (Aadhaar OTP, PAN, GST)
+registerSpecializationMasterEndpoints(app); // Specialization master (problem grid, vendor specializations)
+
+// Platform policies (Legal agreements, T&C)
+app.route('/', platformPoliciesApp);
 
 // 404 handler - CRITICAL: Must include CORS headers
 app.notFound((c) => {
@@ -657,15 +688,33 @@ app.onError((err, c) => {
 /**
  * Main Lambda handler
  */
+const CORS_PREFLIGHT_200 = (origin: string): APIGatewayProxyResultV2 => ({
+  statusCode: 200,
+  body: '',
+  headers: {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+    'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Max-Age': '86400',
+    'Content-Length': '0',
+  },
+});
+
 export const handler = async (
   event: APIGatewayProxyEventV2,
   context: Context
 ): Promise<APIGatewayProxyResultV2> => {
+  // ✅ Guard: malformed or missing event (e.g. direct invoke) → return 200 CORS so callers don't get 5xx
+  if (!event || typeof event !== 'object') {
+    return CORS_PREFLIGHT_200('https://d2aoyjj8ine0wk.cloudfront.net');
+  }
+
   // ✅ CRITICAL CORS FIX: Check for OPTIONS FIRST - before ANY other code
   // This MUST be the absolute first thing to ensure OPTIONS always returns 200 OK
   // Use try-catch at the very top level to catch any errors
   try {
-    // Safely extract method and check for OPTIONS
+    // Safely extract method (support both HTTP API v2 and v1 event shapes)
     let method: string | undefined;
     let hasPreflightHeaders = false;
     
@@ -690,24 +739,15 @@ export const handler = async (
                      event?.headers?.['Origin'] ||
                      '';
       
-      // ✅ FIX: Inline origin check instead of calling getAllowedOrigin
+      // Only these 3 CloudFront URLs + localhost + custom domains
       const allowedOrigins = [
-        'https://d1s6ykkj381k58.cloudfront.net',
         'https://dfof7mguaa0a5.cloudfront.net',
+        'https://d1s6ykkj381k58.cloudfront.net',
         'https://d2aoyjj8ine0wk.cloudfront.net',
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'http://localhost:3002',
-        'http://localhost:3003',
-        'http://localhost:5173',
-        'https://dev.admin.warmpawz.com',
-        'https://dev.vendor.warmpawz.com',
-        'https://dev.customer.warmpawz.com',
-        'https://admin.warmpawz.com',
-        'https://vendor.warmpawz.com',
-        'https://customer.warmpawz.com',
-        'https://warmpawz.com',
-        'https://www.warmpawz.com',
+        'http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:3003', 'http://localhost:5173',
+        'https://dev.admin.warmpawz.com', 'https://dev.vendor.warmpawz.com', 'https://dev.customer.warmpawz.com',
+        'https://admin.warmpawz.com', 'https://vendor.warmpawz.com', 'https://customer.warmpawz.com',
+        'https://warmpawz.com', 'https://www.warmpawz.com',
       ];
       
       let allowedOrigin = allowedOrigins[0];
@@ -939,31 +979,13 @@ export const handler = async (
                    event.headers?.['origin'] ||
                    event.headers?.['Origin'];
     
-    // Use the same allowedOrigins array defined at module level for consistency
-    // OFFICIAL CloudFront distributions only
+    // Same as module-level allowedOrigins (only 3 CloudFront + localhost + custom domains)
     const allowedOrigins = [
-      // Admin Web CloudFront (OFFICIAL - E1WPXL8WBOWOE8)
-      'https://dfof7mguaa0a5.cloudfront.net',
-      // Customer Web CloudFront (OFFICIAL - E2RDORGXSWJJ87)
-      'https://d2aoyjj8ine0wk.cloudfront.net',
-      // Vendor Web CloudFront (OFFICIAL - E95171GX1I6HN)
-      'https://d1s6ykkj381k58.cloudfront.net',
-      // Local development
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://localhost:3002',
-      'http://localhost:3003',
-      'http://localhost:5173',
-      // Dev domains
-      'https://dev.admin.warmpawz.com',
-      'https://dev.vendor.warmpawz.com',
-      'https://dev.customer.warmpawz.com',
-      // Production domains (for prod environment)
-      'https://admin.warmpawz.com',
-      'https://vendor.warmpawz.com',
-      'https://customer.warmpawz.com',
-      'https://warmpawz.com',
-      'https://www.warmpawz.com',
+      'https://dfof7mguaa0a5.cloudfront.net', 'https://d1s6ykkj381k58.cloudfront.net', 'https://d2aoyjj8ine0wk.cloudfront.net',
+      'http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:3003', 'http://localhost:5173',
+      'https://dev.admin.warmpawz.com', 'https://dev.vendor.warmpawz.com', 'https://dev.customer.warmpawz.com',
+      'https://admin.warmpawz.com', 'https://vendor.warmpawz.com', 'https://customer.warmpawz.com',
+      'https://warmpawz.com', 'https://www.warmpawz.com',
     ];
     
     // Get allowed origin using helper function

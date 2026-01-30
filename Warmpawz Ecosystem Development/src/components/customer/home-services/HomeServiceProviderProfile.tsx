@@ -34,7 +34,7 @@ import {
   Users,
   Briefcase
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { SERVICE_CONFIGS, HomeServiceType } from './UniversalHomeServiceRouter';
 
 interface ServiceConfig {
@@ -121,7 +121,7 @@ export function HomeServiceProviderProfile({
   onSelectService,
   onNavigate
 }: HomeServiceProviderProfileProps) {
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   const [provider, setProvider] = useState<ProviderDetails | null>(null);
   const [loading, setLoading] = useState(true);

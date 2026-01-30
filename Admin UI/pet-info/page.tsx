@@ -32,7 +32,7 @@ import {
 	PieChart as PieChartIcon,
 	Info,
 } from "lucide-react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import {
 	PieChart,
 	Pie,
@@ -49,7 +49,7 @@ import {
 	ResponsiveContainer,
 } from "recharts";
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = `${getApiBaseUrl()}`;
 
 interface PetStats {
 	totalPets: number;
@@ -119,7 +119,7 @@ export default function PetIntelligenceSystem({
 		try {
 			// Load pet statistics
 			const statsRes = await fetch(`${API_BASE}/admin/pets/stats`, {
-				headers: { Authorization: `Bearer ${publicAnonKey}` },
+				headers: { ...getAuthHeaders() },
 			});
 			if (statsRes.ok) {
 				const statsData = await statsRes.json();
@@ -128,7 +128,7 @@ export default function PetIntelligenceSystem({
 
 			// Load all pets
 			const petsRes = await fetch(`${API_BASE}/admin/pets/all`, {
-				headers: { Authorization: `Bearer ${publicAnonKey}` },
+				headers: { ...getAuthHeaders() },
 			});
 			if (petsRes.ok) {
 				const petsData = await petsRes.json();
@@ -137,7 +137,7 @@ export default function PetIntelligenceSystem({
 
 			// Load breed insights
 			const insightsRes = await fetch(`${API_BASE}/admin/pets/breed-insights`, {
-				headers: { Authorization: `Bearer ${publicAnonKey}` },
+				headers: { ...getAuthHeaders() },
 			});
 			if (insightsRes.ok) {
 				const insightsData = await insightsRes.json();

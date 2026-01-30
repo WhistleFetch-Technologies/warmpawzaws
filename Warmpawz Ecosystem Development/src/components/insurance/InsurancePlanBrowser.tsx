@@ -12,9 +12,9 @@ import {
   DollarSign
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
-const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const BASE_URL = `${getApiBaseUrl()}`;
 
 interface InsurancePlan {
   planId: string;
@@ -75,7 +75,7 @@ export function InsurancePlanBrowser({
         : `${BASE_URL}/insurance/plans`;
 
       const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {
@@ -98,7 +98,7 @@ export function InsurancePlanBrowser({
         const response = await fetch(`${BASE_URL}/insurance/calculate-premium`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

@@ -41,7 +41,7 @@ import {
 	Badge,
 } from "@repo/ui";
 import { toast, Toaster } from "sonner";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 
 // Types
 interface Ticket {
@@ -116,9 +116,9 @@ export default function SupportCRM({ onNavigate }: SupportCRMProps) {
 		setLoading(true);
 		try {
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/crm/tickets`,
+				`${getApiBaseUrl()}/crm/tickets`,
 				{
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 			if (response.ok) {
@@ -178,9 +178,9 @@ export default function SupportCRM({ onNavigate }: SupportCRMProps) {
 	const loadAgentMetrics = async () => {
 		try {
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/crm/analytics/agents`,
+				`${getApiBaseUrl()}/crm/analytics/agents`,
 				{
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 			if (response.ok) {
@@ -219,12 +219,12 @@ export default function SupportCRM({ onNavigate }: SupportCRMProps) {
 
 		try {
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/crm/tickets/auto-route`,
+				`${getApiBaseUrl()}/crm/tickets/auto-route`,
 				{
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 					body: JSON.stringify({ ticketId: selectedTicket.id }),
 				}
@@ -249,12 +249,12 @@ export default function SupportCRM({ onNavigate }: SupportCRMProps) {
 
 		try {
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/crm/reply`,
+				`${getApiBaseUrl()}/crm/reply`,
 				{
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 					body: JSON.stringify({
 						ticketId: selectedTicket.id,
@@ -297,12 +297,12 @@ export default function SupportCRM({ onNavigate }: SupportCRMProps) {
 
 		try {
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/crm/close`,
+				`${getApiBaseUrl()}/crm/close`,
 				{
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 					body: JSON.stringify({ ticketId: selectedTicket.id }),
 				}
@@ -335,12 +335,12 @@ export default function SupportCRM({ onNavigate }: SupportCRMProps) {
 
 		try {
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/crm/action`,
+				`${getApiBaseUrl()}/crm/action`,
 				{
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 					body: JSON.stringify({
 						ticketId: selectedTicket.id,

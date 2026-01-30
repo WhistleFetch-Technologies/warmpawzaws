@@ -3,7 +3,7 @@ import {
   Plus, MapPin, Clock, Edit, Trash2, Save, X, Search, AlertTriangle,
   Building, Map as MapIcon, Check, ChevronDown, ChevronUp
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -95,9 +95,9 @@ export function LocationScheduleManager({ staff, onBack }: LocationScheduleManag
 
       // Load staff locations with availability windows
       const locationsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/locations-with-availability`,
+        `${getApiBaseUrl()}/staff/${staff.id}/locations-with-availability`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -110,9 +110,9 @@ export function LocationScheduleManager({ staff, onBack }: LocationScheduleManag
       // Load clinic locations if staff is associated with a clinic
       if (staff.vendorId) {
         const clinicRes = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${staff.vendorId}/details`,
+          `${getApiBaseUrl()}/vendor/${staff.vendorId}/details`,
           {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            headers: getAuthHeaders()
           }
         );
 
@@ -200,11 +200,11 @@ export function LocationScheduleManager({ staff, onBack }: LocationScheduleManag
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/locations`,
+        `${getApiBaseUrl()}/staff/${staff.id}/locations`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(locationForm)
@@ -234,10 +234,10 @@ export function LocationScheduleManager({ staff, onBack }: LocationScheduleManag
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/locations/${locationId}`,
+        `${getApiBaseUrl()}/staff/${staff.id}/locations/${locationId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -295,11 +295,11 @@ export function LocationScheduleManager({ staff, onBack }: LocationScheduleManag
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/locations/${locationId}/availability`,
+        `${getApiBaseUrl()}/staff/${staff.id}/locations/${locationId}/availability`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ window })
@@ -326,10 +326,10 @@ export function LocationScheduleManager({ staff, onBack }: LocationScheduleManag
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/locations/${locationId}/availability/${windowId}`,
+        `${getApiBaseUrl()}/staff/${staff.id}/locations/${locationId}/availability/${windowId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

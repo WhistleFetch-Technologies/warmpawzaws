@@ -9,7 +9,7 @@ import { Textarea } from '../../ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '../../ui/dialog';
 import { Plus, Edit2, Trash2, Layers, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface Tier {
   id: string;
@@ -42,7 +42,7 @@ export function TierManagement() {
   const [currentTier, setCurrentTier] = useState<Tier | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadTiers();
@@ -52,7 +52,7 @@ export function TierManagement() {
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE}/payments/tiers`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (response.ok) {
@@ -74,7 +74,7 @@ export function TierManagement() {
     try {
       const response = await fetch(`${API_BASE}/admin/payments/tiers/seed-defaults`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (response.ok) {
@@ -105,7 +105,7 @@ export function TierManagement() {
         method,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify(currentTier)
       });
@@ -136,7 +136,7 @@ export function TierManagement() {
     try {
       const response = await fetch(`${API_BASE}/admin/payments/tiers/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {

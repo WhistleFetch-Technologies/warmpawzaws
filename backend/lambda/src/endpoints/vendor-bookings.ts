@@ -16,11 +16,13 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { select, update, query } from '../database/rds-connection';
 import { logBookingStatusChange } from '../utils/audit-log';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds, parseSelectedServices } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
+import { getDiscoveryRules } from '../lib/rule-engine';
 
 export function registerVendorBookingsEndpoints(app: Hono) {
   /**
@@ -67,15 +69,22 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
       const result = await query(queryText, params).catch(() => ({ rows: [] }));
 
-      // Enrich bookings with customer, service, and related data (prescriptions, medical records, chat)
+      const chatRules = await getDiscoveryRules('all', 'chat');
+      const chatDays = chatRules.chat_available_days_post_appointment ?? 7;
+
+      // Enrich bookings with customer, service, vendor, and related data (prescriptions, medical records, chat)
       const enrichedBookings = await Promise.all(
         result.rows.map(async (booking: any) => {
-          const [customer, service, prescriptions, medicalRecords, chatMessages] = await Promise.all([
+          const [customer, service, vendor, prescriptions, medicalRecords, chatMessages] = await Promise.all([
             booking.customer_id
               ? select('customers', { id: booking.customer_id }).catch(() => [])
               : Promise.resolve([]),
             booking.service_id
               ? select('services', { id: booking.service_id }).catch(() => [])
+              : Promise.resolve([]),
+            // ✅ FIX: Add vendor lookup for chat enabled logic
+            booking.vendor_id
+              ? select('vendors', { id: booking.vendor_id }).catch(() => [])
               : Promise.resolve([]),
             // Check for prescriptions
             query(
@@ -113,7 +122,16 @@ export function registerVendorBookingsEndpoints(app: Hono) {
               name: service[0].name,
               category: service[0].category,
             } : null,
-            chatEnabled: booking.status !== 'cancelled',
+            // Rule engine: Chat available for chat_available_days_post_appointment days after completion
+            chatEnabled: (() => {
+              if (booking.status === 'cancelled') return false;
+              if (booking.status === 'completed' && booking.updated_at) {
+                const completedDate = new Date(booking.updated_at);
+                const daysSinceCompletion = (Date.now() - completedDate.getTime()) / (1000 * 60 * 60 * 24);
+                return daysSinceCompletion <= chatDays;
+              }
+              return true;
+            })(),
             hasUnreadMessages: unreadMessageCount > 0,
             unreadMessageCount,
             hasPrescription: prescriptionCount > 0,
@@ -206,7 +224,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
             newStatus: status,
             reason: notes || 'Status updated by vendor',
             eventTimestamp: new Date().toISOString(),
-            eventId: crypto.randomUUID(),
+            eventId: randomUUID(),
           });
         } catch (error) {
           console.error('Failed to publish booking status updated event:', error);
@@ -266,7 +284,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           newStatus: 'confirmed',
           reason: 'Vendor confirmed booking',
           eventTimestamp: new Date().toISOString(),
-          eventId: crypto.randomUUID(),
+          eventId: randomUUID(),
         });
       } catch (error) {
         console.error('Failed to publish booking status updated event:', error);
@@ -334,7 +352,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           newStatus: 'cancelled',
           reason: reason || 'Vendor cancelled booking',
           eventTimestamp: new Date().toISOString(),
-          eventId: crypto.randomUUID(),
+          eventId: randomUUID(),
         });
       } catch (error) {
         console.error('Failed to publish booking status updated event:', error);
@@ -406,7 +424,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           newStatus: 'cancelled',
           reason: reason || 'Vendor declined booking',
           eventTimestamp: new Date().toISOString(),
-          eventId: crypto.randomUUID(),
+          eventId: randomUUID(),
         });
       } catch (error) {
         console.error('Failed to publish booking status updated event:', error);
@@ -474,7 +492,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           newStatus: 'completed',
           reason: 'Service completed',
           eventTimestamp: new Date().toISOString(),
-          eventId: crypto.randomUUID(),
+          eventId: randomUUID(),
         });
       } catch (error) {
         console.error('Failed to publish booking status updated event:', error);
@@ -661,6 +679,10 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         sessionEndedAt: booking.session_ended_at,
         completedAt: booking.completed_at,
         cancelledAt: booking.cancelled_at,
+        
+        // Multi-service: list of services and total duration
+        selectedServices: parseSelectedServices(booking.selected_services),
+        totalDurationMinutes: booking.total_duration_minutes != null ? Number(booking.total_duration_minutes) : undefined,
         
         // Timestamps
         createdAt: booking.created_at,

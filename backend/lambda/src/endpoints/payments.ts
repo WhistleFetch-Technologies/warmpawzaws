@@ -24,6 +24,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update, withTransaction } from '../database/rds-connection';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
@@ -39,7 +40,7 @@ import { isValidUUID } from '../types/entities';
 class CreatePaymentHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
-    const requestId = context.event.requestContext?.requestId || crypto.randomUUID();
+    const requestId = context.event.requestContext?.requestId || randomUUID();
     const { 
       bookingId, 
       amount, 
@@ -425,7 +426,7 @@ function createApiGatewayEventWithBody(req: any, parsedBody: any): any {
     pathParameters: {},
     queryStringParameters: Object.fromEntries(new URL(req.url, 'http://localhost').searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
@@ -439,14 +440,14 @@ function createApiGatewayEvent(req: any): any {
     pathParameters: {},
     queryStringParameters: Object.fromEntries(new URL(req.url, 'http://localhost').searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'payment-handler',
     functionVersion: '$LATEST',
   };

@@ -11,9 +11,9 @@
  * - Performance benchmarks
  */
 
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../utils/api-config';
 
-const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const BASE_URL = `${getApiBaseUrl()}`;
 
 interface TestResult {
   name: string;
@@ -47,7 +47,7 @@ class APITestRunner {
       const options: RequestInit = {
         method,
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         }
       };
@@ -470,7 +470,7 @@ export async function runPerformanceBenchmarks() {
     for (let i = 0; i < iterations; i++) {
       const start = Date.now();
       await fetch(`${BASE_URL}${benchmark.endpoint}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       times.push(Date.now() - start);
     }
@@ -528,7 +528,7 @@ export async function runErrorHandlingTests() {
       const response = await fetch(`${BASE_URL}${test.endpoint}`, {
         method: test.method,
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: test.body ? JSON.stringify(test.body) : undefined

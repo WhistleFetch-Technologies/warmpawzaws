@@ -198,6 +198,30 @@
                     "bedrock:InvokeModelWithResponseStream"
                   ],
                   "Resource": "arn:aws:bedrock:ap-south-1::foundation-model/*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "chime:CreateMeeting",
+                    "chime:DeleteMeeting",
+                    "chime:GetMeeting",
+                    "chime:ListMeetings",
+                    "chime:CreateAttendee",
+                    "chime:DeleteAttendee",
+                    "chime:GetAttendee",
+                    "chime:ListAttendees",
+                    "chime:BatchCreateAttendee",
+                    "chime:StartMeetingTranscription",
+                    "chime:StopMeetingTranscription"
+                  ],
+                  "Resource": "arn:aws:chime:*:*:meeting/*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "chime:CreateMeetingWithAttendees"
+                  ],
+                  "Resource": "*"
                 }
               ]
             }
@@ -240,7 +264,7 @@
           "S3Bucket": {
             "Ref": "ServerlessDeploymentBucket"
           },
-          "S3Key": "serverless/warmpawz-api/dev/1769339941999-2026-01-25T11:19:01.999Z/warmpawz-api.zip"
+          "S3Key": "serverless/warmpawz-api/dev/1769776737168-2026-01-30T12:38:57.168Z/warmpawz-api.zip"
         },
         "Handler": "dist/handler.handler",
         "Runtime": "nodejs18.x",
@@ -289,14 +313,14 @@
         "ApiLogGroup"
       ]
     },
-    "ApiLambdaVersionIlp7kdVgVYFE4nbozYGp4w2VVcxyJie9ahV8lA88": {
+    "ApiLambdaVersionaYyr0nEkRGIRKvujLbehGhsbzuq0MU6rbvf0iXsQf0": {
       "Type": "AWS::Lambda::Version",
       "DeletionPolicy": "Retain",
       "Properties": {
         "FunctionName": {
           "Ref": "ApiLambdaFunction"
         },
-        "CodeSha256": "ivk3X8oFHUsTqlUzj6M7rWbfag5A+4zlEwhbCn+UGNY=",
+        "CodeSha256": "pUeUFvoFKhXhMQ2yPTQR4Hny4aaBbtgXkBL3Q5gtS0E=",
         "Description": "Warmpawz API Gateway Handler"
       }
     },
@@ -401,7 +425,7 @@
     "ApiLambdaFunctionQualifiedArn": {
       "Description": "Current Lambda function version",
       "Value": {
-        "Ref": "ApiLambdaVersionIlp7kdVgVYFE4nbozYGp4w2VVcxyJie9ahV8lA88"
+        "Ref": "ApiLambdaVersionaYyr0nEkRGIRKvujLbehGhsbzuq0MU6rbvf0iXsQf0"
       },
       "Export": {
         "Name": "sls-warmpawz-api-dev-ApiLambdaFunctionQualifiedArn"

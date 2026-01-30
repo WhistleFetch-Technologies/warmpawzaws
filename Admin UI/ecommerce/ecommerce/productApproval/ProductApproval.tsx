@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Package, CheckCircle, XCircle } from "lucide-react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import { toast, Toaster } from "sonner";
 
 export function ProductApproval() {
@@ -17,8 +17,8 @@ export function ProductApproval() {
 		try {
 			setLoading(true);
 			const res = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/products?status=pending_approval`,
-				{ headers: { Authorization: `Bearer ${publicAnonKey}` } }
+				`${getApiBaseUrl()}/ecommerce/products?status=pending_approval`,
+				{ headers: { ...getAuthHeaders() } }
 			);
 
 			if (res.ok) {
@@ -35,11 +35,11 @@ export function ProductApproval() {
 	const handleApprove = async (productId: string) => {
 		try {
 			const res = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/product/${productId}`,
+				`${getApiBaseUrl()}/ecommerce/product/${productId}`,
 				{
 					method: "PUT",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({ status: "active" }),
@@ -63,11 +63,11 @@ export function ProductApproval() {
 
 		try {
 			const res = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/product/${productId}`,
+				`${getApiBaseUrl()}/ecommerce/product/${productId}`,
 				{
 					method: "PUT",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({ status: "rejected", rejectionReason: reason }),

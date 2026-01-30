@@ -14,7 +14,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '../../ui/select';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { copyTextToClipboard } from '../../../utils/shareUtils';
 
@@ -72,10 +72,10 @@ export function CouponManagement() {
       if (statusFilter !== 'all') query.append('status', statusFilter);
 
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/coupons?${query.toString()}`,
+        `${getApiBaseUrl()}/admin/coupons?${query.toString()}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'apikey': publicAnonKey
           }
         }
@@ -97,11 +97,11 @@ export function CouponManagement() {
     try {
       setSubmitting(true);
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/coupons/create`,
+        `${getApiBaseUrl()}/admin/coupons/create`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'apikey': publicAnonKey,
             'Content-Type': 'application/json'
           },
@@ -130,11 +130,11 @@ export function CouponManagement() {
     try {
       setSubmitting(true);
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/coupons/bulk-generate`,
+        `${getApiBaseUrl()}/admin/coupons/bulk-generate`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'apikey': publicAnonKey,
             'Content-Type': 'application/json'
           },

@@ -20,14 +20,18 @@ import {
   ArrowLeft, Upload, FileText, MapPin, Clock, Check, 
   CheckCircle2, Loader2, AlertCircle, Package, Truck,
   Phone, MessageSquare, Star, Building2, ChevronRight,
-  X, Camera, Image, RefreshCw, Circle, CreditCard
+  X, Camera, Image, RefreshCw, Circle, CreditCard,
+  Key, Eye, EyeOff, Copy, User
 } from 'lucide-react';
+import { DeliveryOTPVerification } from '../DeliveryOTPVerification';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { PharmacyBroadcastMap, type BroadcastPharmacy } from '../pharmacy/PharmacyBroadcastMap';
+import { LiveOrderTracking } from '../tracking/LiveOrderTracking';
 
 interface PharmacyOrderFlowProps {
   customerPhone: string;
@@ -110,6 +114,7 @@ export function PharmacyOrderFlow({
   // Broadcast
   const [broadcastStatus, setBroadcastStatus] = useState<BroadcastStatus | null>(null);
   const [broadcastProgress, setBroadcastProgress] = useState(0);
+  const [broadcasts, setBroadcasts] = useState<BroadcastPharmacy[]>([]);
   
   // Pharmacy & Invoice
   const [acceptedPharmacy, setAcceptedPharmacy] = useState<AcceptedPharmacy | null>(null);
@@ -118,6 +123,12 @@ export function PharmacyOrderFlow({
   // Notes
   const [notes, setNotes] = useState('');
   
+  // Delivery tracking & OTP state
+  const [deliveryStatus, setDeliveryStatus] = useState<string>('pending');
+  const [deliveryOtp, setDeliveryOtp] = useState<string | null>(null);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [deliveryPartner, setDeliveryPartner] = useState<{ name?: string; phone?: string } | null>(null);
+  
   // WebSocket for real-time updates
   const { subscribeToOrder, subscribeToPharmacyBroadcast } = useWebSocket(customerId, 'customer');
 
@@ -125,15 +136,89 @@ export function PharmacyOrderFlow({
     loadAddresses();
   }, []);
 
+  // Load delivery status when in tracking step
+  useEffect(() => {
+    if (step === 'tracking' && orderId) {
+      loadDeliveryStatus();
+      const interval = setInterval(loadDeliveryStatus, 15000);
+      return () => clearInterval(interval);
+    }
+  }, [step, orderId]);
+
+  // Poll for invoice when pharmacy has accepted (status -> invoice_generated)
+  useEffect(() => {
+    if (step !== 'accepted' || !orderId) return;
+    const poll = async () => {
+      try {
+        const res = await apiClient.get<any>(`/customer/orders/${orderId}/pharmacy-status`);
+        const orderData = res?.order || res;
+        if (orderData?.status === 'invoice_generated') {
+          const items = orderData.medicines || [];
+          setInvoice({
+            id: orderId,
+            items: items.map((i: any) => ({
+              name: i.name,
+              quantity: i.quantity ?? 1,
+              price: i.price ?? 0,
+              available: i.available !== false,
+            })),
+            subtotal: orderData.subtotal ?? items.reduce((s: number, i: any) => s + (i.quantity || 1) * (i.price || 0), 0),
+            discount: orderData.discount ?? 0,
+            taxAmount: orderData.taxAmount ?? 0,
+            deliveryCharges: orderData.deliveryFee ?? orderData.delivery_fee ?? 0,
+            platformFee: orderData.platformFee ?? orderData.platform_fee ?? 0,
+            convenienceFee: orderData.convenienceFee ?? orderData.convenience_fee ?? 0,
+            totalAmount: orderData.totalAmount ?? orderData.total_amount ?? 0,
+          });
+          setStep('invoice');
+        }
+      } catch (e) {
+        console.error('Error polling pharmacy status:', e);
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, [step, orderId]);
+
+  const loadDeliveryStatus = async () => {
+    if (!orderId) return;
+    try {
+      const res = await apiClient.get<any>(`/delivery/${orderId}/status`);
+      if (res.success || res.status) {
+        setDeliveryStatus(res.status || res.delivery_status || 'pending');
+        setDeliveryOtp(res.delivery_otp || res.deliveryOtp || res.otp || null);
+        setOtpVerified(res.otp_verified || res.otpVerified || false);
+        setDeliveryPartner({
+          name: res.partner_name || res.partnerName,
+          phone: res.partner_phone || res.partnerPhone,
+        });
+      }
+    } catch (error) {
+      console.error('Error loading delivery status:', error);
+    }
+  };
+  
+  // Check if order is out for delivery
+  const isOutForDelivery = ['dispatched', 'in_transit', 'out_for_delivery', 'arriving', 'on_way', 'picked_up'].includes(deliveryStatus);
+
   // ============================================================================
   // LOAD DATA
   // ============================================================================
+
+  // Actual customer UUID (looked up from addresses)
+  const [actualCustomerId, setActualCustomerId] = useState<string | null>(null);
 
   const loadAddresses = async () => {
     try {
       const res = await apiClient.get<any>(`/customer/${customerPhone}/addresses`);
       const addressList = res.addresses || [];
       setAddresses(addressList);
+      
+      // Extract customer ID from address response
+      if (addressList.length > 0 && addressList[0].customerId) {
+        setActualCustomerId(addressList[0].customerId);
+      }
       
       if (!selectedAddress && addressList.length > 0) {
         const defaultAddr = addressList.find((a: any) => a.isDefault) || addressList[0];
@@ -181,6 +266,13 @@ export function PharmacyOrderFlow({
       return;
     }
 
+    const lat = selectedAddress.latitude ?? selectedAddress.lat;
+    const lng = selectedAddress.longitude ?? selectedAddress.lng;
+    if (lat == null || lng == null || Number.isNaN(Number(lat)) || Number.isNaN(Number(lng))) {
+      toast.error('Selected address must have location. Please choose an address with map location or add a new one.');
+      return;
+    }
+
     if (!prescriptionUrl && !prescriptionId) {
       toast.error('Please upload a prescription');
       return;
@@ -189,18 +281,24 @@ export function PharmacyOrderFlow({
     setLoading(true);
 
     try {
+      // Use actual customer UUID if available, otherwise use customerId prop
+      const customerUUID = actualCustomerId || customerId;
+      
       const res = await apiClient.post<any>('/pharmacy/orders/create', {
-        customerId,
+        customerId: customerUUID,
         customerPhone,
         prescriptionId,
         prescriptionUrl,
         deliveryAddress: {
+          address: [selectedAddress.addressLine1 || selectedAddress.address, selectedAddress.city, selectedAddress.pincode].filter(Boolean).join(', '),
           addressLine1: selectedAddress.addressLine1 || selectedAddress.address,
           city: selectedAddress.city,
           state: selectedAddress.state,
           pincode: selectedAddress.pincode,
-          latitude: selectedAddress.latitude,
-          longitude: selectedAddress.longitude,
+          lat: Number(lat),
+          lng: Number(lng),
+          latitude: Number(lat),
+          longitude: Number(lng),
         },
         notes,
       });
@@ -253,14 +351,51 @@ export function PharmacyOrderFlow({
     // Fallback: Still poll if WebSocket not available (for compatibility)
     const pollInterval = setInterval(async () => {
       try {
-        const res = await apiClient.get<any>(`/pharmacy/orders/${orderIdToTrack}/status`);
-        if (res.success && res.status !== 'broadcasting') {
-          clearInterval(pollInterval);
+        const res = await apiClient.get<any>(`/pharmacy/orders/${orderIdToTrack}/broadcast-status`);
+        if (res.success) {
+          if (Array.isArray(res.broadcasts)) {
+            setBroadcasts(res.broadcasts.map((b: any) => ({
+              id: b.id,
+              pharmacyId: b.pharmacyId ?? b.pharmacy_id,
+              pharmacyName: b.pharmacyName ?? b.pharmacy_name,
+              latitude: b.latitude ?? null,
+              longitude: b.longitude ?? null,
+              status: b.status,
+              distance_from_customer: b.distance_from_customer ?? b.distanceFromCustomer,
+              distanceFromCustomer: b.distanceFromCustomer ?? b.distance_from_customer,
+            })));
+          }
+          // Update broadcast status from polling
+          if (res.broadcastStatus) {
+            setBroadcastStatus({
+              status: res.broadcastStatus.accepted > 0 ? 'accepted' : 'broadcasting',
+              currentRadius: res.broadcastStatus.currentRadius || 5,
+              notifiedPharmaciesCount: res.broadcastStatus.totalBroadcasts || 0,
+              startedAt: broadcastStatus?.startedAt || new Date().toISOString(),
+              expiresAt: broadcastStatus?.expiresAt || new Date(Date.now() + 10*60*1000).toISOString(),
+            });
+            
+            // Check if pharmacy accepted (API returns camelCase: pharmacyId, pharmacyName, respondedAt; backend may add pharmacy_phone, distance_from_customer)
+            if (res.broadcastStatus.accepted > 0 && res.broadcasts?.length > 0) {
+              const acceptedBroadcast = res.broadcasts.find((b: any) => b.status === 'accepted');
+              if (acceptedBroadcast) {
+                setAcceptedPharmacy({
+                  id: acceptedBroadcast.pharmacyId ?? acceptedBroadcast.pharmacy_id ?? '',
+                  name: acceptedBroadcast.pharmacyName ?? acceptedBroadcast.pharmacy_name ?? 'Pharmacy',
+                  phone: acceptedBroadcast.pharmacy_phone ?? acceptedBroadcast.pharmacyPhone ?? '',
+                  distance: acceptedBroadcast.distance_from_customer ?? acceptedBroadcast.distanceFromCustomer,
+                  acceptedAt: acceptedBroadcast.respondedAt ?? acceptedBroadcast.accepted_at ?? acceptedBroadcast.response_time ?? new Date().toISOString(),
+                });
+                setStep('accepted');
+                clearInterval(pollInterval);
+              }
+            }
+          }
         }
       } catch (error) {
         console.error('Error polling:', error);
       }
-    }, 10000); // Poll every 10 seconds as fallback
+    }, 5000); // Poll every 5 seconds during broadcast
 
     return () => {
       unsubscribe();
@@ -576,6 +711,16 @@ export function PharmacyOrderFlow({
               </div>
             </Card>
 
+            <PharmacyBroadcastMap
+              currentRadius={broadcastStatus.currentRadius}
+              pharmaciesNotified={broadcastStatus.notifiedPharmaciesCount}
+              pharmaciesAccepted={0}
+              pharmaciesPending={broadcastStatus.notifiedPharmaciesCount}
+              pharmaciesRejected={0}
+              isSearching={true}
+              customerLocation={selectedAddress ? { lat: selectedAddress.latitude ?? selectedAddress.lat, lng: selectedAddress.longitude ?? selectedAddress.lng } : undefined}
+              pharmacies={broadcasts}
+            />
             <p className="text-center text-gray-500 text-sm">
               Please wait while we find the best pharmacy for your order. 
               You'll be notified once a pharmacy accepts.
@@ -681,6 +826,12 @@ export function PharmacyOrderFlow({
                     <span>₹{invoice.platformFee.toFixed(2)}</span>
                   </div>
                 )}
+                {invoice.convenienceFee > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Convenience Fee</span>
+                    <span>₹{invoice.convenienceFee.toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-bold text-lg pt-2 border-t border-gray-200">
                   <span>Total</span>
                   <span className="text-[#FF8C42]">₹{invoice.totalAmount.toFixed(2)}</span>
@@ -708,40 +859,99 @@ export function PharmacyOrderFlow({
         {/* Step 6: Tracking */}
         {step === 'tracking' && (
           <>
-            <Card className="bg-green-50 border-green-200 rounded-2xl p-5">
-              <div className="flex items-center gap-3">
-                <CheckCircle2 className="w-8 h-8 text-green-500" />
-                <div>
-                  <h2 className="font-bold text-green-900">Payment Successful!</h2>
-                  <p className="text-green-700 text-sm">Your order is being prepared</p>
+            {otpVerified ? (
+              <Card className="bg-green-50 border-green-200 rounded-2xl p-5">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="w-8 h-8 text-green-500" />
+                  <div>
+                    <h2 className="font-bold text-green-900">Order Delivered!</h2>
+                    <p className="text-green-700 text-sm">Your medicines have been delivered successfully</p>
+                  </div>
                 </div>
-              </div>
-            </Card>
+              </Card>
+            ) : (
+              <Card className="bg-green-50 border-green-200 rounded-2xl p-5">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="w-8 h-8 text-green-500" />
+                  <div>
+                    <h2 className="font-bold text-green-900">Payment Successful!</h2>
+                    <p className="text-green-700 text-sm">Your order is being prepared</p>
+                  </div>
+                </div>
+              </Card>
+            )}
 
+            {/* Google Maps live tracking - when out for delivery and we have delivery address */}
+            {isOutForDelivery && orderId && selectedAddress && (
+              <LiveOrderTracking
+                orderId={orderId}
+                orderType="pharmacy"
+                deliveryAddress={{
+                  lat: selectedAddress.latitude ?? selectedAddress.lat,
+                  lng: selectedAddress.longitude ?? selectedAddress.lng,
+                  address: [selectedAddress.addressLine1, selectedAddress.city, selectedAddress.pincode].filter(Boolean).join(', '),
+                }}
+                onBack={onBack}
+              />
+            )}
+
+            {/* Delivery OTP Verification - Show when out for delivery */}
+            {isOutForDelivery && orderId && deliveryOtp && !otpVerified && (
+              <DeliveryOTPVerification
+                orderId={orderId}
+                orderType="pharmacy"
+                deliveryOtp={deliveryOtp}
+                partnerName={deliveryPartner?.name}
+                partnerPhone={deliveryPartner?.phone}
+                onVerificationSuccess={() => {
+                  setOtpVerified(true);
+                  toast.success('Delivery confirmed successfully!');
+                }}
+              />
+            )}
+
+            {/* Order Status Timeline */}
             <Card className="bg-white rounded-2xl p-5 border border-gray-100">
               <div className="space-y-4">
                 {[
-                  { label: 'Order Placed', done: true },
-                  { label: 'Preparing Medicines', done: true },
-                  { label: 'Ready for Pickup', done: false },
-                  { label: 'Out for Delivery', done: false },
-                  { label: 'Delivered', done: false },
-                ].map((status, idx) => (
-                  <div key={idx} className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                      status.done ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
-                    }`}>
-                      {status.done ? (
-                        <Check className="w-4 h-4" />
-                      ) : (
-                        <span className="text-xs">{idx + 1}</span>
+                  { key: 'placed', label: 'Order Placed' },
+                  { key: 'preparing', label: 'Preparing Medicines' },
+                  { key: 'ready', label: 'Ready for Pickup' },
+                  { key: 'out_for_delivery', label: 'Out for Delivery' },
+                  { key: 'delivered', label: 'Delivered' },
+                ].map((status, idx) => {
+                  const statusOrder = ['placed', 'confirmed', 'preparing', 'ready', 'dispatched', 'in_transit', 'out_for_delivery', 'arriving', 'delivered'];
+                  const currentIdx = statusOrder.indexOf(deliveryStatus);
+                  const stepIdx = statusOrder.indexOf(status.key);
+                  const isDone = stepIdx <= currentIdx || 
+                    (status.key === 'placed' && currentIdx >= 0) ||
+                    (status.key === 'preparing' && currentIdx >= 2) ||
+                    (status.key === 'ready' && currentIdx >= 3) ||
+                    (status.key === 'out_for_delivery' && currentIdx >= 4) ||
+                    (status.key === 'delivered' && deliveryStatus === 'delivered');
+                  
+                  return (
+                    <div key={idx} className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                        isDone ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'
+                      }`}>
+                        {isDone ? (
+                          <Check className="w-4 h-4" />
+                        ) : (
+                          <span className="text-xs">{idx + 1}</span>
+                        )}
+                      </div>
+                      <span className={isDone ? 'text-gray-900 font-medium' : 'text-gray-500'}>
+                        {status.label}
+                      </span>
+                      {status.key === 'out_for_delivery' && isOutForDelivery && (
+                        <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded-full">
+                          In Progress
+                        </span>
                       )}
                     </div>
-                    <span className={status.done ? 'text-gray-900 font-medium' : 'text-gray-500'}>
-                      {status.label}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </Card>
 
@@ -749,7 +959,7 @@ export function PharmacyOrderFlow({
               onClick={() => onComplete(orderId!)}
               className="w-full bg-[#FF8C42] hover:bg-[#E67A35]"
             >
-              Track Order
+              {otpVerified ? 'Done' : 'Track Order'}
               <Truck className="w-5 h-5 ml-2" />
             </Button>
           </>

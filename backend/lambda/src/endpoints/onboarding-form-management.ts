@@ -166,6 +166,85 @@ function formatTitle(str: string) {
   return str.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
+/**
+ * Get sections from fields with KYC-aware section mapping
+ * Uses role-specific sections from KYC config
+ */
+function getSectionsFromFieldsWithKYC(fields: any[], kycSections?: any[]) {
+  const sections: Record<string, any> = {};
+  
+  // Build section metadata from KYC sections
+  const sectionMeta: Record<string, any> = {};
+  
+  if (kycSections && kycSections.length > 0) {
+    kycSections.forEach((s: any) => {
+      sectionMeta[s.id] = { 
+        title: s.name, 
+        order: s.order,
+        description: s.description 
+      };
+    });
+  }
+  
+  // Add default/legacy sections for backward compatibility
+  const defaultSections: Record<string, any> = {
+    'basic': { title: 'Basic Information', order: 1 },
+    'identity_verification': { title: 'Identity Verification', order: 2 },
+    'professional': { title: 'Professional Details', order: 3 },
+    'business_registration': { title: 'Business Registration', order: 4 },
+    'documents': { title: 'Documents', order: 5 },
+    'declarations': { title: 'Declarations & Consent', order: 6 },
+    'location': { title: 'Location & Service Area', order: 7 },
+    'banking': { title: 'Banking Details', order: 8 },
+    // Legacy sections
+    'business_information': { title: 'Business Information', order: 1 },
+    'location_information': { title: 'Location', order: 7 },
+    'banking_information': { title: 'Banking Details', order: 8 },
+    'document_verification': { title: 'Documents', order: 5 },
+    'additional_information': { title: 'Additional Info', order: 9 },
+  };
+  
+  // Merge: KYC sections take precedence
+  Object.assign(sectionMeta, defaultSections);
+  if (kycSections && kycSections.length > 0) {
+    kycSections.forEach((s: any) => {
+      sectionMeta[s.id] = { 
+        title: s.name, 
+        order: s.order,
+        description: s.description 
+      };
+    });
+  }
+
+  // Group fields by section
+  for (const field of fields) {
+    const secKey = field.section || 'additional_information';
+    if (!sections[secKey]) {
+      sections[secKey] = {
+        id: secKey,
+        name: secKey,
+        title: sectionMeta[secKey]?.title || formatTitle(secKey),
+        order: sectionMeta[secKey]?.order || 99,
+        description: sectionMeta[secKey]?.description || '',
+        fields: [],
+        isActive: true,
+      };
+    }
+    sections[secKey].fields.push(field);
+  }
+
+  // Sort fields within each section by displayOrder
+  Object.values(sections).forEach((section: any) => {
+    section.fields.sort((a: any, b: any) => {
+      const orderA = a.displayOrder || a.order || 0;
+      const orderB = b.displayOrder || b.order || 0;
+      return orderA - orderB;
+    });
+  });
+
+  return Object.values(sections).sort((a: any, b: any) => a.order - b.order);
+}
+
 // ============================================================================
 // ENDPOINTS
 // ============================================================================
@@ -389,6 +468,204 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
   });
 
   /**
+   * POST /admin/onboarding-fields/migrate-kyc
+   * Migrate KYC-compliant fields to all active roles
+   * Adds Aadhaar, PAN, Police Verification, and role-specific KYC fields
+   */
+  app.post('/admin/onboarding-fields/migrate-kyc', async (c) => {
+    try {
+      console.log('[KYC-MIGRATE] KYC migration endpoint called');
+      
+      // Import KYC field definitions
+      const { 
+        ROLE_KYC_CONFIGS, 
+        getKYCFieldsForRole, 
+        getSupportedKYCRoles,
+        KYC_SECTIONS 
+      } = await import('../lib/kyc-form-fields');
+      
+      // Get all active roles
+      const activeRoles = await select('roles', { is_active: true }, {
+        orderBy: 'name',
+        orderDirection: 'ASC',
+      });
+      
+      console.log(`[KYC-MIGRATE] Found ${activeRoles.length} active roles`);
+      
+      const results: any[] = [];
+      let updated = 0;
+      let created = 0;
+      let skipped = 0;
+      let errors = 0;
+      
+      // Get supported KYC roles
+      const supportedRoles = getSupportedKYCRoles();
+      
+      for (const role of activeRoles) {
+        try {
+          const roleName = role.name;
+          
+          // Check if this role has KYC configuration
+          if (!supportedRoles.includes(roleName) && !supportedRoles.includes(`${roleName}_solo`) && !supportedRoles.includes(`${roleName}_business`)) {
+            console.log(`[KYC-MIGRATE] Skipping role ${roleName} - no KYC config`);
+            skipped++;
+            results.push({
+              roleId: roleName,
+              roleName: role.display_name || roleName,
+              status: 'skipped',
+              reason: 'No KYC configuration defined for this role',
+            });
+            continue;
+          }
+          
+          // Get KYC fields for this role
+          let kycFields = getKYCFieldsForRole(roleName);
+          
+          // If no fields found for base role, try with vendor type suffix
+          if (kycFields.length === 0) {
+            kycFields = getKYCFieldsForRole(roleName, 'solo');
+            if (kycFields.length === 0) {
+              kycFields = getKYCFieldsForRole(roleName, 'business');
+            }
+          }
+          
+          if (kycFields.length === 0) {
+            console.log(`[KYC-MIGRATE] No KYC fields found for role ${roleName}`);
+            skipped++;
+            results.push({
+              roleId: roleName,
+              roleName: role.display_name || roleName,
+              status: 'skipped',
+              reason: 'No KYC fields found',
+            });
+            continue;
+          }
+          
+          // Check if form exists
+          const existingForms = await select('onboarding_forms', { role_id: roleName });
+          
+          // Convert KYC fields to form field format
+          const formFields = kycFields.map((f, idx) => ({
+            id: f.id,
+            fieldName: f.fieldName,
+            label: f.label,
+            type: f.type,
+            section: f.section,
+            isMandatory: f.isMandatory,
+            required: f.required,
+            requiresDocument: f.type === 'file',
+            requiresVerification: f.requiresVerification || false,
+            verificationEndpoint: f.verificationEndpoint || null,
+            placeholder: f.placeholder || '',
+            helpText: f.helpText || '',
+            options: f.options || [],
+            validation: f.validation || {},
+            displayOrder: f.displayOrder,
+            isActive: true,
+            defaultValue: '',
+            dependsOn: f.conditional || null,
+            softBlock: f.softBlock || false,
+            declarationText: f.declarationText || null,
+          }));
+          
+          // Get KYC sections
+          const roleConfig = ROLE_KYC_CONFIGS[roleName] || ROLE_KYC_CONFIGS[`${roleName}_solo`] || ROLE_KYC_CONFIGS[`${roleName}_business`];
+          const sections = roleConfig?.sections || KYC_SECTIONS;
+          
+          if (existingForms.length > 0) {
+            // Merge KYC fields with existing fields
+            const existingFields = typeof existingForms[0].fields === 'string'
+              ? JSON.parse(existingForms[0].fields)
+              : existingForms[0].fields || [];
+            
+            // Keep existing non-KYC fields and add/update KYC fields
+            const kycFieldIds = new Set(formFields.map(f => f.id));
+            const nonKycFields = existingFields.filter((f: any) => !kycFieldIds.has(f.id));
+            
+            const mergedFields = [...nonKycFields, ...formFields];
+            
+            // Sort by section order then display order
+            const sectionOrder: Record<string, number> = {};
+            sections.forEach((s: any, idx: number) => {
+              sectionOrder[s.id] = idx;
+            });
+            
+            mergedFields.sort((a: any, b: any) => {
+              const sectionA = sectionOrder[a.section] ?? 99;
+              const sectionB = sectionOrder[b.section] ?? 99;
+              if (sectionA !== sectionB) return sectionA - sectionB;
+              return (a.displayOrder || 0) - (b.displayOrder || 0);
+            });
+            
+            await update('onboarding_forms', { role_id: roleName }, {
+              fields: JSON.stringify(mergedFields),
+              sections: JSON.stringify(sections),
+              version: (existingForms[0].version || 1) + 1,
+              updated_at: new Date().toISOString(),
+            });
+            
+            updated++;
+            results.push({
+              roleId: roleName,
+              roleName: role.display_name || roleName,
+              status: 'updated',
+              kycFieldsAdded: formFields.length,
+              totalFields: mergedFields.length,
+            });
+          } else {
+            // Create new form with KYC fields
+            await insert('onboarding_forms', {
+              role_id: roleName,
+              fields: JSON.stringify(formFields),
+              sections: JSON.stringify(sections),
+              status: 'active',
+              version: 1,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+            
+            created++;
+            results.push({
+              roleId: roleName,
+              roleName: role.display_name || roleName,
+              status: 'created',
+              kycFieldsAdded: formFields.length,
+            });
+          }
+        } catch (error: any) {
+          errors++;
+          console.error(`[KYC-MIGRATE] Error processing role ${role.name}:`, error);
+          results.push({
+            roleId: role.name,
+            roleName: role.display_name || role.name,
+            status: 'error',
+            error: error.message,
+          });
+        }
+      }
+      
+      return c.json({
+        success: true,
+        message: `KYC migration completed: ${created} created, ${updated} updated, ${skipped} skipped, ${errors} errors`,
+        summary: {
+          totalRoles: activeRoles.length,
+          created,
+          updated,
+          skipped,
+          errors,
+        },
+        results,
+      });
+    } catch (error: any) {
+      console.error('[KYC-MIGRATE] Error:', error);
+      return c.json({ 
+        success: false,
+        error: error.message || 'Failed to migrate KYC fields' 
+      }, 500);
+    }
+  });
+
+  /**
    * GET /admin/onboarding-fields/:roleId
    * Get all onboarding fields for a specific role
    */
@@ -399,17 +676,23 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
       fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboarding-form-management.ts:102',message:'Route matched - roleId extracted',data:{roleId,rawPath:c.req.path,method:c.req.method},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
       // #endregion
 
-      // Ensure onboarding_forms table exists
+      // Ensure onboarding_forms table exists with sections column
       await query(`
         CREATE TABLE IF NOT EXISTS onboarding_forms (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           role_id VARCHAR(255) UNIQUE NOT NULL,
           fields JSONB NOT NULL,
+          sections JSONB,
           status VARCHAR(50) DEFAULT 'active',
           version INTEGER DEFAULT 1,
           created_at TIMESTAMP DEFAULT NOW(),
           updated_at TIMESTAMP DEFAULT NOW()
         )
+      `).catch(() => {});
+      
+      // Add sections column if it doesn't exist (for existing tables)
+      await query(`
+        ALTER TABLE onboarding_forms ADD COLUMN IF NOT EXISTS sections JSONB
       `).catch(() => {});
 
       // Get role configuration with case-insensitive fallback
@@ -455,21 +738,86 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
           : forms[0].fields || [];
       }
 
-      // If no fields found, return empty array (frontend will use default)
-      // This is NOT an error - the form just hasn't been created yet
-      if (fields.length === 0) {
-        console.log(`[GET /admin/onboarding-fields/:roleId] No form found for role "${actualRoleName}", returning empty form`);
+      // ✅ NEW: Import and merge KYC fields for the role
+      try {
+        const { 
+          getKYCFieldsForRole, 
+          ROLE_KYC_CONFIGS, 
+          KYC_SECTIONS 
+        } = await import('../lib/kyc-form-fields');
+        
+        // Get KYC fields for this role (use 'solo' as default for admin view)
+        // Try both solo and business variants
+        let kycFields = getKYCFieldsForRole(actualRoleName, 'solo');
+        if (kycFields.length === 0) {
+          kycFields = getKYCFieldsForRole(actualRoleName, 'business');
+        }
+        if (kycFields.length === 0) {
+          kycFields = getKYCFieldsForRole(actualRoleName);
+        }
+        
+        if (kycFields.length > 0) {
+          console.log(`[GET /admin/onboarding-fields/:roleId] Adding ${kycFields.length} KYC fields for role ${actualRoleName}`);
+          
+          // Convert KYC fields to form field format
+          const kycFormFields = kycFields.map((f: any) => ({
+            id: f.id,
+            fieldName: f.fieldName,
+            name: f.fieldName, // Add 'name' for frontend compatibility
+            label: f.label,
+            type: f.type, // Includes 'aadhaar-otp', 'pan-verify', 'gst-verify', 'declaration'
+            section: f.section,
+            isMandatory: f.isMandatory,
+            required: f.isMandatory,
+            requiresVerification: f.requiresVerification || false,
+            verificationEndpoint: f.verificationEndpoint || null,
+            placeholder: f.placeholder || '',
+            helpText: f.helpText || '',
+            options: f.options || [],
+            validation: f.validation || {},
+            displayOrder: f.displayOrder || 0,
+            order: f.displayOrder || 0,
+            isActive: true,
+            softBlock: f.softBlock || false,
+            declarationText: f.declarationText || null,
+            declarationType: f.declarationType || f.id, // Use explicit declarationType if set, otherwise fallback to id
+          }));
+          
+          // Merge KYC fields with existing fields (KYC fields replace existing with same ID)
+          const kycFieldIds = new Set(kycFormFields.map((f: any) => f.id));
+          const nonKycFields = fields.filter((f: any) => !kycFieldIds.has(f.id) && !kycFieldIds.has(f.fieldName));
+          fields = [...nonKycFields, ...kycFormFields];
+          
+          console.log(`[GET /admin/onboarding-fields/:roleId] Total fields after merge: ${fields.length}`);
+        }
+        
+        // Get role-specific sections from config
+        const roleConfig = ROLE_KYC_CONFIGS[actualRoleName] || 
+                          ROLE_KYC_CONFIGS[`${actualRoleName}_solo`] || 
+                          ROLE_KYC_CONFIGS[`${actualRoleName}_business`];
+        
+        // Use role's sections if available, otherwise use all KYC sections
+        const roleSections = roleConfig?.sections || KYC_SECTIONS;
+        
+        // Group fields by section using KYC-aware section mapping
+        const sections = getSectionsFromFieldsWithKYC(fields, roleSections);
+        
         return c.json({
           success: true,
           roleId: actualRoleName,
           roleName: role.display_name || actualRoleName,
-          fields: [],
-          sections: [],
-          version: 1,
+          fields,
+          sections,
+          version: await getFormVersion(actualRoleName),
+          kycFieldCount: kycFields.length,
         });
+      } catch (kycError) {
+        console.error('[GET /admin/onboarding-fields/:roleId] Error loading KYC fields:', kycError);
+        // Fall through to return fields without KYC
       }
 
-      // Group fields by section
+      // Fallback: If KYC import fails, return fields without KYC
+      // Group fields by section (legacy)
       const sections = getSectionsFromFields(fields);
 
       return c.json({

@@ -16,6 +16,7 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
+import { getDiscoveryRules } from '../lib/rule-engine';
 import { sendRatingRequest, sendEventNotification } from '../lib/services/push-notification-service';
 
 export function registerReviewEndpoints(app: Hono) {
@@ -163,7 +164,9 @@ export function registerReviewEndpoints(app: Hono) {
         return c.json({ success: true, pendingBookings: [] });
       }
 
-      // Get completed bookings without reviews from last 7 days
+      const rules = await getDiscoveryRules('all', 'reviews');
+      const reviewEligibleDays = rules.review_eligible_days ?? 7;
+
       const pendingBookings = await query(
         `SELECT b.*, 
                 COALESCE(v.business_name, s.name) as vendor_name,
@@ -177,10 +180,10 @@ export function registerReviewEndpoints(app: Hono) {
          WHERE b.customer_id = $1
          AND b.status = 'completed'
          AND b.has_review IS NOT TRUE
-         AND b.completed_at > NOW() - INTERVAL '7 days'
+         AND b.completed_at > NOW() - ($2::text || ' days')::interval
          ORDER BY b.completed_at DESC
          LIMIT 3`,
-        [customerIdToUse]
+        [customerIdToUse, reviewEligibleDays]
       );
 
       return c.json({

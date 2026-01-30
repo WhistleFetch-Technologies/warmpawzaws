@@ -13,7 +13,7 @@ import {
   ChevronRight,
   User
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface TeleConsultationProps {
@@ -51,10 +51,10 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vet/doctors?serviceType=tele`,
+        `${getApiBaseUrl()}/vet/doctors?serviceType=tele`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -75,10 +75,10 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vet/slots?vendorId=${selectedDoctor.id}&date=${selectedDate}&serviceType=tele`,
+        `${getApiBaseUrl()}/vet/slots?vendorId=${selectedDoctor.id}&date=${selectedDate}&serviceType=tele`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -100,12 +100,12 @@ export function TeleConsultation({ onBack, customerId, petProfiles, customerName
       setLoading(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vet/booking`,
+        `${getApiBaseUrl()}/vet/booking`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({
             customerId,

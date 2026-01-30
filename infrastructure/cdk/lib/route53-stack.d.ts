@@ -20,12 +20,13 @@ export interface Route53StackProps {
     environment: string;
 }
 export declare class Route53Stack extends Construct {
-    readonly hostedZone: route53.IHostedZone;
-    readonly certificate: acm.ICertificate;
+    readonly hostedZone?: route53.IHostedZone;
+    readonly certificate?: acm.ICertificate;
     readonly apiDomainName: string;
     readonly customerAppDomain: string;
     readonly vendorAppDomain: string;
     readonly adminDomain: string;
+    readonly isCustomDomainEnabled: boolean;
     private apiARecord?;
     private apiAaaaRecord?;
     constructor(scope: Construct, id: string, props: Route53StackProps);

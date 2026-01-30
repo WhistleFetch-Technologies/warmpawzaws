@@ -3,7 +3,7 @@ import {
   Package, ShoppingCart, TrendingUp, AlertCircle, 
   DollarSign, Eye, Percent, ArrowUp, ArrowDown, Clock
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface SellerDashboardProps {
   sellerId: string;
@@ -25,8 +25,8 @@ export function SellerDashboard({ sellerId, sellerName }: SellerDashboardProps) 
       
       // Load analytics
       const analyticsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/analytics/seller/${sellerId}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/ecommerce/analytics/seller/${sellerId}`,
+        { headers: getAuthHeaders() }
       );
       
       if (analyticsRes.ok) {
@@ -36,8 +36,8 @@ export function SellerDashboard({ sellerId, sellerName }: SellerDashboardProps) 
       
       // Load recent orders
       const ordersRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/orders?sellerId=${sellerId}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/ecommerce/orders?sellerId=${sellerId}`,
+        { headers: getAuthHeaders() }
       );
       
       if (ordersRes.ok) {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button } from '../../ui/button';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { Package, Truck, Printer, RefreshCw } from 'lucide-react';
 
@@ -14,10 +14,10 @@ export function BulkShiprocketActions({ selectedOrderIds, onSuccess, onClearSele
   const [loading, setLoading] = useState(false);
   const [action, setAction] = useState<string | null>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   const getAuthHeaders = () => ({
-    'Authorization': `Bearer ${publicAnonKey}`,
+    ...getAuthHeaders(),
     'apikey': publicAnonKey,
     'Content-Type': 'application/json'
   });

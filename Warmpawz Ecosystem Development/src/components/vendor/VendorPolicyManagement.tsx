@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Shield, Plus, Edit2, Trash2, Search, DollarSign, Calendar, CheckCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface PolicyManagementProps {
@@ -57,7 +57,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
     exclusions: [] as string[]
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchPolicies();
@@ -69,7 +69,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
       const response = await fetch(
         `${API_BASE}/vendor/policy-management/${vendorId}?status=${filter === 'all' ? '' : filter}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -92,7 +92,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
         {
           method: selectedPolicy ? 'PUT' : 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(formData)
@@ -123,7 +123,7 @@ export function VendorPolicyManagement({ vendorId, onClose }: PolicyManagementPr
         `${API_BASE}/vendor/policy-management/${vendorId}/${policyId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

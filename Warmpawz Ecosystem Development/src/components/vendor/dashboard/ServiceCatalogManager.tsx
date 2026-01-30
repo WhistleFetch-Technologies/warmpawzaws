@@ -8,7 +8,7 @@ import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Textarea } from '../../ui/textarea';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface Service {
   id: string;
@@ -33,7 +33,7 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
   const [formData, setFormData] = useState({ name: '', description: '', price: 0, duration: 30, category: '' });
   const [submitting, setSubmitting] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   const handleOpenModal = (service?: Service) => {
     if (service) {
@@ -57,7 +57,7 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
         method: editingService ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify(formData)
       });
@@ -88,7 +88,7 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
       const response = await fetch(`${API_BASE}/center/${centerId}/services/${serviceId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         }
       });
 

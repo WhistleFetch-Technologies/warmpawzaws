@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { RefreshCw, Clock, Phone, MapPin, CheckCircle, Play, Square, AlertCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
@@ -32,8 +32,8 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
       setLoading(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/today-bookings`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/today-bookings`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -76,8 +76,8 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
       setSubmitting(true);
 
       const endpoint = otpAction === 'start'
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${selectedBooking.id}/verify-start`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${selectedBooking.id}/verify-end`;
+        ? `${getApiBaseUrl()}/bookings/${selectedBooking.id}/verify-start`
+        : `${getApiBaseUrl()}/bookings/${selectedBooking.id}/verify-end`;
 
       const body: any = {
         otp: otpInput,
@@ -92,7 +92,7 @@ export function TodayBookingsOTP({ vendorId, vendorName }: TodayBookingsOTPProps
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(body)

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Camera, ArrowLeft, Info } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { UniversalVendorCard } from './UniversalVendorCard';
 
 interface PhotographyServicesLandingProps {
@@ -14,7 +14,7 @@ interface PhotographyServicesLandingProps {
 export function PhotographyServicesLanding({ onBack, onNavigate, phone }: PhotographyServicesLandingProps) {
   const [loading, setLoading] = useState(true);
   const [photographers, setPhotographers] = useState<any[]>([]);
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadPhotographers();

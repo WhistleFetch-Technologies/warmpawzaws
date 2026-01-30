@@ -2,8 +2,8 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 
 interface Service {
@@ -18,15 +18,35 @@ interface Service {
   publish_status: 'draft' | 'published' | 'archived';
 }
 
-export default function ServiceManagementPage() {
+function ServiceManagementContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'published' | 'draft' | 'enabled' | 'disabled'>('all');
   const [newService, setNewService] = useState<Partial<Service>>({
     service_style: 'at_vendor',
     is_enabled: true,
     publish_status: 'draft',
+  });
+  
+  // Auto-open add form if ?add=true in URL
+  useEffect(() => {
+    if (searchParams.get('add') === 'true') {
+      setShowAddForm(true);
+    }
+  }, [searchParams]);
+  
+  // Filter services based on selected filter
+  const filteredServices = services.filter(service => {
+    switch (filter) {
+      case 'published': return service.publish_status === 'published';
+      case 'draft': return service.publish_status === 'draft';
+      case 'enabled': return service.is_enabled === true;
+      case 'disabled': return service.is_enabled === false;
+      default: return true;
+    }
   });
 
   useEffect(() => {
@@ -42,8 +62,50 @@ export default function ServiceManagementPage() {
     try {
       const vendorId = localStorage.getItem('vendorId');
       if (vendorId) {
-        const response = await apiClient.get<{ services: Service[] }>(`/vendor/${vendorId}/services`);
-        setServices(response.services || []);
+        const response = await apiClient.get<any>(`/vendor/${vendorId}/services`);
+        
+        // Handle multiple API response formats
+        let loadedServices: Service[] = [];
+        
+        if (Array.isArray(response.services)) {
+          // Format 1: { services: Service[] } - flat array
+          loadedServices = response.services;
+        } else if (response.services && typeof response.services === 'object') {
+          // Format 2: { services: { at_home: { services: [] }, at_center: { services: [] }, tele: { services: [] } } }
+          const nested = response.services;
+          ['at_home', 'at_center', 'tele', 'at_vendor', 'online'].forEach(style => {
+            if (nested[style]?.services && Array.isArray(nested[style].services)) {
+              loadedServices = [...loadedServices, ...nested[style].services];
+            } else if (Array.isArray(nested[style])) {
+              loadedServices = [...loadedServices, ...nested[style]];
+            }
+          });
+        } else if (Array.isArray(response.allServices)) {
+          // Format 3: { allServices: Service[] }
+          loadedServices = response.allServices;
+        } else if (Array.isArray(response.legacyServices)) {
+          // Format 4: { legacyServices: Service[] }
+          loadedServices = response.legacyServices;
+        } else if (Array.isArray(response)) {
+          // Format 5: Direct array response
+          loadedServices = response;
+        }
+        
+        // Normalize field names (handle both snake_case and camelCase)
+        loadedServices = loadedServices.map(s => ({
+          ...s,
+          id: s.id,
+          service_name: s.service_name || s.serviceName || s.name || 'Unnamed Service',
+          description: s.description || '',
+          category: s.category || s.sub_category || 'General',
+          price: s.price || s.custom_price || 0,
+          duration_minutes: s.duration_minutes || s.custom_duration || 30,
+          service_style: s.service_style || s.serviceStyle || 'at_vendor',
+          is_enabled: s.is_enabled ?? s.isEnabled ?? true,
+          publish_status: s.publish_status || s.publishStatus || 'draft',
+        }));
+        
+        setServices(loadedServices);
       }
     } catch (err) {
       console.error('Error loading services:', err);
@@ -78,10 +140,29 @@ export default function ServiceManagementPage() {
 
   const publishService = async (serviceId: string) => {
     try {
-      await apiClient.put(`/vendor-services/${serviceId}`, { publish_status: 'published' });
+      const vendorId = localStorage.getItem('vendorId');
+      if (!vendorId) {
+        console.error('Vendor ID not found');
+        return;
+      }
+      await apiClient.put(`/vendor/${vendorId}/services/${serviceId}`, { publish_status: 'published' });
       loadServices();
     } catch (err) {
       console.error('Error publishing service:', err);
+    }
+  };
+  
+  const unpublishService = async (serviceId: string) => {
+    try {
+      const vendorId = localStorage.getItem('vendorId');
+      if (!vendorId) {
+        console.error('Vendor ID not found');
+        return;
+      }
+      await apiClient.put(`/vendor/${vendorId}/services/${serviceId}`, { publish_status: 'draft' });
+      loadServices();
+    } catch (err) {
+      console.error('Error unpublishing service:', err);
     }
   };
 
@@ -115,7 +196,7 @@ export default function ServiceManagementPage() {
             </div>
             <div className="flex gap-3">
               <button
-                onClick={() => router.push('/')}
+                onClick={() => router.back()}
                 className="px-4 py-2 text-gray-600 hover:text-gray-800 transition"
               >
                 ← Back
@@ -134,6 +215,32 @@ export default function ServiceManagementPage() {
       {/* Main Content - Match consistency pattern: max-w-7xl mx-auto p-6 or p-8 */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-7xl mx-auto p-6">
+        
+        {/* Filter Bar */}
+        {services.length > 0 && (
+          <div className="mb-6 flex flex-wrap gap-2 items-center">
+            <span className="text-sm text-gray-500 mr-2">Filter:</span>
+            {[
+              { value: 'all', label: 'All', count: services.length },
+              { value: 'published', label: 'Published', count: services.filter(s => s.publish_status === 'published').length },
+              { value: 'draft', label: 'Draft', count: services.filter(s => s.publish_status === 'draft').length },
+              { value: 'enabled', label: 'Enabled', count: services.filter(s => s.is_enabled).length },
+              { value: 'disabled', label: 'Disabled', count: services.filter(s => !s.is_enabled).length },
+            ].map(({ value, label, count }) => (
+              <button
+                key={value}
+                onClick={() => setFilter(value as any)}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
+                  filter === value
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                }`}
+              >
+                {label} ({count})
+              </button>
+            ))}
+          </div>
+        )}
 
         {services.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-xl shadow-sm">
@@ -146,9 +253,20 @@ export default function ServiceManagementPage() {
               Add Your First Service
             </button>
           </div>
+        ) : filteredServices.length === 0 ? (
+          <div className="text-center py-12 bg-white rounded-xl shadow-sm">
+            <div className="text-4xl mb-4">🔍</div>
+            <p className="text-gray-500">No services match the selected filter</p>
+            <button
+              onClick={() => setFilter('all')}
+              className="mt-4 px-6 py-2 text-orange-500 hover:underline"
+            >
+              Show all services
+            </button>
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {services.map((service) => (
+            {filteredServices.map((service) => (
               <div key={service.id} className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md transition">
                 <div className="flex items-start justify-between mb-4">
                   <div>
@@ -200,14 +318,21 @@ export default function ServiceManagementPage() {
                   >
                     {service.is_enabled ? 'Disable' : 'Enable'}
                   </button>
-                  {service.publish_status === 'draft' && (
+                  {service.publish_status === 'draft' ? (
                     <button
                       onClick={() => publishService(service.id)}
                       className="flex-1 p-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600"
                     >
                       Publish
                     </button>
-                  )}
+                  ) : service.publish_status === 'published' ? (
+                    <button
+                      onClick={() => unpublishService(service.id)}
+                      className="flex-1 p-2 bg-gray-100 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-200"
+                    >
+                      Unpublish
+                    </button>
+                  ) : null}
                 </div>
               </div>
             ))}
@@ -289,3 +414,14 @@ export default function ServiceManagementPage() {
   );
 }
 
+export default function ServiceManagementPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+      </div>
+    }>
+      <ServiceManagementContent />
+    </Suspense>
+  );
+}

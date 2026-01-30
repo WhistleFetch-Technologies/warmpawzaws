@@ -23,7 +23,7 @@ import {
   User,
   Heart
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '../../ui/sheet';
 import { toast } from 'sonner@2.0.3';
 import { useCart } from '../../../context/CartContext';
@@ -122,7 +122,7 @@ export function VetClinicListViewEnhanced({ phone, onBack, onNavigate }: VetClin
   const [pets, setPets] = useState<any[]>([]);
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
   
   // ✅ Load user data for header
   useEffect(() => {
@@ -133,13 +133,13 @@ export function VetClinicListViewEnhanced({ phone, onBack, onNavigate }: VetClin
     try {
       const [profileRes, petsRes, walletRes] = await Promise.all([
         fetch(`${API_BASE}/customer/profile/${phone}`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }),
         fetch(`${API_BASE}/customer/pets/${phone}`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }),
         fetch(`${API_BASE}/customer/wallet/${phone}`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         })
       ]);
 
@@ -287,7 +287,7 @@ export function VetClinicListViewEnhanced({ phone, onBack, onNavigate }: VetClin
         `${API_BASE}/universal/search?${params.toString()}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -416,7 +416,7 @@ export function VetClinicListViewEnhanced({ phone, onBack, onNavigate }: VetClin
         `${API_BASE}/universal/search?${params.toString()}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

@@ -24,7 +24,7 @@ export function StandardizedFooter({
   const isActive = (tab: string) => currentTab === tab;
 
   return (
-    <div className={`fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 ${maxWidth} mx-auto`}>
+    <div className={`fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 ${maxWidth} mx-auto`} style={{ zIndex: 50 }}>
       <div className="px-6 py-3">
       <div className="flex items-center justify-around">
         {/* Home Tab */}

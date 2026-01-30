@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, FileText, Calendar, User, AlertCircle, Pill, Activity } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface PetMedicalHistoryModalProps {
   petId: string;
@@ -60,9 +60,9 @@ export function PetMedicalHistoryModal({ petId, petName, onClose }: PetMedicalHi
       console.log('🏥 [MEDICAL-HISTORY] Loading history for pet:', petId);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/prescription/pet/${petId}`,
+        `${getApiBaseUrl()}/prescription/pet/${petId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

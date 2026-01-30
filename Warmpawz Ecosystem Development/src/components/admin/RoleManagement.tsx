@@ -10,7 +10,7 @@ import { Checkbox } from '../ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '../ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Plus, Edit, Trash2, Check, X, Settings, FileText, Shield, Zap, Users, RotateCcw, RefreshCw } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface Role {
   id: string;
@@ -71,10 +71,10 @@ export function RoleManagement() {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles?t=${Date.now()}`,
+        `${getApiBaseUrl()}/config/roles?t=${Date.now()}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -101,11 +101,11 @@ export function RoleManagement() {
     try {
       setSeeding(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles/seed`,
+        `${getApiBaseUrl()}/config/roles/seed`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -135,11 +135,11 @@ export function RoleManagement() {
     try {
       setMigrating(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor/migrate-all`,
+        `${getApiBaseUrl()}/admin/vendor/migrate-all`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -248,9 +248,9 @@ export function RoleManagement() {
                 if (!confirm('⚠️ This will DELETE ALL existing roles and RESTORE the original factory defaults. This fixes duplicates and missing forms. Continue?')) return;
                 try {
                   // Use the new STRICT reset endpoint
-                  const res = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/fix/reset-roles-strict`, {
+                  const res = await fetch(`${getApiBaseUrl()}/fix/reset-roles-strict`, {
                      method: 'POST',
-                     headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+                     headers: getAuthHeaders()
                   });
                   const data = await res.json();
                   if (res.ok) {
@@ -451,11 +451,11 @@ export function RoleManagement() {
                     
                     try {
                       const response = await fetch(
-                        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles/${role.id}`,
+                        `${getApiBaseUrl()}/config/roles/${role.id}`,
                         {
                           method: 'DELETE',
                           headers: {
-                            'Authorization': `Bearer ${publicAnonKey}`
+                            ...getAuthHeaders()
                           }
                         }
                       );
@@ -637,8 +637,8 @@ function RoleEditor({ role, onSave, onCancel }: {
   const handleSave = async () => {
     try {
       const url = role
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles/${role.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`;
+        ? `${getApiBaseUrl()}/config/roles/${role.id}`
+        : `${getApiBaseUrl()}/config/roles`;
 
       // Strictly construct payload with only editable fields to prevent schema errors
       const payload = {
@@ -662,7 +662,7 @@ function RoleEditor({ role, onSave, onCancel }: {
       const response = await fetch(url, {
         method: role ? 'PUT' : 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)

@@ -32,7 +32,7 @@ import {
   AlertCircle,
   Check
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
 
@@ -103,7 +103,7 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
   const [showAddHolidayDialog, setShowAddHolidayDialog] = useState(false);
   const [editingHoliday, setEditingHoliday] = useState<Holiday | null>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadScheduleData();
@@ -117,7 +117,7 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
       const breaksResponse = await fetch(
         `${API_BASE}/staff/${staffId}/breaks`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
       
@@ -130,7 +130,7 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
       const prefsResponse = await fetch(
         `${API_BASE}/staff/${staffId}/preferences`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
       
@@ -145,7 +145,7 @@ export function StaffScheduleManagement({ staffId, staffName, vendorId, onClose 
       const holidaysResponse = await fetch(
         `${API_BASE}/staff/${staffId}/holidays`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
       

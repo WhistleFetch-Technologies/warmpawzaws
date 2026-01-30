@@ -2,6 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import dynamic from 'next/dynamic';
+import { transformPrescriptionData } from '../PrescriptionDocument';
+
+// Dynamically import PrescriptionDocument for A4 view
+const PrescriptionDocument = dynamic(() => import('../PrescriptionDocument'), {
+  loading: () => <div className="flex items-center justify-center p-8">Loading document...</div>,
+  ssr: false
+});
 
 // 2D Sketch-style SVG Icons
 const Icons = {
@@ -92,6 +100,13 @@ interface Prescription {
   instructions: string;
   vet_name?: string;
   prescription_date: string;
+  medications?: Array<{
+    name: string;
+    dosage?: string;
+    frequency?: string;
+    duration?: string;
+    instructions?: string;
+  }>;
 }
 
 interface Pharmacy {
@@ -124,6 +139,7 @@ type FlowStep = 'prescription' | 'searching' | 'confirmed' | 'invoice' | 'paymen
 export default function PrescriptionOrderFlow({ prescriptionId, customerId, onBack }: PrescriptionOrderFlowProps) {
   const [step, setStep] = useState<FlowStep>('prescription');
   const [prescription, setPrescription] = useState<Prescription | null>(null);
+  const [fullPrescriptionData, setFullPrescriptionData] = useState<any>(null);
   const [pharmacies, setPharmacies] = useState<Pharmacy[]>([]);
   const [confirmedPharmacy, setConfirmedPharmacy] = useState<Pharmacy | null>(null);
   const [order, setOrder] = useState<any>(null);
@@ -132,14 +148,17 @@ export default function PrescriptionOrderFlow({ prescriptionId, customerId, onBa
   const [loading, setLoading] = useState(true);
   const [searchProgress, setSearchProgress] = useState(0);
   const [trackingStatus, setTrackingStatus] = useState<any>(null);
+  const [showA4Document, setShowA4Document] = useState(false);
 
   // Fetch prescription details
   useEffect(() => {
     const fetchPrescription = async () => {
       try {
-        const response = await apiClient.get(`/prescriptions/${prescriptionId}`);
+        // Load prescription with full details for A4 document view
+        const response = await apiClient.get(`/prescriptions/${prescriptionId}?includeDetails=true`);
         if (response && (response as any).success) {
           setPrescription((response as any).prescription);
+          setFullPrescriptionData((response as any).prescription);
         }
       } catch (error) {
         console.error('Error fetching prescription:', error);
@@ -161,19 +180,26 @@ export default function PrescriptionOrderFlow({ prescriptionId, customerId, onBa
     }, 300);
 
     try {
-      const response = await apiClient.post('/pharmacy/orders/from-prescription', {
-        prescriptionId,
+      // ✅ FIX: Use correct API endpoint /pharmacy/orders/create (not /from-prescription)
+      // Build items from prescription data
+      const prescriptionItems = prescription ? [{
+        medicine_name: prescription.medication_name || 'Prescription Medicine',
+        quantity: 1,
+        unit_price: 0, // Price will be set by pharmacy
+      }] : [];
+
+      const response = await apiClient.post('/pharmacy/orders/create', {
         customerId,
-        customerLocation: {
-          // In production, get from browser or stored address
-          latitude: 28.6139,
-          longitude: 77.2090,
-        },
+        prescriptionId: prescriptionId || null,
+        items: prescriptionItems,
         deliveryAddress: {
-          // In production, get from user profile or selection
-          line1: 'Customer Address',
+          address: 'Customer Address', // TODO: Get from user profile or selection
+          lat: 28.6139,
+          lng: 77.2090,
           city: 'Mumbai',
         },
+        paymentMethod: 'online',
+        logisticsType: 'warmpawz',
       });
 
       clearInterval(progressInterval);
@@ -186,22 +212,35 @@ export default function PrescriptionOrderFlow({ prescriptionId, customerId, onBa
         // Start polling for order status to wait for pharmacy acceptance
         // Don't simulate - wait for real pharmacy response
         if ((response as any).order?.id) {
-          // Start polling for order acceptance
+          // Start polling for order acceptance using broadcast-status endpoint
           const pollOrderStatus = setInterval(async () => {
             try {
-              const statusResponse = await apiClient.get(`/pharmacy/orders/${(response as any).order.id}/track`);
-              if (statusResponse && (statusResponse as any).order?.status === 'confirmed') {
-                // Pharmacy accepted - find the accepting pharmacy
-                const acceptingPharmacy = (response as any).pharmacies.find((p: any) => p.id === (statusResponse as any).order?.pharmacy?.id) || (response as any).pharmacies[0];
-                setConfirmedPharmacy(acceptingPharmacy);
-                setStep('confirmed');
-                clearInterval(pollOrderStatus);
-              } else if ((statusResponse as any).order?.status === 'no_pharmacy_available') {
-                // All pharmacies rejected
-                clearInterval(pollOrderStatus);
-                // Show error message (toast would be nice, but not critical for functionality)
-                console.error('No pharmacy accepted your order. Please try again.');
-                setStep('prescription');
+              // ✅ FIX: Use correct API endpoint /broadcast-status (not /track)
+              const statusResponse = await apiClient.get(`/pharmacy/orders/${(response as any).order.id}/broadcast-status`);
+              if (statusResponse && (statusResponse as any).success) {
+                const broadcastStatus = (statusResponse as any).broadcastStatus;
+                
+                if (broadcastStatus?.accepted > 0) {
+                  // Pharmacy accepted - get accepting pharmacy info
+                  const acceptingPharmacy = broadcastStatus.acceptedPharmacy || (response as any).pharmacies?.[0];
+                  if (acceptingPharmacy) {
+                    setConfirmedPharmacy({
+                      id: acceptingPharmacy.id,
+                      name: acceptingPharmacy.name || acceptingPharmacy.businessName || 'Pharmacy',
+                      distance: acceptingPharmacy.distance || 0,
+                      deliveryFee: 40,
+                      eta: { minutes: 30, rangeMin: 25, rangeMax: 40 },
+                      rating: acceptingPharmacy.rating || 4.5,
+                    });
+                  }
+                  setStep('confirmed');
+                  clearInterval(pollOrderStatus);
+                } else if (broadcastStatus?.status === 'expired' || broadcastStatus?.status === 'no_pharmacy_available') {
+                  // All pharmacies rejected or broadcast expired
+                  clearInterval(pollOrderStatus);
+                  console.error('No pharmacy accepted your order. Please try again.');
+                  setStep('prescription');
+                }
               }
             } catch (error) {
               console.error('Error polling order status:', error);
@@ -224,26 +263,34 @@ export default function PrescriptionOrderFlow({ prescriptionId, customerId, onBa
   useEffect(() => {
     if (step !== 'confirmed' || !order) return;
 
-    // Poll for order status (invoice)
+    // Poll for order status (invoice) using correct endpoint
     const checkInvoice = setInterval(async () => {
       try {
-        const response = await apiClient.get(`/pharmacy/orders/${order.id}/track`);
-        if (response && (response as any).order?.status === 'invoice_generated') {
-          // Mock invoice for demo
-          setInvoice({
-            items: order.prescription?.medications?.map((m: any) => ({
-              name: m.name,
-              price: 120 + Math.floor(Math.random() * 100),
-              quantity: 1,
-            })) || [],
-            subtotal: 350,
-            taxRate: 5,
-            taxAmount: 18,
-            deliveryFee: confirmedPharmacy?.deliveryFee || 40,
-            total: 408,
-          });
-          setStep('invoice');
-          clearInterval(checkInvoice);
+        // ✅ FIX: Use correct API endpoint /pharmacy/orders/:orderId (not /track)
+        const response = await apiClient.get(`/pharmacy/orders/${order.id}`);
+        if (response && (response as any).success && (response as any).order) {
+          const orderData = (response as any).order;
+          // Check if invoice is ready
+          if (orderData.status === 'invoice_generated' || orderData.invoice_url || orderData.invoice_amount) {
+            setInvoice({
+              items: orderData.items?.map((item: any) => ({
+                name: item.medicine_name || item.name,
+                price: item.unit_price || item.price || 0,
+                quantity: item.quantity || 1,
+              })) || order.prescription?.medications?.map((m: any) => ({
+                name: m.name,
+                price: 120 + Math.floor(Math.random() * 100),
+                quantity: 1,
+              })) || [],
+              subtotal: orderData.subtotal || 350,
+              taxRate: 5,
+              taxAmount: orderData.tax_amount || 18,
+              deliveryFee: orderData.delivery_fee || confirmedPharmacy?.deliveryFee || 40,
+              total: orderData.total || 408,
+            });
+            setStep('invoice');
+            clearInterval(checkInvoice);
+          }
         }
       } catch (error) {
         console.error('Error checking invoice:', error);
@@ -364,6 +411,21 @@ export default function PrescriptionOrderFlow({ prescriptionId, customerId, onBa
                 )}
               </div>
             </div>
+
+            {/* View Full Prescription Button */}
+            <button
+              onClick={() => setShowA4Document(true)}
+              className="w-full py-3 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                <path d="M14 2v6h6" />
+                <path d="M16 13H8" />
+                <path d="M16 17H8" />
+                <path d="M10 9H8" />
+              </svg>
+              <span>View Full Prescription (A4)</span>
+            </button>
 
             <button
               onClick={handleOrderMedicine}
@@ -640,6 +702,24 @@ export default function PrescriptionOrderFlow({ prescriptionId, customerId, onBa
           </div>
         )}
       </main>
+
+      {/* A4 Prescription Document Modal */}
+      {showA4Document && prescription && (
+        <PrescriptionDocument
+          prescription={transformPrescriptionData({
+            ...prescription,
+            ...fullPrescriptionData,
+            medications: prescription.medications || (prescription.medication_name ? [{
+              name: prescription.medication_name,
+              dosage: prescription.dosage,
+              frequency: prescription.frequency,
+              duration: prescription.duration,
+              instructions: prescription.instructions
+            }] : [])
+          })}
+          onClose={() => setShowA4Document(false)}
+        />
+      )}
     </div>
   );
 }

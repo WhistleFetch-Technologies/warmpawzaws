@@ -96,6 +96,30 @@
                 "bedrock:InvokeModelWithResponseStream"
               ],
               "Resource": "arn:aws:bedrock:ap-south-1::foundation-model/*"
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "chime:CreateMeeting",
+                "chime:DeleteMeeting",
+                "chime:GetMeeting",
+                "chime:ListMeetings",
+                "chime:CreateAttendee",
+                "chime:DeleteAttendee",
+                "chime:GetAttendee",
+                "chime:ListAttendees",
+                "chime:BatchCreateAttendee",
+                "chime:StartMeetingTranscription",
+                "chime:StopMeetingTranscription"
+              ],
+              "Resource": "arn:aws:chime:*:*:meeting/*"
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "chime:CreateMeetingWithAttendees"
+              ],
+              "Resource": "*"
             }
           ]
         }
@@ -270,6 +294,12 @@
                       },
                       {
                         "$ref": "$[\"service\"][\"provider\"][\"iam\"][\"role\"][\"statements\"][6]"
+                      },
+                      {
+                        "$ref": "$[\"service\"][\"provider\"][\"iam\"][\"role\"][\"statements\"][7]"
+                      },
+                      {
+                        "$ref": "$[\"service\"][\"provider\"][\"iam\"][\"role\"][\"statements\"][8]"
                       }
                     ]
                   }
@@ -312,7 +342,7 @@
                 "S3Bucket": {
                   "Ref": "ServerlessDeploymentBucket"
                 },
-                "S3Key": "serverless/warmpawz-api/dev/1769339941999-2026-01-25T11:19:01.999Z/warmpawz-api.zip"
+                "S3Key": "serverless/warmpawz-api/dev/1769776737168-2026-01-30T12:38:57.168Z/warmpawz-api.zip"
               },
               "Handler": "dist/handler.handler",
               "Runtime": "nodejs18.x",
@@ -360,14 +390,14 @@
               "ApiLogGroup"
             ]
           },
-          "ApiLambdaVersionIlp7kdVgVYFE4nbozYGp4w2VVcxyJie9ahV8lA88": {
+          "ApiLambdaVersionaYyr0nEkRGIRKvujLbehGhsbzuq0MU6rbvf0iXsQf0": {
             "Type": "AWS::Lambda::Version",
             "DeletionPolicy": "Retain",
             "Properties": {
               "FunctionName": {
                 "Ref": "ApiLambdaFunction"
               },
-              "CodeSha256": "ivk3X8oFHUsTqlUzj6M7rWbfag5A+4zlEwhbCn+UGNY=",
+              "CodeSha256": "pUeUFvoFKhXhMQ2yPTQR4Hny4aaBbtgXkBL3Q5gtS0E=",
               "Description": "Warmpawz API Gateway Handler"
             }
           },
@@ -469,7 +499,7 @@
           "ApiLambdaFunctionQualifiedArn": {
             "Description": "Current Lambda function version",
             "Value": {
-              "Ref": "ApiLambdaVersionIlp7kdVgVYFE4nbozYGp4w2VVcxyJie9ahV8lA88"
+              "Ref": "ApiLambdaVersionaYyr0nEkRGIRKvujLbehGhsbzuq0MU6rbvf0iXsQf0"
             },
             "Export": {
               "Name": "sls-warmpawz-api-dev-ApiLambdaFunctionQualifiedArn"
@@ -589,7 +619,7 @@
         "timeout": 30,
         "runtime": "nodejs18.x",
         "vpc": {},
-        "versionLogicalId": "ApiLambdaVersionIlp7kdVgVYFE4nbozYGp4w2VVcxyJie9ahV8lA88"
+        "versionLogicalId": "ApiLambdaVersionaYyr0nEkRGIRKvujLbehGhsbzuq0MU6rbvf0iXsQf0"
       }
     },
     "configValidationMode": "warn",
@@ -614,16 +644,16 @@
           "node_modules/**"
         ],
         "artifactsS3KeyDirname": "serverless/warmpawz-api/dev/code-artifacts",
-        "artifact": "D:\\WFTPL\\warmpawzApp\\warmpawzaws\\backend\\lambda\\.serverless\\warmpawz-api.zip",
-        "artifactDirectoryName": "serverless/warmpawz-api/dev/1769339941999-2026-01-25T11:19:01.999Z"
+        "artifact": "/Users/ketan/Documents/warmpawzecodev/backend/lambda/.serverless/warmpawz-api.zip",
+        "artifactDirectoryName": "serverless/warmpawz-api/dev/1769776737168-2026-01-30T12:38:57.168Z"
       }
     },
     "layers": {},
     "isDashboardMonitoringPreconfigured": false,
-    "artifact": "D:\\WFTPL\\warmpawzApp\\warmpawzaws\\backend\\lambda\\.serverless\\warmpawz-api.zip"
+    "artifact": "/Users/ketan/Documents/warmpawzecodev/backend/lambda/.serverless/warmpawz-api.zip"
   },
   "package": {
-    "artifactDirectoryName": "serverless/warmpawz-api/dev/1769339941999-2026-01-25T11:19:01.999Z",
+    "artifactDirectoryName": "serverless/warmpawz-api/dev/1769776737168-2026-01-30T12:38:57.168Z",
     "artifact": "warmpawz-api.zip"
   }
 }

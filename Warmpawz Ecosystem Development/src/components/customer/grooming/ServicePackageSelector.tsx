@@ -3,7 +3,7 @@ import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { ArrowLeft, Clock, ChevronDown, ChevronUp, Plus, Check } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface ServicePackageSelectorProps {
   vendorId: string;
@@ -26,7 +26,7 @@ export function ServicePackageSelector({
   const [selectedAddOns, setSelectedAddOns] = useState<any[]>([]);
   const [expandedService, setExpandedService] = useState<string | null>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadServices();

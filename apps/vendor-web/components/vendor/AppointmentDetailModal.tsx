@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, AlertCircle, Navigation, Loader2, MessageSquare, FileText, RefreshCw, History, Pill, Video, Stethoscope } from 'lucide-react';
+import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, AlertCircle, Navigation, Loader2, MessageSquare, FileText, RefreshCw, History, Pill, Video, Stethoscope, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 // Removed Supabase imports - using apiClient instead
 import { toast } from 'sonner';
@@ -11,6 +11,15 @@ import { MedicalHistoryModal } from './MedicalHistoryModal';
 import { AddVetSummaryModal } from './modals/AddVetSummaryModal';
 import { VendorPrescriptionModal } from './modals/VendorPrescriptionModal';
 import { CommunicationHub } from '../communication/CommunicationHub';
+import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
+import dynamic from 'next/dynamic';
+import { transformPrescriptionData } from './PrescriptionDocument';
+
+// Dynamically import PrescriptionDocument for A4 view
+const PrescriptionDocument = dynamic(() => import('./PrescriptionDocument'), {
+  loading: () => <div className="flex items-center justify-center p-8">Loading document...</div>,
+  ssr: false
+});
 
 interface AppointmentDetailModalProps {
   bookingId: string;
@@ -65,6 +74,19 @@ interface Booking {
   // Vendor (for prescription creation)
   vendorId?: string;
   staffId?: string;
+  staff_id?: string; // snake_case version from API
+  
+  // Location coordinates (for GPS tracking)
+  latitude?: string;
+  longitude?: string;
+  delivery_latitude?: string;
+  delivery_longitude?: string;
+  customer_latitude?: string;
+  customer_longitude?: string;
+  address_id?: string;
+  
+  // Allow any additional properties from API
+  [key: string]: any;
 }
 
 interface Activity {
@@ -100,6 +122,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const [showMedicalHistory, setShowMedicalHistory] = useState(false);
   const [showVetSummaryModal, setShowVetSummaryModal] = useState(false);
   const [showTracking, setShowTracking] = useState(false);
+  const [showA4Document, setShowA4Document] = useState(false);
+  const [selectedPrescriptionForA4, setSelectedPrescriptionForA4] = useState<any>(null);
   
   // OTP States
   const [otp, setOtp] = useState('');
@@ -119,6 +143,14 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       // Load booking details
       const data = await apiClient.get(`/vendor/bookings/${bookingId}/details`) as any;
       const rawBooking = data.booking;
+      
+      // ✅ CRITICAL FIX: Also load booking history (includes prescriptions)
+      let historyData: any = null;
+      try {
+        historyData = await apiClient.get(`/bookings/${bookingId}/history`) as any;
+      } catch (error) {
+        console.warn('Could not load booking history:', error);
+      }
       
       // Map backend response to frontend Booking interface
       const mappedBooking: Booking = {
@@ -166,13 +198,34 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       };
       
       setBooking(mappedBooking);
-      setActivities((data.activities || []).map((a: any) => ({
+      
+      // ✅ CRITICAL FIX: Combine activities from booking details and history (which includes prescriptions)
+      const activitiesFromDetails = (data.activities || []).map((a: any) => ({
         id: a.id,
         type: a.type || a.activityType,
         description: a.description,
         timestamp: a.createdAt || a.timestamp,
         actor: a.performedBy || a.actor,
-      })));
+      }));
+      
+      // Get activities from history (includes prescriptions)
+      const activitiesFromHistory = (historyData?.history || []).map((h: any) => ({
+        id: h.id || `history_${h.type}_${h.timestamp}`,
+        type: h.type === 'prescription' ? 'prescription' : h.type || 'status_change',
+        description: h.description || (h.type === 'prescription' ? `Prescription created${h.prescription_data?.diagnosis ? ` - Diagnosis: ${h.prescription_data.diagnosis}` : ''}` : ''),
+        timestamp: h.created_at || h.timestamp,
+        actor: h.actor || 'System',
+        prescriptionData: h.prescription_data, // Include prescription data for history display
+      }));
+      
+      // Combine and sort by timestamp
+      const allActivities = [...activitiesFromDetails, ...activitiesFromHistory].sort((a, b) => {
+        const aTime = new Date(a.timestamp || 0).getTime();
+        const bTime = new Date(b.timestamp || 0).getTime();
+        return aTime - bTime;
+      });
+      
+      setActivities(allActivities);
       // Safely process prescriptions - validate and normalize data
       const safePrescriptions = (data.prescriptions || []).map((prescription: any) => {
         try {
@@ -265,38 +318,388 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     }
   };
 
+  // ✅ GPS Tracking State
+  const [isTracking, setIsTracking] = useState(false);
+  const [watchId, setWatchId] = useState<number | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [showTrackingModal, setShowTrackingModal] = useState(false);
+  const [destinationLocation, setDestinationLocation] = useState<{ lat: number; lng: number } | null>(null); // ✅ NEW: Destination for map
+  const [trackingSessionId, setTrackingSessionId] = useState<string | null>(null); // ✅ CRITICAL FIX: Store session ID for updates
+  const trackingSessionIdRef = useRef<string | null>(null); // ✅ CRITICAL: Ref so watchPosition callback sees current session ID (closure fix)
+  const mapRef = useRef<HTMLDivElement>(null); // ✅ NEW: Map container ref
+  const mapInstanceRef = useRef<any>(null); // ✅ NEW: Google Maps instance
+  const routePolylineRef = useRef<any>(null); // ✅ NEW: Route polyline
+
   const handleStartTravel = async () => {
     if (!booking) return;
     
-    // ✅ SECURITY FIX: Use authenticated fetch for tracking session
+    // ✅ Request GPS permission and start tracking
+    if (!navigator.geolocation) {
+      toast.error('GPS is not supported on this device');
+      return;
+    }
+    
     try {
       setProcessing(true);
-      await apiClient.post(`/vendor/tracking/${booking.id}/start`, {
-        vendorId: vendorData.id,
-        type: 'traveling'
-      });
-      // Update local state to show we are traveling
-      loadAppointmentDetails();
-      onRefresh?.();
+      
+      // Get current location first
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          setCurrentLocation({ lat: latitude, lng: longitude });
+          
+            try {
+            // Start tracking session on backend
+            // ✅ CRITICAL FIX: Use correct endpoint path
+            const trackingResponse = await apiClient.post(`/tracking/start`, {
+              bookingId: booking.id,
+              vendorId: vendorData?.id,
+              staffId: booking.staffId || booking.staff_id,
+              startLatitude: latitude,
+              startLongitude: longitude
+            }) as any;
+            
+            // ✅ CRITICAL FIX: Get destination and session ID from tracking session response
+            if (trackingResponse?.session) {
+              const session = trackingResponse.session;
+              
+              // Store session ID in ref (so watchPosition callback sees it immediately) and state
+              if (session.id) {
+                trackingSessionIdRef.current = session.id;
+                setTrackingSessionId(session.id);
+              }
+              
+              // Get destination location
+              if (session.destinationLocation) {
+                const dest = session.destinationLocation;
+                setDestinationLocation({ lat: dest.latitude, lng: dest.longitude });
+              } else if (session.destination_latitude && session.destination_longitude) {
+                setDestinationLocation({ 
+                  lat: parseFloat(session.destination_latitude), 
+                  lng: parseFloat(session.destination_longitude) 
+                });
+              }
+            }
+            
+            // Start watching position (use ref in callback so session ID is available immediately)
+            const id = navigator.geolocation.watchPosition(
+              (pos) => {
+                const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                setCurrentLocation(loc);
+                
+                // ✅ CRITICAL FIX: Send location update using ref (closure-safe)
+                const sid = trackingSessionIdRef.current;
+                if (sid) {
+                  apiClient.post(`/tracking/${sid}/update`, {
+                    latitude: loc.lat,
+                    longitude: loc.lng
+                  }).catch(console.error);
+                }
+              },
+              (error) => {
+                console.error('GPS error:', error);
+                toast.error('GPS tracking error: ' + error.message);
+              },
+              { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+            );
+            
+            setWatchId(id);
+            setIsTracking(true);
+            setShowTrackingModal(true);
+            
+            // ✅ CRITICAL FIX: If destination not from tracking response, try other sources
+            if (!destinationLocation) {
+              // Try multiple sources: booking coordinates, customer address
+              let destLoc: { lat: number; lng: number } | null = null;
+              
+              if (booking?.latitude && booking?.longitude) {
+                destLoc = { lat: parseFloat(booking.latitude), lng: parseFloat(booking.longitude) };
+              } else if (booking?.delivery_latitude && booking?.delivery_longitude) {
+                destLoc = { lat: parseFloat(booking.delivery_latitude), lng: parseFloat(booking.delivery_longitude) };
+              } else if (booking?.address_id) {
+                // Try to get from customer address
+                try {
+                  const addressResponse = await apiClient.get(`/customer/addresses/${booking.address_id}`) as any;
+                  if (addressResponse?.address?.latitude && addressResponse?.address?.longitude) {
+                    destLoc = { 
+                      lat: parseFloat(addressResponse.address.latitude), 
+                      lng: parseFloat(addressResponse.address.longitude) 
+                    };
+                  }
+                } catch (err) {
+                  console.warn('Could not get customer address coordinates:', err);
+                }
+              }
+              
+              // If we have destination, set it
+              if (destLoc) {
+                setDestinationLocation(destLoc);
+              }
+            }
+            
+            // ✅ CRITICAL FIX: Initialize map after modal opens
+            // Will be triggered by useEffect when showTrackingModal and currentLocation are set
+            
+            toast.success('GPS tracking started! Customer can now track your location.');
+            
+            // Refresh booking status
+            loadAppointmentDetails();
+            onRefresh?.();
+          } catch (apiError) {
+            console.error('Error starting travel:', apiError);
+            toast.error('Failed to start tracking session');
+          } finally {
+            setProcessing(false);
+          }
+        },
+        (error) => {
+          setProcessing(false);
+          console.error('GPS permission error:', error);
+          if (error.code === error.PERMISSION_DENIED) {
+            toast.error('Please enable GPS/location permission to start travel tracking');
+          } else {
+            toast.error('Could not get your location: ' + error.message);
+          }
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
     } catch (error) {
       console.error('Error starting travel:', error);
-    } finally {
       setProcessing(false);
     }
   };
+  
+  // ✅ Stop GPS tracking when modal closes or arrives
+  const stopTracking = () => {
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      setWatchId(null);
+    }
+    trackingSessionIdRef.current = null;
+    setTrackingSessionId(null);
+    setIsTracking(false);
+    setShowTrackingModal(false);
+    // Clean up map
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current = null;
+    }
+    if (routePolylineRef.current) {
+      routePolylineRef.current.setMap(null);
+      routePolylineRef.current = null;
+    }
+  };
+
+  // ✅ CRITICAL FIX: Initialize tracking map with Google Maps
+  const initializeTrackingMap = async () => {
+    if (!mapRef.current || !currentLocation) return;
+
+    // Load Google Maps if needed
+    if (!window.google?.maps) {
+      await loadGoogleMaps();
+    }
+
+    if (!window.google?.maps || !mapRef.current) {
+      console.warn('Google Maps not available for tracking map');
+      return;
+    }
+
+    try {
+      const center = destinationLocation 
+        ? {
+            lat: (currentLocation.lat + destinationLocation.lat) / 2,
+            lng: (currentLocation.lng + destinationLocation.lng) / 2,
+          }
+        : currentLocation;
+
+      const map = new window.google.maps.Map(mapRef.current, {
+        center,
+        zoom: 14,
+        mapTypeControl: false,
+        fullscreenControl: true,
+        streetViewControl: false,
+        zoomControl: true,
+      });
+
+      mapInstanceRef.current = map;
+
+      // Add current location marker
+      if (currentLocation) {
+        new window.google.maps.Marker({
+          position: currentLocation,
+          map,
+          icon: {
+            url: 'data:image/svg+xml,' + encodeURIComponent(`
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="16" cy="16" r="14" fill="#10B981" stroke="white" stroke-width="3"/>
+                <circle cx="16" cy="16" r="6" fill="white"/>
+              </svg>
+            `),
+            scaledSize: new window.google.maps.Size(32, 32),
+          },
+          title: 'Your Location',
+        });
+      }
+
+      // Add destination marker if available
+      if (destinationLocation) {
+        new window.google.maps.Marker({
+          position: destinationLocation,
+          map,
+          icon: {
+            url: 'data:image/svg+xml,' + encodeURIComponent(`
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="16" cy="16" r="14" fill="#FF8C42" stroke="white" stroke-width="3"/>
+                <path d="M16 10L20 22H12L16 10Z" fill="white"/>
+              </svg>
+            `),
+            scaledSize: new window.google.maps.Size(32, 32),
+          },
+          title: 'Customer Location',
+        });
+
+        // Draw route line
+        const polyline = new window.google.maps.Polyline({
+          path: [currentLocation, destinationLocation],
+          geodesic: true,
+          strokeColor: '#FF8C42',
+          strokeOpacity: 0.8,
+          strokeWeight: 4,
+        });
+        polyline.setMap(map);
+        routePolylineRef.current = polyline;
+
+        // Fit bounds
+        const bounds = new window.google.maps.LatLngBounds();
+        bounds.extend(currentLocation);
+        bounds.extend(destinationLocation);
+        map.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 50 });
+      } else {
+        map.setCenter(currentLocation);
+        map.setZoom(15);
+      }
+    } catch (error) {
+      console.error('Error initializing tracking map:', error);
+    }
+  };
+
+  // ✅ Load Google Maps script
+  const loadGoogleMaps = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if (window.google?.maps) {
+        resolve();
+        return;
+      }
+
+      const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+      if (!apiKey) {
+        // Try to get from backend
+        apiClient.get('/config/google-maps-key').then((response: any) => {
+          const key = response?.apiKey || response?.key;
+          if (!key) {
+            reject(new Error('Google Maps API key not configured'));
+            return;
+          }
+          loadMapsScript(key, resolve, reject);
+        }).catch(() => {
+          reject(new Error('Google Maps API key not available'));
+        });
+      } else {
+        loadMapsScript(apiKey, resolve, reject);
+      }
+    });
+  };
+
+  const loadMapsScript = (apiKey: string, resolve: () => void, reject: (err: Error) => void) => {
+    if (document.querySelector('script[src*="maps.googleapis.com"]')) {
+      const checkInterval = setInterval(() => {
+        if (window.google?.maps) {
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 100);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load Google Maps'));
+    document.head.appendChild(script);
+  };
+
+  // ✅ Update map when location changes
+  useEffect(() => {
+    if (isTracking && currentLocation && mapInstanceRef.current) {
+      // Recenter map on current location
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.panTo(currentLocation);
+      }
+    }
+  }, [currentLocation, isTracking]);
+
+  // ✅ Initialize map when modal opens
+  useEffect(() => {
+    if (showTrackingModal && currentLocation) {
+      // Small delay to ensure modal is rendered
+      const timer = setTimeout(() => {
+        if (destinationLocation) {
+          initializeTrackingMap();
+        } else {
+          // Try to get destination from booking
+          if (booking?.latitude && booking?.longitude) {
+            setDestinationLocation({ 
+              lat: parseFloat(booking.latitude), 
+              lng: parseFloat(booking.longitude) 
+            });
+            setTimeout(() => initializeTrackingMap(), 100);
+          } else {
+            // Just show current location
+            initializeTrackingMap();
+          }
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [showTrackingModal, currentLocation, destinationLocation]);
+  
+  // ✅ Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
+  }, [watchId]);
 
   const handleArrived = async () => {
     // ✅ SECURITY FIX: Use authenticated fetch for status update
     try {
       setProcessing(true);
+      
+      // Stop GPS tracking when arrived
+      stopTracking();
+      
+      // Notify backend to stop tracking
+      if (booking) {
+        await apiClient.post(`/vendor/tracking/${booking.id}/stop`, {
+          vendorId: vendorData?.id,
+          type: 'arrived'
+        }).catch(console.error);
+      }
+      
       await apiClient.post(`/vendor/bookings/${bookingId}/status`, {
         status: 'arrived',
         note: 'Vendor has arrived at location'
       });
+      
+      toast.success('Marked as arrived!');
       loadAppointmentDetails();
       onRefresh?.();
     } catch (error) {
       console.error('Error marking arrived:', error);
+      toast.error('Failed to update status');
     } finally {
       setProcessing(false);
     }
@@ -315,7 +718,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const getActivityIcon = (type: string) => {
     switch (type) {
       case 'status_change': return CheckCircle2;
-      case 'prescription': return Star;
+      case 'prescription': return Pill; // ✅ CRITICAL FIX: Use Pill icon for prescriptions
       case 'chat': return MessageSquare;
       case 'note': return FileText;
       case 'follow_up': return RefreshCw;
@@ -651,12 +1054,28 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     return (
                       <div key={activity.id} className="bg-white rounded-xl p-4 flex gap-3">
                         <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
-                          <IconComponent className="w-4 h-4 text-gray-600" />
+                          {activity.type === 'prescription' ? (
+                            <Pill className="w-4 h-4 text-green-600" />
+                          ) : (
+                            <IconComponent className="w-4 h-4 text-gray-600" />
+                          )}
                         </div>
                         <div className="flex-1">
                           <p className="text-sm text-gray-900">{activity.description}</p>
+                          {/* ✅ CRITICAL FIX: Show prescription details if available */}
+                          {activity.type === 'prescription' && (activity as any).prescriptionData && (
+                            <div className="mt-2 p-2 bg-green-50 rounded-lg">
+                              <p className="text-xs text-green-700 font-medium">Prescription Details</p>
+                              {(activity as any).prescriptionData.diagnosis && (
+                                <p className="text-xs text-gray-600 mt-1">Diagnosis: {(activity as any).prescriptionData.diagnosis}</p>
+                              )}
+                              {(activity as any).prescriptionData.medications && (
+                                <p className="text-xs text-gray-600">Medications: {JSON.stringify((activity as any).prescriptionData.medications)}</p>
+                              )}
+                            </div>
+                          )}
                           <p className="text-xs text-gray-500 mt-1">
-                            {new Date(activity.timestamp).toLocaleString('en-IN')}
+                            {new Date(activity.timestamp).toLocaleString('en-IN')} • {activity.actor}
                           </p>
                         </div>
                       </div>
@@ -677,15 +1096,20 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     const roleName = vendorData?.roleName;
                     const capabilities = vendorData?.capabilities;
                     
+                    // ✅ FIX: Proper role-based prescription visibility check
+                    // Only show for veterinarians, clinics, diagnostics, and nutritionists
                     const isVet = (
                       (roleId && typeof roleId === 'string' && String(roleId).toLowerCase().includes('vet')) ||
                       (roleId && typeof roleId === 'string' && String(roleId).toLowerCase().includes('clinic')) ||
+                      (roleId && typeof roleId === 'string' && String(roleId).toLowerCase().includes('diagnostics')) ||
+                      (roleId && typeof roleId === 'string' && String(roleId).toLowerCase().includes('nutritionist')) ||
                       (role && typeof role === 'string' && String(role).toLowerCase().includes('vet')) ||
                       (roleName && typeof roleName === 'string' && String(roleName).toLowerCase().includes('vet')) ||
                       (roleName && typeof roleName === 'string' && String(roleName).toLowerCase().includes('clinic')) ||
+                      (roleName && typeof roleName === 'string' && String(roleName).toLowerCase().includes('diagnostics')) ||
+                      (roleName && typeof roleName === 'string' && String(roleName).toLowerCase().includes('nutritionist')) ||
                       (Array.isArray(capabilities) && capabilities.includes('prescriptions')) ||
-                      (Array.isArray(capabilities) && capabilities.includes('prescription_create')) ||
-                      true // Always show for testing
+                      (Array.isArray(capabilities) && capabilities.includes('prescription_create'))
                     );
                     
                     return isVet && booking.status !== 'cancelled';
@@ -795,8 +1219,20 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                           </div>
                         )}
                         
-                        <div className="pt-2 border-t border-gray-100 text-xs text-gray-500">
-                          Prescribed by: {prescription.uploadedBy || 'Unknown'}
+                        <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
+                          <span className="text-xs text-gray-500">
+                            Prescribed by: {prescription.uploadedBy || 'Unknown'}
+                          </span>
+                          <button
+                            onClick={() => {
+                              setSelectedPrescriptionForA4(prescription);
+                              setShowA4Document(true);
+                            }}
+                            className="flex items-center gap-1 px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors"
+                          >
+                            <Printer className="w-3 h-3" />
+                            View A4
+                          </button>
                         </div>
                       </div>
                       );
@@ -828,51 +1264,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                 Chat
               </button>
               
-              {/* TELE-CONSULTATION Actions */}
-              {booking.serviceType === 'tele' && booking.status !== 'completed' && booking.status !== 'cancelled' && (
-                <button
-                  onClick={async () => {
-                    try {
-                      // Create or join video call
-                      const customerId = booking.customerId || '';
-                      const vendorId = vendorData?.id || '';
-                      
-                      // First create meeting if needed
-                      const createResponse = await apiClient.post('/video-call/create-meeting', {
-                        bookingId: booking.id,
-                        customerId,
-                        vendorId,
-                      }) as any;
-                      
-                      if (createResponse?.success || createResponse?.meetingId) {
-                        // Join the meeting
-                        const joinResponse = await apiClient.post<any>('/video-call/join', {
-                          bookingId: booking.id,
-                          userId: vendorId,
-                          userType: 'vendor',
-                        });
-                        
-                        if (joinResponse?.success) {
-                          // Open video call page
-                          window.open(`/video/${booking.id}`, '_blank');
-                        } else {
-                          toast.error('Failed to join video call');
-                        }
-                      } else {
-                        toast.error('Failed to create video call');
-                      }
-                    } catch (err: any) {
-                      console.error('Error starting video call:', err);
-                      toast.error(err.message || 'Failed to start video call');
-                    }
-                  }}
-                  className="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
-                >
-                  <Video className="w-4 h-4" />
-                  Start Video Call
-                </button>
-              )}
-
+              {/* Rule 2: Video/teleconsulting starts from CHAT only (camera icon in chat). No direct Start Video Call here. */}
               {/* HOME SERVICE Actions (Walker/Trainer/Groomer) */}
               {(booking.serviceType === 'at_home' || booking.serviceType === 'home') && booking.status !== 'completed' && booking.status !== 'cancelled' && (
                 <>
@@ -888,8 +1280,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     </button>
                   )}
 
-                  {/* Phase 2: Arrived (If traveling/in_progress) */}
-                  {(booking.status === 'traveling' || (booking.status === 'in_progress' && !(booking as any).arrived)) && (
+                  {/* Phase 2: Arrived (If traveling/vendor_on_way/in_progress) */}
+                  {(booking.status === 'traveling' || booking.status === 'vendor_on_way' || (booking.status === 'in_progress' && !(booking as any).arrived)) && (
                     <button
                       onClick={handleArrived}
                       disabled={processing}
@@ -990,7 +1382,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         />
       )}
 
-      {/* Communication Hub (Unified Chat/Video) */}
+      {/* Communication Hub (Unified Chat/Video) - Rule 2: Video starts from chat (camera icon) */}
       {communicationMode && (
         <CommunicationHub
           mode={communicationMode}
@@ -999,6 +1391,42 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           userName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
           otherUserName={booking.customerName}
           userType="vendor"
+          serviceStyle={booking.serviceType === 'tele' ? 'tele' : undefined}
+          onStartVideoCall={async (bid) => {
+            try {
+              setProcessing(true);
+              toast.info('Starting video call...');
+              const createRes = await apiClient.post('/video-call/create-meeting', {
+                bookingId: bid,
+                customerId: booking.customerId || '',
+                vendorId: vendorData?.id,
+              }) as any;
+              if (!createRes?.success && !createRes?.meetingId) {
+                toast.error('Failed to create video call');
+                return;
+              }
+              const joinRes = await apiClient.post<any>('/video-call/join', {
+                bookingId: bid,
+                userId: vendorData?.id,
+                userType: 'vendor',
+              });
+              if (joinRes?.success) {
+                await apiClient.post('/video-call/notify-ready', {
+                  bookingId: bid,
+                  participantType: 'vendor',
+                  participantId: vendorData?.id,
+                }).catch(() => {});
+                toast.success('Customer notified! Opening video call...');
+                window.open(`/video/${bid}`, '_blank');
+              } else {
+                toast.error('Failed to join video call');
+              }
+            } catch (err: any) {
+              toast.error(err?.message || 'Failed to start video call');
+            } finally {
+              setProcessing(false);
+            }
+          }}
           onClose={() => {
             setCommunicationMode(null);
             loadAppointmentDetails(); // Refresh to show new activity
@@ -1115,6 +1543,139 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             </div>
           </div>
         </div>
+      )}
+
+      {/* ✅ CRITICAL FIX: GPS Tracking Modal with Map View */}
+      {showTrackingModal && (
+        <div className="fixed inset-0 bg-black/60 z-[70] flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+                  <Navigation className="w-6 h-6 text-green-600 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Live Route Tracking</h3>
+                  <p className="text-sm text-gray-500">Customer can track your location</p>
+                </div>
+              </div>
+              <button
+                onClick={stopTracking}
+                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            {/* ✅ CRITICAL FIX: Map View */}
+            <div className="flex-1 relative min-h-[400px] bg-gray-100">
+              <div 
+                ref={mapRef}
+                className="w-full h-full"
+                style={{ minHeight: '400px' }}
+              />
+              {!window.google?.maps && (
+                <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+                  <div className="text-center">
+                    <Loader2 className="w-8 h-8 animate-spin text-gray-400 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500">Loading map...</p>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* Info Panel */}
+            <div className="p-4 border-t border-gray-200 space-y-3">
+              {/* Current Location */}
+              <div className="bg-gray-50 rounded-xl p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-gray-600">Your Location</span>
+                  <span className={`text-xs px-2 py-1 rounded-full ${isTracking ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-600'}`}>
+                    {isTracking ? '● Live' : '○ Stopped'}
+                  </span>
+                </div>
+                {currentLocation ? (
+                  <p className="text-xs font-mono text-gray-900">
+                    {currentLocation.lat.toFixed(6)}, {currentLocation.lng.toFixed(6)}
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500">Getting location...</p>
+                )}
+              </div>
+              
+              {/* Destination */}
+              {booking && (
+                <div className="bg-blue-50 rounded-xl p-3">
+                  <span className="text-xs font-medium text-blue-600">Destination</span>
+                  <p className="text-sm font-medium text-gray-900 mt-1">{booking.location || booking.customerName}</p>
+                </div>
+              )}
+              
+              {/* Actions */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    if (currentLocation && booking?.location) {
+                      const destination = encodeURIComponent(booking.location);
+                      window.open(`https://www.google.com/maps/dir/?api=1&origin=${currentLocation.lat},${currentLocation.lng}&destination=${destination}&travelmode=driving`, '_blank');
+                    }
+                  }}
+                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+                >
+                  <MapPin className="w-4 h-4" />
+                  Open in Maps
+                </button>
+                <button
+                  onClick={handleArrived}
+                  disabled={processing}
+                  className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+                >
+                  {processing ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4" />
+                  )}
+                  I've Arrived
+                </button>
+              </div>
+              
+              <p className="text-xs text-center text-gray-400">
+                GPS tracking will automatically stop when you mark as arrived
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* A4 Prescription Document Modal */}
+      {showA4Document && selectedPrescriptionForA4 && booking && (
+        <PrescriptionDocument
+          prescription={transformPrescriptionData({
+            ...selectedPrescriptionForA4,
+            pet_name: booking.petName,
+            pet_species: booking.petType,
+            pet_breed: booking.petBreed,
+            customer_name: booking.customerName,
+            customer_phone: booking.customerPhone,
+            vendor_name: vendorData?.businessName || vendorData?.business_name,
+            vendor_owner_name: vendorData?.ownerName || vendorData?.owner_name,
+            vendor_phone: vendorData?.phone,
+            vendor_address: vendorData?.address,
+            vendor_city: vendorData?.city,
+            medications: selectedPrescriptionForA4.medications || (selectedPrescriptionForA4.medication_name ? [{
+              name: selectedPrescriptionForA4.medication_name,
+              dosage: selectedPrescriptionForA4.dosage,
+              frequency: selectedPrescriptionForA4.frequency,
+              duration: selectedPrescriptionForA4.duration,
+              instructions: selectedPrescriptionForA4.instructions || selectedPrescriptionForA4.notes
+            }] : [])
+          })}
+          onClose={() => {
+            setShowA4Document(false);
+            setSelectedPrescriptionForA4(null);
+          }}
+        />
       )}
     </>
   );

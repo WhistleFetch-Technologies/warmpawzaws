@@ -47,7 +47,7 @@ import { WalletPage } from '../shop/WalletPage';
 import { OrderDetailView } from './OrderDetailView';
 import { OrderTrackingView } from './OrderTrackingView';
 import { ProblemCategoryMapper } from '../admin/ProblemCategoryMapper';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { useNotificationService } from './useNotificationService';
 import { toast } from 'sonner@2.0.3';
 import { useCart } from '../../context/CartContext';
@@ -230,8 +230,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       if (notification.type === 'chat_message' && notification.bookingId) {
         try {
           const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${notification.bookingId}`,
-            { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+            `${getApiBaseUrl()}/booking/${notification.bookingId}`,
+            { headers: getAuthHeaders() }
           );
           if (response.ok) {
             const { booking } = await response.json();
@@ -264,8 +264,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         console.log('📬 [CUSTOMER-HOME] Service completed notification:', notification);
         try {
           const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${notification.bookingId}`,
-            { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+            `${getApiBaseUrl()}/booking/${notification.bookingId}`,
+            { headers: getAuthHeaders() }
           );
           if (response.ok) {
             const { booking } = await response.json();
@@ -299,7 +299,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const handleViewFullPetProfile = async () => {
     if (!selectedPetId) return;
     try {
-      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/pet/${selectedPetId}`, { headers: { Authorization: `Bearer ${publicAnonKey}` } });
+      const response = await fetch(`${getApiBaseUrl()}/pet/${selectedPetId}`, { headers: getAuthHeaders() });
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.pet) handleViewPetProfile(data.pet);

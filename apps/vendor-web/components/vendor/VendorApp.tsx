@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { VendorRoleSelection } from './VendorRoleSelection';
 import { DynamicVendorOnboardingForm } from './DynamicVendorOnboardingForm';
@@ -18,8 +18,6 @@ interface VendorSession {
   vendor?: any;
   sessionToken?: string;
   verified: boolean;
-  isStaffLogin?: boolean;
-  staff?: any;
 }
 
 interface VendorAppProps {
@@ -39,20 +37,36 @@ type VendorStatus =
 
 export function VendorApp({ initialSession }: VendorAppProps) {
   const router = useRouter();
-  const [session, setSession] = useState<VendorSession>(initialSession);
+  const [session] = useState<VendorSession>(initialSession); // ✅ FIX: Remove setSession - session doesn't change
   const [status, setStatus] = useState<VendorStatus>('new');
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
   const [vendorData, setVendorData] = useState<any>(null);
   const [applicationData, setApplicationData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  
+  // ✅ FIX: Prevent multiple status checks causing infinite loops
+  const hasCheckedStatus = useRef(false);
+  const isCheckingStatus = useRef(false);
 
-  // Load vendor status on mount
+  // Load vendor status on mount - run ONCE only
   useEffect(() => {
+    // ✅ FIX: Strict single-run check to prevent infinite loading loop
+    if (hasCheckedStatus.current || isCheckingStatus.current) {
+      console.log('⚠️ [VendorApp] Status check already running or completed, skipping');
+      return;
+    }
+    hasCheckedStatus.current = true;
     checkVendorStatus();
-  }, [session]);
+  }, []); // ✅ FIX: Empty dependency array - only run on mount
 
   const checkVendorStatus = async () => {
+    // ✅ FIX: Prevent concurrent status checks
+    if (isCheckingStatus.current) {
+      console.log('⚠️ [VendorApp] Status check already in progress, skipping');
+      return;
+    }
+    isCheckingStatus.current = true;
     setIsLoading(true);
     
     try {
@@ -60,12 +74,80 @@ export function VendorApp({ initialSession }: VendorAppProps) {
       const storedStatus = localStorage.getItem('vendorApplicationStatus');
       console.log('📊 [VendorApp] Stored onboarding status from localStorage:', storedStatus);
       
-      // If status is APPROVED or ACTIVATED, show dashboard directly (skip approved setup screen)
+      // ✅ FIX: FAST PATH - If status is APPROVED or ACTIVATED, show dashboard immediately
+      // This prevents the infinite loading loop by short-circuiting before API calls
       if (storedStatus === 'APPROVED' || storedStatus === 'ACTIVATED') {
-        console.log('✅ [VendorApp] Vendor is approved/activated, showing dashboard directly');
-        setStatus('active'); // Set to 'active' to show dashboard, not 'approved' which shows setup screen
+        console.log('✅ [VendorApp] Vendor is approved/activated, showing dashboard directly (FAST PATH)');
+        
+        // Load vendor data from localStorage for immediate display
+        const storedVendor = localStorage.getItem('vendorData');
+        const storedVendorId = localStorage.getItem('vendorId');
+        
+        if (storedVendor) {
+          try {
+            const vendor = JSON.parse(storedVendor);
+            vendor.isActive = true;
+            vendor.status = 'active';
+            setVendorData(vendor);
+            
+            // ✅ CRITICAL FIX: Fetch profile in background to update vendorId if needed
+            // This ensures we get the correct vendors table ID (not vendor_identity ID)
+            if (storedVendorId) {
+              apiClient.get<any>(`/vendor/${storedVendorId}/profile`)
+                .then((profileResponse) => {
+                  const profileData = profileResponse?.data || profileResponse;
+                  if (profileData?.success && profileData?.vendor) {
+                    const profileVendor = profileData.vendor;
+                    const correctVendorId = profileVendor.id || storedVendorId;
+                    
+                    // ✅ CRITICAL FIX: ALWAYS merge profile data to get roleId and capabilities
+                    // Preserve address and vendorConfiguration from localStorage when profile returns null/undefined
+                    // (on reload, profile API can omit these and overwriting would hide address + flip to solo UI)
+                    const updatedVendor = { 
+                      ...vendor, 
+                      ...profileVendor,
+                      id: correctVendorId,
+                      roleId: profileVendor.role_id ?? profileVendor.roleId ?? vendor.roleId,
+                      role_id: profileVendor.role_id ?? profileVendor.roleId ?? vendor.role_id,
+                      roleName: profileVendor.roleName ?? profileVendor.role_name ?? vendor.roleName ?? vendor.role_name,
+                      role_name: profileVendor.role_name ?? profileVendor.roleName ?? vendor.role_name ?? vendor.roleName,
+                      isActive: true,
+                      status: 'active',
+                      // Preserve from localStorage when profile omits or nulls (prevents reload bug)
+                      address: (profileVendor.address != null && profileVendor.address !== '') ? profileVendor.address : (vendor.address ?? profileVendor.address),
+                      vendorConfiguration: (profileVendor.vendorConfiguration ?? profileVendor.vendor_configuration) ?? (vendor.vendorConfiguration ?? vendor.vendor_configuration),
+                    };
+                    
+                    console.log('✅ [VendorApp] FAST PATH: Merging profile data with roleId:', updatedVendor.roleId || updatedVendor.role_id);
+                    
+                    // Update localStorage
+                    localStorage.setItem('vendorId', correctVendorId);
+                    localStorage.setItem('vendorData', JSON.stringify(updatedVendor));
+                    
+                    // Update roleId in localStorage
+                    const roleId = profileVendor.role_id || profileVendor.roleId;
+                    if (roleId) {
+                      localStorage.setItem('vendorRole', roleId);
+                      console.log('✅ [VendorApp] FAST PATH: Updated vendorRole to', roleId);
+                    }
+                    
+                    // ✅ CRITICAL: Update state to trigger re-render with roleId
+                    setVendorData(updatedVendor);
+                  }
+                })
+                .catch((err) => {
+                  console.warn('⚠️ [VendorApp] FAST PATH: Could not fetch profile for ID update:', err);
+                });
+            }
+          } catch (e) {
+            console.warn('⚠️ [VendorApp] Could not parse stored vendor data');
+          }
+        }
+        
+        setStatus('active');
         setIsLoading(false);
-        // Don't return - continue to set vendorData so dashboard can render
+        isCheckingStatus.current = false;
+        return; // ✅ FIX: Return early to prevent further API calls
       }
       
       // Fetch onboarding status from API (correct endpoint)
@@ -85,41 +167,6 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         
         // ✅ CRITICAL: Check existing status - don't overwrite ACTIVATED/APPROVED with lower status
         const existingStatus = localStorage.getItem('vendorApplicationStatus');
-        
-        // ✅ CRITICAL: Detect staff members - check multiple conditions:
-        // 1. responseData.is_staff (explicit flag from backend)
-        // 2. identity.user_type === 'staff' (NEW: direct user_type check)
-        // 3. responseData.staff_info exists
-        // 4. identity.vendor_id exists AND (identity.metadata?.staff_id OR identity.metadata?.created_via === 'staff_login')
-        const isStaffMember = !!(
-          responseData.is_staff || // Explicit flag from backend
-          identity.user_type === 'staff' || // ✅ NEW: Direct user_type check
-          responseData.staff_info || // Staff info object exists
-          (identity.vendor_id && identity.metadata?.staff_id) || // Has staff_id in metadata
-          (identity.vendor_id && identity.metadata?.created_via === 'staff_login') || // Created via staff login
-          (identity.vendor_id && identity.metadata?.created_via === 'staff_onboarding_status') || // Created via staff onboarding status
-          (identity.vendor_id && identity.metadata?.created_via === 'staff_creation') // ✅ NEW: Created during staff creation
-        );
-        
-        if (isStaffMember) {
-          console.log('📊 [VendorApp] Detected staff member:', {
-            is_staff: responseData.is_staff,
-            user_type: identity.user_type,
-            staff_info: responseData.staff_info,
-            vendor_id: identity.vendor_id,
-            metadata: identity.metadata,
-            current_status: onboardingStatus
-          });
-          
-          // ✅ CRITICAL: Force ACTIVATED for staff members (they should never see role selection)
-          onboardingStatus = 'ACTIVATED'; // Always force for staff
-          console.log('✅ [VendorApp] Forcing ACTIVATED for staff member');
-          
-          // ✅ Store staff flag in localStorage for render logic
-          localStorage.setItem('isStaffMember', 'true');
-        } else {
-          localStorage.removeItem('isStaffMember');
-        }
         
         // ✅ CRITICAL FIX: Don't overwrite ACTIVATED/APPROVED with INIT or lower status
         if (onboardingStatus) {
@@ -225,10 +272,6 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           businessName: identity.business_name || identity.full_name || application?.application_payload?.businessName || 'Vendor',
           fullName: identity.full_name || identity.business_name || 'Vendor',
           address: identity.address || application?.application_payload?.address || 'India',
-          // ✅ NEW: Store staff detection for render logic
-          is_staff: isStaffMember,
-          staff_info: responseData.staff_info || null,
-          vendor_id: identity.vendor_id || responseData.staff_info?.vendor_id || null,
         };
         
         // Add application data if exists
@@ -270,12 +313,12 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           vendorData.isActive = true;
           vendorData.status = 'active';
         } else if (onboardingStatus === 'APPROVED') {
-          // ✅ FIX: Show dashboard directly for APPROVED vendors (not approved setup screen)
-          console.log('✅ [VendorApp] Vendor is APPROVED, showing dashboard directly');
-          setStatus('active'); // Set to 'active' to show dashboard, not 'approved' which shows setup screen
-          vendorData.isActive = true; // Approved vendors are active
-          vendorData.status = 'active';
-          // Continue to set vendorData - don't return early
+          // Wireframe: Show "You're approved" screen with Get Started, then dashboard
+          console.log('✅ [VendorApp] Vendor is APPROVED, showing approved setup screen (Get Started)');
+          setStatus('approved');
+          vendorData.isActive = true;
+          vendorData.status = 'approved';
+          // Don't set to 'active' here - user must click Get Started first
         } else if (onboardingStatus === 'UNDER_REVIEW') {
           setStatus('pending');
           vendorData.status = 'pending';
@@ -302,31 +345,14 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           });
         } else if (onboardingStatus === 'FORM_PENDING' || onboardingStatus === 'ROLE_PENDING') {
           // Still in onboarding
-          // ✅ FIX: If staff member with selected_role_id, skip role selection and go to onboarding form
-          if (isStaffMember && identity.selected_role_id) {
-            console.log('✅ [VendorApp] Staff member with role, skipping role selection, showing onboarding form');
-            setStatus('new');
-            setSelectedRole(identity.selected_role_id);
+          setStatus('new');
+          if (identity.selected_role_id && role) {
+            setSelectedRole(role.id || role.name);
             setShowOnboarding(true);
-          } else {
-            setStatus('new');
-            if (identity.selected_role_id && role) {
-              setSelectedRole(role.id || role.name);
-              setShowOnboarding(true);
-            }
           }
         } else {
           // INIT or other
-          // ✅ FIX: If staff member with selected_role_id, don't show role selection - go directly to dashboard
-          if (isStaffMember && identity.selected_role_id) {
-            console.log('✅ [VendorApp] Staff member with role and INIT status, forcing ACTIVATED and showing dashboard');
-            onboardingStatus = 'ACTIVATED';
-            setStatus('active');
-            vendorData.isActive = true;
-            vendorData.status = 'active';
-          } else {
-            setStatus('new');
-          }
+          setStatus('new');
         }
         
         // Store vendor data
@@ -334,6 +360,11 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         localStorage.setItem('vendorData', JSON.stringify(vendorData));
         localStorage.setItem('vendorApplicationStatus', onboardingStatus);
         localStorage.setItem('vendorId', vendorData.id || identity.id);
+        const bizName = (vendorData as any).business_name || (vendorData as any).businessName || '';
+        if (bizName) {
+          localStorage.setItem('vendorName', bizName);
+          localStorage.setItem('businessName', bizName);
+        }
         
         console.log('✅ [VendorApp] Status updated:', {
           onboardingStatus,
@@ -396,6 +427,7 @@ export function VendorApp({ initialSession }: VendorAppProps) {
       }
     } finally {
       setIsLoading(false);
+      isCheckingStatus.current = false;
     }
   };
 
@@ -480,6 +512,9 @@ export function VendorApp({ initialSession }: VendorAppProps) {
   };
 
   const handleCorrectAndResubmit = () => {
+    // Preserve selected role so dynamic form loads for same role (clarification resubmit)
+    const roleId = vendorData?.roleId || vendorData?.role_id;
+    if (roleId) setSelectedRole(roleId);
     setShowOnboarding(true);
   };
 
@@ -560,17 +595,16 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     );
   }
 
-  // ✅ FIX: Skip approved setup screen - approved vendors go directly to VendorLandingPage (full portal)
-  // VendorLandingPage includes VendorDashboard with all navigation handlers and sub-screens
+  // Approved: show "You're approved" screen with Get Started; on complete → dashboard
   if (status === 'approved' || status === 'approved_services') {
-    console.log('✅ [VendorApp] Approved vendor - showing VendorLandingPage (full portal)');
     return (
-      <VendorLandingPage 
+      <VendorApprovedSetup
         vendorId={vendorData?.id || session.vendorId || ''}
-        phone={session.phone}
-        initialVendorData={vendorData}
-        vendorType={vendorData?.vendorType}
-        serviceStyle={vendorData?.serviceStyle}
+        roleId={vendorData?.roleId || vendorData?.role_id}
+        onComplete={() => {
+          setStatus('active');
+          localStorage.setItem('vendorApplicationStatus', 'ACTIVATED');
+        }}
       />
     );
   }
@@ -725,61 +759,11 @@ export function VendorApp({ initialSession }: VendorAppProps) {
   }
 
   // New Vendor - Role Selection
-  // ✅ FIX: Don't show role selection for staff members (they have vendor_id and selected_role_id)
-  // ✅ IMPROVED: Check is_staff from vendorData OR localStorage (set during checkVendorStatus)
-  const isStaffMember = vendorData?.is_staff || 
-    vendorData?.user_type === 'staff' ||
-    (typeof window !== 'undefined' && localStorage.getItem('isStaffMember') === 'true') ||
-    (vendorData?.vendor_id && vendorData?.roleId);
-  
-  console.log('📊 [VendorApp] Render decision:', { 
-    status, 
-    selectedRole, 
-    isStaffMember, 
-    vendorData_is_staff: vendorData?.is_staff,
-    vendorData_user_type: vendorData?.user_type,
-    localStorage_isStaffMember: typeof window !== 'undefined' ? localStorage.getItem('isStaffMember') : null,
-    vendorData_vendor_id: vendorData?.vendor_id,
-    vendorData_roleId: vendorData?.roleId
-  });
-  
-  if (status === 'new' && !selectedRole && !isStaffMember) {
+  if (status === 'new' && !selectedRole) {
     return <VendorRoleSelection onRoleSelect={handleRoleSelect} />;
   }
 
-  // ✅ FIX: If staff member but status is 'new', force to 'active' (staff should never see role selection)
-  if (status === 'new' && isStaffMember) {
-    console.log('✅ [VendorApp] Staff member detected in render, forcing to active status');
-    // Use useEffect to avoid state update during render
-    setTimeout(() => {
-      if (vendorData?.roleId) {
-        setSelectedRole(vendorData.roleId);
-      }
-      setStatus('active');
-    }, 0);
-    return (
-      <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading staff profile...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Default: Show role selection (only for non-staff)
-  if (!isStaffMember) {
-    return <VendorRoleSelection onRoleSelect={handleRoleSelect} />;
-  }
-
-  // Staff member fallback: Show loading while transitioning to dashboard
-  return (
-    <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto flex items-center justify-center">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-        <p className="text-gray-600">Loading staff profile...</p>
-      </div>
-    </div>
-  );
+  // Default: Show role selection
+  return <VendorRoleSelection onRoleSelect={handleRoleSelect} />;
 }
 

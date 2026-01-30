@@ -147,11 +147,17 @@ export default function MarketingPromotionsTab() {
 		displayType: "spotlight",
 	});
 
-	// UI Config State
+	// UI Config State - Service Launch by Geography
 	const [uiConfig, setUiConfig] = useState<any[]>([]);
-	const [selectedRole, setSelectedRole] = useState("veterinarian");
+	const [selectedRole, setSelectedRole] = useState("veterinarian"); // Legacy - kept for backward compatibility
 	const [availableRoles, setAvailableRoles] = useState<any[]>([]);
 	const [configLoading, setConfigLoading] = useState(false);
+	
+	// New Geographic Selection State
+	const [selectedState, setSelectedState] = useState<string>("");
+	const [selectedCity, setSelectedCity] = useState<string>("");
+	const [availableStates, setAvailableStates] = useState<{code: string; name: string}[]>([]);
+	const [availableCities, setAvailableCities] = useState<string[]>([]);
 
 	
 
@@ -173,12 +179,23 @@ export default function MarketingPromotionsTab() {
 		}
 	}, [activeTab]);
 
-	// Reload config when role changes or tab is opened
+	// Reload config when geography changes or tab is opened
 	useEffect(() => {
-		if (activeTab === "ui-config" && selectedRole) {
-			loadUiConfig();
+		if (activeTab === "ui-config") {
+			loadServiceLaunchConfig();
 		}
-	}, [selectedRole, activeTab]);
+	}, [selectedState, selectedCity, activeTab]);
+
+	// Load cities when state changes
+	useEffect(() => {
+		if (selectedState) {
+			loadCitiesForState(selectedState);
+			setSelectedCity(""); // Reset city when state changes
+		} else {
+			setAvailableCities([]);
+			setSelectedCity("");
+		}
+	}, [selectedState]);
 
 	// Safety net: Ensure uiConfig is always an array
 	useEffect(() => {
@@ -221,6 +238,97 @@ export default function MarketingPromotionsTab() {
 		} catch (error) {
 			console.error("Error loading roles:", error);
 			setAvailableRoles([]); // Set to empty array on error
+		}
+	};
+
+	// ===========================
+	// SERVICE LAUNCH CONFIG (NEW GEOGRAPHY-BASED)
+	// ===========================
+
+	const loadServiceLaunchConfig = async () => {
+		setConfigLoading(true);
+		setUiConfig([]);
+		try {
+			// Build query params for geography
+			const params = new URLSearchParams();
+			if (selectedState) params.append('stateCode', selectedState);
+			if (selectedCity) params.append('city', selectedCity);
+			
+			const data = await apiClient.get(`/config/service-launch?${params.toString()}`);
+			
+			console.log('[loadServiceLaunchConfig] Response:', data);
+			
+			if (data && typeof data === 'object' && (data as any).success) {
+				const services = (data as any).services || [];
+				// Store available states from response
+				if ((data as any).availableStates) {
+					setAvailableStates((data as any).availableStates);
+				}
+				setUiConfig(Array.isArray(services) ? services : []);
+			} else {
+				setUiConfig([]);
+			}
+		} catch (error) {
+			console.error("Error loading service launch config:", error);
+			toast.error("Failed to load service launch configuration");
+			setUiConfig([]);
+		} finally {
+			setConfigLoading(false);
+		}
+	};
+
+	const loadCitiesForState = async (stateCode: string) => {
+		try {
+			const data = await apiClient.get(`/config/service-launch/cities?stateCode=${stateCode}`);
+			if (data && (data as any).success) {
+				setAvailableCities((data as any).cities || []);
+			} else {
+				setAvailableCities([]);
+			}
+		} catch (error) {
+			console.error("Error loading cities:", error);
+			setAvailableCities([]);
+		}
+	};
+
+	const handleUpdateServiceLaunch = async (serviceId: string, status: string, rolloutPercentage: number = 100) => {
+		try {
+			await apiClient.put("/config/service-launch/geography", {
+				serviceId,
+				stateCode: selectedState || undefined,
+				city: selectedCity || undefined,
+				status,
+				rolloutPercentage,
+			});
+			toast.success(`Service "${serviceId}" updated to ${status}${selectedState ? ` for ${selectedState}` : ''}${selectedCity ? ` > ${selectedCity}` : ''}`);
+			// Reload config to reflect changes
+			loadServiceLaunchConfig();
+		} catch (error) {
+			console.error("Error updating service launch:", error);
+			toast.error("Failed to update service launch status");
+		}
+	};
+
+	const handleBulkSaveConfig = async () => {
+		try {
+			if (!Array.isArray(uiConfig)) {
+				toast.error("Invalid configuration format");
+				return;
+			}
+			
+			// Build bulk update payload
+			const services = uiConfig.map(svc => ({
+				serviceId: svc.id || svc.serviceId,
+				defaultStatus: svc.defaultStatus,
+				defaultRolloutPercentage: svc.defaultRolloutPercentage,
+				stateOverrides: svc.stateOverrides,
+			}));
+			
+			await apiClient.put("/config/service-launch", { services });
+			toast.success("Service launch configuration saved");
+		} catch (error) {
+			console.error("Error saving config:", error);
+			toast.error("Failed to save configuration");
 		}
 	};
 
@@ -982,7 +1090,7 @@ export default function MarketingPromotionsTab() {
 											{promo.code}
 										</TableCell>
 										<TableCell className="capitalize">
-											{promo.serviceCategory.replace("_", " ")}
+											{(promo.serviceCategory ?? "").replace("_", " ")}
 										</TableCell>
 										<TableCell>
 											<Switch
@@ -1030,130 +1138,180 @@ export default function MarketingPromotionsTab() {
 						</Card>
 						)}
 
-						{/* UI CONFIG TAB */}
+						{/* UI CONFIG TAB - Service Launch by Geography */}
 						{activeTab === "ui-config" && (
 							<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-								{/* ✅ FIX: Added overflow-visible and relative positioning for dropdown */}
+								{/* Geographic Scope Selection */}
 								<Card className="p-6 col-span-1 h-fit relative overflow-visible">
-									<h3 className="font-semibold mb-4">Configuration Scope</h3>
+									<h3 className="font-semibold mb-4">Geographic Scope</h3>
 									<div className="space-y-4">
-										<div className="relative z-20">
-											<Label className="block text-sm font-medium text-gray-700 mb-2">Target Role</Label>
-											<Select value={selectedRole} onValueChange={setSelectedRole}>
+										{/* State Selector */}
+										<div className="relative z-30">
+											<Label className="block text-sm font-medium text-gray-700 mb-2">State</Label>
+											<Select value={selectedState || "__all__"} onValueChange={(val) => setSelectedState(val === "__all__" ? "" : val)}>
 												<SelectTrigger className="w-full">
-													<SelectValue placeholder="Select a role" />
+													<SelectValue placeholder="All India (Default)" />
 												</SelectTrigger>
-												{/* ✅ FIX: Added position and z-index to SelectContent */}
 												<SelectContent className="max-h-[280px] overflow-y-auto z-50">
-													{Array.isArray(availableRoles) && availableRoles.length > 0 ? (
-														availableRoles.map((role) => (
-															<SelectItem key={role.id} value={role.id}>
-																{role.display_name || role.name}
-															</SelectItem>
-														))
-													) : (
-														<>
-															<SelectItem value="veterinarian">
-																Veterinarian
-															</SelectItem>
-															<SelectItem value="groomer">Groomer</SelectItem>
-															<SelectItem value="walker">Walker</SelectItem>
-															<SelectItem value="trainer">Trainer</SelectItem>
-														</>
-													)}
+													<SelectItem value="__all__">All India (Default)</SelectItem>
+													{availableStates.map((state) => (
+														<SelectItem key={state.code} value={state.code}>
+															{state.name}
+														</SelectItem>
+													))}
 												</SelectContent>
 											</Select>
 										</div>
+										
+										{/* City Selector - Only show when state is selected */}
+										{selectedState && (
+											<div className="relative z-20">
+												<Label className="block text-sm font-medium text-gray-700 mb-2">City</Label>
+												<Select value={selectedCity || "__all__"} onValueChange={(val) => setSelectedCity(val === "__all__" ? "" : val)}>
+													<SelectTrigger className="w-full">
+														<SelectValue placeholder="All Cities in State" />
+													</SelectTrigger>
+													<SelectContent className="max-h-[280px] overflow-y-auto z-50">
+														<SelectItem value="__all__">All Cities in State</SelectItem>
+														{availableCities.map((city) => (
+															<SelectItem key={city} value={city}>
+																{city}
+															</SelectItem>
+														))}
+													</SelectContent>
+												</Select>
+											</div>
+										)}
+										
+										{/* Current Scope Indicator */}
+										<div className="pt-4 border-t">
+											<div className="text-sm font-medium text-gray-700 mb-2">Editing Launch Status For:</div>
+											<div className="bg-blue-50 text-blue-700 px-3 py-2 rounded-lg text-sm font-medium">
+												{selectedCity ? `${selectedCity}, ${selectedState}` : 
+												 selectedState ? `All of ${availableStates.find(s => s.code === selectedState)?.name || selectedState}` : 
+												 'All India (Default)'}
+											</div>
+										</div>
+										
 										<div className="pt-4 border-t text-sm text-gray-500">
-											Use this section to show or hide service buttons on the customer
-											dashboard. Changes reflect immediately in the app.
+											<p className="mb-2"><strong>How it works:</strong></p>
+											<ul className="list-disc list-inside space-y-1 text-xs">
+												<li><strong>Hidden</strong> - Service not visible to customers</li>
+												<li><strong>Coming Soon</strong> - Visible but not bookable</li>
+												<li><strong>Beta</strong> - Available to beta users only</li>
+												<li><strong>Launched</strong> - Fully available to all</li>
+											</ul>
+											<p className="mt-3 text-xs">
+												City overrides State settings. State overrides Default.
+											</p>
 										</div>
 									</div>
 								</Card>
 
+								{/* Services Launch Status */}
 								<Card className="p-6 col-span-2">
 									<div className="flex justify-between items-center mb-6">
-										<h3 className="font-semibold">Dashboard Buttons</h3>
+										<div>
+											<h3 className="font-semibold">Service Launch Status</h3>
+											<p className="text-sm text-gray-500">
+												Control service visibility and booking availability by geography
+											</p>
+										</div>
 										<Button
-											onClick={handleSaveConfig}
+											onClick={handleBulkSaveConfig}
 											disabled={configLoading}
 											className="bg-[#FF8C42] hover:bg-[#FF7A2E]"
 										>
 											<Save className="w-4 h-4 mr-2" />
-											Save Changes
+											Save All Changes
 										</Button>
 									</div>
 
 									{configLoading ? (
-										<div className="text-center py-12">Loading configuration...</div>
+										<div className="text-center py-12">Loading services from catalog...</div>
 									) : (
 										<div className="space-y-4">
 											{(() => {
-												// Double-check uiConfig is an array before mapping
 												if (!Array.isArray(uiConfig)) {
 													console.error('[UI Config Render] uiConfig is not an array!', uiConfig, typeof uiConfig);
 													return null;
 												}
 												if (uiConfig.length === 0) {
-													return null;
+													return (
+														<div className="text-center py-8 text-gray-500">
+															No services found in catalog. Add services in Catalog &amp; Services first.
+														</div>
+													);
 												}
-												return uiConfig.map((btn: any, index: number) => (
+												return uiConfig.map((svc: any) => (
 													<div
-														key={btn.id}
+														key={svc.id || svc.serviceId}
 														className="p-4 border rounded-lg bg-gray-50 space-y-3"
 													>
 														<div className="flex items-center justify-between">
 															<div className="flex items-center gap-3">
-																<div className="w-10 h-10 bg-white rounded-lg border flex items-center justify-center">
-																	<span className="text-xs font-bold text-gray-500">
-																		{btn.icon || "🔘"}
-																	</span>
+																<div className="w-10 h-10 bg-white rounded-lg border flex items-center justify-center text-xl">
+																	{svc.icon || "🔘"}
 																</div>
 																<div className="flex-1">
-																	<div className="font-medium">{btn.label || btn.id}</div>
-																	<div className="text-xs text-gray-500 font-mono">
-																		ID: {btn.id}
+																	<div className="font-medium">{svc.displayName || svc.serviceName || svc.id}</div>
+																	<div className="text-xs text-gray-500">
+																		Category: {svc.categoryName || svc.categoryId || 'N/A'}
 																	</div>
-																	{btn.serviceId && (
-																		<div className="text-xs text-gray-400 font-mono">
-																			Service: {btn.serviceId}
-																		</div>
-																	)}
 																</div>
 															</div>
+															{/* Status Badge */}
 															<div className="flex items-center gap-2">
-																<span
-																	className={`text-xs font-medium ${btn.enabled ? "text-green-600" : "text-gray-400"}`}
-																>
-																	{btn.enabled ? "Visible" : "Hidden"}
-																</span>
-																<Switch
-																	checked={btn.enabled}
-																	onCheckedChange={() => handleToggleService(index)}
-																/>
+																{svc.effectiveStatus === 'launched' && (
+																	<Badge className="bg-green-100 text-green-700">Launched</Badge>
+																)}
+																{svc.effectiveStatus === 'beta' && (
+																	<Badge className="bg-blue-100 text-blue-700">Beta</Badge>
+																)}
+																{svc.effectiveStatus === 'coming_soon' && (
+																	<Badge className="bg-amber-100 text-amber-700">Coming Soon</Badge>
+																)}
+																{svc.effectiveStatus === 'hidden' && (
+																	<Badge className="bg-gray-100 text-gray-500">Hidden</Badge>
+																)}
 															</div>
 														</div>
 														
-														{/* Advanced Configuration */}
+														{/* Launch Status Controls */}
 														<div className="pt-2 border-t space-y-2">
-															<div className="grid grid-cols-2 gap-2 text-xs">
+															<div className="grid grid-cols-2 gap-4 text-xs">
 																<div>
-																	<span className="text-gray-500 block mb-1">Launch Phase:</span>
+																	<span className="text-gray-500 block mb-1">
+																		Launch Status {selectedState ? `(${selectedState}${selectedCity ? ` > ${selectedCity}` : ''})` : '(Default)'}:
+																	</span>
 																	<Select
-																		value={btn.launchPhase || "full"}
-																		onValueChange={(value) => {
-																			const newConfig = [...uiConfig];
-																			newConfig[index].launchPhase = value;
-																			setUiConfig(newConfig);
-																		}}
+																		value={svc.effectiveStatus || "hidden"}
+																		onValueChange={(value) => handleUpdateServiceLaunch(svc.id || svc.serviceId, value, svc.effectiveRolloutPercentage || 100)}
 																	>
 																		<SelectTrigger className="h-8 text-xs">
 																			<SelectValue />
 																		</SelectTrigger>
 																		<SelectContent>
-																			<SelectItem value="coming_soon">Coming Soon</SelectItem>
-																			<SelectItem value="beta">Beta</SelectItem>
-																			<SelectItem value="full">Full Launch</SelectItem>
+																			<SelectItem value="hidden">
+																				<span className="flex items-center gap-2">
+																					<EyeOff className="w-3 h-3" /> Hidden
+																				</span>
+																			</SelectItem>
+																			<SelectItem value="coming_soon">
+																				<span className="flex items-center gap-2">
+																					<Calendar className="w-3 h-3" /> Coming Soon
+																				</span>
+																			</SelectItem>
+																			<SelectItem value="beta">
+																				<span className="flex items-center gap-2">
+																					<Star className="w-3 h-3" /> Beta
+																				</span>
+																			</SelectItem>
+																			<SelectItem value="launched">
+																				<span className="flex items-center gap-2">
+																					<Eye className="w-3 h-3" /> Launched
+																				</span>
+																			</SelectItem>
 																		</SelectContent>
 																	</Select>
 																</div>
@@ -1163,25 +1321,41 @@ export default function MarketingPromotionsTab() {
 																		type="number"
 																		min="0"
 																		max="100"
-																		value={btn.rolloutPercentage || 100}
+																		value={svc.effectiveRolloutPercentage || 100}
 																		onChange={(e) => {
-																			const newConfig = [...uiConfig];
-																			newConfig[index].rolloutPercentage = parseInt(e.target.value) || 100;
-																			setUiConfig(newConfig);
+																			const percentage = parseInt(e.target.value) || 100;
+																			handleUpdateServiceLaunch(svc.id || svc.serviceId, svc.effectiveStatus || 'hidden', percentage);
 																		}}
 																		className="h-8 text-xs"
 																		placeholder="100"
 																	/>
 																</div>
 															</div>
-															{btn.launchPhase === "coming_soon" && (
-																<div className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
-																	⚠️ Service will be blocked from booking
+															
+															{/* Info Messages */}
+															{svc.effectiveStatus === "coming_soon" && (
+																<div className="text-xs text-amber-600 bg-amber-50 p-2 rounded flex items-center gap-2">
+																	<Calendar className="w-3 h-3" />
+																	Service visible as &quot;Coming Soon&quot; - not bookable
 																</div>
 															)}
-															{btn.launchPhase === "beta" && (
-																<div className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
-																	ℹ️ Service available for beta users only
+															{svc.effectiveStatus === "beta" && (
+																<div className="text-xs text-blue-600 bg-blue-50 p-2 rounded flex items-center gap-2">
+																	<Star className="w-3 h-3" />
+																	Service available for beta users only
+																</div>
+															)}
+															{svc.effectiveStatus === "launched" && (
+																<div className="text-xs text-green-600 bg-green-50 p-2 rounded flex items-center gap-2">
+																	<Eye className="w-3 h-3" />
+																	Service fully available for booking
+																</div>
+															)}
+															
+															{/* Show Default/Override Indicator */}
+															{(selectedState || selectedCity) && svc.defaultStatus && (
+																<div className="text-xs text-gray-500 mt-2">
+																	Default status: <span className="font-medium capitalize">{svc.defaultStatus}</span>
 																</div>
 															)}
 														</div>
@@ -1189,29 +1363,23 @@ export default function MarketingPromotionsTab() {
 												));
 											})()}
 											{(() => {
-												// Double-check before showing empty state
+												// Error state handler
 												if (!Array.isArray(uiConfig)) {
 													console.error('[UI Config Empty State] uiConfig is not an array!', uiConfig, typeof uiConfig);
 													return (
 														<div className="text-center py-8 text-gray-500">
 															Configuration error. Please refresh the page.
+															<Button
+																variant="outline"
+																onClick={loadServiceLaunchConfig}
+																className="mt-2 ml-2"
+															>
+																<RotateCcw className="w-4 h-4 mr-2" /> Retry
+															</Button>
 														</div>
 													);
 												}
-												if (uiConfig.length === 0) {
-													return (
-												<div className="text-center py-8 text-gray-500">
-													No configuration found for this role.
-													<Button
-														variant="outline"
-														onClick={loadUiConfig}
-														className="mt-2"
-													>
-														<RotateCcw className="w-4 h-4 mr-2" /> Retry
-													</Button>
-													</div>
-													);
-												}
+												// Empty state is handled above in the mapping
 												return null;
 											})()}
 										</div>

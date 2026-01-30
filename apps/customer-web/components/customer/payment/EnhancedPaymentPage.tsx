@@ -385,8 +385,12 @@ export function EnhancedPaymentPage({
         
         try {
           const bookingRes = await apiClient.post<any>('/bookings/create', bookingPayload);
-          
-          currentBookingId = bookingRes.data?.bookingId || bookingRes.bookingId || bookingRes.booking?.id || bookingRes.id;
+          // P2: Treat 200-with-error as failure (resilient parsing)
+          if (bookingRes?.error || bookingRes?.success === false) {
+            const errMsg = typeof bookingRes?.error === 'string' ? bookingRes.error : (bookingRes?.error?.message ?? bookingRes?.error ?? 'Booking creation failed');
+            throw new Error(errMsg);
+          }
+          currentBookingId = bookingRes.data?.bookingId || bookingRes.bookingId || bookingRes.booking?.id || bookingRes.id || bookingRes.data?.id || bookingRes.booking_id;
           if (!currentBookingId) {
             console.error('❌ Booking response:', bookingRes);
             throw new Error('Failed to create booking: No booking ID returned');

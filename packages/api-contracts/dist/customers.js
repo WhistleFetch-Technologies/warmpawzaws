@@ -16,6 +16,9 @@ exports.UpdateCustomerProfileRequestSchema = zod_1.z.object({
     email: zod_1.z.string().email('Invalid email format').optional(),
     address: zod_1.z.string().max(500, 'Address too long').optional(),
     pincode: zod_1.z.string().regex(/^\d{6}$/, 'Invalid pincode format').optional(),
+    city: zod_1.z.string().max(100, 'City too long').optional(),
+    state: zod_1.z.string().max(100, 'State too long').optional(),
+    landmark: zod_1.z.string().max(200, 'Landmark too long').optional(),
     photo: zod_1.z.string().url('Invalid photo URL').optional(),
 });
 exports.AddPetRequestSchema = zod_1.z.object({

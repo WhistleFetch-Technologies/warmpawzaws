@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Utensils, Calendar, MapPin, Package } from 'lucide-react';
+import { Utensils, Calendar, MapPin, Package, ArrowLeft, Key, Eye, EyeOff, Copy, Check, Phone, User, Truck, AlertCircle, CheckCircle } from 'lucide-react';
+import { PolicyDisplay } from '../shared/PolicyDisplay';
+import { toast } from 'sonner';
 
 interface MealPlanBookingFlowProps {
   vendorId: string;
@@ -50,6 +52,16 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // Order tracking state
+  const [orderId, setOrderId] = useState<string | null>(null);
+  const [orderStatus, setOrderStatus] = useState<string | null>(null);
+  const [showTracking, setShowTracking] = useState(false);
+  const [deliveryOtp, setDeliveryOtp] = useState<string | null>(null);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [showOTP, setShowOTP] = useState(false);
+  const [copiedOTP, setCopiedOTP] = useState(false);
+  const [deliveryPartner, setDeliveryPartner] = useState<{ name?: string; phone?: string } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -123,6 +135,49 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
     }
   };
 
+  // Load order tracking status
+  const loadOrderTracking = async (orderIdToTrack: string) => {
+    try {
+      const res = await apiClient.get<any>(`/delivery/${orderIdToTrack}/status`);
+      if (res.success || res.status) {
+        setOrderStatus(res.status || res.delivery_status || 'pending');
+        setDeliveryOtp(res.delivery_otp || res.deliveryOtp || res.otp || null);
+        setOtpVerified(res.otp_verified || res.otpVerified || false);
+        setDeliveryPartner({
+          name: res.partner_name || res.partnerName,
+          phone: res.partner_phone || res.partnerPhone,
+        });
+      }
+    } catch (error) {
+      console.error('Error loading order tracking:', error);
+    }
+  };
+
+  // Copy OTP to clipboard
+  const copyOTP = () => {
+    if (deliveryOtp) {
+      navigator.clipboard.writeText(deliveryOtp);
+      setCopiedOTP(true);
+      toast.success('OTP copied to clipboard');
+      setTimeout(() => setCopiedOTP(false), 2000);
+    }
+  };
+
+  // Check if order is out for delivery
+  const isOutForDelivery = (status: string | null) => {
+    if (!status) return false;
+    return ['out_for_delivery', 'dispatched', 'in_transit', 'arriving', 'on_way', 'picked_up'].includes(status.toLowerCase());
+  };
+
+  // Poll for order status updates when tracking is shown
+  useEffect(() => {
+    if (showTracking && orderId) {
+      loadOrderTracking(orderId);
+      const interval = setInterval(() => loadOrderTracking(orderId), 15000); // Poll every 15 seconds
+      return () => clearInterval(interval);
+    }
+  }, [showTracking, orderId]);
+
   const calculatePrice = (): number => {
     const plan = mealPlans.find(p => p.id === selectedPlan);
     if (!plan) return 0;
@@ -185,7 +240,8 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
         throw new Error(orderResponse.error || 'Failed to create order');
       }
 
-      const orderId = orderResponse.order.id || orderResponse.order_id;
+      const newOrderId = orderResponse.order.id || orderResponse.order_id;
+      setOrderId(newOrderId);
 
       // Handle payment if amount > 0
       if (totalAmount > 0) {
@@ -227,12 +283,17 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
                   razorpay_order_id: response.razorpay_order_id,
                   razorpay_payment_id: response.razorpay_payment_id,
                   razorpay_signature: response.razorpay_signature,
-                  order_id: orderId,
+                  order_id: newOrderId,
                   order_type: 'meal_plan',
                 });
 
+                // Show tracking after successful payment
+                setShowTracking(true);
+                loadOrderTracking(newOrderId);
+                toast.success('Order placed successfully!');
+                
                 if (onSuccess) {
-                  onSuccess(orderId);
+                  onSuccess(newOrderId);
                 }
               } catch (err: any) {
                 console.error('Payment verification failed:', err);
@@ -261,8 +322,12 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
         }
       } else {
         // Free order - no payment needed
+        setShowTracking(true);
+        loadOrderTracking(newOrderId);
+        toast.success('Order placed successfully!');
+        
         if (onSuccess) {
-          onSuccess(orderId);
+          onSuccess(newOrderId);
         }
       }
     } catch (err: any) {
@@ -281,6 +346,177 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
   }
 
   const selectedPlanData = mealPlans.find(p => p.id === selectedPlan);
+
+  // Show tracking view after order is placed
+  if (showTracking && orderId) {
+    return (
+      <div className="max-w-2xl mx-auto p-4">
+        <button
+          onClick={() => setShowTracking(false)}
+          className="text-gray-600 hover:text-gray-900 mb-4 flex items-center gap-2"
+        >
+          <ArrowLeft size={20} />
+          Back to Order Form
+        </button>
+
+        <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+          <Package className="text-orange-500" size={28} />
+          Order Status
+        </h2>
+
+        {/* Order Status Card */}
+        <div className="bg-white rounded-xl p-6 shadow-sm mb-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-sm text-gray-500">Order ID</p>
+              <p className="font-semibold text-gray-900">#{orderId.slice(-8)}</p>
+            </div>
+            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+              orderStatus === 'delivered' ? 'bg-green-100 text-green-800' :
+              isOutForDelivery(orderStatus) ? 'bg-orange-100 text-orange-800' :
+              'bg-blue-100 text-blue-800'
+            }`}>
+              {orderStatus?.replace('_', ' ').toUpperCase() || 'PENDING'}
+            </span>
+          </div>
+
+          {/* Status Timeline */}
+          <div className="space-y-3">
+            {['placed', 'confirmed', 'preparing', 'out_for_delivery', 'delivered'].map((step, idx) => {
+              const stepOrder = ['placed', 'confirmed', 'preparing', 'out_for_delivery', 'delivered'];
+              const currentIdx = stepOrder.indexOf(orderStatus || 'placed');
+              const isCompleted = idx <= currentIdx;
+              const isCurrent = idx === currentIdx;
+              
+              return (
+                <div key={step} className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                    isCompleted ? 'bg-green-100 text-green-600' :
+                    isCurrent ? 'bg-orange-500 text-white' :
+                    'bg-gray-100 text-gray-400'
+                  }`}>
+                    {isCompleted ? <Check size={16} /> : <span className="text-xs">{idx + 1}</span>}
+                  </div>
+                  <span className={isCompleted ? 'text-gray-900 font-medium' : 'text-gray-500'}>
+                    {step.replace('_', ' ').charAt(0).toUpperCase() + step.replace('_', ' ').slice(1)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Delivery OTP Section - Show when out for delivery */}
+        {isOutForDelivery(orderStatus) && deliveryOtp && !otpVerified && (
+          <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl p-6 shadow-sm mb-4 border-2 border-orange-200">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Key className="w-6 h-6 text-orange-600" />
+                <h3 className="text-lg font-bold text-orange-800">Your Delivery OTP</h3>
+              </div>
+              {deliveryPartner?.name && (
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <User className="w-4 h-4" />
+                    <span>{deliveryPartner.name}</span>
+                  </div>
+                  {deliveryPartner.phone && (
+                    <button
+                      onClick={() => window.location.href = `tel:${deliveryPartner.phone}`}
+                      className="p-2 bg-orange-100 rounded-full hover:bg-orange-200 transition"
+                    >
+                      <Phone className="w-4 h-4 text-orange-600" />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            {/* OTP Display */}
+            <div className="flex justify-center gap-3 mb-4">
+              {deliveryOtp.split('').map((digit, idx) => (
+                <div
+                  key={idx}
+                  className="w-14 h-16 bg-white rounded-xl shadow-sm border-2 border-orange-300 flex items-center justify-center"
+                >
+                  <span className="text-3xl font-bold text-orange-600">
+                    {showOTP ? digit : '•'}
+                  </span>
+                </div>
+              ))}
+            </div>
+            
+            {/* OTP Actions */}
+            <div className="flex justify-center gap-4 mb-4">
+              <button
+                onClick={() => setShowOTP(!showOTP)}
+                className="flex items-center gap-2 px-5 py-2.5 bg-white border border-orange-300 rounded-lg text-orange-700 hover:bg-orange-50 transition font-medium"
+              >
+                {showOTP ? (
+                  <>
+                    <EyeOff className="w-4 h-4" />
+                    Hide OTP
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-4 h-4" />
+                    Show OTP
+                  </>
+                )}
+              </button>
+              <button
+                onClick={copyOTP}
+                className="flex items-center gap-2 px-5 py-2.5 bg-white border border-orange-300 rounded-lg text-orange-700 hover:bg-orange-50 transition font-medium"
+              >
+                {copiedOTP ? (
+                  <>
+                    <Check className="w-4 h-4 text-green-600" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    Copy OTP
+                  </>
+                )}
+              </button>
+            </div>
+            
+            {/* Instructions */}
+            <div className="flex items-start gap-2 text-sm text-orange-700 bg-orange-100/50 rounded-lg p-3">
+              <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+              <p>Share this OTP with the delivery partner <strong>only after receiving your meal plan</strong>. This confirms delivery.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Delivery Confirmed */}
+        {otpVerified && orderStatus === 'delivered' && (
+          <div className="bg-green-50 rounded-xl p-6 shadow-sm mb-4 border border-green-200 text-center">
+            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-3" />
+            <h3 className="text-xl font-bold text-green-800 mb-1">Delivery Confirmed!</h3>
+            <p className="text-green-600">Your meal plan has been delivered successfully.</p>
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="flex gap-4">
+          <button
+            onClick={onCancel}
+            className="flex-1 px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+          >
+            Close
+          </button>
+          <button
+            onClick={() => loadOrderTracking(orderId)}
+            className="flex-1 px-6 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600"
+          >
+            Refresh Status
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto p-4">
@@ -502,6 +738,12 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
             {error}
           </div>
         )}
+
+        {/* ✅ ENRICHED: Policy Display */}
+        <PolicyDisplay 
+          serviceType="nutrition" 
+          showPolicies={['delivery', 'cancellation', 'refund', 'tax']}
+        />
 
         {/* Actions */}
         <div className="flex gap-4">

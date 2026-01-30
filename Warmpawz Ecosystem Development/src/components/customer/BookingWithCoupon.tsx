@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Calendar, MapPin, User, DollarSign, Check } from 'lucide-react';
 import { CouponCodeInput, DiscountSummary } from './CouponCodeInput';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 /**
  * 🛒 BOOKING WITH COUPON INTEGRATION
@@ -82,11 +82,11 @@ export function BookingWithCoupon({
 
       // Step 1: Create booking
       const bookingResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/create`,
+        `${getApiBaseUrl()}/booking/create`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -115,11 +115,11 @@ export function BookingWithCoupon({
       // Step 2: Apply coupon if one was used
       if (appliedCoupon) {
         await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/coupons/apply`,
+          `${getApiBaseUrl()}/coupons/apply`,
           {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
+              ...getAuthHeaders(),
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -135,11 +135,11 @@ export function BookingWithCoupon({
 
       // Step 3: Initiate payment
       const paymentResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/payment/initiate`,
+        `${getApiBaseUrl()}/payment/initiate`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

@@ -4,12 +4,12 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../utils/api-config';
 import { cacheManager } from '../utils/cache-manager';
 import PerformanceMonitor from '../utils/performance-monitor';
 import Analytics from '../utils/analytics';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 export interface VendorData {
   id: string;
@@ -56,7 +56,7 @@ export function useVendorData(vendorId?: string) {
 
       // Fetch from API
       const response = await fetch(`${API_BASE}/vendor/${vendorId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (!response.ok) {
@@ -104,7 +104,7 @@ export function useVendorByPhone(phone?: string) {
       const response = await fetch(`${API_BASE}/vendor/by-phone`, {
         method: 'POST',
         headers: { 
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ phone })
@@ -138,7 +138,7 @@ export function useUpdateVendor(vendorId: string) {
       const response = await fetch(`${API_BASE}/vendor/${vendorId}`, {
         method: 'PATCH',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(updates)

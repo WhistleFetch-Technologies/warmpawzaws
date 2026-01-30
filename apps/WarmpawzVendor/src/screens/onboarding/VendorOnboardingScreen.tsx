@@ -137,10 +137,16 @@ export function VendorOnboardingScreen({
               placeholder={field.placeholder}
               value={value}
               onChangeText={(text) => {
-                setFormData({ ...formData, [field.id]: text });
-                if (errors[field.id]) {
-                  setErrors({ ...errors, [field.id]: '' });
-                }
+                // ✅ FIX: Use functional state updates to avoid stale closure issues
+                setFormData(prev => ({ ...prev, [field.id]: text }));
+                setErrors(prev => {
+                  if (prev[field.id]) {
+                    const updated = { ...prev };
+                    delete updated[field.id];
+                    return updated;
+                  }
+                  return prev;
+                });
               }}
               keyboardType={field.type === 'email' ? 'email-address' : field.type === 'tel' ? 'phone-pad' : 'default'}
               autoCapitalize={field.type === 'email' ? 'none' : 'words'}
@@ -161,10 +167,16 @@ export function VendorOnboardingScreen({
               placeholder={field.placeholder}
               value={value}
               onChangeText={(text) => {
-                setFormData({ ...formData, [field.id]: text });
-                if (errors[field.id]) {
-                  setErrors({ ...errors, [field.id]: '' });
-                }
+                // ✅ FIX: Use functional state updates to avoid stale closure issues
+                setFormData(prev => ({ ...prev, [field.id]: text }));
+                setErrors(prev => {
+                  if (prev[field.id]) {
+                    const updated = { ...prev };
+                    delete updated[field.id];
+                    return updated;
+                  }
+                  return prev;
+                });
               }}
               multiline
               numberOfLines={4}
@@ -190,10 +202,16 @@ export function VendorOnboardingScreen({
                     value === option.value && styles.selectOptionSelected,
                   ]}
                   onPress={() => {
-                    setFormData({ ...formData, [field.id]: option.value });
-                    if (errors[field.id]) {
-                      setErrors({ ...errors, [field.id]: '' });
-                    }
+                    // ✅ FIX: Use functional state updates to avoid stale closure issues
+                    setFormData(prev => ({ ...prev, [field.id]: option.value }));
+                    setErrors(prev => {
+                      if (prev[field.id]) {
+                        const updated = { ...prev };
+                        delete updated[field.id];
+                        return updated;
+                      }
+                      return prev;
+                    });
                   }}
                 >
                   <Text
@@ -223,10 +241,16 @@ export function VendorOnboardingScreen({
               value={value.toString()}
               onChangeText={(text) => {
                 const numValue = text ? parseFloat(text) : '';
-                setFormData({ ...formData, [field.id]: numValue });
-                if (errors[field.id]) {
-                  setErrors({ ...errors, [field.id]: '' });
-                }
+                // ✅ FIX: Use functional state updates to avoid stale closure issues
+                setFormData(prev => ({ ...prev, [field.id]: numValue }));
+                setErrors(prev => {
+                  if (prev[field.id]) {
+                    const updated = { ...prev };
+                    delete updated[field.id];
+                    return updated;
+                  }
+                  return prev;
+                });
               }}
               keyboardType="numeric"
             />

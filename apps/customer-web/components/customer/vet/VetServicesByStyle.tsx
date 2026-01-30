@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP-7.1: Vendor discount display
+import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -119,18 +120,20 @@ export function VetServicesByStyle({
           );
         }
         
-        setProviders(providerData);
-        console.log(`✅ [Vet] Loaded ${providerData.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
-      } else {
-        console.warn('⚠️ [Vet] API returned success=false');
-        setProviders([]);
+        // ✅ FIX: If primary endpoint returns providers, use them and exit
+        if (providerData.length > 0) {
+          setProviders(providerData);
+          console.log(`✅ [Vet] Loaded ${providerData.length} provider${vendorId ? ' (filtered)' : 's'} with ${serviceStyle} services`);
+          return;
+        }
+        
+        console.log(`⚠️ [Vet] Primary endpoint returned 0 providers, trying fallback...`);
       }
-    } catch (error) {
-      console.error('❌ [Vet] Error loading services by style:', error);
-      // Try fallback endpoint
+      
+      // Try fallback endpoint (also when primary returns 0 providers)
       try {
         const fallbackResponse = await apiClient.get(
-          `/customer/discover-services?category=${category}&roleId=veterinarian&serviceStyle=${serviceStyle}${locationParams}`
+          `/customer/discover-services?category=${category}&serviceStyle=${serviceStyle}${locationParams}`
         ) as any;
         
         const servicesData = fallbackResponse.vendors || fallbackResponse.services || [];
@@ -287,8 +290,11 @@ export function VetServicesByStyle({
     setSelectedServices(newSelection);
   };
 
+  // ✅ FIX: Pass all selected services to booking, not just the first one
+  // This matches the grooming flow where multiple services can be selected
   const handleBookServices = () => {
     if (selectedServices.size === 0) {
+      // If no services selected, navigate with first service or all services
       if (profileProvider?.services && profileProvider.services.length > 0) {
         handleSelectService(profileProvider, profileProvider.services[0]);
       }
@@ -300,7 +306,34 @@ export function VetServicesByStyle({
     ).filter(Boolean);
 
     if (selectedServicesData.length > 0) {
-      handleSelectService(profileProvider!, selectedServicesData[0]);
+      // ✅ FIX: Pass all selected services, not just the first one
+      // Build booking data similar to GroomingServicesByStyle
+      const firstService = selectedServicesData[0];
+      const bookingData: any = {
+        vendorId: profileProvider!.providerId || profileProvider!.vendorId,
+        vendorName: profileProvider!.name,
+        serviceStyle,
+        selectedServices: selectedServicesData, // ✅ Pass array of selected services
+        // Also include first service for backward compatibility
+        serviceId: firstService?.id || firstService?.serviceId,
+        serviceName: firstService?.name,
+        price: totalPrice, // Total price of all selected services
+        duration: selectedServicesData.reduce((sum, s) => sum + (s?.duration || 0), 0),
+      };
+
+      if (profileProvider!.providerType === 'vendor') {
+        bookingData.vendorId = profileProvider!.providerId;
+        bookingData.vendorName = profileProvider!.name;
+      } else {
+        // Staff or individual provider
+        bookingData.staffId = profileProvider!.providerId;
+        bookingData.staffName = profileProvider!.name;
+        bookingData.vendorId = profileProvider!.vendorId;
+        bookingData.vendorName = profileProvider!.vendorName;
+        bookingData.isIndividualProvider = profileProvider!.isIndividualProvider;
+      }
+
+      onNavigate('vet-booking', bookingData);
     }
   };
 
@@ -345,9 +378,27 @@ export function VetServicesByStyle({
     const description = vendor?.description || facility?.description || `${providerName} provides professional veterinary services.`;
     const specialization = facility?.specialization || vendor?.specialization || 'General Veterinary Care';
 
+    // ✅ FIX: Prepare stats for ServiceDashboardHeader
+    const dashboardStats = [
+      { value: `${providers.length}+`, label: 'Vets' },
+      { value: '1K+', label: 'Bookings' },
+      { value: `${Number(profileProvider.rating).toFixed(1)}`, label: 'Rating' }
+    ];
+
     return (
-      <div>
-        {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      <div className="min-h-screen bg-gray-50">
+        {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
+        <ServiceDashboardHeader
+          serviceName={providerName}
+          serviceSubtitle={specialization}
+          serviceIcon={Stethoscope}
+          iconColor="text-white"
+          stats={dashboardStats}
+          onBack={onBack}
+          showBackButton={true}
+          headerColor="bg-[#FF8C42]"
+        />
+        <div>
 
         {/* Large Hero Photo Gallery - Vet Provider Style */}
         {hasPhotos ? (
@@ -852,17 +903,49 @@ export function VetServicesByStyle({
             </Button>
           </div>
         </div>
-      </div>
-    );
+        </div>
+    </div>
+  );
   }
+
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const getServiceTitle = () => {
+    if (serviceStyle === 'at_center') return 'Vet Clinic';
+    if (serviceStyle === 'at_home') return 'Home Visit';
+    if (serviceStyle === 'tele') return 'Tele Consultation';
+    return serviceTypeName || 'Veterinary Services';
+  };
+  
+  const getServiceSubtitle = () => {
+    if (serviceStyle === 'at_center') return 'Visit our veterinary clinics';
+    if (serviceStyle === 'at_home') return 'Vet comes to you';
+    if (serviceStyle === 'tele') return 'Video consultation with vet';
+    return 'Professional pet healthcare';
+  };
+  
+  const listingStats = [
+    { value: `${providers.length}+`, label: 'Vets' },
+    { value: '1K+', label: 'Bookings' },
+    { value: '4.7', label: 'Rating' }
+  ];
 
   // Listing View Mode (when vendorId not provided or multiple providers)
   return (
-    <div>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+    <div className="min-h-screen bg-gray-50">
+      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
+      <ServiceDashboardHeader
+        serviceName={getServiceTitle()}
+        serviceSubtitle={getServiceSubtitle()}
+        serviceIcon={Stethoscope}
+        iconColor="text-white"
+        stats={listingStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
+      />
       
       {/* Info section */}
-      <div className="px-6 pt-4 pb-2">
+      <div className="max-w-md mx-auto px-6 pt-4 pb-2 bg-white">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-11 h-11 bg-orange-100 rounded-2xl flex items-center justify-center">
             {getStyleIcon()}
@@ -887,7 +970,7 @@ export function VetServicesByStyle({
       </div>
 
       {/* Content */}
-      <div className="px-4 pb-24">
+      <div className="max-w-md mx-auto px-4 pb-24">
         {providers.length === 0 ? (
           <Card className="p-8 text-center bg-white">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">

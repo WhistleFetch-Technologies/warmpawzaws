@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Gift, Check, Calendar, Clock, Star } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface FreeTrialSelectorProps {
@@ -17,7 +17,7 @@ export function FreeTrialSelector({ customerId, vendorId, onTrialBooked }: FreeT
   const [booking, setBooking] = useState(false);
   const [selectedTrial, setSelectedTrial] = useState<string | null>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchFreeTrials();
@@ -30,7 +30,7 @@ export function FreeTrialSelector({ customerId, vendorId, onTrialBooked }: FreeT
         : `${API_BASE}/trainer/free-trials`;
 
       const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {
@@ -58,7 +58,7 @@ export function FreeTrialSelector({ customerId, vendorId, onTrialBooked }: FreeT
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           customerId,

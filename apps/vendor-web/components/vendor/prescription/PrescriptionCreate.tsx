@@ -1,5 +1,22 @@
 'use client';
 
+/**
+ * ============================================================================
+ * PrescriptionCreate - Standalone Prescription Creation Component
+ * ============================================================================
+ * 
+ * Use this component for:
+ * - Creating prescriptions from a dedicated prescription management page
+ * - When you need a full-page prescription creation experience
+ * 
+ * Use VendorPrescriptionModal instead for:
+ * - Creating prescriptions from within an appointment context
+ * - Modal-based prescription creation (preferred UX)
+ * - When you have booking context (bookingId, petId, customerId)
+ * 
+ * @see VendorPrescriptionModal at apps/vendor-web/components/vendor/modals/VendorPrescriptionModal.tsx
+ */
+
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { ArrowLeft, Plus, X, FileText } from 'lucide-react';

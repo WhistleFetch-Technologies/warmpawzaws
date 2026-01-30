@@ -40,6 +40,9 @@ interface UniversalPaymentPageProps {
   // Vendor/Seller
   vendorId: string;
   vendorName: string;
+  vendorAddress?: string; // ✅ NEW: Vendor/clinic address for at_center services
+  staffName?: string; // ✅ NEW: Staff name for at_home services
+  staffPhoto?: string; // ✅ NEW: Staff photo for at_home services
   
   // Schedule (for bookings)
   bookingDate?: string;
@@ -66,6 +69,7 @@ interface UniversalPaymentPageProps {
   baseAmount: number;
   duration?: number;
   quantity?: number;
+  selectedServices?: any[]; // ✅ NEW: Selected services for multi-service bookings
   
   // Customer
   customerPhone: string;
@@ -177,6 +181,7 @@ export function UniversalPaymentPage({
   baseAmount,
   duration,
   quantity = 1,
+  selectedServices, // ✅ FIX: Add missing prop destructuring
   customerPhone,
   customerId,
   onBack,
@@ -234,6 +239,11 @@ export function UniversalPaymentPage({
   // Policy acceptance state
   const [showPolicyModal, setShowPolicyModal] = useState(false);
   const [policyAccepted, setPolicyAccepted] = useState(false);
+  
+  // ✅ NEW: Subscription coverage state
+  const [subscriptionCovered, setSubscriptionCovered] = useState(false);
+  const [activeSubscription, setActiveSubscription] = useState<any>(null);
+  const [checkingSubscription, setCheckingSubscription] = useState(false);
 
   useEffect(() => {
     loadPaymentData();
@@ -243,6 +253,46 @@ export function UniversalPaymentPage({
     loadRazorpayOffers();
     loadPlatformFees();
   }, [customerPhone, baseAmount, category, serviceStyle]);
+  
+  // ✅ NEW: Check if customer has active subscription that covers this booking
+  useEffect(() => {
+    const checkSubscriptionCoverage = async () => {
+      if (type !== 'booking' || !customerId || !vendorId) {
+        return;
+      }
+      
+      setCheckingSubscription(true);
+      
+      try {
+        const coverageRes = await apiClient.post<any>('/subscriptions/check-coverage', {
+          customerId: customerId || customerPhone,
+          vendorId,
+          serviceId: resolvedServiceId || serviceId,
+          serviceStyle,
+          category,
+        });
+        
+        if (coverageRes.success && coverageRes.covered) {
+          console.log('✅ [SUBSCRIPTION] Booking covered by subscription:', coverageRes.subscription);
+          setSubscriptionCovered(true);
+          setActiveSubscription(coverageRes.subscription);
+          
+          // If subscription covers this booking, set amount to 0
+          // The payment will be processed as a subscription booking
+        }
+      } catch (error: any) {
+        // Subscription check failed - proceed with normal payment; surface so it's not silent
+        console.log('ℹ️ [SUBSCRIPTION] No active subscription or check failed:', error.message);
+        setSubscriptionCovered(false);
+        setActiveSubscription(null);
+        toast.info('Subscription check unavailable; you can pay normally.');
+      } finally {
+        setCheckingSubscription(false);
+      }
+    };
+    
+    checkSubscriptionCoverage();
+  }, [type, customerId, vendorId, resolvedServiceId, serviceId, serviceStyle, category, customerPhone]);
 
   useEffect(() => {
     if (showAddressSelection) {
@@ -490,16 +540,25 @@ export function UniversalPaymentPage({
 
   const loadPlatformFees = async () => {
     try {
-      // Load platform and convenience fees from finance settings
+      // Load platform and convenience fees from fee config endpoint
       const feesRes = await apiClient.get<any>(
-        `/admin/finance/fees?serviceStyle=${serviceStyle || ''}&amount=${baseAmount}&type=${type}`
+        `/config/fees?serviceStyle=${serviceStyle || ''}&amount=${baseAmount}&type=${type}`
       );
       
       if (feesRes.success) {
         const platformFee = feesRes.platformFee || 0;
         const convenienceFee = feesRes.convenienceFee || 0;
+        // Delivery fee is usually calculated separately by logistics
         const deliveryFee = serviceStyle === 'at_home' || type === 'order' ? (feesRes.deliveryFee || 0) : 0;
         const packagingFee = type === 'order' ? (feesRes.packagingFee || 0) : 0;
+        
+        console.log('[FEES] Loaded fee configuration:', {
+          platformFee,
+          convenienceFee,
+          deliveryFee,
+          packagingFee,
+          breakdown: feesRes.breakdown,
+        });
         
         setPlatformFees({
           platformFee,
@@ -511,10 +570,13 @@ export function UniversalPaymentPage({
       }
     } catch (error) {
       console.error('Error loading platform fees:', error);
-      // Set default small fees for services
+      // Set default fees for services using same calculation as backend
       if (baseAmount > 0) {
-        const defaultPlatformFee = Math.round(baseAmount * 0.02); // 2% platform fee
-        const defaultConvenienceFee = type === 'booking' ? 9 : 0; // ₹9 convenience for bookings
+        // Default: 2% platform fee with max cap of ₹200
+        let defaultPlatformFee = Math.round((baseAmount * 2) / 100);
+        defaultPlatformFee = Math.min(defaultPlatformFee, 200);
+        // Default: ₹10 convenience fee for bookings
+        const defaultConvenienceFee = type === 'booking' ? 10 : 0;
         setPlatformFees({
           platformFee: defaultPlatformFee,
           convenienceFee: defaultConvenienceFee,
@@ -715,7 +777,9 @@ export function UniversalPaymentPage({
   const totalAfterDiscounts = subtotalAfterDiscounts + finalTax + platformFees.total;
   
   const walletAmount = useWallet && wallet ? Math.min(wallet.balance, totalAfterDiscounts - razorpayOfferDiscount) : 0;
-  const finalAmount = Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
+  
+  // ✅ NEW: If subscription covers this booking, final amount is 0
+  const finalAmount = subscriptionCovered ? 0 : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
 
   const handlePayment = async (skipPolicyCheck: boolean = false) => {
     // Check if policies have been accepted (for bookings)
@@ -899,15 +963,57 @@ export function UniversalPaymentPage({
           }
         }
 
-        // Map serviceStyle to serviceType enum
+        // Map serviceStyle to serviceType enum (must match CreateBookingRequestSchema.serviceType)
+        const validServiceTypes = ['at_vendor', 'at_home', 'online', 'at_center', 'tele', 'hybrid', 'product'] as const;
         const serviceTypeMap: Record<string, string> = {
           'at_home': 'at_home',
           'at_center': 'at_center',
+          'at_vendor': 'at_vendor',
           'tele': 'tele',
-          'ecom': 'product'
+          'online': 'tele',
+          'ecom': 'product',
+          'hybrid': 'hybrid',
+          'product': 'product',
         };
-        const serviceTypeValue = serviceTypeMap[serviceStyle || ''] || serviceStyle || 'at_center';
+        const rawServiceType = serviceTypeMap[serviceStyle || ''] || serviceStyle || 'at_center';
+        const serviceTypeValue = validServiceTypes.includes(rawServiceType as any) ? rawServiceType : 'at_center';
 
+        // ✅ NEW: Check if subscription covers this booking
+        if (subscriptionCovered && activeSubscription) {
+          console.log('📋 Creating subscription-covered booking (0 payment)...');
+          
+          try {
+            const subscriptionBookingRes = await apiClient.post<any>('/subscriptions/create-booking', {
+              subscriptionId: activeSubscription.id,
+              customerId,
+              vendorId,
+              serviceId: finalServiceId,
+              serviceName,
+              bookingDate,
+              bookingTime,
+              serviceType: serviceStyle || 'at_center',
+              petId,
+              petName,
+              customerPhone,
+              address: selectedAddress?.addressLine1 || address?.addressLine1,
+            });
+            
+            if (subscriptionBookingRes.success && subscriptionBookingRes.booking) {
+              toast.success('Booking confirmed with your subscription!');
+              onSuccess(
+                subscriptionBookingRes.booking.id,
+                undefined,
+                subscriptionBookingRes.booking.otp || subscriptionBookingRes.bookingOtp
+              );
+              return;
+            }
+          } catch (subError: any) {
+            console.warn('⚠️ Subscription booking failed, proceeding with normal payment:', subError);
+            // Fall through to normal payment flow
+            setSubscriptionCovered(false);
+          }
+        }
+        
         // Create booking with correct API format
         // ✅ Try all possible booking creation endpoints
         // CRITICAL: Lambda may not be deployed with latest code, try all variations
@@ -927,21 +1033,38 @@ export function UniversalPaymentPage({
         
         // ✅ finalServiceId is already resolved and validated above
 
+        // Normalize bookingTime to HH:MM or HH:MM:SS (backend schema expects this)
+        const timeMatch = typeof bookingTime === 'string' && bookingTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+        const normalizedBookingTime = timeMatch
+          ? (timeMatch[3] !== undefined ? `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}:${timeMatch[3]}` : `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`)
+          : bookingTime;
+
         const bookingPayload = {
           customerId: customerId, // ✅ Required UUID
           vendorId: vendorId, // ✅ Required UUID
           serviceId: finalServiceId, // ✅ Required UUID (resolved above)
           serviceName: serviceName, // ✅ Service name for booking
           bookingDate: bookingDate, // ✅ Format: YYYY-MM-DD
-          bookingTime: bookingTime, // ✅ Format: HH:MM
+          bookingTime: normalizedBookingTime, // ✅ Format: HH:MM or HH:MM:SS
           serviceType: serviceTypeValue, // ✅ Required enum
-          amount: taxBreakdown.total, // ✅ Number
+          amount: taxBreakdown.total, // ✅ Number (schema allows >= 0)
           petId: petId || undefined, // ✅ Optional UUID
           petName: petName || undefined, // ✅ Pet name for booking
           customerPhone: customerPhone, // ✅ Customer phone
           customerName: customerNameValue, // ✅ Customer name
           address: addressValue, // ✅ Optional string
           notes: '', // ✅ Optional string
+          // ✅ NEW: Pass selected services for multi-service bookings
+          selectedServices: selectedServices && selectedServices.length > 0 
+            ? selectedServices.map(s => ({
+                id: s.id || s.serviceId,
+                serviceId: s.serviceId || s.id,
+                name: s.name || s.serviceName,
+                price: s.price || s.custom_price || 0,
+                duration: s.duration || s.duration_minutes || 30,
+                quantity: s.quantity || 1,
+              }))
+            : undefined,
         };
         
         console.log('📋 Creating booking with validated payload:', {
@@ -978,21 +1101,31 @@ export function UniversalPaymentPage({
               continue; // Try next endpoint
             } else {
               // Not a 404, might be validation error - log details and throw
+              const err = error as any;
+              const errorResponse = err?.response ?? err?.responseData ?? err?.responseBody;
               console.error(`❌ ${endpoint} failed with non-404 error:`, error);
-              console.error('❌ Error response:', (error as any)?.response || (error as any)?.responseData);
-              console.error('❌ Error data:', (error as any)?.responseData);
-              console.error('❌ Error status:', (error as any)?.status || (error as any)?.statusCode);
+              console.error('❌ Error response:', errorResponse);
+              console.error('❌ Error status:', err?.status ?? err?.statusCode);
               console.error('❌ Error message:', error?.message);
-              
-              // Extract detailed error message
-              const errorResponse = (error as any)?.response || (error as any)?.responseData;
-              const errorMessage = 
-                errorResponse?.error?.message || 
-                errorResponse?.error || 
-                errorResponse?.message ||
-                error?.message || 
+
+              // Extract message from backend shape: { success: false, error: { code, message, details } }
+              let errorMessage =
+                errorResponse?.error?.message ??
+                (typeof errorResponse?.error === 'string' ? errorResponse.error : null) ??
+                errorResponse?.message ??
+                error?.message ??
                 'Failed to create booking. Please check all required fields and try again.';
-              
+
+              // If backend sent validation errors (Zod), append first path/message for clarity
+              const details = errorResponse?.error?.details ?? errorResponse?.details;
+              const validationErrors = details?.errors;
+              if (Array.isArray(validationErrors) && validationErrors.length > 0) {
+                const first = validationErrors[0];
+                const path = first?.path?.join?.('.') ?? first?.path ?? '';
+                const msg = first?.message ?? '';
+                errorMessage = path ? `${errorMessage} (${path}: ${msg})` : `${errorMessage} — ${msg}`;
+              }
+
               throw new Error(errorMessage);
             }
           }
@@ -1002,6 +1135,12 @@ export function UniversalPaymentPage({
         if (!bookingRes) {
           console.error('❌ All booking creation endpoints failed');
           throw lastError || new Error('All booking creation endpoints returned 404. Lambda may need redeployment.');
+        }
+        
+        // P2: Treat 200-with-error as failure (resilient parsing)
+        if (bookingRes?.error || bookingRes?.success === false) {
+          const errMsg = typeof bookingRes?.error === 'string' ? bookingRes.error : (bookingRes?.error?.message ?? bookingRes?.error ?? 'Booking creation failed');
+          throw new Error(errMsg);
         }
         
         // Handle response format (can be in data.bookingId or bookingId)
@@ -1113,8 +1252,8 @@ export function UniversalPaymentPage({
           throw new Error('Invalid booking ID format. Please try again.');
         }
         
-        // ✅ Validate amount is a positive number
-        if (!paymentPayload.amount || paymentPayload.amount <= 0 || isNaN(paymentPayload.amount)) {
+        // ✅ Validate amount is a non-negative number (0 allowed for full wallet payment)
+        if (paymentPayload.amount == null || paymentPayload.amount < 0 || isNaN(paymentPayload.amount)) {
           console.error('❌ Invalid amount:', paymentPayload.amount);
           throw new Error('Invalid payment amount. Please try again.');
         }
@@ -1206,8 +1345,10 @@ export function UniversalPaymentPage({
             errorMessage = `Payment validation failed: ${validationErrors}`;
             console.error('❌ Validation errors:', errorData.errors);
           } else if (errorData?.error?.message) {
-            // Format: { error: { message: '...' } }
+            // Format: { success: false, error: { code, message, details } } (backend 500)
+            const step = errorData.error?.details?.step;
             errorMessage = errorData.error.message;
+            if (step) errorMessage += ` (step: ${step})`;
           } else if (errorData?.error) {
             // Format: { error: '...' }
             errorMessage = typeof errorData.error === 'string' ? errorData.error : errorData.error.message || errorMessage;

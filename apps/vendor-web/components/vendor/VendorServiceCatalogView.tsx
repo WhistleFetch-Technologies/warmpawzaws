@@ -13,10 +13,11 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { toast } from 'sonner';
 import { authenticatedFetch } from '@/lib/session-manager';
 import { getVendorRoleId, normalizeServiceStyle, isServiceApplicableToRole } from '@/lib/vendor-utils';
+import { getServiceStyleLabel } from '@/lib/service-style-labels';
 
 interface VendorServiceCatalogViewProps {
   vendorId: string;
@@ -25,6 +26,8 @@ interface VendorServiceCatalogViewProps {
   onSelectService?: (service: any) => void;
   mode?: 'browse' | 'multi-select';
   allowedServiceStyles?: ('at_home' | 'at_center' | 'tele')[]; // ✅ NEW: Filter by role config
+  roleId?: string; // ✅ NEW: Direct roleId prop for catalog filtering
+  roleName?: string | null; // ✅ For role-based labels (e.g. "Training center booking")
 }
 
 interface ServiceCatalogItem {
@@ -80,8 +83,11 @@ export function VendorServiceCatalogView({
   onBack,
   onSelectService,
   mode = 'browse',
-  allowedServiceStyles // ✅ NEW: Role-based service style filter
+  allowedServiceStyles, // ✅ NEW: Role-based service style filter
+  roleId: propRoleId, // ✅ NEW: Direct roleId prop
+  roleName: propRoleName // ✅ For role-based labels
 }: VendorServiceCatalogViewProps) {
+  const roleNameForLabels = propRoleName ?? vendorData?.roleName ?? vendorData?.role_name ?? '';
   const [services, setServices] = useState<ServiceCatalogItem[]>([]);
   const [groupedServices, setGroupedServices] = useState<CategoryGroup[]>([]);
   const [vendorServices, setVendorServices] = useState<any[]>([]);
@@ -108,8 +114,22 @@ export function VendorServiceCatalogView({
     try {
       setLoading(true);
 
-      // ✅ Get vendor's roleId for filtering services (using utility)
-      const vendorRoleId = getVendorRoleId(vendorData);
+      // ✅ Get vendor's roleId for filtering services - prefer prop, then try utility, then localStorage
+      let vendorRoleId = propRoleId || getVendorRoleId(vendorData);
+      
+      // ✅ FIX: If roleId still not available, try to get from localStorage
+      if (!vendorRoleId && typeof window !== 'undefined') {
+        const storedVendorData = localStorage.getItem('vendorData');
+        if (storedVendorData) {
+          try {
+            const parsed = JSON.parse(storedVendorData);
+            vendorRoleId = parsed.roleId || parsed.role_id || parsed.selected_role_id;
+          } catch (e) {
+            console.warn('📚 [CATALOG] Failed to parse stored vendorData');
+          }
+        }
+      }
+      
       console.log('📚 [CATALOG] Loading service catalog for roleId:', vendorRoleId);
 
       // ✅ NEW: Try local service catalog first (faster, role-specific)
@@ -125,7 +145,7 @@ export function VendorServiceCatalogView({
             catalogId: svc.id,
             categoryId: (svc.category || 'Uncategorized').toLowerCase().replace(/\s+/g, '_'),
             categoryName: svc.category || 'Uncategorized',
-            subCategoryId: svc.subCategory?.toLowerCase().replace(/\s+/g, '_') || 'general',
+            subCategoryId: (svc.subCategory != null ? String(svc.subCategory).toLowerCase().replace(/\s+/g, '_') : '') || 'general',
             subCategoryName: svc.subCategory || 'General',
             serviceName: svc.name,
             serviceStyle: svc.serviceStyle,
@@ -140,10 +160,12 @@ export function VendorServiceCatalogView({
         setServices(normalizedServices);
       }
 
-      // Load services from admin catalog API - pass roleId if available for better filtering
+      // Load services from service catalog API - pass roleId for better filtering
+      // NOTE: Using /service-catalog/role/:roleId (public endpoint) instead of /admin/service-catalog
+      // which requires admin authentication and causes redirect issues for vendor users
       const catalogUrl = vendorRoleId 
-        ? `/admin/service-catalog?roleId=${vendorRoleId}`
-        : '/admin/service-catalog';
+        ? `/service-catalog/role/${vendorRoleId}`
+        : '/service-catalog/categories';
       
       let servicesData: any = null;
       try {
@@ -303,18 +325,47 @@ export function VendorServiceCatalogView({
               'home_service': 'at_home'
             };
             
-            const allowedStyles = rawStyles.map((style: string) => styleMapping[style] || style);
+            let allowedStyles = rawStyles.map((style: string) => styleMapping[style] || style);
             console.log('📋 [CATALOG] Raw allowed styles from role config:', rawStyles);
             console.log('📋 [CATALOG] Mapped allowed styles:', allowedStyles);
+            
+            // ✅ SOLO PROVIDER ENFORCEMENT: Solo vendors cannot have at_center
+            const isSoloProvider = vendorData?.vendorConfiguration === 'solo' || 
+                                   vendorData?.isSoloProvider === true ||
+                                   vendorData?.is_solo_provider === true ||
+                                   vendorData?.vendor_type === 'solo';
+            if (isSoloProvider) {
+              allowedStyles = allowedStyles.filter((s: string) => s !== 'at_center');
+              console.log('📋 [CATALOG] Solo provider - filtered out at_center. Final styles:', allowedStyles);
+            }
+            
             setRoleAllowedStyles(allowedStyles);
           }
         } catch (roleError) {
           console.warn('⚠️ Failed to load role config, using prop or defaults:', roleError);
-          setRoleAllowedStyles(allowedServiceStyles || ['at_home', 'at_center', 'tele']);
+          let fallbackStyles = allowedServiceStyles || ['at_home', 'at_center', 'tele'];
+          // ✅ SOLO PROVIDER ENFORCEMENT
+          const isSoloProvider = vendorData?.vendorConfiguration === 'solo' || 
+                                 vendorData?.isSoloProvider === true ||
+                                 vendorData?.is_solo_provider === true ||
+                                 vendorData?.vendor_type === 'solo';
+          if (isSoloProvider) {
+            fallbackStyles = fallbackStyles.filter((s: string) => s !== 'at_center');
+          }
+          setRoleAllowedStyles(fallbackStyles);
         }
       } else {
         // Use prop-based allowed styles or defaults
-        setRoleAllowedStyles(allowedServiceStyles || ['at_home', 'at_center', 'tele']);
+        let propStyles = allowedServiceStyles || ['at_home', 'at_center', 'tele'];
+        // ✅ SOLO PROVIDER ENFORCEMENT
+        const isSoloProvider = vendorData?.vendorConfiguration === 'solo' || 
+                               vendorData?.isSoloProvider === true ||
+                               vendorData?.is_solo_provider === true ||
+                               vendorData?.vendor_type === 'solo';
+        if (isSoloProvider) {
+          propStyles = propStyles.filter((s: string) => s !== 'at_center');
+        }
+        setRoleAllowedStyles(propStyles);
       }
       
       // Load roles list for reference
@@ -781,9 +832,9 @@ export function VendorServiceCatalogView({
             const effectiveStyles = roleAllowedStyles.length > 0 ? roleAllowedStyles : (allowedServiceStyles || ['at_home', 'at_center', 'tele']);
             const styleOptions = [
               { value: 'all', label: 'All' },
-              { value: 'at_center', label: 'At Center' },
-              { value: 'at_home', label: 'At Home' },
-              { value: 'tele', label: 'Tele' }
+              { value: 'at_center', label: getServiceStyleLabel(roleNameForLabels, 'at_center') },
+              { value: 'at_home', label: getServiceStyleLabel(roleNameForLabels, 'at_home') },
+              { value: 'tele', label: getServiceStyleLabel(roleNameForLabels, 'tele') }
             ].filter(opt => opt.value === 'all' || effectiveStyles.includes(opt.value));
             
             return styleOptions.map(style => (
@@ -946,9 +997,7 @@ export function VendorServiceCatalogView({
                                       </span>
                                       
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                        {service.serviceStyle === 'at_home' ? 'At Home' : 
-                                         service.serviceStyle === 'at_center' ? 'At Center' : 
-                                         service.serviceStyle === 'tele' ? 'Tele Consultation' : 'Tele'}
+                                        {service.serviceStyle && getServiceStyleLabel(roleNameForLabels, service.serviceStyle)}
                                       </span>
 
                                       {service.duration && (

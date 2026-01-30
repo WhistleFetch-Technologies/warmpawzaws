@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 /**
  * ============================================================================
  * ADMIN ADVANCED ENDPOINTS - PHASES 24-29
@@ -1476,6 +1477,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           name::text as name,
           COALESCE(description::text, '') as description,
           COALESCE(icon::text, '') as icon,
+          COALESCE(icon_color::text, 'text-gray-500') as icon_color,
           COALESCE(display_order::integer, 0) as display_order,
           COALESCE(is_active::boolean, true) as is_active,
           COALESCE(created_at::text, '') as created_at,
@@ -1493,6 +1495,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         name: String(cat.name || ''),
         description: String(cat.description || ''),
         icon: String(cat.icon || ''),
+        icon_color: String(cat.icon_color || 'text-gray-500'),
         display_order: parseInt(cat.display_order) || 0,
         is_active: cat.is_active !== false,
         created_at: String(cat.created_at || ''),
@@ -1537,6 +1540,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               name::text as name,
               COALESCE(description::text, '') as description,
               COALESCE(icon::text, '') as icon,
+              COALESCE(icon_color::text, 'text-gray-500') as icon_color,
               COALESCE(display_order::integer, 0) as display_order,
               COALESCE(is_active::boolean, true) as is_active,
               COALESCE(created_at::text, '') as created_at,
@@ -1553,6 +1557,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             name: String(cat.name || ''),
             description: String(cat.description || ''),
             icon: String(cat.icon || ''),
+            icon_color: String(cat.icon_color || 'text-gray-500'),
             display_order: parseInt(cat.display_order) || 0,
             is_active: cat.is_active !== false,
             created_at: String(cat.created_at || ''),
@@ -1589,7 +1594,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/catalog/categories', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { name, description, icon, status, vendorType, serviceStyle } = body;
+      const { 
+        categoryId, name, description, icon, iconColor, 
+        hasProblemGrid, vendorRoles, status 
+      } = body;
 
       if (!name) {
         return c.json({ success: false, error: 'Category name is required' }, 400);
@@ -1599,14 +1607,17 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const maxOrder = await query('SELECT COALESCE(MAX(display_order), 0) as max_order FROM service_categories').catch(() => ({ rows: [{ max_order: 0 }] }));
       const nextOrder = parseInt(maxOrder.rows[0]?.max_order || '0', 10) + 1;
 
-      // Generate category_id if not provided
-      const categoryId = `cat-${name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`;
+      // Use provided category_id or generate one
+      const finalCategoryId = categoryId || `cat-${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}`;
       
       const newCategory = await insert('service_categories', {
-        category_id: categoryId,
+        category_id: finalCategoryId,
         name,
         description: description || '',
-        icon: icon || '📦',
+        icon: icon || 'Folder',
+        icon_color: iconColor || 'text-gray-500',
+        has_problem_grid: hasProblemGrid || false,
+        vendor_roles: vendorRoles || [],
         display_order: nextOrder,
         is_active: status !== 'inactive',
         created_at: new Date().toISOString(),
@@ -1636,6 +1647,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.name !== undefined) updateData.name = body.name;
       if (body.description !== undefined) updateData.description = body.description;
       if (body.icon !== undefined) updateData.icon = body.icon;
+      if (body.iconColor !== undefined) updateData.icon_color = body.iconColor;
+      if (body.hasProblemGrid !== undefined) updateData.has_problem_grid = body.hasProblemGrid;
+      if (body.vendorRoles !== undefined) updateData.vendor_roles = body.vendorRoles;
       if (body.status !== undefined) updateData.is_active = body.status !== 'inactive';
       if (body.display_order !== undefined) updateData.display_order = parseInt(body.display_order, 10);
 
@@ -2333,16 +2347,39 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           return c.json({ success: false, error: `Invalid item type: ${itemType}` }, 400);
       }
 
-      // Bulk update all items
+      // Define allowed columns per table to prevent SQL injection
+      const ALLOWED_COLUMNS: Record<string, string[]> = {
+        vendors: ['status', 'is_active', 'is_verified', 'commission_rate', 'rating', 'tier_level'],
+        services: ['status', 'is_active', 'price', 'duration', 'category_id'],
+        products: ['is_active', 'price', 'category_id', 'status', 'stock_quantity'],
+      };
+
+      // Validate all update field names against whitelist
+      const allowedCols = ALLOWED_COLUMNS[tableName] || [];
+      const sanitizedUpdateData: Record<string, any> = {};
+      
+      for (const key of Object.keys(updateData)) {
+        if (allowedCols.includes(key)) {
+          sanitizedUpdateData[key] = updateData[key];
+        } else {
+          console.warn(`[SECURITY] Rejected disallowed column in bulk edit: ${key}`);
+        }
+      }
+
+      if (Object.keys(sanitizedUpdateData).length === 0) {
+        return c.json({ success: false, error: 'No valid fields to update' }, 400);
+      }
+
+      // Bulk update all items with sanitized fields
       const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
-      const updateFields = Object.keys(updateData).map((key, i) => `${key} = $${ids.length + i + 1}`).join(', ');
+      const updateFields = Object.keys(sanitizedUpdateData).map((key, i) => `${key} = $${ids.length + i + 1}`).join(', ');
       const updateQuery = `
         UPDATE ${tableName}
         SET ${updateFields}
         WHERE id = ANY(ARRAY[${placeholders}]::uuid[])
       `;
       
-      const params = [...ids, ...Object.values(updateData)];
+      const params = [...ids, ...Object.values(sanitizedUpdateData)];
       await query(updateQuery, params);
 
       return c.json({
@@ -3717,6 +3754,47 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  app.get('/admin/payments/gateways', async (c) => {
+    try {
+      const config = await query('SELECT * FROM payment_gateway_config ORDER BY created_at DESC').catch(async () => {
+        return await query('SELECT * FROM payment_gateway_settings ORDER BY created_at DESC').catch(() => ({ rows: [] }));
+      });
+      const rows = config.rows || [];
+      const gateways: Array<Record<string, unknown>> = [];
+      for (const row of rows) {
+        const data = row.gateway_config
+          ? (typeof row.gateway_config === 'string' ? JSON.parse(row.gateway_config) : row.gateway_config)
+          : row;
+        const razorpay = data.razorpay ?? data;
+        if (razorpay && (razorpay.keyId || razorpay.key_id)) {
+          gateways.push({
+            id: row.id ?? 'razorpay',
+            name: 'Razorpay',
+            type: 'razorpay',
+            keyId: razorpay.keyId ?? razorpay.key_id ?? '',
+            enabled: razorpay.enabled !== false,
+          });
+        }
+      }
+      if (gateways.length === 0 && rows.length > 0) {
+        const first = rows[0];
+        const data = first.gateway_config ? (typeof first.gateway_config === 'string' ? JSON.parse(first.gateway_config) : first.gateway_config) : first;
+        const r = data.razorpay ?? data;
+        gateways.push({
+          id: first.id ?? 'razorpay',
+          name: 'Razorpay',
+          type: 'razorpay',
+          keyId: r?.keyId ?? r?.key_id ?? '',
+          enabled: r?.enabled !== false,
+        });
+      }
+      return c.json({ success: true, gateways });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
   app.get('/admin/payments/gateway-config', async (c) => {
     try {
       // Try payment_gateway_config table first, fallback to payment_gateway_settings
@@ -3977,7 +4055,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.get('/admin/payouts', async (c) => {
     try {
       const payouts = await query('SELECT * FROM payouts ORDER BY created_at DESC LIMIT 50');
-      return c.json({ success: true, payouts: payouts.rows });
+      const rows = (payouts.rows || []).map((row: Record<string, unknown>) => ({
+        ...row,
+        status: row.payout_status ?? row.status ?? 'pending',
+      }));
+      return c.json({ success: true, payouts: rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -3989,11 +4071,27 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const stats = await query(`
         SELECT 
           COUNT(*) as total_payouts,
-          SUM(amount) as total_amount,
-          COUNT(*) FILTER (WHERE status = 'completed') as completed
+          COALESCE(SUM(amount), 0) as total_amount,
+          COUNT(*) FILTER (WHERE payout_status = 'pending') as pending_count,
+          COUNT(*) FILTER (WHERE payout_status = 'processing') as processing_count,
+          COUNT(*) FILTER (WHERE payout_status = 'completed') as completed_count,
+          COALESCE(SUM(amount) FILTER (WHERE payout_status = 'pending'), 0) as pending_amount,
+          COALESCE(SUM(amount) FILTER (WHERE payout_status = 'processing'), 0) as processing_amount,
+          COALESCE(SUM(amount) FILTER (WHERE payout_status = 'completed'), 0) as completed_amount
         FROM payouts
       `);
-      return c.json({ success: true, stats: stats.rows[0] });
+      const row = stats.rows[0] || {};
+      return c.json({
+        success: true,
+        stats: {
+          pendingCount: parseInt(row.pending_count as string, 10) || 0,
+          processingCount: parseInt(row.processing_count as string, 10) || 0,
+          completedCount: parseInt(row.completed_count as string, 10) || 0,
+          pendingAmount: parseFloat(row.pending_amount as string) || 0,
+          processingAmount: parseFloat(row.processing_amount as string) || 0,
+          completedAmount: parseFloat(row.completed_amount as string) || 0,
+        },
+      });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -4781,13 +4879,293 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       await query(bannersMigration);
       console.log('✅ banners table created');
       
+      // Financial tables migration
+      console.log('🔧 Creating financial tables...');
+      
+      // Create vendor_tiers table
+      await query(`
+        CREATE TABLE IF NOT EXISTS vendor_tiers (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tier_name TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL,
+            commission_rate NUMERIC(5, 2) NOT NULL,
+            min_bookings INTEGER DEFAULT 0,
+            min_revenue NUMERIC(12, 2) DEFAULT 0,
+            is_free_tier BOOLEAN DEFAULT false,
+            monthly_fee NUMERIC(10, 2) DEFAULT 0,
+            six_month_fee NUMERIC(10, 2) DEFAULT 0,
+            twelve_month_fee NUMERIC(10, 2) DEFAULT 0,
+            yearly_fee NUMERIC(10, 2) DEFAULT 0,
+            features JSONB DEFAULT '{}',
+            display_order INTEGER DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_vendor_tiers_name ON vendor_tiers(tier_name);
+        INSERT INTO vendor_tiers (tier_name, display_name, commission_rate, min_bookings, min_revenue, is_free_tier, monthly_fee, yearly_fee, display_order) VALUES
+            ('Bronze', 'Bronze', 15, 0, 0, true, 0, 0, 1),
+            ('Silver', 'Silver', 12, 50, 50000, false, 999, 9990, 2),
+            ('Gold', 'Gold', 10, 200, 200000, false, 2499, 24990, 3),
+            ('Platinum', 'Platinum', 8, 500, 500000, false, 4999, 49990, 4)
+        ON CONFLICT (tier_name) DO UPDATE SET 
+            commission_rate = EXCLUDED.commission_rate,
+            min_bookings = EXCLUDED.min_bookings,
+            min_revenue = EXCLUDED.min_revenue,
+            monthly_fee = EXCLUDED.monthly_fee,
+            yearly_fee = EXCLUDED.yearly_fee;
+      `).catch(e => console.log('vendor_tiers:', e.message));
+      console.log('✅ vendor_tiers table created');
+
+      // Create vendor_tier_subscriptions table
+      await query(`
+        CREATE TABLE IF NOT EXISTS vendor_tier_subscriptions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+            tier_id UUID NOT NULL REFERENCES vendor_tiers(id),
+            subscription_type TEXT NOT NULL CHECK (subscription_type IN ('monthly', 'six_month', 'twelve_month', 'yearly')),
+            payment_type TEXT NOT NULL DEFAULT 'upfront' CHECK (payment_type IN ('upfront', 'split', 'settlement_deduction')),
+            total_amount NUMERIC(10, 2) NOT NULL,
+            discount_amount NUMERIC(10, 2) DEFAULT 0,
+            final_amount NUMERIC(10, 2) NOT NULL,
+            split_installments INTEGER,
+            status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'expired', 'cancelled', 'pending_payment')),
+            start_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            end_date DATE NOT NULL,
+            payment_method TEXT DEFAULT 'upfront' CHECK (payment_method IN ('upfront', 'settlement_deduction')),
+            settlement_deduction_installments INTEGER DEFAULT 2,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_vendor_tier_subs_vendor ON vendor_tier_subscriptions(vendor_id);
+      `).catch(e => console.log('vendor_tier_subscriptions:', e.message));
+      console.log('✅ vendor_tier_subscriptions table created');
+
+      // Create tier_upgrade_deductions table
+      await query(`
+        CREATE TABLE IF NOT EXISTS tier_upgrade_deductions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+            subscription_id UUID REFERENCES vendor_tier_subscriptions(id) ON DELETE CASCADE,
+            tier_id UUID REFERENCES vendor_tiers(id),
+            total_amount NUMERIC(10, 2) NOT NULL,
+            recovery_installments INTEGER NOT NULL DEFAULT 2,
+            amount_per_installment NUMERIC(10, 2) NOT NULL,
+            amount_recovered NUMERIC(10, 2) NOT NULL DEFAULT 0,
+            amount_remaining NUMERIC(10, 2) NOT NULL,
+            installments_completed INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled')),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            completed_at TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS idx_tier_upgrade_deductions_vendor ON tier_upgrade_deductions(vendor_id);
+      `).catch(e => console.log('tier_upgrade_deductions:', e.message));
+      console.log('✅ tier_upgrade_deductions table created');
+
+      // Add settlement_breakup columns
+      await query(`
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                         WHERE table_name = 'settlements' AND column_name = 'settlement_breakup') THEN
+            ALTER TABLE settlements ADD COLUMN settlement_breakup JSONB DEFAULT NULL;
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                         WHERE table_name = 'settlements' AND column_name = 'tier_deduction_amount') THEN
+            ALTER TABLE settlements ADD COLUMN tier_deduction_amount NUMERIC(10, 2) DEFAULT 0;
+          END IF;
+        END $$;
+      `).catch(e => console.log('settlements columns:', e.message));
+      console.log('✅ settlements columns added');
+
+      // Create vendor_earnings table
+      await query(`
+        CREATE TABLE IF NOT EXISTS vendor_earnings (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+            booking_id UUID NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+            amount NUMERIC(10, 2) NOT NULL,
+            commission_amount NUMERIC(10, 2) NOT NULL DEFAULT 0,
+            total_amount NUMERIC(10, 2) NOT NULL,
+            commission_rate NUMERIC(5, 2) NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'settled', 'paid_out', 'cancelled')),
+            realized_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            paid_out_at TIMESTAMPTZ,
+            settlement_id UUID REFERENCES settlements(id),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_vendor_earnings_vendor ON vendor_earnings(vendor_id);
+        CREATE INDEX IF NOT EXISTS idx_vendor_earnings_booking ON vendor_earnings(booking_id);
+      `).catch(e => console.log('vendor_earnings:', e.message));
+      console.log('✅ vendor_earnings table created');
+      
       return c.json({ 
         success: true, 
         message: 'Missing tables created successfully',
-        tables: ['service_catalog', 'service_categories', 'banners']
+        tables: ['service_catalog', 'service_categories', 'banners', 'vendor_tiers', 'vendor_tier_subscriptions', 'tier_upgrade_deductions', 'vendor_earnings']
       });
     } catch (error: any) {
       console.error('Error running migrations:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // Create financial tables for tier system
+  app.post('/admin/migrations/create-financial-tables', async (c) => {
+    try {
+      console.log('🔧 Running financial tables migration...');
+      
+      // Create vendor_tiers table
+      await query(`
+        CREATE TABLE IF NOT EXISTS vendor_tiers (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            tier_name TEXT NOT NULL UNIQUE,
+            display_name TEXT NOT NULL,
+            commission_rate NUMERIC(5, 2) NOT NULL,
+            min_bookings INTEGER DEFAULT 0,
+            min_revenue NUMERIC(12, 2) DEFAULT 0,
+            is_free_tier BOOLEAN DEFAULT false,
+            monthly_fee NUMERIC(10, 2) DEFAULT 0,
+            six_month_fee NUMERIC(10, 2) DEFAULT 0,
+            twelve_month_fee NUMERIC(10, 2) DEFAULT 0,
+            yearly_fee NUMERIC(10, 2) DEFAULT 0,
+            features JSONB DEFAULT '{}',
+            display_order INTEGER DEFAULT 0,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_vendor_tiers_name ON vendor_tiers(tier_name);
+        CREATE INDEX IF NOT EXISTS idx_vendor_tiers_order ON vendor_tiers(display_order);
+
+        -- Insert default tiers if not exists
+        INSERT INTO vendor_tiers (tier_name, display_name, commission_rate, min_bookings, min_revenue, is_free_tier, monthly_fee, yearly_fee, display_order) VALUES
+            ('Bronze', 'Bronze', 15, 0, 0, true, 0, 0, 1),
+            ('Silver', 'Silver', 12, 50, 50000, false, 999, 9990, 2),
+            ('Gold', 'Gold', 10, 200, 200000, false, 2499, 24990, 3),
+            ('Platinum', 'Platinum', 8, 500, 500000, false, 4999, 49990, 4)
+        ON CONFLICT (tier_name) DO NOTHING;
+      `);
+      console.log('✅ vendor_tiers table created');
+
+      // Create vendor_tier_subscriptions table
+      await query(`
+        CREATE TABLE IF NOT EXISTS vendor_tier_subscriptions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+            tier_id UUID NOT NULL REFERENCES vendor_tiers(id),
+            subscription_type TEXT NOT NULL CHECK (subscription_type IN ('monthly', 'six_month', 'twelve_month', 'yearly')),
+            payment_type TEXT NOT NULL CHECK (payment_type IN ('upfront', 'split', 'settlement_deduction')),
+            total_amount NUMERIC(10, 2) NOT NULL,
+            discount_amount NUMERIC(10, 2) DEFAULT 0,
+            final_amount NUMERIC(10, 2) NOT NULL,
+            split_installments INTEGER,
+            split_interval_days INTEGER,
+            next_payment_date DATE,
+            next_payment_amount NUMERIC(10, 2),
+            status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'expired', 'cancelled', 'pending_payment')),
+            start_date DATE NOT NULL,
+            end_date DATE NOT NULL,
+            payment_ids UUID[] DEFAULT '{}',
+            payment_method TEXT DEFAULT 'upfront' CHECK (payment_method IN ('upfront', 'settlement_deduction')),
+            settlement_deduction_installments INTEGER DEFAULT 2,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_vendor_tier_subs_vendor ON vendor_tier_subscriptions(vendor_id);
+        CREATE INDEX IF NOT EXISTS idx_vendor_tier_subs_status ON vendor_tier_subscriptions(status);
+      `);
+      console.log('✅ vendor_tier_subscriptions table created');
+
+      // Create tier_upgrade_deductions table
+      await query(`
+        CREATE TABLE IF NOT EXISTS tier_upgrade_deductions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+            subscription_id UUID NOT NULL REFERENCES vendor_tier_subscriptions(id) ON DELETE CASCADE,
+            tier_id UUID NOT NULL REFERENCES vendor_tiers(id),
+            total_amount NUMERIC(10, 2) NOT NULL,
+            recovery_installments INTEGER NOT NULL DEFAULT 2,
+            amount_per_installment NUMERIC(10, 2) NOT NULL,
+            amount_recovered NUMERIC(10, 2) NOT NULL DEFAULT 0,
+            amount_remaining NUMERIC(10, 2) NOT NULL,
+            installments_completed INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled')),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            completed_at TIMESTAMPTZ
+        );
+        CREATE INDEX IF NOT EXISTS idx_tier_upgrade_deductions_vendor ON tier_upgrade_deductions(vendor_id);
+        CREATE INDEX IF NOT EXISTS idx_tier_upgrade_deductions_status ON tier_upgrade_deductions(status);
+      `);
+      console.log('✅ tier_upgrade_deductions table created');
+
+      // Create tier_deduction_transactions table
+      await query(`
+        CREATE TABLE IF NOT EXISTS tier_deduction_transactions (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            deduction_id UUID NOT NULL REFERENCES tier_upgrade_deductions(id) ON DELETE CASCADE,
+            settlement_id UUID NOT NULL REFERENCES settlements(id) ON DELETE CASCADE,
+            vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+            installment_number INTEGER NOT NULL,
+            amount NUMERIC(10, 2) NOT NULL,
+            settlement_gross_amount NUMERIC(10, 2) NOT NULL,
+            settlement_net_amount NUMERIC(10, 2) NOT NULL,
+            description TEXT NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_tier_deduction_transactions_deduction ON tier_deduction_transactions(deduction_id);
+        CREATE INDEX IF NOT EXISTS idx_tier_deduction_transactions_settlement ON tier_deduction_transactions(settlement_id);
+      `);
+      console.log('✅ tier_deduction_transactions table created');
+
+      // Add settlement_breakup and tier_deduction_amount to settlements
+      await query(`
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                         WHERE table_name = 'settlements' AND column_name = 'settlement_breakup') THEN
+            ALTER TABLE settlements ADD COLUMN settlement_breakup JSONB DEFAULT NULL;
+          END IF;
+          
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                         WHERE table_name = 'settlements' AND column_name = 'tier_deduction_amount') THEN
+            ALTER TABLE settlements ADD COLUMN tier_deduction_amount NUMERIC(10, 2) DEFAULT 0;
+          END IF;
+        END $$;
+      `);
+      console.log('✅ settlements table updated with breakup columns');
+
+      // Create vendor_earnings table if not exists
+      await query(`
+        CREATE TABLE IF NOT EXISTS vendor_earnings (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            vendor_id UUID NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+            booking_id UUID NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+            amount NUMERIC(10, 2) NOT NULL,
+            commission_amount NUMERIC(10, 2) NOT NULL DEFAULT 0,
+            total_amount NUMERIC(10, 2) NOT NULL,
+            commission_rate NUMERIC(5, 2) NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'settled', 'paid_out', 'cancelled')),
+            realized_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            paid_out_at TIMESTAMPTZ,
+            settlement_id UUID REFERENCES settlements(id),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_vendor_earnings_vendor ON vendor_earnings(vendor_id);
+        CREATE INDEX IF NOT EXISTS idx_vendor_earnings_booking ON vendor_earnings(booking_id);
+        CREATE INDEX IF NOT EXISTS idx_vendor_earnings_status ON vendor_earnings(status);
+        CREATE INDEX IF NOT EXISTS idx_vendor_earnings_settlement ON vendor_earnings(settlement_id);
+      `);
+      console.log('✅ vendor_earnings table created');
+
+      return c.json({
+        success: true,
+        message: 'Financial tables created successfully',
+        tables: ['vendor_tiers', 'vendor_tier_subscriptions', 'tier_upgrade_deductions', 'tier_deduction_transactions', 'vendor_earnings']
+      });
+    } catch (error: any) {
+      console.error('Error creating financial tables:', error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -5142,6 +5520,92 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const result = await query('UPDATE vendors SET is_active = true, updated_at = NOW() WHERE status = \'approved\' AND is_active = false RETURNING id, phone, business_name');
       return c.json({ success: true, message: 'All approved vendors activated', activated: result.rows.length, vendors: result.rows });
     } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  // ============================================================================
+  // DIAGNOSTIC ENDPOINT: Debug vendor data
+  // ============================================================================
+  app.get('/admin/debug/vendor-status', async (c) => {
+    try {
+      // 1. Count vendors by status
+      const statusCounts = await query(`
+        SELECT status, is_active, COUNT(*) as count
+        FROM vendors
+        GROUP BY status, is_active
+        ORDER BY status, is_active
+      `);
+
+      // 2. Get sample of approved + active vendors
+      const activeVendors = await query(`
+        SELECT 
+          v.id, v.phone, v.business_name, v.status, v.is_active, v.role_id,
+          r.name as role_name, r.display_name as role_display_name,
+          vi.vendor_type as vi_vendor_type,
+          r.config->>'vendorConfiguration' as role_vendor_config
+        FROM vendors v
+        LEFT JOIN roles r ON r.id = v.role_id
+        LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
+        WHERE v.status = 'approved' AND v.is_active = true
+        ORDER BY v.created_at DESC
+        LIMIT 10
+      `);
+
+      // 3. Get sample of approved but NOT active vendors  
+      const approvedNotActive = await query(`
+        SELECT 
+          v.id, v.phone, v.business_name, v.status, v.is_active, v.role_id,
+          r.name as role_name
+        FROM vendors v
+        LEFT JOIN roles r ON r.id = v.role_id
+        WHERE v.status = 'approved' AND (v.is_active = false OR v.is_active IS NULL)
+        ORDER BY v.created_at DESC
+        LIMIT 10
+      `);
+
+      // 4. Get vendor_identity records with vendor_type
+      const vendorIdentities = await query(`
+        SELECT 
+          vi.id, vi.phone, vi.vendor_type, vi.onboarding_status, vi.vendor_id,
+          r.name as role_name, r.config->>'vendorConfiguration' as role_vendor_config
+        FROM vendor_identity vi
+        LEFT JOIN roles r ON r.id = vi.selected_role_id
+        WHERE vi.vendor_type IS NOT NULL AND vi.vendor_type != ''
+        LIMIT 20
+      `);
+
+      // 5. Get roles that are solo type
+      const soloRoles = await query(`
+        SELECT id, name, display_name, config->>'vendorConfiguration' as vendor_config
+        FROM roles
+        WHERE 
+          name LIKE '%_solo' 
+          OR name LIKE 'solo_%' 
+          OR config->>'vendorConfiguration' = 'solo'
+          OR LOWER(display_name) LIKE '%solo%'
+      `);
+
+      // 6. Check if vendor_identity has vendor_id column
+      const viColumns = await query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'vendor_identity' AND column_name = 'vendor_id'
+      `);
+
+      return c.json({
+        success: true,
+        diagnostics: {
+          statusCounts: statusCounts.rows,
+          activeVendorsSample: activeVendors.rows,
+          approvedNotActiveSample: approvedNotActive.rows,
+          vendorIdentitiesWithType: vendorIdentities.rows,
+          soloRoles: soloRoles.rows,
+          vendorIdentityHasVendorIdColumn: viColumns.rows.length > 0
+        }
+      });
+    } catch (error: unknown) {
+      console.error('Debug endpoint error:', error);
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
@@ -6526,10 +6990,15 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       results.push('Created pharmacy_order_broadcasts table');
 
       // Add indexes
-      await query(`CREATE INDEX IF NOT EXISTS idx_pharmacy_order_broadcasts_order_id ON pharmacy_order_broadcasts(order_id)`).catch(() => {});
-      await query(`CREATE INDEX IF NOT EXISTS idx_pharmacy_order_broadcasts_pharmacy_id ON pharmacy_order_broadcasts(pharmacy_id)`).catch(() => {});
-      await query(`CREATE INDEX IF NOT EXISTS idx_pharmacy_order_broadcasts_status ON pharmacy_order_broadcasts(status)`).catch(() => {});
-      results.push('Created indexes');
+      try {
+        await query(`CREATE INDEX IF NOT EXISTS idx_pharmacy_order_broadcasts_order_id ON pharmacy_order_broadcasts(order_id)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_pharmacy_order_broadcasts_pharmacy_id ON pharmacy_order_broadcasts(pharmacy_id)`);
+        await query(`CREATE INDEX IF NOT EXISTS idx_pharmacy_order_broadcasts_status ON pharmacy_order_broadcasts(status)`);
+        results.push('Created indexes');
+      } catch (indexErr) {
+        console.warn('[Admin] Failed to create indexes:', indexErr instanceof Error ? indexErr.message : indexErr);
+        results.push('Index creation skipped (may already exist)');
+      }
 
       // Add columns to orders table for pharmacy flow
       const orderColumns = [
@@ -6552,8 +7021,27 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         { name: 'delivery_address', type: 'JSONB' },
       ];
 
+      // Validate column definitions against allowed patterns (defense in depth)
+      const ALLOWED_COLUMN_NAME_PATTERN = /^[a-z_][a-z0-9_]*$/;
+      const ALLOWED_COLUMN_TYPES = ['UUID', 'TIMESTAMP', 'JSONB', 'VARCHAR(50)', 'VARCHAR(100)', 'VARCHAR(6)', 'DECIMAL(10,2)'];
+      
       for (const col of orderColumns) {
-        await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`).catch(() => {});
+        // Validate column name format
+        if (!ALLOWED_COLUMN_NAME_PATTERN.test(col.name)) {
+          console.error(`[SECURITY] Rejected invalid column name: ${col.name}`);
+          continue;
+        }
+        // Validate column type (extract base type for comparison)
+        const baseType = col.type.split(' ')[0];
+        if (!ALLOWED_COLUMN_TYPES.some(t => col.type.startsWith(t.split(' ')[0]))) {
+          console.error(`[SECURITY] Rejected invalid column type: ${col.type}`);
+          continue;
+        }
+        try {
+          await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
+        } catch (err) {
+          console.warn(`Failed to add column ${col.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
       }
       results.push('Added pharmacy columns to orders table');
 
@@ -6579,14 +7067,14 @@ function createApiGatewayEvent(req: any): any {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'admin-advanced-handler',
     functionVersion: '$LATEST',
   };

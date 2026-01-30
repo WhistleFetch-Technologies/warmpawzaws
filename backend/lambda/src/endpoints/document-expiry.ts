@@ -14,6 +14,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 
@@ -363,9 +364,9 @@ export function registerDocumentExpiryEndpoints(app: Hono) {
       body: '',
       pathParameters: { vendorId: c.req.param('vendorId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'document-expiry', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'document-expiry', functionVersion: '$LATEST' };
     const result = await getVendorDocsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -380,9 +381,9 @@ export function registerDocumentExpiryEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: { documentId: c.req.param('documentId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'document-expiry', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'document-expiry', functionVersion: '$LATEST' };
     const result = await updateDocHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -396,9 +397,9 @@ export function registerDocumentExpiryEndpoints(app: Hono) {
       body: '',
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'document-expiry', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'document-expiry', functionVersion: '$LATEST' };
     const result = await checkExpiryJobHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -412,9 +413,9 @@ export function registerDocumentExpiryEndpoints(app: Hono) {
       body: '',
       pathParameters: {},
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'document-expiry', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'document-expiry', functionVersion: '$LATEST' };
     const result = await adminGetExpiringHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });

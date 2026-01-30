@@ -57,32 +57,45 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
         throw new Error('Customer not found');
       }
 
+      // CreateBookingRequestSchema requires serviceId (UUID). Fetch vendor's walker service when possible.
+      let serviceIdValue: string | undefined;
+      try {
+        const servicesRes = await apiClient.get<any>(`/customer/vendor/${vendorId}/services`) as any;
+        const services = servicesRes?.services ?? servicesRes?.data ?? [];
+        const walkerService = Array.isArray(services) && services.find((s: any) => (s.service_type || s.serviceType || s.category || '').toLowerCase().includes('walk'));
+        serviceIdValue = walkerService?.id ?? walkerService?.serviceId ?? walkerService?.service_id ?? (services[0]?.id ?? services[0]?.serviceId ?? services[0]?.service_id);
+      } catch (_) {
+        /* ignore */
+      }
+      if (!serviceIdValue) {
+        setError('No walker service found for this vendor. Please book from the Walker service page.');
+        setProcessing(false);
+        return;
+      }
+
       const bookingData = {
-        serviceId: 'pet_walker',
-        vendorId,
         customerId,
+        vendorId,
+        serviceId: serviceIdValue,
         serviceType: 'at_home',
-        bookingType: 'scheduled',
         bookingDate: selectedDate,
         bookingTime: selectedTime,
         address: pickupAddress,
+        amount: calculatePrice(),
         notes: JSON.stringify({
           walkType,
           duration,
           petCount,
           specialInstructions,
         }),
-        totalAmount: calculatePrice(),
       };
 
       const bookingResponse = await apiClient.post<any>('/bookings/create', bookingData);
-
-      if (bookingResponse.success && bookingResponse.booking) {
-        if (onSuccess) {
-          onSuccess(bookingResponse.booking.id);
-        }
+      const bid = bookingResponse?.data?.bookingId ?? bookingResponse?.bookingId ?? bookingResponse?.booking?.id ?? bookingResponse?.id;
+      if (bid) {
+        if (onSuccess) onSuccess(bid);
       } else {
-        throw new Error(bookingResponse.error || 'Failed to create booking');
+        throw new Error(bookingResponse?.error || bookingResponse?.data?.error || 'Failed to create booking');
       }
     } catch (err: any) {
       console.error('Error creating booking:', err);

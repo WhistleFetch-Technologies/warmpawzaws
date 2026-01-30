@@ -53,12 +53,28 @@ const KNOWN_ROLE_NAMES: Record<string, string> = {
   'insurance': 'Pet Insurance Provider',
 };
 
+// ============================================================================
+// BASE CAPABILITIES - Available to ALL vendor roles
+// These are horizontal capabilities required for all vendors
+// ============================================================================
+const BASE_CAPABILITIES = [
+  'dashboard',        // Core Operations - Dashboard overview
+  'profile',          // Core Operations - Update vendor profile
+  'earnings',         // Finance & Payments - View earnings
+  'settlements',      // Finance & Payments - View payouts
+  'bank_account',     // Finance & Payments - Manage bank details
+  'notifications',    // Communication - Notifications
+  'reports',          // Operations - Reports and analytics
+  'bank_verification', // Verification - Bank account verification
+];
+
 const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
   'veterinarian': {
     vendorTypes: ['healthcare_provider'],
     serviceStyles: ['at_clinic', 'video_consultation', 'home_visit'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'prescriptions',
       'medical_records',
       'bookings',
@@ -81,6 +97,7 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     serviceStyles: ['at_clinic', 'video_consultation', 'home_visit'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'prescriptions',
       'medical_records',
       'bookings',
@@ -107,6 +124,7 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     serviceStyles: ['at_center', 'at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'bookings',
       'gallery',
       'chat',
@@ -117,13 +135,14 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
       'packages'
     ],
     icon: '✂️',
-    category: 'service_provider',
+    category: 'grooming',
   },
   'pet_boarding': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_center'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'bookings',
       'cctv_access',
       'photo_updates',
@@ -138,13 +157,14 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
       'occupancy_tracking'
     ],
     icon: '🏨',
-    category: 'service_provider',
+    category: 'petcare',
   },
   'pet_resort': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_center'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'bookings',
       'cctv_access',
       'photo_updates',
@@ -159,30 +179,32 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
       'occupancy_tracking'
     ],
     icon: '🏝️',
-    category: 'service_provider',
+    category: 'petcare',
   },
   'pet_walker': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
+    // ✅ Solo-focused role: No packages capability, only custom_services
     capabilities: [
+      ...BASE_CAPABILITIES,
       'gps_tracking',
       'photo_updates',
       'bookings',
       'facility_management',
       'schedule',
       'custom_services',
-      'packages',
       'chat'
     ],
     icon: '🦮',
-    category: 'service_provider',
+    category: 'petcare',
   },
   'pet_trainer': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_home', 'at_center', 'online'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'bookings',
       'progress_tracking',
       'chat',
@@ -193,13 +215,14 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
       'packages'
     ],
     icon: '🎾',
-    category: 'service_provider',
+    category: 'training',
   },
   'pet_behaviorist': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_home', 'at_center', 'video_consultation'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'bookings',
       'progress_tracking',
       'chat',
@@ -211,48 +234,50 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
       'tele_consultation'
     ],
     icon: '🧠',
-    category: 'service_provider',
+    category: 'training',
   },
   'pet_sitter': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
+    // ✅ Solo-focused role: No packages capability, only custom_services
     capabilities: [
+      ...BASE_CAPABILITIES,
       'bookings',
       'photo_updates',
       'chat',
       'facility_management',
       'schedule',
-      'custom_services',
-      'packages',
-      'staff'
+      'custom_services'
     ],
     icon: '🏠',
-    category: 'service_provider',
+    category: 'petcare',
   },
   'pet_taxi': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
+    // ✅ Solo-focused role: No packages capability, only custom_services
     capabilities: [
+      ...BASE_CAPABILITIES,
       'bookings',
       'gps_tracking',
       'emergency',
       'facility_management',
       'schedule',
       'custom_services',
-      'packages',
       'distance_pricing',
       'chat'
     ],
     icon: '🚕',
-    category: 'service_provider',
+    category: 'specialty',
   },
   'pet_products_store': {
     vendorTypes: ['seller'],
     serviceStyles: ['delivery', 'pickup'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'catalog',
       'inventory',
       'orders',
@@ -269,6 +294,7 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     serviceStyles: ['delivery', 'pickup'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'catalog',
       'inventory',
       'prescriptions',
@@ -278,7 +304,11 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
       'schedule',
       'prescription_verification',
       'controlled_substances',
-      'expiry_management'
+      'expiry_management',
+      'order_dispatch',
+      'availability_check',
+      'invoice_generation',
+      'order_broadcast'
     ],
     icon: '💊',
     category: 'healthcare',
@@ -288,6 +318,7 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     serviceStyles: ['at_center'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'bookings',
       'menu',
       'events',
@@ -301,15 +332,17 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
       'chat'
     ],
     icon: '☕',
-    category: 'hospitality',
+    category: 'lifestyle',
   },
   'pet_photographer': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_center', 'at_home', 'outdoor'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'bookings',
       'gallery',
+      'portfolio',
       'staff',
       'facility_management',
       'schedule',
@@ -318,15 +351,17 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
       'chat'
     ],
     icon: '📸',
-    category: 'service_provider',
+    category: 'lifestyle',
   },
   'pet_shelter': {
     vendorTypes: ['service_provider', 'ngo'],
     serviceStyles: ['at_center'],
     pricingControl: { canControlPrice: false, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'adoption',
       'donation',
+      'pet_profiles',
       'events',
       'staff',
       'facility_management',
@@ -334,13 +369,14 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
       'chat'
     ],
     icon: '🏠',
-    category: 'specialist',
+    category: 'specialty',
   },
   'event_organizer': {
     vendorTypes: ['service_provider', 'ngo', 'organization'],
     serviceStyles: ['at_center', 'outdoor'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'events',
       'bookings',
       'staff',
@@ -351,13 +387,14 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
       'packages'
     ],
     icon: '📅',
-    category: 'specialist',
+    category: 'lifestyle',
   },
   'pet_sunset_services': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_center', 'home_visit'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'bookings',
       'memorial',
       'counseling',
@@ -369,22 +406,27 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
       'chat'
     ],
     icon: '🌅',
-    category: 'specialist',
+    category: 'specialty',
   },
   'nutritionist': {
     vendorTypes: ['healthcare_provider', 'service_provider'],
-    serviceStyles: ['at_center', 'video_consultation', 'home_visit'],
+    serviceStyles: ['at_center', 'video_consultation', 'home_visit', 'delivery'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'bookings',
       'chat',
       'staff',
       'tele_consultation',
+      'video_calling',
       'facility_management',
       'schedule',
       'custom_services',
       'packages',
       'meal_plans',
+      'diet_charts',
+      'prescriptions',
+      'delivery',
       'progress_tracking'
     ],
     icon: '🥗',
@@ -395,28 +437,34 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     serviceStyles: ['online', 'at_center'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'chat',
       'staff',
       'facility_management',
       'schedule',
       'policy_management',
-      'claims_management'
+      'claims_management',
+      'insurance_plans'
     ],
     icon: '🛡️',
-    category: 'service_provider',
+    category: 'specialty',
   },
   'pet_ambulance': {
     vendorTypes: ['healthcare_provider', 'service_provider'],
     serviceStyles: ['at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
+    // ✅ Solo-focused role: Primarily solo operators
     capabilities: [
+      ...BASE_CAPABILITIES,
       'bookings',
       'gps_tracking',
+      'live_location',
       'emergency',
       'facility_management',
       'schedule',
       'chat',
-      'emergency_protocols'
+      'emergency_protocols',
+      'custom_services'
     ],
     icon: '🚑',
     category: 'healthcare',
@@ -426,15 +474,42 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     serviceStyles: ['at_center', 'at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'catalog',
+      'pet_profiles',
       'bookings',
       'chat',
       'facility_management',
       'schedule',
-      'custom_services'
+      'custom_services',
+      'gallery'
     ],
     icon: '🐶',
     category: 'retail',
+  },
+  // ============================================================================
+  // DIAGNOSTICS ROLE - For home sample collection services
+  // ============================================================================
+  'diagnostics': {
+    vendorTypes: ['healthcare_provider'],
+    serviceStyles: ['at_home', 'at_center'],
+    pricingControl: { canControlPrice: true, canControlDuration: true },
+    capabilities: [
+      ...BASE_CAPABILITIES,
+      'bookings',
+      'diagnostics',
+      'diagnostic_lab',
+      'medical_records',
+      'gps_tracking',
+      'live_location',
+      'chat',
+      'staff',
+      'facility_management',
+      'schedule',
+      'custom_services'
+    ],
+    icon: '🔬',
+    category: 'healthcare',
   },
 };
 
@@ -856,7 +931,8 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
 export function registerRoleSeedingEndpoints(app: Hono) {
   /**
    * POST /admin/roles/seed
-   * Seed all 20 standard roles with configurations, onboarding forms, and service catalogs
+   * By default (updateOnly=true): only updates existing roles (config, display_name, description); never creates; does not change is_active or is_system_role.
+   * ?updateOnly=false: full seed (create missing roles, update existing, seed forms/catalogs).
    */
   app.post('/admin/roles/seed', async (c) => {
     try {
@@ -864,68 +940,64 @@ export function registerRoleSeedingEndpoints(app: Hono) {
         created: 0,
         updated: 0,
         skipped: 0,
-        formsCreated: 0,
-        catalogsCreated: 0,
         errors: [] as string[],
       };
 
+      // Query param: updateOnly=true = only update existing roles, never create; only touch config/display fields; preserve is_active, is_system_role
+      const updateOnly = (c.req.query('updateOnly') ?? 'true') === 'true';
+
       for (const [roleId, def] of Object.entries(STANDARD_ROLE_DEFINITIONS)) {
         try {
-          // Check if role exists
           const existing = await select('roles', { name: roleId });
-          
-          const roleData: any = {
-            name: roleId,
-            display_name: KNOWN_ROLE_NAMES[roleId] || roleId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
-            description: `Standard ${KNOWN_ROLE_NAMES[roleId] || roleId} role`,
-            is_system_role: true,
-            is_active: true,
-            config: {
-              category: def.category || 'general',
-              icon: def.icon || '🔧',
-              vendorTypes: def.vendorTypes || [],
-              serviceStyles: def.serviceStyles || [],
-              pricingControl: def.pricingControl || {
-                canControlPrice: false,
-                canControlDuration: false,
+
+          if (existing.length === 0) {
+            // Do not create new roles when updateOnly
+            if (updateOnly) {
+              stats.skipped++;
+              continue;
+            }
+            // Legacy full-seed path: create new role (only when updateOnly=false)
+            const roleData: any = {
+              name: roleId,
+              display_name: KNOWN_ROLE_NAMES[roleId] || roleId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+              description: `Standard ${KNOWN_ROLE_NAMES[roleId] || roleId} role`,
+              is_system_role: true,
+              is_active: true,
+              config: {
+                category: def.category || 'general',
+                icon: def.icon || '🔧',
+                vendorTypes: def.vendorTypes || [],
+                serviceStyles: def.serviceStyles || [],
+                pricingControl: def.pricingControl || { canControlPrice: false, canControlDuration: false },
               },
-            },
-          };
-
-          let roleRecordId: string;
-
-          if (existing.length > 0) {
-            // Update existing role
-            await update('roles', { name: roleId }, roleData);
-            roleRecordId = existing[0].id;
-            stats.updated++;
-          } else {
-            // Create new role
+            };
             const newRole = await insert('roles', roleData);
-            roleRecordId = newRole[0].id;
-            
-            // Insert capabilities
-            if (def.capabilities && def.capabilities.length > 0) {
+            if (def.capabilities?.length) {
               for (const capName of def.capabilities) {
-                await insert('role_permissions', {
-                  role_id: roleRecordId,
-                  permission_name: capName,
-                  resource: '*',
-                  action: '*',
-                }).catch(err => console.error(`Error adding capability ${capName} to role ${roleId}:`, err));
+                await insert('role_permissions', { role_id: newRole[0].id, permission_name: capName, resource: '*', action: '*' }).catch(() => {});
               }
             }
             stats.created++;
+            continue;
           }
 
-          // Seed onboarding form for this role
-          const formCreated = await seedOnboardingForm(roleId);
-          if (formCreated) stats.formsCreated++;
-
-          // Seed service catalog for this role
-          const catalogCount = await seedServiceCatalog(roleId, def.serviceStyles || []);
-          stats.catalogsCreated += catalogCount;
-
+          // Update existing role only: required config fields; do not change is_active or is_system_role
+          const current = existing[0] as any;
+          const currentConfig = (current.config && typeof current.config === 'object') ? current.config : {};
+          const updateData: any = {
+            display_name: KNOWN_ROLE_NAMES[roleId] ?? current.display_name ?? roleId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+            description: current.description ?? `Standard ${KNOWN_ROLE_NAMES[roleId] || roleId} role`,
+            config: {
+              ...currentConfig,
+              category: def.category ?? currentConfig.category ?? 'general',
+              icon: def.icon ?? currentConfig.icon ?? '🔧',
+              vendorTypes: def.vendorTypes ?? currentConfig.vendorTypes ?? [],
+              serviceStyles: def.serviceStyles ?? currentConfig.serviceStyles ?? [],
+              pricingControl: def.pricingControl ?? currentConfig.pricingControl ?? { canControlPrice: false, canControlDuration: false },
+            },
+          };
+          await update('roles', { name: roleId }, updateData);
+          stats.updated++;
         } catch (error: any) {
           console.error(`Error seeding role ${roleId}:`, error);
           stats.errors.push(`${roleId}: ${error.message}`);
@@ -935,7 +1007,7 @@ export function registerRoleSeedingEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        message: 'Roles seeding completed',
+        message: updateOnly ? 'Roles update completed (existing only; status preserved)' : 'Roles seeding completed',
         stats,
         totalRoles: Object.keys(STANDARD_ROLE_DEFINITIONS).length,
       });

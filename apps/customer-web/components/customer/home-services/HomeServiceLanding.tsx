@@ -12,6 +12,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import * as LucideIcons from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -33,6 +34,25 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { SERVICE_CONFIGS, HomeServiceType } from './UniversalHomeServiceRouter';
+
+// Map config roleId to roleId used in specialization_master applicable_roles
+const ROLE_ID_FOR_PROBLEM_GRID: Record<string, string> = {
+  dog_walker: 'walker', pet_walker: 'walker', walker: 'walker',
+  pet_groomer: 'groomer', groomer: 'groomer',
+  pet_trainer: 'trainer', trainer: 'trainer',
+  veterinarian: 'veterinarian', vet_solo: 'veterinarian', vet_clinic: 'veterinarian',
+  pet_behaviourist: 'behaviourist', behaviorist: 'behaviourist', behaviourist: 'behaviourist',
+  boarding: 'boarding', pet_boarding: 'boarding',
+  nutritionist: 'nutritionist', pet_nutritionist: 'nutritionist',
+};
+
+function ProblemIcon({ problem }: { problem: { iconName?: string; iconColor?: string; icon?: string } }) {
+  if (problem.iconName && (LucideIcons as any)[problem.iconName]) {
+    const Icon = (LucideIcons as any)[problem.iconName];
+    return <Icon className={`w-6 h-6 ${problem.iconColor || 'text-gray-600'}`} />;
+  }
+  return <span className="text-2xl">{problem.icon || '•'}</span>;
+}
 
 interface ServiceConfig {
   roleId: string;
@@ -90,10 +110,33 @@ export function HomeServiceLanding({
   const [featuredProviders, setFeaturedProviders] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [problemsFromApi, setProblemsFromApi] = useState<Array<{ id: string; name: string; icon?: string; iconName?: string; iconColor?: string }> | null>(null);
 
   useEffect(() => {
     loadLandingData();
   }, [serviceType, customerId, phone]);
+
+  // Load "What do you need?" problems from Catalog (specialization_master) so admin-created specializations appear
+  useEffect(() => {
+    const apiRoleId = ROLE_ID_FOR_PROBLEM_GRID[config.roleId] || config.roleId;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiClient.get<{ success?: boolean; problems?: any[] }>(`/public/problem-grid/${apiRoleId}`);
+        if (cancelled || !data?.success || !Array.isArray(data.problems)) return;
+        const list = data.problems.map((p: any) => ({
+          id: p.id,
+          name: p.displayName || p.name,
+          iconName: p.iconName,
+          iconColor: p.iconColor,
+        }));
+        if (!cancelled && list.length > 0) setProblemsFromApi(list);
+      } catch (_) {
+        // Keep config.problems as fallback
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [config.roleId]);
 
   const loadLandingData = async () => {
     try {
@@ -289,17 +332,19 @@ export function HomeServiceLanding({
           </div>
         </div>
 
-        {/* Problem Selection - What do you need? */}
+        {/* Problem Selection - What do you need? (from Catalog when available) */}
         <div className="mb-6">
           <h2 className="text-lg font-semibold mb-3">What do you need?</h2>
           <div className="grid grid-cols-3 gap-3">
-            {config.problems.slice(0, 6).map((problem) => (
+            {(problemsFromApi && problemsFromApi.length > 0 ? problemsFromApi : config.problems).slice(0, 6).map((problem) => (
               <Card
                 key={problem.id}
                 className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm text-center"
                 onClick={() => onNavigate('problem_selected', { problemId: problem.id })}
               >
-                <div className="text-2xl mb-2">{problem.icon}</div>
+                <div className="flex justify-center mb-2 min-h-[2rem]">
+                  {'iconName' in problem ? <ProblemIcon problem={problem} /> : <span className="text-2xl">{(problem as any).icon}</span>}
+                </div>
                 <p className="text-xs font-medium text-gray-700 leading-tight">
                   {problem.name}
                 </p>

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Video, VideoOff, Mic, MicOff, PhoneOff, MessageSquare, User, Clock, Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface TeleConsultationCallProps {
   bookingId: string;
@@ -83,10 +83,10 @@ export function TeleConsultationCall({
   const checkCallStatus = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/tele-session/${teleSessionId}`,
+        `${getApiBaseUrl()}/tele-session/${teleSessionId}`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -166,11 +166,11 @@ export function TeleConsultationCall({
       console.log('📱 [TELE] Ending call...');
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/tele-session/${teleSessionId}/end`,
+        `${getApiBaseUrl()}/tele-session/${teleSessionId}/end`,
         {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -192,11 +192,11 @@ export function TeleConsultationCall({
   const sendHeartbeat = async () => {
     try {
       await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/tele-session/${teleSessionId}/heartbeat`,
+        `${getApiBaseUrl()}/tele-session/${teleSessionId}/heartbeat`,
         {
           method: 'PUT',
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -210,11 +210,11 @@ export function TeleConsultationCall({
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/tele-session/${teleSessionId}/chat`,
+        `${getApiBaseUrl()}/tele-session/${teleSessionId}/chat`,
         {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({

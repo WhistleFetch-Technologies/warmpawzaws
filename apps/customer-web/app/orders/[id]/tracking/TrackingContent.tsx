@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 import Link from 'next/link';
+import { Key, Eye, EyeOff, Copy, Check, Phone, User, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
 
 // ============================================================================
 // TYPES
@@ -17,6 +19,11 @@ interface TrackingInfo {
     trackingNumber?: string;
     shippedAt?: string;
     deliveredAt?: string;
+    // Delivery OTP fields
+    deliveryOtp?: string;
+    otpVerified?: boolean;
+    deliveryPartnerName?: string;
+    deliveryPartnerPhone?: string;
   };
   shipments: Array<{
     id: string;
@@ -44,6 +51,25 @@ export default function TrackingContent() {
   const [tracking, setTracking] = useState<TrackingInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // OTP display states
+  const [showOTP, setShowOTP] = useState(false);
+  const [copiedOTP, setCopiedOTP] = useState(false);
+  
+  // Check if order is out for delivery
+  const isOutForDelivery = (status: string) => {
+    return ['out_for_delivery', 'shipped', 'dispatched', 'in_transit', 'arriving', 'on_way'].includes(status?.toLowerCase());
+  };
+  
+  // Copy OTP to clipboard
+  const copyOTP = () => {
+    if (tracking?.order?.deliveryOtp) {
+      navigator.clipboard.writeText(tracking.order.deliveryOtp);
+      setCopiedOTP(true);
+      toast.success('OTP copied to clipboard');
+      setTimeout(() => setCopiedOTP(false), 2000);
+    }
+  };
 
   useEffect(() => {
     if (orderId) {
@@ -60,6 +86,24 @@ export default function TrackingContent() {
       setError(null);
 
       const response = await apiClient.get<any>(`/orders/${orderId}/tracking`);
+      
+      // Also fetch delivery OTP info if order is in transit
+      let deliveryInfo: any = null;
+      try {
+        deliveryInfo = await apiClient.get<any>(`/delivery/${orderId}/status`);
+      } catch (e) {
+        // Delivery info might not exist for all orders
+        console.log('Delivery status not available:', e);
+      }
+      
+      // Merge delivery OTP info into tracking response
+      if (response && response.order) {
+        response.order.deliveryOtp = deliveryInfo?.delivery_otp || deliveryInfo?.deliveryOtp || deliveryInfo?.otp;
+        response.order.otpVerified = deliveryInfo?.otp_verified || deliveryInfo?.otpVerified;
+        response.order.deliveryPartnerName = deliveryInfo?.partner_name || deliveryInfo?.partnerName;
+        response.order.deliveryPartnerPhone = deliveryInfo?.partner_phone || deliveryInfo?.partnerPhone;
+      }
+      
       setTracking(response);
     } catch (err: any) {
       console.error('Error loading tracking:', err);
@@ -152,6 +196,103 @@ export default function TrackingContent() {
                   Track on Carrier Site
                 </a>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Delivery OTP Section - Show when order is out for delivery */}
+        {isOutForDelivery(tracking.order.status) && tracking.order.deliveryOtp && !tracking.order.otpVerified && (
+          <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl shadow-sm p-6 mb-6 border-2 border-orange-200">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Key className="w-6 h-6 text-orange-600" />
+                <h2 className="text-lg font-bold text-orange-800">Your Delivery OTP</h2>
+              </div>
+              {tracking.order.deliveryPartnerName && (
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <User className="w-4 h-4" />
+                    <span>{tracking.order.deliveryPartnerName}</span>
+                  </div>
+                  {tracking.order.deliveryPartnerPhone && (
+                    <button
+                      onClick={() => window.location.href = `tel:${tracking.order.deliveryPartnerPhone}`}
+                      className="p-2 bg-orange-100 rounded-full hover:bg-orange-200 transition"
+                    >
+                      <Phone className="w-4 h-4 text-orange-600" />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            {/* OTP Display */}
+            <div className="flex justify-center gap-3 mb-4">
+              {tracking.order.deliveryOtp.split('').map((digit, idx) => (
+                <div
+                  key={idx}
+                  className="w-14 h-16 bg-white rounded-xl shadow-sm border-2 border-orange-300 flex items-center justify-center"
+                >
+                  <span className="text-3xl font-bold text-orange-600">
+                    {showOTP ? digit : '•'}
+                  </span>
+                </div>
+              ))}
+            </div>
+            
+            {/* OTP Actions */}
+            <div className="flex justify-center gap-4 mb-4">
+              <button
+                onClick={() => setShowOTP(!showOTP)}
+                className="flex items-center gap-2 px-5 py-2.5 bg-white border border-orange-300 rounded-lg text-orange-700 hover:bg-orange-50 transition font-medium"
+              >
+                {showOTP ? (
+                  <>
+                    <EyeOff className="w-4 h-4" />
+                    Hide OTP
+                  </>
+                ) : (
+                  <>
+                    <Eye className="w-4 h-4" />
+                    Show OTP
+                  </>
+                )}
+              </button>
+              <button
+                onClick={copyOTP}
+                className="flex items-center gap-2 px-5 py-2.5 bg-white border border-orange-300 rounded-lg text-orange-700 hover:bg-orange-50 transition font-medium"
+              >
+                {copiedOTP ? (
+                  <>
+                    <Check className="w-4 h-4 text-green-600" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    Copy OTP
+                  </>
+                )}
+              </button>
+            </div>
+            
+            {/* Instructions */}
+            <div className="flex items-start gap-2 text-sm text-orange-700 bg-orange-100/50 rounded-lg p-3">
+              <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+              <p>Share this OTP with the delivery partner <strong>only after receiving your order</strong>. This confirms delivery and releases payment.</p>
+            </div>
+          </div>
+        )}
+
+        {/* OTP Verified Success Message */}
+        {tracking.order.otpVerified && tracking.order.status === 'delivered' && (
+          <div className="bg-green-50 rounded-xl shadow-sm p-6 mb-6 border border-green-200 flex items-center justify-center gap-4">
+            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+              <Check className="w-6 h-6 text-green-600" />
+            </div>
+            <div>
+              <h3 className="font-bold text-green-800">Delivery Confirmed!</h3>
+              <p className="text-sm text-green-600">Your order has been delivered and verified successfully.</p>
             </div>
           </div>
         )}

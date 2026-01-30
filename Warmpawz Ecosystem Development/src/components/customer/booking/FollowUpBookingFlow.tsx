@@ -13,7 +13,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { CalendarSlotPicker } from './CalendarSlotPicker';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface FollowUpBookingFlowProps {
   phone: string;
@@ -44,7 +44,7 @@ export function FollowUpBookingFlow({
   const [eligibility, setEligibility] = useState<any>(null);
   const [originalBooking, setOriginalBooking] = useState<any>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     checkEligibility();
@@ -57,7 +57,7 @@ export function FollowUpBookingFlow({
         `${API_BASE}/followup/check/${originalBookingId}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -78,7 +78,7 @@ export function FollowUpBookingFlow({
         `${API_BASE}/customer/bookings/${phone.replace(/[^0-9]/g, '')}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -118,7 +118,7 @@ export function FollowUpBookingFlow({
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

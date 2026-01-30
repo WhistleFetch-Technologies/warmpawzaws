@@ -5,7 +5,7 @@ import { EnhancedVendorOnboarding } from './vendor/onboarding/EnhancedVendorOnbo
 import { VendorLandingPage } from './vendor/VendorLandingPage';
 import { StaffDashboard } from './staff/StaffDashboard';
 import { SellerPortal } from './vendor/seller/SellerPortal';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../utils/api-config';
 import { useVendorNotificationService } from './vendor/useVendorNotificationService';
 
 export function VendorApp() {
@@ -49,9 +49,9 @@ export function VendorApp() {
       
       // USE NEW STATUS ENDPOINT - Get real-time status
       const statusResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/status/${phone}`,
+        `${getApiBaseUrl()}/vendor/status/${phone}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -78,9 +78,9 @@ export function VendorApp() {
           
           // Fetch full vendor data
           const vendorResponse = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/find-by-phone/${phone}`,
+            `${getApiBaseUrl()}/vendor/find-by-phone/${phone}`,
             {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+              headers: getAuthHeaders()
             }
           );
           
@@ -106,10 +106,10 @@ export function VendorApp() {
                 console.log('🔄 Migrating vendor to new role-based system...');
                 try {
                   const migrateResponse = await fetch(
-                    `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor/migrate/${phone}`,
+                    `${getApiBaseUrl()}/admin/vendor/migrate/${phone}`,
                     {
                       method: 'POST',
-                      headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+                      headers: getAuthHeaders()
                     }
                   );
                   
@@ -233,9 +233,9 @@ export function VendorApp() {
     // Fetch role details to get the name
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`,
+        `${getApiBaseUrl()}/config/roles`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

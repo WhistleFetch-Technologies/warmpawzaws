@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Stethoscope, Scissors, GraduationCap, Heart, Home, ShoppingBag } from 'lucide-react';
+import { Stethoscope, Scissors, GraduationCap, Heart, Home, ShoppingBag, ArrowLeft } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -15,7 +15,12 @@ const services = [
   { id: 'shop', name: 'Shop', icon: ShoppingBag, color: 'bg-orange-100 text-orange-600' },
 ];
 
-export function IntegratedServicesHub() {
+interface IntegratedServicesHubProps {
+  onBack?: () => void;
+  onNavigate?: (service: string) => void;
+}
+
+export function IntegratedServicesHub({ onBack, onNavigate }: IntegratedServicesHubProps = {}) {
   const [availableServices, setAvailableServices] = useState(services);
 
   useEffect(() => {
@@ -35,14 +40,29 @@ export function IntegratedServicesHub() {
 
   return (
     <div className="p-6">
+      {onBack && (
+        <div className="flex items-center gap-2 mb-4">
+          <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full" aria-label="Go back">
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <span className="text-sm font-medium text-gray-600">Back</span>
+        </div>
+      )}
       <h1 className="text-2xl font-bold mb-4">Integrated Services Hub</h1>
       <p className="text-gray-600 mb-6">Access all pet care services in one place</p>
       
       <div className="grid grid-cols-2 gap-4">
         {availableServices.map((service) => {
           const Icon = service.icon;
+          const serviceKey = service.id === 'walking' ? 'walker' : service.id;
+          const handleClick = () => onNavigate ? onNavigate(serviceKey) : undefined;
           return (
-            <Card key={service.id} className="p-4 cursor-pointer hover:shadow-lg transition-shadow">
+            <Card
+              key={service.id}
+              className="p-4 cursor-pointer hover:shadow-lg transition-shadow"
+              onClick={handleClick}
+              role={onNavigate ? 'button' : undefined}
+            >
               <div className={`w-12 h-12 rounded-lg ${service.color} flex items-center justify-center mb-3`}>
                 <Icon className="w-6 h-6" />
               </div>

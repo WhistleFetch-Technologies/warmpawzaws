@@ -229,19 +229,19 @@ export function PackageTrackingDashboard({
     return (
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
+        <header className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white border-b border-orange-200 sticky top-0 z-40 rounded-b-2xl shadow-md">
           <div className="max-w-lg mx-auto px-4 py-4 flex items-center gap-4">
             <button 
               onClick={() => setSelectedPackage(null)} 
-              className="p-2 hover:bg-gray-100 rounded-full"
+              className="p-2 hover:bg-white/20 rounded-full text-white"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
             <div className="flex-1">
-              <h1 className="font-semibold text-gray-900">{selectedPackage.packageName}</h1>
-              <p className="text-sm text-gray-500">{selectedPackage.vendorName}</p>
+              <h1 className="font-semibold text-white">{selectedPackage.packageName}</h1>
+              <p className="text-sm text-white/90">{selectedPackage.vendorName}</p>
             </div>
-            <button onClick={() => loadSessions(selectedPackage.id)} className="p-2">
+            <button onClick={() => loadSessions(selectedPackage.id)} className="p-2 text-white hover:bg-white/20 rounded-full">
               <RefreshCw className={`w-5 h-5 ${loadingSessions ? 'animate-spin' : ''}`} />
             </button>
           </div>
@@ -424,16 +424,16 @@ export function PackageTrackingDashboard({
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
+      <header className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white border-b border-orange-200 sticky top-0 z-40 rounded-b-2xl shadow-md">
         <div className="max-w-lg mx-auto px-4 py-4 flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full">
+          <button onClick={onBack} className="p-2 hover:bg-white/20 rounded-full text-white">
             <ChevronLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
-            <h1 className="font-semibold text-gray-900">My Packages</h1>
-            <p className="text-sm text-gray-500">{packages.length} packages</p>
+            <h1 className="font-semibold text-white">My Packages</h1>
+            <p className="text-sm text-white/90">{packages.length} packages</p>
           </div>
-          <button onClick={loadPackages} className="p-2">
+          <button onClick={loadPackages} className="p-2 text-white hover:bg-white/20 rounded-full">
             <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
           </button>
         </div>

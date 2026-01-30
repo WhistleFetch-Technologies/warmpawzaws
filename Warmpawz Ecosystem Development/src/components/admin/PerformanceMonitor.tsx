@@ -13,9 +13,9 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
-const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const BASE_URL = `${getApiBaseUrl()}`;
 
 interface PerformanceMetrics {
   timestamp: string;
@@ -85,7 +85,7 @@ export function PerformanceMonitor() {
       const response = await fetch(
         `${BASE_URL}/performance/metrics`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -106,7 +106,7 @@ export function PerformanceMonitor() {
       const response = await fetch(
         `${BASE_URL}/performance/alerts?limit=10`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -125,7 +125,7 @@ export function PerformanceMonitor() {
         `${BASE_URL}/performance/alerts/${alertId}/resolve`,
         {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

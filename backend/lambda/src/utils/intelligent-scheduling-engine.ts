@@ -66,7 +66,7 @@ interface CalculatedSlot {
 
 interface SchedulingRequest {
   vendorId: string;
-  staffId?: string;
+  // ❌ REMOVED: staffId - staff has been decommissioned
   date: string;
   serviceStyle?: string;
   serviceDuration?: number;
@@ -75,42 +75,49 @@ interface SchedulingRequest {
 }
 
 /**
- * Calculate available slots for a vendor/staff on a given date
+ * Calculate available slots for a vendor on a given date
+ * ✅ UPDATED: Removed staff support - vendors handle their own availability
  */
 export async function calculateAvailableSlots(request: SchedulingRequest): Promise<CalculatedSlot[]> {
-  const { vendorId, staffId, date, serviceStyle, serviceDuration, customerLocation, includeTravel } = request;
+  const { vendorId, date, serviceStyle, serviceDuration, customerLocation, includeTravel } = request;
   
   const requestDate = new Date(date);
   const dayOfWeek = requestDate.getDay();
+  
+  // ✅ Check if vendor is online (for solo providers)
+  const vendorOnline = await checkVendorOnline(vendorId);
+  if (!vendorOnline) {
+    return []; // Vendor is offline, no slots available
+  }
   
   // Get scheduling policies
   const policies = await getSchedulingPolicies();
   const bufferPolicy = policies.find((p: any) => p.policy_type === 'buffer_time');
   const commutePolicy = policies.find((p: any) => p.policy_type === 'commute_time');
   
-  // Get schedule windows for this day
-  const scheduleWindows = await getScheduleWindows(vendorId, staffId, dayOfWeek, serviceStyle);
+  // Get schedule windows for this day (vendor only - staff removed)
+  const scheduleWindows = await getScheduleWindows(vendorId, dayOfWeek, serviceStyle);
   
   if (scheduleWindows.length === 0) {
     return [];
   }
   
-  // Check for holiday
-  const isHoliday = await checkHoliday(vendorId, staffId, date);
+  // Check for holiday (vendor only - staff removed)
+  const isHoliday = await checkHoliday(vendorId, date);
   if (isHoliday) {
     return [];
   }
   
-  // Get breaks for this day
-  const breaks = await getBreaks(vendorId, staffId, dayOfWeek, date);
+  // Get breaks for this day (vendor only - staff removed)
+  const breaks = await getBreaks(vendorId, dayOfWeek, date);
   
-  // Get existing bookings for this date
-  const existingBookings = await getExistingBookings(vendorId, staffId, date);
+  // Get existing bookings for this date (vendor only - staff removed)
+  const existingBookings = await getExistingBookings(vendorId, date);
   
   // Get vendor's current location for home services
   let vendorLocation: { lat: number; lng: number } | null = null;
   if (serviceStyle === 'at_home' && includeTravel) {
-    vendorLocation = await getVendorLocation(vendorId, staffId);
+    vendorLocation = await getVendorLocation(vendorId);
   }
   
   // Generate all possible slots
@@ -141,66 +148,71 @@ export async function calculateAvailableSlots(request: SchedulingRequest): Promi
 }
 
 /**
- * Get schedule windows for a vendor/staff on a specific day
+ * Check if vendor is online (for solo providers)
+ * ✅ NEW: Check is_online status for vendor availability
+ */
+async function checkVendorOnline(vendorId: string): Promise<boolean> {
+  try {
+    const vendors = await select('vendors', { id: vendorId });
+    if (vendors.length === 0) return false;
+    
+    // is_online defaults to true if not set
+    return vendors[0].is_online ?? true;
+  } catch (error) {
+    console.error('Error checking vendor online status:', error);
+    return true; // Default to online on error
+  }
+}
+
+/**
+ * Get schedule windows for a vendor on a specific day
+ * ✅ UPDATED: Removed staff support, added service_styles array filtering
  */
 async function getScheduleWindows(
   vendorId: string,
-  staffId: string | undefined,
   dayOfWeek: number,
   serviceStyle?: string
 ): Promise<ScheduleWindow[]> {
   try {
-    let queryStr: string;
-    let params: any[];
+    // ✅ UPDATED: Query uses service_styles array (TEXT[]) for filtering
+    let queryStr = `
+      SELECT 
+        time_window_start,
+        time_window_end,
+        service_style,
+        service_styles,
+        slot_duration_minutes,
+        COALESCE(buffer_time, buffer_time_minutes, 15) as buffer_time_minutes,
+        COALESCE(max_capacity, 1) as max_capacity,
+        service_area_km,
+        location_data
+      FROM vendor_availability_v2
+      WHERE vendor_id = $1
+      AND day_of_week = $2
+      AND is_enabled = true
+    `;
     
-    if (staffId) {
-      queryStr = `
-        SELECT 
-          start_time as time_window_start,
-          end_time as time_window_end,
-          service_style,
-          slot_duration_minutes,
-          buffer_time_minutes,
-          max_capacity,
-          radius_km as service_area_km
-        FROM staff_schedules
-        WHERE staff_id = $1
-        AND day_of_week = $2
-        AND is_available = true
-        ${serviceStyle ? 'AND service_style = $3' : ''}
-        ORDER BY start_time
-      `;
-      params = serviceStyle ? [staffId, dayOfWeek, serviceStyle] : [staffId, dayOfWeek];
-    } else {
-      queryStr = `
-        SELECT 
-          time_window_start,
-          time_window_end,
-          service_style,
-          slot_duration_minutes,
-          COALESCE(buffer_time_minutes, 15) as buffer_time_minutes,
-          max_capacity,
-          service_area_km
-        FROM vendor_availability_v2
-        WHERE vendor_id = $1
-        AND day_of_week = $2
-        AND is_enabled = true
-        ${serviceStyle ? 'AND service_style = $3' : ''}
-        ORDER BY time_window_start
-      `;
-      params = serviceStyle ? [vendorId, dayOfWeek, serviceStyle] : [vendorId, dayOfWeek];
+    const params: any[] = [vendorId, dayOfWeek];
+    
+    if (serviceStyle) {
+      // ✅ Filter by service_styles array OR legacy service_style column
+      queryStr += ` AND ($3 = ANY(service_styles) OR service_style = $3)`;
+      params.push(serviceStyle);
     }
+    
+    queryStr += ` ORDER BY time_window_start`;
     
     const result = await query(queryStr, params);
     
     return result.rows.map((row: any) => ({
       startTime: row.time_window_start,
       endTime: row.time_window_end,
-      serviceStyle: row.service_style || 'at_center',
+      serviceStyle: row.service_style || (row.service_styles?.[0]) || 'at_center',
       slotDuration: row.slot_duration_minutes || 30,
       bufferTime: row.buffer_time_minutes || 15,
       maxCapacity: row.max_capacity || 1,
-      serviceRadius: row.service_area_km
+      serviceRadius: row.service_area_km,
+      locationData: row.location_data
     }));
   } catch (error) {
     console.error('Error getting schedule windows:', error);
@@ -210,25 +222,56 @@ async function getScheduleWindows(
 
 /**
  * Check if date is a holiday
+ * ✅ UPDATED: Uses vendor_holidays_enhanced table, removed staff support
  */
-async function checkHoliday(vendorId: string, staffId: string | undefined, date: string): Promise<boolean> {
+async function checkHoliday(vendorId: string, date: string): Promise<boolean> {
   try {
-    if (staffId) {
+    const checkDate = new Date(date);
+    
+    // Check vendor_holidays_enhanced table first
+    try {
       const result = await query(
-        `SELECT COUNT(*) as count FROM staff_holidays WHERE staff_id = $1 AND holiday_date = $2`,
-        [staffId, date]
+        `SELECT COUNT(*) as count FROM vendor_holidays_enhanced 
+         WHERE vendor_id = $1 
+           AND is_active = true
+           AND (
+             ($2 >= start_date AND $2 <= end_date)
+             OR
+             (is_recurring_yearly = true 
+              AND EXTRACT(MONTH FROM $2::date) = EXTRACT(MONTH FROM start_date)
+              AND EXTRACT(DAY FROM $2::date) >= EXTRACT(DAY FROM start_date)
+              AND EXTRACT(DAY FROM $2::date) <= EXTRACT(DAY FROM end_date))
+           )`,
+        [vendorId, date]
       );
-      return Number(result.rows[0]?.count) > 0;
-    } else {
-      // Check vendor vacation mode
-      const vendors = await select('vendors', { id: vendorId });
-      if (vendors.length > 0 && vendors[0].metadata?.vacation_mode?.isActive) {
-        const vacationStart = new Date(vendors[0].metadata.vacation_mode.startDate);
-        const vacationEnd = new Date(vendors[0].metadata.vacation_mode.endDate);
-        const checkDate = new Date(date);
-        return checkDate >= vacationStart && checkDate <= vacationEnd;
+      if (Number(result.rows[0]?.count) > 0) {
+        return true;
       }
+    } catch {
+      // Table may not exist, continue to fallback
     }
+    
+    // Fallback: Check legacy vendor_holidays table
+    try {
+      const legacyResult = await query(
+        `SELECT COUNT(*) as count FROM vendor_holidays WHERE vendor_id = $1 AND date = $2`,
+        [vendorId, date]
+      );
+      if (Number(legacyResult.rows[0]?.count) > 0) {
+        return true;
+      }
+    } catch {
+      // Table may not exist, continue
+    }
+    
+    // Fallback: Check vendor vacation mode in metadata
+    const vendors = await select('vendors', { id: vendorId });
+    if (vendors.length > 0 && vendors[0].metadata?.vacation_mode?.isActive) {
+      const vacationStart = new Date(vendors[0].metadata.vacation_mode.startDate);
+      const vacationEnd = new Date(vendors[0].metadata.vacation_mode.endDate);
+      return checkDate >= vacationStart && checkDate <= vacationEnd;
+    }
+    
     return false;
   } catch (error) {
     console.error('Error checking holiday:', error);
@@ -238,28 +281,30 @@ async function checkHoliday(vendorId: string, staffId: string | undefined, date:
 
 /**
  * Get breaks for a specific day
+ * ✅ UPDATED: Uses vendor_breaks table, removed staff support
  */
 async function getBreaks(
   vendorId: string,
-  staffId: string | undefined,
   dayOfWeek: number,
   date: string
 ): Promise<Break[]> {
   try {
-    if (staffId) {
-      const result = await query(
-        `SELECT start_time, end_time 
-         FROM staff_breaks 
-         WHERE staff_id = $1 
-         AND (day_of_week = $2 OR break_date = $3)`,
-        [staffId, dayOfWeek, date]
-      );
-      return result.rows.map((row: any) => ({
-        startTime: row.start_time,
-        endTime: row.end_time
-      }));
-    }
-    return [];
+    const result = await query(
+      `SELECT start_time, end_time 
+       FROM vendor_breaks 
+       WHERE vendor_id = $1 
+         AND is_active = true
+         AND (
+           (is_recurring = true AND day_of_week = $2)
+           OR
+           (break_date = $3)
+         )`,
+      [vendorId, dayOfWeek, date]
+    );
+    return result.rows.map((row: any) => ({
+      startTime: row.start_time,
+      endTime: row.end_time
+    }));
   } catch (error) {
     console.error('Error getting breaks:', error);
     return [];
@@ -268,20 +313,19 @@ async function getBreaks(
 
 /**
  * Get existing bookings for a date
+ * ✅ UPDATED: Removed staff_id filtering, staff decommissioned
  */
 async function getExistingBookings(
   vendorId: string,
-  staffId: string | undefined,
   date: string
 ): Promise<Booking[]> {
   try {
-    let queryStr = `
+    const queryStr = `
       SELECT 
         booking_time,
         duration_minutes as duration,
         service_type as service_style,
         status,
-        staff_id,
         customer_location
       FROM bookings
       WHERE vendor_id = $1
@@ -290,11 +334,6 @@ async function getExistingBookings(
     `;
     const params: any[] = [vendorId, date];
     
-    if (staffId) {
-      queryStr += ` AND staff_id = $3`;
-      params.push(staffId);
-    }
-    
     const result = await query(queryStr, params);
     
     return result.rows.map((row: any) => ({
@@ -302,7 +341,6 @@ async function getExistingBookings(
       duration: row.duration || 30,
       serviceStyle: row.service_style || 'at_center',
       status: row.status,
-      staffId: row.staff_id,
       customerLocation: row.customer_location
     }));
   } catch (error) {
@@ -312,26 +350,14 @@ async function getExistingBookings(
 }
 
 /**
- * Get vendor/staff current location
+ * Get vendor current location
+ * ✅ UPDATED: Removed staff support - vendors handle their own location
  */
 async function getVendorLocation(
-  vendorId: string,
-  staffId?: string
+  vendorId: string
 ): Promise<{ lat: number; lng: number } | null> {
   try {
-    if (staffId) {
-      const result = await query(
-        `SELECT latitude, longitude FROM staff_real_time_locations 
-         WHERE staff_id = $1 
-         ORDER BY recorded_at DESC LIMIT 1`,
-        [staffId]
-      );
-      if (result.rows.length > 0) {
-        return { lat: result.rows[0].latitude, lng: result.rows[0].longitude };
-      }
-    }
-    
-    // Fall back to vendor's registered location
+    // Get vendor's registered location
     const vendors = await select('vendors', { id: vendorId });
     if (vendors.length > 0 && vendors[0].latitude && vendors[0].longitude) {
       return { lat: vendors[0].latitude, lng: vendors[0].longitude };

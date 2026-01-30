@@ -1,0 +1,550 @@
+'use client';
+
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import { X, MapPin, Navigation, Loader2, Home, Briefcase, MoreHorizontal, Search, ChevronRight } from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
+import { toast } from 'sonner';
+import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+
+// Note: Google Maps is now handled by EnhancedAddressAutocomplete component
+
+interface AddressFormData {
+  label: 'Home' | 'Work' | 'Other';
+  name: string;
+  phone: string;
+  addressLine1: string;
+  addressLine2: string;
+  landmark: string;
+  city: string;
+  state: string;
+  pincode: string;
+  latitude: number | null;
+  longitude: number | null;
+  isDefault: boolean;
+}
+
+interface AddAddressModalProps {
+  phone: string;
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: (address: any) => void;
+  customerName?: string;
+}
+
+export function AddAddressModal({ 
+  phone, 
+  isOpen, 
+  onClose, 
+  onSuccess,
+  customerName = ''
+}: AddAddressModalProps) {
+  const [loading, setLoading] = useState(false);
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  
+  const [formData, setFormData] = useState<AddressFormData>({
+    label: 'Home',
+    name: customerName,
+    phone: phone,
+    addressLine1: '',
+    addressLine2: '',
+    landmark: '',
+    city: '',
+    state: '',
+    pincode: '',
+    latitude: null,
+    longitude: null,
+    isDefault: false,
+  });
+  
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Reset form when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setFormData({
+        label: 'Home',
+        name: customerName,
+        phone: phone,
+        addressLine1: '',
+        addressLine2: '',
+        landmark: '',
+        city: '',
+        state: '',
+        pincode: '',
+        latitude: null,
+        longitude: null,
+        isDefault: false,
+      });
+      setErrors({});
+    }
+  }, [isOpen, customerName, phone]);
+
+  // Note: Google Maps autocomplete is now handled by EnhancedAddressAutocomplete component
+
+  // Detect current location
+  const handleDetectLocation = async () => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocation is not supported by your browser');
+      return;
+    }
+
+    setDetectingLocation(true);
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+
+        // Reverse geocode using Google Maps Geocoding API
+        try {
+          // Get API key from backend
+          const keyResponse = await apiClient.get<{ apiKey: string }>('/config/google-maps-key');
+          const apiKey = keyResponse?.apiKey;
+          
+          if (apiKey) {
+            const geocodeResponse = await fetch(
+              `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
+            );
+            const geocodeData = await geocodeResponse.json();
+
+            if (geocodeData.results && geocodeData.results[0]) {
+              const result = geocodeData.results[0];
+              const updates: Partial<AddressFormData> = {
+                addressLine1: result.formatted_address,
+                latitude: latitude,
+                longitude: longitude,
+              };
+
+              // Extract address components
+              result.address_components?.forEach((component: any) => {
+                if (component.types.includes('postal_code')) {
+                  updates.pincode = component.long_name;
+                }
+                if (component.types.includes('locality')) {
+                  updates.city = component.long_name;
+                }
+                if (component.types.includes('administrative_area_level_1')) {
+                  updates.state = component.long_name;
+                }
+                if (component.types.includes('sublocality_level_1') || component.types.includes('sublocality')) {
+                  if (!updates.addressLine2) {
+                    updates.addressLine2 = component.long_name;
+                  }
+                }
+              });
+
+              setFormData(prev => ({ ...prev, ...updates }));
+              toast.success('Location detected!');
+            } else {
+              // Fallback: Just use coordinates
+              setFormData(prev => ({
+                ...prev,
+                latitude: latitude,
+                longitude: longitude,
+                addressLine1: 'Current Location',
+              }));
+              toast.info('Location detected. Please enter address details.');
+            }
+          } else {
+            // No API key - just save coordinates
+            setFormData(prev => ({
+              ...prev,
+              latitude: latitude,
+              longitude: longitude,
+              addressLine1: 'Current Location',
+            }));
+            toast.info('Location coordinates captured. Please enter address manually.');
+          }
+        } catch (error) {
+          console.error('Error reverse geocoding:', error);
+          // Fallback: Just use coordinates
+          setFormData(prev => ({
+            ...prev,
+            latitude: latitude,
+            longitude: longitude,
+            addressLine1: 'Current Location',
+          }));
+          toast.info('Location detected. Please enter address details.');
+        } finally {
+          setDetectingLocation(false);
+        }
+      },
+      (error) => {
+        setDetectingLocation(false);
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            toast.error('Please allow location access');
+            break;
+          case error.POSITION_UNAVAILABLE:
+            toast.error('Location information unavailable');
+            break;
+          case error.TIMEOUT:
+            toast.error('Location request timed out');
+            break;
+          default:
+            toast.error('Could not detect location');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  // Validate form
+  const validateForm = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    if (!formData.addressLine1.trim()) {
+      newErrors.addressLine1 = 'Address line 1 is required';
+    }
+
+    if (!formData.city.trim()) {
+      newErrors.city = 'City is required';
+    }
+
+    if (!formData.pincode.trim()) {
+      newErrors.pincode = 'Pincode is required';
+    } else if (!/^\d{6}$/.test(formData.pincode)) {
+      newErrors.pincode = 'Pincode must be 6 digits';
+    }
+
+    if (!formData.state.trim()) {
+      newErrors.state = 'State is required';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // Save address
+  const handleSaveAddress = async () => {
+    if (!validateForm()) {
+      toast.error('Please fill all required fields');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const addressData = {
+        phone: phone,
+        label: formData.label.toLowerCase(),
+        name: formData.name || 'Customer',
+        addressLine1: formData.addressLine1,
+        addressLine2: formData.addressLine2 || null,
+        landmark: formData.landmark || null,
+        city: formData.city,
+        state: formData.state,
+        pincode: formData.pincode,
+        coordinates: formData.latitude && formData.longitude 
+          ? JSON.stringify({ lat: formData.latitude, lng: formData.longitude })
+          : null,
+        isDefault: formData.isDefault,
+      };
+
+      console.log('📍 [AddAddressModal] Saving address:', addressData);
+
+      const response = await apiClient.post<any>('/customer/addresses', addressData);
+
+      console.log('✅ [AddAddressModal] Address saved:', response);
+
+      if (response.success || response.address) {
+        toast.success('Address saved successfully!');
+        
+        // Get the newly created address
+        const newAddress = response.address || response.addresses?.[response.addresses.length - 1];
+        
+        onSuccess(newAddress);
+        onClose();
+      } else {
+        throw new Error(response.error || 'Failed to save address');
+      }
+    } catch (error: any) {
+      console.error('❌ [AddAddressModal] Error saving address:', error);
+      toast.error(error.message || 'Failed to save address');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Don't render anything if modal is not open
+  if (!isOpen) return null;
+
+  return (
+    <div 
+      className="fixed inset-0 bg-black/50 transition-opacity duration-300 z-50"
+      onClick={onClose}
+    >
+      <div 
+        className="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl transform transition-transform duration-300 ease-out flex flex-col translate-y-0 max-w-[430px] mx-auto"
+        style={{ 
+          height: '90vh',
+          maxHeight: '90vh'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header with Gradient */}
+        <div className="bg-gradient-to-br from-[#FF8C42] to-[#FF6B1A] p-4 pb-4 rounded-t-3xl flex-shrink-0">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-6 h-6 text-white" />
+              <h3 className="font-bold text-white text-lg">Add New Address</h3>
+            </div>
+            <button
+              onClick={onClose}
+              disabled={loading}
+              className="w-9 h-9 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm active:scale-95 transition-transform disabled:opacity-50"
+            >
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </div>
+          <p className="text-white/80 text-sm">Where should the service provider come?</p>
+        </div>
+
+        {/* Content - Scrollable */}
+        <div className="flex-1 overflow-y-auto" style={{ 
+          WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#FF8C42 #f3f4f6'
+        }}>
+          <div className="p-4 pb-24 space-y-4">
+            
+            {/* Address Type Selection */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-2">
+                Save as
+              </label>
+              <div className="flex gap-2">
+                {[
+                  { value: 'Home', icon: Home, label: 'Home' },
+                  { value: 'Work', icon: Briefcase, label: 'Work' },
+                  { value: 'Other', icon: MoreHorizontal, label: 'Other' },
+                ].map(({ value, icon: Icon, label }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, label: value as 'Home' | 'Work' | 'Other' }))}
+                    className={`flex-1 py-3 px-4 border-2 rounded-xl transition-all font-medium text-sm flex items-center justify-center gap-2 ${
+                      formData.label === value
+                        ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42] shadow-sm'
+                        : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Detect Location Button */}
+            <button
+              onClick={handleDetectLocation}
+              disabled={detectingLocation}
+              className="w-full py-3 px-4 border-2 border-dashed border-[#FF8C42] rounded-xl text-[#FF8C42] font-medium flex items-center justify-center gap-2 hover:bg-orange-50 disabled:opacity-50 transition-all"
+            >
+              {detectingLocation ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Navigation className="w-5 h-5" />
+              )}
+              {detectingLocation ? 'Detecting...' : 'Detect My Location'}
+            </button>
+
+            {/* Address Search with Google Maps Autocomplete */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                Address Line 1 <span className="text-red-500">*</span>
+              </label>
+              <EnhancedAddressAutocomplete
+                value={formData.addressLine1}
+                onChange={(address: string, components?: AddressComponents) => {
+                  setFormData(prev => ({ ...prev, addressLine1: address }));
+                  
+                  // Auto-populate city, state, pincode from Google Maps
+                  if (components) {
+                    const updates: Partial<AddressFormData> = {};
+                    
+                    if (components.city && !formData.city) {
+                      updates.city = components.city;
+                    }
+                    if (components.state && !formData.state) {
+                      updates.state = components.state;
+                    }
+                    if (components.pincode && !formData.pincode) {
+                      updates.pincode = components.pincode;
+                    }
+                    if (components.street && !formData.addressLine2) {
+                      updates.addressLine2 = components.street;
+                    }
+                    if (components.landmark && !formData.landmark) {
+                      updates.landmark = components.landmark;
+                    }
+                    if (components.coordinates) {
+                      updates.latitude = components.coordinates.lat;
+                      updates.longitude = components.coordinates.lng;
+                    }
+                    
+                    if (Object.keys(updates).length > 0) {
+                      setFormData(prev => ({ ...prev, ...updates }));
+                    }
+                  }
+                  
+                  // Clear errors when address is selected
+                  if (address && errors.addressLine1) {
+                    setErrors(prev => ({ ...prev, addressLine1: '' }));
+                  }
+                }}
+                placeholder="Search address, landmark, city..."
+                className={errors.addressLine1 ? 'border-red-300' : ''}
+                required
+              />
+              {errors.addressLine1 && (
+                <p className="text-xs text-red-500 mt-1">{errors.addressLine1}</p>
+              )}
+            </div>
+
+            {/* Address Line 2 */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                Address Line 2 (Optional)
+              </label>
+              <input
+                type="text"
+                value={formData.addressLine2}
+                onChange={(e) => setFormData(prev => ({ ...prev, addressLine2: e.target.value }))}
+                placeholder="Apartment, floor, building name"
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+              />
+            </div>
+
+            {/* Landmark */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                Landmark (Optional)
+              </label>
+              <input
+                type="text"
+                value={formData.landmark}
+                onChange={(e) => setFormData(prev => ({ ...prev, landmark: e.target.value }))}
+                placeholder="Nearby landmark for easy navigation"
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+              />
+            </div>
+
+            {/* City and State Row */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                  City <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.city}
+                  onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
+                  placeholder="City"
+                  className={`w-full px-3 py-2.5 border-2 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm ${
+                    errors.city ? 'border-red-300' : 'border-gray-200'
+                  }`}
+                />
+                {errors.city && (
+                  <p className="text-xs text-red-500 mt-1">{errors.city}</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                  State <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.state}
+                  onChange={(e) => setFormData(prev => ({ ...prev, state: e.target.value }))}
+                  placeholder="State"
+                  className={`w-full px-3 py-2.5 border-2 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm ${
+                    errors.state ? 'border-red-300' : 'border-gray-200'
+                  }`}
+                />
+                {errors.state && (
+                  <p className="text-xs text-red-500 mt-1">{errors.state}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Pincode */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                Pincode <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.pincode}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                  setFormData(prev => ({ ...prev, pincode: value }));
+                }}
+                placeholder="6-digit pincode"
+                maxLength={6}
+                className={`w-full px-3 py-2.5 border-2 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm ${
+                  errors.pincode ? 'border-red-300' : 'border-gray-200'
+                }`}
+              />
+              {errors.pincode && (
+                <p className="text-xs text-red-500 mt-1">{errors.pincode}</p>
+              )}
+            </div>
+
+            {/* Set as Default */}
+            <label className="flex items-center gap-3 cursor-pointer p-3 bg-gray-50 rounded-xl">
+              <input
+                type="checkbox"
+                checked={formData.isDefault}
+                onChange={(e) => setFormData(prev => ({ ...prev, isDefault: e.target.checked }))}
+                className="w-5 h-5 text-[#FF8C42] border-gray-300 rounded focus:ring-[#FF8C42]"
+              />
+              <div>
+                <p className="text-sm font-medium text-gray-700">Set as default address</p>
+                <p className="text-xs text-gray-500">Use this address for future bookings</p>
+              </div>
+            </label>
+
+            {/* Location Status */}
+            {formData.latitude && formData.longitude && (
+              <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-xl">
+                <MapPin className="w-4 h-4 text-green-600" />
+                <p className="text-xs text-green-700">
+                  Location coordinates captured for accurate distance calculation
+                </p>
+              </div>
+            )}
+
+          </div>
+        </div>
+
+        {/* Fixed Bottom Buttons */}
+        <div className="flex-shrink-0 p-4 bg-white border-t border-gray-100 flex gap-3">
+          <Button
+            onClick={onClose}
+            variant="outline"
+            className="flex-1 h-12 border-2 border-gray-300 rounded-xl text-sm"
+            disabled={loading}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSaveAddress}
+            disabled={loading}
+            className="flex-1 h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-xl text-white text-sm"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              'Save Address'
+            )}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -34,7 +34,7 @@ import {
 	ArrowLeft,
 	CheckCircle,
 } from "lucide-react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 
 interface RBACDashboardProps {
 	onBack?: () => void;
@@ -48,7 +48,7 @@ export default function RBACDashboard({ onBack }: RBACDashboardProps = {}) {
 	const [activeTab, setActiveTab] = useState("roles");
 	const [showRoleDialog, setShowRoleDialog] = useState(false);
 
-	const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+	const API_BASE = `${getApiBaseUrl()}`;
 
 	useEffect(() => {
 		loadData();
@@ -60,7 +60,7 @@ export default function RBACDashboard({ onBack }: RBACDashboardProps = {}) {
 			// Load roles
 			const rolesResponse = await fetch(`${API_BASE}/admin/rbac/roles`, {
 				headers: {
-					Authorization: `Bearer ${publicAnonKey}`,
+					...getAuthHeaders(),
 				},
 			});
 
@@ -76,7 +76,7 @@ export default function RBACDashboard({ onBack }: RBACDashboardProps = {}) {
 				`${API_BASE}/admin/rbac/permissions`,
 				{
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 				}
 			);
@@ -91,7 +91,7 @@ export default function RBACDashboard({ onBack }: RBACDashboardProps = {}) {
 			// Load policies
 			const policiesResponse = await fetch(`${API_BASE}/admin/rbac/policies`, {
 				headers: {
-					Authorization: `Bearer ${publicAnonKey}`,
+					...getAuthHeaders(),
 				},
 			});
 

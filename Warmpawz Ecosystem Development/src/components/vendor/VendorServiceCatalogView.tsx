@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Check, Search, X } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
 
@@ -86,9 +86,9 @@ export function VendorServiceCatalogView({
 
       // Load all services from admin catalog API (same as admin panel)
       const servicesRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/service-catalog`,
+        `${getApiBaseUrl()}/admin/service-catalog`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -100,9 +100,9 @@ export function VendorServiceCatalogView({
 
       // Load vendor's enabled services
       const vendorServicesRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services/${vendorId}`,
+        `${getApiBaseUrl()}/vendor/services/${vendorId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -139,9 +139,9 @@ export function VendorServiceCatalogView({
 
       // Load roles
       const rolesRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`,
+        `${getApiBaseUrl()}/config/roles`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -342,7 +342,7 @@ export function VendorServiceCatalogView({
 
           // ✅ FIX: Call correct endpoint /vendor/services/add
           const response = await authenticatedFetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services/add`,
+            `${getApiBaseUrl()}/vendor/services/add`,
             {
               method: 'POST',
               body: JSON.stringify({
@@ -415,7 +415,7 @@ export function VendorServiceCatalogView({
     try {
       // ✅ FIX: Use correct endpoint /vendor/services/add (not /vendor/services)
       const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services/add`,
+        `${getApiBaseUrl()}/vendor/services/add`,
         {
           method: 'POST',
           body: JSON.stringify({

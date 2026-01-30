@@ -125,13 +125,17 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
       });
 
       // Add tracking event
-      await insert('shipment_tracking_events', {
-        shipment_id: shipment.id,
-        event_type: current_status,
-        event_description: scans?.[0]?.activity || current_status,
-        location: scans?.[0]?.location || null,
-        event_time: scans?.[0]?.date ? new Date(scans[0].date).toISOString() : new Date().toISOString(),
-      }).catch(() => {});
+      try {
+        await insert('shipment_tracking_events', {
+          shipment_id: shipment.id,
+          event_type: current_status,
+          event_description: scans?.[0]?.activity || current_status,
+          location: scans?.[0]?.location || null,
+          event_time: scans?.[0]?.date ? new Date(scans[0].date).toISOString() : new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn('[SHIPROCKET WEBHOOK] Failed to insert tracking event:', err instanceof Error ? err.message : err);
+      }
 
       // Update order status
       if (shipment.order_id) {
@@ -226,23 +230,35 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
       // Add tracking event
       if (Scans && Scans.length > 0) {
         const latestScan = Scans[0];
-        await insert('shipment_tracking_events', {
-          shipment_id: shipment.id,
-          event_type: latestScan.ScanType,
-          event_description: latestScan.Instructions || Status?.Status,
-          location: latestScan.ScannedLocation,
-          event_time: new Date(latestScan.ScanDateTime).toISOString(),
-        }).catch(() => {});
+        try {
+          await insert('shipment_tracking_events', {
+            shipment_id: shipment.id,
+            event_type: latestScan.ScanType,
+            event_description: latestScan.Instructions || Status?.Status,
+            location: latestScan.ScannedLocation,
+            event_time: new Date(latestScan.ScanDateTime).toISOString(),
+          });
+        } catch (err) {
+          console.warn('[DELHIVERY WEBHOOK] Failed to insert tracking event:', err instanceof Error ? err.message : err);
+        }
       }
 
       // Update order and notify
       if (shipment.order_id) {
-        await updateOrderStatus(shipment.order_id, normalizedStatus).catch(() => {});
-        await sendShipmentNotification(shipment.order_id, normalizedStatus, previousStatus, {
-          awb: Waybill,
-          location: Location,
-          etd: ExpectedDeliveryDate,
-        }).catch(() => {});
+        try {
+          await updateOrderStatus(shipment.order_id, normalizedStatus);
+        } catch (err) {
+          console.warn('[DELHIVERY WEBHOOK] Failed to update order status:', err instanceof Error ? err.message : err);
+        }
+        try {
+          await sendShipmentNotification(shipment.order_id, normalizedStatus, previousStatus, {
+            awb: Waybill,
+            location: Location,
+            etd: ExpectedDeliveryDate,
+          });
+        } catch (err) {
+          console.warn('[DELHIVERY WEBHOOK] Failed to send notification:', err instanceof Error ? err.message : err);
+        }
       }
 
       return c.json({ success: true, status: normalizedStatus });
@@ -746,10 +762,9 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
           order = result.rows[0];
           orderType = 'pharmacy';
         } else {
-          // Check meal orders
+          // Check meal orders (id only – meal_orders may not have order_number)
           result = await query(
-            `SELECT * FROM meal_orders 
-             WHERE (id::text = $1 OR order_number = $1)`,
+            `SELECT * FROM meal_orders WHERE id::text = $1`,
             [orderId]
           ).catch(() => ({ rows: [] }));
           if (result.rows.length > 0) {
@@ -849,13 +864,17 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
           orderType,
           order: {
             id: order.id,
-            orderNumber: order.order_number,
+            order_number: order.order_number || order.id?.toString().slice(-8),
+            orderNumber: order.order_number || order.id?.toString().slice(-8),
             status: order.status,
             total: order.total_amount,
+            total_amount: order.total_amount,
             createdAt: order.created_at,
+            created_at: order.created_at,
           },
           tracking: deliveryTracking ? {
             status: deliveryTracking.status,
+            deliveryOtp: deliveryTracking.delivery_otp || null,
             deliveryPerson: {
               name: deliveryTracking.delivery_person_name,
               phone: deliveryTracking.delivery_person_phone,
@@ -873,7 +892,11 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
             deliveredAt: deliveryTracking.delivered_at,
             trackingUrl: deliveryTracking.tracking_url,
             locationHistory: deliveryTracking.location_history?.slice(0, 20) || [],
-          } : null,
+          } : {
+            status: order.status,
+            deliveryOtp: null,
+            deliveryPerson: null,
+          },
         });
       }
     } catch (error: any) {
@@ -1063,13 +1086,102 @@ async function createShiprocketShipmentInternal(params: {
   }
 }
 
-async function createDelhiveryShipment(c: any, params: any) {
-  // Delhivery integration - similar structure
-  // For now, return placeholder
-  return c.json({
-    success: false,
-    error: 'Delhivery integration not yet implemented',
-  }, 501);
+async function createDelhiveryShipment(c: any, params: {
+  orderId: string;
+  order: any;
+  orderItems: any[];
+  customer: any;
+  shippingAddress: any;
+  partner?: any;
+}) {
+  const { orderId, order, orderItems, customer, shippingAddress, partner } = params;
+
+  try {
+    // Import getSecretJson dynamically to avoid circular deps
+    const { getSecretJson } = await import('../utils/secrets-manager');
+    
+    // Get Delhivery credentials
+    const config = await getSecretJson<{ api_token: string; client_name: string }>('delhivery');
+    
+    if (!config?.api_token || !config?.client_name) {
+      console.warn('[DELHIVERY] Credentials not configured, falling back to Shiprocket');
+      return c.json({
+        success: false,
+        error: 'Delhivery credentials not configured',
+        fallbackToShiprocket: true,
+      }, 501);
+    }
+
+    const delhiveryPayload = {
+      shipments: [{
+        name: shippingAddress?.name || customer?.name || 'Customer',
+        add: shippingAddress?.street || shippingAddress?.line1 || shippingAddress?.address || 'Address',
+        pin: shippingAddress?.pincode || shippingAddress?.zip || '000000',
+        city: shippingAddress?.city || 'City',
+        state: shippingAddress?.state || 'State',
+        country: 'India',
+        phone: customer?.phone || shippingAddress?.phone || '0000000000',
+        order: orderId,
+        payment_mode: order.payment_method === 'cod' ? 'COD' : 'Prepaid',
+        cod_amount: order.payment_method === 'cod' ? parseFloat(order.total_amount || '0') : 0,
+        weight: (order.total_weight || 0.5) * 1000, // Convert kg to grams
+        seller_name: config.client_name,
+        products_desc: orderItems.map((i: any) => i.product_name || i.name).join(', ') || 'Order items',
+        quantity: orderItems.reduce((sum: number, i: any) => sum + (i.quantity || 1), 0),
+        total_amount: parseFloat(order.total_amount || '0'),
+      }],
+    };
+
+    const response = await fetch('https://track.delhivery.com/api/cmu/create.json', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${config.api_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(delhiveryPayload),
+    });
+
+    const result: any = await response.json();
+
+    if (!response.ok || !result.success) {
+      console.error('[DELHIVERY] Create order failed:', result);
+      return c.json({
+        success: false,
+        error: result.rmk || 'Delhivery order creation failed',
+      }, 500);
+    }
+
+    const waybill = result.packages?.[0]?.waybill;
+
+    // Store shipment
+    await insert('shipments', {
+      order_id: orderId,
+      logistics_partner: 'delhivery',
+      logistics_partner_id: partner?.id || null,
+      awb_code: waybill,
+      status: 'created',
+      tracking_url: `https://www.delhivery.com/track/package/${waybill}`,
+    });
+
+    // Update order
+    await update('orders', { id: orderId }, {
+      order_status: 'processing',
+      tracking_number: waybill,
+      delivery_partner: 'Delhivery',
+    });
+
+    return c.json({
+      success: true,
+      waybill,
+      trackingUrl: `https://www.delhivery.com/track/package/${waybill}`,
+    });
+  } catch (error: any) {
+    console.error('[DELHIVERY CREATE] Error:', error);
+    return c.json({
+      success: false,
+      error: error.message,
+    }, 500);
+  }
 }
 
 async function createHyperlocalDelivery(c: any, params: {

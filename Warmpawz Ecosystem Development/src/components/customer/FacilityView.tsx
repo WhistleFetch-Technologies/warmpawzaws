@@ -13,7 +13,7 @@ import {
   ChevronRight,
   Image as ImageIcon
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { getAmenityById } from '../../utils/master-amenities';
 import { getVendorPersonalization } from '../../utils/vendor-personalization';
 
@@ -33,7 +33,7 @@ export function FacilityView({ vendorId, onBack, onClose, onBookNow }: FacilityV
   const [reviews, setReviews] = useState<any[]>([]);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
   
   // Use whichever callback is provided
   const handleClose = onClose || onBack;
@@ -46,7 +46,7 @@ export function FacilityView({ vendorId, onBack, onClose, onBookNow }: FacilityV
         // Fetch facility data
         const response = await fetch(`${API_BASE}/customer/facility/${vendorId}`, {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         });
 

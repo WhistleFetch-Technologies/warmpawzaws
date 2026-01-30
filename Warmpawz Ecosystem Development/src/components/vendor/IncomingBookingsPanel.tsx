@@ -7,7 +7,7 @@ import {
   Calendar, Clock, User, Phone, MapPin, DollarSign,
   Check, X, AlertCircle, ChevronRight, PawPrint
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { AcceptBookingModal } from './AcceptBookingModal';
 import { DeclineBookingModal } from './DeclineBookingModal';
@@ -26,7 +26,7 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
   const [showDeclineModal, setShowDeclineModal] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'today'>('pending');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadBookings();
@@ -43,7 +43,7 @@ export function IncomingBookingsPanel({ vendorId, onUpdate }: IncomingBookingsPa
 
       const response = await fetch(
         `${API_BASE}/vendor/${vendorId}/bookings?status=${filter}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        { headers: getAuthHeaders() }
       );
 
       if (!response.ok) throw new Error('Failed to load bookings');

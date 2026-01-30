@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { MapPin, Loader2, Search, Navigation } from "lucide-react";
-// import { projectId, publicAnonKey } from '../../utils/supabase/info';
+// import { getApiBaseUrl, getAuthHeaders } from '../../utils/supabase/info';
 
 interface AddressAutocompleteProps {
 	onSelect: (address: any) => void;
@@ -57,10 +57,10 @@ export function AddressAutocomplete({
 			setLoading(true);
 
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/places/autocomplete?input=${encodeURIComponent(input)}`,
+				`${getApiBaseUrl()}/places/autocomplete?input=${encodeURIComponent(input)}`,
 				{
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 				}
 			);
@@ -85,10 +85,10 @@ export function AddressAutocomplete({
 
 			// Get place details
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/places/details?placeId=${prediction.placeId}`,
+				`${getApiBaseUrl()}/places/details?placeId=${prediction.placeId}`,
 				{
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 				}
 			);
@@ -155,10 +155,10 @@ export function AddressAutocomplete({
 
 					// Reverse geocode
 					const response = await fetch(
-						`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/places/reverse-geocode?lat=${latitude}&lng=${longitude}`,
+						`${getApiBaseUrl()}/places/reverse-geocode?lat=${latitude}&lng=${longitude}`,
 						{
 							headers: {
-								Authorization: `Bearer ${publicAnonKey}`,
+								...getAuthHeaders(),
 							},
 						}
 					);

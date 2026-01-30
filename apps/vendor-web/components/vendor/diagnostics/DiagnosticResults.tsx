@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { FileText, Upload, Search, Calendar } from 'lucide-react';
+import { FileText, Upload, Search, Calendar, ArrowLeft, Truck, Edit2, Send, FileEdit, Trash2 } from 'lucide-react';
 import { CapabilityGate } from '../CapabilityGate';
 import { UploadResults } from './UploadResults';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 
 interface DiagnosticTest {
   id: string;
@@ -18,6 +20,8 @@ interface DiagnosticTest {
   sample_type?: string;
   preparation_instructions?: string;
   is_available: boolean;
+  is_free_home_collection?: boolean;
+  home_collection_fee?: number;
 }
 
 interface DiagnosticResultsProps {
@@ -29,6 +33,7 @@ export function DiagnosticResults({ vendorId, onBack }: DiagnosticResultsProps) 
   const [tests, setTests] = useState<DiagnosticTest[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
+  const [editingTest, setEditingTest] = useState<DiagnosticTest | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
@@ -60,13 +65,41 @@ export function DiagnosticResults({ vendorId, onBack }: DiagnosticResultsProps) 
     );
   });
 
-  if (showUpload) {
+  const togglePublish = async (test: DiagnosticTest) => {
+    try {
+      await apiClient.put(`/vendor/${vendorId}/diagnostics/tests/${test.id}`, {
+        isAvailable: !test.is_available,
+      });
+      toast.success(test.is_available ? 'Test unpublished (Draft)' : 'Test published - now visible to customers');
+      loadTests();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update status');
+    }
+  };
+
+  const handleDelete = async (test: DiagnosticTest) => {
+    if (!confirm('Remove this test?')) return;
+    try {
+      await apiClient.put(`/vendor/${vendorId}/diagnostics/tests/${test.id}`, { isAvailable: false });
+      toast.success('Test removed');
+      loadTests();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to remove');
+    }
+  };
+
+  if (showUpload || editingTest) {
     return (
       <UploadResults
         vendorId={vendorId}
-        onBack={() => setShowUpload(false)}
+        editingTest={editingTest}
+        onBack={() => {
+          setShowUpload(false);
+          setEditingTest(null);
+        }}
         onSuccess={() => {
           setShowUpload(false);
+          setEditingTest(null);
           loadTests();
         }}
       />
@@ -82,19 +115,28 @@ export function DiagnosticResults({ vendorId, onBack }: DiagnosticResultsProps) 
   }
 
   return (
-    <CapabilityGate capability="diagnostic_results" showDisabledMessage>
-      <div className="space-y-4">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Diagnostic Tests</h1>
-            <p className="text-gray-500 mt-1">Manage your diagnostic test catalog</p>
+    <CapabilityGate requireAny={['diagnostic_results', 'diagnostics', 'test_catalog']} showDisabledMessage disabledMessage="Diagnostic tests management is not available for your account">
+      <div className="space-y-4 w-full max-w-[430px] mx-auto">
+        {/* Header with Back Arrow */}
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors shrink-0"
+              aria-label="Back to dashboard"
+            >
+              <ArrowLeft className="w-5 h-5 text-gray-700" />
+            </button>
+          )}
+          <div className="flex-1 min-w-0">
+            <h1 className="text-lg font-bold text-gray-900">Diagnostic Tests</h1>
+            <p className="text-sm text-gray-500 mt-0.5">Manage your test catalog</p>
           </div>
           <button
-            onClick={() => setShowUpload(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            onClick={() => { setEditingTest(null); setShowUpload(true); }}
+            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm shrink-0"
           >
-            <Upload className="w-5 h-5" />
+            <Upload className="w-4 h-4" />
             Add Test
           </button>
         </div>
@@ -131,22 +173,29 @@ export function DiagnosticResults({ vendorId, onBack }: DiagnosticResultsProps) 
                 key={test.id}
                 className="bg-white rounded-lg p-4 border border-gray-200 hover:shadow-md transition"
               >
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{test.test_name}</h3>
+                <div className="space-y-2 mb-2">
+                  <div className="flex justify-between items-start gap-2">
+                    <h3 className="font-semibold text-gray-900 min-w-0 flex-1 truncate">{test.test_name}</h3>
+                    <div className="flex items-center shrink-0 gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingTest(test)} title="Edit">
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => togglePublish(test)} title={test.is_available ? 'Unpublish' : 'Publish'}>
+                        {test.is_available ? <FileEdit className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(test)} title="Remove">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`px-2 py-0.5 text-xs rounded-full shrink-0 ${test.is_available ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                      {test.is_available ? 'Published' : 'Draft'}
+                    </span>
                     {test.test_code && (
-                      <p className="text-sm text-gray-500">Code: {test.test_code}</p>
+                      <span className="text-sm text-gray-500">Code: {test.test_code}</span>
                     )}
                   </div>
-                  {test.is_available ? (
-                    <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">
-                      Available
-                    </span>
-                  ) : (
-                    <span className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded-full">
-                      Unavailable
-                    </span>
-                  )}
                 </div>
 
                 {test.category && (
@@ -157,7 +206,7 @@ export function DiagnosticResults({ vendorId, onBack }: DiagnosticResultsProps) 
                   <p className="text-sm text-gray-600 mb-2">{test.description}</p>
                 )}
 
-                <div className="flex items-center gap-4 text-sm text-gray-500 mt-3 pt-3 border-t">
+                <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500 mt-3 pt-3 border-t">
                   {test.price && (
                     <span className="font-medium text-gray-900">₹{test.price}</span>
                   )}
@@ -169,6 +218,12 @@ export function DiagnosticResults({ vendorId, onBack }: DiagnosticResultsProps) 
                   )}
                   {test.sample_type && (
                     <span>Sample: {test.sample_type}</span>
+                  )}
+                  {test.is_free_home_collection !== undefined && (
+                    <span className="flex items-center gap-1">
+                      <Truck className="w-4 h-4" />
+                      {test.is_free_home_collection ? 'Free home collection' : `Home: ₹${test.home_collection_fee ?? 0}`}
+                    </span>
                   )}
                 </div>
               </div>

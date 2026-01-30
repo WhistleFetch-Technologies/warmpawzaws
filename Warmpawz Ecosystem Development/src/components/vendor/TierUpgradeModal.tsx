@@ -6,7 +6,7 @@ import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Label } from '../ui/label';
 import { Check, Crown, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface Tier {
   id: string;
@@ -35,7 +35,7 @@ export function TierUpgradeModal({ isOpen, onClose, currentTierId, vendorId, onS
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     if (isOpen) {
@@ -47,7 +47,7 @@ export function TierUpgradeModal({ isOpen, onClose, currentTierId, vendorId, onS
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE}/payments/tiers`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (response.ok) {
@@ -75,7 +75,7 @@ export function TierUpgradeModal({ isOpen, onClose, currentTierId, vendorId, onS
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({ 
           targetTierId: selectedTierId,

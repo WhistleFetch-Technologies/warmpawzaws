@@ -3,9 +3,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { Button, Card } from '@warmpawz/ui';
-import { Plus, Edit, Trash2, Search, CheckCircle, XCircle, Eye } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, CheckCircle, XCircle, Eye, Pause, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import { VendorRoleWizard } from './VendorRoleWizard';
+
+// Helper to check if role is system role
+const isSystemRole = (role: VendorRole): boolean => {
+  return role.config?.is_system_role === true || false;
+};
 
 interface VendorRole {
   id: string;
@@ -37,7 +42,8 @@ export function VendorRolesTab() {
   const loadRoles = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get<any>('/admin/roles');
+      // Get ALL roles including inactive ones
+      const response = await apiClient.get<any>('/admin/roles?active=false');
       console.log('🔍 [VendorRolesTab] API Response:', response);
       
       if (response && response.success && response.roles) {
@@ -66,6 +72,80 @@ export function VendorRolesTab() {
       setRoles([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Toggle role active/inactive
+  const handleToggleActive = async (role: VendorRole) => {
+    if (isSystemRole(role)) {
+      toast.error('System roles cannot be modified');
+      return;
+    }
+
+    const newStatus = !role.isActive;
+    const action = newStatus ? 'activate' : 'deactivate';
+    
+    if (!confirm(`Are you sure you want to ${action} "${role.display_name}"?`)) {
+      return;
+    }
+
+    try {
+      const response = await apiClient.put<any>(`/admin/roles/${role.id}`, { 
+        is_active: newStatus 
+      });
+      
+      if (response.success) {
+        toast.success(`Role ${newStatus ? 'activated' : 'deactivated'} successfully`);
+        loadRoles();
+      } else {
+        toast.error(response.error || `Failed to ${action} role`);
+      }
+    } catch (error: any) {
+      console.error(`Error ${action}ing role:`, error);
+      toast.error(error.message || `Failed to ${action} role`);
+    }
+  };
+
+  // Delete role (soft or permanent)
+  const handleDeleteRole = async (role: VendorRole, permanent: boolean = false) => {
+    if (isSystemRole(role)) {
+      toast.error('System roles cannot be deleted');
+      return;
+    }
+
+    if (permanent) {
+      // Double confirmation for permanent delete
+      const firstConfirm = window.confirm(
+        `⚠️ PERMANENT DELETE\n\nAre you sure you want to PERMANENTLY delete role "${role.display_name}"?\n\nThis will:\n• Remove the role from the database\n• Delete all associated permissions\n• This action CANNOT be undone!`
+      );
+      if (!firstConfirm) return;
+      
+      const secondConfirm = window.prompt(`To confirm permanent deletion, type the role name: "${role.display_name}"`);
+      if (secondConfirm !== role.display_name) {
+        toast.error('Role name did not match. Deletion cancelled.');
+        return;
+      }
+    } else {
+      if (!confirm(`Are you sure you want to deactivate role "${role.display_name}"?\n\nThe role will be hidden from new vendors but existing vendors will keep their role.`)) {
+        return;
+      }
+    }
+
+    try {
+      const endpoint = permanent 
+        ? `/admin/roles/${role.id}?permanent=true`
+        : `/admin/roles/${role.id}`;
+      const response = await apiClient.delete<any>(endpoint);
+      
+      if (response.success) {
+        toast.success(response.message || (permanent ? 'Role permanently deleted' : 'Role deactivated'));
+        loadRoles();
+      } else {
+        toast.error(response.error || 'Failed to delete role');
+      }
+    } catch (error: any) {
+      console.error('Error deleting role:', error);
+      toast.error(error.message || 'Failed to delete role');
     }
   };
 
@@ -290,17 +370,51 @@ export function VendorRolesTab() {
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setEditingRole(role);
-                          setShowWizard(true);
-                        }}
-                      >
-                        <Edit className="w-3 h-3 mr-1" />
-                        Edit
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingRole(role);
+                            setShowWizard(true);
+                          }}
+                          title="Edit role"
+                        >
+                          <Edit className="w-3 h-3 mr-1" />
+                          Edit
+                        </Button>
+                        
+                        {!isSystemRole(role) && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleToggleActive(role)}
+                              title={role.isActive ? 'Deactivate role' : 'Activate role'}
+                              className={role.isActive 
+                                ? 'text-orange-600 border-orange-300 hover:bg-orange-50' 
+                                : 'text-green-600 border-green-300 hover:bg-green-50'
+                              }
+                            >
+                              {role.isActive ? (
+                                <Pause className="w-3 h-3" />
+                              ) : (
+                                <Play className="w-3 h-3" />
+                              )}
+                            </Button>
+                            
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleDeleteRole(role, true)}
+                              title="Permanently delete role"
+                              className="text-red-600 border-red-300 hover:bg-red-50"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

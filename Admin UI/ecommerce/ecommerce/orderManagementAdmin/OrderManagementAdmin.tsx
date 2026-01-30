@@ -6,7 +6,7 @@ import {
 	ChevronRight,
 	ArrowLeft,
 } from "lucide-react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders, getAuthToken } from "@repo/utils/api-config";
 
 import {
 	LoadingState,
@@ -26,7 +26,7 @@ export function OrderManagementAdmin() {
 	const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 	const [selectedOrder, setSelectedOrder] = useState<any>(null);
 
-	const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+	const API_BASE = `${getApiBaseUrl()}`;
 
 	useEffect(() => {
 		fetchOrders();
@@ -49,8 +49,8 @@ export function OrderManagementAdmin() {
 				`${API_BASE}/ecommerce/orders`, // Using the actual orders endpoint
 				{
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
-						apikey: publicAnonKey,
+						...getAuthHeaders(),
+						apikey: getAuthToken(),
 					},
 				}
 			);
@@ -74,8 +74,8 @@ export function OrderManagementAdmin() {
 			// Fetch full order details from API
 			const response = await fetch(`${API_BASE}/ecommerce/order/${id}`, {
 				headers: {
-					Authorization: `Bearer ${publicAnonKey}`,
-					apikey: publicAnonKey,
+					...getAuthHeaders(),
+					apikey: getAuthToken(),
 				},
 			});
 

@@ -8,7 +8,7 @@ import { TimeSlotSelector } from './grooming/TimeSlotSelector';
 import { AddressSelector } from './grooming/AddressSelector';
 import { PaymentPage } from './grooming/PaymentPage';
 import { BookingConfirmation } from './grooming/BookingConfirmation';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 type ViewType = 
   | 'landing'
@@ -48,7 +48,7 @@ export function SunsetServiceRouter({ onBack, phone, onNavigate, onViewBooking }
     booking: null
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadCustomerData();

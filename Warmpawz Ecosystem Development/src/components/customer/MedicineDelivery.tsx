@@ -3,7 +3,7 @@ import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Input } from '../ui/input';
 import { ArrowLeft, Pill, Upload, Check, Package, Truck, MapPin } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface MedicineDeliveryProps {
@@ -24,10 +24,10 @@ export function MedicineDelivery({ onBack, customerId, petProfiles }: MedicineDe
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vet/medicine-order`,
+        `${getApiBaseUrl()}/vet/medicine-order`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+          headers: { 'Content-Type': 'application/json', Authorization: (getAuthHeaders().Authorization || "") },
           body: JSON.stringify({
             customerId,
             petId: selectedPet.id,

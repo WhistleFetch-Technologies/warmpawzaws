@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Star, MapPin, Phone, Mail, Clock, Award, CheckCircle2, Package, TrendingUp } from 'lucide-react';
+import { Star, MapPin, Phone, Mail, Clock, Award, CheckCircle2, Package, TrendingUp, Sparkles } from 'lucide-react';
+import { AmenitiesSection } from './shared/AmenitiesSection';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -22,7 +23,7 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
   const [products, setProducts] = useState<any[]>([]);
   const [reviews, setReviews] = useState<any[]>([]);
   const [rating, setRating] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'products' | 'reviews'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'amenities' | 'products' | 'reviews'>('overview');
 
   const loadVendorData = async () => {
     try {
@@ -153,6 +154,16 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
             Overview
           </button>
           <button
+            onClick={() => setActiveTab('amenities')}
+            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'amenities'
+                ? 'border-[#FF8C42] text-[#FF8C42]'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Amenities
+          </button>
+          <button
             onClick={() => setActiveTab('products')}
             className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'products'
@@ -225,6 +236,20 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
               </Card>
             )}
           </>
+        )}
+
+        {activeTab === 'amenities' && (
+          <Card className="p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <Sparkles className="w-5 h-5 text-[#FF8C42]" />
+              <h3 className="font-semibold text-gray-900">Facilities & Amenities</h3>
+            </div>
+            <AmenitiesSection
+              amenities={vendor?.amenities || []}
+              customAmenities={vendor?.customAmenities || []}
+              showCategories={true}
+            />
+          </Card>
         )}
 
         {activeTab === 'products' && (

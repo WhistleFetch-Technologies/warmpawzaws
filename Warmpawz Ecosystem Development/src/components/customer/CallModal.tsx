@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Phone, Video, Mic, MicOff, VideoOff, PhoneOff } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface CallModalProps {
   bookingId: string;
@@ -55,11 +55,11 @@ export function CallModal({ bookingId, customerPhone, customerName, callType, on
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/call/initiate`,
+        `${getApiBaseUrl()}/call/initiate`,
         {
           method: 'POST',
           headers: { 
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -90,10 +90,10 @@ export function CallModal({ bookingId, customerPhone, customerName, callType, on
   const answerCall = async (callId: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/call/${callId}/answer`,
+        `${getApiBaseUrl()}/call/${callId}/answer`,
         {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -110,11 +110,11 @@ export function CallModal({ bookingId, customerPhone, customerName, callType, on
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/call/${callSession.id}/end`,
+        `${getApiBaseUrl()}/call/${callSession.id}/end`,
         {
           method: 'POST',
           headers: { 
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({})

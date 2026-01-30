@@ -12,9 +12,9 @@
  * - Payment and settlement flow
  */
 
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../utils/api-config';
 
-const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const BASE_URL = `${getApiBaseUrl()}`;
 
 interface FlowStep {
   name: string;
@@ -111,7 +111,7 @@ export async function testCustomerBookingFlow() {
       'Search for grooming services',
       async () => {
         const response = await fetch(`${BASE_URL}/elasticsearch/search?q=grooming`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         });
         return response.json();
       }
@@ -122,7 +122,7 @@ export async function testCustomerBookingFlow() {
       'View vendor profile',
       async () => {
         const response = await fetch(`${BASE_URL}/vendor/test-vendor-001`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         });
         return response.json();
       }
@@ -134,7 +134,7 @@ export async function testCustomerBookingFlow() {
       async () => {
         const response = await fetch(
           `${BASE_URL}/vendor/test-vendor-001/availability?date=2024-12-20`,
-          { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+          { headers: getAuthHeaders() }
         );
         return response.json();
       }
@@ -147,7 +147,7 @@ export async function testCustomerBookingFlow() {
         const response = await fetch(`${BASE_URL}/bookings/create`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -172,7 +172,7 @@ export async function testCustomerBookingFlow() {
           {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
+              ...getAuthHeaders(),
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -193,7 +193,7 @@ export async function testCustomerBookingFlow() {
         const response = await fetch(`${BASE_URL}/payment/create-order`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -213,7 +213,7 @@ export async function testCustomerBookingFlow() {
         const response = await fetch(`${BASE_URL}/sms/send`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -236,7 +236,7 @@ export async function testCustomerBookingFlow() {
       async () => {
         const response = await fetch(
           `${BASE_URL}/customer/test-customer-001/bookings`,
-          { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+          { headers: getAuthHeaders() }
         );
         return response.json();
       }
@@ -265,7 +265,7 @@ export async function testEmergencyAmbulanceFlow() {
         const response = await fetch(`${BASE_URL}/ambulance/emergency-booking`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -309,7 +309,7 @@ export async function testEmergencyAmbulanceFlow() {
         const response = await fetch(`${BASE_URL}/sms/send`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -332,7 +332,7 @@ export async function testEmergencyAmbulanceFlow() {
       async () => {
         const response = await fetch(
           `${BASE_URL}/ambulance/tracking/${ambulanceBooking.booking?.id || 'AMB-TEST'}`,
-          { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+          { headers: getAuthHeaders() }
         );
         return response.json();
       }
@@ -347,7 +347,7 @@ export async function testEmergencyAmbulanceFlow() {
           {
             method: 'PUT',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
+              ...getAuthHeaders(),
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({ status: 'arrived' })
@@ -366,7 +366,7 @@ export async function testEmergencyAmbulanceFlow() {
           {
             method: 'PUT',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
+              ...getAuthHeaders(),
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({ status: 'pet_loaded' })
@@ -385,7 +385,7 @@ export async function testEmergencyAmbulanceFlow() {
           {
             method: 'PUT',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
+              ...getAuthHeaders(),
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({ status: 'delivered' })
@@ -416,7 +416,7 @@ export async function testInsurancePurchaseFlow() {
       'Browse available insurance plans',
       async () => {
         const response = await fetch(`${BASE_URL}/insurance/plans`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         });
         return response.json();
       }
@@ -449,7 +449,7 @@ export async function testInsurancePurchaseFlow() {
         const response = await fetch(`${BASE_URL}/insurance/purchase-policy`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -472,7 +472,7 @@ export async function testInsurancePurchaseFlow() {
       async () => {
         const response = await fetch(
           `${BASE_URL}/insurance/policy/${policy.policy?.policyId || 'POL-TEST'}/download`,
-          { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+          { headers: getAuthHeaders() }
         );
         return response.json();
       }
@@ -485,7 +485,7 @@ export async function testInsurancePurchaseFlow() {
         const response = await fetch(`${BASE_URL}/sms/send`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -532,7 +532,7 @@ export async function testVendorSettlementFlow() {
       async () => {
         const response = await fetch(
           `${BASE_URL}/tier-system/calculate-commission?vendorId=test-vendor-001&amount=1000`,
-          { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+          { headers: getAuthHeaders() }
         );
         return response.json();
       }
@@ -545,7 +545,7 @@ export async function testVendorSettlementFlow() {
         const response = await fetch(`${BASE_URL}/marketplace-settlement/process`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -565,7 +565,7 @@ export async function testVendorSettlementFlow() {
       async () => {
         const response = await fetch(
           `${BASE_URL}/marketplace-settlement/vendor/test-vendor-001/earnings`,
-          { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+          { headers: getAuthHeaders() }
         );
         return response.json();
       }
@@ -612,7 +612,7 @@ export async function testTrainingProgressFlow() {
           {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
+              ...getAuthHeaders(),
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -634,7 +634,7 @@ export async function testTrainingProgressFlow() {
       async () => {
         const response = await fetch(
           `${BASE_URL}/training/package/${packageBooking.packageId}/progress`,
-          { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+          { headers: getAuthHeaders() }
         );
         return response.json();
       }
@@ -655,7 +655,7 @@ export async function testTrainingProgressFlow() {
         const response = await fetch(`${BASE_URL}/sms/send`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Calendar, Users, Clock, CheckCircle, XCircle, AlertCircle, Coffee } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface CafeVendorDashboardProps {
   vendorId: string;
@@ -40,9 +40,9 @@ export function CafeVendorDashboard({ vendorId }: CafeVendorDashboardProps) {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/vendor/${vendorId}`,
+        `${getApiBaseUrl()}/bookings/vendor/${vendorId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -81,11 +81,11 @@ export function CafeVendorDashboard({ vendorId }: CafeVendorDashboardProps) {
   const handleStatusUpdate = async (bookingId: string, newStatus: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${bookingId}/status`,
+        `${getApiBaseUrl()}/bookings/${bookingId}/status`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

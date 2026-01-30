@@ -7,7 +7,7 @@ import {
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { Card } from '../../ui/card';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface InsurancePlan {
   id: string;
@@ -85,9 +85,9 @@ export function InsuranceDashboard({
       
       // Load plans
       const plansResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/insurance/plans`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/insurance/plans`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
       
@@ -110,9 +110,9 @@ export function InsuranceDashboard({
       
       // Load claims
       const claimsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/insurance/claims`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/insurance/claims`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
       

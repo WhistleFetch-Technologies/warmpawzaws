@@ -8,7 +8,7 @@ import {
 	RefreshCw,
 } from "lucide-react";
 import { Button } from "@repo/ui";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 interface ClarificationVendor {
 	id: string;
 	vendorId: string;
@@ -47,9 +47,9 @@ export function ClarificationRequestedTab({
 
 			// Fetch all vendors and filter by more_info_required status
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/all`,
+				`${getApiBaseUrl()}/admin/vendors/all`,
 				{
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 
@@ -120,11 +120,11 @@ export function ClarificationRequestedTab({
 
 		try {
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor/request-info`,
+				`${getApiBaseUrl()}/admin/vendor/request-info`,
 				{
 					method: "POST",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({

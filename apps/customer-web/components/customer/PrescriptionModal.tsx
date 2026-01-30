@@ -1,10 +1,18 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { X, FileText, Download, Share2, ShoppingCart, Pill, Clock, Calendar, User, CheckCircle, Loader2, ExternalLink } from 'lucide-react';
+import { X, FileText, Download, Share2, ShoppingCart, Pill, Clock, Calendar, User, CheckCircle, Loader2, ExternalLink, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import dynamic from 'next/dynamic';
+import { transformPrescriptionData } from './PrescriptionDocument';
+
+// Dynamically import PrescriptionDocument for code splitting
+const PrescriptionDocument = dynamic(() => import('./PrescriptionDocument'), {
+  loading: () => <div className="flex items-center justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-[#FF8C42]" /></div>,
+  ssr: false
+});
 
 interface PrescriptionModalProps {
   prescriptionId?: string;
@@ -17,9 +25,9 @@ interface PrescriptionModalProps {
 
 interface Medication {
   name: string;
-  dosage: string;
-  frequency: string;
-  duration: string;
+  dosage?: string;
+  frequency?: string;
+  duration?: string;
   instructions?: string;
 }
 
@@ -58,9 +66,11 @@ export function PrescriptionModal({
   onReorderMedicine 
 }: PrescriptionModalProps) {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [fullPrescriptionData, setFullPrescriptionData] = useState<any>(null);
   const [loading, setLoading] = useState(!propPrescription);
   const [sharing, setSharing] = useState(false);
   const [ordering, setOrdering] = useState(false);
+  const [showFullDocument, setShowFullDocument] = useState(false);
 
   useEffect(() => {
     if (propPrescription) {
@@ -78,11 +88,22 @@ export function PrescriptionModal({
       let response;
       
       if (bookingId) {
-        response = await apiClient.get(`/prescriptions/booking/${bookingId}`) as any;
+        // Load prescriptions for booking with full details
+        response = await apiClient.get(`/prescriptions/booking/${bookingId}?includeDetails=true`) as any;
         setPrescriptions(response.prescriptions || []);
+        
+        // Store full data for document view
+        if (response.prescriptions?.length > 0) {
+          setFullPrescriptionData(response);
+        }
       } else if (prescriptionId) {
-        response = await apiClient.get(`/prescriptions/${prescriptionId}`) as any;
+        response = await apiClient.get(`/prescriptions/${prescriptionId}?includeDetails=true`) as any;
         setPrescriptions(response.prescription ? [response.prescription] : []);
+        
+        // Store full data for document view
+        if (response.prescription) {
+          setFullPrescriptionData(response);
+        }
       }
     } catch (error) {
       console.error('Error loading prescription:', error);
@@ -126,22 +147,26 @@ Instructions: ${p.instructions || 'N/A'}
   const handleOrderMedicine = async () => {
     setOrdering(true);
     try {
-      const medications = prescriptions.map(p => ({
-        name: p.medication_name,
-        dosage: p.dosage,
-        frequency: p.frequency,
-        duration: p.duration,
-      }));
-
-      if (onReorderMedicine) {
+      // Use the proper prescription order flow (with pharmacy search by radius)
+      // instead of going to cart
+      const prescriptionIdToUse = prescriptionId || prescriptions[0]?.id;
+      
+      if (prescriptionIdToUse) {
+        // Navigate to the prescription order flow page
+        // This uses PharmacyBroadcastMap with 5km, 10km, 20km radius search
+        window.location.href = `/prescriptions/${prescriptionIdToUse}/order`;
+      } else if (onReorderMedicine) {
+        // Fallback: Use callback if provided (for inline ordering)
+        const medications = prescriptions.map(p => ({
+          name: p.medication_name,
+          dosage: p.dosage,
+          frequency: p.frequency,
+          duration: p.duration,
+        }));
         onReorderMedicine(medications);
       } else {
-        // Navigate to pharmacy with prescription data
-        const params = new URLSearchParams({
-          prescription: JSON.stringify(medications),
-          bookingId: bookingId || '',
-        });
-        window.location.href = `/pharmacy?${params.toString()}`;
+        // No prescription ID available - show error
+        toast.error('Unable to order medicine. Please try again from your booking details.');
       }
     } catch (error) {
       console.error('Error ordering medicine:', error);
@@ -227,50 +252,66 @@ Instructions: ${p.instructions || 'N/A'}
               )}
 
               {/* Medications List */}
-              {prescriptions.map((prescription, index) => (
-                <div key={prescription.id || index} className="bg-white rounded-xl p-4 space-y-3 border-l-4 border-[#FF8C42]">
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Pill className="w-5 h-5 text-[#FF8C42]" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-gray-900 text-lg">
-                        {prescription.medication_name || 'Medication'}
-                      </h4>
-                      
-                      {/* Dosage Info Grid */}
-                      <div className="grid grid-cols-3 gap-2 mt-3">
-                        <div className="bg-blue-50 rounded-lg p-2 text-center">
-                          <p className="text-xs text-blue-600 font-medium">Dosage</p>
-                          <p className="text-sm text-gray-900 font-medium">
-                            {prescription.dosage || '-'}
-                          </p>
-                        </div>
-                        <div className="bg-green-50 rounded-lg p-2 text-center">
-                          <p className="text-xs text-green-600 font-medium">Frequency</p>
-                          <p className="text-sm text-gray-900 font-medium">
-                            {prescription.frequency || '-'}
-                          </p>
-                        </div>
-                        <div className="bg-purple-50 rounded-lg p-2 text-center">
-                          <p className="text-xs text-purple-600 font-medium">Duration</p>
-                          <p className="text-sm text-gray-900 font-medium">
-                            {prescription.duration || '-'}
-                          </p>
+              {prescriptions.map((prescription, index) => {
+                // Extract medication details from either top-level fields or medications JSONB array
+                const medications = prescription.medications;
+                // Ensure medData is a single Medication object or null (not an array)
+                const medData: Medication | null = Array.isArray(medications) && medications.length > 0 
+                  ? medications[0] 
+                  : null;
+                
+                // Get values from medications array first, fallback to top-level fields
+                const dosage = prescription.dosage || medData?.dosage || '-';
+                const frequency = prescription.frequency || medData?.frequency || '-';
+                const duration = prescription.duration || medData?.duration || '-';
+                const instructions = prescription.instructions || medData?.instructions || prescription.diagnosis;
+                const medicationName = prescription.medication_name || medData?.name || 'Medication';
+                
+                return (
+                  <div key={prescription.id || index} className="bg-white rounded-xl p-4 space-y-3 border-l-4 border-[#FF8C42]">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <Pill className="w-5 h-5 text-[#FF8C42]" />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-gray-900 text-lg">
+                          {medicationName}
+                        </h4>
+                        
+                        {/* Dosage Info Grid */}
+                        <div className="grid grid-cols-3 gap-2 mt-3">
+                          <div className="bg-blue-50 rounded-lg p-2 text-center">
+                            <p className="text-xs text-blue-600 font-medium">Dosage</p>
+                            <p className="text-sm text-gray-900 font-medium">
+                              {dosage}
+                            </p>
+                          </div>
+                          <div className="bg-green-50 rounded-lg p-2 text-center">
+                            <p className="text-xs text-green-600 font-medium">Frequency</p>
+                            <p className="text-sm text-gray-900 font-medium">
+                              {frequency}
+                            </p>
+                          </div>
+                          <div className="bg-purple-50 rounded-lg p-2 text-center">
+                            <p className="text-xs text-purple-600 font-medium">Duration</p>
+                            <p className="text-sm text-gray-900 font-medium">
+                              {duration}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Instructions */}
-                  {prescription.instructions && (
-                    <div className="bg-amber-50 rounded-lg p-3 mt-3">
-                      <p className="text-xs text-amber-700 font-medium mb-1">Instructions</p>
-                      <p className="text-sm text-gray-700">{prescription.instructions}</p>
-                    </div>
-                  )}
-                </div>
-              ))}
+                    {/* Instructions */}
+                    {instructions && (
+                      <div className="bg-amber-50 rounded-lg p-3 mt-3">
+                        <p className="text-xs text-amber-700 font-medium mb-1">Instructions</p>
+                        <p className="text-sm text-gray-700">{instructions}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
 
               {/* General Notes */}
               {prescriptions[0]?.generalNotes && (
@@ -286,7 +327,16 @@ Instructions: ${p.instructions || 'N/A'}
         {/* Footer Actions */}
         {prescriptions.length > 0 && (
           <div className="bg-white border-t border-gray-100 p-4 space-y-3">
-            {/* Order Medicine Button - Primary CTA */}
+            {/* View Full Prescription Button */}
+            <button
+              onClick={() => setShowFullDocument(true)}
+              className="w-full py-3 px-4 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-xl font-semibold flex items-center justify-center gap-2 transition-all shadow-lg"
+            >
+              <Eye className="w-5 h-5" />
+              View Full Prescription (A4)
+            </button>
+
+            {/* Order Medicine Button */}
             <button
               onClick={handleOrderMedicine}
               disabled={ordering}
@@ -315,16 +365,44 @@ Instructions: ${p.instructions || 'N/A'}
                 Share
               </button>
               <button
-                onClick={() => window.print()}
+                onClick={() => setShowFullDocument(true)}
                 className="flex-1 py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-medium flex items-center justify-center gap-2 transition-colors"
               >
                 <Download className="w-4 h-4" />
-                Download
+                Print/PDF
               </button>
             </div>
           </div>
         )}
       </div>
+
+      {/* Full Prescription Document Modal */}
+      {showFullDocument && prescriptions.length > 0 && (
+        <PrescriptionDocument
+          prescription={transformPrescriptionData({
+            ...prescriptions[0],
+            ...fullPrescriptionData,
+            // Combine all medications from all prescriptions into one
+            medications: prescriptions.flatMap(p => {
+              if (p.medications && Array.isArray(p.medications)) {
+                return p.medications;
+              }
+              if (p.medication_name) {
+                return [{
+                  name: p.medication_name,
+                  dosage: p.dosage,
+                  frequency: p.frequency,
+                  duration: p.duration,
+                  instructions: p.instructions
+                }];
+              }
+              return [];
+            })
+          })}
+          onClose={() => setShowFullDocument(false)}
+          onOrderMedicine={handleOrderMedicine}
+        />
+      )}
     </div>
   );
 }

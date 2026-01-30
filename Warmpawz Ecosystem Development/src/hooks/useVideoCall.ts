@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../utils/api-config';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 interface UseVideoCallProps {
   bookingId: string;
@@ -44,7 +44,7 @@ export function useVideoCall({ bookingId, participantType, customerName, custome
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${publicAnonKey}`
+              ...getAuthHeaders()
             },
             body: JSON.stringify({
               roomId,
@@ -98,7 +98,7 @@ export function useVideoCall({ bookingId, participantType, customerName, custome
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           bookingId,
@@ -130,7 +130,7 @@ export function useVideoCall({ bookingId, participantType, customerName, custome
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             roomId: currentRoomId,
@@ -164,7 +164,7 @@ export function useVideoCall({ bookingId, participantType, customerName, custome
         if (pc.signalingState === 'stable' && participantType === 'vendor') {
           // Vendor waiting for offer
           const res = await fetch(`${API_BASE}/video/signal/offer/${currentRoomId}`, {
-             headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+             headers: getAuthHeaders()
           });
           const data = await res.json();
           
@@ -179,7 +179,7 @@ export function useVideoCall({ bookingId, participantType, customerName, custome
                method: 'POST',
                headers: {
                  'Content-Type': 'application/json',
-                 'Authorization': `Bearer ${publicAnonKey}`
+                 ...getAuthHeaders()
                },
                body: JSON.stringify({
                  roomId: currentRoomId,
@@ -191,7 +191,7 @@ export function useVideoCall({ bookingId, participantType, customerName, custome
         } else if (pc.signalingState === 'have-local-offer' && participantType === 'customer') {
           // Customer waiting for answer
           const res = await fetch(`${API_BASE}/video/signal/answer/${currentRoomId}`, {
-             headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+             headers: getAuthHeaders()
           });
           const data = await res.json();
           
@@ -203,7 +203,7 @@ export function useVideoCall({ bookingId, participantType, customerName, custome
 
         // Poll for ICE Candidates
         const res = await fetch(`${API_BASE}/video/signal/ice-candidates/${currentRoomId}/${participantType}`, {
-           headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+           headers: getAuthHeaders()
         });
         const data = await res.json();
         
@@ -245,7 +245,7 @@ export function useVideoCall({ bookingId, participantType, customerName, custome
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${publicAnonKey}`
+              ...getAuthHeaders()
             },
             body: JSON.stringify({
               participantType,

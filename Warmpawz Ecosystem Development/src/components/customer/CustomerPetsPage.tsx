@@ -3,7 +3,7 @@ import { LoadingState, ErrorState, EmptyState } from '../ui/states';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { ArrowLeft, Plus, Calendar, Activity, Weight } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface Pet {
   id: string;
@@ -28,7 +28,7 @@ export function CustomerPetsPage({ phone, onBack, onNavigate, onAddPet }: Custom
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchPets();
@@ -43,7 +43,7 @@ export function CustomerPetsPage({ phone, onBack, onNavigate, onAddPet }: Custom
         `${API_BASE}/customer/pets?phone=${encodeURIComponent(phone)}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'apikey': publicAnonKey
           }
         }

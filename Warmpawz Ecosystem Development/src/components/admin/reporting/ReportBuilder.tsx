@@ -12,13 +12,13 @@ import {
   Save, Clock, BarChart3, PieChart as PieChartIcon, TrendingUp, Table,
   ArrowLeft, Mail, Share2
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { 
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 interface ReportConfig {
   id?: string;
@@ -104,7 +104,7 @@ export function ReportBuilder({ onBack }: ReportBuilderProps) {
   const loadSavedReports = async () => {
     try {
       const response = await fetch(`${API_BASE}/admin/reports/saved`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       if (response.ok) {
         const data = await response.json();
@@ -122,7 +122,7 @@ export function ReportBuilder({ onBack }: ReportBuilderProps) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify(reportConfig)
       });
@@ -152,7 +152,7 @@ export function ReportBuilder({ onBack }: ReportBuilderProps) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify(reportConfig)
       });

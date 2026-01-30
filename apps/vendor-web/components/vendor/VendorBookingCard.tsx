@@ -13,7 +13,7 @@ import {
   Square
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { getVendorRoleId, hasVendorRole } from '@/lib/vendor-utils';
 
 interface BookingCardProps {
@@ -28,6 +28,8 @@ interface BookingCardProps {
   chatEnabled?: boolean;
   /** Optional callback to open chat modal */
   onOpenChat?: (booking: any) => void;
+  /** Optional callback to open prescription modal */
+  onOpenPrescription?: (booking: any) => void;
 }
 
 export function VendorBookingCard({ 
@@ -40,6 +42,7 @@ export function VendorBookingCard({
   onRefresh,
   chatEnabled = true, // Default to true for backwards compatibility
   onOpenChat,
+  onOpenPrescription,
 }: BookingCardProps) {
   
   const isVet = hasVendorRole(vendorData, ['veterinarian', 'vet']);
@@ -69,51 +72,15 @@ export function VendorBookingCard({
     }
   };
   
-  // ✅ Handle Open Prescription
-  const handleOpenPrescription = async () => {
+  // ✅ Handle Open Prescription - Use parent callback to open modal
+  const handleOpenPrescription = () => {
     console.log('💊 Opening prescription for booking:', booking.bookingId || booking.id);
     
-    const bookingId = booking.bookingId || booking.id;
-    
-    if (booking.hasPrescription) {
-      // View existing prescription
-      try {
-        const data = await apiClient.get(`/vendor/prescription/${bookingId}`) as any;
-        
-        if (data && data.prescription) {
-          alert(`📋 Prescription Details\n\n${data.prescription.notes}\n\nUploaded: ${new Date(data.prescription.uploadedAt).toLocaleString()}`);
-        } else {
-          alert('❌ Failed to load prescription');
-        }
-      } catch (error) {
-        console.error('Error fetching prescription:', error);
-        alert('❌ Error loading prescription');
-      }
+    if (onOpenPrescription) {
+      onOpenPrescription(booking);
     } else {
-      // Upload new prescription
-      const notes = prompt('Enter prescription notes for ' + booking.petName + ':');
-      if (!notes) return;
-      
-      try {
-        const payload = {
-          bookingId,
-          vendorId,
-          prescriptionNotes: notes,
-          prescriptionFile: null // TODO: Add file upload
-        };
-        
-        const data = await apiClient.post('/vendor/prescription/upload', payload) as any;
-        
-        if (data && data.success) {
-          alert('✅ Prescription uploaded successfully!');
-          onRefresh(); // Reload to show prescription badge
-        } else {
-          alert('❌ Failed to upload prescription: ' + (data?.error || 'Unknown error'));
-        }
-      } catch (error) {
-        console.error('Error uploading prescription:', error);
-        alert('❌ Error uploading prescription');
-      }
+      // Fallback alert if no callback provided
+      alert('Prescription modal not available. Please try from the full booking view.');
     }
   };
   

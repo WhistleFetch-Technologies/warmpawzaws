@@ -36,11 +36,12 @@ interface ProblemGridItem {
   name: string;
   icon: string;
   description?: string;
-  allowedServiceStyles: ServiceStyle[];
+  allowedServiceStyles?: ServiceStyle[];  // Optional - fetched from API
   linkedServiceRoles: string[];
   specializations?: string[];
   category: string;
   popular?: boolean;
+  roleId?: string;
 }
 
 type ServiceStyle = 'at_home' | 'at_center' | 'tele';
@@ -130,13 +131,57 @@ export function ProblemGridFlowRouter({
   const [selectedServiceStyle, setSelectedServiceStyle] = useState<ServiceStyle | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<ServiceProvider | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingProblemDetails, setLoadingProblemDetails] = useState(false);
   const [providers, setProviders] = useState<ServiceProvider[]>([]);
   const [showInstantOption, setShowInstantOption] = useState(false);
   const [isInstantMode, setIsInstantMode] = useState(false);
+  const [allowedServiceStyles, setAllowedServiceStyles] = useState<ServiceStyle[]>(['at_home', 'at_center', 'tele']);
   
-  // Computed
-  const availableStyles = selectedProblem?.allowedServiceStyles || [];
+  // Computed - use fetched allowedServiceStyles, fallback to problem's styles, then default
+  const availableStyles = allowedServiceStyles.length > 0 
+    ? allowedServiceStyles 
+    : (selectedProblem?.allowedServiceStyles || ['at_home', 'at_center', 'tele']);
   const hasTeleOption = availableStyles.includes('tele');
+
+  // Fetch problem details including allowedServiceStyles when problem changes
+  useEffect(() => {
+    if (selectedProblem?.id && selectedProblem?.roleId) {
+      fetchProblemDetails();
+    }
+  }, [selectedProblem?.id, selectedProblem?.roleId]);
+
+  const fetchProblemDetails = async () => {
+    if (!selectedProblem) return;
+    
+    setLoadingProblemDetails(true);
+    try {
+      // Fetch problem details including allowedServiceStyles from public/problems
+      const roleId = selectedProblem.roleId || selectedProblem.linkedServiceRoles?.[0] || 'vet';
+      const res = await apiClient.get<any>(`/public/problems?roleId=${roleId}`);
+      
+      if (res.success && res.problems) {
+        // Find the matching problem to get its allowedServiceStyles
+        const matchingProblem = res.problems.find(
+          (p: any) => p.id === selectedProblem.id
+        );
+        
+        if (matchingProblem?.allowedServiceStyles) {
+          setAllowedServiceStyles(matchingProblem.allowedServiceStyles as ServiceStyle[]);
+        } else if (selectedProblem.allowedServiceStyles) {
+          // Use the styles from initialProblem if API doesn't return them
+          setAllowedServiceStyles(selectedProblem.allowedServiceStyles);
+        }
+      }
+    } catch (error: any) {
+      console.error('Error fetching problem details:', error);
+      // Fallback to problem's styles or defaults
+      if (selectedProblem.allowedServiceStyles) {
+        setAllowedServiceStyles(selectedProblem.allowedServiceStyles);
+      }
+    } finally {
+      setLoadingProblemDetails(false);
+    }
+  };
 
   // Fetch providers when service style is selected
   useEffect(() => {
@@ -148,27 +193,50 @@ export function ProblemGridFlowRouter({
   const fetchProviders = async () => {
     if (!selectedProblem || !selectedServiceStyle) return;
     
+    // Validate that the selected style is allowed for this problem
+    if (!availableStyles.includes(selectedServiceStyle)) {
+      console.warn(`Service style ${selectedServiceStyle} is not allowed for problem ${selectedProblem.id}`);
+      setProviders([]);
+      return;
+    }
+    
     setLoading(true);
     try {
       const params = new URLSearchParams({
         serviceStyle: selectedServiceStyle,
         problemGridId: selectedProblem.id,
         specializations: selectedProblem.specializations?.join(',') || '',
-        roles: selectedProblem.linkedServiceRoles.join(','),
+        roles: selectedProblem.linkedServiceRoles?.join(',') || '',
         ...(location && {
           lat: location.lat.toString(),
           lng: location.lng.toString(),
         }),
       });
 
-      const res = await apiClient.get<any>(`/search/providers?${params}`);
+      // Try the search/providers endpoint first, fall back to customer/services/by-problem
+      let res: any;
+      try {
+        res = await apiClient.get<any>(`/search/providers?${params}`);
+      } catch (searchError) {
+        // Fallback to by-problem endpoint with serviceStyle filter
+        const byProblemParams = new URLSearchParams({
+          problemId: selectedProblem.id,
+          serviceStyle: selectedServiceStyle,
+          ...(location && {
+            lat: location.lat.toString(),
+            lng: location.lng.toString(),
+          }),
+        });
+        res = await apiClient.get<any>(`/customer/services/by-problem?${byProblemParams}`);
+      }
       
       if (res.success) {
-        setProviders(res.providers || []);
+        setProviders(res.providers || res.services || []);
         
         // Check if instant booking is available for tele
         if (selectedServiceStyle === 'tele') {
-          const instantAvailable = res.providers?.some((p: ServiceProvider) => p.isInstantAvailable);
+          const providerList = res.providers || res.services || [];
+          const instantAvailable = providerList.some((p: ServiceProvider) => p.isInstantAvailable);
           setShowInstantOption(instantAvailable);
         }
       }
@@ -200,10 +268,16 @@ export function ProblemGridFlowRouter({
         setCurrentStep('service-style');
         setSelectedServiceStyle(null);
         setProviders([]);
+        setIsInstantMode(false);
         break;
       case 'booking':
         setCurrentStep('discovery');
         setSelectedProvider(null);
+        break;
+      case 'service-style':
+        // Reset allowed styles when going back from service style selection
+        setAllowedServiceStyles(['at_home', 'at_center', 'tele']);
+        onClose?.();
         break;
       default:
         onClose?.();
@@ -234,33 +308,55 @@ export function ProblemGridFlowRouter({
         )}
       </div>
 
-      {/* Service Style Options */}
-      <div className="grid gap-4">
-        {availableStyles.map((style) => {
-          const config = SERVICE_STYLE_CONFIG[style];
-          return (
-            <Card
-              key={style}
-              onClick={() => handleServiceStyleSelect(style)}
-              className="p-4 cursor-pointer hover:shadow-md transition border-gray-200 hover:border-[#FF8C42]"
-            >
-              <div className="flex items-center gap-4">
-                <div className={`w-14 h-14 ${config.bgColor} rounded-2xl flex items-center justify-center ${config.color}`}>
-                  {config.icon}
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900">{config.label}</h3>
-                  <p className="text-sm text-gray-500">{config.description}</p>
-                </div>
-                <ArrowRight className="w-5 h-5 text-gray-400" />
-              </div>
-            </Card>
-          );
-        })}
-      </div>
+      {/* Loading state while fetching problem details */}
+      {loadingProblemDetails && (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-[#FF8C42]" />
+          <span className="ml-2 text-gray-500">Loading options...</span>
+        </div>
+      )}
 
-      {/* Tele Instant Option */}
-      {hasTeleOption && (
+      {/* Service Style Options - only show allowed styles */}
+      {!loadingProblemDetails && (
+        <div className="grid gap-4">
+          {availableStyles.map((style) => {
+            const config = SERVICE_STYLE_CONFIG[style];
+            if (!config) return null; // Skip unknown styles
+            
+            return (
+              <Card
+                key={style}
+                onClick={() => handleServiceStyleSelect(style)}
+                className="p-4 cursor-pointer hover:shadow-md transition border-gray-200 hover:border-[#FF8C42]"
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-14 h-14 ${config.bgColor} rounded-2xl flex items-center justify-center ${config.color}`}>
+                    {config.icon}
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900">{config.label}</h3>
+                    <p className="text-sm text-gray-500">{config.description}</p>
+                  </div>
+                  <ArrowRight className="w-5 h-5 text-gray-400" />
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* No styles available message */}
+      {!loadingProblemDetails && availableStyles.length === 0 && (
+        <div className="text-center py-8">
+          <p className="text-gray-500">No service styles available for this problem.</p>
+          <Button variant="outline" onClick={onClose} className="mt-4">
+            Go Back
+          </Button>
+        </div>
+      )}
+
+      {/* Tele Instant Option - only show if tele is in allowed styles */}
+      {!loadingProblemDetails && hasTeleOption && (
         <Card className="bg-gradient-to-r from-purple-500 to-indigo-600 p-4 text-white">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">
@@ -288,11 +384,18 @@ export function ProblemGridFlowRouter({
       )}
 
       {/* Info */}
-      <div className="text-center">
-        <p className="text-sm text-gray-500">
-          Service providers are filtered based on "{selectedProblem?.name}"
-        </p>
-      </div>
+      {!loadingProblemDetails && availableStyles.length > 0 && (
+        <div className="text-center">
+          <p className="text-sm text-gray-500">
+            Service providers are filtered based on "{selectedProblem?.name}"
+          </p>
+          {availableStyles.length < 3 && (
+            <p className="text-xs text-gray-400 mt-1">
+              Only {availableStyles.map(s => SERVICE_STYLE_CONFIG[s]?.label).filter(Boolean).join(' and ')} available for this service
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -448,11 +551,14 @@ export function ProblemGridFlowRouter({
   const renderBooking = () => {
     if (!selectedProvider || !selectedServiceStyle) return null;
 
-    // Use BookingFlow with the correct props (serviceId and customerPhone)
+    // Use BookingFlow with callbacks for proper navigation
+    // BookingFlow has its own header, so we just pass the callbacks
     return (
       <BookingFlow
         serviceId={selectedProvider.serviceId}
         customerPhone={customerId || ''}
+        onBack={goBack}
+        onComplete={handleBookingComplete}
       />
     );
   };

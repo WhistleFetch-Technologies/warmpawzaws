@@ -6,8 +6,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { ArrowLeft } from 'lucide-react';
 
-export function ProblemCategoryMapper() {
+interface ProblemCategoryMapperProps {
+  onBack?: () => void;
+}
+
+export function ProblemCategoryMapper({ onBack }: ProblemCategoryMapperProps = {}) {
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [newCategory, setNewCategory] = useState('');
@@ -48,6 +53,14 @@ export function ProblemCategoryMapper() {
 
   return (
     <div className="p-6">
+      {onBack && (
+        <div className="flex items-center gap-2 mb-4">
+          <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full" aria-label="Go back">
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <span className="text-sm font-medium text-gray-600">Back</span>
+        </div>
+      )}
       <h1 className="text-2xl font-bold mb-4">Problem Category Mapper</h1>
       <p className="text-gray-600 mb-6">Manage problem categories for pet health issues</p>
       

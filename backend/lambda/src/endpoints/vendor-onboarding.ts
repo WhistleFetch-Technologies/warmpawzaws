@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
 import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
@@ -678,22 +679,82 @@ class GetOnboardingFormSchemaHandler extends BaseHandler {
           : forms[0].fields || [];
       }
 
-      // ✅ NEW: Inject role-specific fields
+      // ✅ NEW: Inject role-specific fields (legacy)
       const roleSpecificFields = this.getRoleSpecificFields(selectedRoleId);
       fields = [...fields, ...roleSpecificFields];
+
+      // ✅ NEW: Import and merge KYC fields for the role
+      try {
+        const { getKYCFieldsForRole, ROLE_KYC_CONFIGS, KYC_SECTIONS } = await import('../lib/kyc-form-fields');
+        
+        // Get vendor type from identity if available
+        let vendorType: 'solo' | 'business' | undefined;
+        if (phone) {
+          const identities = await select('vendor_identity', { phone });
+          if (identities.length > 0 && identities[0].vendor_type) {
+            vendorType = identities[0].vendor_type;
+          }
+        }
+        
+        // Get KYC fields for this role
+        const kycFields = getKYCFieldsForRole(selectedRoleId, vendorType);
+        
+        if (kycFields.length > 0) {
+          console.log(`[FORM-SCHEMA] Adding ${kycFields.length} KYC fields for role ${selectedRoleId}`);
+          
+          // Convert KYC fields to form field format
+          const kycFormFields = kycFields.map((f: any) => ({
+            id: f.id,
+            name: f.fieldName, // Frontend expects 'name'
+            fieldName: f.fieldName,
+            label: f.label,
+            type: f.type, // Includes 'aadhaar-otp', 'pan-verify', 'gst-verify', 'declaration'
+            section: f.section,
+            required: f.isMandatory,
+            isMandatory: f.isMandatory,
+            requiresVerification: f.requiresVerification || false,
+            verificationEndpoint: f.verificationEndpoint || null,
+            placeholder: f.placeholder || '',
+            helpText: f.helpText || '',
+            options: f.options || [],
+            validation: f.validation || {},
+            displayOrder: f.displayOrder || 0,
+            isActive: true,
+            softBlock: f.softBlock || false,
+            declarationText: f.declarationText || null,
+            declarationType: f.declarationType || f.id, // Use explicit declarationType if set, otherwise fallback to id
+          }));
+          
+          // Merge KYC fields - KYC fields replace existing fields with same ID
+          const kycFieldIds = new Set(kycFormFields.map((f: any) => f.id));
+          const nonKycFields = fields.filter((f: any) => !kycFieldIds.has(f.id) && !kycFieldIds.has(f.name));
+          fields = [...nonKycFields, ...kycFormFields];
+        }
+      } catch (kycError) {
+        console.error('[FORM-SCHEMA] Error loading KYC fields:', kycError);
+        // Continue without KYC fields if import fails
+      }
 
       // Filter active fields only
       const activeFields = fields.filter((f: any) => f.isActive !== false);
 
-      // Group fields by section (matching reference structure)
+      // ✅ UPDATED: Section mapping with KYC sections
       const sections: Record<string, any> = {};
       const sectionMeta: Record<string, any> = {
+        // KYC sections
+        'basic': { title: 'Basic Information', order: 1 },
+        'identity_verification': { title: 'Identity Verification', order: 2 },
+        'professional': { title: 'Professional Details', order: 3 },
+        'business_registration': { title: 'Business Registration', order: 4 },
+        'documents': { title: 'Documents', order: 5 },
+        'declarations': { title: 'Declarations & Consent', order: 6 },
+        'location': { title: 'Location & Service Area', order: 7 },
+        'banking': { title: 'Banking Details', order: 8 },
+        // Legacy sections (for backward compatibility)
         'business_information': { title: 'Business Information', order: 1 },
-        'location_information': { title: 'Location', order: 2 },
-        // Note: Banking information moved to vendor dashboard settings
-        'document_verification': { title: 'Documents', order: 3 },
-        'documents': { title: 'Documents', order: 3 },
-        'additional_information': { title: 'Additional Info', order: 4 },
+        'location_information': { title: 'Location', order: 7 },
+        'document_verification': { title: 'Documents', order: 5 },
+        'additional_information': { title: 'Additional Info', order: 9 },
       };
 
       for (const field of activeFields) {
@@ -1602,7 +1663,7 @@ class GoLiveHandler extends BaseHandler {
 
 // Helper to create a handler context from Hono context
 function createHandlerContext(c: any): HandlerContext {
-  const requestId = c.req.header('x-request-id') || crypto.randomUUID();
+  const requestId = c.req.header('x-request-id') || randomUUID();
   return {
     event: {
       pathParameters: c.req.param ? Object.fromEntries(Object.entries(c.req.param())) : {},
@@ -1670,6 +1731,75 @@ export function registerVendorOnboardingEndpoints(app: Hono) {
   });
   app.post('/vendor/onboarding/submit-application', async (c) => {
     return toHonoResponse(c, new SubmitApplicationHandler(), createHandlerContext(c));
+  });
+
+  // ✅ FIX: Add /vendor/application/status/:vendorId endpoint (used by VendorApplicationStatus.tsx)
+  app.get('/vendor/application/status/:vendorId', async (c) => {
+    const vendorId = c.req.param('vendorId');
+    console.log('📋 [VENDOR-APPLICATION-STATUS] Getting status for vendorId:', vendorId);
+    
+    try {
+      // First try to find by application ID
+      let application = await query(
+        `SELECT va.*, vi.phone, vi.vendor_id, vi.current_role_id, r.name as role_name
+         FROM vendor_onboarding_applications va
+         LEFT JOIN vendor_identity vi ON va.vendor_identity_id = vi.id
+         LEFT JOIN roles r ON vi.current_role_id = r.id
+         WHERE va.id = $1 OR va.vendor_identity_id = $1 OR vi.vendor_id = $1
+         ORDER BY va.created_at DESC
+         LIMIT 1`,
+        [vendorId]
+      );
+      
+      if (!application || application.length === 0) {
+        // Try to find by vendor_id in vendors table
+        const vendorRecord = await query(
+          `SELECT v.*, vi.phone, va.id as application_id, va.status as app_status, va.submitted_at
+           FROM vendors v
+           LEFT JOIN vendor_identity vi ON v.phone = vi.phone
+           LEFT JOIN vendor_onboarding_applications va ON vi.id = va.vendor_identity_id
+           WHERE v.id = $1
+           ORDER BY va.created_at DESC
+           LIMIT 1`,
+          [vendorId]
+        );
+        
+        if (vendorRecord && vendorRecord.length > 0) {
+          const vendor = vendorRecord[0];
+          return c.json({
+            success: true,
+            application: {
+              id: vendor.application_id || vendorId,
+              status: vendor.app_status || vendor.onboarding_status || 'pending',
+              submittedAt: vendor.submitted_at || vendor.created_at,
+              fullName: vendor.owner_name || vendor.full_name,
+              reviewedAt: vendor.reviewed_at,
+              clarificationNotes: vendor.clarification_notes,
+            },
+            canProceedToSetup: vendor.app_status === 'approved' || vendor.onboarding_status === 'APPROVED',
+          });
+        }
+        
+        return c.json({ success: false, error: 'Application not found' }, 404);
+      }
+      
+      const app = application[0];
+      return c.json({
+        success: true,
+        application: {
+          id: app.id,
+          status: app.status,
+          submittedAt: app.submitted_at || app.created_at,
+          fullName: app.form_data?.fullName || app.form_data?.ownerName || 'Vendor',
+          reviewedAt: app.reviewed_at,
+          clarificationNotes: app.clarification_notes || app.admin_comments,
+        },
+        canProceedToSetup: app.status === 'approved' || app.status === 'APPROVED',
+      });
+    } catch (error: any) {
+      console.error('❌ [VENDOR-APPLICATION-STATUS] Error:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
   });
 
   // Phase 6: Admin Review

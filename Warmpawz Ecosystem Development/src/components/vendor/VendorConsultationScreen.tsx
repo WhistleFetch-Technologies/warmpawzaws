@@ -8,7 +8,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface VendorConsultationScreenProps {
   vendorId: string;
@@ -78,12 +78,12 @@ export function VendorConsultationScreen({ vendorId, vendorData, onBack }: Vendo
       };
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/consultation/create`,
+        `${getApiBaseUrl()}/vendor/consultation/create`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify(prescriptionData),
         }

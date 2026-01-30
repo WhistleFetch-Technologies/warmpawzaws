@@ -29,7 +29,7 @@ export function GPSTrackingView({ bookingId, onClose }: GPSTrackingViewProps) {
       const apiBaseUrl = (window as any).__WARMPAWZ_RUNTIME_CONFIG__?.apiBaseUrl 
         || process.env.NEXT_PUBLIC_API_BASE_URL 
         || '';
-      const sseUrl = `${apiBaseUrl.replace(/\/+$/, '')}/gps-tracking/booking/${bookingId}/stream`;
+      const sseUrl = `${apiBaseUrl.replace(/\/+$/, '')}/tracking/booking/${bookingId}/stream`;
       
       // Get auth token for SSE connection
       const token = typeof window !== 'undefined' 
@@ -102,20 +102,21 @@ export function GPSTrackingView({ bookingId, onClose }: GPSTrackingViewProps) {
       const loadTrackingStatus = async () => {
         try {
           const response = await apiClient.get<{
-            isTracking: boolean;
+            success?: boolean;
             tracking?: any;
             message?: string;
-          }>(`/gps-tracking/booking/${bookingId}`);
+          }>(`/tracking/booking/${bookingId}`);
 
-          if (response.isTracking && response.tracking) {
+          if (response.success && response.tracking) {
+            const t = response.tracking;
             setTracking({
               isTracking: true,
-              currentLocation: response.tracking.current_location,
+              currentLocation: t.currentLocation || t.current_location,
               route: [],
-              distanceTraveled: response.tracking.distance_traveled_km || 0,
-              duration: response.tracking.duration_seconds || 0,
-              eta_minutes: response.tracking.eta_minutes,
-              distance_km: response.tracking.distance_km,
+              distanceTraveled: t.distanceKm || t.distance_km || 0,
+              duration: 0,
+              eta_minutes: t.estimatedEtaMinutes ?? t.eta_minutes,
+              distance_km: t.distanceKm ?? t.distance_km,
             });
             setError(null);
           } else {
@@ -150,21 +151,21 @@ export function GPSTrackingView({ bookingId, onClose }: GPSTrackingViewProps) {
   const loadTrackingStatus = async () => {
     try {
       const response = await apiClient.get<{
-        isTracking: boolean;
+        success?: boolean;
         tracking?: any;
         message?: string;
-      }>(`/gps-tracking/booking/${bookingId}`);
+      }>(`/tracking/booking/${bookingId}`);
 
-      if (response.isTracking && response.tracking) {
-        // Map the new response format to the old format for compatibility
+      if (response.success && response.tracking) {
+        const t = response.tracking;
         setTracking({
           isTracking: true,
-          currentLocation: response.tracking.current_location,
-          route: [], // Route points can be added if needed
-          distanceTraveled: response.tracking.distance_traveled_km || 0,
-          duration: response.tracking.duration_seconds || 0,
-          eta_minutes: response.tracking.eta_minutes,
-          distance_km: response.tracking.distance_km,
+          currentLocation: t.currentLocation || t.current_location,
+          route: [],
+          distanceTraveled: t.distanceKm || t.distance_km || 0,
+          duration: 0,
+          eta_minutes: t.estimatedEtaMinutes ?? t.eta_minutes,
+          distance_km: t.distanceKm ?? t.distance_km,
         });
         setError(null);
       } else {

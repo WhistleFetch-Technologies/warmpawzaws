@@ -11,7 +11,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { createWebSocketClient, getWebSocketClient, disconnectWebSocket } from '@/lib/websocket-client';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 
 export function useWebSocket(userId?: string, userType: 'customer' | 'vendor' = 'customer') {
   const clientRef = useRef<ReturnType<typeof createWebSocketClient> | null>(null);
@@ -20,8 +20,7 @@ export function useWebSocket(userId?: string, userType: 'customer' | 'vendor' = 
     if (!userId) return;
 
     // Get API base URL from runtime config
-    const apiBaseUrl = (window as any).__WARMPAWZ_RUNTIME_CONFIG__?.apiBaseUrl || 
-                       process.env.NEXT_PUBLIC_API_URL || 
+    const apiBaseUrl = getApiBaseUrl() || 
                        'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
 
     // Create or get WebSocket client

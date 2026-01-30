@@ -128,12 +128,12 @@ export function ReturnRequestPage(props: ReturnRequestPageProps) {
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="max-w-md mx-auto bg-white min-h-screen">
-        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3">
+        <div className="sticky top-0 z-10 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 py-3 rounded-b-2xl shadow-md">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full">
+            <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full text-white hover:bg-white/20">
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <h1 className="text-xl font-semibold">Return Request</h1>
+            <h1 className="text-xl font-semibold text-white">Return Request</h1>
           </div>
         </div>
 

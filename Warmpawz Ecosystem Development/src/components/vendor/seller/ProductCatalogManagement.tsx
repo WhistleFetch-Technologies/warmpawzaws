@@ -3,7 +3,7 @@ import {
   Plus, Search, Filter, Edit2, Trash2, Eye, Package,
   Grid, List, ChevronDown, X, Upload, DollarSign, Tag
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { authenticatedPost, authenticatedPut, authenticatedDelete } from '../../../utils/authenticatedFetch'; // ✅ FIX: Add authenticated fetch
 import { toast } from 'sonner@2.0.3';
 import {
@@ -43,8 +43,8 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
     try {
       setLoading(true);
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/products?sellerId=${sellerId}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/ecommerce/products?sellerId=${sellerId}`,
+        { headers: getAuthHeaders() }
       );
       
       if (res.ok) {
@@ -62,8 +62,8 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
   const loadCategories = async () => {
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/categories`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/ecommerce/categories`,
+        { headers: getAuthHeaders() }
       );
       
       if (res.ok) {
@@ -81,7 +81,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
     try {
       // ✅ FIX: Use authenticatedDelete instead of fetch with publicAnonKey
       await authenticatedDelete(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/product/${productId}`
+        `${getApiBaseUrl()}/ecommerce/product/${productId}`
       );
       
       toast.success('Product deleted successfully');
@@ -379,8 +379,8 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
 
     try {
       const url = product
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/product/${product.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/product`;
+        ? `${getApiBaseUrl()}/ecommerce/product/${product.id}`
+        : `${getApiBaseUrl()}/ecommerce/product`;
 
       const res = await (product ? authenticatedPut : authenticatedPost)(url, {
         ...formData,

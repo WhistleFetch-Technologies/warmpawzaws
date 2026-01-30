@@ -19,11 +19,14 @@ import {
 } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { VendorApi } from '../../services/api';
+import { getServiceStyleLabelForRole } from '../../utils/service-style-labels';
 
 interface VendorServiceManagementScreenProps {
   vendorId: string;
   onBack?: () => void;
 }
+
+type ServiceStyle = 'at_home' | 'at_center' | 'tele';
 
 export function VendorServiceManagementScreen({
   vendorId,
@@ -33,11 +36,82 @@ export function VendorServiceManagementScreen({
   const [saving, setSaving] = useState(false);
   const [serviceCatalog, setServiceCatalog] = useState<any[]>([]);
   const [vendorServices, setVendorServices] = useState<Record<string, any>>({});
-  const [serviceStyle, setServiceStyle] = useState<'at_home' | 'at_center' | 'tele'>('at_home');
+  const [serviceStyle, setServiceStyle] = useState<ServiceStyle>('at_home');
+  
+  // ✅ NEW: Load allowed service styles from backend based on vendor's role
+  const [allowedServiceStyles, setAllowedServiceStyles] = useState<ServiceStyle[]>([]);
+  const [roleName, setRoleName] = useState<string | null>(null); // ✅ For role-based labels
+  const [loadingRoleConfig, setLoadingRoleConfig] = useState(true);
 
+  // ✅ NEW: Load role configuration first to get allowed service styles
   useEffect(() => {
-    loadServices();
-  }, [vendorId, serviceStyle]);
+    loadRoleConfiguration();
+  }, [vendorId]);
+  
+  // ✅ Load services only after role config is loaded
+  useEffect(() => {
+    if (!loadingRoleConfig && allowedServiceStyles.length > 0) {
+      loadServices();
+    }
+  }, [vendorId, serviceStyle, loadingRoleConfig, allowedServiceStyles]);
+  
+  // ✅ NEW: Fetch role configuration to determine allowed service styles
+  const loadRoleConfiguration = async () => {
+    try {
+      setLoadingRoleConfig(true);
+      console.log('🔧 [MOBILE] Loading role config for vendor:', vendorId);
+      
+      // Use the same endpoint as web app to get vendor services with role config
+      const data = await VendorApi.getVendorServicesWithRoleConfig(vendorId);
+      
+      if (data && data.success) {
+        // Extract allowed service styles from backend response
+        let allowedStyles = data.allowedServiceStyles || data.allowed_service_styles || [];
+        
+        // ✅ Map any variant names to standard format
+        const styleMapping: Record<string, ServiceStyle> = {
+          'at_clinic': 'at_center',
+          'at_center': 'at_center',
+          'video_consultation': 'tele',
+          'tele': 'tele',
+          'home_visit': 'at_home',
+          'at_home': 'at_home',
+        };
+        
+        allowedStyles = allowedStyles
+          .map((s: string) => styleMapping[s] || s)
+          .filter((s: string): s is ServiceStyle => ['at_home', 'at_center', 'tele'].includes(s));
+        
+        // ✅ Remove duplicates
+        allowedStyles = [...new Set(allowedStyles)];
+        
+        console.log('✅ [MOBILE] Allowed service styles:', allowedStyles);
+        
+        if (allowedStyles.length > 0) {
+          setAllowedServiceStyles(allowedStyles);
+          // Set initial service style to first allowed style
+          setServiceStyle(allowedStyles[0]);
+        } else {
+          // Fallback to at_home only if no styles configured
+          console.warn('⚠️ [MOBILE] No allowed styles found, falling back to at_home');
+          setAllowedServiceStyles(['at_home']);
+          setServiceStyle('at_home');
+        }
+      } else {
+        console.error('❌ [MOBILE] Failed to load role config:', data?.error);
+        // Fallback - most vendors can use at_home
+        setAllowedServiceStyles(['at_home']);
+        setServiceStyle('at_home');
+      }
+    } catch (error) {
+      console.error('❌ [MOBILE] Error loading role config:', error);
+      // Fallback - most vendors can use at_home
+      setAllowedServiceStyles(['at_home']);
+      setServiceStyle('at_home');
+    } finally {
+      setLoadingRoleConfig(false);
+    }
+  };
 
   const loadServices = async () => {
     try {
@@ -122,11 +196,15 @@ export function VendorServiceManagementScreen({
 
   const filteredCatalog = serviceCatalog.filter((s) => s.serviceStyle === serviceStyle);
 
-  if (loading) {
+  // ✅ FIX: Show loading state during role config loading OR service loading
+  if (loadingRoleConfig || loading) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>
+            {loadingRoleConfig ? 'Loading configuration...' : 'Loading services...'}
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -144,23 +222,28 @@ export function VendorServiceManagementScreen({
           <Text style={styles.title}>Service Management</Text>
         </View>
 
+        {/* ✅ FIX: Only show tabs for allowed service styles; labels per role (e.g. Training center booking) */}
         <View style={styles.tabs}>
-          {(['at_home', 'at_center', 'tele'] as const).map((style) => (
-            <TouchableOpacity
-              key={style}
-              style={[styles.tab, serviceStyle === style && styles.tabActive]}
-              onPress={() => setServiceStyle(style)}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  serviceStyle === style && styles.tabTextActive,
-                ]}
+          {allowedServiceStyles.map((style) => {
+            const config = getServiceStyleLabelForRole(roleName, style);
+            return (
+              <TouchableOpacity
+                key={style}
+                style={[styles.tab, serviceStyle === style && styles.tabActive]}
+                onPress={() => setServiceStyle(style)}
               >
-                {style.replace('_', ' ').toUpperCase()}
-              </Text>
-            </TouchableOpacity>
-          ))}
+                <Text style={styles.tabIcon}>{config.icon}</Text>
+                <Text
+                  style={[
+                    styles.tabText,
+                    serviceStyle === style && styles.tabTextActive,
+                  ]}
+                >
+                  {config.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         <View style={styles.content}>
@@ -247,6 +330,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  loadingText: {
+    marginTop: spacing.md,
+    fontSize: typography.fontSizes.sm,
+    color: colors.textSecondary,
+  },
   header: {
     padding: spacing.lg,
     backgroundColor: colors.background,
@@ -284,9 +372,14 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: colors.gradientOrange50,
   },
+  tabIcon: {
+    fontSize: typography.fontSizes.lg,
+    marginBottom: spacing.xs / 2,
+  },
   tabText: {
-    fontSize: typography.fontSizes.sm,
+    fontSize: typography.fontSizes.xs,
     color: colors.text,
+    textAlign: 'center' as const,
   },
   tabTextActive: {
     color: colors.primary,

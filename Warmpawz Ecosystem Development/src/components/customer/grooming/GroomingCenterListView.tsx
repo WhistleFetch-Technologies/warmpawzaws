@@ -15,7 +15,7 @@ import {
   ShoppingBag,
   User
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '../../ui/sheet';
 import { Card } from '../../ui/card';
 import { toast } from 'sonner@2.0.3';
@@ -60,7 +60,7 @@ export function GroomingCenterListView({ phone, onBack, onNavigate }: GroomingCe
   const [openNowOnly, setOpenNowOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'distance' | 'rating' | 'reviews'>('distance');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadGroomingCenters();
@@ -79,7 +79,7 @@ export function GroomingCenterListView({ phone, onBack, onNavigate }: GroomingCe
         `${API_BASE}/universal/search?serviceCategory=grooming_services&serviceStyle=at_center&limit=50`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

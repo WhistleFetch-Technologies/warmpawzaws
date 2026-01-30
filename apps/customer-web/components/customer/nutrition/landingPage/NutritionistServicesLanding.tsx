@@ -8,6 +8,8 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { PromotionBanner } from '../../shared/PromotionBanner';
 import { NUTRITIONIST_NEEDS } from '../../ProblemGridSection';
+import { useProblemGridByRole } from '../../useProblemGridByRole';
+import { ServiceDashboardHeader } from '../../shared/ServiceDashboardHeader';
 
 interface NutritionistServicesLandingProps {
   phone: string;
@@ -20,6 +22,7 @@ interface NutritionistServicesLandingProps {
  * Nutrition services require a pet to be selected before booking
  */
 export function NutritionistServicesLanding({ phone, onBack, onNavigate }: NutritionistServicesLandingProps) {
+  const nutritionistNeeds = useProblemGridByRole('nutritionist');
   const [loading, setLoading] = useState(true);
   const [nutritionists, setNutritionists] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
@@ -116,8 +119,11 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FF8C42] flex items-center justify-center max-w-md mx-auto">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center max-w-md mx-auto">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-3"></div>
+          <p className="text-gray-600">Loading nutrition services...</p>
+        </div>
       </div>
     );
   }
@@ -125,19 +131,22 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   // ✅ FIX: Show error state if pets failed to load
   if (error) {
     return (
-      <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto pb-24">
-        <div className="px-6 pt-12 pb-6">
-          <div className="flex items-center gap-4 mb-6">
-            <button 
-              onClick={onBack}
-              className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5 text-white" />
-            </button>
-            <h1 className="text-2xl font-bold text-white">Pet Nutrition</h1>
-          </div>
-        </div>
-        <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
+      <div className="min-h-screen bg-gray-50 max-w-md mx-auto pb-24">
+        <ServiceDashboardHeader
+          serviceName="Pet Nutrition"
+          serviceSubtitle="Expert nutrition consultation"
+          serviceIcon={Apple}
+          iconColor="text-white"
+          stats={[
+            { value: '45+', label: 'Experts' },
+            { value: '1.5K+', label: 'Consultations' },
+            { value: '*4.9', label: 'Rating' }
+          ]}
+          onBack={onBack}
+          showBackButton={true}
+          headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+        />
+        <div className="bg-white px-6 pt-8 min-h-[calc(100vh-180px)]">
           <Card className="p-8 text-center">
             <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
             <h3 className="text-lg font-semibold mb-2">Unable to Load</h3>
@@ -151,43 +160,33 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
     );
   }
 
-  return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto pb-24">
-      {/* Header - Orange Background */}
-      <div className="px-6 pt-12 pb-6">
-        <div className="flex items-center gap-4 mb-6">
-           <button 
-            onClick={onBack}
-            className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-white" />
-          </button>
-          <h1 className="text-2xl font-bold text-white">Pet Nutrition</h1>
-        </div>
+  // Prepare stats for ServiceDashboardHeader
+  const dashboardStats = stats ? [
+    { value: `${stats.activeNutritionists}+`, label: 'Experts' },
+    { value: stats.consultations, label: 'Consultations' },
+    { value: `*${stats.rating}`, label: 'Rating' }
+  ] : [
+    { value: '45+', label: 'Experts' },
+    { value: '1.5K+', label: 'Consultations' },
+    { value: '*4.9', label: 'Rating' }
+  ];
 
-        {/* Stats Bar - Glassmorphism */}
-        {stats && (
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.activeNutritionists}+</div>
-               <div className="text-xs text-white/80">Experts</div>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.consultations}</div>
-               <div className="text-xs text-white/80">Consultations</div>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="flex items-center gap-1 text-2xl font-bold text-white">
-                 {stats.rating} <Star className="w-4 h-4 fill-white" />
-               </div>
-               <div className="text-xs text-white/80">Rating</div>
-            </div>
-          </div>
-        )}
-      </div>
+  return (
+    <div className="min-h-screen bg-gray-50 pb-24">
+      {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame */}
+      <ServiceDashboardHeader
+        serviceName="Pet Nutrition"
+        serviceSubtitle="Expert nutrition consultation"
+        serviceIcon={Apple}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+      />
 
       {/* Main Content - White Card with Top Radius */}
-      <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
+      <div className="bg-white max-w-md mx-auto px-6 pt-8 min-h-[calc(100vh-180px)]">
         <div className="space-y-8">
           
           {/* Promotion Banner */}
@@ -210,7 +209,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
               </button>
             </div>
             <div className="grid grid-cols-4 gap-3">
-              {NUTRITIONIST_NEEDS.map((need) => {
+              {(nutritionistNeeds.length > 0 ? nutritionistNeeds : NUTRITIONIST_NEEDS).map((need) => {
                 const isViewAll = need.id === 'view_all';
                 return (
                   <button
@@ -289,7 +288,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
               {serviceTypes.map((service, idx) => (
                 <button
                   key={idx}
-                  onClick={() => handleBookNow({ serviceType: service.label })}
+                  onClick={() => service.label === 'Meal Plans' ? onNavigate?.('nutrition-meal-plans') : handleBookNow({ serviceType: service.label })}
                   className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
                 >
                   <div className={`w-10 h-10 rounded-xl ${service.color.split(' ')[0]} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>

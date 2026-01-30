@@ -2,21 +2,27 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Save, Clock, Building2, MapPin, Image as ImageIcon, Calendar, Sparkles, Check } from 'lucide-react';
+import { ArrowLeft, Save, Clock, Building2, MapPin, Image as ImageIcon, Calendar, Sparkles, Check, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-// Removed Supabase imports - using API Gateway
 import { toast } from 'sonner';
 import { getAmenitiesForVendorType } from '@/lib/master-amenities';
 import { SpecializationSelector } from './SpecializationSelector';
+import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { AdvancedAvailabilityManager } from './AdvancedAvailabilityManager';
 
-interface CenterProfileManagerProps {
+// ✅ RENAMED: CenterProfileManager -> ProfileManager (generic naming)
+// Export both names for backward compatibility
+interface ProfileManagerProps {
   vendorId: string;
   vendorData?: any;
   onBack: () => void;
 }
+
+// Alias for backward compatibility
+type CenterProfileManagerProps = ProfileManagerProps;
 
 interface CenterProfile {
   // Basic Info
@@ -58,11 +64,13 @@ interface CenterProfile {
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterProfileManagerProps) {
-  const [activeTab, setActiveTab] = useState<'basic' | 'timing' | 'amenities' | 'specialization'>('basic');
+// ✅ Main export with generic name
+export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerProps) {
+  const [activeTab, setActiveTab] = useState<'basic' | 'availability' | 'amenities' | 'specialization'>('basic');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [showAdvancedAvailability, setShowAdvancedAvailability] = useState(false);
   
   // ✅ FIX: Track roleId separately with fallback loading
   // IMPORTANT: Prefer roleName over roleId (roleId is UUID, roleName is actual name like 'veterinary_clinic')
@@ -77,7 +85,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
     address: vendorData?.address || '',
     city: vendorData?.city || '',
     state: vendorData?.state || '',
-    pincode: vendorData?.pincode || '',
+    pincode: (vendorData?.pincode && vendorData?.pincode !== '000000') ? vendorData.pincode : '',
     operatingHours: DAYS.reduce((acc, day) => ({
       ...acc,
       [day]: { isOpen: true, open: '09:00', close: '18:00' }
@@ -174,7 +182,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
           address: facilityData.facility.address || prev.address,
           city: facilityData.facility.city || prev.city,
           state: facilityData.facility.state || prev.state,
-          pincode: facilityData.facility.pincode || prev.pincode || '',
+          pincode: (facilityData.facility.pincode && facilityData.facility.pincode !== '000000') ? facilityData.facility.pincode : ((prev.pincode && prev.pincode !== '000000') ? prev.pincode : ''),
           amenities: facilityData.facility.amenities || [],
           customAmenities: facilityData.facility.customAmenities || [],
           photos: loadedPhotos,
@@ -421,7 +429,7 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
+        <div className="w-full max-w-[430px] mx-auto bg-white py-12 text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600">Loading center profile...</p>
         </div>
@@ -431,60 +439,60 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div className="flex-1">
-              <h1 className="font-bold text-gray-900">Center Profile & Timings</h1>
-              <p className="text-sm text-gray-600">{profile.centerName}</p>
+      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
+        {/* Header - Mobile optimized */}
+        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF7A2E] text-white sticky top-0 z-10">
+          <div className="px-4 py-3">
+            <div className="flex items-center gap-3">
+              <button onClick={onBack} className="p-1.5 hover:bg-white/20 rounded-lg -ml-1">
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <div className="flex-1 min-w-0">
+                <h1 className="font-bold text-lg truncate">Profile & Availability</h1>
+                <p className="text-xs text-white/80 truncate">{profile.centerName}</p>
+              </div>
+              <Button
+                onClick={handleSave}
+                disabled={saving || uploading}
+                size="sm"
+                className="bg-white text-[#FF8C42] hover:bg-white/90 text-xs"
+              >
+                <Save className="w-3.5 h-3.5 mr-1" />
+                {saving ? 'Saving...' : 'Save'}
+              </Button>
             </div>
-            <Button
-              onClick={handleSave}
-              disabled={saving || uploading}
-              className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
-            >
-              <Save className="w-4 h-4 mr-2" />
-              {saving ? 'Saving...' : 'Save All'}
-            </Button>
           </div>
         </div>
-      </div>
 
-      {/* Tab Navigation */}
-      <div className="bg-white border-b">
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="flex gap-1 overflow-x-auto">
+        {/* Tab Navigation - Mobile scrollable */}
+        <div className="bg-white border-b overflow-x-auto">
+          <div className="flex min-w-max px-2">
             {[
-              { id: 'basic', label: 'Basic Info', icon: Building2 },
-              { id: 'timing', label: 'Timings', icon: Clock },
+              { id: 'basic', label: 'Basic', icon: Building2 },
+              { id: 'availability', label: 'Hours', icon: Clock },
               { id: 'amenities', label: 'Amenities', icon: Sparkles },
-              { id: 'specialization', label: 'Specialization', icon: Check }
+              { id: 'specialization', label: 'Specialty', icon: Check }
             ].map(tab => {
               const Icon = tab.icon;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex items-center gap-2 px-4 py-3 border-b-2 font-medium text-sm transition-colors whitespace-nowrap ${
+                  className={`flex items-center gap-1.5 px-3 py-2.5 border-b-2 font-medium text-xs transition-colors whitespace-nowrap ${
                     activeTab === tab.id
                       ? 'border-[#FF8C42] text-[#FF8C42]'
-                      : 'border-transparent text-gray-600 hover:text-gray-900'
+                      : 'border-transparent text-gray-500'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-3.5 h-3.5" />
                   {tab.label}
                 </button>
               );
             })}
           </div>
         </div>
-      </div>
 
-      <div className="max-w-6xl mx-auto px-4 py-6">
+        <div className="p-4">
         {/* Basic Info Tab */}
         {activeTab === 'basic' && (
           <div className="space-y-6">
@@ -519,11 +527,19 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Address
                   </label>
-                  <Textarea
-                    value={profile.address}
-                    onChange={(e) => setProfile(prev => ({ ...prev, address: e.target.value }))}
-                    placeholder="Complete address"
-                    rows={2}
+                  <EnhancedAddressAutocomplete
+                    value={profile.address || ''}
+                    onChange={(address: string, components?: AddressComponents) => {
+                      // Single state update: address + city, state, pincode from search (like customer profile)
+                      setProfile(prev => ({
+                        ...prev,
+                        address,
+                        ...(components?.city != null && { city: components.city }),
+                        ...(components?.state != null && { state: components.state }),
+                        ...(components?.pincode != null && { pincode: components.pincode }),
+                      }));
+                    }}
+                    placeholder="Search address, landmark, city..."
                   />
                 </div>
 
@@ -637,167 +653,299 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
           </div>
         )}
 
-        {/* Timing Tab */}
-        {activeTab === 'timing' && (
+        {/* Availability Tab - Advanced Scheduling System */}
+        {activeTab === 'availability' && (
+          showAdvancedAvailability ? (
+            <AdvancedAvailabilityManager
+              vendorId={vendorId}
+              vendorData={vendorData}
+              onBack={() => setShowAdvancedAvailability(false)}
+            />
+          ) : (
           <div className="space-y-6">
-            <div className="bg-white rounded-xl border p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="font-bold text-gray-900">Operating Hours</h2>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => copyTimingToAll('monday')}
-                >
-                  Copy Monday to All
-                </Button>
-              </div>
-              
-              <div className="space-y-3">
-                {DAYS.map((day, idx) => (
-                  <div key={day} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
-                    <div className="w-32">
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={profile.operatingHours[day]?.isOpen || false}
-                          onChange={(e) => setProfile(prev => ({
-                            ...prev,
-                            operatingHours: {
-                              ...prev.operatingHours,
-                              [day]: {
-                                ...prev.operatingHours[day],
-                                isOpen: e.target.checked
-                              }
-                            }
-                          }))}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm font-medium">{DAY_LABELS[idx]}</span>
-                      </label>
-                    </div>
-                    
-                    {profile.operatingHours[day]?.isOpen && (
-                      <>
-                        <input
-                          type="time"
-                          value={profile.operatingHours[day]?.open || '09:00'}
-                          onChange={(e) => setProfile(prev => ({
-                            ...prev,
-                            operatingHours: {
-                              ...prev.operatingHours,
-                              [day]: {
-                                ...prev.operatingHours[day],
-                                open: e.target.value
-                              }
-                            }
-                          }))}
-                          className="px-3 py-2 border rounded-lg"
-                        />
-                        <span className="text-gray-500">to</span>
-                        <input
-                          type="time"
-                          value={profile.operatingHours[day]?.close || '18:00'}
-                          onChange={(e) => setProfile(prev => ({
-                            ...prev,
-                            operatingHours: {
-                              ...prev.operatingHours,
-                              [day]: {
-                                ...prev.operatingHours[day],
-                                close: e.target.value
-                              }
-                            }
-                          }))}
-                          className="px-3 py-2 border rounded-lg"
-                        />
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => copyTimingToAll(day)}
-                        >
-                          Copy to All
-                        </Button>
-                      </>
-                    )}
+            {/* Advanced Scheduling Banner */}
+            <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-2xl border border-orange-200 p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
+                    <Calendar className="w-5 h-5 text-orange-600" />
                   </div>
-                ))}
+                  <div>
+                    <h3 className="font-semibold text-gray-900">Need more control?</h3>
+                    <p className="text-sm text-gray-600">
+                      Use Advanced Scheduling for multiple slots, breaks, holidays & service styles
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => setShowAdvancedAvailability(true)}
+                  className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
+                >
+                  <Clock className="w-4 h-4 mr-2" />
+                  Advanced Scheduling
+                </Button>
               </div>
             </div>
 
-            {/* Emergency Services (for vet centers) */}
-            {(vendorData?.roleId?.includes('vet') || vendorData?.roleId?.includes('clinic')) && (
-              <div className="bg-white rounded-xl border p-6">
-                <h2 className="font-bold text-gray-900 mb-4">Emergency Services</h2>
-                
-                <div className="space-y-3">
-                  <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={profile.emergencyServices.ambulance}
-                      onChange={(e) => setProfile(prev => ({
-                        ...prev,
-                        emergencyServices: {
-                          ...prev.emergencyServices,
-                          ambulance: e.target.checked
-                        }
-                      }))}
-                      className="w-4 h-4"
-                    />
-                    <span className="flex-1 font-medium">Ambulance Service Available</span>
-                  </label>
+            <div className="bg-white rounded-2xl border shadow-sm p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                    <Clock className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-gray-900">Operating Hours</h2>
+                    <p className="text-sm text-gray-500">Basic schedule - open/close times</p>
+                  </div>
+                </div>
+                <Badge className="bg-blue-100 text-blue-700 border-blue-200">
+                  {Object.values(profile.operatingHours).filter(d => d.isOpen).length} days active
+                </Badge>
+              </div>
+              
+              {/* Quick Setup */}
+              <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-gray-900">Quick Setup</p>
+                    <p className="text-sm text-gray-600">Apply Monday's schedule to all weekdays</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => copyTimingToAll('monday')}
+                    className="bg-white hover:bg-blue-50"
+                  >
+                    Apply to All Days
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Day Schedule Cards */}
+              <div className="space-y-3">
+                {DAYS.map((day, idx) => {
+                  const isOpen = profile.operatingHours[day]?.isOpen || false;
+                  return (
+                    <div 
+                      key={day} 
+                      className={`p-4 rounded-xl border-2 transition-all ${
+                        isOpen 
+                          ? 'border-blue-200 bg-blue-50/50' 
+                          : 'border-gray-100 bg-gray-50/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setProfile(prev => ({
+                              ...prev,
+                              operatingHours: {
+                                ...prev.operatingHours,
+                                [day]: {
+                                  ...prev.operatingHours[day],
+                                  isOpen: !isOpen
+                                }
+                              }
+                            }))}
+                            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                              isOpen 
+                                ? 'bg-blue-500 border-blue-500' 
+                                : 'bg-white border-gray-300'
+                            }`}
+                          >
+                            {isOpen && (
+                              <Check className="w-4 h-4 text-white" />
+                            )}
+                          </button>
+                          <span className={`font-medium ${isOpen ? 'text-gray-900' : 'text-gray-400'}`}>
+                            {DAY_LABELS[idx]}
+                          </span>
+                        </div>
+                        
+                        {isOpen && (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="time"
+                              value={profile.operatingHours[day]?.open || '09:00'}
+                              onChange={(e) => setProfile(prev => ({
+                                ...prev,
+                                operatingHours: {
+                                  ...prev.operatingHours,
+                                  [day]: {
+                                    ...prev.operatingHours[day],
+                                    open: e.target.value
+                                  }
+                                }
+                              }))}
+                              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                            />
+                            <span className="text-gray-400">to</span>
+                            <input
+                              type="time"
+                              value={profile.operatingHours[day]?.close || '18:00'}
+                              onChange={(e) => setProfile(prev => ({
+                                ...prev,
+                                operatingHours: {
+                                  ...prev.operatingHours,
+                                  [day]: {
+                                    ...prev.operatingHours[day],
+                                    close: e.target.value
+                                  }
+                                }
+                              }))}
+                              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                            />
+                          </div>
+                        )}
+                      </div>
+                      
+                      {!isOpen && (
+                        <p className="mt-2 text-xs text-gray-400 pl-9">Closed</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
-                  {profile.emergencyServices.ambulance && (
-                    <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer ml-8">
-                      <input
-                        type="checkbox"
-                        checked={profile.emergencyServices.ambulanceAvailable247}
-                        onChange={(e) => setProfile(prev => ({
+            {/* Emergency Services - Enhanced UI (for vet centers) */}
+            {(vendorData?.roleId?.includes('vet') || vendorData?.roleId?.includes('clinic')) && (
+              <div className="bg-white rounded-2xl border shadow-sm p-6">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
+                    <Calendar className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-gray-900">Emergency Services</h2>
+                    <p className="text-sm text-gray-500">Configure 24/7 availability options</p>
+                  </div>
+                </div>
+                
+                <div className="space-y-4">
+                  {/* Ambulance Service */}
+                  <div className={`p-4 rounded-xl border-2 transition-all ${
+                    profile.emergencyServices.ambulance 
+                      ? 'border-red-200 bg-red-50/50' 
+                      : 'border-gray-100 bg-gray-50/50'
+                  }`}>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <button
+                        type="button"
+                        onClick={() => setProfile(prev => ({
                           ...prev,
                           emergencyServices: {
                             ...prev.emergencyServices,
-                            ambulanceAvailable247: e.target.checked
+                            ambulance: !prev.emergencyServices.ambulance
                           }
                         }))}
-                        className="w-4 h-4"
-                      />
-                      <span className="flex-1">24/7 Ambulance</span>
+                        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                          profile.emergencyServices.ambulance 
+                            ? 'bg-red-500 border-red-500' 
+                            : 'bg-white border-gray-300'
+                        }`}
+                      >
+                        {profile.emergencyServices.ambulance && (
+                          <Check className="w-4 h-4 text-white" />
+                        )}
+                      </button>
+                      <div className="flex-1">
+                        <span className="font-medium text-gray-900">Ambulance Service</span>
+                        <p className="text-xs text-gray-500">Provide pet ambulance pickup</p>
+                      </div>
                     </label>
-                  )}
 
-                  <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={profile.emergencyServices.consultationAvailable247}
-                      onChange={(e) => setProfile(prev => ({
-                        ...prev,
-                        emergencyServices: {
-                          ...prev.emergencyServices,
-                          consultationAvailable247: e.target.checked
-                        }
-                      }))}
-                      className="w-4 h-4"
-                    />
-                    <span className="flex-1 font-medium">24/7 Emergency Consultation</span>
-                  </label>
+                    {profile.emergencyServices.ambulance && (
+                      <div className="mt-3 ml-9 p-3 bg-red-100/50 rounded-lg">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={profile.emergencyServices.ambulanceAvailable247}
+                            onChange={(e) => setProfile(prev => ({
+                              ...prev,
+                              emergencyServices: {
+                                ...prev.emergencyServices,
+                                ambulanceAvailable247: e.target.checked
+                              }
+                            }))}
+                            className="w-4 h-4 rounded border-red-300 text-red-500 focus:ring-red-200"
+                          />
+                          <span className="text-sm font-medium text-red-800">Available 24/7</span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
 
-                  <label className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={profile.emergencyServices.diagnosticsAvailable247}
-                      onChange={(e) => setProfile(prev => ({
-                        ...prev,
-                        emergencyServices: {
-                          ...prev.emergencyServices,
-                          diagnosticsAvailable247: e.target.checked
-                        }
-                      }))}
-                      className="w-4 h-4"
-                    />
-                    <span className="flex-1 font-medium">24/7 Diagnostics</span>
-                  </label>
+                  {/* Emergency Consultation */}
+                  <div className={`p-4 rounded-xl border-2 transition-all ${
+                    profile.emergencyServices.consultationAvailable247 
+                      ? 'border-orange-200 bg-orange-50/50' 
+                      : 'border-gray-100 bg-gray-50/50'
+                  }`}>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <button
+                        type="button"
+                        onClick={() => setProfile(prev => ({
+                          ...prev,
+                          emergencyServices: {
+                            ...prev.emergencyServices,
+                            consultationAvailable247: !prev.emergencyServices.consultationAvailable247
+                          }
+                        }))}
+                        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                          profile.emergencyServices.consultationAvailable247 
+                            ? 'bg-orange-500 border-orange-500' 
+                            : 'bg-white border-gray-300'
+                        }`}
+                      >
+                        {profile.emergencyServices.consultationAvailable247 && (
+                          <Check className="w-4 h-4 text-white" />
+                        )}
+                      </button>
+                      <div className="flex-1">
+                        <span className="font-medium text-gray-900">24/7 Emergency Consultation</span>
+                        <p className="text-xs text-gray-500">Accept emergency consultations anytime</p>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* 24/7 Diagnostics */}
+                  <div className={`p-4 rounded-xl border-2 transition-all ${
+                    profile.emergencyServices.diagnosticsAvailable247 
+                      ? 'border-purple-200 bg-purple-50/50' 
+                      : 'border-gray-100 bg-gray-50/50'
+                  }`}>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <button
+                        type="button"
+                        onClick={() => setProfile(prev => ({
+                          ...prev,
+                          emergencyServices: {
+                            ...prev.emergencyServices,
+                            diagnosticsAvailable247: !prev.emergencyServices.diagnosticsAvailable247
+                          }
+                        }))}
+                        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                          profile.emergencyServices.diagnosticsAvailable247 
+                            ? 'bg-purple-500 border-purple-500' 
+                            : 'bg-white border-gray-300'
+                        }`}
+                      >
+                        {profile.emergencyServices.diagnosticsAvailable247 && (
+                          <Check className="w-4 h-4 text-white" />
+                        )}
+                      </button>
+                      <div className="flex-1">
+                        <span className="font-medium text-gray-900">24/7 Diagnostics</span>
+                        <p className="text-xs text-gray-500">Lab and diagnostic tests available round the clock</p>
+                      </div>
+                    </label>
+                  </div>
                 </div>
               </div>
             )}
           </div>
+          )
         )}
 
         {/* Amenities Tab */}
@@ -873,7 +1021,11 @@ export function CenterProfileManager({ vendorId, vendorData, onBack }: CenterPro
             />
           </div>
         )}
+        </div>
       </div>
     </div>
   );
 }
+
+// ✅ Backward compatibility alias - will be deprecated in future
+export const CenterProfileManager = ProfileManager;

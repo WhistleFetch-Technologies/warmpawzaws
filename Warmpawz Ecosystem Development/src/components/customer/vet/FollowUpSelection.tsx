@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, MessageCircle, Calendar, ChevronRight, Clock, MapPin } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface FollowUpSelectionProps {
   phone: string;
@@ -23,10 +23,10 @@ export function FollowUpSelection({ phone, onBack, onNavigate }: FollowUpSelecti
   const loadEligibleBookings = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/followup-eligible/${phone}`,
+        `${getApiBaseUrl()}/customer/followup-eligible/${phone}`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );

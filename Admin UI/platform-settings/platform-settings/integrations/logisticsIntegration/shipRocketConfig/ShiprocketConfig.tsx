@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button, Input, Label, Switch, LoadingState } from "@repo/ui";
 
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders, getAuthToken } from "@repo/utils/api-config";
 
 import { CheckCircle, AlertCircle, Save, Globe, Mail, Key } from "lucide-react";
 import { toast } from "sonner";
@@ -29,15 +29,15 @@ export function ShiprocketConfig() {
 	} | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
-	const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+	const API_BASE = `${getApiBaseUrl()}`;
 
 	useEffect(() => {
 		fetchConfig();
 	}, []);
 
 	const getAuthHeaders = () => ({
-		apikey: publicAnonKey,
-		Authorization: `Bearer ${publicAnonKey}`,
+		apikey: getAuthToken(),
+		...getAuthHeaders(),
 		"Content-Type": "application/json",
 	});
 

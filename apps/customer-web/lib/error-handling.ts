@@ -13,9 +13,9 @@ export interface RetryConfig {
 }
 
 export const DEFAULT_RETRY_CONFIG: RetryConfig = {
-  maxRetries: 3,
-  baseDelayMs: 1000,
-  maxDelayMs: 10000,
+  maxRetries: 5,  // Increased from 3 to 5 to handle transient 503 errors during cold starts
+  baseDelayMs: 500,  // Reduced from 1000ms to 500ms for faster initial retry
+  maxDelayMs: 15000,  // Increased from 10000ms to 15000ms to allow longer waits for cold starts
   backoffMultiplier: 2,
   retryableStatusCodes: [408, 429, 500, 502, 503, 504],
   retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'Failed to fetch'],

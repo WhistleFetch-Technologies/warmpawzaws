@@ -21,9 +21,11 @@ interface CommunicationHubProps {
   otherUserName?: string;
   userType?: string;
   onClose?: () => void;
+  onStartVideoCall?: (bookingId: string) => void; // ✅ P2P Video Call from chat
+  serviceStyle?: string; // ✅ To show video call button only for tele consultations
 }
 
-export function CommunicationHub({ mode, bookingId, userId, userName, otherUserName, userType, onClose }: CommunicationHubProps) {
+export function CommunicationHub({ mode, bookingId, userId, userName, otherUserName, userType, onClose, onStartVideoCall, serviceStyle }: CommunicationHubProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -258,12 +260,24 @@ export function CommunicationHub({ mode, bookingId, userId, userName, otherUserN
             <p className="text-xs text-white/80">Booking #{bookingId.slice(0, 8)}</p>
           </div>
         </div>
-        <button 
-          onClick={onClose}
-          className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          {/* ✅ P2P VIDEO CALL: Start video call button for tele consultations */}
+          {(serviceStyle === 'tele' || serviceStyle === 'online') && onStartVideoCall && (
+            <button 
+              onClick={() => onStartVideoCall(bookingId)}
+              className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-green-500 transition-colors"
+              title="Start Video Call"
+            >
+              <Video className="w-5 h-5" />
+            </button>
+          )}
+          <button 
+            onClick={onClose}
+            className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Messages */}

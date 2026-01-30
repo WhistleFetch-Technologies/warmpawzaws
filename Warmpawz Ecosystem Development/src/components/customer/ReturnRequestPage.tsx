@@ -12,7 +12,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { Package, Camera, Upload, Clock, CheckCircle, XCircle, Truck, RefreshCw, AlertCircle, ChevronRight } from 'lucide-react';
 
 interface OrderItem {
@@ -81,10 +81,10 @@ export function ReturnRequestPage({ customerId, orderId: initialOrderId }: Retur
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customers/${customerId}/orders?status=delivered`,
+        `${getApiBaseUrl()}/customers/${customerId}/orders?status=delivered`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -115,10 +115,10 @@ export function ReturnRequestPage({ customerId, orderId: initialOrderId }: Retur
   const loadReturns = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customers/${customerId}/returns`,
+        `${getApiBaseUrl()}/customers/${customerId}/returns`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -220,11 +220,11 @@ export function ReturnRequestPage({ customerId, orderId: initialOrderId }: Retur
       );
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/orders/${selectedOrder.id}/return/request`,
+        `${getApiBaseUrl()}/orders/${selectedOrder.id}/return/request`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

@@ -24,6 +24,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { PhotoUpload } from '@/components/shared/PhotoUpload';
+import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 
 // Specializations by role type (same as staff creation)
 const SPECIALIZATIONS_BY_ROLE: Record<string, string[]> = {
@@ -49,6 +50,26 @@ const SPECIALIZATIONS_BY_ROLE: Record<string, string[]> = {
   'default': ['General Pet Care', 'Customer Service', 'Pet Handling', 'First Aid', 'Safety Protocols', 'Communication'],
 };
 
+interface TimeSlot {
+  start: string;
+  end: string;
+}
+
+interface DayAvailability {
+  enabled: boolean;
+  slots: TimeSlot[];
+}
+
+interface AvailabilitySchedule {
+  monday?: DayAvailability;
+  tuesday?: DayAvailability;
+  wednesday?: DayAvailability;
+  thursday?: DayAvailability;
+  friday?: DayAvailability;
+  saturday?: DayAvailability;
+  sunday?: DayAvailability;
+}
+
 interface ProfessionalProfile {
   id: string;
   owner_name: string;
@@ -65,6 +86,7 @@ interface ProfessionalProfile {
   experience_years?: number;
   service_area?: string;
   operating_hours?: string;
+  availability?: AvailabilitySchedule; // Enhanced scheduling
   role_name?: string;
 }
 
@@ -93,7 +115,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     address: initialProfile?.address || '',
     city: initialProfile?.city || '',
     state: initialProfile?.state || '',
-    pincode: initialProfile?.pincode || '',
+    pincode: (initialProfile?.pincode && initialProfile?.pincode !== '000000') ? initialProfile.pincode : '',
     description: initialProfile?.description || '',
     photo_url: initialProfile?.logo_url || initialProfile?.photo_url || '',
     qualifications: initialProfile?.qualifications || '',
@@ -101,6 +123,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     experience_years: initialProfile?.experience_years || initialProfile?.experienceYears || 0,
     service_area: initialProfile?.service_area || initialProfile?.serviceArea || '',
     operating_hours: initialProfile?.operating_hours || initialProfile?.operatingHours || '',
+    availability: initialProfile?.availability || initialProfile?.availabilitySchedule || undefined,
     role_name: vendorRoleName,
   });
   const [hasChanges, setHasChanges] = useState(false);
@@ -162,7 +185,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           address: response.vendor.address || '',
           city: response.vendor.city || '',
           state: response.vendor.state || '',
-          pincode: response.vendor.pincode || '',
+          pincode: (response.vendor.pincode && response.vendor.pincode !== '000000') ? response.vendor.pincode : '',
           description: response.vendor.description || '',
           photo_url: response.vendor.photo_url || response.vendor.logo_url || '',
           qualifications: response.vendor.qualifications || '',
@@ -274,8 +297,10 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-full max-w-[430px] mx-auto bg-white py-12 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+        </div>
       </div>
     );
   }
@@ -284,40 +309,42 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
   const availableSpecializations = getAvailableSpecializations();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
-      {/* Header */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-blue-200 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onBack || (() => router.back())}
-              className="rounded-full"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div className="flex-1">
-              <h1 className="text-2xl font-bold text-gray-800">Professional Profile</h1>
-              <p className="text-sm text-gray-500 mt-1">
-                {vendorRoleName} • Solo Service Provider
-              </p>
-            </div>
-            {hasChanges && (
+    <div className="min-h-screen bg-gray-50">
+      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
+        {/* Header - Mobile optimized */}
+        <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white sticky top-0 z-10">
+          <div className="px-4 py-3">
+            <div className="flex items-center gap-3">
               <Button
-                onClick={handleSave}
-                disabled={saving}
-                className="bg-blue-500 hover:bg-blue-600 text-white"
+                variant="ghost"
+                size="icon"
+                onClick={onBack || (() => router.back())}
+                className="rounded-full text-white hover:bg-white/20 -ml-2"
               >
-                {saving ? 'Saving...' : 'Save Changes'}
+                <ArrowLeft className="w-5 h-5" />
               </Button>
-            )}
+              <div className="flex-1">
+                <h1 className="text-lg font-bold">Professional Profile</h1>
+                <p className="text-xs text-white/80">
+                  {vendorRoleName} • Solo Provider
+                </p>
+              </div>
+              {hasChanges && (
+                <Button
+                  onClick={handleSave}
+                  disabled={saving}
+                  size="sm"
+                  className="bg-white text-blue-600 hover:bg-white/90 text-xs"
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="max-w-4xl mx-auto px-6 py-8">
+        {/* Main Content */}
+        <div className="p-4">
         {/* Profile Completion Banner */}
         <div className={`rounded-2xl p-4 mb-6 ${completionPercentage === 100 ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}`}>
           <div className="flex items-center gap-4">
@@ -542,13 +569,22 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           <div className="space-y-6">
             <div>
               <Label htmlFor="address">Address *</Label>
-              <Textarea
-                id="address"
-                value={profile.address}
-                onChange={(e) => handleInputChange('address', e.target.value)}
+              <EnhancedAddressAutocomplete
+                value={profile.address || ''}
+                onChange={(address: string, components?: AddressComponents) => {
+                  // Single state update: address + city, state, pincode from search (like customer profile)
+                  setProfile(prev => ({
+                    ...prev,
+                    address,
+                    ...(components?.city != null && { city: components.city ?? prev.city }),
+                    ...(components?.state != null && { state: components.state ?? prev.state }),
+                    ...(components?.pincode != null && { pincode: components.pincode ?? prev.pincode }),
+                  }));
+                  setHasChanges(true);
+                }}
+                placeholder="Search address, landmark, city..."
                 className={`mt-1 ${formErrors.address ? 'border-red-300' : ''}`}
-                rows={2}
-                placeholder="Your base location address"
+                required
               />
               {formErrors.address && <p className="text-red-500 text-xs mt-1">{formErrors.address}</p>}
             </div>
@@ -598,33 +634,196 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           </div>
         </div>
 
-        {/* Operating Hours */}
+        {/* Operating Hours - Enhanced Scheduling UI */}
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
-          <div className="flex items-center gap-2 mb-6">
-            <Clock className="w-5 h-5 text-blue-500" />
-            <h2 className="text-lg font-semibold">Availability</h2>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-blue-500" />
+              <h2 className="text-lg font-semibold">Availability Schedule</h2>
+            </div>
+            <Badge className="bg-blue-100 text-blue-700 border-blue-200">
+              {profile.availability ? 
+                Object.values(profile.availability || {}).filter((day: any) => day?.enabled).length + ' days active' 
+                : 'Not set'
+              }
+            </Badge>
           </div>
-          <div>
-            <Label htmlFor="operating_hours">Working Hours</Label>
-            <Input
-              id="operating_hours"
-              value={profile.operating_hours || ''}
-              onChange={(e) => handleInputChange('operating_hours', e.target.value)}
-              className="mt-1"
-              placeholder="e.g., Mon-Sat: 9 AM - 6 PM, Sunday: By Appointment"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Let customers know when you're available for bookings
-            </p>
+          
+          {/* Quick Setup Option */}
+          <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-gray-900">Quick Setup</p>
+                <p className="text-sm text-gray-600">Apply same hours to all weekdays</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const weekdaySchedule = {
+                    monday: { enabled: true, slots: [{ start: '09:00', end: '18:00' }] },
+                    tuesday: { enabled: true, slots: [{ start: '09:00', end: '18:00' }] },
+                    wednesday: { enabled: true, slots: [{ start: '09:00', end: '18:00' }] },
+                    thursday: { enabled: true, slots: [{ start: '09:00', end: '18:00' }] },
+                    friday: { enabled: true, slots: [{ start: '09:00', end: '18:00' }] },
+                    saturday: { enabled: true, slots: [{ start: '09:00', end: '14:00' }] },
+                    sunday: { enabled: false, slots: [] }
+                  };
+                  handleInputChange('availability', weekdaySchedule);
+                  handleInputChange('operating_hours', 'Mon-Fri: 9 AM - 6 PM, Sat: 9 AM - 2 PM');
+                  toast.success('Standard schedule applied!');
+                }}
+                className="bg-white hover:bg-blue-50"
+              >
+                Apply Standard Hours
+              </Button>
+            </div>
           </div>
+
+          {/* Day-by-Day Schedule */}
+          <div className="space-y-3">
+            {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => {
+              const dayKey = day.toLowerCase() as keyof typeof profile.availability;
+              const dayData = profile.availability?.[dayKey] || { enabled: false, slots: [] };
+              
+              return (
+                <div 
+                  key={day} 
+                  className={`p-4 rounded-xl border-2 transition-all ${
+                    dayData.enabled 
+                      ? 'border-blue-200 bg-blue-50/50' 
+                      : 'border-gray-100 bg-gray-50/50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newAvailability = {
+                            ...profile.availability,
+                            [dayKey]: {
+                              enabled: !dayData.enabled,
+                              slots: !dayData.enabled && (!dayData.slots || dayData.slots.length === 0)
+                                ? [{ start: '09:00', end: '18:00' }]
+                                : dayData.slots
+                            }
+                          };
+                          handleInputChange('availability', newAvailability);
+                        }}
+                        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                          dayData.enabled 
+                            ? 'bg-blue-500 border-blue-500' 
+                            : 'bg-white border-gray-300'
+                        }`}
+                      >
+                        {dayData.enabled && (
+                          <CheckCircle className="w-4 h-4 text-white" />
+                        )}
+                      </button>
+                      <span className={`font-medium ${dayData.enabled ? 'text-gray-900' : 'text-gray-400'}`}>
+                        {day}
+                      </span>
+                    </div>
+                    
+                    {dayData.enabled && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newSlots = [...(dayData.slots || []), { start: '09:00', end: '18:00' }];
+                          handleInputChange('availability', {
+                            ...profile.availability,
+                            [dayKey]: { ...dayData, slots: newSlots }
+                          });
+                        }}
+                        className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        + Add Slot
+                      </button>
+                    )}
+                  </div>
+                  
+                  {/* Time Slots */}
+                  {dayData.enabled && dayData.slots && dayData.slots.length > 0 && (
+                    <div className="mt-3 space-y-2 pl-9">
+                      {dayData.slots.map((slot: { start: string; end: string }, idx: number) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <input
+                            type="time"
+                            value={slot.start}
+                            onChange={(e) => {
+                              const newSlots = [...dayData.slots];
+                              newSlots[idx] = { ...newSlots[idx], start: e.target.value };
+                              handleInputChange('availability', {
+                                ...profile.availability,
+                                [dayKey]: { ...dayData, slots: newSlots }
+                              });
+                            }}
+                            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                          />
+                          <span className="text-gray-400">to</span>
+                          <input
+                            type="time"
+                            value={slot.end}
+                            onChange={(e) => {
+                              const newSlots = [...dayData.slots];
+                              newSlots[idx] = { ...newSlots[idx], end: e.target.value };
+                              handleInputChange('availability', {
+                                ...profile.availability,
+                                [dayKey]: { ...dayData, slots: newSlots }
+                              });
+                            }}
+                            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                          />
+                          {dayData.slots.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newSlots = dayData.slots.filter((_: any, i: number) => i !== idx);
+                                handleInputChange('availability', {
+                                  ...profile.availability,
+                                  [dayKey]: { ...dayData, slots: newSlots }
+                                });
+                              }}
+                              className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {!dayData.enabled && (
+                    <p className="mt-2 text-xs text-gray-400 pl-9">Not available</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          
+          {/* Legacy Text Field (Hidden but saved for backward compatibility) */}
+          <input
+            type="hidden"
+            value={profile.operating_hours || ''}
+            onChange={(e) => handleInputChange('operating_hours', e.target.value)}
+          />
+          
+          <p className="text-xs text-gray-500 mt-4 flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            Customers will see your availability when booking appointments
+          </p>
         </div>
 
         {/* Save Button (if changes) */}
         {hasChanges && (
-          <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-blue-200 p-4 rounded-t-2xl">
-            <div className="max-w-4xl mx-auto flex justify-end gap-4">
+          <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 p-3">
+            <div className="flex gap-2">
               <Button
                 variant="outline"
+                size="sm"
+                className="flex-1"
                 onClick={() => {
                   loadProfile();
                   setHasChanges(false);
@@ -636,14 +835,16 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
               <Button
                 onClick={handleSave}
                 disabled={saving}
-                className="bg-blue-500 hover:bg-blue-600 text-white"
+                size="sm"
+                className="flex-1 bg-blue-500 hover:bg-blue-600 text-white"
               >
-                <Save className="w-4 h-4 mr-2" />
-                {saving ? 'Saving...' : 'Save Changes'}
+                <Save className="w-4 h-4 mr-1" />
+                {saving ? 'Saving...' : 'Save'}
               </Button>
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

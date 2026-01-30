@@ -218,7 +218,7 @@ export function normalizeVendor(raw: any): NormalizedVendor {
     address: raw.address,
     city: raw.city,
     state: raw.state,
-    pincode: raw.pincode || raw.zip_code,
+    pincode: (raw.pincode && raw.pincode !== '000000') ? raw.pincode : ((raw.zip_code && raw.zip_code !== '000000') ? raw.zip_code : ''),
     roleId: raw.roleId || raw.role_id,
     roleName: raw.roleName || raw.role_name,
     vendorType: raw.vendorType || raw.vendor_type || 'business',

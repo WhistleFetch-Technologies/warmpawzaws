@@ -1,26 +1,28 @@
 #!/bin/bash
 # Direct AWS CLI deployment script for customer-web
-# Usage: ./scripts/deploy-customer-web.sh
+# Usage: ./scripts/deploy-customer-web.sh [--deploy-only]
+#   --deploy-only  Skip build; inject config and upload existing dist (fails if dist missing).
+#   Default: always clean + build, then inject + upload. Do NOT use SKIP_BUILD env (ignored).
 
 set -e
 
+# Only skip build when explicitly requested via flag (ignore SKIP_BUILD env to avoid cross-agent leaks)
+DEPLOY_ONLY=false
+for arg in "$@"; do
+  if [ "$arg" = "--deploy-only" ] || [ "$arg" = "--skip-build" ]; then
+    DEPLOY_ONLY=true
+    break
+  fi
+done
+
 echo "🚀 Deploying customer-web to AWS dev environment..."
 
-# Configuration
+# Configuration - ONLY use official Customer CloudFront URL
 APP_NAME="customer-web"
 S3_BUCKET="warmpawz-dev-customer-frontend-ap-south-1"
-CLOUDFRONT_DIST_ID=$(aws cloudfront list-distributions \
-  --query "DistributionList.Items[?Origins.Items[?DomainName==\`${S3_BUCKET}.s3.ap-south-1.amazonaws.com\`]].Id" \
-  --output text | awk '{print $1}' | head -1)
-
-if [ -z "$CLOUDFRONT_DIST_ID" ] || [ "$CLOUDFRONT_DIST_ID" = "None" ]; then
-  echo "❌ Error: Could not find CloudFront distribution for ${S3_BUCKET}"
-  exit 1
-fi
-
-CLOUDFRONT_URL=$(aws cloudfront list-distributions \
-  --query "DistributionList.Items[?Id==\`${CLOUDFRONT_DIST_ID}\`].DomainName" \
-  --output text | awk '{print $1}' | head -1)
+# Official Customer CloudFront (ONLY this URL for customer component)
+CLOUDFRONT_DIST_ID="E2RDORGXSWJJ87"
+CLOUDFRONT_URL="https://d2aoyjj8ine0wk.cloudfront.net"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -32,39 +34,76 @@ NC='\033[0m' # No Color
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-# Step 1: Build the app
-echo -e "${BLUE}📦 Building ${APP_NAME}...${NC}"
+# Step 1: Build the app (skip only when --deploy-only was passed and dist exists)
 cd "apps/${APP_NAME}"
+if [ "$DEPLOY_ONLY" = true ] && [ -d "dist" ]; then
+  echo -e "${GREEN}✅ Skipping build (--deploy-only, dist exists)${NC}"
+else
+  echo -e "${BLUE}📦 Building ${APP_NAME}...${NC}"
+  # Clean stale build artifacts to prevent ENOENT / manifest race conditions
+  echo -e "${BLUE}🧹 Cleaning stale build artifacts...${NC}"
+  rm -rf .next dist node_modules/.cache
+  sleep 2
 
-# Clean stale build artifacts to prevent race conditions
-echo -e "${BLUE}🧹 Cleaning stale build artifacts...${NC}"
-rm -rf .next dist node_modules/.cache
+  # Build with retry on failure (Next.js static export can be flaky)
+  if ! npm run build; then
+    echo -e "${YELLOW}⚠️  First build failed, retrying with full clean...${NC}"
+    rm -rf .next dist node_modules/.cache
+    sleep 3
+    npm run build
+  fi
 
-npm run build
+  if [ ! -d "dist" ]; then
+    echo -e "${YELLOW}❌ Error: dist directory not found after build!${NC}"
+    exit 1
+  fi
 
-if [ ! -d "dist" ]; then
-  echo -e "${YELLOW}❌ Error: dist directory not found after build!${NC}"
-  exit 1
+  echo -e "${GREEN}✅ Build completed successfully${NC}"
 fi
-
-echo -e "${GREEN}✅ Build completed successfully${NC}"
 
 # Step 1.5: Inject runtime-config.js
 echo -e "${BLUE}🔧 Injecting runtime-config.js...${NC}"
 cd "$PROJECT_ROOT"
 
-# Get API Gateway endpoint (HTTP API v2)
-# The warmpawz API is an HTTP API (v2), so we use apigatewayv2
-API_ENDPOINT=$(aws apigatewayv2 get-apis --region ap-south-1 \
-  --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" \
-  --output text 2>/dev/null | head -1 || echo "")
+# Get API endpoint. For Customer app with UAT mode:
+# - Prefer USE_SERVERLESS_API=1 to use z0b3obweb6 (supports UAT tokens; CDK API uses Cognito-only)
+# - Else prefer api.dev.warmpawz.com (official API domain) when in CDK outputs
+# - Else CDK ApiGatewayUrl, then serverless fallback
+USE_SERVERLESS_API="${USE_SERVERLESS_API:-0}"
+SERVERLESS_API="https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"
 
-if [ -n "$API_ENDPOINT" ] && [ "$API_ENDPOINT" != "None" ]; then
-  echo -e "${GREEN}✅ API Gateway endpoint: $API_ENDPOINT${NC}"
+if [ "$USE_SERVERLESS_API" = "1" ] || [ "$USE_SERVERLESS_API" = "true" ]; then
+  API_ENDPOINT="$SERVERLESS_API"
+  echo -e "${GREEN}✅ Using Serverless API (UAT-compatible): $API_ENDPOINT${NC}"
 else
-  # Fallback to known API Gateway endpoint
-  API_ENDPOINT="https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"
-  echo -e "${YELLOW}⚠️  Using fallback API endpoint: $API_ENDPOINT${NC}"
+  CDK_OUT="$PROJECT_ROOT/infrastructure/cdk/cdk-outputs.json"
+  if [ -f "$CDK_OUT" ]; then
+    if command -v jq >/dev/null 2>&1; then
+      API_DOMAIN=$(jq -r '.WarmpawzStack-dev.ApiDomainName // empty' "$CDK_OUT" 2>/dev/null)
+      CDK_API_URL=$(jq -r '.WarmpawzStack-dev.ApiGatewayUrl // empty' "$CDK_OUT" 2>/dev/null | sed 's|/$||')
+    else
+      API_DOMAIN=$(grep -o '"ApiDomainName": "[^"]*"' "$CDK_OUT" 2>/dev/null | head -1 | sed 's/.*"ApiDomainName": "\([^"]*\)".*/\1/')
+      CDK_API_URL=$(grep -o '"ApiGatewayUrl": "[^"]*"' "$CDK_OUT" 2>/dev/null | head -1 | sed 's/.*"ApiGatewayUrl": "\([^"]*\)".*/\1/' | sed 's|/$||')
+    fi
+    # Prefer official API domain (https://api.dev.warmpawz.com) when available
+    if [ -n "$API_DOMAIN" ] && [ "$API_DOMAIN" != "null" ]; then
+      API_ENDPOINT="https://${API_DOMAIN}"
+      echo -e "${GREEN}✅ API endpoint (official domain): $API_ENDPOINT${NC}"
+    elif [ -n "$CDK_API_URL" ] && [ "$CDK_API_URL" != "null" ]; then
+      API_ENDPOINT="$CDK_API_URL"
+      echo -e "${GREEN}✅ API Gateway endpoint: $API_ENDPOINT${NC}"
+      echo -e "${YELLOW}   Note: CDK API uses Cognito auth. For UAT (phone login), set USE_SERVERLESS_API=1${NC}"
+    fi
+  fi
+  if [ -z "$API_ENDPOINT" ]; then
+    API_ENDPOINT=$(aws apigatewayv2 get-apis --region ap-south-1 \
+      --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" \
+      --output text 2>/dev/null | head -1 || echo "")
+  fi
+  if [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" = "None" ]; then
+    API_ENDPOINT="$SERVERLESS_API"
+    echo -e "${YELLOW}⚠️  Using fallback API (serverless, UAT-compatible): $API_ENDPOINT${NC}"
+  fi
 fi
 
 # Inject runtime-config.js into dist folder

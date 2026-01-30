@@ -274,7 +274,7 @@ app.get('/providers/top', async (c) => {
           (
             SELECT MIN(vs.price)
             FROM vendor_services vs
-            WHERE vs.vendor_id = v.id AND vs.is_active = true
+            WHERE vs.vendor_id = v.id AND vs.is_enabled = true
           ) as starting_price,
           (
             SELECT COUNT(*) 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { X, Pill, Save, AlertCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface VendorPrescriptionModalProps {
   bookingId: string;
@@ -46,11 +46,11 @@ export function VendorPrescriptionModal({
       setError('');
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/prescription/upload`,
+        `${getApiBaseUrl()}/vendor/prescription/upload`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

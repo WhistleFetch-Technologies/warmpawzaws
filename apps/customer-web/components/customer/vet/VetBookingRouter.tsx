@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload } from 'lucide-react';
+import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Stethoscope, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { StandardizedHeader } from '../shared/StandardizedHeader';
+import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { trackBookingStep, useBookingAnalytics } from '@/lib/analytics';
 
 interface VetBookingRouterProps {
   phone: string;
@@ -106,6 +107,34 @@ export function VetBookingRouter({
   const [usePackageSession, setUsePackageSession] = useState(false);
   const [showPackageOffer, setShowPackageOffer] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
+  
+  // ✅ ANALYTICS: Track booking steps
+  const analytics = useBookingAnalytics('vet', selectedServiceType as any);
+  
+  useEffect(() => {
+    const stepToAnalyticsMap: Record<BookingStep, string> = {
+      'service': 'service_selection',
+      'details': 'schedule_selection',
+      'payment': 'payment_initiated',
+      'confirmation': 'booking_confirmed',
+    };
+    
+    const analyticsStep = stepToAnalyticsMap[step];
+    if (analyticsStep) {
+      trackBookingStep({
+        step: analyticsStep as any,
+        serviceCategory: 'vet',
+        serviceStyle: selectedServiceType as any,
+        vendorId: vendorId || doctorId,
+        petId: selectedPet?.id,
+        phone,
+        metadata: {
+          serviceName: selectedVendorService?.name || serviceName,
+          price: selectedVendorService?.price || price,
+        }
+      });
+    }
+  }, [step, selectedServiceType, vendorId, doctorId, selectedPet?.id]);
   
   // Add Pet/Address modal states
   const [showAddPetModal, setShowAddPetModal] = useState(false);
@@ -365,10 +394,28 @@ export function VetBookingRouter({
     }
   };
 
+  // ✅ FIX: Helper function for API calls with retry logic
+  const fetchWithRetry = async (url: string, maxRetries: number = 3, delay: number = 1000) => {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        return await apiClient.get(url);
+      } catch (error: any) {
+        const isServerError = error?.status >= 500 || error?.message?.includes('5');
+        if (isServerError && attempt < maxRetries - 1) {
+          console.log(`🔄 Retrying ${url} (attempt ${attempt + 2}/${maxRetries}) after ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay * (attempt + 1))); // Exponential backoff
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new Error('Max retries exceeded');
+  };
+
   const loadCustomerData = async () => {
     try {
-      // Load pets from API
-      const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
+      // Load pets from API with retry logic for intermittent 500/503 errors
+      const petsResponse = await fetchWithRetry(`/customer/pets/${phone}`, 3, 1000) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
         setPets(petsResponse.pets.map((p: any) => ({
           id: p.id,
@@ -382,7 +429,7 @@ export function VetBookingRouter({
       // Address is part of vendor profile - not needed here
       // Get customer ID for package checking
       try {
-        const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
+        const profileResponse = await fetchWithRetry(`/customer/profile?phone=${encodeURIComponent(phone)}`, 2, 500) as any;
         if (profileResponse?.profile?.id || profileResponse?.id) {
           setCustomerId(profileResponse?.profile?.id || profileResponse?.id);
         }
@@ -538,25 +585,38 @@ export function VetBookingRouter({
           return; // Don't proceed to confirmation on error
         }
       } else {
-        // Regular booking
+        // Regular booking: use CreateBookingRequestSchema (customerId, vendorId, serviceId UUID, bookingDate, bookingTime, serviceType enum)
+        if (!customerId) {
+          toast.error('Please wait for your profile to load, then try again.');
+          setProcessing(false);
+          return;
+        }
+        const vendorIdValue = doctorId || vendorId;
+        const serviceIdValue = (selectedServiceOption as any)?.serviceId || (selectedServiceOption as any)?.service_id || serviceId;
+        if (!vendorIdValue || !serviceIdValue) {
+          toast.error('Missing vendor or service. Please go back and select a service.');
+          setProcessing(false);
+          return;
+        }
         const bookingData = {
-          customer_phone: phone,
-          vendor_id: doctorId || 'test-vet-001',
-          service_type: selectedServiceType,
-          service_name: selectedServiceOption?.name,
-          price: usePackageSession ? 0 : selectedServiceOption?.price,
-          scheduled_date: selectedDate,
-          scheduled_time: selectedTime,
-          pet_id: selectedPet?.id,
-          pet_name: selectedPet?.name,
-          // address_id removed - address is part of vendor profile
-          notes,
-          status: 'pending',
+          customerId,
+          vendorId: vendorIdValue,
+          serviceId: serviceIdValue,
+          bookingDate: selectedDate,
+          bookingTime: selectedTime,
+          serviceType: selectedServiceType === 'clinic' ? 'at_center' : selectedServiceType,
+          petId: selectedPet?.id || undefined,
+          petName: selectedPet?.name,
+          amount: usePackageSession ? 0 : selectedServiceOption?.price,
+          notes: notes || undefined,
+          serviceName: selectedServiceOption?.name,
+          customerPhone: phone,
         };
 
         try {
           const response = await apiClient.post('/bookings/create', bookingData) as any;
-          setBookingId(response.booking?.id || 'BK-' + Date.now());
+          const res = response?.data ?? response;
+          setBookingId(res?.bookingId || res?.booking?.id || res?.id || 'BK-' + Date.now());
         } catch (err: any) {
           console.error('Error creating booking:', err);
           const errorMessage = err?.response?.data?.error || err?.message || 'Failed to create booking';
@@ -577,31 +637,100 @@ export function VetBookingRouter({
 
   const selectedServiceOption = getSelectedServiceOption();
 
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const getServiceTitle = () => {
+    if (selectedServiceType === 'at_center') return 'Clinic Visit Booking';
+    if (selectedServiceType === 'at_home') return 'Home Visit Booking';
+    if (selectedServiceType === 'tele') return 'Tele Consultation Booking';
+    return 'Veterinary Booking';
+  };
+  
+  const getServiceSubtitle = () => {
+    if (selectedServiceType === 'at_center') return 'Book a clinic appointment';
+    if (selectedServiceType === 'at_home') return 'Book a home visit';
+    if (selectedServiceType === 'tele') return 'Book a video consultation';
+    return 'Book your veterinary service';
+  };
+  
+  const dashboardStats = [
+    { value: '50+', label: 'Vets', icon: <Stethoscope className="w-4 h-4" /> },
+    { value: '1K+', label: 'Bookings' },
+    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
+
+  // ✅ FIX: Prepare step indicators for header
+  const getStepIndicators = (): StepInfo[] | undefined => {
+    if (step === 'payment' || step === 'confirmation') return undefined;
+    
+    const stepLabels = ['Service', 'Details', 'Payment'];
+    const currentStepMap: Record<BookingStep, number> = {
+      service: 0,
+      details: 1,
+      payment: 2,
+      confirmation: 3
+    };
+    const currentIdx = currentStepMap[step];
+    
+    return stepLabels.map((label, idx) => ({
+      label,
+      isCompleted: idx < currentIdx,
+      isCurrent: idx === currentIdx
+    }));
+  };
+
   return (
     <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
-      {/* Standardized Header - Match home: gradient, greeting, YOUR PETS, same size */}
-      <StandardizedHeader
-        userName={userName}
-        userProfilePhoto={userProfilePhoto}
-        showBackButton={true}
-        showPets={true}
-        pets={Array.isArray(pets) ? pets.map((p) => ({ id: p.id, name: p.name, type: p.species || 'Pet', photo: p.photo, image: p.photo })) : []}
-        selectedPet={selectedPet ? { id: selectedPet.id, name: selectedPet.name, type: selectedPet.species || 'Pet', photo: selectedPet.photo, image: selectedPet.photo } : null}
-        onPetSelect={(pet) => {
-          const foundPet = Array.isArray(pets) ? pets.find((p) => p.id === pet.id) : null;
-          setSelectedPet(foundPet || null);
-        }}
-        onPetClick={(petId) => onNavigate('profile')}
-        onAddPet={() => setShowAddPetModal(true)}
-        onBack={handleBack}
-        onNavigate={onNavigate}
-        onProfileClick={() => onNavigate('profile')}
-        customerPhone={phone}
-        itemCount={0}
-      />
+      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader - Hide when on payment step */}
+      {step !== 'payment' && (
+        <ServiceDashboardHeader
+          serviceName={getServiceTitle()}
+          serviceSubtitle={getServiceSubtitle()}
+          serviceIcon={Stethoscope}
+          iconColor="text-white"
+          stats={dashboardStats}
+          steps={getStepIndicators()}
+          onBack={handleBack}
+          showBackButton={true}
+          headerColor="bg-[#FF8C42]"
+        />
+      )}
 
       <div className="flex-1 overflow-y-auto bg-gray-50">
-        <div className="max-w-[430px] mx-auto px-4 sm:px-6 py-4 sm:py-6">
+        <div className="max-w-md mx-auto px-4 sm:px-6 py-4 sm:py-6">
+          {/* Pet Selector - Show when not on payment step */}
+          {step !== 'payment' && pets.length > 0 && (
+            <div className="mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-sm font-semibold text-gray-700">Select Pet:</span>
+              </div>
+              <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+                {pets.map((pet) => (
+                  <button
+                    key={pet.id}
+                    onClick={() => setSelectedPet(pet)}
+                    className={`flex-shrink-0 px-3 py-2 rounded-lg border-2 transition-all ${
+                      selectedPet?.id === pet.id
+                        ? 'border-[#FF8C42] bg-orange-50'
+                        : 'border-gray-200 bg-white hover:border-orange-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {pet.photo ? (
+                        <img src={pet.photo} alt={pet.name} className="w-8 h-8 rounded-full object-cover" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center">
+                          <span className="text-xs font-bold text-orange-600">{pet.name.charAt(0)}</span>
+                        </div>
+                      )}
+                      <span className={`text-sm font-medium ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-gray-700'}`}>
+                        {pet.name}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
         {/* Service Selection - Skip if service context exists */}
         {step === 'service' && !hasServiceContext && (

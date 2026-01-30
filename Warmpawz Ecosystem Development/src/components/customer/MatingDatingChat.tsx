@@ -4,7 +4,7 @@ import {
   ChevronLeft, Send, Coffee, Stethoscope, 
   Image as ImageIcon, Smile, Calendar, MapPin
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface MatingDatingChatProps {
@@ -51,8 +51,8 @@ export function MatingDatingChat({ phone, matchId, onBack }: MatingDatingChatPro
   const loadMatchData = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/matches/${phone}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/dating/matches/${phone}`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -73,11 +73,11 @@ export function MatingDatingChat({ phone, matchId, onBack }: MatingDatingChatPro
     try {
       // Attempt to unlock chat with subscription check
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/unlock-chat`,
+        `${getApiBaseUrl()}/dating/unlock-chat`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -108,8 +108,8 @@ export function MatingDatingChat({ phone, matchId, onBack }: MatingDatingChatPro
       
       // Mock implementation - in production, integrate with AWS Chime
       // const response = await fetch(
-      //   `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/chime/messages/${matchId}`,
-      //   { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+      //   `${getApiBaseUrl()}/chime/messages/${matchId}`,
+      //   { headers: getAuthHeaders() }
       // );
 
       // For now, use local state
@@ -139,11 +139,11 @@ export function MatingDatingChat({ phone, matchId, onBack }: MatingDatingChatPro
 
       // In production, send via AWS Chime
       // const response = await fetch(
-      //   `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/chime/send-message`,
+      //   `${getApiBaseUrl()}/chime/send-message`,
       //   {
       //     method: 'POST',
       //     headers: {
-      //       'Authorization': `Bearer ${publicAnonKey}`,
+      //       ...getAuthHeaders(),
       //       'Content-Type': 'application/json'
       //     },
       //     body: JSON.stringify({

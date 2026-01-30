@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { projectId, publicAnonKey } from '../../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../../utils/api-config';
 
 interface KPIData {
   totalGMV: number;
@@ -34,7 +34,7 @@ export function useAnalyticsData(range: string = '7d') {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadAnalyticsData();
@@ -50,7 +50,7 @@ export function useAnalyticsData(range: string = '7d') {
         `${API_BASE}/admin/analytics/kpi?range=${range}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -67,7 +67,7 @@ export function useAnalyticsData(range: string = '7d') {
         `${API_BASE}/admin/analytics/revenue?range=${range}&groupBy=day`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -84,7 +84,7 @@ export function useAnalyticsData(range: string = '7d') {
         `${API_BASE}/admin/analytics/revenue?range=${range}&groupBy=category`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -101,7 +101,7 @@ export function useAnalyticsData(range: string = '7d') {
         `${API_BASE}/admin/analytics/vendor-performance?range=${range}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

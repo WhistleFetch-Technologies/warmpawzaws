@@ -101,6 +101,18 @@ export function HomeServicesDashboard({
     }
   };
 
+  // Loading state (P3 optional)
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 max-w-md mx-auto flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-green-600 border-t-transparent" />
+          <p className="text-sm text-gray-500">Loading home services...</p>
+        </div>
+      </div>
+    );
+  }
+
   // If a service is selected, show the booking router
   if (selectedService) {
     const config = HOME_SERVICE_CONFIGS[selectedService];

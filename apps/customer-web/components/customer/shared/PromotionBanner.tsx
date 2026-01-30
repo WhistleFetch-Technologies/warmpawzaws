@@ -201,6 +201,10 @@ export function PromotionBanner({
                       size="sm"
                       className="mt-2 bg-[#FF8C42] hover:bg-[#ff7a28] text-white"
                       onClick={() => {
+                        // Track promotion click
+                        apiClient.post(`/promotions/${promo.id}/click`, {
+                          source: `${service}_spotlight`
+                        }).catch(() => {}); // Silent fail for tracking
                         // Navigate to booking or apply promotion
                         window.location.href = `/${service}?promotion=${promo.id}`;
                       }}
@@ -260,6 +264,10 @@ export function PromotionBanner({
                     variant="outline"
                     className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42] hover:text-white"
                     onClick={() => {
+                      // Track promotion click
+                      apiClient.post(`/promotions/${promo.id}/click`, {
+                        source: `${service}_regular`
+                      }).catch(() => {}); // Silent fail for tracking
                       window.location.href = `/${service}?promotion=${promo.id}`;
                     }}
                   >

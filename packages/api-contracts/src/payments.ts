@@ -30,7 +30,7 @@ export const VerifyRazorpayPaymentRequestSchema = z.object({
 
 export const CreatePaymentRequestSchema = z.object({
   bookingId: z.string().uuid('Invalid booking ID format'),
-  amount: z.number().positive('Amount must be positive'),
+  amount: z.number().min(0, 'Amount must be non-negative'), // Allow 0 for full wallet payment
   paymentMethod: z.enum(['razorpay', 'wallet', 'cash', 'card', 'upi', 'netbanking'], {
     errorMap: () => ({ message: 'Invalid payment method' }),
   }).optional(),

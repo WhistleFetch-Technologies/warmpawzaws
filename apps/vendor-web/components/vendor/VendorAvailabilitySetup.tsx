@@ -5,7 +5,7 @@ import { apiClient } from '@/lib/api-client';
 import { Calendar, Plus, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 
 interface TimeSlot {
   start: string;

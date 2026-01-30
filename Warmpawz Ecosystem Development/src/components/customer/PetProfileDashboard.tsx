@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ChevronLeft, Calendar, TrendingUp, Clock, Filter, Search, Package } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { BookingDetailModal } from './BookingDetailModal';
 
 interface Pet {
@@ -55,9 +55,9 @@ export function PetProfileDashboard({ phone, petData, onBack }: PetProfileDashbo
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${phone}`,
+        `${getApiBaseUrl()}/bookings/${phone}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

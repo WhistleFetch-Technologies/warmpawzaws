@@ -245,17 +245,19 @@ export function registerPrescriptionEndpoints(app: Hono) {
           // ✅ CRITICAL: Use SQL COALESCE as final safety net - even if JS variable is null, SQL will use CURRENT_DATE
           // This is the ABSOLUTE last line of defense at the database level
           // NULLIF handles empty strings, COALESCE handles NULL values
+          // ✅ FIX: Added medication_name column (NOT NULL constraint) - uses med.name or default 'Prescription'
+          const medicationName = med.name || 'Prescription';
           const result = await query(
             `INSERT INTO prescriptions (
               booking_id, customer_id, pet_id, vendor_id, staff_id, medications, instructions,
-              diagnosis, prescription_date, follow_up_date, created_by, created_by_role, is_active
+              diagnosis, prescription_date, follow_up_date, created_by, created_by_role, is_active, medication_name
             ) VALUES (
               $1, $2, $3, $4, $5, $6::jsonb, $7, $8, 
               COALESCE(NULLIF(TRIM($9::text), '')::date, CURRENT_DATE), 
-              $10::date, $11, $12, $13
+              $10::date, $11, $12, $13, $14
             )
             RETURNING *`,
-            queryParams
+            [...queryParams, medicationName]
           );
           const row = result.rows?.[0];
           if (row) insertedPrescriptions.push(row);
@@ -295,14 +297,15 @@ export function registerPrescriptionEndpoints(app: Hono) {
             const fallbackDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             console.log('[prescriptions] Retrying with fallback date:', fallbackDate);
             try {
-              const retryResult = await query(
+              const retryMedicationName = med.name || 'Prescription';
+            const retryResult = await query(
                 `INSERT INTO prescriptions (
                   booking_id, customer_id, pet_id, vendor_id, staff_id, medications, instructions,
-                  diagnosis, prescription_date, follow_up_date, created_by, created_by_role, is_active
+                  diagnosis, prescription_date, follow_up_date, created_by, created_by_role, is_active, medication_name
                 ) VALUES (
                   $1, $2, $3, $4, $5, $6::jsonb, $7, $8, 
                   $9::date, 
-                  $10::date, $11, $12, $13
+                  $10::date, $11, $12, $13, $14
                 )
                 RETURNING *`,
                 [
@@ -319,6 +322,7 @@ export function registerPrescriptionEndpoints(app: Hono) {
                   createdBy || vendorId,
                   createdByRole || 'vendor',
                   true,
+                  retryMedicationName,
                 ]
               );
               const retryRow = retryResult.rows?.[0];
@@ -457,19 +461,58 @@ export function registerPrescriptionEndpoints(app: Hono) {
   /**
    * GET /prescriptions/:prescriptionId
    * Get prescription with access control
+   * ✅ Now includes full doctor/clinic/pet details for A4 prescription document
    */
   app.get("/prescriptions/:prescriptionId", async (c) => {
     try {
       const { prescriptionId } = c.req.param();
       const actorId = c.req.query('actorId');
       const actorRole = c.req.query('actorRole');
+      const includeDetails = c.req.query('includeDetails') === 'true';
 
-      const prescriptions = await select('prescriptions', { id: prescriptionId });
-      if (prescriptions.length === 0) {
+      // Fetch prescription with comprehensive joined data
+      const result = await query(
+        `SELECT p.*, 
+                -- Pet details
+                pet.name as pet_name, 
+                pet.species as pet_species, 
+                pet.breed as pet_breed,
+                pet.age_years as pet_age_years,
+                pet.age_months as pet_age_months,
+                pet.gender as pet_gender,
+                pet.weight_kg as pet_weight_kg,
+                -- Customer details
+                c.full_name as customer_name, 
+                c.phone as customer_phone,
+                -- Vendor/Doctor details
+                v.business_name as vendor_name,
+                v.owner_name as vendor_owner_name,
+                v.phone as vendor_phone,
+                v.email as vendor_email,
+                v.address as vendor_address,
+                v.city as vendor_city,
+                v.state as vendor_state,
+                v.pincode as vendor_pincode,
+                v.metadata as vendor_metadata,
+                -- Staff details
+                s.name as staff_name,
+                -- Booking details
+                b.booking_date, b.booking_time
+         FROM prescriptions p
+         LEFT JOIN pets pet ON p.pet_id = pet.id
+         LEFT JOIN customers c ON p.customer_id = c.id
+         LEFT JOIN vendors v ON p.vendor_id = v.id
+         LEFT JOIN staff s ON p.staff_id = s.id
+         LEFT JOIN bookings b ON p.booking_id = b.id
+         WHERE p.id = $1`,
+        [prescriptionId]
+      );
+
+      if (result.rows.length === 0) {
         return c.json({ error: 'Prescription not found' }, 404);
       }
 
-      const prescription = prescriptions[0];
+      let prescription = result.rows[0];
 
       // Access control: customer can only see their own, vendor can see their prescriptions
       if (actorRole === 'customer' && prescription.customer_id !== actorId) {
@@ -480,23 +523,26 @@ export function registerPrescriptionEndpoints(app: Hono) {
         return c.json({ error: 'Access denied' }, 403);
       }
 
-      // Get related booking info
-      const booking = prescription.booking_id
-        ? await select('bookings', { id: prescription.booking_id })
-        : [];
-
-      // Get pet info
-      const pet = prescription.pet_id
-        ? await select('pets', { id: prescription.pet_id })
-        : [];
+      // Process metadata to extract license info if includeDetails is requested
+      if (includeDetails && prescription.vendor_metadata) {
+        try {
+          const metadata = typeof prescription.vendor_metadata === 'string' 
+            ? JSON.parse(prescription.vendor_metadata) 
+            : prescription.vendor_metadata;
+          
+          prescription = {
+            ...prescription,
+            license_number: metadata.vetLicense || metadata.licenseNumber || metadata.vet_license,
+            vci_registration: metadata.vciRegistrationNumber || metadata.vci_registration,
+            qualification: metadata.qualification || metadata.degree,
+            specialization: metadata.specialization || metadata.specialty,
+          };
+        } catch { /* ignore */ }
+      }
 
       return c.json({
         success: true,
-        prescription: {
-          ...prescription,
-          booking: booking[0] || null,
-          pet: pet[0] || null,
-        },
+        prescription,
       });
     } catch (error: any) {
       console.error('Error fetching prescription:', error);
@@ -506,25 +552,48 @@ export function registerPrescriptionEndpoints(app: Hono) {
 
   /**
    * GET /prescriptions/booking/:bookingId
-   * Get prescriptions for a booking (enriched with pet/customer info)
+   * Get prescriptions for a booking (enriched with pet/customer/doctor info)
    * ✅ CRITICAL: Only returns PUBLISHED prescriptions to customers
+   * ✅ Now includes full doctor/clinic details for A4 prescription document
    */
   app.get("/prescriptions/booking/:bookingId", async (c) => {
     try {
       const { bookingId } = c.req.param();
       const includeDrafts = c.req.query('includeDrafts') === 'true'; // Only vendors can see drafts
+      const includeDetails = c.req.query('includeDetails') === 'true'; // Include full details for document view
 
-      // Fetch prescriptions with joined data
-      // ✅ FIX: Only show published prescriptions to customers (draft prescriptions are hidden)
+      // Fetch prescriptions with comprehensive joined data for A4 prescription document
       const result = await query(
         `SELECT p.*, 
-                pet.name as pet_name, pet.species as pet_species, pet.breed as pet_breed,
-                c.full_name as customer_name, c.phone as customer_phone,
-                v.business_name as vendor_name
+                -- Pet details
+                pet.name as pet_name, 
+                pet.species as pet_species, 
+                pet.breed as pet_breed,
+                pet.age_years as pet_age_years,
+                pet.age_months as pet_age_months,
+                pet.gender as pet_gender,
+                pet.weight_kg as pet_weight_kg,
+                -- Customer details
+                c.full_name as customer_name, 
+                c.phone as customer_phone,
+                -- Vendor/Doctor details
+                v.business_name as vendor_name,
+                v.owner_name as vendor_owner_name,
+                v.phone as vendor_phone,
+                v.email as vendor_email,
+                v.address as vendor_address,
+                v.city as vendor_city,
+                v.state as vendor_state,
+                v.pincode as vendor_pincode,
+                v.metadata as vendor_metadata,
+                -- Staff details (if prescription created by staff member)
+                s.name as staff_name,
+                s.phone as staff_phone
          FROM prescriptions p
          LEFT JOIN pets pet ON p.pet_id = pet.id
          LEFT JOIN customers c ON p.customer_id = c.id
          LEFT JOIN vendors v ON p.vendor_id = v.id
+         LEFT JOIN staff s ON p.staff_id = s.id
          WHERE p.booking_id = $1
          AND p.is_active = true
          AND (p.status = 'published' OR p.status IS NULL ${includeDrafts ? "OR p.status = 'draft'" : ''})
@@ -532,10 +601,32 @@ export function registerPrescriptionEndpoints(app: Hono) {
         [bookingId]
       );
 
+      // Process metadata to extract license info if includeDetails is requested
+      const processedRows = result.rows.map((row: any) => {
+        if (includeDetails && row.vendor_metadata) {
+          try {
+            const metadata = typeof row.vendor_metadata === 'string' 
+              ? JSON.parse(row.vendor_metadata) 
+              : row.vendor_metadata;
+            
+            return {
+              ...row,
+              license_number: metadata.vetLicense || metadata.licenseNumber || metadata.vet_license,
+              vci_registration: metadata.vciRegistrationNumber || metadata.vci_registration,
+              qualification: metadata.qualification || metadata.degree,
+              specialization: metadata.specialization || metadata.specialty,
+            };
+          } catch {
+            return row;
+          }
+        }
+        return row;
+      });
+
       return c.json({
         success: true,
-        prescriptions: result.rows,
-        total: result.rows.length,
+        prescriptions: processedRows,
+        total: processedRows.length,
       });
     } catch (error: any) {
       console.error('Error fetching prescriptions:', error);

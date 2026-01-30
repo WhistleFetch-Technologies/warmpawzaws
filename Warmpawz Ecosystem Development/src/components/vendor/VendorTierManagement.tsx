@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { TrendingUp, Award, Crown, Star, ArrowUp, ChevronRight, Info } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface TierConfig {
   id: string;
@@ -43,8 +43,8 @@ export function VendorTierManagement({ vendorId, vendorName }: VendorTierManagem
       setLoading(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/tier`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/tier`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -62,8 +62,8 @@ export function VendorTierManagement({ vendorId, vendorName }: VendorTierManagem
   const loadAllTiers = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/tiers`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/tiers`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -78,8 +78,8 @@ export function VendorTierManagement({ vendorId, vendorName }: VendorTierManagem
   const loadAnalytics = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/tier/analytics`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/tier/analytics`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -99,12 +99,12 @@ export function VendorTierManagement({ vendorId, vendorName }: VendorTierManagem
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/tier/upgrade`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/tier/upgrade`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({ tierId: tierData.upgrade.nextTier })
         }

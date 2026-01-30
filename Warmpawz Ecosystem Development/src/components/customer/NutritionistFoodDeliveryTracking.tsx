@@ -16,7 +16,7 @@ import {
   MessageCircle,
   AlertCircle
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface DeliveryPartner {
   partnerId: string;
@@ -92,9 +92,9 @@ export function NutritionistFoodDeliveryTracking({
       setError(null);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/nutritionist/delivery/${orderId}/gps`,
+        `${getApiBaseUrl()}/nutritionist/delivery/${orderId}/gps`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

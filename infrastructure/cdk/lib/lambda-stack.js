@@ -73,7 +73,7 @@ class LambdaStack extends constructs_1.Construct {
         this.apiFunction = new lambda.Function(this, 'ApiFunction', {
             functionName: `warmpawz-api-${environment}`,
             runtime: lambda.Runtime.NODEJS_20_X,
-            handler: 'dist/src/handler.handler',
+            handler: 'dist/handler.handler',
             code: lambda.Code.fromAsset('../../backend/lambda', {
                 // Exclude source files - only include dist and node_modules
                 exclude: ['node_modules', '*.ts', '!*.d.ts', 'tsconfig.json', '.git'],

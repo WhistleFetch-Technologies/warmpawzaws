@@ -17,8 +17,9 @@
 
 import { Hono } from 'hono';
 import { select, query } from '../database/rds-connection';
-import { normalizeDbRows, buildBookingResponse } from '../utils/entity-extractor';
+import { normalizeDbRows, buildBookingResponse, parseSelectedServices } from '../utils/entity-extractor';
 import { normalizeBooking, isValidUUID } from '../types/entities';
+import { getDiscoveryRules } from '../lib/rule-engine';
 
 export function registerCustomerBookingHistoryEndpoints(app: Hono) {
   /**
@@ -123,6 +124,9 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
           // ✅ Include cancellation/refund info
           cancellationReason: b.cancellation_reason,
           rescheduledFromBookingId: b.rescheduled_from_booking_id,
+          // Multi-service: list of services and total duration
+          selectedServices: parseSelectedServices(b.selected_services),
+          totalDurationMinutes: b.total_duration_minutes != null ? Number(b.total_duration_minutes) : undefined,
         })),
         stats: {
           total: parseInt(stats?.total || '0', 10),
@@ -286,6 +290,9 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
           updatedAt: booking.updated_at,
           prescription: prescriptions.rows.length > 0 ? prescriptions.rows[0] : null,
           review: reviews.rows.length > 0 ? reviews.rows[0] : null,
+          // Multi-service: list of services and total duration
+          selectedServices: parseSelectedServices(booking.selected_services).length > 0 ? parseSelectedServices(booking.selected_services) : undefined,
+          totalDurationMinutes: booking.total_duration_minutes != null ? Number(booking.total_duration_minutes) : undefined,
         }
       });
     } catch (error: any) {
@@ -448,6 +455,9 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
           createdAt: booking.created_at,
           completedAt: booking.completed_at,
           cancelledAt: booking.cancelled_at,
+          // Multi-service: list of services and total duration
+          selectedServices: parseSelectedServices(booking.selected_services).length > 0 ? parseSelectedServices(booking.selected_services) : undefined,
+          totalDurationMinutes: booking.total_duration_minutes != null ? Number(booking.total_duration_minutes) : undefined,
         },
         prescription: prescriptions.rows[0] || null,
         review: reviews.rows[0] || null,
@@ -460,13 +470,14 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
 
   /**
    * GET /customer/:customerId/bookings/follow-up-eligible
-   * Get bookings eligible for follow-up (completed within 7 days)
+   * Get bookings eligible for follow-up (completed within N days from rule engine)
    */
   app.get("/customer/:customerId/bookings/follow-up-eligible", async (c) => {
     try {
       const { customerId } = c.req.param();
+      const rules = await getDiscoveryRules('all', 'booking');
+      const followUpDays = rules.follow_up_days ?? 7;
 
-      // Get completed bookings within last 7 days
       const eligibleBookings = await query(
         `SELECT b.*,
                 v.business_name as vendor_name,
@@ -478,9 +489,9 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
          WHERE b.customer_id = $1
          AND b.status = 'completed'
          AND b.completed_at IS NOT NULL
-         AND b.completed_at >= NOW() - INTERVAL '7 days'
+         AND b.completed_at >= NOW() - ($2::text || ' days')::interval
          ORDER BY b.completed_at DESC`,
-        [customerId]
+        [customerId, followUpDays]
       );
 
       // Enrich with prescription and review status

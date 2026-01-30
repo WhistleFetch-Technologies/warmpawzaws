@@ -19,7 +19,7 @@ import {
   ShoppingCart,
   User
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { useCart } from '../../../context/CartContext';
 
 interface VetDoctorDetailsProps {
@@ -72,8 +72,8 @@ export function VetDoctorDetails({ phone, doctor: propsDoctor, doctorId, preSele
       
       // Fetch doctor details from backend
       const doctorRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/doctors/${doctorId}`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/doctors/${doctorId}`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
 
       if (!doctorRes.ok) {
@@ -140,8 +140,8 @@ export function VetDoctorDetails({ phone, doctor: propsDoctor, doctorId, preSele
       
       // Fetch doctor details (which includes services) from backend
       const doctorRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/doctors/${doctorId}`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/doctors/${doctorId}`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
 
       if (!doctorRes.ok) {

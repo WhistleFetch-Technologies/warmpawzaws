@@ -14,9 +14,9 @@ import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { InstantStaffList } from './InstantStaffList';
 import { VideoCallRoom } from './VideoCallRoom';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
-const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const BASE_URL = `${getApiBaseUrl()}`;
 
 interface TeleConsultationFlowProps {
   customerId: string;
@@ -64,7 +64,7 @@ export function TeleConsultationFlow({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           customerId,
@@ -101,7 +101,7 @@ export function TeleConsultationFlow({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           bookingId: booking.bookingId,
@@ -136,7 +136,7 @@ export function TeleConsultationFlow({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           customerId
@@ -167,7 +167,7 @@ export function TeleConsultationFlow({
       const checkStatus = async () => {
         try {
           const response = await fetch(`${BASE_URL}/tele-services/booking/${booking.bookingId}`, {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            headers: getAuthHeaders()
           });
           
           if (response.ok) {

@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Search, MapPin, Star, Clock, TrendingUp, Filter, SlidersHorizontal } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
-const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const BASE_URL = `${getApiBaseUrl()}`;
 
 interface SearchResult {
   id: string;
@@ -116,7 +116,7 @@ export function SearchResultsAdvanced({
       const response = await fetch(
         `${BASE_URL}/search/advanced?${params.toString()}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -152,7 +152,7 @@ export function SearchResultsAdvanced({
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

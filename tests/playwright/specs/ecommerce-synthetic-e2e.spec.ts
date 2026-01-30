@@ -68,8 +68,7 @@ import { test, expect, APIRequestContext } from '@playwright/test';
 // Constants
 const API_BASE = process.env.API_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
 const CUSTOMER_URL = process.env.CUSTOMER_URL || 'https://d2aoyjj8ine0wk.cloudfront.net';
-// Use correct vendor URL - same as customer for now (vendor-web may not be deployed separately)
-const VENDOR_URL = process.env.VENDOR_URL || 'https://d2aoyjj8ine0wk.cloudfront.net';
+const VENDOR_URL = process.env.VENDOR_URL || 'https://d1s6ykkj381k58.cloudfront.net';
 
 // Helper to check if status is acceptable (API may return 500 for unimplemented/missing tables)
 const isAcceptableStatus = (status: number, expected: number[]) => {

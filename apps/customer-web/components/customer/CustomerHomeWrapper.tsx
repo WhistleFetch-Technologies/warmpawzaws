@@ -1,90 +1,137 @@
 import { useState } from 'react';
-import { CustomerHomeComplete as CustomerHome } from './CustomerHomeComplete';
-import { UserAccountSidebar } from './UserAccountSidebar';
-import { CustomerPetDetails } from './CustomerPetDetails';
-import { CustomerPetProfile } from './CustomerPetProfile';
-import { WalkerService } from './WalkerService';
-import { WalkerDashboard } from './walker/WalkerDashboard';
-import { CustomerSidebar } from './CustomerSidebar';
-import { PetBookingDetails } from './PetBookingDetails';
-import { PetQuickView } from './PetQuickView';
-import { AddPetModal } from './AddPetModal';
-import { ComingSoon } from './ComingSoon';
-import { VetServiceRouter } from './VetServiceRouter';
-import { VetBookingFlow } from './vet/VetBookingFlow';
-import { VetBookingRouter } from './vet/VetBookingRouter';
-import { VetDoctorDetails } from './vet/VetDoctorDetails';
-import { ClinicListView } from './vet/ClinicListView';
-import { ClinicProfileView } from './vet/ClinicProfileView';
-import { GroomingServiceRouter } from './GroomingServiceRouter';
-import { TrainingServiceRouter } from './TrainingServiceRouter';
-import { BoardingServiceRouter } from './BoardingServiceRouter';
-import { AdoptionServiceRouter } from './AdoptionServiceRouter';
-import { SunsetServiceRouter } from './SunsetServiceRouter';
-import { CustomerProfile } from './CustomerProfile';
-import { PetProfile } from './PetProfile';
-import { PetProfileDashboard } from './PetProfileDashboard';
-import { InsuranceServicesLanding } from './InsuranceServicesLanding';
-import { PetCafeServicesLanding } from './PetCafeServicesLanding';
-import { PharmacyServicesLanding } from './PharmacyServicesLanding';
-import { PharmacyStore } from './PharmacyStore';
-import { PharmacyCheckout } from './PharmacyCheckout';
-import { PhotographyServicesLanding } from './PhotographyServicesLanding';
-import { BreederServicesLanding } from './BreederServicesLanding';
-import { AmbulanceServicesLanding } from './AmbulanceServicesLanding';
-import { NutritionistServicesLanding } from './nutrition/landingPage/NutritionistServicesLanding';
-import { RelocationServicesLanding } from './RelocationServicesLanding';
-import { ResortServicesLanding } from './ResortServicesLanding';
-import { PetHolidayServicesLanding } from './PetHolidayServicesLanding';
-import { ShopDashboard } from './ShopDashboard';
-import { ProductDetailPage } from './ProductDetailPage';
-import { ShoppingCartView } from './ShoppingCartView';
-import { CheckoutView } from './CheckoutView';
-import { OrderSuccessView } from './OrderSuccessView';
-import { OrderHistoryPage } from '../shop/OrderHistoryPage';
-import { AddressBookPage } from '../shop/AddressBookPage';
-import { WalletPage } from '../shop/WalletPage';
-import { OrderDetailView } from './OrderDetailView';
-import { OrderTrackingView } from './OrderTrackingView';
-import { ProblemCategoryMapper } from '../admin/ProblemCategoryMapper';
-import { useNotificationService } from './useNotificationService';
+import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
 import { useCart } from '../../context/CartContext';
 import { apiClient } from '@/lib/api-client';
-import { MyBookings } from './MyBookings';
-import { AppointmentsList } from './AppointmentsList';
-import { AppointmentDetailsView } from './AppointmentDetailsView';
-import { RescheduleAppointmentView } from './RescheduleAppointmentView';
-// import { WalletView } from './WalletView';
+import { useNotificationService } from './useNotificationService';
 
-// ✅ NEW IMPORTS FOR GAP FIXES
-import { PetCafeListingZomatoStyle } from './PetCafeListingZomatoStyle';
-import { ResortBoardingBookingEnhanced } from './ResortBoardingBookingEnhanced';
-import { CafeReservationFlow } from './CafeReservationFlow';
-import { BreederCatalogView } from './BreederCatalogView';
-import { AmbulanceSOS } from './AmbulanceSOS';
-import { AdoptionQuestionnaire } from './AdoptionQuestionnaire';
-import { CustomerServicesPage } from './CustomerServicesPage';
-import { CustomerBookingsPage } from './CustomerBookingsPage';
-import { CreateBookingPage } from './booking/CreateBookingPage';
-import { CustomerPetsPage } from './CustomerPetsPage';
-import { OrderTrackingPage } from '../shop/OrderTrackingPage';
+// ============================================================================
+// PERFORMANCE OPTIMIZATION: Lazy Loading with Dynamic Imports
+// ============================================================================
+// Components are split into categories:
+// 1. CRITICAL PATH - loaded immediately (home screen essentials)
+// 2. LAZY LOADED - loaded on demand when user navigates to specific screens
+// ============================================================================
 
-// ✅ P2 CUSTOMER APP ENHANCEMENTS - Recently Developed UI Components
-import { MultiPetBookingPage } from './MultiPetBookingPage';
-import { ReturnRequestPage } from './ReturnRequestPage';
-import { RewardsLoyaltyPage } from './RewardsLoyaltyPage';
-import { ReferralSystemPage } from './ReferralSystemPage';
-import { PackageBookingPage } from './PackageBookingPage';
-import { EmergencyBookingPage } from './EmergencyBookingPage';
-import { CheckInCheckOutPage } from './CheckInCheckOutPage';
-import { MedicalRecordsPage } from './MedicalRecordsPage';
-import { WalletPage as CustomerWalletPage } from './WalletPage';
+// Loading component for lazy-loaded components
+const LoadingSpinner = () => (
+  <div className="flex items-center justify-center min-h-[200px]">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+  </div>
+);
 
-// ✅ MATING & DATING SERVICE - P2P Matchmaking
-import { MatingDatingHub } from './MatingDatingHub';
-import { HomeServiceSelectionEnhanced } from './HomeServiceSelectionEnhanced';
-import { IntegratedServicesHub } from '../IntegratedServicesHub';
+// ============================================================================
+// CRITICAL PATH COMPONENTS - Loaded immediately (needed for home screen)
+// ============================================================================
+import { CustomerHomeComplete as CustomerHome } from './CustomerHomeComplete';
+import { UserAccountSidebar } from './UserAccountSidebar';
+import { ComingSoon } from './ComingSoon';
+
+// ============================================================================
+// LAZY LOADED COMPONENTS - Loaded on demand
+// ============================================================================
+
+// Pet Management
+const CustomerPetDetails = dynamic(() => import('./CustomerPetDetails').then(mod => ({ default: mod.CustomerPetDetails })), { loading: LoadingSpinner });
+const CustomerPetProfile = dynamic(() => import('./CustomerPetProfile').then(mod => ({ default: mod.CustomerPetProfile })), { loading: LoadingSpinner });
+const PetBookingDetails = dynamic(() => import('./PetBookingDetails').then(mod => ({ default: mod.PetBookingDetails })), { loading: LoadingSpinner });
+const PetQuickView = dynamic(() => import('./PetQuickView').then(mod => ({ default: mod.PetQuickView })), { loading: LoadingSpinner });
+const AddPetModal = dynamic(() => import('./AddPetModal').then(mod => ({ default: mod.AddPetModal })), { loading: LoadingSpinner });
+const CustomerProfile = dynamic(() => import('./CustomerProfile').then(mod => ({ default: mod.CustomerProfile })), { loading: LoadingSpinner });
+const PetProfile = dynamic(() => import('./PetProfile').then(mod => ({ default: mod.PetProfile })), { loading: LoadingSpinner });
+const PetProfileDashboard = dynamic(() => import('./PetProfileDashboard').then(mod => ({ default: mod.PetProfileDashboard })), { loading: LoadingSpinner });
+
+// Walker Service
+const WalkerService = dynamic(() => import('./WalkerService').then(mod => ({ default: mod.WalkerService })), { loading: LoadingSpinner });
+const WalkerDashboard = dynamic(() => import('./walker/WalkerDashboard').then(mod => ({ default: mod.WalkerDashboard })), { loading: LoadingSpinner });
+
+// Vet Service
+const VetServiceRouter = dynamic(() => import('./VetServiceRouter').then(mod => ({ default: mod.VetServiceRouter })), { loading: LoadingSpinner });
+const VetBookingFlow = dynamic(() => import('./vet/VetBookingFlow').then(mod => ({ default: mod.VetBookingFlow })), { loading: LoadingSpinner });
+const VetBookingRouter = dynamic(() => import('./vet/VetBookingRouter').then(mod => ({ default: mod.VetBookingRouter })), { loading: LoadingSpinner });
+const VetDoctorDetails = dynamic(() => import('./vet/VetDoctorDetails').then(mod => ({ default: mod.VetDoctorDetails })), { loading: LoadingSpinner });
+const ClinicListView = dynamic(() => import('./vet/ClinicListView').then(mod => ({ default: mod.ClinicListView })), { loading: LoadingSpinner });
+const ClinicProfileView = dynamic(() => import('./vet/ClinicProfileView').then(mod => ({ default: mod.ClinicProfileView })), { loading: LoadingSpinner });
+
+// Other Core Services
+const GroomingServiceRouter = dynamic(() => import('./GroomingServiceRouter').then(mod => ({ default: mod.GroomingServiceRouter })), { loading: LoadingSpinner });
+const TrainingServiceRouter = dynamic(() => import('./TrainingServiceRouter').then(mod => ({ default: mod.TrainingServiceRouter })), { loading: LoadingSpinner });
+const BoardingServiceRouter = dynamic(() => import('./BoardingServiceRouter').then(mod => ({ default: mod.BoardingServiceRouter })), { loading: LoadingSpinner });
+const AdoptionServiceRouter = dynamic(() => import('./AdoptionServiceRouter').then(mod => ({ default: mod.AdoptionServiceRouter })), { loading: LoadingSpinner });
+const SunsetServiceRouter = dynamic(() => import('./SunsetServiceRouter').then(mod => ({ default: mod.SunsetServiceRouter })), { loading: LoadingSpinner });
+
+// Landing Pages
+const InsuranceServicesLanding = dynamic(() => import('./InsuranceServicesLanding').then(mod => ({ default: mod.InsuranceServicesLanding })), { loading: LoadingSpinner });
+const PetCafeServicesLanding = dynamic(() => import('./PetCafeServicesLanding').then(mod => ({ default: mod.PetCafeServicesLanding })), { loading: LoadingSpinner });
+const PharmacyServicesLanding = dynamic(() => import('./PharmacyServicesLanding').then(mod => ({ default: mod.PharmacyServicesLanding })), { loading: LoadingSpinner });
+const PhotographyServicesLanding = dynamic(() => import('./PhotographyServicesLanding').then(mod => ({ default: mod.PhotographyServicesLanding })), { loading: LoadingSpinner });
+const BreederServicesLanding = dynamic(() => import('./BreederServicesLanding').then(mod => ({ default: mod.BreederServicesLanding })), { loading: LoadingSpinner });
+const AmbulanceServicesLanding = dynamic(() => import('./AmbulanceServicesLanding').then(mod => ({ default: mod.AmbulanceServicesLanding })), { loading: LoadingSpinner });
+const NutritionistServicesLanding = dynamic(() => import('./nutrition/landingPage/NutritionistServicesLanding').then(mod => ({ default: mod.NutritionistServicesLanding })), { loading: LoadingSpinner });
+const RelocationServicesLanding = dynamic(() => import('./RelocationServicesLanding').then(mod => ({ default: mod.RelocationServicesLanding })), { loading: LoadingSpinner });
+const ResortServicesLanding = dynamic(() => import('./ResortServicesLanding').then(mod => ({ default: mod.ResortServicesLanding })), { loading: LoadingSpinner });
+const PetHolidayServicesLanding = dynamic(() => import('./PetHolidayServicesLanding').then(mod => ({ default: mod.PetHolidayServicesLanding })), { loading: LoadingSpinner });
+const DiagnosticsServicesLanding = dynamic(() => import('./DiagnosticsServicesLanding').then(mod => ({ default: mod.DiagnosticsServicesLanding })), { loading: LoadingSpinner });
+const DiagnosticsReportViewer = dynamic(() => import('./diagnostics/DiagnosticsReportViewer').then(mod => ({ default: mod.DiagnosticsReportViewer })), { loading: LoadingSpinner });
+const SampleCollectionTracker = dynamic(() => import('./diagnostics/SampleCollectionTracker').then(mod => ({ default: mod.SampleCollectionTracker })), { loading: LoadingSpinner });
+
+// Shop & E-commerce
+const ShopDashboard = dynamic(() => import('./ShopDashboard').then(mod => ({ default: mod.ShopDashboard })), { loading: LoadingSpinner });
+const ProductDetailPage = dynamic(() => import('./ProductDetailPage').then(mod => ({ default: mod.ProductDetailPage })), { loading: LoadingSpinner });
+const ShoppingCartView = dynamic(() => import('./ShoppingCartView').then(mod => ({ default: mod.ShoppingCartView })), { loading: LoadingSpinner });
+const CheckoutView = dynamic(() => import('./CheckoutView').then(mod => ({ default: mod.CheckoutView })), { loading: LoadingSpinner });
+const OrderSuccessView = dynamic(() => import('./OrderSuccessView').then(mod => ({ default: mod.OrderSuccessView })), { loading: LoadingSpinner });
+const OrderHistoryPage = dynamic(() => import('../shop/OrderHistoryPage').then(mod => ({ default: mod.OrderHistoryPage })), { loading: LoadingSpinner });
+const AddressBookPage = dynamic(() => import('../shop/AddressBookPage').then(mod => ({ default: mod.AddressBookPage })), { loading: LoadingSpinner });
+const WalletPage = dynamic(() => import('../shop/WalletPage').then(mod => ({ default: mod.WalletPage })), { loading: LoadingSpinner });
+const OrderDetailView = dynamic(() => import('./OrderDetailView').then(mod => ({ default: mod.OrderDetailView })), { loading: LoadingSpinner });
+const OrderTrackingView = dynamic(() => import('./OrderTrackingView').then(mod => ({ default: mod.OrderTrackingView })), { loading: LoadingSpinner });
+const PharmacyStore = dynamic(() => import('./PharmacyStore').then(mod => ({ default: mod.PharmacyStore })), { loading: LoadingSpinner });
+const PharmacyCheckout = dynamic(() => import('./PharmacyCheckout').then(mod => ({ default: mod.PharmacyCheckout })), { loading: LoadingSpinner });
+const PharmacyOrderStatus = dynamic(() => import('./pharmacy/PharmacyOrderStatus').then(mod => ({ default: mod.PharmacyOrderStatus })), { loading: LoadingSpinner });
+const PharmacyOrderFlow = dynamic(() => import('./specialized/PharmacyOrderFlow').then(mod => ({ default: mod.PharmacyOrderFlow })), { loading: LoadingSpinner });
+
+// Bookings & Appointments
+const MyBookings = dynamic(() => import('./MyBookings').then(mod => ({ default: mod.MyBookings })), { loading: LoadingSpinner });
+const AppointmentsList = dynamic(() => import('./AppointmentsList').then(mod => ({ default: mod.AppointmentsList })), { loading: LoadingSpinner });
+const AppointmentDetailsView = dynamic(() => import('./AppointmentDetailsView').then(mod => ({ default: mod.AppointmentDetailsView })), { loading: LoadingSpinner });
+const RescheduleAppointmentView = dynamic(() => import('./RescheduleAppointmentView').then(mod => ({ default: mod.RescheduleAppointmentView })), { loading: LoadingSpinner });
+
+// Admin Components
+const ProblemCategoryMapper = dynamic(() => import('../admin/ProblemCategoryMapper').then(mod => ({ default: mod.ProblemCategoryMapper })), { loading: LoadingSpinner });
+
+// Gap Fixes
+const PetCafeListingZomatoStyle = dynamic(() => import('./PetCafeListingZomatoStyle').then(mod => ({ default: mod.PetCafeListingZomatoStyle })), { loading: LoadingSpinner });
+const ResortBoardingBookingEnhanced = dynamic(() => import('./ResortBoardingBookingEnhanced').then(mod => ({ default: mod.ResortBoardingBookingEnhanced })), { loading: LoadingSpinner });
+const CafeReservationFlow = dynamic(() => import('./CafeReservationFlow').then(mod => ({ default: mod.CafeReservationFlow })), { loading: LoadingSpinner });
+const BreederCatalogView = dynamic(() => import('./BreederCatalogView').then(mod => ({ default: mod.BreederCatalogView })), { loading: LoadingSpinner });
+const AmbulanceSOS = dynamic(() => import('./AmbulanceSOS').then(mod => ({ default: mod.AmbulanceSOS })), { loading: LoadingSpinner });
+const AdoptionQuestionnaire = dynamic(() => import('./AdoptionQuestionnaire').then(mod => ({ default: mod.AdoptionQuestionnaire })), { loading: LoadingSpinner });
+const CustomerServicesPage = dynamic(() => import('./CustomerServicesPage').then(mod => ({ default: mod.CustomerServicesPage })), { loading: LoadingSpinner });
+const CustomerBookingsPage = dynamic(() => import('./CustomerBookingsPage').then(mod => ({ default: mod.CustomerBookingsPage })), { loading: LoadingSpinner });
+const CreateBookingPage = dynamic(() => import('./booking/CreateBookingPage').then(mod => ({ default: mod.CreateBookingPage })), { loading: LoadingSpinner });
+const CustomerPetsPage = dynamic(() => import('./CustomerPetsPage').then(mod => ({ default: mod.CustomerPetsPage })), { loading: LoadingSpinner });
+const OrderTrackingPage = dynamic(() => import('../shop/OrderTrackingPage').then(mod => ({ default: mod.OrderTrackingPage })), { loading: LoadingSpinner });
+
+// P2 Customer App Enhancements
+const MultiPetBookingPage = dynamic(() => import('./MultiPetBookingPage').then(mod => ({ default: mod.MultiPetBookingPage })), { loading: LoadingSpinner });
+const ReturnRequestPage = dynamic(() => import('./ReturnRequestPage').then(mod => ({ default: mod.ReturnRequestPage })), { loading: LoadingSpinner });
+const RewardsLoyaltyPage = dynamic(() => import('./RewardsLoyaltyPage').then(mod => ({ default: mod.RewardsLoyaltyPage })), { loading: LoadingSpinner });
+const ReferralSystemPage = dynamic(() => import('./ReferralSystemPage').then(mod => ({ default: mod.ReferralSystemPage })), { loading: LoadingSpinner });
+const PackageBookingPage = dynamic(() => import('./PackageBookingPage').then(mod => ({ default: mod.PackageBookingPage })), { loading: LoadingSpinner });
+const EmergencyBookingPage = dynamic(() => import('./EmergencyBookingPage').then(mod => ({ default: mod.EmergencyBookingPage })), { loading: LoadingSpinner });
+const CheckInCheckOutPage = dynamic(() => import('./CheckInCheckOutPage').then(mod => ({ default: mod.CheckInCheckOutPage })), { loading: LoadingSpinner });
+const MedicalRecordsPage = dynamic(() => import('./MedicalRecordsPage').then(mod => ({ default: mod.MedicalRecordsPage })), { loading: LoadingSpinner });
+const CustomerWalletPage = dynamic(() => import('./WalletPage').then(mod => ({ default: mod.WalletPage })), { loading: LoadingSpinner });
+
+// Mating & Dating Service
+const MatingDatingHub = dynamic(() => import('./MatingDatingHub').then(mod => ({ default: mod.MatingDatingHub })), { loading: LoadingSpinner });
+const HomeServiceSelectionEnhanced = dynamic(() => import('./HomeServiceSelectionEnhanced').then(mod => ({ default: mod.HomeServiceSelectionEnhanced })), { loading: LoadingSpinner });
+const UniversalHomeServiceRouter = dynamic(() => import('./home-services/UniversalHomeServiceRouter').then(mod => ({ default: mod.UniversalHomeServiceRouter })), { loading: LoadingSpinner });
+const IntegratedServicesHub = dynamic(() => import('../IntegratedServicesHub').then(mod => ({ default: mod.IntegratedServicesHub })), { loading: LoadingSpinner });
+
+// Sidebar (loaded for home screen interactions)
+const CustomerSidebar = dynamic(() => import('./CustomerSidebar').then(mod => ({ default: mod.CustomerSidebar })), { loading: LoadingSpinner });
 
 type ScreenType = 
   | 'home' 
@@ -127,6 +174,8 @@ type ScreenType =
   | 'order_tracking'
   | 'pharmacy_store'
   | 'pharmacy_checkout'
+  | 'pharmacy_order_status'
+  | 'pharmacy_order_flow'
   | 'photography'
   | 'breeder'
   | 'breeder_catalog'
@@ -162,7 +211,12 @@ type ScreenType =
   | 'customer-wallet'
   | 'mating-dating-hub'
   | 'integrated-services'
-  | 'home-service-selection';
+  | 'home-service-selection'
+  | 'universal-home-booking'
+  | 'pharmacy'
+  | 'lab-diagnostics'
+  | 'diagnostics-reports'
+  | 'sample-collection-tracking';
 
 export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
   console.log('CustomerHomeWrapper: Rendering with phone:', phone);
@@ -185,7 +239,16 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
+  const [currentPharmacyOrderId, setCurrentPharmacyOrderId] = useState<string | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
+  const [selectedHomeServiceType, setSelectedHomeServiceType] = useState<string>('walker'); // For universal home booking: walker | grooming | training | veterinary | behaviourist | sitter | diagnostics
+  // Prescription order flow state
+  const [prescriptionOrderData, setPrescriptionOrderData] = useState<{
+    prescriptionId?: string;
+    prescriptionUrl?: string;
+    bookingId?: string;
+    medications?: any[];
+  } | null>(null);
   const { addToCart } = useCart();
 
   // ✅ Navigate to a screen (push to history)
@@ -213,7 +276,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       console.log('📬 [CUSTOMER-HOME] Notification received:', notification);
       if (notification.type === 'chat_message' && notification.bookingId) {
         try {
-          const data = await apiClient.get(`/booking/${notification.bookingId}`) as any;
+          const data = await apiClient.get(`/bookings/${notification.bookingId}`) as any;
           const booking = data?.booking || data;
           if (booking) {
             setVetServiceData({
@@ -251,7 +314,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const handleViewFullPetProfile = async () => {
     if (!selectedPetId) return;
     try {
-      const data = await apiClient.get(`/pet/${selectedPetId}`) as any;
+      const data = await apiClient.get(`/pets/${selectedPetId}`) as any;
       if (data?.success && data?.pet) {
         handleViewPetProfile(data.pet);
       } else if (data?.pet) {
@@ -277,9 +340,10 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'cart') navigateToScreen('shop'); // Navigate to shop then cart logic handles
     else if (service === 'photography') navigateToScreen('photography');
     else if (service === 'breeder') navigateToScreen('breeder');
-    else if (service === 'ambulance') navigateToScreen('integrated-services'); // Use new integrated hub
-    else if (service === 'nutritionist') navigateToScreen('integrated-services');
-    else if (service === 'diagnostics') navigateToScreen('integrated-services');
+    else if (service === 'ambulance') navigateToScreen('ambulance');
+    else if (service === 'nutritionist') navigateToScreen('nutritionist');
+    else if (service === 'pharmacy' || service === 'pharmacy_store') navigateToScreen('pharmacy');
+    else if (service === 'diagnostics' || service === 'lab-diagnostics' || service === 'lab') navigateToScreen('lab-diagnostics');
     else if (service === 'home-service') navigateToScreen('home-service-selection');
     else if (service === 'relocation') navigateToScreen('relocation');
     else if (service === 'resort') navigateToScreen('resort');
@@ -315,13 +379,44 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (path === 'account/settings') toast.info('Settings coming soon');
   };
 
+  // Back arrow: go to previous screen in stack; if already at root, go to home
   const handleBack = () => {
-    navigateToScreen('home');
+    setNavigationHistory(prev => {
+      if (prev.length > 1) {
+        const next = prev.slice(0, -1);
+        const newCurrent = next[next.length - 1];
+        if (newCurrent === 'home') {
+          setSelectedPetId(null);
+          setSelectedBookingId(null);
+          setVetServiceData(null);
+          setWalkerServiceData(null);
+          setSelectedVendorId(undefined);
+          setSelectedHomeServiceType('walker');
+        }
+        return next;
+      }
+      setSelectedPetId(null);
+      setSelectedBookingId(null);
+      setVetServiceData(null);
+      setWalkerServiceData(null);
+      setSelectedVendorId(undefined);
+      setSelectedHomeServiceType('walker');
+      return ['home'];
+    });
+  };
+
+  // Go to home and reset stack (for "Back to Home" / "Done" actions)
+  const goToHome = () => {
+    setCurrentOrderId(null);
+    setCurrentPharmacyOrderId(null);
     setSelectedPetId(null);
     setSelectedBookingId(null);
     setVetServiceData(null);
     setWalkerServiceData(null);
     setSelectedVendorId(undefined);
+    setSelectedHomeServiceType('walker');
+    setPrescriptionOrderData(null);
+    setNavigationHistory(['home']);
   };
 
   const handlePetDeleted = () => {
@@ -344,32 +439,29 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     navigateToScreen('my-bookings');
   };
 
-  const handleReorderMedicine = (medications: any[]) => {
-    console.log('Reordering medicines:', medications);
-    if (medications && medications.length > 0) {
-      medications.forEach(med => {
-        addToCart({
-          id: med.id || `med-${Math.random().toString(36).substr(2, 9)}`,
-          name: med.name,
-          price: med.price || 150,
-          quantity: parseInt(med.quantity) || 1,
-          prescriptionRequired: true,
-          image: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&q=80&w=200'
-        });
-      });
-      toast.success(`Added ${medications.length} medicines to cart`);
-      navigateToScreen('pharmacy_checkout');
-    } else {
-      toast.success('Navigating to Pharmacy...');
-      navigateToScreen('shop');
-    }
+  // ✅ FIX: Handle prescription ordering - Navigate to PharmacyOrderFlow instead of cart
+  const handleReorderMedicine = (medications: any[], prescriptionId?: string, bookingId?: string) => {
+    console.log('Ordering medicine from prescription:', { medications, prescriptionId, bookingId });
+    
+    // Set prescription order data for the flow
+    setPrescriptionOrderData({
+      prescriptionId: prescriptionId,
+      bookingId: bookingId,
+      medications: medications || [],
+    });
+    
+    // Navigate to pharmacy order flow with broadcast UI
+    toast.success('Opening pharmacy order...');
+    navigateToScreen('pharmacy_order_flow');
   };
 
   // RENDER LOGIC
+  // ✅ FIX: Use key prop to ensure proper unmounting of components when switching screens
+  // This prevents duplicate footer rendering issues during navigation transitions
 
   if (currentScreen === 'home') {
     return (
-      <>
+      <div key="screen-home">
         <CustomerHome 
           phone={phone}
           refreshKey={refreshKey}
@@ -389,7 +481,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             onNavigate={handleAccountNavigate}
           />
         )}
-      </>
+      </div>
     );
   }
 
@@ -402,14 +494,15 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'pet-profile' && selectedPetData) return <PetProfile phone={phone} petId={selectedPetData.id} petName={selectedPetData.name} petType={selectedPetData.type} petBreed={selectedPetData.breed} petAge={selectedPetData.age} petGender={selectedPetData.gender} petImage={selectedPetData.image} onBack={handleBack} />;
   if (currentScreen === 'booking-details' && selectedBookingId && selectedPetId) return <PetBookingDetails bookingId={selectedBookingId} petId={selectedPetId} phone={phone} onBack={handleBack} onReorderMedicine={handleReorderMedicine} />;
   if (currentScreen === 'pet-quick' && selectedPetId) return <PetQuickView petId={selectedPetId} phone={phone} onBack={handleBack} onViewFullProfile={handleViewFullPetProfile} />;
-  if (currentScreen === 'pet-details' && selectedPetId) return <CustomerPetDetails phone={phone} petId={selectedPetId} onBack={() => navigateToScreen('pet-quick')} onViewBooking={handleViewBooking} onDelete={handlePetDeleted} onViewPetProfile={(petData: any) => { setSelectedPetData(petData); navigateToScreen('pet-profile-dashboard'); }} />;
-  if (currentScreen === 'pet-profile-dashboard' && selectedPetData) return <PetProfileDashboard phone={phone} petData={selectedPetData} onBack={() => { navigateToScreen('pet-details'); setSelectedPetData(null); }} />;
+  if (currentScreen === 'pet-details' && selectedPetId) return <CustomerPetDetails phone={phone} petId={selectedPetId} onBack={handleBack} onViewBooking={handleViewBooking} onDelete={handlePetDeleted} onViewPetProfile={(petData: any) => { setSelectedPetData(petData); navigateToScreen('pet-profile-dashboard'); }} />;
+  if (currentScreen === 'pet-profile-dashboard' && selectedPetData) return <PetProfileDashboard phone={phone} petData={selectedPetData} onBack={() => { setSelectedPetData(null); handleBack(); }} />;
   if (currentScreen === 'add-pet') return <CustomerPetProfile session={{ phone }} prefillData={null} onComplete={handlePetProfileComplete} onBack={handleBack} />;
   
   // Core Services
-  if (currentScreen === 'walker') return <WalkerDashboard phone={phone} onBack={handleBack} onNavigate={handleWalkerNavigate} data={walkerServiceData} />;
-  if (currentScreen === 'walker-booking') return <WalkerService phone={phone} onBack={() => navigateToScreen('walker')} />;
-  if (currentScreen === 'vet') return <VetServiceRouter phone={phone} onBack={handleBack} onNavigate={handleVetNavigate} data={vetServiceData} />;
+  // ✅ FIX: Add keys to service components for proper unmounting during navigation
+  if (currentScreen === 'walker') return <WalkerDashboard key="screen-walker" phone={phone} onBack={handleBack} onNavigate={handleWalkerNavigate} data={walkerServiceData} />;
+  if (currentScreen === 'walker-booking') return <WalkerService key="screen-walker-booking" phone={phone} onBack={handleBack} />;
+  if (currentScreen === 'vet') return <VetServiceRouter key="screen-vet" phone={phone} onBack={handleBack} onNavigate={handleVetNavigate} data={vetServiceData} />;
   if (currentScreen === 'vet-booking') return <VetBookingRouter 
     phone={phone} 
     doctorId={vetServiceData?.doctorId} 
@@ -423,13 +516,13 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     duration={vetServiceData?.duration}
     vendorId={vetServiceData?.vendorId || vetServiceData?.clinicId}
     clinicId={vetServiceData?.clinicId}
-    onBack={() => navigateToScreen('vet')} 
+    onBack={handleBack} 
     onNavigate={handleVetNavigate} 
     onViewBooking={handleViewBooking} 
   />;
-  if (currentScreen === 'vet-doctor-details') return <VetDoctorDetails phone={phone} doctorId={vetServiceData?.doctorId || ''} onBack={() => navigateToScreen('vet')} onNavigate={handleVetNavigate} />;
-  if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={() => navigateToScreen('vet')} onNavigate={(screen, data) => { if (screen === 'clinic-details') { setVetServiceData(data); navigateToScreen('vet-clinic-profile'); } }} />;
-  if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={() => navigateToScreen('vet-clinic-list')} onNavigate={(screen, data) => { 
+  if (currentScreen === 'vet-doctor-details') return <VetDoctorDetails phone={phone} doctorId={vetServiceData?.doctorId || ''} onBack={handleBack} onNavigate={handleVetNavigate} />;
+  if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'clinic-details') { setVetServiceData(data); navigateToScreen('vet-clinic-profile'); } }} />;
+  if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={handleBack} onNavigate={(screen, data) => { 
     if (screen === 'appointment' || screen === 'vet-booking') { 
       // Pass clinic booking data: vendorId, service, serviceType
       setVetServiceData({ 
@@ -446,65 +539,158 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
       navigateToScreen('vet-booking'); 
     } 
   }} />;
-  if (currentScreen === 'vet-clinic-booking') return <VetBookingFlow phone={phone} serviceType={vetServiceData?.serviceType || 'tele'} vendorId={vetServiceData?.vendorId} onBack={() => navigateToScreen('vet')} onNavigate={handleVetNavigate} />;
+  if (currentScreen === 'vet-clinic-booking') return <VetBookingFlow phone={phone} serviceType={vetServiceData?.serviceType || 'tele'} vendorId={vetServiceData?.vendorId} onBack={handleBack} onNavigate={handleVetNavigate} />;
   if (currentScreen === 'grooming') return <GroomingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} />;
-  if (currentScreen === 'training') return <TrainingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => navigateToScreen('coming-soon')} />;
-  if (currentScreen === 'boarding') return <BoardingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => navigateToScreen('coming-soon')} />;
+  if (currentScreen === 'training') return <TrainingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => { if (screen === 'training_center' || screen === 'training_home') navigateToScreen(screen as ScreenType); else navigateToScreen('coming-soon'); }} />;
+  if (currentScreen === 'boarding') return <BoardingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => { if (screen === 'boarding-booking') { setSelectedVendorId(data?.vendorId); setSelectedService(data?.serviceType || 'boarding'); navigateToScreen('create-booking'); } else if (screen === 'boarding_facility') navigateToScreen('boarding_facility'); else navigateToScreen('coming-soon'); }} />;
   if (currentScreen === 'adoption') return <AdoptionServiceRouter phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'adoption_questionnaire') navigateToScreen('adoption_questionnaire'); else navigateToScreen('coming-soon'); }} />;
   if (currentScreen === 'sunset') return <SunsetServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => navigateToScreen('coming-soon')} />;
   if (currentScreen === 'insurance') return <InsuranceServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => navigateToScreen('coming-soon')} />;
+
+  // Explicit branches for ScreenTypes that would otherwise fall through to ComingSoon
+  if (currentScreen === 'user-profile') return <ComingSoon serviceName="user-profile" onBack={handleBack} />;
+  if (currentScreen === 'training_center') return <ComingSoon serviceName="training-center" onBack={handleBack} />;
+  if (currentScreen === 'training_home') return <ComingSoon serviceName="training-at-home" onBack={handleBack} />;
+  if (currentScreen === 'boarding_facility') return <ComingSoon serviceName="boarding-facility" onBack={handleBack} />;
+  if (currentScreen === 'insurance_provider') return <ComingSoon serviceName="insurance-provider" onBack={handleBack} />;
+  if (currentScreen === 'food') return <ComingSoon serviceName="food" onBack={handleBack} />;
   
   // ✅ UPDATED LANDING PAGES & FLOWS
   if (currentScreen === 'resort') return <ResortServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'resort_booking') { setSelectedVendorId(data?.vendorId); navigateToScreen('resort_booking'); } }} />;
-  if (currentScreen === 'resort_booking') return <ResortBoardingBookingEnhanced phone={phone} preSelectedVendorId={selectedVendorId} onBack={() => navigateToScreen('resort')} onSuccess={() => navigateToScreen('my-bookings')} />;
+  if (currentScreen === 'resort_booking') return <ResortBoardingBookingEnhanced phone={phone} preSelectedVendorId={selectedVendorId} onBack={handleBack} onSuccess={() => navigateToScreen('my-bookings')} />;
   
   if (currentScreen === 'cafes') return <PetCafeServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
       if (screen === 'cafe_reservation') { setSelectedVendorId(data?.vendorId); navigateToScreen('cafe_reservation'); }
       else if (screen === 'cafe_detail') { setSelectedVendorId(data?.vendorId); navigateToScreen('cafe_detail'); }
   }} />;
-  if (currentScreen === 'cafe_detail') return <PetCafeListingZomatoStyle cafeId={selectedVendorId || ''} onBack={() => navigateToScreen('cafes')} />;
-  if (currentScreen === 'cafe_reservation') return <CafeReservationFlow phone={phone} preSelectedVendorId={selectedVendorId} onBack={() => navigateToScreen('cafes')} />;
+  if (currentScreen === 'cafe_detail') return <PetCafeListingZomatoStyle cafeId={selectedVendorId || ''} onBack={handleBack} />;
+  if (currentScreen === 'cafe_reservation') return <CafeReservationFlow phone={phone} preSelectedVendorId={selectedVendorId} onBack={handleBack} />;
   
   if (currentScreen === 'breeder') return <BreederServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'breeder_catalog') navigateToScreen('breeder_catalog'); }} />;
-  if (currentScreen === 'breeder_catalog') return <BreederCatalogView phone={phone} onBack={() => navigateToScreen('breeder')} />;
+  if (currentScreen === 'breeder_catalog') return <BreederCatalogView phone={phone} onBack={handleBack} />;
 
   if (currentScreen === 'ambulance') return <AmbulanceServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'ambulance_sos') navigateToScreen('ambulance_sos'); }} />;
-  if (currentScreen === 'ambulance_sos') return <AmbulanceSOS phone={phone} onBack={() => navigateToScreen('ambulance')} />;
+  if (currentScreen === 'ambulance_sos') return <AmbulanceSOS phone={phone} onBack={handleBack} />;
   
   if (currentScreen === 'photography') return <PhotographyServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => navigateToScreen('coming-soon')} />;
   if (currentScreen === 'relocation') return <RelocationServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => navigateToScreen('coming-soon')} />;
   
-  // Nutritionist & Holiday fallbacks
-  if (currentScreen === 'nutritionist') return <NutritionistServicesLanding phone={phone} onBack={handleBack} onNavigate={() => navigateToScreen('coming-soon')} />;
+  // Nutritionist: wire create-booking and pets; other screens (meal-plans, tele, etc.) → coming-soon
+  if (currentScreen === 'nutritionist') return <NutritionistServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
+    if (screen === 'create-booking') { setSelectedService(data?.serviceId || data?.serviceType); setSelectedVendorId(data?.vendorId); navigateToScreen('create-booking'); }
+    else if (screen === 'pets') navigateToScreen('pets');
+    else navigateToScreen('coming-soon');
+  }} />;
   if (currentScreen === 'holiday') return <PetHolidayServicesLanding phone={phone} onBack={handleBack} onNavigate={() => navigateToScreen('coming-soon')} />;
+
+  // Pharmacy Landing - Entry point: Order medicine (prescription flow) or Shop
+  if (currentScreen === 'pharmacy') return <PharmacyServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
+    if (screen === 'pharmacy_order_flow') navigateToScreen('pharmacy_order_flow');
+    else if (screen === 'pharmacy_store') navigateToScreen('pharmacy_store'); 
+    else if (screen === 'pharmacy_checkout') navigateToScreen('pharmacy_checkout');
+  }} />;
+
+  // Lab Diagnostics Landing - Entry point for lab tests and diagnostics
+  if (currentScreen === 'lab-diagnostics') return <DiagnosticsServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
+    if (screen === 'lab-booking') {
+      setSelectedVendorId(data?.vendorId);
+      navigateToScreen('create-booking');
+    } else if (screen === 'diagnostics-reports') {
+      setSelectedBookingId(data?.bookingId);
+      navigateToScreen('diagnostics-reports');
+    } else if (screen === 'sample-collection-tracking') {
+      setSelectedBookingId(data?.bookingId);
+      navigateToScreen('sample-collection-tracking');
+    }
+  }} />;
+
+  // Diagnostics Report Viewer - View and download lab reports
+  if (currentScreen === 'diagnostics-reports') {
+    if (selectedBookingId) return <DiagnosticsReportViewer 
+      bookingId={selectedBookingId} 
+      customerPhone={phone} 
+      onBack={handleBack} 
+      onShareWithVet={(reportId, vetId) => { toast.success('Report shared with vet'); }}
+    />;
+    return <ComingSoon serviceName="diagnostics-reports" onBack={handleBack} />;
+  }
+
+  // Sample Collection Tracker - Track phlebotomist for home collection
+  if (currentScreen === 'sample-collection-tracking') {
+    if (selectedBookingId) return <SampleCollectionTracker 
+      bookingId={selectedBookingId} 
+      customerPhone={phone} 
+      onBack={handleBack} 
+      onComplete={() => { toast.success('Sample collection completed'); handleBack(); }}
+    />;
+    return <ComingSoon serviceName="sample-collection-tracking" onBack={handleBack} />;
+  }
 
   // Shop & Orders
   if (currentScreen === 'shop') return <ShopDashboard phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'pharmacy_store') navigateToScreen('pharmacy_store'); else if (screen === 'pharmacy_checkout') navigateToScreen('pharmacy_checkout'); else if (screen === 'product_detail') { setSelectedProduct(data?.product); navigateToScreen('product_detail'); } else if (screen === 'cart') navigateToScreen('cart'); else handleNavigateToService(screen); }} />;
-  if (currentScreen === 'product_detail' && selectedProduct) return <ProductDetailPage product={selectedProduct} onBack={() => navigateToScreen('shop')} onReviewsClick={() => toast.info('Reviews coming soon')} onVendorClick={() => toast.info('Vendor profile coming soon')} />;
-  if (currentScreen === 'cart') return <ShoppingCartView onBack={() => navigateToScreen('shop')} onCheckout={() => navigateToScreen('checkout')} onContinueShopping={() => navigateToScreen('shop')} />;
-  if (currentScreen === 'checkout') return <CheckoutView phone={phone} onBack={() => navigateToScreen('shop')} onSuccess={(orderId) => { setCurrentOrderId(orderId); navigateToScreen('order_success'); }} />;
-  if (currentScreen === 'order_success' && currentOrderId) return <OrderSuccessView orderId={currentOrderId} onTrackOrder={() => { setSelectedOrder({ id: currentOrderId }); navigateToScreen('order_tracking'); }} onBackToHome={() => { setCurrentOrderId(null); navigateToScreen('home'); }} onViewOrders={() => { setCurrentOrderId(null); navigateToScreen('order_history'); }} />;
-  if (currentScreen === 'order_history') return <OrderHistoryPage onNavigate={handleAccountNavigate} />;
+  if (currentScreen === 'product_detail') {
+    if (selectedProduct) return <ProductDetailPage product={selectedProduct} onBack={handleBack} onReviewsClick={() => toast.info('Reviews coming soon')} onVendorClick={() => toast.info('Vendor profile coming soon')} />;
+    return <ComingSoon serviceName="product-detail" onBack={handleBack} />;
+  }
+  if (currentScreen === 'cart') return <ShoppingCartView onBack={handleBack} onCheckout={() => navigateToScreen('checkout')} onContinueShopping={handleBack} />;
+  if (currentScreen === 'checkout') return <CheckoutView phone={phone} onBack={handleBack} onSuccess={(orderId) => { setCurrentOrderId(orderId); navigateToScreen('order_success'); }} />;
+  if (currentScreen === 'order_success') {
+    if (currentOrderId) return <OrderSuccessView orderId={currentOrderId} onTrackOrder={() => { setSelectedOrder({ id: currentOrderId }); navigateToScreen('order_tracking'); }} onBackToHome={goToHome} onViewOrders={() => { setCurrentOrderId(null); navigateToScreen('order_history'); }} />;
+    return <ComingSoon serviceName="order-success" onBack={handleBack} />;
+  }
+  if (currentScreen === 'order_history') return <OrderHistoryPage onBack={handleBack} onNavigate={handleAccountNavigate} />;
   if (currentScreen === 'address_book') return <AddressBookPage phone={phone} onBack={handleBack} onNavigate={handleAccountNavigate} />;
-  if (currentScreen === 'wallet') return <WalletPage onNavigate={handleAccountNavigate} />;
+  if (currentScreen === 'wallet') return <WalletPage onBack={handleBack} onNavigate={handleAccountNavigate} />;
   // if (currentScreen === 'order_history') return <OrderHistoryView phone={phone} onBack={handleBack} onOrderClick={(order) => { setSelectedOrder(order); navigateToScreen('order_detail'); }} />;
-  if (currentScreen === 'order_detail' && selectedOrder) return <OrderDetailView order={selectedOrder} onBack={() => navigateToScreen('order_history')} onTrackOrder={() => navigateToScreen('order_tracking')} onReorder={() => { toast.success('Items added to cart'); navigateToScreen('shop'); }} onHelp={() => toast.info('Support coming soon')} />;
-  if (currentScreen === 'order_tracking' && selectedOrder) return <OrderTrackingPage orderId={selectedOrder.id || selectedOrder.orderId} onBack={() => navigateToScreen('order_detail')} />;
+  if (currentScreen === 'order_detail') {
+    if (selectedOrder) return <OrderDetailView order={selectedOrder} onBack={handleBack} onTrackOrder={() => navigateToScreen('order_tracking')} onReorder={() => { toast.success('Items added to cart'); navigateToScreen('shop'); }} onHelp={() => toast.info('Support coming soon')} />;
+    return <ComingSoon serviceName="order-detail" onBack={handleBack} />;
+  }
+  if (currentScreen === 'order_tracking') {
+    if (selectedOrder) return <OrderTrackingPage orderId={selectedOrder.id || selectedOrder.orderId} onBack={handleBack} />;
+    return <ComingSoon serviceName="order-tracking" onBack={handleBack} />;
+  }
   
-  if (currentScreen === 'pharmacy_store') return <PharmacyStore onBack={() => navigateToScreen('shop')} onNavigate={(screen) => { if (screen === 'pharmacy_checkout') navigateToScreen('pharmacy_checkout'); }} />;
-  if (currentScreen === 'pharmacy_checkout') return <PharmacyCheckout phone={phone} onBack={() => navigateToScreen('pharmacy_store')} onSuccess={() => navigateToScreen('home')} />;
+  if (currentScreen === 'pharmacy_store') return <PharmacyStore onBack={handleBack} onNavigate={(screen) => { if (screen === 'pharmacy_checkout') navigateToScreen('pharmacy_checkout'); }} />;
+  if (currentScreen === 'pharmacy_checkout') return <PharmacyCheckout phone={phone} onBack={handleBack} onSuccess={(orderId) => { setCurrentPharmacyOrderId(orderId || null); navigateToScreen('pharmacy_order_status'); }} />;
+  if (currentScreen === 'pharmacy_order_status') {
+    if (currentPharmacyOrderId) return <PharmacyOrderStatus orderId={currentPharmacyOrderId} phone={phone} onBack={() => { setCurrentPharmacyOrderId(null); handleBack(); }} />;
+    return <ComingSoon serviceName="pharmacy-order-status" onBack={handleBack} />;
+  }
+  
+  // ✅ Pharmacy Order Flow: prescription → address → broadcast (5/10/20km, expand every 2 min) → pharmacy accept → invoice → pay → OTP → track
+  if (currentScreen === 'pharmacy_order_flow') return (
+    <PharmacyOrderFlow
+      customerPhone={phone}
+      customerId={phone}
+      prescriptionId={prescriptionOrderData?.prescriptionId}
+      prescriptionUrl={prescriptionOrderData?.prescriptionUrl}
+      onBack={() => { setPrescriptionOrderData(null); handleBack(); }}
+      onComplete={(orderId) => {
+        setCurrentPharmacyOrderId(orderId);
+        setPrescriptionOrderData(null);
+        navigateToScreen('pharmacy_order_status');
+      }}
+    />
+  );
 
   // Other Screens
   if (currentScreen === 'my-bookings') return <MyBookings phone={phone} onBack={handleBack} initialBookingId={selectedBookingId || undefined} onReorderMedicine={handleReorderMedicine} />;
   if (currentScreen === 'appointments') return <AppointmentsList customerId={phone} onBack={handleBack} onSelectAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); navigateToScreen('appointment-details'); }} />;
-  if (currentScreen === 'appointment-details' && selectedAppointmentId) return <AppointmentDetailsView appointmentId={selectedAppointmentId} customerId={phone} onBack={() => navigateToScreen('appointments')} onReschedule={(appointmentId) => { setSelectedAppointmentId(appointmentId); navigateToScreen('appointment-reschedule'); }} onCancel={() => { navigateToScreen('appointments'); setSelectedAppointmentId(null); }} />;
-  if (currentScreen === 'appointment-reschedule' && selectedAppointmentId) return <RescheduleAppointmentView appointmentId={selectedAppointmentId} onBack={() => navigateToScreen('appointment-details')} onSuccess={() => { navigateToScreen('appointment-details'); toast.success('Rescheduled successfully'); }} />;
+  if (currentScreen === 'appointment-details') {
+    if (selectedAppointmentId) return <AppointmentDetailsView appointmentId={selectedAppointmentId} customerId={phone} onBack={handleBack} onReschedule={(appointmentId) => { setSelectedAppointmentId(appointmentId); navigateToScreen('appointment-reschedule'); }} onCancel={() => { setSelectedAppointmentId(null); handleBack(); }} />;
+    return <ComingSoon serviceName="appointment-details" onBack={handleBack} />;
+  }
+  if (currentScreen === 'appointment-reschedule') {
+    if (selectedAppointmentId) return <RescheduleAppointmentView appointmentId={selectedAppointmentId} onBack={handleBack} onSuccess={() => { handleBack(); toast.success('Rescheduled successfully'); }} />;
+    return <ComingSoon serviceName="appointment-reschedule" onBack={handleBack} />;
+  }
   
   // if (currentScreen === 'wallet') return <WalletView phone={phone} onBack={handleBack} />;
-  if (currentScreen === 'category-mapper') return <ProblemCategoryMapper />;
+  if (currentScreen === 'category-mapper') return <ProblemCategoryMapper onBack={handleBack} />;
   
   // ✅ NEW: Adoption Questionnaire
-  if (currentScreen === 'adoption_questionnaire') return <AdoptionQuestionnaire onBack={() => navigateToScreen('adoption')} onComplete={() => { toast.success('Preferences saved'); navigateToScreen('adoption'); }} />;
+  if (currentScreen === 'adoption_questionnaire') return <AdoptionQuestionnaire onBack={handleBack} onComplete={() => { toast.success('Preferences saved'); handleBack(); }} />;
 
   // ✅ NEW: Services Browser
   if (currentScreen === 'services') return <CustomerServicesPage onBack={handleBack} onNavigate={(screen, data) => { 
@@ -524,7 +710,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   }} />;
 
   // ✅ NEW: Create Booking
-  if (currentScreen === 'create-booking') return <CreateBookingPage phone={phone} serviceId={selectedService} vendorId={selectedVendorId} onBack={() => navigateToScreen('services')} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
+  if (currentScreen === 'create-booking') return <CreateBookingPage phone={phone} serviceId={selectedService} vendorId={selectedVendorId} onBack={handleBack} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
 
   // ✅ NEW: Pets
   if (currentScreen === 'pets') return <CustomerPetsPage 
@@ -546,15 +732,19 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     customerPhone={phone}
     customerId={phone}
     petId={selectedPetId || undefined}
+    onCancel={handleBack}
   />;
 
   // Return Request
-  if (currentScreen === 'return-request' && selectedOrder) return <ReturnRequestPage
-    customerPhone={phone}
-    customerId={phone}
-    orderId={selectedOrder.id}
-    onBack={() => navigateToScreen('order_detail')}
-  />;
+  if (currentScreen === 'return-request') {
+    if (selectedOrder) return <ReturnRequestPage
+      customerPhone={phone}
+      customerId={phone}
+      orderId={selectedOrder.id}
+      onBack={handleBack}
+    />;
+    return <ComingSoon serviceName="return-request" onBack={handleBack} />;
+  }
 
   // Rewards & Loyalty
   if (currentScreen === 'rewards-loyalty') return <RewardsLoyaltyPage
@@ -575,6 +765,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     customerPhone={phone}
     customerId={phone}
     petId={selectedPetId || undefined}
+    onBack={handleBack}
   />;
 
   // Emergency Booking
@@ -593,16 +784,20 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   />;
 
   // Medical Records
-  if (currentScreen === 'medical-records' && selectedPetId) return <MedicalRecordsPage
-    phone={phone}
-    petId={selectedPetId}
-    onBack={() => navigateToScreen('pet-details')}
-  />;
+  if (currentScreen === 'medical-records') {
+    if (selectedPetId) return <MedicalRecordsPage
+      phone={phone}
+      petId={selectedPetId}
+      onBack={handleBack}
+    />;
+    return <ComingSoon serviceName="medical-records" onBack={handleBack} />;
+  }
 
   // Customer Wallet (Enhanced)
   if (currentScreen === 'customer-wallet') return <CustomerWalletPage
     customerPhone={phone}
     customerId={phone}
+    onBack={handleBack}
   />;
 
   // ✅ MATING & DATING SERVICE - P2P Matchmaking
@@ -612,15 +807,43 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   />;
 
   // ✅ GAP FIXES: Rule 2 & 6
-  if (currentScreen === 'integrated-services') return <IntegratedServicesHub />;
+  if (currentScreen === 'integrated-services') return <IntegratedServicesHub onBack={handleBack} onNavigate={handleNavigateToService} />;
 
   if (currentScreen === 'home-service-selection') return <HomeServiceSelectionEnhanced
     customerPhone={phone}
     customerId={phone}
     petId={selectedPetId || undefined}
     onBack={handleBack}
+    onNavigate={(screen, data) => {
+      if (screen === 'create-booking' && data?.homeService) {
+        // Map HomeServiceSelectionEnhanced ids to UniversalHomeServiceRouter HomeServiceType
+        const map: Record<string, string> = { vet: 'veterinary', walking: 'walker', sitting: 'sitter' };
+        const serviceType = (map[data?.serviceType || data?.serviceId] || data?.serviceType || data?.serviceId || 'walker') as 'walker' | 'grooming' | 'training' | 'veterinary' | 'behaviourist' | 'sitter' | 'diagnostics';
+        setSelectedHomeServiceType(serviceType);
+        setSelectedVendorId(data?.vendorId);
+        navigateToScreen('universal-home-booking');
+      } else if (screen === 'create-booking') {
+        setSelectedService(data?.serviceType ?? data?.serviceId);
+        setSelectedVendorId(data?.vendorId);
+        navigateToScreen('create-booking');
+      }
+    }}
     onSuccess={(bookingId) => bookingId && handleViewBooking(bookingId)}
   />;
+
+  // Full home service flow: provider list → profile → slots → pet → address → pay
+  if (currentScreen === 'universal-home-booking') return (
+    <UniversalHomeServiceRouter
+      phone={phone}
+      serviceType={selectedHomeServiceType as 'walker' | 'grooming' | 'training' | 'veterinary' | 'behaviourist' | 'sitter' | 'diagnostics'}
+      preSelectedVendorId={selectedVendorId}
+      onBack={handleBack}
+      onNavigate={(screen, data) => {
+        if (screen === 'my-bookings' && data?.bookingId) handleViewBooking(data.bookingId);
+      }}
+      onViewBooking={handleViewBooking}
+    />
+  );
 
   return <ComingSoon serviceName="pet-marketplace" onBack={handleBack} />;
 }

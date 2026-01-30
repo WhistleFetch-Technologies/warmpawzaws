@@ -6,9 +6,6 @@ import { apiClient } from '@/lib/api-client';
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 import { HierarchicalServiceList } from '@/components/admin/catalog/HierarchicalServiceList';
 import { CategoriesTab } from '@/components/admin/catalog/CategoriesTab';
-import { ProductServicesTab } from '@/components/admin/catalog/ProductServicesTab';
-import { PricingInventoryTab } from '@/components/admin/catalog/PricingInventoryTab';
-import { BulkOperationsTab } from '@/components/admin/catalog/BulkOperationsTab';
 import { ServiceCatalogTab } from '@/components/admin/catalog/ServiceCatalogTab';
 import { VendorRolesTab } from '@/components/admin/catalog/VendorRolesTab';
 // AdminRolesPage removed - use /roles page instead
@@ -52,7 +49,7 @@ interface Category {
 // ============================================================================
 
 export default function ServiceCatalogPage() {
-  const [activeTab, setActiveTab] = useState<'categories' | 'products' | 'pricing' | 'bulk' | 'roles' | 'onboarding' | 'servicecatalog'>('categories');
+  const [activeTab, setActiveTab] = useState<'categories' | 'roles' | 'onboarding' | 'servicecatalog'>('categories');
   const [services, setServices] = useState<ServiceCatalogItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -536,36 +533,6 @@ export default function ServiceCatalogPage() {
                 Categories
               </button>
               <button
-                onClick={() => setActiveTab('products')}
-                className={`px-4 py-3 text-sm font-medium border-b-[3px] transition-colors whitespace-nowrap ${
-                  activeTab === 'products'
-                    ? 'border-orange-500 text-orange-600 bg-orange-50/50'
-                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                }`}
-              >
-                Product & Services
-              </button>
-              <button
-                onClick={() => setActiveTab('pricing')}
-                className={`px-4 py-3 text-sm font-medium border-b-[3px] transition-colors whitespace-nowrap ${
-                  activeTab === 'pricing'
-                    ? 'border-orange-500 text-orange-600 bg-orange-50/50'
-                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                }`}
-              >
-                Pricing & Inventory
-              </button>
-              <button
-                onClick={() => setActiveTab('bulk')}
-                className={`px-4 py-3 text-sm font-medium border-b-[3px] transition-colors whitespace-nowrap ${
-                  activeTab === 'bulk'
-                    ? 'border-orange-500 text-orange-600 bg-orange-50/50'
-                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                }`}
-              >
-                Bulk Operations
-              </button>
-              <button
                 onClick={() => setActiveTab('roles')}
                 className={`px-4 py-3 text-sm font-medium border-b-[3px] transition-colors whitespace-nowrap ${
                   activeTab === 'roles'
@@ -692,10 +659,6 @@ export default function ServiceCatalogPage() {
                 <CategoriesTab />
               </div>
             )}
-            
-            {activeTab === 'products' && <ProductServicesTab />}
-            {activeTab === 'pricing' && <PricingInventoryTab />}
-            {activeTab === 'bulk' && <BulkOperationsTab />}
             
             {activeTab === 'roles' && (
               <div className="p-6">

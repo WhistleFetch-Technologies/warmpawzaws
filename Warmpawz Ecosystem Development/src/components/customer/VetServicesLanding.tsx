@@ -17,7 +17,7 @@ import {
   Building2,
   Scissors
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { FollowUpModal } from './FollowUpModal';
 import { CustomerNotificationModal } from './CustomerNotificationModal';
 import { VET_PROBLEMS } from './ProblemGridSection';
@@ -84,8 +84,8 @@ export function VetServicesLanding({ onBack, onNavigate, customerId, phone }: Ve
   const loadPromotions = async () => {
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/marketing/promotions?roleId=veterinarian`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/marketing/promotions?roleId=veterinarian`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
       if (res.ok) {
         const data = await res.json();
@@ -99,8 +99,8 @@ export function VetServicesLanding({ onBack, onNavigate, customerId, phone }: Ve
   const loadUiConfig = async () => {
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/ui/dashboard?roleId=veterinarian`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/config/ui/dashboard?roleId=veterinarian`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
       if (res.ok) {
         const data = await res.json();
@@ -126,9 +126,9 @@ export function VetServicesLanding({ onBack, onNavigate, customerId, phone }: Ve
     try {
       const cleanPhone = phone.replace(/[^0-9]/g, '');
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/notifications/${cleanPhone}?limit=50`,
+        `${getApiBaseUrl()}/customer/notifications/${cleanPhone}?limit=50`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` },
+          headers: { Authorization: (getAuthHeaders().Authorization || "") },
         }
       );
 
@@ -156,9 +156,9 @@ export function VetServicesLanding({ onBack, onNavigate, customerId, phone }: Ve
   const loadFollowUpEligibility = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/bookings/follow-up-eligible/${phone}`,
+        `${getApiBaseUrl()}/customer/bookings/follow-up-eligible/${phone}`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` },
+          headers: { Authorization: (getAuthHeaders().Authorization || "") },
         }
       );
 

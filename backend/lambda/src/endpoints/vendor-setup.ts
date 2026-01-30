@@ -12,6 +12,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, update, insert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
@@ -211,18 +212,44 @@ class UpdateVendorAvailabilityHandler extends BaseHandler {
   }
 }
 
+/**
+ * Resolve vendorId to a UUID when it's a slug (e.g. "center-1") or other identifier.
+ * Tries: 1) direct UUID lookup, 2) metadata->>'slug', 3) slugified business_name.
+ */
+async function resolveVendorId(vendorId: string): Promise<string | null> {
+  if (!vendorId) return null;
+  if (isValidUUID(vendorId)) return vendorId;
+  try {
+    const slug = vendorId.trim().toLowerCase();
+    const res = await query(
+      `SELECT id FROM vendors WHERE is_active = true
+       AND (metadata->>'slug' = $1 OR LOWER(REGEXP_REPLACE(TRIM(business_name), '\\s+', '-')) = $2)
+       LIMIT 1`,
+      [vendorId.trim(), slug]
+    );
+    return res.rows?.[0]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 class GetAvailableServicesHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const vendorId = context.event.pathParameters?.vendorId;
-    if (!vendorId) {
+    const vendorIdParam = context.event.pathParameters?.vendorId;
+    if (!vendorIdParam) {
       return this.error('Vendor ID is required', 400);
     }
-    
+
+    const vendorId = await resolveVendorId(vendorIdParam);
+    if (!vendorId) {
+      return this.error('Vendor not found', 404);
+    }
+
     const vendors = await select('vendors', { id: vendorId });
     if (vendors.length === 0) {
       return this.error('Vendor not found', 404);
     }
-    
+
     // Get services directly linked to vendor
     const vendorServices = await select('services', { vendor_id: vendorId, is_active: true });
     
@@ -953,14 +980,14 @@ function createApiGatewayEvent(req: any): any {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'vendor-setup-handler',
     functionVersion: '$LATEST',
   };

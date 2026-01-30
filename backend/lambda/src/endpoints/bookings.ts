@@ -32,6 +32,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update, withTransaction, getClient } from '../database/rds-connection';
 import { withIdempotency, checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
@@ -99,8 +100,8 @@ function validateBookingDate(bookingDate: string, bookingTime: string): { valid:
 function generateEventMetadata(requestId?: string) {
   return {
     eventTimestamp: new Date().toISOString(),
-    eventId: crypto.randomUUID(),
-    requestId: requestId || crypto.randomUUID(),
+    eventId: randomUUID(),
+    requestId: requestId || randomUUID(),
     sourceService: 'booking-handler',
   };
 }
@@ -112,7 +113,7 @@ function generateEventMetadata(requestId?: string) {
 class CreateBookingHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
-    const requestId = context.event.requestContext?.requestId || crypto.randomUUID();
+    const requestId = context.event.requestContext?.requestId || randomUUID();
     const {
       customerId,
       vendorId,
@@ -438,7 +439,7 @@ class UpdateBookingStatusHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const bookingId = context.event.pathParameters?.bookingId;
     const body = this.parseBody(context.event);
-    const requestId = context.event.requestContext?.requestId || crypto.randomUUID();
+    const requestId = context.event.requestContext?.requestId || randomUUID();
     const { status, reason, actorId, actorType } = body;
 
     if (!bookingId) {
@@ -621,14 +622,14 @@ function createApiGatewayEvent(req: any): any {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'booking-handler',
     functionVersion: '$LATEST',
   };

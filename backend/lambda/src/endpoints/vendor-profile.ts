@@ -522,7 +522,58 @@ export function registerVendorProfileEndpoints(app: Hono) {
         });
       }
 
-      const vendors = await select('vendors', { id: vendorId });
+      // ✅ CRITICAL FIX: Check both vendors table and vendor_identity table
+      // If vendor only exists in vendor_identity (approved), auto-create the vendor record
+      let vendors = await select('vendors', { id: vendorId });
+      
+      if (vendors.length === 0) {
+        console.log(`[PROFILE] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
+        const identities = await select('vendor_identity', { id: vendorId });
+        
+        if (identities.length > 0) {
+          const identity = identities[0];
+          if (identity.onboarding_status === 'APPROVED' || identity.onboarding_status === 'ACTIVATED') {
+            // Check if vendor exists by phone (there might be an existing vendor with different ID)
+            const vendorByPhone = await select('vendors', { phone: identity.phone });
+            if (vendorByPhone.length > 0) {
+              vendors = vendorByPhone;
+              console.log(`[PROFILE] Found existing vendor by phone: ${vendors[0].id}`);
+            } else {
+              // Get application data for vendor details
+              const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
+              const application = applications.length > 0 ? applications[0] : null;
+              const payload = application?.application_payload || {};
+              
+              // Create vendors record
+              console.log(`[PROFILE] Auto-creating vendor record for approved vendor ${vendorId}`);
+              const newVendor = await insert('vendors', {
+                id: vendorId,
+                phone: identity.phone,
+                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
+                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+                owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
+                role_id: identity.selected_role_id,
+                category: 'general',
+                address: payload.address || 'Not specified',
+                city: payload.city || 'Not specified',
+                state: payload.state || 'Not specified',
+                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
+                status: 'active',
+                is_active: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              });
+              vendors = newVendor;
+              console.log(`[PROFILE] Created vendor record for ${vendorId}`);
+            }
+          } else {
+            return c.json({ error: 'Vendor not approved or activated' }, 403);
+          }
+        } else {
+          return c.json({ error: 'Vendor not found' }, 404);
+        }
+      }
+      
       if (vendors.length === 0) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
@@ -955,7 +1006,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
                 address: payload.address || 'Not specified',
                 city: payload.city || 'Not specified',
                 state: payload.state || 'Not specified',
-                pincode: payload.pin || payload.pincode || '000000',
+                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
                 status: 'active',
                 is_active: true,
                 created_at: new Date().toISOString(),
@@ -1054,7 +1105,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
                 address: payload.address || 'Not specified',
                 city: payload.city || 'Not specified',
                 state: payload.state || 'Not specified',
-                pincode: payload.pin || payload.pincode || '000000',
+                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
                 status: 'active',
                 is_active: true,
                 created_at: new Date().toISOString(),

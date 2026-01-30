@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Star, Heart, Shield, Clock } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { ImageWithFallback } from '../../figma/ImageWithFallback';
 
 interface SunsetServiceProfileViewProps {
@@ -14,7 +14,7 @@ export function SunsetServiceProfileView({ phone, vendorId, onBack, onNavigate }
   const [vendor, setVendor] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadVendorDetails();

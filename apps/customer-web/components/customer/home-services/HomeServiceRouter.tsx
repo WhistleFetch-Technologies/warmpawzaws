@@ -29,6 +29,8 @@ import { toast } from 'sonner';
 import { PromotionBanner } from '../shared/PromotionBanner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
+import { AddAddressModal } from '../shared/AddAddressModal';
+import { trackBookingStep, trackPageView, useBookingAnalytics, ServiceCategory } from '@/lib/analytics';
 
 // Service types that support home service
 export type HomeServiceType = 'walking' | 'grooming' | 'training' | 'veterinary' | 'sitting' | 'nutrition' | 'behaviourist' | 'diagnostics';
@@ -221,6 +223,39 @@ export function HomeServiceRouter({
   const [addresses, setAddresses] = useState<any[]>([]);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  
+  // ✅ ANALYTICS: Track booking steps
+  const analytics = useBookingAnalytics(serviceType as ServiceCategory, 'at_home');
+  
+  // ✅ ANALYTICS: Track step changes
+  useEffect(() => {
+    const stepToAnalyticsMap: Record<RouterStep, string> = {
+      'discovery': 'provider_discovery',
+      'provider-profile': 'provider_selection',
+      'services': 'service_selection',
+      'datetime': 'schedule_selection',
+      'pet': 'pet_selection',
+      'address': 'address_selection',
+      'payment': 'payment_initiated',
+      'confirmation': 'booking_confirmed',
+    };
+    
+    const analyticsStep = stepToAnalyticsMap[step];
+    if (analyticsStep) {
+      trackBookingStep({
+        step: analyticsStep as any,
+        serviceCategory: serviceType as ServiceCategory,
+        serviceStyle: 'at_home',
+        vendorId: selectedProvider?.id,
+        petId: selectedPet?.id,
+        phone,
+        metadata: {
+          serviceName,
+          selectedProblem,
+        }
+      });
+    }
+  }, [step, serviceType, selectedProvider?.id, selectedPet?.id]);
   const [customerId, setCustomerId] = useState<string | null>(null);
   
   // Package state
@@ -1592,8 +1627,27 @@ export function HomeServiceRouter({
         </div>
       )}
 
-      {/* TODO: Add Pet Modal and Address Modal components */}
-      {/* These can be imported from existing components or created similarly to VetBookingRouter */}
+      {/* Add Address Modal */}
+      {showAddAddressModal && (
+        <AddAddressModal
+          phone={phone}
+          isOpen={showAddAddressModal}
+          onClose={() => setShowAddAddressModal(false)}
+          onSuccess={(newAddress) => {
+            console.log('✅ [HomeServiceRouter] New address added:', newAddress);
+            // Refresh addresses list
+            loadCustomerData();
+            // Select the new address
+            if (newAddress) {
+              setSelectedAddress(newAddress);
+            }
+            setShowAddAddressModal(false);
+          }}
+        />
+      )}
+
+      {/* TODO: Add Pet Modal component */}
+      {/* Can be imported from existing AddPetModal or created similarly */}
     </div>
   );
 }

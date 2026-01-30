@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Send, Paperclip, Image as ImageIcon, X } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface FollowUpChatProps {
@@ -38,10 +38,10 @@ export function FollowUpChat({ bookingId, vendorId, vendorName, customerPhone, o
   const loadChatMessages = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/followup/chat/${bookingId}`,
+        `${getApiBaseUrl()}/followup/chat/${bookingId}`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -63,11 +63,11 @@ export function FollowUpChat({ bookingId, vendorId, vendorName, customerPhone, o
     setSending(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/followup/chat/${bookingId}/message`,
+        `${getApiBaseUrl()}/followup/chat/${bookingId}/message`,
         {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({

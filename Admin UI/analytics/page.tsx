@@ -62,7 +62,7 @@ import {
 import { RevenueChart, VendorPerformanceTable } from "@/components/analytics";
 import { useAnalyticsData } from "@/hooks/analytics/useAnalyticsData";
 
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import { toast, Toaster } from "sonner";
 
 interface AnalyticsDashboardProps {
@@ -96,7 +96,7 @@ export default function AdminAnalyticsDashboard({
 		refresh,
 	} = useAnalyticsData(dateRange);
 
-	const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+	const API_BASE = `${getApiBaseUrl()}`;
 
 	useEffect(() => {
 		if (activeTab === "reports") {
@@ -160,7 +160,7 @@ export default function AdminAnalyticsDashboard({
 		setLoadingReports(true);
 		try {
 			const response = await fetch(`${API_BASE}/admin/reports`, {
-				headers: { Authorization: `Bearer ${publicAnonKey}` },
+				headers: { ...getAuthHeaders() },
 			});
 			if (response.ok) {
 				const result = await response.json();
@@ -182,7 +182,7 @@ export default function AdminAnalyticsDashboard({
 				{
 					method: "POST",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 				}

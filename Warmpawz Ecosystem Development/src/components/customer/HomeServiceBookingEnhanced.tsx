@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { MapPin, Clock, Star, Calendar, ChevronRight, Heart, TrendingUp, Navigation, User } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface Provider {
   id: string;
@@ -73,8 +73,8 @@ export function HomeServiceBookingEnhanced({
     try {
       // Load customer's booking history to find previously used providers
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${customerId}/bookings`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/${customerId}/bookings`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -121,8 +121,8 @@ export function HomeServiceBookingEnhanced({
 
       // Search for providers based on service type and time window
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/discover/vendors?serviceType=${serviceType}&timeWindow=${selectedTimeWindow}&lat=${customerLocation.lat}&lng=${customerLocation.lng}&radius=10`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/discover/vendors?serviceType=${serviceType}&timeWindow=${selectedTimeWindow}&lat=${customerLocation.lat}&lng=${customerLocation.lng}&radius=10`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -207,12 +207,12 @@ export function HomeServiceBookingEnhanced({
       };
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings`,
+        `${getApiBaseUrl()}/bookings`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(bookingData)
         }

@@ -1,23 +1,6 @@
 {
  "Description": "Warmpawz Platform Infrastructure - PROD",
  "Resources": {
-  "AuroraStackAuroraSecret2E11B886": {
-   "Type": "AWS::SecretsManager::Secret",
-   "Properties": {
-    "Description": "Aurora RDS database credentials for Warmpawz",
-    "GenerateSecretString": {
-     "ExcludeCharacters": "\"@/\\",
-     "GenerateStringKey": "password",
-     "PasswordLength": 32,
-     "SecretStringTemplate": "{\"username\":\"warmpawz_admin\"}"
-    }
-   },
-   "UpdateReplacePolicy": "Delete",
-   "DeletionPolicy": "Delete",
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/AuroraStack/AuroraSecret/Resource"
-   }
-  },
   "CognitoStackCustomerUserPoolsmsRole2E079065": {
    "Type": "AWS::IAM::Role",
    "Properties": {
@@ -533,7 +516,7 @@
       "IpProtocol": "-1"
      }
     ],
-    "VpcId": "vpc-06f3085b6a63d0d86"
+    "VpcId": "vpc-02a4893e5e582c4d8"
    },
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/SecurityStack/LambdaSecurityGroup/Resource"
@@ -574,7 +557,7 @@
       "IpProtocol": "-1"
      }
     ],
-    "VpcId": "vpc-06f3085b6a63d0d86"
+    "VpcId": "vpc-02a4893e5e582c4d8"
    },
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/SecurityStack/ApiSecurityGroup/Resource"
@@ -912,9 +895,7 @@
         "secretsmanager:GetSecretValue"
        ],
        "Effect": "Allow",
-       "Resource": {
-        "Ref": "AuroraStackAuroraSecret2E11B886"
-       }
+       "Resource": "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-dev-rds-master-20260106164510791100000002-WqZcjI"
       },
       {
        "Action": [
@@ -1327,50 +1308,11 @@
        ],
        "Effect": "Allow",
        "Resource": [
-        {
-         "Fn::GetAtt": [
-          "DynamoDbStackAiConversationsTable8F2402AA",
-          "Arn"
-         ]
-        },
-        {
-         "Fn::GetAtt": [
-          "DynamoDbStackAnalyticsTable19FB8467",
-          "Arn"
-         ]
-        },
-        {
-         "Fn::GetAtt": [
-          "DynamoDbStackChatMessagesTable8D237DC2",
-          "Arn"
-         ]
-        },
-        {
-         "Fn::GetAtt": [
-          "DynamoDbStackLogsTable96BE4B9D",
-          "Arn"
-         ]
-        },
-        {
-         "Fn::GetAtt": [
-          "DynamoDbStackReportsTableB844EC92",
-          "Arn"
-         ]
-        },
-        {
-         "Fn::Join": [
-          "",
-          [
-           {
-            "Fn::GetAtt": [
-             "DynamoDbStackChatMessagesTable8D237DC2",
-             "Arn"
-            ]
-           },
-           "/index/*"
-          ]
-         ]
-        }
+        "arn:aws:dynamodb:ap-south-1:057442119249:table/warmpawz-prod-ai-conversations",
+        "arn:aws:dynamodb:ap-south-1:057442119249:table/warmpawz-prod-analytics",
+        "arn:aws:dynamodb:ap-south-1:057442119249:table/warmpawz-prod-chat-messages",
+        "arn:aws:dynamodb:ap-south-1:057442119249:table/warmpawz-prod-logs",
+        "arn:aws:dynamodb:ap-south-1:057442119249:table/warmpawz-prod-reports"
        ]
       }
      ],
@@ -1877,215 +1819,6 @@
     "aws:cdk:path": "WarmpawzStack-prod/SnsStack/AnalyticsTopic/Resource"
    }
   },
-  "DynamoDbStackLogsTable96BE4B9D": {
-   "Type": "AWS::DynamoDB::Table",
-   "Properties": {
-    "AttributeDefinitions": [
-     {
-      "AttributeName": "pk",
-      "AttributeType": "S"
-     },
-     {
-      "AttributeName": "sk",
-      "AttributeType": "S"
-     }
-    ],
-    "BillingMode": "PAY_PER_REQUEST",
-    "KeySchema": [
-     {
-      "AttributeName": "pk",
-      "KeyType": "HASH"
-     },
-     {
-      "AttributeName": "sk",
-      "KeyType": "RANGE"
-     }
-    ],
-    "PointInTimeRecoverySpecification": {
-     "PointInTimeRecoveryEnabled": true
-    },
-    "TableName": "warmpawz-prod-logs",
-    "TimeToLiveSpecification": {
-     "AttributeName": "ttl",
-     "Enabled": true
-    }
-   },
-   "UpdateReplacePolicy": "Retain",
-   "DeletionPolicy": "Retain",
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/DynamoDbStack/LogsTable/Resource"
-   }
-  },
-  "DynamoDbStackAnalyticsTable19FB8467": {
-   "Type": "AWS::DynamoDB::Table",
-   "Properties": {
-    "AttributeDefinitions": [
-     {
-      "AttributeName": "pk",
-      "AttributeType": "S"
-     },
-     {
-      "AttributeName": "sk",
-      "AttributeType": "S"
-     }
-    ],
-    "BillingMode": "PAY_PER_REQUEST",
-    "KeySchema": [
-     {
-      "AttributeName": "pk",
-      "KeyType": "HASH"
-     },
-     {
-      "AttributeName": "sk",
-      "KeyType": "RANGE"
-     }
-    ],
-    "PointInTimeRecoverySpecification": {
-     "PointInTimeRecoveryEnabled": true
-    },
-    "TableName": "warmpawz-prod-analytics"
-   },
-   "UpdateReplacePolicy": "Retain",
-   "DeletionPolicy": "Retain",
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/DynamoDbStack/AnalyticsTable/Resource"
-   }
-  },
-  "DynamoDbStackReportsTableB844EC92": {
-   "Type": "AWS::DynamoDB::Table",
-   "Properties": {
-    "AttributeDefinitions": [
-     {
-      "AttributeName": "pk",
-      "AttributeType": "S"
-     },
-     {
-      "AttributeName": "sk",
-      "AttributeType": "S"
-     }
-    ],
-    "BillingMode": "PAY_PER_REQUEST",
-    "KeySchema": [
-     {
-      "AttributeName": "pk",
-      "KeyType": "HASH"
-     },
-     {
-      "AttributeName": "sk",
-      "KeyType": "RANGE"
-     }
-    ],
-    "PointInTimeRecoverySpecification": {
-     "PointInTimeRecoveryEnabled": true
-    },
-    "TableName": "warmpawz-prod-reports"
-   },
-   "UpdateReplacePolicy": "Retain",
-   "DeletionPolicy": "Retain",
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/DynamoDbStack/ReportsTable/Resource"
-   }
-  },
-  "DynamoDbStackChatMessagesTable8D237DC2": {
-   "Type": "AWS::DynamoDB::Table",
-   "Properties": {
-    "AttributeDefinitions": [
-     {
-      "AttributeName": "conversationId",
-      "AttributeType": "S"
-     },
-     {
-      "AttributeName": "messageId",
-      "AttributeType": "S"
-     },
-     {
-      "AttributeName": "userId",
-      "AttributeType": "S"
-     },
-     {
-      "AttributeName": "createdAt",
-      "AttributeType": "S"
-     }
-    ],
-    "BillingMode": "PAY_PER_REQUEST",
-    "GlobalSecondaryIndexes": [
-     {
-      "IndexName": "userMessages",
-      "KeySchema": [
-       {
-        "AttributeName": "userId",
-        "KeyType": "HASH"
-       },
-       {
-        "AttributeName": "createdAt",
-        "KeyType": "RANGE"
-       }
-      ],
-      "Projection": {
-       "ProjectionType": "ALL"
-      }
-     }
-    ],
-    "KeySchema": [
-     {
-      "AttributeName": "conversationId",
-      "KeyType": "HASH"
-     },
-     {
-      "AttributeName": "messageId",
-      "KeyType": "RANGE"
-     }
-    ],
-    "PointInTimeRecoverySpecification": {
-     "PointInTimeRecoveryEnabled": true
-    },
-    "TableName": "warmpawz-prod-chat-messages",
-    "TimeToLiveSpecification": {
-     "AttributeName": "ttl",
-     "Enabled": true
-    }
-   },
-   "UpdateReplacePolicy": "Retain",
-   "DeletionPolicy": "Retain",
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/DynamoDbStack/ChatMessagesTable/Resource"
-   }
-  },
-  "DynamoDbStackAiConversationsTable8F2402AA": {
-   "Type": "AWS::DynamoDB::Table",
-   "Properties": {
-    "AttributeDefinitions": [
-     {
-      "AttributeName": "userId",
-      "AttributeType": "S"
-     },
-     {
-      "AttributeName": "conversationId",
-      "AttributeType": "S"
-     }
-    ],
-    "BillingMode": "PAY_PER_REQUEST",
-    "KeySchema": [
-     {
-      "AttributeName": "userId",
-      "KeyType": "HASH"
-     },
-     {
-      "AttributeName": "conversationId",
-      "KeyType": "RANGE"
-     }
-    ],
-    "PointInTimeRecoverySpecification": {
-     "PointInTimeRecoveryEnabled": true
-    },
-    "TableName": "warmpawz-prod-ai-conversations"
-   },
-   "UpdateReplacePolicy": "Retain",
-   "DeletionPolicy": "Retain",
-   "Metadata": {
-    "aws:cdk:path": "WarmpawzStack-prod/DynamoDbStack/AiConversationsTable/Resource"
-   }
-  },
   "ChimeStackChimeRole4A0C6A8C": {
    "Type": "AWS::IAM::Role",
    "Properties": {
@@ -2324,16 +2057,14 @@
    "Properties": {
     "Code": {
      "S3Bucket": "cdk-hnb659fds-assets-057442119249-ap-south-1",
-     "S3Key": "e0e8617414ba7b59399755556e5d467efad4388f71fc04ba4bbcc72f61ad4570.zip"
+     "S3Key": "db8968333c0fb5ce14cf026dfcc72debcb6a6daaa55dc68ac44a57af41542273.zip"
     },
     "Description": "Main Warmpawz API Lambda function - handles all API requests",
     "Environment": {
      "Variables": {
       "NODE_ENV": "production",
       "AURORA_PROXY_ENDPOINT": "warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
-      "AURORA_SECRET_ARN": {
-       "Ref": "AuroraStackAuroraSecret2E11B886"
-      },
+      "AURORA_SECRET_ARN": "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-dev-rds-master-20260106164510791100000002-WqZcjI",
       "AURORA_DATABASE": "warmpawz",
       "COGNITO_CUSTOMER_POOL_ID": {
        "Ref": "CognitoStackCustomerUserPoolCB3F3B8A"
@@ -2395,26 +2126,16 @@
       "SNS_ANALYTICS_TOPIC_ARN": {
        "Ref": "SnsStackAnalyticsTopic7094CF54"
       },
-      "DYNAMODB_LOGS_TABLE": {
-       "Ref": "DynamoDbStackLogsTable96BE4B9D"
-      },
-      "DYNAMODB_ANALYTICS_TABLE": {
-       "Ref": "DynamoDbStackAnalyticsTable19FB8467"
-      },
-      "DYNAMODB_REPORTS_TABLE": {
-       "Ref": "DynamoDbStackReportsTableB844EC92"
-      },
-      "DYNAMODB_CHAT_MESSAGES_TABLE": {
-       "Ref": "DynamoDbStackChatMessagesTable8D237DC2"
-      },
-      "DYNAMODB_AI_CONVERSATIONS_TABLE": {
-       "Ref": "DynamoDbStackAiConversationsTable8F2402AA"
-      },
+      "DYNAMODB_LOGS_TABLE": "warmpawz-prod-logs",
+      "DYNAMODB_ANALYTICS_TABLE": "warmpawz-prod-analytics",
+      "DYNAMODB_REPORTS_TABLE": "warmpawz-prod-reports",
+      "DYNAMODB_CHAT_MESSAGES_TABLE": "warmpawz-prod-chat-messages",
+      "DYNAMODB_AI_CONVERSATIONS_TABLE": "warmpawz-prod-ai-conversations",
       "ALLOW_ORIGIN": "https://warmpawz.com"
      }
     },
     "FunctionName": "warmpawz-api-prod",
-    "Handler": "dist/src/handler.handler",
+    "Handler": "dist/handler.handler",
     "Layers": [
      {
       "Ref": "LambdaStackSharedLayerEA8C1C60"
@@ -2439,9 +2160,9 @@
       }
      ],
      "SubnetIds": [
-      "subnet-0b352e91231e46e42",
-      "subnet-04d6066e0fbebe114",
-      "subnet-042a90000fd723fa6"
+      "subnet-0b667c6835342a6b8",
+      "subnet-00237c0065313789f",
+      "subnet-0552174bc421dff3d"
      ]
     }
    },
@@ -2451,7 +2172,7 @@
    ],
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/ApiFunction/Resource",
-    "aws:asset:path": "asset.e0e8617414ba7b59399755556e5d467efad4388f71fc04ba4bbcc72f61ad4570",
+    "aws:asset:path": "asset.db8968333c0fb5ce14cf026dfcc72debcb6a6daaa55dc68ac44a57af41542273",
     "aws:asset:is-bundled": false,
     "aws:asset:property": "Code"
    }
@@ -2487,16 +2208,14 @@
    "Properties": {
     "Code": {
      "S3Bucket": "cdk-hnb659fds-assets-057442119249-ap-south-1",
-     "S3Key": "e0e8617414ba7b59399755556e5d467efad4388f71fc04ba4bbcc72f61ad4570.zip"
+     "S3Key": "db8968333c0fb5ce14cf026dfcc72debcb6a6daaa55dc68ac44a57af41542273.zip"
     },
     "Description": "Processes notifications from notification queue",
     "Environment": {
      "Variables": {
       "NODE_ENV": "production",
       "AURORA_PROXY_ENDPOINT": "warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
-      "AURORA_SECRET_ARN": {
-       "Ref": "AuroraStackAuroraSecret2E11B886"
-      },
+      "AURORA_SECRET_ARN": "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-dev-rds-master-20260106164510791100000002-WqZcjI",
       "AURORA_DATABASE": "warmpawz",
       "NOTIFICATION_QUEUE_URL": {
        "Ref": "SqsStackNotificationQueueCDC9E5EE"
@@ -2529,9 +2248,9 @@
       }
      ],
      "SubnetIds": [
-      "subnet-0b352e91231e46e42",
-      "subnet-04d6066e0fbebe114",
-      "subnet-042a90000fd723fa6"
+      "subnet-0b667c6835342a6b8",
+      "subnet-00237c0065313789f",
+      "subnet-0552174bc421dff3d"
      ]
     }
    },
@@ -2541,7 +2260,7 @@
    ],
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/NotificationProcessor/Resource",
-    "aws:asset:path": "asset.e0e8617414ba7b59399755556e5d467efad4388f71fc04ba4bbcc72f61ad4570",
+    "aws:asset:path": "asset.db8968333c0fb5ce14cf026dfcc72debcb6a6daaa55dc68ac44a57af41542273",
     "aws:asset:is-bundled": false,
     "aws:asset:property": "Code"
    }
@@ -2596,16 +2315,14 @@
    "Properties": {
     "Code": {
      "S3Bucket": "cdk-hnb659fds-assets-057442119249-ap-south-1",
-     "S3Key": "e0e8617414ba7b59399755556e5d467efad4388f71fc04ba4bbcc72f61ad4570.zip"
+     "S3Key": "db8968333c0fb5ce14cf026dfcc72debcb6a6daaa55dc68ac44a57af41542273.zip"
     },
     "Description": "Processes emails from email queue",
     "Environment": {
      "Variables": {
       "NODE_ENV": "production",
       "AURORA_PROXY_ENDPOINT": "warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
-      "AURORA_SECRET_ARN": {
-       "Ref": "AuroraStackAuroraSecret2E11B886"
-      },
+      "AURORA_SECRET_ARN": "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-dev-rds-master-20260106164510791100000002-WqZcjI",
       "AURORA_DATABASE": "warmpawz",
       "SES_FROM_EMAIL": "noreply@warmpawz.com"
      }
@@ -2636,9 +2353,9 @@
       }
      ],
      "SubnetIds": [
-      "subnet-0b352e91231e46e42",
-      "subnet-04d6066e0fbebe114",
-      "subnet-042a90000fd723fa6"
+      "subnet-0b667c6835342a6b8",
+      "subnet-00237c0065313789f",
+      "subnet-0552174bc421dff3d"
      ]
     }
    },
@@ -2648,7 +2365,7 @@
    ],
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/EmailProcessor/Resource",
-    "aws:asset:path": "asset.e0e8617414ba7b59399755556e5d467efad4388f71fc04ba4bbcc72f61ad4570",
+    "aws:asset:path": "asset.db8968333c0fb5ce14cf026dfcc72debcb6a6daaa55dc68ac44a57af41542273",
     "aws:asset:is-bundled": false,
     "aws:asset:property": "Code"
    }
@@ -2703,16 +2420,14 @@
    "Properties": {
     "Code": {
      "S3Bucket": "cdk-hnb659fds-assets-057442119249-ap-south-1",
-     "S3Key": "e0e8617414ba7b59399755556e5d467efad4388f71fc04ba4bbcc72f61ad4570.zip"
+     "S3Key": "db8968333c0fb5ce14cf026dfcc72debcb6a6daaa55dc68ac44a57af41542273.zip"
     },
     "Description": "Processes SMS from SMS queue",
     "Environment": {
      "Variables": {
       "NODE_ENV": "production",
       "AURORA_PROXY_ENDPOINT": "warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
-      "AURORA_SECRET_ARN": {
-       "Ref": "AuroraStackAuroraSecret2E11B886"
-      },
+      "AURORA_SECRET_ARN": "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-dev-rds-master-20260106164510791100000002-WqZcjI",
       "AURORA_DATABASE": "warmpawz",
       "SMS_QUEUE_URL": {
        "Ref": "SqsStackSmsQueue7579FE7A"
@@ -2745,9 +2460,9 @@
       }
      ],
      "SubnetIds": [
-      "subnet-0b352e91231e46e42",
-      "subnet-04d6066e0fbebe114",
-      "subnet-042a90000fd723fa6"
+      "subnet-0b667c6835342a6b8",
+      "subnet-00237c0065313789f",
+      "subnet-0552174bc421dff3d"
      ]
     }
    },
@@ -2757,7 +2472,7 @@
    ],
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/SmsProcessor/Resource",
-    "aws:asset:path": "asset.e0e8617414ba7b59399755556e5d467efad4388f71fc04ba4bbcc72f61ad4570",
+    "aws:asset:path": "asset.db8968333c0fb5ce14cf026dfcc72debcb6a6daaa55dc68ac44a57af41542273",
     "aws:asset:is-bundled": false,
     "aws:asset:property": "Code"
    }
@@ -2812,16 +2527,14 @@
    "Properties": {
     "Code": {
      "S3Bucket": "cdk-hnb659fds-assets-057442119249-ap-south-1",
-     "S3Key": "e0e8617414ba7b59399755556e5d467efad4388f71fc04ba4bbcc72f61ad4570.zip"
+     "S3Key": "db8968333c0fb5ce14cf026dfcc72debcb6a6daaa55dc68ac44a57af41542273.zip"
     },
     "Description": "Processes analytics events from analytics queue",
     "Environment": {
      "Variables": {
       "NODE_ENV": "production",
       "AURORA_PROXY_ENDPOINT": "warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
-      "AURORA_SECRET_ARN": {
-       "Ref": "AuroraStackAuroraSecret2E11B886"
-      },
+      "AURORA_SECRET_ARN": "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-dev-rds-master-20260106164510791100000002-WqZcjI",
       "AURORA_DATABASE": "warmpawz",
       "ANALYTICS_QUEUE_URL": {
        "Ref": "SqsStackAnalyticsQueueEC085EA1"
@@ -2854,9 +2567,9 @@
       }
      ],
      "SubnetIds": [
-      "subnet-0b352e91231e46e42",
-      "subnet-04d6066e0fbebe114",
-      "subnet-042a90000fd723fa6"
+      "subnet-0b667c6835342a6b8",
+      "subnet-00237c0065313789f",
+      "subnet-0552174bc421dff3d"
      ]
     }
    },
@@ -2866,7 +2579,7 @@
    ],
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/AnalyticsProcessor/Resource",
-    "aws:asset:path": "asset.e0e8617414ba7b59399755556e5d467efad4388f71fc04ba4bbcc72f61ad4570",
+    "aws:asset:path": "asset.db8968333c0fb5ce14cf026dfcc72debcb6a6daaa55dc68ac44a57af41542273",
     "aws:asset:is-bundled": false,
     "aws:asset:property": "Code"
    }
@@ -2921,16 +2634,14 @@
    "Properties": {
     "Code": {
      "S3Bucket": "cdk-hnb659fds-assets-057442119249-ap-south-1",
-     "S3Key": "e0e8617414ba7b59399755556e5d467efad4388f71fc04ba4bbcc72f61ad4570.zip"
+     "S3Key": "db8968333c0fb5ce14cf026dfcc72debcb6a6daaa55dc68ac44a57af41542273.zip"
     },
     "Description": "Processes settlements from settlement queue",
     "Environment": {
      "Variables": {
       "NODE_ENV": "production",
       "AURORA_PROXY_ENDPOINT": "warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
-      "AURORA_SECRET_ARN": {
-       "Ref": "AuroraStackAuroraSecret2E11B886"
-      },
+      "AURORA_SECRET_ARN": "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-dev-rds-master-20260106164510791100000002-WqZcjI",
       "AURORA_DATABASE": "warmpawz",
       "SETTLEMENT_QUEUE_URL": {
        "Ref": "SqsStackSettlementQueueE715B1BA"
@@ -2965,9 +2676,9 @@
       }
      ],
      "SubnetIds": [
-      "subnet-0b352e91231e46e42",
-      "subnet-04d6066e0fbebe114",
-      "subnet-042a90000fd723fa6"
+      "subnet-0b667c6835342a6b8",
+      "subnet-00237c0065313789f",
+      "subnet-0552174bc421dff3d"
      ]
     }
    },
@@ -2977,7 +2688,7 @@
    ],
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/LambdaStack/SettlementProcessor/Resource",
-    "aws:asset:path": "asset.e0e8617414ba7b59399755556e5d467efad4388f71fc04ba4bbcc72f61ad4570",
+    "aws:asset:path": "asset.db8968333c0fb5ce14cf026dfcc72debcb6a6daaa55dc68ac44a57af41542273",
     "aws:asset:is-bundled": false,
     "aws:asset:property": "Code"
    }
@@ -4982,7 +4693,6 @@
      }
     ],
     "SubjectAlternativeNames": [
-     "*.warmpawz.com",
      "*.warmpawz.com"
     ],
     "Tags": [
@@ -5050,7 +4760,7 @@
   "CDKMetadata": {
    "Type": "AWS::CDK::Metadata",
    "Properties": {
-    "Analytics": "v2:deflate64:H4sIAAAAAAAA/31TUXPbIAz+LX2nrE22H+Cm7Za7bu2cbq89GSsejQ0eEu1lHP99BySxu932gr5PIOmTgIVcLJfy4gxe6Vy1u/NeNzJsGNRO1EjWO4UCXukpECqHTAMY6NDJsMlcrLamoChcS/IaGBogXPWeGN0VEAplO6PZyvCN0D1Y26egEz6CVa/R8HyreKLQMMhQ2x7TZrYPttdqn2hBUaBaZEnead5/dNaPB2X/caxN55AoClrKcOXVrrRzQMVMld7wQlJ3Uaje+nbrrGEZrjWx041nbY24d7rTplIKidYtGtacM61SwG0K+NeJeZoo6CfJ8NWjzwMoIK+TuBmNggzJsPENKafHrCR1PuePdtQqeQvI65RsRqNo9wYG2zYyPEJTriCDKPAFDZMMN8leeUpbJ1z7w3X5dLSHoWlBhjvYo/uOjg6i3vBbb9RR7QnnhJv8DD/DOGrTncr85X1AN2iiMrPlExAhk6ySEb3tSN7ZrkZOY7ZGwKg7YHyF/ctChk/MYzXqlCaZRDcMXe6hgOSqreeC1oaxc3DU+wedzlWef1inf6HLqSd2bQfQ5gsMucSMVaOe9TSxKBQ61lutgPH0C1eTLz+tiUbhkooPSxmqGpV1bVaW0QZZVABQWIwiDyn1eSh7+vqrrbn3PHqOwtgW5TO9e1m8l5eX8uLsmbQ+d96wHlDWxf4GjIxfa08EAAA="
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/32TbVPUMBDHP4vvQ4Q7/QDlEGUGBXvoW2ab7tWFNqnZDcyZyXd3kh7XoqNvsv/fptmnpCu9Wq/16Rt45hPTPp701Oi4FTCPqkZ2wRtU8Mz30besL0CgAcZNH1jQnwOjMq6zJE7Hb4z+1rlebXb2qF/Epie0styaPEkRDDrWrse8Weyt68nsM04qKTQrHbdogifZf/QujHn3/44r23lkTorXOp4H84gl/UFNZs70iifI3SVlehfanXdWdLwgFk9NEHJW3XjqyFbGIPNVi1ZISqRNPnCZD/zri2WYpPgn6/g1YCgDmERZ5+IWmBRb1nEbGjaexlJJ7nzJd24kk72TKOscbIFJtXsLg2sbfQdNj+U+8QmtsI4fsj0PnM8cdR0O9xR6TKqHoWlBx2vYo/+Ong/VvOLLYM1LmUddAm7L6/oM40i2O6b5y3uLfiDmaVjre2BGYV1lo3rXsb52XY2S5+usgpE6EHyG/dNKx08iYzVSDpNNxq1AV3qYRHbVLsikrqxg5+Gl3j9w/q4K8sN5+oW+hJ7pwg1A9gsMJcWCqpEWPc2UlEEvtCMDggNY6NDruJl95U3NmJTPVbxf61jVaJxvS2VFbVFUBQATpaTKkHKfh7THP3qzszdBxiBJWdeifuC3T6t3+uxMn755YKITH6zQgLqe7G/mpB3pJgQAAA=="
    },
    "Metadata": {
     "aws:cdk:path": "WarmpawzStack-prod/CDKMetadata/Default"
@@ -5074,9 +4784,7 @@
   },
   "AuroraSecretArn": {
    "Description": "Aurora RDS Secret ARN - For A4 (Backend Engineer)",
-   "Value": {
-    "Ref": "AuroraStackAuroraSecret2E11B886"
-   },
+   "Value": "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-dev-rds-master-20260106164510791100000002-WqZcjI",
    "Export": {
     "Name": "Warmpawz-AuroraSecretArn"
    }
@@ -5304,18 +5012,14 @@
   },
   "LogsTableName": {
    "Description": "DynamoDB Logs Table Name",
-   "Value": {
-    "Ref": "DynamoDbStackLogsTable96BE4B9D"
-   },
+   "Value": "warmpawz-prod-logs",
    "Export": {
     "Name": "Warmpawz-prod-LogsTableName"
    }
   },
   "ChatMessagesTableName": {
    "Description": "DynamoDB Chat Messages Table Name",
-   "Value": {
-    "Ref": "DynamoDbStackChatMessagesTable8D237DC2"
-   },
+   "Value": "warmpawz-prod-chat-messages",
    "Export": {
     "Name": "Warmpawz-prod-ChatMessagesTableName"
    }

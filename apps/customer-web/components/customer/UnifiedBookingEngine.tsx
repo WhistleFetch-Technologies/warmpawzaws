@@ -433,18 +433,40 @@ export function UnifiedBookingEngine({
       bookingData.customerId = customer.id;
 
       const result: any = await apiClient.post('/bookings/create', bookingData);
+      // P2: Treat 200-with-error as failure (resilient parsing)
+      if (result?.error || result?.success === false) {
+        const errMsg = typeof result?.error === 'string' ? result.error : (result?.error?.message ?? result?.error ?? 'Booking creation failed');
+        throw new Error(errMsg);
+      }
+      // Support multiple response shapes (data.bookingId, data.data?.bookingId, data.booking?.id)
+      const bookingId =
+        result?.data?.bookingId ??
+        result?.bookingId ??
+        result?.booking?.id ??
+        result?.booking?.bookingId ??
+        result?.data?.id ??
+        result?.id ??
+        '';
 
-      if (result.bookingId) {
+      if (result?.error) {
+        throw new Error(typeof result.error === 'string' ? result.error : result.error?.message ?? 'Failed to create booking');
+      }
+      if (bookingId) {
         if (onSuccess) {
-          onSuccess(result.bookingId);
+          onSuccess(bookingId);
         } else {
-          router.push(`/bookings/${result.bookingId}`);
+          router.push(`/bookings/${bookingId}`);
         }
       } else {
         throw new Error('Failed to create booking');
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to create booking');
+      const errorMessage =
+        err?.response?.data?.error?.message ??
+        err?.response?.data?.error ??
+        err?.message ??
+        'Failed to create booking';
+      setError(typeof errorMessage === 'string' ? errorMessage : 'Failed to create booking');
     } finally {
       setProcessing(false);
     }

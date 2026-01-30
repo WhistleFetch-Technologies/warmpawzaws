@@ -5,7 +5,7 @@ import { Textarea } from '../ui/textarea';
 import { Label } from '../ui/label';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { XCircle, AlertTriangle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface DeclineBookingModalProps {
@@ -30,7 +30,7 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
   const [suggestAlternative, setSuggestAlternative] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   const handleDecline = async () => {
     const finalReason = selectedReason === 'Other (please specify)' 
@@ -50,7 +50,7 @@ export function DeclineBookingModal({ booking, vendorId, onClose, onSuccess }: D
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

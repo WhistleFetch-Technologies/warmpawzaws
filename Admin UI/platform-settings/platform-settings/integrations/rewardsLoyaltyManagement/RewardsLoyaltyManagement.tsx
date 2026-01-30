@@ -21,7 +21,7 @@ import {
 } from "@repo/ui";
 import { Gift, Plus, Save, Trash2, Trophy, Users } from "lucide-react";
 import { toast } from "sonner";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 
 interface LoyaltyRule {
 	id: string;
@@ -48,17 +48,17 @@ export function RewardsLoyaltyManagement() {
 		try {
 			// First try to init default rules if empty
 			await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/loyalty/rules/init`,
+				`${getApiBaseUrl()}/loyalty/rules/init`,
 				{
 					method: "POST",
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/loyalty/rules`,
+				`${getApiBaseUrl()}/loyalty/rules`,
 				{
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 			const data = await response.json();
@@ -74,11 +74,11 @@ export function RewardsLoyaltyManagement() {
 		try {
 			setLoading(true);
 			await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/loyalty/rules`,
+				`${getApiBaseUrl()}/loyalty/rules`,
 				{
 					method: "PUT",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({ rules }),

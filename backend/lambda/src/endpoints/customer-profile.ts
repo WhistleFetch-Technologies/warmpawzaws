@@ -250,7 +250,28 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[profile] Error fetching customer profile by query:', error);
-      return c.json({ success: true, profile: null, _degraded: true }, 200);
+      console.error('[profile] Error stack:', error?.stack);
+      
+      // ✅ FIX: Return proper error codes instead of masking with 200 OK
+      const errorMessage = error?.message || 'Unknown error';
+      
+      if (errorMessage.includes('connection pool') || errorMessage.includes('too many clients')) {
+        return c.json({ 
+          success: false, 
+          error: 'Service temporarily busy. Please try again.',
+          code: 'POOL_EXHAUSTED',
+          profile: null,
+          _degraded: true 
+        }, 503);
+      }
+      
+      return c.json({ 
+        success: false, 
+        error: 'Failed to fetch profile. Please try again.',
+        code: 'INTERNAL_ERROR',
+        profile: null,
+        _degraded: true 
+      }, 500);
     }
   });
 
@@ -434,12 +455,21 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         completionUpdates.address = true;
       }
 
-      // Handle address - customers table has address (TEXT) and pincode (TEXT) as separate fields
+      // Handle address - customers table has address (TEXT), pincode (TEXT), city (TEXT), state (TEXT) as separate fields
       if (profileData.address) {
         updateData.address = profileData.address;
       }
       if (profileData.pincode) {
         updateData.pincode = profileData.pincode;
+      }
+      if (profileData.city) {
+        updateData.city = profileData.city;
+      }
+      if (profileData.state) {
+        updateData.state = profileData.state;
+      }
+      if (profileData.landmark) {
+        updateData.landmark = profileData.landmark;
       }
 
       // Ensure we're not trying to update preferences column (it may not exist yet)
@@ -546,12 +576,21 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         completionUpdates.address = true;
       }
 
-      // Handle address - customers table has address (TEXT) and pincode (TEXT) as separate fields
+      // Handle address - customers table has address (TEXT), pincode (TEXT), city (TEXT), state (TEXT) as separate fields
       if (profileData.address) {
         updateData.address = profileData.address;
       }
       if (profileData.pincode) {
         updateData.pincode = profileData.pincode;
+      }
+      if (profileData.city) {
+        updateData.city = profileData.city;
+      }
+      if (profileData.state) {
+        updateData.state = profileData.state;
+      }
+      if (profileData.landmark) {
+        updateData.landmark = profileData.landmark;
       }
 
       // Ensure we're not trying to update preferences column (it may not exist yet)

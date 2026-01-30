@@ -528,6 +528,73 @@ const NUTRITIONIST_SERVICES: ServiceCatalogItem[] = [
 ];
 
 /**
+ * Diagnostics Center Services Catalog
+ * Lab tests, home sample collection, diagnostic services
+ */
+const DIAGNOSTICS_SERVICES: ServiceCatalogItem[] = [
+  {
+    id: 'blood_tests',
+    name: 'Blood Tests',
+    description: 'Complete blood count, biochemistry panel, and other blood work',
+    duration: 30,
+    priceRange: { min: 500, max: 3000 },
+    category: 'Lab Tests',
+    serviceStyle: 'at_center',
+    applicableRoles: ['diagnostics', 'diagnostics_center', 'diagnostic_center'],
+  },
+  {
+    id: 'urine_analysis',
+    name: 'Urine Analysis',
+    description: 'Urinalysis and urine culture',
+    duration: 20,
+    priceRange: { min: 300, max: 1500 },
+    category: 'Lab Tests',
+    serviceStyle: 'at_center',
+    applicableRoles: ['diagnostics', 'diagnostics_center', 'diagnostic_center'],
+  },
+  {
+    id: 'home_sample_collection',
+    name: 'Home Sample Collection',
+    description: 'Sample collection at customer location for lab tests',
+    duration: 30,
+    priceRange: { min: 200, max: 500 },
+    category: 'Sample Collection',
+    serviceStyle: 'at_home',
+    applicableRoles: ['diagnostics', 'diagnostics_center', 'diagnostic_center'],
+  },
+  {
+    id: 'diagnostic_package',
+    name: 'Diagnostic Package',
+    description: 'Preventive health screening package',
+    duration: 60,
+    priceRange: { min: 1500, max: 5000 },
+    category: 'Packages',
+    serviceStyle: 'at_center',
+    applicableRoles: ['diagnostics', 'diagnostics_center', 'diagnostic_center'],
+  },
+  {
+    id: 'x_ray',
+    name: 'X-Ray / Imaging',
+    description: 'Radiology and imaging services',
+    duration: 30,
+    priceRange: { min: 500, max: 3000 },
+    category: 'Imaging',
+    serviceStyle: 'at_center',
+    applicableRoles: ['diagnostics', 'diagnostics_center', 'diagnostic_center'],
+  },
+  {
+    id: 'ultrasound',
+    name: 'Ultrasound',
+    description: 'Sonography and ultrasound imaging',
+    duration: 45,
+    priceRange: { min: 1000, max: 4000 },
+    category: 'Imaging',
+    serviceStyle: 'at_center',
+    applicableRoles: ['diagnostics', 'diagnostics_center', 'diagnostic_center'],
+  },
+];
+
+/**
  * E-commerce/Seller Services Catalog
  * Note: Sellers primarily sell products, but can offer services
  */
@@ -593,15 +660,33 @@ export const SERVICE_CATALOGS: Record<string, ServiceCatalogItem[]> = {
   seller: SELLER_SERVICES,
   pet_products_store: SELLER_SERVICES,
   ecommerce: SELLER_SERVICES,
+  diagnostics: DIAGNOSTICS_SERVICES,
+  diagnostics_center: DIAGNOSTICS_SERVICES,
+  diagnostic_center: DIAGNOSTICS_SERVICES,
 };
+
+/** Check if string looks like a UUID (not a role name/code) */
+const isUUID = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
 /**
  * Get service catalog for a specific role
+ * @param roleIdOrName - Role ID (UUID), role name, or role code (e.g. 'diagnostics_center', 'vet')
+ * @param roleName - Optional role display name (e.g. 'Diagnostics Center') - used when roleIdOrName is a UUID
  */
-export function getServiceCatalogForRole(roleId: string | null | undefined): ServiceCatalogItem[] {
-  if (!roleId) return [];
+export function getServiceCatalogForRole(
+  roleIdOrName: string | null | undefined,
+  roleName?: string | null
+): ServiceCatalogItem[] {
+  if (!roleIdOrName && !roleName) return [];
   
-  const normalizedRoleId = roleId.toLowerCase().trim();
+  // When roleId is a UUID, use roleName for lookup (catalog keys are role names/codes, not UUIDs)
+  let lookupKey = roleIdOrName || roleName || '';
+  if (lookupKey && isUUID(String(lookupKey)) && roleName) {
+    lookupKey = roleName;
+  }
+  if (!lookupKey) return [];
+  
+  const normalizedRoleId = String(lookupKey).toLowerCase().trim().replace(/\s+/g, '_').replace(/-/g, '_');
   
   // Direct match
   if (SERVICE_CATALOGS[normalizedRoleId]) {
@@ -617,12 +702,20 @@ export function getServiceCatalogForRole(roleId: string | null | undefined): Ser
     'pet_pharmacy': ['pharmacy', 'pharmacist'],
     'pet_nutritionist': ['nutritionist', 'nutrition'],
     'pet_products_store': ['seller', 'store', 'retailer', 'ecommerce'],
+    'diagnostics': ['diagnostics_center', 'diagnostic_center', 'diagnostics_provider', 'diagnostics_solo'],
+    'diagnostics_center': ['diagnostics', 'diagnostic_center'],
   };
   
   for (const [mainRole, variations] of Object.entries(roleVariations)) {
     if (normalizedRoleId === mainRole || variations.includes(normalizedRoleId)) {
       return SERVICE_CATALOGS[mainRole] || SERVICE_CATALOGS[variations[0]] || [];
     }
+  }
+  
+  // Try matching "diagnostics center" -> diagnostics_center
+  const withUnderscores = normalizedRoleId.replace(/\s+/g, '_');
+  if (SERVICE_CATALOGS[withUnderscores]) {
+    return SERVICE_CATALOGS[withUnderscores];
   }
   
   return [];

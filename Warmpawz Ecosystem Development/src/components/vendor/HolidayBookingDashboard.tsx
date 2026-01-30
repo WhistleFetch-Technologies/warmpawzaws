@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Calendar, DollarSign, CheckCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 /**
  * 📅 HOLIDAY BOOKING VENDOR DASHBOARD
@@ -20,8 +20,8 @@ export default function HolidayBookingDashboard({ vendorId }: { vendorId: string
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/holiday-bookings`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/holiday-bookings`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
       const data = await response.json();
       if (data.success) setBookings(data.data.bookings || []);
@@ -35,12 +35,12 @@ export default function HolidayBookingDashboard({ vendorId }: { vendorId: string
   const updateBookingStatus = async (bookingId: string, status: string, paymentStatus?: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/holiday-packages/bookings/${bookingId}/status`,
+        `${getApiBaseUrl()}/holiday-packages/bookings/${bookingId}/status`,
         {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({ status, paymentStatus }),
         }

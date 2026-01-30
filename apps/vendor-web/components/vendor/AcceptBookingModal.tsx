@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { CheckCircle, User } from 'lucide-react';
+import { CheckCircle, User, Clock, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 
@@ -20,8 +20,14 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
   const [staffMembers, setStaffMembers] = useState<any[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState(booking.staffId || '');
   const [notes, setNotes] = useState('');
+  const [eta, setEta] = useState('30'); // Default 30 minutes ETA for home services
   const [loading, setLoading] = useState(false);
   const [loadingStaff, setLoadingStaff] = useState(true);
+  
+  // Check if this is a home service booking
+  const isHomeService = booking.serviceStyle === 'at_home' || 
+                        booking.service_style === 'at_home' ||
+                        booking.serviceType === 'at_home';
 
   useEffect(() => {
     loadStaffMembers();
@@ -54,7 +60,8 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
       const data = await apiClient.post(`/vendor/bookings/${booking.id}/confirm`, {
         vendorId,
         staffId: selectedStaffId || undefined,
-        notes
+        notes,
+        eta: isHomeService ? parseInt(eta, 10) : undefined // Include ETA for home services
       }) as any;
 
       if (data && data.success) {
@@ -108,6 +115,35 @@ export function AcceptBookingModal({ booking, vendorId, onClose, onSuccess }: Ac
               </div>
             </div>
           </div>
+
+          {/* ETA for Home Services */}
+          {isHomeService && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-orange-500" />
+                  Estimated Time of Arrival <span className="text-red-500">*</span>
+                </div>
+              </label>
+              <Select value={eta} onValueChange={setEta}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select ETA" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="15">15 minutes</SelectItem>
+                  <SelectItem value="30">30 minutes</SelectItem>
+                  <SelectItem value="45">45 minutes</SelectItem>
+                  <SelectItem value="60">1 hour</SelectItem>
+                  <SelectItem value="90">1.5 hours</SelectItem>
+                  <SelectItem value="120">2 hours</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                <MapPin className="w-3 h-3" />
+                Customer will see your estimated arrival time
+              </p>
+            </div>
+          )}
 
           {/* Staff Assignment */}
           {staffMembers.length > 0 && (

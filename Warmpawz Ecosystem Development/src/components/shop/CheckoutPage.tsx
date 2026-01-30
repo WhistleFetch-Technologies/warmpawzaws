@@ -11,7 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
 import { Badge } from '../ui/badge';
 import { Checkbox } from '../ui/checkbox';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { authenticatedGet, authenticatedPost } from '../../utils/authenticatedFetch';
 import { toast } from 'sonner';
 

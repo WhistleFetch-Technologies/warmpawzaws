@@ -11,7 +11,7 @@ import { Label } from '../../ui/label';
 import { Button } from '../../ui/button';
 import { Switch } from '../../ui/switch';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../ui/tabs';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import {
   Cloud, Database, MessageSquare, Map, Loader2, CheckCircle2, 
@@ -123,25 +123,25 @@ export function AWSIntegrationsSettings() {
 
       // Load AWS settings
       const awsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/settings/aws`,
+        `${getApiBaseUrl()}/admin/settings/aws`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
       // Load Razorpay settings
       const razorpayResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/settings/payment-gateway`,
+        `${getApiBaseUrl()}/admin/settings/payment-gateway`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
       // Load Google Maps settings
       const mapsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/settings/google-maps`,
+        `${getApiBaseUrl()}/admin/settings/google-maps`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -249,12 +249,12 @@ export function AWSIntegrationsSettings() {
 
       // Save AWS settings
       const awsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/settings/aws`,
+        `${getApiBaseUrl()}/admin/settings/aws`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(aws)
         }
@@ -262,12 +262,12 @@ export function AWSIntegrationsSettings() {
 
       // Save Razorpay settings
       const razorpayResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/settings/payment-gateway`,
+        `${getApiBaseUrl()}/admin/settings/payment-gateway`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             razorpay: {
@@ -281,12 +281,12 @@ export function AWSIntegrationsSettings() {
 
       // Save Google Maps settings
       const mapsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/settings/google-maps`,
+        `${getApiBaseUrl()}/admin/settings/google-maps`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(googleMaps)
         }

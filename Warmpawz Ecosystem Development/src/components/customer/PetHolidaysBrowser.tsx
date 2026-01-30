@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { MapPin, Calendar, Users, Heart, Star, Clock, TrendingUp, ChevronRight, Filter, Search } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface HolidayPackage {
   id: string;
@@ -62,8 +62,8 @@ export function PetHolidaysBrowser({ customerId, onBookPackage }: PetHolidaysBro
       setLoading(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/holiday-packages`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/holiday-packages`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -127,12 +127,12 @@ export function PetHolidaysBrowser({ customerId, onBookPackage }: PetHolidaysBro
       };
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/holiday-packages/book`,
+        `${getApiBaseUrl()}/holiday-packages/book`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(bookingData)
         }

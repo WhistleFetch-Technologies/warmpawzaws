@@ -63,6 +63,96 @@ export interface MedicalRecord {
 export function registerMedicalRecordsEndpoints(app: Hono) {
   
   /**
+   * ✅ FIX: GET /customer/:phone/medical-records
+   * Get all medical records for a customer by phone (used by MedicalRecordsPage.tsx)
+   * This fetches records across ALL pets belonging to the customer
+   */
+  app.get("/customer/:phone/medical-records", async (c) => {
+    try {
+      const phone = c.req.param('phone');
+      const recordType = c.req.query('type');
+      const limit = parseInt(c.req.query('limit') || '50');
+      const offset = parseInt(c.req.query('offset') || '0');
+      
+      // Normalize phone number
+      const normalizedPhone = phone.replace(/[^0-9]/g, '').slice(-10);
+      
+      console.log('📋 [MEDICAL-RECORDS] Fetching records for customer phone:', normalizedPhone);
+
+      // First get customer and their pets
+      const customerResult = await query(
+        `SELECT c.id as customer_id, p.id as pet_id, p.name as pet_name
+         FROM customers c
+         LEFT JOIN pets p ON c.id = p.customer_id
+         WHERE c.phone LIKE $1 OR c.phone LIKE $2`,
+        [`%${normalizedPhone}`, `+91${normalizedPhone}`]
+      );
+      
+      const customerRows = (customerResult as any)?.rows || customerResult || [];
+      if (!customerRows || customerRows.length === 0) {
+        return c.json({ success: true, records: [], total: 0, message: 'No customer found' });
+      }
+      
+      const petIds = customerRows.map((r: any) => r.pet_id).filter(Boolean);
+      
+      if (petIds.length === 0) {
+        return c.json({ success: true, records: [], total: 0, message: 'No pets found' });
+      }
+      
+      // Fetch medical records for all pets
+      let queryText = `
+        SELECT mr.*, 
+               v.business_name as vendor_name,
+               v.owner_name as veterinarian_name,
+               p.name as pet_name,
+               p.breed as pet_breed
+        FROM medical_records mr
+        LEFT JOIN vendors v ON mr.vendor_id = v.id
+        LEFT JOIN pets p ON mr.pet_id = p.id
+        WHERE mr.pet_id = ANY($1::uuid[])
+      `;
+      const params: any[] = [petIds];
+      let paramIndex = 2;
+
+      if (recordType && recordType !== 'all') {
+        queryText += ` AND mr.record_type = $${paramIndex}`;
+        params.push(recordType);
+        paramIndex++;
+      }
+
+      queryText += ` ORDER BY mr.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+
+      const result = await query(queryText, params);
+      const records = (result as any) || [];
+
+      return c.json({
+        success: true,
+        records: records.map((r: any) => ({
+          id: r.id,
+          pet_id: r.pet_id,
+          pet_name: r.pet_name,
+          record_type: r.record_type,
+          title: r.title || r.record_type,
+          description: r.description || r.notes,
+          veterinarian_name: r.veterinarian_name,
+          clinic_name: r.vendor_name,
+          date: r.record_date || r.created_at,
+          attachments: r.attachments || [],
+          notes: r.notes,
+          document_url: r.document_url || null,
+          booking_id: r.booking_id || null,
+        })),
+        total: records.length,
+      });
+
+    } catch (error: any) {
+      console.error('❌ [MEDICAL-RECORDS] Error fetching by phone:', error);
+      return c.json({ success: false, error: error.message, records: [] }, 500);
+    }
+  });
+
+  /**
    * GET /medical-records/pet/:petId
    * Get all medical records for a pet
    * Fixes GAP: CC-5 - Medical Records in History
@@ -136,6 +226,28 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         [bookingId]
       );
 
+      // ✅ CRITICAL FIX: Also get prescriptions for this booking
+      const prescriptions = await query(
+        `SELECT 
+          p.id,
+          p.booking_id,
+          p.medications,
+          p.instructions,
+          p.diagnosis,
+          p.prescription_date,
+          p.follow_up_date,
+          p.created_at,
+          v.business_name as vendor_name,
+          s.name as staff_name
+        FROM prescriptions p
+        LEFT JOIN vendors v ON v.id = p.vendor_id
+        LEFT JOIN staff s ON s.id = p.staff_id
+        WHERE p.booking_id = $1 
+          AND p.is_active = true
+        ORDER BY p.created_at DESC`,
+        [bookingId]
+      ).catch(() => ({ rows: [] }));
+
       // Also get records from referral chain (diagnostics reports)
       const referralRecords = await query(
         `SELECT mr.*, 
@@ -147,6 +259,33 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         [bookingId]
       );
 
+      // Combine medical records and prescriptions, sort by date
+      const allRecords = [
+        ...(records as any).rows.map((r: any) => ({ ...r, source: 'medical_records' })),
+        ...(prescriptions as any).rows.map((p: any) => ({
+          id: `prescription_${p.id}`,
+          booking_id: p.booking_id,
+          record_type: 'prescription',
+          title: 'Prescription',
+          description: p.diagnosis || 'Prescription',
+          content_data: {
+            medications: p.medications,
+            instructions: p.instructions,
+            diagnosis: p.diagnosis,
+            prescription_date: p.prescription_date,
+            follow_up_date: p.follow_up_date,
+          },
+          vendor_name: p.vendor_name,
+          staff_name: p.staff_name,
+          created_at: p.created_at,
+          source: 'prescriptions',
+        })),
+      ].sort((a: any, b: any) => {
+        const aTime = new Date(a.created_at || 0).getTime();
+        const bTime = new Date(b.created_at || 0).getTime();
+        return bTime - aTime;
+      });
+
       return c.json({
         success: true,
         booking: {
@@ -155,7 +294,8 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           date: booking.booking_date,
           status: booking.status,
         },
-        records: (records as any).rows || [],
+        records: allRecords, // ✅ CRITICAL FIX: Includes both medical records and prescriptions
+        prescriptions: (prescriptions as any).rows || [], // Also return separately for easy access
         referralRecords: (referralRecords as any).rows || [],
       });
 
@@ -851,6 +991,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
    * GET /medical-records/booking/:bookingId/prescriptions
    * Get all prescriptions for a booking (handwritten + doctor-created)
    * Shows both uploaded files and doctor prescriptions, sorted by latest date first
+   * ✅ FIX: Query BOTH medical_records AND prescriptions tables
    */
   app.get("/medical-records/booking/:bookingId/prescriptions", async (c) => {
     try {
@@ -862,14 +1003,13 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         return c.json({ error: 'Booking not found' }, 404);
       }
 
-      // Get all prescription records for this booking
-      // ✅ FIX: Also include records with record_type='treatment' that have prescription metadata
-      // ✅ FIX: Handle nullable columns and use safe column references
-      // ✅ FIX: Check if staff_id column exists, if not use staffId or omit
-      const records = await query(
+      // ✅ FIX: Query BOTH tables and merge results
+      // 1. Get from medical_records table (uploaded prescriptions)
+      const medicalRecordsResult = await query(
         `SELECT mr.*, 
                 v.business_name as vendor_name,
-                p.name as pet_name
+                p.name as pet_name,
+                'medical_records' as source
          FROM medical_records mr
          LEFT JOIN vendors v ON mr.vendor_id = v.id
          LEFT JOIN pets p ON mr.pet_id = p.id
@@ -880,18 +1020,49 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
              (mr.description IS NOT NULL AND mr.description ILIKE '%[Type: Prescription]%')
              OR (mr.content_data IS NOT NULL AND mr.content_data::text ILIKE '%"recordType":"prescription"%')
            ))
-         )
-         ORDER BY 
-           COALESCE(
-             CASE WHEN mr.prescription_date IS NOT NULL THEN mr.prescription_date::timestamp END,
-             CASE WHEN mr.record_date IS NOT NULL THEN mr.record_date::timestamp END,
-             mr.created_at
-           ) DESC,
-           mr.created_at DESC`,
+         )`,
         [bookingId]
       );
+      const medicalRecords = (medicalRecordsResult as any).rows || [];
 
-      const prescriptions = (records as any).rows || [];
+      // 2. Get from prescriptions table (doctor-created prescriptions)
+      let prescriptionsTableRecords: any[] = [];
+      try {
+        const prescriptionsResult = await query(
+          `SELECT pr.*, 
+                  v.business_name as vendor_name,
+                  p.name as pet_name,
+                  'prescriptions' as source,
+                  'prescription' as record_type
+           FROM prescriptions pr
+           LEFT JOIN vendors v ON pr.vendor_id = v.id
+           LEFT JOIN pets p ON pr.pet_id = p.id
+           WHERE pr.booking_id = $1::uuid
+           AND (pr.status IS NULL OR pr.status != 'cancelled')`,
+          [bookingId]
+        );
+        prescriptionsTableRecords = (prescriptionsResult as any).rows || [];
+      } catch (prescError) {
+        console.warn('Error querying prescriptions table:', prescError);
+        // Continue with medical_records only
+      }
+
+      // 3. Merge and deduplicate by ID (in case same record is in both)
+      const allPrescriptions = [...medicalRecords, ...prescriptionsTableRecords];
+      const uniqueById = new Map();
+      for (const p of allPrescriptions) {
+        if (!uniqueById.has(p.id)) {
+          uniqueById.set(p.id, p);
+        }
+      }
+      const prescriptions = Array.from(uniqueById.values());
+
+      // 4. Sort by date (latest first)
+      prescriptions.sort((a, b) => {
+        const dateA = new Date(a.prescription_date || a.record_date || a.created_at).getTime();
+        const dateB = new Date(b.prescription_date || b.record_date || b.created_at).getTime();
+        return dateB - dateA;
+      });
 
       const booking = bookings[0];
 
@@ -916,18 +1087,64 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
    * GET /medical-records/booking/:bookingId/view/:recordId
    * View specific prescription file (PDF/photo) or prescription details
    * Returns file URL or prescription content
+   * ✅ FIX: Check both medical_records AND prescriptions tables
    */
   app.get("/medical-records/booking/:bookingId/view/:recordId", async (c) => {
     try {
       const { bookingId, recordId } = c.req.param();
 
-      // Get record
-      const records = await select('medical_records', { id: recordId, booking_id: bookingId });
-      if (records.length === 0) {
-        return c.json({ error: 'Record not found' }, 404);
+      let record: any = null;
+      let recordSource: 'medical_records' | 'prescriptions' = 'medical_records';
+
+      // First, try to get from medical_records table
+      const medicalRecords = await select('medical_records', { id: recordId, booking_id: bookingId });
+      
+      if (medicalRecords.length > 0) {
+        record = medicalRecords[0];
+        recordSource = 'medical_records';
+      } else {
+        // ✅ FIX: Also check the prescriptions table if not found in medical_records
+        try {
+          const prescriptionRecords = await select('prescriptions', { id: recordId, booking_id: bookingId });
+          if (prescriptionRecords.length > 0) {
+            record = prescriptionRecords[0];
+            recordSource = 'prescriptions';
+          }
+        } catch (prescError) {
+          console.warn('Error checking prescriptions table:', prescError);
+        }
+
+        // ✅ FIX: Also try searching by just recordId (in case booking_id doesn't match)
+        if (!record) {
+          try {
+            // Check medical_records by just ID
+            const mrById = await select('medical_records', { id: recordId });
+            if (mrById.length > 0) {
+              record = mrById[0];
+              recordSource = 'medical_records';
+            }
+          } catch (e) {
+            // Ignore
+          }
+        }
+
+        if (!record) {
+          try {
+            // Check prescriptions by just ID
+            const pById = await select('prescriptions', { id: recordId });
+            if (pById.length > 0) {
+              record = pById[0];
+              recordSource = 'prescriptions';
+            }
+          } catch (e) {
+            // Ignore
+          }
+        }
       }
 
-      const record = records[0];
+      if (!record) {
+        return c.json({ error: 'Record not found' }, 404);
+      }
 
       // If it's a file-based prescription (handwritten), return file URL
       if (record.file_url) {
@@ -1010,11 +1227,40 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       }
 
       // If it's a doctor-created prescription, return content data
+      // ✅ FIX: Handle both medical_records and prescriptions table structures
+      let contentData = null;
+      
+      if (recordSource === 'prescriptions') {
+        // Prescriptions table has different structure
+        contentData = {
+          medications: record.medications || [],
+          diagnosis: record.diagnosis,
+          notes: record.notes,
+          doctorName: record.doctor_name,
+          followUpDate: record.follow_up_date,
+          followUpNotes: record.follow_up_notes,
+          prescriptionDate: record.prescription_date || record.created_at,
+          status: record.status || 'published',
+        };
+      } else if (record.content_data) {
+        // Medical records table - parse content_data
+        try {
+          contentData = typeof record.content_data === 'string' 
+            ? JSON.parse(record.content_data) 
+            : record.content_data;
+        } catch (e) {
+          contentData = { raw: record.content_data };
+        }
+      }
+
       return c.json({
         success: true,
-        record,
-        contentData: record.content_data ? JSON.parse(record.content_data) : null,
-        type: 'prescription',
+        record: {
+          ...record,
+          source: recordSource, // ✅ NEW: Indicate which table the record came from
+        },
+        contentData,
+        type: record.file_url ? 'file' : 'prescription',
       });
 
     } catch (error: any) {

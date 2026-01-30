@@ -16,6 +16,7 @@
  */
 
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
+import { randomUUID } from 'crypto';
 
 const snsClient = new SNSClient({
   region: process.env.AWS_REGION || 'ap-south-1',
@@ -69,7 +70,7 @@ function createEventEnvelope<T>(
   correlationId?: string
 ): EventEnvelope<T> {
   return {
-    eventId: crypto.randomUUID(),
+    eventId: randomUUID(),
     eventType,
     eventTimestamp: new Date().toISOString(),
     eventSource: 'warmpawz-backend',

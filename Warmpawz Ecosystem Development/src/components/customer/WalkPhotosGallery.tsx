@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Camera, Heart, Clock, X } from 'lucide-react';
 import { Card } from '../ui/card';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface WalkPhotosGalleryProps {
   walkId: string;
@@ -14,7 +14,7 @@ export function WalkPhotosGallery({ walkId, showUpload = false, onUpload }: Walk
   const [loading, setLoading] = useState(true);
   const [selectedPhoto, setSelectedPhoto] = useState<any | null>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchPhotos();
@@ -23,7 +23,7 @@ export function WalkPhotosGallery({ walkId, showUpload = false, onUpload }: Walk
   const fetchPhotos = async () => {
     try {
       const response = await fetch(`${API_BASE}/walker/walk-photos/${walkId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -90,14 +90,6 @@ export function InstantTeleQueue({
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(serviceId || null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const [showProviderList, setShowProviderList] = useState(true);
-
-  // Get API base URL
-  const getApiBaseUrl = () => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('api_base_url') || process.env.NEXT_PUBLIC_API_URL || '';
-    }
-    return process.env.NEXT_PUBLIC_API_URL || '';
-  };
 
   useEffect(() => {
     loadAvailableProviders();

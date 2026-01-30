@@ -24,7 +24,7 @@ import { Textarea } from '../../ui/textarea';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../ui/dialog';
 
 interface VetPharmacyManagerProps {
@@ -80,7 +80,7 @@ export function VetPharmacyManager({ vendorId, vendorData, onBack, embedded }: V
   const [invoiceAmount, setInvoiceAmount] = useState('');
   const [invoiceNotes, setInvoiceNotes] = useState('');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadPharmacyData();
@@ -92,7 +92,7 @@ export function VetPharmacyManager({ vendorId, vendorData, onBack, embedded }: V
       
       // Load pharmacy inventory
       const inventoryRes = await fetch(`${API_BASE}/vendor/${vendorId}/pharmacy/inventory`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (inventoryRes.ok) {
@@ -102,7 +102,7 @@ export function VetPharmacyManager({ vendorId, vendorData, onBack, embedded }: V
 
       // Load prescription orders
       const ordersRes = await fetch(`${API_BASE}/vendor/${vendorId}/pharmacy/prescription-orders`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (ordersRes.ok) {
@@ -123,7 +123,7 @@ export function VetPharmacyManager({ vendorId, vendorData, onBack, embedded }: V
       const res = await fetch(`${API_BASE}/vendor/${vendorId}/pharmacy/verify-prescription`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ orderId })
@@ -148,7 +148,7 @@ export function VetPharmacyManager({ vendorId, vendorData, onBack, embedded }: V
       const res = await fetch(`${API_BASE}/vendor/${vendorId}/pharmacy/send-invoice`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -179,7 +179,7 @@ export function VetPharmacyManager({ vendorId, vendorData, onBack, embedded }: V
       const res = await fetch(`${API_BASE}/vendor/${vendorId}/pharmacy/dispatch-order`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ orderId })

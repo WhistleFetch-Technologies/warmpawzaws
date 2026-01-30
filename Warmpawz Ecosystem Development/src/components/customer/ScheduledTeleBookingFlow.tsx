@@ -7,7 +7,7 @@ import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface ScheduledTeleBookingFlowProps {
   serviceId: string;
@@ -113,9 +113,9 @@ export function ScheduledTeleBookingFlow({
       setLoading(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/tele/scheduled-availability?serviceId=${serviceId}&date=${date}`,
+        `${getApiBaseUrl()}/tele/scheduled-availability?serviceId=${serviceId}&date=${date}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -156,11 +156,11 @@ export function ScheduledTeleBookingFlow({
 
       // TASK 3: API contract for booking creation
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/scheduled-tele`,
+        `${getApiBaseUrl()}/bookings/scheduled-tele`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -192,11 +192,11 @@ export function ScheduledTeleBookingFlow({
       
       // Process payment
       const paymentRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/payments/process`,
+        `${getApiBaseUrl()}/payments/process`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

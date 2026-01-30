@@ -3,7 +3,7 @@ import { CapabilityDebugOverlay } from './CapabilityDebugOverlay';
 import { ModuleDisabledMessage, ModuleMessages } from './ModuleDisabledMessage';
 import { SoloProviderDashboard } from './dashboard/SoloProviderDashboard'; // ✅ INTEGRATION: Solo provider dashboard
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { getVendorIconTheme, getRoleIcon, getRoleColorScheme } from '../../utils/vendor-icon-themes';
 import VendorUtils from '../../utils/vendor-utils';
 import CapabilityHelper from '../../utils/capability-helper';
@@ -208,7 +208,7 @@ export function VendorDashboard({
   // 🔌 CORE: Load dynamic capabilities
   const { capabilities, loading: capsLoading, roleName } = useVendorCapabilities(vendorData?.roleId);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
   
   // ✅ USE UTILITY: Replace duplicated role check with centralized utility
   const isVet = VendorUtils.isVet(vendorData?.roleId);
@@ -254,13 +254,13 @@ export function VendorDashboard({
       const criticalPromises: Promise<Response | null>[] = [
         // 1. Always fetch dashboard stats
         fetch(`${API_BASE}/vendor/dashboard/${vendorId}?timeframe=${activeTab}`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }),
         
         // 2. Fetch schedule if booking enabled - USE UTILITY
         CapabilityHelper.hasBooking(capabilities)
           ? fetch(`${API_BASE}/vendor/schedule/${vendorId}?date=${today}`, {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+              headers: getAuthHeaders()
             })
           : Promise.resolve(null)
       ];
@@ -270,19 +270,19 @@ export function VendorDashboard({
         // 3. Fetch watchlist if medical records enabled - USE UTILITY
         CapabilityHelper.hasMedicalRecords(capabilities)
           ? fetch(`${API_BASE}/vendor/watchlist/${vendorId}`, {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+              headers: getAuthHeaders()
             })
           : Promise.resolve(null),
         
         // 4. Always fetch notifications
         fetch(`${API_BASE}/vendor/notifications/${vendorId}?limit=5`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }),
         
         // 5. Fetch services if catalog or booking enabled - USE UTILITY
         (CapabilityHelper.hasCatalog(capabilities) || CapabilityHelper.hasBooking(capabilities))
           ? fetch(`${API_BASE}/vendor/services/${vendorId}`, {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+              headers: getAuthHeaders()
             })
           : Promise.resolve(null)
       ];

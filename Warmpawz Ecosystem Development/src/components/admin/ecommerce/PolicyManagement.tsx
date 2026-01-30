@@ -34,7 +34,7 @@ import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../ui/tabs';
 import { authenticatedGet, authenticatedPost, authenticatedPut } from '../../../utils/authenticatedFetch';
-import { projectId } from '../../../utils/supabase/info';
+import { getApiBaseUrl } from '../../../utils/api-config';
 
 interface RefundPolicy {
   enabledCategories: string[];
@@ -128,7 +128,7 @@ export function PolicyManagement() {
     try {
       // Fetch policies from backend
       const policies = await authenticatedGet(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/policies`,
+        `${getApiBaseUrl()}/admin/policies`,
         true
       );
 
@@ -151,7 +151,7 @@ export function PolicyManagement() {
 
     try {
       await authenticatedPut(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/policies/${type}`,
+        `${getApiBaseUrl()}/admin/policies/${type}`,
         data
       );
 

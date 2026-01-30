@@ -30,14 +30,18 @@ export function registerPackageEndpoints(app: Hono) {
     try {
       const vendorId = c.req.query('vendorId');
       const serviceType = c.req.query('serviceType');
+      const serviceStyle = c.req.query('serviceStyle'); // NEW: Filter by service style (at_center, at_home, tele)
+      const roleId = c.req.query('roleId'); // NEW: Filter by role for role-based package rules
       const petType = c.req.query('petType');
       const minPrice = c.req.query('minPrice');
       const maxPrice = c.req.query('maxPrice');
 
       let packageQuery = `
-        SELECT p.*, v.business_name as vendor_name, v.city as vendor_city, v.rating as vendor_rating
+        SELECT p.*, v.business_name as vendor_name, v.city as vendor_city, v.rating as vendor_rating,
+               r.name as vendor_role
         FROM service_packages p
         INNER JOIN vendors v ON p.vendor_id = v.id
+        LEFT JOIN roles r ON v.role_id = r.id
         WHERE p.is_active = true
         AND v.status = 'approved'
         AND v.is_active = true
@@ -65,6 +69,38 @@ export function registerPackageEndpoints(app: Hono) {
         packageQuery += ` AND p.service_type = $${paramIndex}`;
         params.push(serviceType);
         paramIndex++;
+      }
+
+      // NEW: Filter by service style - critical for vendor discovery rules
+      // Rule 1: at_center packages for clinic/center bookings only
+      // Rule 2: at_home packages for home services (walker, trainer)
+      // Rule 3: tele packages for tele consultations
+      if (serviceStyle) {
+        packageQuery += ` AND (p.service_style = $${paramIndex} OR p.service_style IS NULL)`;
+        params.push(serviceStyle);
+        paramIndex++;
+        
+        // Enforce role-based package rules
+        if (serviceStyle === 'at_home') {
+          // at_home packages for walkers, trainers, sitters, groomers (solo at-home)
+          packageQuery += ` AND (
+            r.name ILIKE '%walker%' OR r.name ILIKE '%trainer%' OR r.name ILIKE '%sitter%' OR r.name ILIKE '%groom%'
+            OR p.service_type ILIKE '%walk%' OR p.service_type ILIKE '%train%' OR p.service_type ILIKE '%sit%' OR p.service_type ILIKE '%groom%'
+            OR p.allowed_roles @> ARRAY[$${paramIndex}]::text[]
+          )`;
+          params.push(roleId || 'any');
+          paramIndex++;
+        } else if (serviceStyle === 'at_center') {
+          // at_center packages for clinics/salons (vet, grooming)
+          packageQuery += ` AND (
+            r.name ILIKE '%clinic%' OR r.name ILIKE '%salon%' OR r.name ILIKE '%vet%' OR r.name ILIKE '%groom%'
+            OR p.service_type ILIKE '%vet%' OR p.service_type ILIKE '%groom%'
+            OR v.vendor_type IN ('business', 'center')
+            OR p.allowed_roles @> ARRAY[$${paramIndex}]::text[]
+          )`;
+          params.push(roleId || 'any');
+          paramIndex++;
+        }
       }
 
       if (minPrice) {
@@ -114,6 +150,7 @@ export function registerPackageEndpoints(app: Hono) {
       const phone = c.req.query('phone');
       const vendorId = c.req.query('vendorId');
       const serviceType = c.req.query('serviceType');
+      const serviceStyle = c.req.query('serviceStyle'); // NEW: Filter by service style
 
       // Resolve phone to customerId if phone provided
       if (phone && !customerId) {
@@ -136,12 +173,16 @@ export function registerPackageEndpoints(app: Hono) {
         });
       }
 
-      // Check for active packages with this vendor
-      const result = await query(`
+      // Build query with optional service_style filter
+      // This ensures:
+      // - at_center packages only for clinic bookings
+      // - at_home packages only for home service bookings
+      // - tele packages only for tele bookings
+      let packageQuery = `
         SELECT 
           pp.*,
           v.business_name as vendor_name,
-          pp.total_sessions - pp.remaining_sessions as sessions_used
+          pp.total_sessions - COALESCE(pp.remaining_sessions, pp.total_sessions) as sessions_used
         FROM package_purchases pp
         LEFT JOIN vendors v ON pp.vendor_id = v.id
         WHERE pp.customer_id = $1
@@ -149,9 +190,21 @@ export function registerPackageEndpoints(app: Hono) {
         AND pp.status = 'active'
         AND (pp.expires_at IS NULL OR pp.expires_at > NOW())
         AND (pp.remaining_sessions > 0 OR pp.unlimited_usage = true)
-        ORDER BY pp.expires_at ASC NULLS LAST
-        LIMIT 1
-      `, [customerId, vendorId]);
+      `;
+      
+      const params: any[] = [customerId, vendorId];
+      let paramIndex = 3;
+      
+      // Filter by service_style if provided
+      if (serviceStyle) {
+        packageQuery += ` AND (pp.service_style = $${paramIndex} OR pp.service_style IS NULL)`;
+        params.push(serviceStyle);
+        paramIndex++;
+      }
+      
+      packageQuery += ` ORDER BY pp.expires_at ASC NULLS LAST LIMIT 1`;
+
+      const result = await query(packageQuery, params);
 
       if (result.rows.length === 0) {
         return c.json({
@@ -173,7 +226,8 @@ export function registerPackageEndpoints(app: Hono) {
           sessionsUsed: pkg.sessions_used,
           expiresAt: pkg.expires_at,
           isUnlimited: pkg.unlimited_usage,
-          packageType: pkg.package_type
+          packageType: pkg.package_type,
+          serviceStyle: pkg.service_style // Include service_style in response
         }
       });
     } catch (error: any) {
@@ -417,7 +471,7 @@ export function registerPackageEndpoints(app: Hono) {
 
   /**
    * POST /vendor/packages
-   * Create a new package
+   * Create a new package (vendorId in body)
    */
   app.post("/vendor/packages", async (c) => {
     try {
@@ -426,6 +480,31 @@ export function registerPackageEndpoints(app: Hono) {
 
       if (!vendorId || !name || !price) {
         return c.json({ error: 'Vendor ID, name, and price are required' }, 400);
+      }
+
+      // ✅ SOLO VENDOR RESTRICTION: Solo vendors cannot create packages
+      // ✅ EXCEPTION: Solo trainers, walkers, and sitters CAN create SESSION packages only
+      const vendorCheck = await select('vendors', { id: vendorId });
+      if (vendorCheck.length > 0 && vendorCheck[0].vendor_type === 'solo') {
+        // Get vendor role to check if trainer/walker/sitter
+        let roleName = '';
+        if (vendorCheck[0].role_id) {
+          const roles = await select('roles', { id: vendorCheck[0].role_id });
+          if (roles.length > 0) {
+            roleName = (roles[0].name || '').toLowerCase();
+          }
+        }
+        
+        // Only trainers, walkers, sitters, and groomers can create session packages as solo providers (solo trainer, solo groomer)
+        const allowedSoloRoles = ['pet_trainer', 'trainer', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter', 'pet_groomer', 'groomer'];
+        const isAllowedSoloRole = allowedSoloRoles.some(role => roleName.includes(role.replace('pet_', '')));
+        
+        if (!isAllowedSoloRole) {
+          return c.json({ error: 'Solo vendors cannot create packages. Only solo trainers, walkers, sitters, and groomers can create session packages.' }, 403);
+        }
+        
+        // Solo trainers/walkers/sitters can only create 'session' type packages
+        console.log(`[Packages] Solo ${roleName} creating session package`);
       }
 
       const newPackage = await insert('service_packages', {
@@ -441,6 +520,171 @@ export function registerPackageEndpoints(app: Hono) {
         created_at: new Date(),
         updated_at: new Date(),
       });
+
+      return c.json({
+        success: true,
+        package: newPackage[0],
+        message: 'Package created successfully',
+      });
+    } catch (error: any) {
+      console.error('Error creating package:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/packages
+   * Get all packages for a specific vendor (vendorId in URL path)
+   * Frontend PackageList and CreatePackageFlow call this; must match GET /vendor/{vendorId}/packages
+   */
+  app.get("/vendor/:vendorId/packages", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!vendorId) {
+        return c.json({ success: false, error: 'Vendor ID required', packages: [], total: 0 }, 400);
+      }
+      const packages = await query(
+        `SELECT p.*, 
+                COALESCE(
+                  (SELECT COUNT(*) FROM package_enrollments e WHERE e.package_id = p.id AND e.status = 'active'),
+                  0
+                ) as active_enrollments
+         FROM service_packages p
+         WHERE p.vendor_id = $1
+         ORDER BY p.created_at DESC`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+      return c.json({
+        success: true,
+        packages: packages.rows,
+        total: packages.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendor packages:', error);
+      return c.json({ success: false, error: error.message, packages: [], total: 0 }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/packages
+   * Create a new package for a specific vendor (vendorId in URL path)
+   * This supports the frontend call format: POST /vendor/{vendorId}/packages
+   */
+  app.post("/vendor/:vendorId/packages", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      
+      // Extract package data from body (supports enhanced package creation modal)
+      const {
+        packageName, name,  // Support both packageName (new) and name (legacy)
+        packageType,
+        description,
+        category,
+        originalPrice,
+        packagePrice, price,  // Support both packagePrice (new) and price (legacy)
+        discount,
+        discountPercentage,
+        validityType,
+        validityPeriod, validityDays,  // Support both
+        usageType,
+        totalSessions, sessionCount,  // Support both
+        unlimitedUsage,
+        includedServices,
+        includedServicesDetails,
+        benefits,
+        membershipPerks,
+        terms,
+        refundPolicy,
+        cancellationPolicy,
+        isRecurring,
+        billingCycle,
+        serviceType,
+        serviceIds,
+        isActive
+      } = body;
+
+      const finalName = packageName || name;
+      const finalPrice = packagePrice || price;
+      const finalValidityDays = validityPeriod || validityDays || 30;
+      const finalSessionCount = totalSessions || sessionCount || 1;
+
+      if (!vendorId || !finalName || !finalPrice) {
+        return c.json({ error: 'Vendor ID, package name, and price are required' }, 400);
+      }
+
+      // Validate vendorId format
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: 'Invalid vendor ID format' }, 400);
+      }
+
+      // ✅ SOLO VENDOR RESTRICTION: Solo vendors cannot create packages
+      // ✅ EXCEPTION: Solo trainers, walkers, and sitters CAN create SESSION packages only
+      const vendorCheck = await select('vendors', { id: vendorId });
+      if (vendorCheck.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      
+      const isSoloVendor = vendorCheck[0].vendor_type === 'solo' || 
+                           vendorCheck[0].vendor_configuration === 'solo';
+      
+      if (isSoloVendor) {
+        // Get vendor role to check if trainer/walker/sitter
+        let roleName = '';
+        if (vendorCheck[0].role_id) {
+          const roles = await select('roles', { id: vendorCheck[0].role_id });
+          if (roles.length > 0) {
+            roleName = (roles[0].name || '').toLowerCase();
+          }
+        }
+        
+        // Only trainers, walkers, sitters, and groomers can create session packages as solo providers (solo trainer, solo groomer)
+        const allowedSoloRoles = ['trainer', 'walker', 'sitter', 'groomer'];
+        const isAllowedSoloRole = allowedSoloRoles.some(role => roleName.includes(role));
+        
+        if (!isAllowedSoloRole) {
+          return c.json({ 
+            error: 'Solo vendors cannot create packages. Only solo trainers, walkers, sitters, and groomers can create session packages.',
+            hint: 'Business accounts can create all package types.'
+          }, 403);
+        }
+        
+        // Validate that solo trainers/walkers/sitters can only create 'session' type packages
+        const requestedPackageType = packageType || serviceType || 'session';
+        if (requestedPackageType !== 'session') {
+          return c.json({ 
+            error: `Solo trainers/walkers/sitters can only create session packages. Requested type: ${requestedPackageType}`,
+            allowedType: 'session'
+          }, 403);
+        }
+        
+        console.log(`[Packages] Solo ${roleName} creating session package: ${finalName}`);
+      }
+
+      // Extract service IDs from includedServices array if provided
+      let finalServiceIds = serviceIds || [];
+      if (includedServices && Array.isArray(includedServices) && includedServices.length > 0) {
+        finalServiceIds = includedServices.map((s: any) => s.id || s);
+      }
+
+      // Build package data - minimal columns to avoid 500 from missing table columns
+      const packageData: any = {
+        vendor_id: vendorId,
+        name: finalName,
+        description: description || '',
+        service_type: packageType || serviceType || 'session',
+        service_ids: Array.isArray(finalServiceIds) ? finalServiceIds : [],
+        price: Number(finalPrice) || 0,
+        session_count: unlimitedUsage ? -1 : (Number(finalSessionCount) || 1),
+        validity_days: Number(finalValidityDays) || 30,
+        is_active: isActive !== false,
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+
+      const newPackage = await insert('service_packages', packageData);
+
+      console.log('✅ Package created successfully:', newPackage[0]?.id);
 
       return c.json({
         success: true,

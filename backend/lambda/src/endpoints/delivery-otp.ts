@@ -14,6 +14,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 
@@ -57,28 +58,28 @@ class GetDeliveryStatusHandler extends BaseHandler {
         [orderId]
       );
 
-      // Also check pharmacy_orders if not found
+      // Also check pharmacy_orders if not found (join delivery_tracking for OTP and partner)
       if (orders.length === 0) {
         const { rows: pharmacyOrders } = await query(
           `SELECT 
             po.id,
             po.status,
             po.status as delivery_status,
-            po.delivery_otp,
-            po.otp_verified,
-            po.delivery_partner_id,
+            COALESCE(dt.delivery_otp, po.delivery_otp) as delivery_otp,
+            COALESCE(dt.otp_verified, po.otp_verified, false) as otp_verified,
+            COALESCE(dt.logistics_partner_id, po.delivery_partner_id) as delivery_partner_id,
             po.delivery_address,
-            po.delivery_latitude,
-            po.delivery_longitude,
-            dp.name as partner_name,
-            dp.phone as partner_phone,
-            dp.photo_url as partner_photo_url,
-            dp.vehicle_number,
-            dp.current_latitude,
-            dp.current_longitude,
-            dp.last_location_update
+            po.estimated_delivery_time,
+            po.actual_delivery_time,
+            COALESCE(dt.delivery_person_name, dp.name) as partner_name,
+            COALESCE(dt.delivery_person_phone, dp.phone) as partner_phone,
+            dt.vehicle_number,
+            dt.current_lat as current_latitude,
+            dt.current_lng as current_longitude,
+            dt.last_location_update
           FROM pharmacy_orders po
-          LEFT JOIN delivery_partners dp ON dp.id = po.delivery_partner_id
+          LEFT JOIN delivery_tracking dt ON dt.pharmacy_order_id = po.id
+          LEFT JOIN delivery_partners dp ON dp.id = dt.logistics_partner_id
           WHERE po.id = $1`,
           [orderId]
         );
@@ -87,7 +88,14 @@ class GetDeliveryStatusHandler extends BaseHandler {
           return this.error('Order not found', 404);
         }
 
-        return this.formatDeliveryResponse(pharmacyOrders[0], orderId);
+        const row = pharmacyOrders[0];
+        const deliveryAddress = typeof row.delivery_address === 'string' ? JSON.parse(row.delivery_address || '{}') : row.delivery_address || {};
+        const withCoords = {
+          ...row,
+          delivery_latitude: deliveryAddress.lat ?? deliveryAddress.latitude,
+          delivery_longitude: deliveryAddress.lng ?? deliveryAddress.longitude,
+        };
+        return this.formatDeliveryResponse(withCoords, orderId);
       }
 
       return this.formatDeliveryResponse(orders[0], orderId);
@@ -191,14 +199,14 @@ class VerifyDeliveryOtpHandler extends BaseHandler {
     }
 
     try {
-      // Try orders table first
       let order = await select('orders', { id: orderId });
       let tableName = 'orders';
+      let isPharmacy = false;
 
       if (order.length === 0) {
-        // Try pharmacy_orders
         order = await select('pharmacy_orders', { id: orderId });
         tableName = 'pharmacy_orders';
+        isPharmacy = true;
       }
 
       if (order.length === 0) {
@@ -207,41 +215,68 @@ class VerifyDeliveryOtpHandler extends BaseHandler {
 
       const orderData = order[0];
 
-      // Check if already verified
-      if (orderData.otp_verified) {
-        return this.success({
-          success: true,
-          message: 'Delivery already confirmed',
-          already_verified: true,
-        });
+      let expectedOtp: string;
+      if (isPharmacy) {
+        const tracking = await select('delivery_tracking', { pharmacy_order_id: orderId });
+        if (tracking.length > 0 && tracking[0].otp_verified) {
+          return this.success({
+            success: true,
+            message: 'Delivery already confirmed',
+            already_verified: true,
+          });
+        }
+        expectedOtp = String((tracking.length > 0 ? tracking[0].delivery_otp : orderData.delivery_otp) || '').trim();
+      } else {
+        if (orderData.otp_verified) {
+          return this.success({
+            success: true,
+            message: 'Delivery already confirmed',
+            already_verified: true,
+          });
+        }
+        expectedOtp = String(orderData.delivery_otp || '').trim();
       }
 
-      // Verify OTP
-      const expectedOtp = String(orderData.delivery_otp || '').trim();
       const providedOtp = String(otp).trim();
-
       if (expectedOtp !== providedOtp) {
         return this.error('Invalid OTP', 400);
       }
 
-      // Mark as delivered
-      await update(tableName, { id: orderId }, {
-        otp_verified: true,
-        status: 'delivered',
-        delivery_status: 'delivered',
-        actual_delivery_time: new Date(),
-        updated_at: new Date(),
-      });
+      if (isPharmacy) {
+        await update('pharmacy_orders', { id: orderId }, {
+          status: 'delivered',
+          delivered_at: new Date().toISOString(),
+          actual_delivery_time: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        const tracking = await select('delivery_tracking', { pharmacy_order_id: orderId });
+        if (tracking.length > 0) {
+          await update('delivery_tracking', { id: tracking[0].id }, {
+            otp_verified: true,
+            status: 'delivered',
+            delivered_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        }
+      } else {
+        await update(tableName, { id: orderId }, {
+          otp_verified: true,
+          status: 'delivered',
+          delivery_status: 'delivered',
+          actual_delivery_time: new Date(),
+          updated_at: new Date(),
+        });
+      }
 
-      // Add to status history
-      await insert('order_status_history', {
-        order_id: orderId,
-        status: 'delivered',
-        message: 'Order delivered successfully',
-        created_at: new Date(),
-      }).catch(() => {});
+      if (!isPharmacy) {
+        await insert('order_status_history', {
+          order_id: orderId,
+          status: 'delivered',
+          message: 'Order delivered successfully',
+          created_at: new Date(),
+        }).catch(() => {});
+      }
 
-      // Notify customer
       await insert('notifications', {
         user_id: orderData.customer_id,
         user_type: 'customer',
@@ -491,9 +526,9 @@ export function registerDeliveryOtpEndpoints(app: Hono) {
       body: '',
       pathParameters: { orderId: c.req.param('orderId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' };
     const result = await getStatusHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -508,9 +543,9 @@ export function registerDeliveryOtpEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: { orderId: c.req.param('orderId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' };
     const result = await verifyOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -524,9 +559,9 @@ export function registerDeliveryOtpEndpoints(app: Hono) {
       body: '',
       pathParameters: { orderId: c.req.param('orderId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' };
     const result = await generateOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -541,9 +576,9 @@ export function registerDeliveryOtpEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: { orderId: c.req.param('orderId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' };
     const result = await updateStatusHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -558,9 +593,9 @@ export function registerDeliveryOtpEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: { partnerId: c.req.param('partnerId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'delivery-otp', functionVersion: '$LATEST' };
     const result = await updateLocationHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });

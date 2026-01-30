@@ -10,7 +10,7 @@ import {
   TruckIcon, DollarSign, Search, Eye, MessageSquare, AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface ReturnsManagementProps {
   onBack: () => void;
@@ -72,7 +72,7 @@ export function ReturnsManagement({ onBack }: ReturnsManagementProps) {
     filterReturns();
   }, [searchQuery, statusFilter, returns]);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   const loadReturns = async () => {
     setLoading(true);
@@ -82,7 +82,7 @@ export function ReturnsManagement({ onBack }: ReturnsManagementProps) {
         `${API_BASE}/admin/returns`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'apikey': publicAnonKey
           }
         }
@@ -109,7 +109,7 @@ export function ReturnsManagement({ onBack }: ReturnsManagementProps) {
         `${API_BASE}/admin/returns/stats`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'apikey': publicAnonKey
           }
         }
@@ -152,11 +152,11 @@ export function ReturnsManagement({ onBack }: ReturnsManagementProps) {
     try {
       // POST /make-server-3dd53475/admin/returns/{id}/approve
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/returns/${returnId}/approve`,
+        `${getApiBaseUrl()}/admin/returns/${returnId}/approve`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ adminNotes })
@@ -182,11 +182,11 @@ export function ReturnsManagement({ onBack }: ReturnsManagementProps) {
     try {
       // POST /make-server-3dd53475/admin/returns/{id}/reject
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/returns/${returnId}/reject`,
+        `${getApiBaseUrl()}/admin/returns/${returnId}/reject`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ reason })
@@ -212,11 +212,11 @@ export function ReturnsManagement({ onBack }: ReturnsManagementProps) {
     try {
       // POST /make-server-3dd53475/admin/returns/{id}/refund
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/returns/${returnId}/refund`,
+        `${getApiBaseUrl()}/admin/returns/${returnId}/refund`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ 

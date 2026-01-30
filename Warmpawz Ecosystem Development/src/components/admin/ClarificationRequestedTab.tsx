@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { MessageCircle, Eye, Clock, AlertCircle, Send, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface ClarificationVendor {
   id: string;
@@ -39,9 +39,9 @@ export function ClarificationRequestedTab({ onViewDetails }: ClarificationReques
 
       // Fetch all vendors and filter by more_info_required status
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/all`,
+        `${getApiBaseUrl()}/admin/vendors/all`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -103,11 +103,11 @@ export function ClarificationRequestedTab({ onViewDetails }: ClarificationReques
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor/request-info`,
+        `${getApiBaseUrl()}/admin/vendor/request-info`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

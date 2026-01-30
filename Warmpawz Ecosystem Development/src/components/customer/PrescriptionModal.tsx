@@ -1,6 +1,6 @@
 import { X, Download, Share2, Pill, FileText, Calendar, AlertCircle, ShoppingCart } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { shareContent } from '../../utils/shareUtils';
 import { toast } from 'sonner';
 
@@ -79,9 +79,9 @@ export function PrescriptionModal({ bookingId, prescription, onClose, onReorderM
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/prescription/booking/${bookingId}`,
+        `${getApiBaseUrl()}/prescription/booking/${bookingId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { FileText, CheckCircle, AlertCircle, Info, Download } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface TravelDocumentationGuideProps {
   travelType?: 'domestic' | 'international';
@@ -15,7 +15,7 @@ export function TravelDocumentationGuide({ travelType = 'domestic' }: TravelDocu
   const [selectedType, setSelectedType] = useState(travelType);
   const [completedItems, setCompletedItems] = useState<Set<string>>(new Set());
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchDocumentation();
@@ -25,7 +25,7 @@ export function TravelDocumentationGuide({ travelType = 'domestic' }: TravelDocu
     try {
       const response = await fetch(
         `${API_BASE}/travel/documentation-checklist?type=${selectedType}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {

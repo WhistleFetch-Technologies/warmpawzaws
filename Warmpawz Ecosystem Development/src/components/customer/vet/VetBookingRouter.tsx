@@ -5,7 +5,7 @@ import { SmartTimeSlotSelection } from './SmartTimeSlotSelection';
 import { PaymentPage } from '../grooming/PaymentPage';
 import { BookingConfirmation } from '../grooming/BookingConfirmation';
 import { AddressSelector } from '../grooming/AddressSelector';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 type ViewType = 
   | 'doctor_details'
@@ -87,7 +87,7 @@ export function VetBookingRouter({
     booking: null
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadCustomerData();

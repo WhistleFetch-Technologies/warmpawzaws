@@ -40,7 +40,7 @@ import {
 } from "@repo/ui";
 
 import { authenticatedGet } from "@repo/utils/authenticatedFetch";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 interface AnalyticsData {
 	revenue: {
 		total: number;
@@ -83,10 +83,10 @@ export function ECommerceAnalytics() {
 		try {
 			// Call analytics API
 			let res = false;
-			if (publicAnonKey) res = true;
+			if (getAuthHeaders().Authorization) res = true;
 
 			const data = await authenticatedGet(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/analytics?days=${dateRange}`,
+				`${getApiBaseUrl()}/ecommerce/analytics?days=${dateRange}`,
 				res
 			);
 

@@ -71,8 +71,8 @@ export function SettlementDashboard() {
         apiClient.get<any>('/admin/payments/analytics'),
       ]);
 
-      setSettlements(settlementsData.data?.settlements || settlementsData.settlements || []);
-      setAnalytics(analyticsData.data?.analytics || analyticsData.analytics || null);
+      setSettlements(Array.isArray(settlementsData?.data?.settlements) ? settlementsData.data.settlements : (settlementsData?.settlements ?? []));
+      setAnalytics(analyticsData?.data?.analytics ?? analyticsData?.analytics ?? null);
     } catch (error) {
       console.error('Error loading data:', error);
       toast.error('Failed to load settlement data');

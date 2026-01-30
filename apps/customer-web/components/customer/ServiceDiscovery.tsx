@@ -1,16 +1,19 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, MapPin, Star, Filter, ChevronRight, Clock, Phone, Award } from 'lucide-react';
+import { Search, MapPin, Star, ChevronRight, Clock, Phone, Award } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import React from 'react';
+import { useCustomerCategories } from '@/hooks/useCustomerCategories';
 
 interface ServiceDiscoveryProps {
   onSelectVendor: (vendorId: string) => void;
 }
 
-const CATEGORIES = [
+/** Fallback when API returns no categories (emoji icons). */
+const FALLBACK_CATEGORIES: { id: string; name: string; icon: string; color: string }[] = [
   { id: 'vet', name: 'Veterinary', icon: '🏥', color: 'bg-red-50 text-red-700' },
   { id: 'grooming', name: 'Grooming', icon: '✂️', color: 'bg-blue-50 text-blue-700' },
   { id: 'training', name: 'Training', icon: '🎓', color: 'bg-purple-50 text-purple-700' },
@@ -18,10 +21,15 @@ const CATEGORIES = [
   { id: 'boarding', name: 'Boarding', icon: '🏠', color: 'bg-yellow-50 text-yellow-700' },
   { id: 'nutrition', name: 'Nutrition', icon: '🍖', color: 'bg-orange-50 text-orange-700' },
   { id: 'adoption', name: 'Adoption', icon: '❤️', color: 'bg-pink-50 text-pink-700' },
-  { id: 'marketplace', name: 'Shop', icon: '🛍️', color: 'bg-indigo-50 text-indigo-700' }
+  { id: 'marketplace', name: 'Shop', icon: '🛍️', color: 'bg-indigo-50 text-indigo-700' },
 ];
 
+type CategoryItem =
+  | { id: string; name: string; icon: string; color: string }
+  | { id: string; name: string; icon: React.ComponentType<{ className?: string }>; color: string };
+
 export function ServiceDiscovery({ onSelectVendor }: ServiceDiscoveryProps) {
+  const { quickServiceTiles } = useCustomerCategories();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [vendors, setVendors] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -58,6 +66,17 @@ export function ServiceDiscovery({ onSelectVendor }: ServiceDiscoveryProps) {
     }
   };
 
+  // Dynamic categories from admin catalog; fallback to hardcoded list if API fails or returns empty
+  const displayCategories: CategoryItem[] =
+    quickServiceTiles.length > 0
+      ? quickServiceTiles.map((t) => ({
+          id: t.categoryId,
+          name: t.label,
+          icon: t.icon,
+          color: t.color,
+        }))
+      : FALLBACK_CATEGORIES;
+
   if (!selectedCategory) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -76,13 +95,19 @@ export function ServiceDiscovery({ onSelectVendor }: ServiceDiscoveryProps) {
         {/* Category Grid */}
         <div className="max-w-7xl mx-auto px-4 py-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {CATEGORIES.map((category) => (
+            {displayCategories.map((category) => (
               <button
                 key={category.id}
                 onClick={() => setSelectedCategory(category.id)}
                 className="p-6 bg-white rounded-xl border-2 border-gray-200 hover:border-blue-500 transition-all text-center group"
               >
-                <div className="text-4xl mb-3">{category.icon}</div>
+                <div className="text-4xl mb-3 flex justify-center items-center min-h-[2.5rem]">
+                  {typeof category.icon === 'string' ? (
+                    category.icon
+                  ) : (
+                    <category.icon className="w-10 h-10 text-gray-600" />
+                  )}
+                </div>
                 <h3 className="font-medium text-gray-900 group-hover:text-blue-600">
                   {category.name}
                 </h3>
@@ -108,7 +133,7 @@ export function ServiceDiscovery({ onSelectVendor }: ServiceDiscoveryProps) {
             </button>
             <div className="flex-1">
               <h1 className="font-bold text-gray-900">
-                {CATEGORIES.find(c => c.id === selectedCategory)?.name} Services
+                {displayCategories.find((c) => c.id === selectedCategory)?.name} Services
               </h1>
               <p className="text-sm text-gray-600">{vendors.length} providers found</p>
             </div>

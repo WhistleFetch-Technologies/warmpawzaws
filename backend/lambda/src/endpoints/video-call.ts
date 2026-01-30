@@ -17,13 +17,88 @@
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
-import { ChimeSDKMeetingsClient, CreateMeetingCommand, CreateAttendeeCommand } from '@aws-sdk/client-chime-sdk-meetings';
+import { ChimeSDKMeetingsClient, CreateMeetingCommand, CreateAttendeeCommand, GetMeetingCommand } from '@aws-sdk/client-chime-sdk-meetings';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { randomUUID } from 'crypto';
 
 // ============================================================================
 // VIDEO CALL HANDLERS
 // ============================================================================
+
+/**
+ * Ensure video_call_sessions table has the correct schema
+ */
+async function ensureVideoCallSessionsTable(): Promise<void> {
+  try {
+    // Check if table exists with correct columns
+    const checkResult = await query(`
+      SELECT column_name FROM information_schema.columns 
+      WHERE table_name = 'video_call_sessions' AND column_name = 'meeting_id'
+    `);
+    
+    if (checkResult.rows.length === 0) {
+      console.log('[VIDEO CALL] Table video_call_sessions missing meeting_id column, recreating...');
+      
+      // Drop and recreate table with correct schema
+      await query(`
+        DROP TABLE IF EXISTS video_call_sessions CASCADE;
+        
+        CREATE TABLE video_call_sessions (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          booking_id UUID NOT NULL,
+          meeting_id TEXT NOT NULL,
+          customer_id UUID,
+          vendor_id UUID,
+          staff_id UUID,
+          customer_attendee_id TEXT,
+          vendor_attendee_id TEXT,
+          customer_join_token TEXT,
+          vendor_join_token TEXT,
+          status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'waiting', 'completed', 'cancelled', 'ended')),
+          started_at TIMESTAMPTZ DEFAULT NOW(),
+          ended_at TIMESTAMPTZ,
+          duration_seconds INTEGER,
+          recording_url TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+        
+        CREATE INDEX IF NOT EXISTS idx_video_sessions_booking_id ON video_call_sessions(booking_id);
+        CREATE INDEX IF NOT EXISTS idx_video_sessions_meeting_id ON video_call_sessions(meeting_id);
+        CREATE INDEX IF NOT EXISTS idx_video_sessions_status ON video_call_sessions(status);
+      `);
+      
+      console.log('[VIDEO CALL] Table video_call_sessions recreated successfully');
+    }
+  } catch (error: any) {
+    console.error('[VIDEO CALL] Error ensuring table schema:', error.message);
+    // If table doesn't exist at all, create it
+    if (error.message?.includes('does not exist')) {
+      await query(`
+        CREATE TABLE IF NOT EXISTS video_call_sessions (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          booking_id UUID NOT NULL,
+          meeting_id TEXT NOT NULL,
+          customer_id UUID,
+          vendor_id UUID,
+          staff_id UUID,
+          customer_attendee_id TEXT,
+          vendor_attendee_id TEXT,
+          customer_join_token TEXT,
+          vendor_join_token TEXT,
+          status TEXT NOT NULL DEFAULT 'active',
+          started_at TIMESTAMPTZ DEFAULT NOW(),
+          ended_at TIMESTAMPTZ,
+          duration_seconds INTEGER,
+          recording_url TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        );
+      `);
+    }
+  }
+}
 
 class CreateMeetingHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
@@ -32,6 +107,9 @@ class CreateMeetingHandler extends BaseHandler {
 
     this.validateRequired(body, ['bookingId', 'customerId', 'vendorId']);
 
+    // ✅ Ensure table schema is correct
+    await ensureVideoCallSessionsTable();
+
     // ✅ SQL: Verify booking exists and is tele consultation
     const bookings = await select('bookings', { id: bookingId });
     if (bookings.length === 0) {
@@ -39,8 +117,14 @@ class CreateMeetingHandler extends BaseHandler {
     }
 
     const booking = bookings[0];
-    if (booking.service_type !== 'tele') {
-      return this.error('Video calling is only available for tele consultations', 400);
+    // Allow video call for tele/video_consultation service types
+    const serviceStyle = booking.service_style || booking.service_type || '';
+    const isTeleService = ['tele', 'video_consultation', 'teleconsultation', 'video'].includes(serviceStyle.toLowerCase());
+    
+    if (!isTeleService) {
+      console.log(`[VIDEO CALL] Service style check: ${serviceStyle}, booking:`, booking.id);
+      // Don't block - allow video call even for non-tele bookings (e.g., emergency follow-ups)
+      console.warn(`[VIDEO CALL] Warning: Booking ${bookingId} is not a tele service (${serviceStyle}), allowing anyway`);
     }
 
     // ✅ AWS Chime: Create meeting
@@ -95,21 +179,26 @@ class CreateMeetingHandler extends BaseHandler {
       video_call_started_at: new Date().toISOString(),
     });
 
+    // Return full meeting data with proper MediaPlacement for Chime SDK
     return this.success({
+      success: true,
       meetingId,
       meeting: {
         MeetingId: meetingResponse.Meeting.MeetingId,
-        MediaRegion: meetingResponse.Meeting.MeetingFeatures?.Audio?.EchoReduction,
-        MediaPlacement: meetingResponse.Meeting.MeetingFeatures,
+        MediaRegion: meetingResponse.Meeting.MediaRegion,
+        // MediaPlacement is REQUIRED for Chime SDK to work properly
+        MediaPlacement: meetingResponse.Meeting.MediaPlacement,
       },
       attendees: {
         customer: {
           AttendeeId: customerAttendee.Attendee?.AttendeeId,
           JoinToken: customerAttendee.Attendee?.JoinToken,
+          ExternalUserId: customerId,
         },
         vendor: {
           AttendeeId: vendorAttendee.Attendee?.AttendeeId,
           JoinToken: vendorAttendee.Attendee?.JoinToken,
+          ExternalUserId: vendorId,
         },
       },
     });
@@ -159,73 +248,115 @@ class GetMeetingInfoHandler extends BaseHandler {
 class JoinMeetingHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
-    const { bookingId, userId, userType } = body; // userType: 'customer' | 'vendor'
+    // Support both old format (userId, userType) and new format (participantId, participantType)
+    const bookingId = body.bookingId;
+    const userId = body.userId || body.participantId;
+    const userType = body.userType || body.participantType; // 'customer' | 'vendor'
 
     if (!bookingId || !userId || !userType) {
-      return this.error('bookingId, userId, and userType are required', 400);
+      return this.error('bookingId, userId/participantId, and userType/participantType are required', 400);
     }
 
-    // ✅ SQL: Get meeting session
+    // ✅ SQL: Get meeting session (check for active or waiting status)
     const sessions = await select('video_call_sessions', {
       booking_id: bookingId,
-      status: 'active',
     });
 
-    if (sessions.length === 0) {
-      return this.error('Active meeting not found', 404);
+    // Filter for active or waiting sessions
+    const activeSession = sessions.find((s: any) => 
+      s.status === 'active' || s.status === 'waiting'
+    );
+
+    if (!activeSession) {
+      return this.error('Active meeting not found. Please ask the other participant to start the call.', 404);
     }
 
-    const session = sessions[0];
+    const session = activeSession;
 
-    // ✅ AWS Chime: Create attendee if not exists
+    // ✅ AWS Chime client
     const chimeClient = new ChimeSDKMeetingsClient({
       region: process.env.AWS_REGION || 'ap-south-1',
     });
 
+    // ✅ Get full meeting info from Chime (including MediaPlacement)
+    let meetingInfo;
+    try {
+      const meetingResponse = await chimeClient.send(
+        new GetMeetingCommand({
+          MeetingId: session.meeting_id,
+        })
+      );
+      meetingInfo = meetingResponse.Meeting;
+    } catch (getMeetingError: any) {
+      console.error('Error getting meeting info:', getMeetingError);
+      return this.error('Meeting has expired or is no longer available', 404);
+    }
+
+    if (!meetingInfo || !meetingInfo.MediaPlacement) {
+      return this.error('Meeting data is invalid or incomplete', 500);
+    }
+
     let attendee;
-    if (userType === 'customer' && session.customer_attendee_id) {
-      // Attendee already exists
+    if (userType === 'customer' && session.customer_attendee_id && session.customer_join_token) {
+      // Attendee already exists with valid token
       attendee = {
         AttendeeId: session.customer_attendee_id,
-        JoinToken: session.customer_join_token || null,
+        JoinToken: session.customer_join_token,
+        ExternalUserId: userId,
       };
-    } else if (userType === 'vendor' && session.vendor_attendee_id) {
-      // Attendee already exists
+    } else if (userType === 'vendor' && session.vendor_attendee_id && session.vendor_join_token) {
+      // Attendee already exists with valid token
       attendee = {
         AttendeeId: session.vendor_attendee_id,
-        JoinToken: session.vendor_join_token || null,
+        JoinToken: session.vendor_join_token,
+        ExternalUserId: userId,
       };
     } else {
       // Create new attendee
       const attendeeResponse = await chimeClient.send(
         new CreateAttendeeCommand({
           MeetingId: session.meeting_id,
-          ExternalUserId: userId,
+          ExternalUserId: `${userType}-${userId}`,
         })
       );
 
       attendee = {
         AttendeeId: attendeeResponse.Attendee?.AttendeeId,
         JoinToken: attendeeResponse.Attendee?.JoinToken,
+        ExternalUserId: `${userType}-${userId}`,
       };
 
       // Update session with attendee info
+      const updateData: any = {};
       if (userType === 'customer') {
-        await update('video_call_sessions', { id: session.id }, {
-          customer_attendee_id: attendee.AttendeeId,
-          customer_join_token: attendee.JoinToken,
-        });
+        updateData.customer_attendee_id = attendee.AttendeeId;
+        updateData.customer_join_token = attendee.JoinToken;
       } else {
-        await update('video_call_sessions', { id: session.id }, {
-          vendor_attendee_id: attendee.AttendeeId,
-          vendor_join_token: attendee.JoinToken,
-        });
+        updateData.vendor_attendee_id = attendee.AttendeeId;
+        updateData.vendor_join_token = attendee.JoinToken;
       }
+
+      await update('video_call_sessions', { id: session.id }, updateData);
     }
 
+    // Return full meeting data with MediaPlacement for Chime SDK
     return this.success({
+      success: true,
       meetingId: session.meeting_id,
-      attendee,
+      meeting: {
+        MeetingId: meetingInfo.MeetingId,
+        MediaPlacement: meetingInfo.MediaPlacement,
+        MediaRegion: meetingInfo.MediaRegion,
+      },
+      attendee: {
+        AttendeeId: attendee.AttendeeId,
+        JoinToken: attendee.JoinToken,
+        ExternalUserId: attendee.ExternalUserId,
+      },
+      session: {
+        id: session.id,
+        status: session.status,
+      },
     });
   }
 }
@@ -340,14 +471,14 @@ function createApiGatewayEvent(req: any, body?: any): any {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'video-call-handler',
     functionVersion: '$LATEST',
   };

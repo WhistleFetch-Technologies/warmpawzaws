@@ -7,7 +7,7 @@
  * ⚠️ SECURITY: Use session tokens for write operations, not publicAnonKey
  */
 
-import { publicAnonKey } from './supabase/info';
+import { publicAnonKey } from './api-config';
 
 interface SessionData {
   phone: string;

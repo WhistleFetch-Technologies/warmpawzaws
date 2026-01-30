@@ -7,7 +7,7 @@ import { Textarea } from '../ui/textarea';
 import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import {
   Dialog,
   DialogContent,
@@ -96,9 +96,9 @@ export function VendorServiceConfigurationScreen({
       
       // First check catalog status
       const debugResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/debug/catalog-status`,
+        `${getApiBaseUrl()}/vendor/debug/catalog-status`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
       
@@ -116,9 +116,9 @@ export function VendorServiceConfigurationScreen({
       }
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/services/${serviceStyle}`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/services/${serviceStyle}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -225,11 +225,11 @@ export function VendorServiceConfigurationScreen({
       }));
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/services/configure`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/services/configure`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -271,11 +271,11 @@ export function VendorServiceConfigurationScreen({
       console.log('🚀 Publishing services...');
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/services/publish`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/services/publish`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ serviceStyle })
@@ -317,11 +317,11 @@ export function VendorServiceConfigurationScreen({
         console.log('📦 Creating package via package endpoints...');
         
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/packages`,
+          `${getApiBaseUrl()}/vendor/${vendorId}/packages`,
           {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
+              ...getAuthHeaders(),
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -387,11 +387,11 @@ export function VendorServiceConfigurationScreen({
       
       // Single custom service (not package)
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/services/add-custom`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/services/add-custom`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

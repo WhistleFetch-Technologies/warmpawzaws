@@ -23,6 +23,7 @@ import { getSnsClient } from '../utils/sns-client';
 import { PublishCommand } from '@aws-sdk/client-sns';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { getDiscoveryRules } from '../lib/rule-engine';
 
 export function registerChatEndpoints(app: Hono) {
   /**
@@ -301,6 +302,26 @@ export function registerChatEndpoints(app: Hono) {
 
       const booking = bookings[0];
 
+      // ✅ Rule engine: Chat availability (chat_available_days_post_appointment per role)
+      let isChatAvailable = true;
+      if (booking.status === 'cancelled') {
+        isChatAvailable = false;
+      } else if (booking.status === 'completed' && booking.updated_at) {
+        let roleName = 'all';
+        if (booking.vendor_id) {
+          const vendorResult = await select('vendors', { id: booking.vendor_id });
+          if (vendorResult.length > 0 && vendorResult[0].role_id) {
+            const roleResult = await query('SELECT name FROM roles WHERE id = $1', [vendorResult[0].role_id]);
+            if (roleResult.rows.length > 0) roleName = roleResult.rows[0].name || 'all';
+          }
+        }
+        const rules = await getDiscoveryRules(roleName, 'chat');
+        const chatDays = rules.chat_available_days_post_appointment ?? 7;
+        const completedDate = new Date(booking.updated_at);
+        const daysSinceCompletion = (Date.now() - completedDate.getTime()) / (1000 * 60 * 60 * 24);
+        isChatAvailable = daysSinceCompletion <= chatDays;
+      }
+
       // Get messages (assuming chat_messages table exists)
       const messages = await query(
         `SELECT * FROM chat_messages
@@ -320,6 +341,7 @@ export function registerChatEndpoints(app: Hono) {
       return c.json({
         success: true,
         messages: messages.rows || [],
+        chatAvailable: isChatAvailable, // ✅ CRITICAL FIX: Include chat availability
         booking: {
           id: booking.id,
           status: booking.status || 'pending',

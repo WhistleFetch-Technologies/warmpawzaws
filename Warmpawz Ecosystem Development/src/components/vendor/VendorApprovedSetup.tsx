@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { Check, ArrowRight } from 'lucide-react';
 
@@ -27,11 +27,11 @@ export function VendorApprovedSetup({ vendorId, roleId, onComplete }: VendorAppr
       console.log('📤 Completing setup (informative only)...', payload);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/setup/complete`,
+        `${getApiBaseUrl()}/vendor/setup/complete`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(payload)

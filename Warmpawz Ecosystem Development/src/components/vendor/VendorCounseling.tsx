@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Heart, Calendar, Clock, User, Phone, Video, MessageSquare, Plus, Search } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface CounselingProps {
@@ -49,7 +49,7 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
     notes: ''
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchSessions();
@@ -61,7 +61,7 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
       const response = await fetch(
         `${API_BASE}/vendor/counseling/${vendorId}?status=${filter === 'all' ? '' : filter}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -84,7 +84,7 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
         {
           method: selectedSession ? 'PUT' : 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(formData)
@@ -114,7 +114,7 @@ export function VendorCounseling({ vendorId, onClose }: CounselingProps) {
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ status })

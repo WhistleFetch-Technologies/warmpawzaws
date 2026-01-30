@@ -9,13 +9,18 @@
  * 
  * Features:
  * - HD video calling with echo cancellation
- * - Real-time chat during call
+ * - Real-time chat during call using Chime Data Messages
  * - Screen sharing support
  * - Call duration tracking
  * - Waiting room with status updates
  * - Responsive design matching Warmpawz theme
+ * - Typing indicators
+ * - Unread message badges
+ * - Message persistence to backend
  * 
  * Date: 2026-01-20
+ * Updated: 2026-01-27 - Replaced CDN loading with npm package imports
+ * Updated: 2026-01-27 - Added real-time chat via Chime Data Messages
  * ============================================================================
  */
 
@@ -24,17 +29,39 @@ import {
   Video, VideoOff, Phone, PhoneOff, Mic, MicOff, 
   MessageSquare, Settings, Maximize2, Minimize2,
   RotateCcw, User, Clock, Send, X, AlertCircle,
-  Monitor, MonitorOff, Loader2, Users, Check
+  Monitor, MonitorOff, Loader2, Users, Check, Circle
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
-// AWS Chime SDK imports (loaded dynamically)
-declare global {
-  interface Window {
-    ChimeSDK: any;
-  }
+// Chat data message topics
+const CHAT_TOPIC = 'chat-message';
+const TYPING_TOPIC = 'typing-indicator';
+
+// Message lifetime in milliseconds (messages expire after this time in Chime)
+const MESSAGE_LIFETIME_MS = 300000; // 5 minutes
+
+// Chime SDK types for meeting data
+interface ChimeMeetingData {
+  MeetingId: string;
+  MediaPlacement: {
+    AudioHostUrl: string;
+    AudioFallbackUrl: string;
+    SignalingUrl: string;
+    TurnControlUrl: string;
+    ScreenDataUrl?: string;
+    ScreenViewingUrl?: string;
+    ScreenSharingUrl?: string;
+    EventIngestionUrl?: string;
+  };
+  MediaRegion: string;
+}
+
+interface ChimeAttendeeData {
+  AttendeeId: string;
+  JoinToken: string;
+  ExternalUserId?: string;
 }
 
 interface ChimeVideoCallProps {
@@ -56,6 +83,24 @@ interface ChatMessage {
   senderName: string;
   message: string;
   timestamp: Date;
+  persisted?: boolean; // Whether this message has been saved to backend
+}
+
+// Data message payload structure
+interface ChatDataMessage {
+  type: 'message';
+  id: string;
+  sender: 'customer' | 'vendor';
+  senderName: string;
+  message: string;
+  timestamp: string;
+}
+
+interface TypingDataMessage {
+  type: 'typing';
+  sender: 'customer' | 'vendor';
+  senderName: string;
+  isTyping: boolean;
 }
 
 interface AttendeeStatus {
@@ -88,6 +133,12 @@ export function ChimeVideoCall({
   const [showChat, setShowChat] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [otherTypingName, setOtherTypingName] = useState('');
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTypingSentRef = useRef<number>(0);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
   
   // Attendee status
   const [attendeeStatus, setAttendeeStatus] = useState<AttendeeStatus>({
@@ -106,6 +157,19 @@ export function ChimeVideoCall({
   const audioElementRef = useRef<HTMLAudioElement>(null);
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
   const statusPollerRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectingToastShownRef = useRef(false);
+
+  // Show toast when entering reconnecting state (once per reconnection cycle)
+  useEffect(() => {
+    if (status === 'reconnecting') {
+      if (!reconnectingToastShownRef.current) {
+        reconnectingToastShownRef.current = true;
+        toast.info('Reconnecting...');
+      }
+    } else {
+      reconnectingToastShownRef.current = false;
+    }
+  }, [status]);
 
   // ============================================================================
   // INITIALIZATION
@@ -118,48 +182,45 @@ export function ChimeVideoCall({
     };
   }, []);
 
-  const loadChimeSDK = async () => {
+  // Store the loaded Chime SDK module
+  const chimeSDKRef = useRef<any>(null);
+
+  const loadChimeSDK = async (retryCount = 0) => {
+    const MAX_RETRIES = 2;
+    
     try {
       // Check if SDK is already loaded
-      if (window.ChimeSDK) {
+      if (chimeSDKRef.current) {
         setStatus('ready');
         return;
       }
 
-      // Load AWS Chime SDK
-      const script = document.createElement('script');
-      script.src = 'https://sdk.amazonaws.com/js/aws-sdk-2.1.24.min.js';
-      script.async = true;
+      // Dynamically import AWS Chime SDK from npm package
+      // This is the recommended approach instead of CDN loading
+      const ChimeSDK = await import('amazon-chime-sdk-js');
       
-      script.onload = () => {
-        // Load Chime SDK bundle
-        const chimeScript = document.createElement('script');
-        chimeScript.src = 'https://cdn.jsdelivr.net/npm/amazon-chime-sdk-js@latest/build/amazon-chime-sdk.min.js';
-        chimeScript.async = true;
-        
-        chimeScript.onload = () => {
-          window.ChimeSDK = (window as any).ChimeSDK || (window as any).AmazonChimeSDK;
-          setStatus('ready');
-        };
-        
-        chimeScript.onerror = () => {
-          setError('Failed to load video call SDK');
-          setStatus('error');
-        };
-        
-        document.body.appendChild(chimeScript);
-      };
+      if (!ChimeSDK || !ChimeSDK.DefaultMeetingSession) {
+        throw new Error('Chime SDK modules not available');
+      }
+
+      chimeSDKRef.current = ChimeSDK;
+      setStatus('ready');
+      console.log('✅ AWS Chime SDK loaded successfully from npm package');
       
-      script.onerror = () => {
-        setError('Failed to load AWS SDK');
-        setStatus('error');
-      };
-      
-      document.body.appendChild(script);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error loading Chime SDK:', err);
-      setError('Failed to initialize video call');
+      
+      // Retry on failure
+      if (retryCount < MAX_RETRIES) {
+        console.log(`Retrying SDK load (attempt ${retryCount + 2}/${MAX_RETRIES + 1})...`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return loadChimeSDK(retryCount + 1);
+      }
+      
+      const msg = `Failed to load video call SDK. Please check your internet connection and try again.`;
+      setError(msg);
       setStatus('error');
+      toast.error(msg);
     }
   };
 
@@ -169,6 +230,9 @@ export function ChimeVideoCall({
     }
     if (statusPollerRef.current) {
       clearInterval(statusPollerRef.current);
+    }
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
     }
     if (meetingSessionRef.current) {
       try {
@@ -183,20 +247,47 @@ export function ChimeVideoCall({
   // MEETING FUNCTIONS
   // ============================================================================
 
-  const joinMeeting = async () => {
+  const joinMeeting = async (retryCount = 0) => {
+    const MAX_RETRIES = 2;
+    
     try {
       setStatus('connecting');
       setError(null);
 
       // Request meeting credentials from backend
-      const response = await apiClient.post<any>('/video-call/join', {
+      const response = await apiClient.post<{
+        success: boolean;
+        meeting: ChimeMeetingData;
+        attendee: ChimeAttendeeData;
+        meetingId: string;
+        error?: string;
+        session?: { id: string; status: string };
+      }>('/video-call/join', {
         bookingId,
         participantId,
         participantType,
       });
 
-      if (!response.success || !response.meeting || !response.attendee) {
-        throw new Error('Failed to get meeting credentials');
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to get meeting credentials');
+      }
+
+      if (!response.meeting || !response.attendee) {
+        throw new Error('Invalid response: missing meeting or attendee data');
+      }
+
+      // Validate MediaPlacement is present (required for Chime SDK)
+      if (!response.meeting.MediaPlacement) {
+        throw new Error('Invalid meeting data: MediaPlacement is missing. The meeting may have expired.');
+      }
+
+      if (!response.meeting.MediaPlacement.AudioHostUrl || !response.meeting.MediaPlacement.SignalingUrl) {
+        throw new Error('Invalid meeting data: MediaPlacement is incomplete');
+      }
+
+      // Validate attendee data
+      if (!response.attendee.AttendeeId || !response.attendee.JoinToken) {
+        throw new Error('Invalid attendee data: AttendeeId or JoinToken is missing');
       }
 
       setMeetingData(response.meeting);
@@ -213,33 +304,75 @@ export function ChimeVideoCall({
 
     } catch (err: any) {
       console.error('Error joining meeting:', err);
-      setError(err.message || 'Failed to join video call');
+      
+      // Retry on network errors
+      if (retryCount < MAX_RETRIES && (err.code === 'network' || err.message?.includes('fetch'))) {
+        console.log(`Retrying join (attempt ${retryCount + 2}/${MAX_RETRIES + 1})...`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return joinMeeting(retryCount + 1);
+      }
+      
+      // Provide user-friendly error messages
+      let errorMessage = err.message || 'Failed to join video call';
+      if (err.status === 404) {
+        errorMessage = 'Meeting not found. Please ask the other participant to start the call first.';
+      } else if (err.status === 400) {
+        errorMessage = err.message || 'Unable to join this meeting. It may not be scheduled yet.';
+      } else if (err.code === 'network' || err.code === 'offline') {
+        errorMessage = 'Network error. Please check your internet connection and try again.';
+      }
+      
+      setError(errorMessage);
       setStatus('error');
+      toast.error(errorMessage);
     }
   };
 
-  const initializeChimeMeeting = async (meeting: any, attendee: any) => {
+  const initializeChimeMeeting = async (meeting: ChimeMeetingData, attendee: ChimeAttendeeData) => {
     try {
-      const ChimeSDK = window.ChimeSDK;
+      const ChimeSDK = chimeSDKRef.current;
       
       if (!ChimeSDK) {
-        throw new Error('Chime SDK not loaded');
+        throw new Error('Chime SDK not loaded. Please refresh and try again.');
       }
 
-      // Create meeting session configuration
-      const configuration = new ChimeSDK.MeetingSessionConfiguration(
-        meeting,
-        attendee
+      const {
+        DefaultMeetingSession,
+        MeetingSessionConfiguration,
+        ConsoleLogger,
+        LogLevel,
+        DefaultDeviceController,
+      } = ChimeSDK;
+
+      // Validate meeting data has required MediaPlacement
+      if (!meeting.MediaPlacement || !meeting.MediaPlacement.AudioHostUrl) {
+        throw new Error('Invalid meeting data: MediaPlacement is missing or incomplete');
+      }
+
+      // Create meeting session configuration with PROPER structure
+      // MeetingSessionConfiguration expects:
+      // - meeting: { MeetingId, MediaPlacement, MediaRegion }
+      // - attendee: { AttendeeId, JoinToken }
+      const configuration = new MeetingSessionConfiguration(
+        {
+          MeetingId: meeting.MeetingId,
+          MediaPlacement: meeting.MediaPlacement,
+          MediaRegion: meeting.MediaRegion,
+        },
+        {
+          AttendeeId: attendee.AttendeeId,
+          JoinToken: attendee.JoinToken,
+        }
       );
 
       // Create logger
-      const logger = new ChimeSDK.ConsoleLogger('ChimeVideoCall', ChimeSDK.LogLevel.WARN);
+      const logger = new ConsoleLogger('ChimeVideoCall', LogLevel.WARN);
 
       // Create device controller
-      const deviceController = new ChimeSDK.DefaultDeviceController(logger);
+      const deviceController = new DefaultDeviceController(logger);
 
       // Create meeting session
-      const meetingSession = new ChimeSDK.DefaultMeetingSession(
+      const meetingSession = new DefaultMeetingSession(
         configuration,
         logger,
         deviceController
@@ -253,19 +386,20 @@ export function ChimeVideoCall({
       // Set up event observers
       setupObservers(meetingSession);
 
-      // Start the meeting
-      meetingSession.audioVideo.start();
-
-      // Bind audio element for remote audio
+      // Bind audio element for remote audio BEFORE starting
       if (audioElementRef.current) {
         meetingSession.audioVideo.bindAudioElement(audioElementRef.current);
       }
 
+      // Start the meeting
+      meetingSession.audioVideo.start();
+
       setStatus('waiting');
+      console.log('✅ Chime meeting initialized successfully');
 
     } catch (err: any) {
       console.error('Error initializing Chime meeting:', err);
-      throw new Error('Failed to initialize video call: ' + err.message);
+      throw new Error('Failed to initialize video call: ' + (err.message || 'Unknown error'));
     }
   };
 
@@ -358,6 +492,87 @@ export function ChimeVideoCall({
     };
 
     audioVideo.realtimeSubscribeToAttendeeIdPresence(attendeeObserver.attendeeIdDidJoin);
+
+    // =========================================================================
+    // REAL-TIME CHAT VIA DATA MESSAGES
+    // =========================================================================
+    
+    // Subscribe to chat messages
+    audioVideo.realtimeSubscribeToReceiveDataMessage((dataMessage: any) => {
+      try {
+        const topic = dataMessage.topic;
+        const data = JSON.parse(new TextDecoder().decode(dataMessage.data));
+        
+        if (topic === CHAT_TOPIC) {
+          handleReceivedChatMessage(data as ChatDataMessage);
+        } else if (topic === TYPING_TOPIC) {
+          handleReceivedTypingIndicator(data as TypingDataMessage);
+        }
+      } catch (err) {
+        console.error('Error processing data message:', err);
+      }
+    });
+  };
+
+  // Handle received chat message from other participant
+  const handleReceivedChatMessage = (data: ChatDataMessage) => {
+    // Don't add our own messages (they're already added locally)
+    if (data.sender === participantType) return;
+    
+    const newMsg: ChatMessage = {
+      id: data.id,
+      sender: data.sender,
+      senderName: data.senderName,
+      message: data.message,
+      timestamp: new Date(data.timestamp),
+    };
+    
+    setChatMessages(prev => {
+      // Avoid duplicate messages
+      if (prev.some(m => m.id === data.id)) return prev;
+      return [...prev, newMsg];
+    });
+    
+    // Increment unread count if chat panel is hidden
+    if (!showChat) {
+      setUnreadCount(prev => prev + 1);
+    }
+    
+    // Clear typing indicator when message received
+    setIsOtherTyping(false);
+    
+    // Play notification sound (optional)
+    playNotificationSound();
+  };
+
+  // Handle received typing indicator
+  const handleReceivedTypingIndicator = (data: TypingDataMessage) => {
+    // Don't show our own typing indicator
+    if (data.sender === participantType) return;
+    
+    setIsOtherTyping(data.isTyping);
+    setOtherTypingName(data.senderName);
+    
+    // Auto-clear typing indicator after 3 seconds
+    if (data.isTyping) {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      typingTimeoutRef.current = setTimeout(() => {
+        setIsOtherTyping(false);
+      }, 3000);
+    }
+  };
+
+  // Play notification sound for new message
+  const playNotificationSound = () => {
+    try {
+      const audio = new Audio('/sounds/notification.mp3');
+      audio.volume = 0.3;
+      audio.play().catch(() => {}); // Ignore if sound can't play
+    } catch (e) {
+      // Ignore sound errors
+    }
   };
 
   const startStatusPolling = () => {
@@ -477,27 +692,145 @@ export function ChimeVideoCall({
   // CHAT
   // ============================================================================
 
-  const addChatMessage = (sender: 'customer' | 'vendor' | 'system', senderName: string, message: string) => {
-    setChatMessages(prev => [...prev, {
-      id: Date.now().toString(),
+  const addChatMessage = (sender: 'customer' | 'vendor' | 'system', senderName: string, message: string, id?: string) => {
+    const newMsg: ChatMessage = {
+      id: id || Date.now().toString(),
       sender,
       senderName,
       message,
       timestamp: new Date(),
-    }]);
+    };
+    
+    setChatMessages(prev => [...prev, newMsg]);
+    
+    // Auto-scroll to latest message
+    setTimeout(() => {
+      if (chatScrollRef.current) {
+        chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+      }
+    }, 100);
+    
+    return newMsg;
   };
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     if (!newMessage.trim()) return;
+    if (!meetingSessionRef.current) return;
 
     const senderName = participantType === 'customer' ? customerName : vendorName;
-    addChatMessage(participantType as 'customer' | 'vendor', senderName, newMessage.trim());
+    const messageId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const messageText = newMessage.trim();
+    const timestamp = new Date();
     
-    // TODO: Send via data channel or backend
-    // For now, we just add locally (real implementation would use Chime data messages)
-
+    // Add message locally first (optimistic update)
+    addChatMessage(participantType as 'customer' | 'vendor', senderName, messageText, messageId);
     setNewMessage('');
+    
+    // Send via Chime Data Messages for real-time delivery
+    try {
+      const audioVideo = meetingSessionRef.current.audioVideo;
+      
+      const chatData: ChatDataMessage = {
+        type: 'message',
+        id: messageId,
+        sender: participantType as 'customer' | 'vendor',
+        senderName,
+        message: messageText,
+        timestamp: timestamp.toISOString(),
+      };
+      
+      const payload = new TextEncoder().encode(JSON.stringify(chatData));
+      audioVideo.realtimeSendDataMessage(CHAT_TOPIC, payload, MESSAGE_LIFETIME_MS);
+      
+      console.log('📤 Chat message sent via Chime data channel');
+    } catch (err) {
+      console.error('Error sending chat message via Chime:', err);
+      toast.error('Failed to send message');
+    }
+    
+    // Persist message to backend for records
+    persistMessageToBackend(messageId, messageText, senderName, timestamp);
   };
+
+  // Persist message to backend (fire and forget)
+  const persistMessageToBackend = async (
+    messageId: string,
+    message: string,
+    senderName: string,
+    timestamp: Date
+  ) => {
+    try {
+      await apiClient.post(`/chat/${bookingId}/send`, {
+        message,
+        senderType: participantType,
+        senderId: participantId,
+        senderName,
+        timestamp: timestamp.toISOString(),
+      });
+      
+      // Mark message as persisted
+      setChatMessages(prev => 
+        prev.map(msg => 
+          msg.id === messageId ? { ...msg, persisted: true } : msg
+        )
+      );
+    } catch (err) {
+      console.error('Error persisting message to backend:', err);
+      // Don't show error to user - message was still sent via Chime
+    }
+  };
+
+  // Send typing indicator
+  const sendTypingIndicator = (isTyping: boolean) => {
+    if (!meetingSessionRef.current) return;
+    
+    // Throttle typing indicators to once per second
+    const now = Date.now();
+    if (isTyping && now - lastTypingSentRef.current < 1000) return;
+    lastTypingSentRef.current = now;
+    
+    try {
+      const audioVideo = meetingSessionRef.current.audioVideo;
+      const senderName = participantType === 'customer' ? customerName : vendorName;
+      
+      const typingData: TypingDataMessage = {
+        type: 'typing',
+        sender: participantType as 'customer' | 'vendor',
+        senderName,
+        isTyping,
+      };
+      
+      const payload = new TextEncoder().encode(JSON.stringify(typingData));
+      audioVideo.realtimeSendDataMessage(TYPING_TOPIC, payload, 3000); // Short lifetime for typing indicators
+    } catch (err) {
+      // Ignore typing indicator errors
+    }
+  };
+
+  // Handle input change with typing indicator
+  const handleMessageInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setNewMessage(value);
+    
+    // Send typing indicator when user starts typing
+    if (value.length > 0) {
+      sendTypingIndicator(true);
+    }
+  };
+
+  // Clear typing indicator when user stops typing
+  useEffect(() => {
+    if (newMessage.length === 0) {
+      sendTypingIndicator(false);
+    }
+  }, [newMessage]);
+
+  // Clear unread count when chat is opened
+  useEffect(() => {
+    if (showChat) {
+      setUnreadCount(0);
+    }
+  }, [showChat]);
 
   // ============================================================================
   // UTILITIES
@@ -578,7 +911,7 @@ export function ChimeVideoCall({
           <p className="text-slate-400 mb-6">{serviceName} with {otherParticipantName}</p>
           
           <Button
-            onClick={joinMeeting}
+            onClick={() => joinMeeting()}
             className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-8 py-6 rounded-xl font-semibold text-lg shadow-lg shadow-green-500/30"
           >
             <Phone className="w-5 h-5 mr-2" />
@@ -737,14 +1070,19 @@ export function ChimeVideoCall({
               {isFullScreen ? <Minimize2 className="w-4 h-4 text-white" /> : <Maximize2 className="w-4 h-4 text-white" />}
             </button>
             
-            {/* Chat */}
+            {/* Chat with unread badge */}
             <button
               onClick={() => setShowChat(!showChat)}
-              className={`p-2 rounded-full transition-colors ${
+              className={`p-2 rounded-full transition-colors relative ${
                 showChat ? 'bg-[#FF8C42]' : 'bg-slate-800/80 backdrop-blur hover:bg-slate-700'
               }`}
             >
               <MessageSquare className="w-4 h-4 text-white" />
+              {unreadCount > 0 && !showChat && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 animate-pulse">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -847,42 +1185,76 @@ export function ChimeVideoCall({
       {showChat && (
         <div className="absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-lg flex flex-col">
           <div className="p-4 border-b border-slate-700 flex items-center justify-between">
-            <h3 className="text-white font-semibold">Chat with {otherParticipantName}</h3>
+            <div>
+              <h3 className="text-white font-semibold">Chat with {otherParticipantName}</h3>
+              {isOtherTyping && (
+                <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                  <span className="flex gap-0.5">
+                    <Circle className="w-1.5 h-1.5 fill-slate-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <Circle className="w-1.5 h-1.5 fill-slate-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <Circle className="w-1.5 h-1.5 fill-slate-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </span>
+                  {otherTypingName} is typing...
+                </p>
+              )}
+            </div>
             <button onClick={() => setShowChat(false)} className="p-2 hover:bg-slate-700 rounded-xl">
               <X className="w-5 h-5 text-white" />
             </button>
           </div>
           
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
             {chatMessages.length === 0 ? (
               <div className="text-center py-8 text-slate-500">
                 <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-50" />
                 <p className="text-sm">No messages yet</p>
+                <p className="text-xs mt-1">Messages sent during the call will appear here</p>
               </div>
             ) : (
-              chatMessages.map((msg) => (
-                <div key={msg.id} className={`flex ${
-                  msg.sender === 'system' ? 'justify-center' :
-                  msg.sender === participantType ? 'justify-end' : 'justify-start'
-                }`}>
-                  {msg.sender === 'system' ? (
-                    <span className="text-xs text-slate-500 bg-slate-800 px-3 py-1 rounded-full">
-                      {msg.message}
-                    </span>
-                  ) : (
-                    <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl ${
-                      msg.sender === participantType 
-                        ? 'bg-[#FF8C42] text-white rounded-br-none' 
-                        : 'bg-slate-700 text-white rounded-bl-none'
-                    }`}>
-                      <p className="text-sm">{msg.message}</p>
-                      <p className="text-[10px] opacity-70 mt-1">
-                        {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </p>
+              <>
+                {chatMessages.map((msg) => (
+                  <div key={msg.id} className={`flex ${
+                    msg.sender === 'system' ? 'justify-center' :
+                    msg.sender === participantType ? 'justify-end' : 'justify-start'
+                  }`}>
+                    {msg.sender === 'system' ? (
+                      <span className="text-xs text-slate-500 bg-slate-800 px-3 py-1 rounded-full">
+                        {msg.message}
+                      </span>
+                    ) : (
+                      <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl ${
+                        msg.sender === participantType 
+                          ? 'bg-[#FF8C42] text-white rounded-br-none' 
+                          : 'bg-slate-700 text-white rounded-bl-none'
+                      }`}>
+                        {msg.sender !== participantType && (
+                          <p className="text-[10px] font-medium opacity-80 mb-0.5">{msg.senderName}</p>
+                        )}
+                        <p className="text-sm">{msg.message}</p>
+                        <p className="text-[10px] opacity-70 mt-1 flex items-center gap-1">
+                          {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {msg.sender === participantType && msg.persisted && (
+                            <Check className="w-3 h-3" />
+                          )}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                
+                {/* Typing indicator in message area */}
+                {isOtherTyping && (
+                  <div className="flex justify-start">
+                    <div className="bg-slate-700 text-white px-4 py-2.5 rounded-2xl rounded-bl-none">
+                      <div className="flex gap-1 py-1">
+                        <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </div>
                     </div>
-                  )}
-                </div>
-              ))
+                  </div>
+                )}
+              </>
             )}
           </div>
           
@@ -891,15 +1263,16 @@ export function ChimeVideoCall({
               <input
                 type="text"
                 value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
+                onChange={handleMessageInputChange}
                 onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                onBlur={() => sendTypingIndicator(false)}
                 placeholder="Type a message..."
-                className="flex-1 bg-slate-700 text-white px-4 py-3 rounded-xl border-0 focus:ring-2 focus:ring-[#FF8C42]"
+                className="flex-1 bg-slate-700 text-white px-4 py-3 rounded-xl border-0 focus:ring-2 focus:ring-[#FF8C42] outline-none"
               />
               <button
                 onClick={sendMessage}
                 disabled={!newMessage.trim()}
-                className="w-12 h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] disabled:opacity-50 text-white rounded-xl flex items-center justify-center"
+                className="w-12 h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl flex items-center justify-center transition-colors"
               >
                 <Send className="w-5 h-5" />
               </button>

@@ -5,7 +5,7 @@ import { apiClient } from '@/lib/api-client';
 import { X, Calendar, Clock, User, Phone, FileText, MessageCircle, History, AlertCircle, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { copyTextToClipboard } from '@/lib/shareUtils';
 import { VendorPrescriptionModal } from './modals/VendorPrescriptionModal';
 import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
@@ -347,24 +347,55 @@ export function VendorBookingDetailModal({
               {/* Service Details */}
               <div className="bg-white border border-gray-200 rounded-2xl p-5 space-y-3">
                 <h3 className="font-bold text-gray-800">Service Details</h3>
-                <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 bg-gradient-to-br from-orange-100 to-pink-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
-                    {booking.serviceType === 'walker' ? '🐕' : 
-                     booking.serviceType === 'grooming' ? '✂️' : 
-                     booking.serviceType === 'vet' ? '🏥' : 
-                     booking.serviceType === 'boarding' ? '🏠' : '🐾'}
+                {(booking.selectedServices && Array.isArray(booking.selectedServices) && booking.selectedServices.length > 0) ? (
+                  <div className="space-y-3">
+                    {booking.selectedServices.map((s: any, i: number) => (
+                      <div key={s.id || s.serviceId || i} className="flex items-start gap-3">
+                        <div className="w-12 h-12 bg-gradient-to-br from-orange-100 to-pink-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
+                          {booking.serviceType === 'walker' ? '🐕' : 
+                           booking.serviceType === 'grooming' ? '✂️' : 
+                           booking.serviceType === 'vet' ? '🏥' : 
+                           booking.serviceType === 'boarding' ? '🏠' : '🐾'}
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-gray-800">{s.name || s.serviceName || 'Service'}</h4>
+                          <p className="text-sm text-gray-600">
+                            {(s.duration != null ? `${s.duration} min` : '')}
+                            {booking.serviceStyle && ` • ${(booking.serviceStyle || '').replace('_', ' ')}`}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-[#FF8C42]">₹{(s.price || 0) * (s.quantity || 1)}</p>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex justify-between items-center pt-2 border-t border-gray-100">
+                      <span className="font-semibold text-gray-800">
+                        {booking.totalDurationMinutes ? `Total duration: ${booking.totalDurationMinutes} min` : 'Total'}
+                      </span>
+                      <span className="font-bold text-[#FF8C42]">₹{booking.totalAmount ?? booking.selectedServices.reduce((sum: number, s: any) => sum + (s.price || 0) * (s.quantity || 1), 0)}</span>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-gray-800">{booking.serviceName || 'Service'}</h4>
-                    <p className="text-sm text-gray-600">
-                      {booking.duration ? `${booking.duration} min` : ''} 
-                      {booking.serviceStyle && ` • ${booking.serviceStyle.replace('_', ' ')}`}
-                    </p>
+                ) : (
+                  <div className="flex items-start gap-3">
+                    <div className="w-12 h-12 bg-gradient-to-br from-orange-100 to-pink-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
+                      {booking.serviceType === 'walker' ? '🐕' : 
+                       booking.serviceType === 'grooming' ? '✂️' : 
+                       booking.serviceType === 'vet' ? '🏥' : 
+                       booking.serviceType === 'boarding' ? '🏠' : '🐾'}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-800">{booking.serviceName || 'Service'}</h4>
+                      <p className="text-sm text-gray-600">
+                        {booking.duration ? `${booking.duration} min` : ''} 
+                        {booking.serviceStyle && ` • ${booking.serviceStyle.replace('_', ' ')}`}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-[#FF8C42]">₹{booking.totalAmount ?? booking.price ?? 0}</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-bold text-[#FF8C42]">₹{booking.price || 0}</p>
-                  </div>
-                </div>
+                )}
               </div>
 
               {/* Schedule Information */}

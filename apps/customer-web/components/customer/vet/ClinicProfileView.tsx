@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Star, Clock, MapPin, Phone, Globe, Calendar, Users, Image as ImageIcon, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Star, Clock, MapPin, Phone, Globe, Calendar, Users, Image as ImageIcon, ChevronRight, CheckCircle2, Building2, Stethoscope } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
-import { StandardizedHeader } from '../shared/StandardizedHeader';
+import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 
 interface ClinicProfileViewProps {
@@ -190,20 +190,25 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
     );
   }
 
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const dashboardStats = [
+    { value: `${clinic.rating?.toFixed(1) || '4.5'}`, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: `${clinic.review_count || 0}`, label: 'Reviews' },
+    { value: clinic.services?.length ? `${clinic.services.length}` : '10+', label: 'Services', icon: <Stethoscope className="w-4 h-4" /> }
+  ];
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Standardized Header */}
-      <StandardizedHeader
-        userName={userName}
-        userProfilePhoto={userProfilePhoto}
-        title={clinic.name}
-        subtitle="Clinic Profile"
-        showBackButton={true}
-        showPets={false}
+      {/* ✅ FIX: Use ServiceDashboardHeader for consistent Frame UI */}
+      <ServiceDashboardHeader
+        serviceName={clinic.name}
+        serviceSubtitle="Veterinary Clinic"
+        serviceIcon={Building2}
+        iconColor="text-white"
+        stats={dashboardStats}
         onBack={onBack}
-        onNavigate={onNavigate}
-        onProfileClick={() => onNavigate('profile')}
-        customerPhone={phone}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
       />
 
       <div className="max-w-[430px] mx-auto px-4 pt-4 pb-32">

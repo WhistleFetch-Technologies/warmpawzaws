@@ -6,7 +6,7 @@ import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { ArrowLeft, Calendar, Clock, MapPin } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface CreateBookingPageProps {
@@ -36,7 +36,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
     notes: ''
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchPets();
@@ -49,7 +49,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
         `${API_BASE}/customer/pets?phone=${encodeURIComponent(phone)}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'apikey': publicAnonKey
           }
         }
@@ -83,7 +83,7 @@ export function CreateBookingPage({ phone, serviceId, vendorId, onBack, onSucces
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'apikey': publicAnonKey,
             'Content-Type': 'application/json'
           },

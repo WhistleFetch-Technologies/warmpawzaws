@@ -46,16 +46,10 @@ fi
 
 echo -e "${GREEN}✓ Build successful${NC}"
 
-# Step 5: Deploy with Serverless Framework
+# Step 5: Deploy with Serverless Framework (use npx for local serverless)
 echo -e "${GREEN}[4/5] Deploying to AWS...${NC}"
 
-if command -v serverless &> /dev/null; then
-    serverless deploy --stage ${STAGE} --region ${REGION}
-else
-    echo -e "${YELLOW}Serverless Framework not installed. Installing...${NC}"
-    npm install -g serverless
-    serverless deploy --stage ${STAGE} --region ${REGION}
-fi
+npx serverless deploy --stage ${STAGE} --region ${REGION}
 
 # Step 6: Invalidate CloudFront cache
 echo -e "${GREEN}[5/5] Invalidating CloudFront cache...${NC}"

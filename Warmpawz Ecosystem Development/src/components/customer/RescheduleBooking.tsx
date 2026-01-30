@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Calendar, Clock, DollarSign, Info } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface RescheduleBookingProps {
   bookingId: string;
@@ -18,7 +18,7 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadData();
@@ -28,10 +28,10 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
     try {
       const [policyRes, slotsRes] = await Promise.all([
         fetch(`${API_BASE}/bookings/${bookingId}/reschedule-policy`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }),
         fetch(`${API_BASE}/bookings/${bookingId}/reschedule-options`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         })
       ]);
 
@@ -63,7 +63,7 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           newDate: selectedSlot.date,

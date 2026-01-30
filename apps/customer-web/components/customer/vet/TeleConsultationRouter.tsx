@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Video, Clock, Zap, Calendar, ChevronRight,
-  User, Star, Shield, Phone, AlertCircle, PawPrint, Plus
+  User, Star, Shield, Phone, AlertCircle, PawPrint, Plus, Stethoscope
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { UniversalServiceProviderList } from '../shared/UniversalServiceProviderList';
 import { UniversalProviderProfile } from '../shared/UniversalProviderProfile';
 import { InstantTeleQueue } from '../InstantTeleQueue';
+import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 
 // ============================================================================
 // TYPES
@@ -95,33 +96,29 @@ interface ModeSelectionProps {
 }
 
 function ModeSelection({ onSelectScheduled, onSelectInstant, onBack }: ModeSelectionProps) {
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const dashboardStats = [
+    { value: '24/7', label: 'Available', icon: <Clock className="w-4 h-4" /> },
+    { value: '<5min', label: 'Avg Wait' },
+    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
+
   return (
-    <>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
-      
-      {/* Stats - Moved below header */}
-      <div className="px-4 pt-4 pb-2 bg-white">
-        <div className="grid grid-cols-3 gap-2">
-          <div className="bg-orange-50 rounded-xl p-2.5 text-center border border-orange-100">
-            <div className="text-lg font-bold text-orange-600">24/7</div>
-            <div className="text-orange-700 text-xs">Available</div>
-          </div>
-          <div className="bg-orange-50 rounded-xl p-2.5 text-center border border-orange-100">
-            <div className="text-lg font-bold text-orange-600">&lt;5min</div>
-            <div className="text-orange-700 text-xs">Avg Wait</div>
-          </div>
-          <div className="bg-orange-50 rounded-xl p-2.5 text-center border border-orange-100">
-            <div className="flex items-center justify-center gap-1 text-lg font-bold text-orange-600">
-              <Star className="w-3.5 h-3.5 fill-orange-500" />
-              4.8
-            </div>
-            <div className="text-orange-700 text-xs">Rating</div>
-          </div>
-        </div>
-      </div>
+    <div className="min-h-screen bg-gray-50">
+      {/* ✅ FIX: Use ServiceDashboardHeader for consistent Frame UI */}
+      <ServiceDashboardHeader
+        serviceName="Tele Consultation"
+        serviceSubtitle="Video consultation with vets"
+        serviceIcon={Video}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
+      />
 
       {/* Main Content */}
-      <div className="px-4 pt-6 pb-8">
+      <div className="px-4 pt-4 pb-8">
         {/* Section Title */}
         <h2 className="text-base font-semibold text-gray-900 mb-4">How would you like to consult?</h2>
 
@@ -196,7 +193,7 @@ function ModeSelection({ onSelectScheduled, onSelectInstant, onBack }: ModeSelec
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -213,12 +210,28 @@ interface InstantServiceSelectionProps {
 }
 
 function InstantServiceSelection({ phone, services, loading, onSelectService, onBack }: InstantServiceSelectionProps) {
+  const dashboardStats = [
+    { value: '24/7', label: 'Available', icon: <Clock className="w-4 h-4" /> },
+    { value: `${services.length}`, label: 'Services' },
+    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
+
   return (
-    <div className="min-h-screen bg-white max-w-md mx-auto">
+    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+      {/* ✅ FIX: Add ServiceDashboardHeader for consistent UI */}
+      <ServiceDashboardHeader
+        serviceName="Instant Consultation"
+        serviceSubtitle="Choose a service"
+        serviceIcon={Zap}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
+      />
+      
       {/* Main Content */}
-      <div className="px-4 pt-6 pb-8">
-        {/* Section Title */}
-        <h2 className="text-base font-semibold text-gray-900 mb-4">Choose a Service</h2>
+      <div className="px-4 pt-4 pb-8">
 
         {loading ? (
           <div className="text-center py-12">
@@ -287,12 +300,28 @@ interface InstantPetSelectionProps {
 }
 
 function InstantPetSelection({ phone, selectedService, pets, loading, onSelectPet, onAddPet, onBack }: InstantPetSelectionProps) {
+  const dashboardStats = [
+    { value: '24/7', label: 'Available', icon: <Clock className="w-4 h-4" /> },
+    { value: `₹${selectedService.price}`, label: 'Price' },
+    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
+
   return (
-    <div className="min-h-screen bg-white max-w-md mx-auto">
+    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+      {/* ✅ FIX: Add ServiceDashboardHeader for consistent UI */}
+      <ServiceDashboardHeader
+        serviceName="Select Pet"
+        serviceSubtitle={selectedService.name}
+        serviceIcon={PawPrint}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
+      />
+      
       {/* Main Content */}
-      <div className="px-4 pt-6 pb-8">
-        {/* Section Title */}
-        <h2 className="text-base font-semibold text-gray-900 mb-4">Which pet needs attention?</h2>
+      <div className="px-4 pt-4 pb-8">
 
         {loading ? (
           <div className="text-center py-12">
@@ -404,7 +433,7 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
       setLoadingServices(true);
       // Fetch platform-level tele services for vet role
       const response = await apiClient.get(
-        '/customer/services/platform?roleId=veterinarian&serviceStyle=tele'
+        '/customer/services/platform?roleId=vet&serviceStyle=tele'
       ) as any;
       
       if (response.success && response.services) {

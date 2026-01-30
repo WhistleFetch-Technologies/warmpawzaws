@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Camera } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
 
 interface UserProfile {
   firstName: string;
@@ -12,6 +14,9 @@ interface UserProfile {
   phone: string;
   address: string;
   pincode: string;
+  city: string;
+  state: string;
+  landmark: string;
   photo?: string;
 }
 
@@ -29,8 +34,30 @@ export function CustomerUserProfile({ session, journeyStage, onComplete }: Custo
     phone: session.phone || '',
     address: '',
     pincode: '',
+    city: '',
+    state: '',
+    landmark: '',
     photo: ''
   });
+  
+  // Get saved country code for display
+  const [savedCountryCode, setSavedCountryCode] = useState('+91');
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const code = localStorage.getItem('customerCountryCode') || '+91';
+      setSavedCountryCode(code);
+    }
+  }, []);
+
+  // Ensure customerPhone is in localStorage for API client UAT token (profile POST needs it)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && session?.phone && !localStorage.getItem('customerPhone')) {
+      localStorage.setItem('customerPhone', session.phone.replace(/\D/g, '').slice(-10));
+    }
+  }, [session?.phone]);
+  
+  // Get country flag for display
+  const countryInfo = COUNTRY_CODES.find(c => c.code === savedCountryCode) || COUNTRY_CODES[0];
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -86,8 +113,8 @@ export function CustomerUserProfile({ session, journeyStage, onComplete }: Custo
 
   const handleSubmit = async () => {
     // Validation
-    if (!profile.firstName || !profile.lastName || !profile.email || !profile.phone || !profile.address || !profile.pincode) {
-      alert('Please fill in all required fields');
+    if (!profile.firstName || !profile.lastName || !profile.email || !profile.phone || !profile.address || !profile.pincode || !profile.city) {
+      alert('Please fill in all required fields (including city)');
       return;
     }
 
@@ -263,29 +290,98 @@ export function CustomerUserProfile({ session, journeyStage, onComplete }: Custo
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Phone Number <span className="text-red-500">*</span>
             </label>
-            <input
-              type="tel"
-              value={profile.phone}
-              readOnly
-              className="w-full px-4 py-3 border-2 border-gray-200 bg-gray-50 rounded-xl cursor-not-allowed"
-            />
+            <div className="flex items-stretch border-2 border-gray-200 bg-gray-50 rounded-xl overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-3 bg-gray-100 border-r border-gray-200">
+                <span className="text-lg">{countryInfo.flag}</span>
+                <span className="text-gray-600 font-medium text-sm">{savedCountryCode}</span>
+              </div>
+              <input
+                type="tel"
+                value={profile.phone}
+                readOnly
+                className="flex-1 px-4 py-3 bg-gray-50 cursor-not-allowed outline-none"
+              />
+            </div>
             <p className="text-xs text-gray-500 mt-1">
               Phone number from your login
             </p>
           </div>
 
-          {/* Address */}
+          {/* Address with Google Maps Autocomplete */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Address <span className="text-red-500">*</span>
             </label>
-            <textarea
+            <EnhancedAddressAutocomplete
               value={profile.address}
-              onChange={(e) => setProfile({ ...profile, address: e.target.value })}
-              placeholder="House No, Street, Area"
-              rows={3}
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none"
+              onChange={(address: string, components?: AddressComponents) => {
+                setProfile(prev => {
+                  const updated = { ...prev, address };
+                  // Auto-populate fields from Google Maps results
+                  if (components?.pincode) {
+                    updated.pincode = components.pincode;
+                  }
+                  if (components?.city) {
+                    updated.city = components.city;
+                  }
+                  if (components?.state) {
+                    updated.state = components.state;
+                  }
+                  if (components?.landmark) {
+                    updated.landmark = components.landmark;
+                  }
+                  return updated;
+                });
+              }}
+              placeholder="Search address, landmark, city..."
+              className="w-full"
+              required
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Type to search for your address, landmark or area
+            </p>
+          </div>
+
+          {/* Landmark (Optional) */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Landmark (Optional)
+            </label>
+            <input
+              type="text"
+              value={profile.landmark}
+              onChange={(e) => setProfile({ ...profile, landmark: e.target.value })}
+              placeholder="Near Metro Station, Opposite Park, etc."
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+            />
+          </div>
+
+          {/* City and State */}
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                City <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={profile.city}
+                onChange={(e) => setProfile({ ...profile, city: e.target.value })}
+                placeholder="Mumbai"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                State
+              </label>
+              <input
+                type="text"
+                value={profile.state}
+                onChange={(e) => setProfile({ ...profile, state: e.target.value })}
+                placeholder="Maharashtra"
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+              />
+            </div>
           </div>
 
           {/* Pincode */}

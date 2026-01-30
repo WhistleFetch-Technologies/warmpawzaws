@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import {
   Dialog,
   DialogContent,
@@ -20,12 +20,15 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { EnhancedPackageCreationModal } from './EnhancedPackageCreationModal';
+import { getServiceStyleLabelForRole } from '@/lib/service-style-labels';
 
 interface VendorServiceConfigurationScreenProps {
   vendorId: string;
   vendorData?: any;
   serviceStyle: 'at_home' | 'at_center' | 'tele';
   roleConfig: any;
+  roleId?: string | null; // ✅ Optional: pass from parent (e.g. fetched from /vendor/:id/services)
+  roleName?: string | null; // ✅ Role name for role-based labels (e.g. "Training center booking")
   onBack: () => void;
 }
 
@@ -68,6 +71,8 @@ export function VendorServiceConfigurationScreen({
   vendorData,
   serviceStyle,
   roleConfig,
+  roleId: roleIdProp,
+  roleName: roleNameProp,
   onBack 
 }: VendorServiceConfigurationScreenProps) {
   const [services, setServices] = useState<Service[]>([]);
@@ -80,7 +85,9 @@ export function VendorServiceConfigurationScreen({
   const [searchQuery, setSearchQuery] = useState(''); // ✅ NEW: Search state
   const [showBulkActions, setShowBulkActions] = useState(false); // ✅ NEW: Bulk actions state
   const [viewMode, setViewMode] = useState<'all' | 'enabled' | 'published'>('all'); // ✅ NEW: View mode filter
-  const [editingService, setEditingService] = useState<Service | null>(null); // ✅ NEW: Service being edited
+  const [editingService, setEditingService] = useState<Service | null>(null); // ✅ Service being edited (opens Edit modal)
+  const [editForm, setEditForm] = useState({ price: 0, duration: 30, description: '' }); // ✅ Edit modal form state
+  const [savingEdit, setSavingEdit] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState<Service | null>(null); // ✅ NEW: Delete confirmation
   const [staffCount, setStaffCount] = useState<number>(0); // ✅ NEW: Track staff count for solo vendor check
   
@@ -94,8 +101,8 @@ export function VendorServiceConfigurationScreen({
   
   const isPlatformManaged = serviceStyle === 'at_home' || serviceStyle === 'tele';
   
-  // Get roleId from vendorData or roleConfig for catalog lookup
-  const roleId = vendorData?.roleId || vendorData?.role_id || vendorData?.roleName || roleConfig?.name || roleConfig?.roleId || 'veterinarian';
+  // ✅ FIX: Use vendor's actual role - never default to 'veterinarian' (would show wrong catalog)
+  const roleId = roleIdProp ?? vendorData?.roleId ?? vendorData?.role_id ?? vendorData?.roleName ?? roleConfig?.name ?? roleConfig?.roleId ?? null;
   
   // ✅ FIX: Check if vendor is solo provider
   const vendorConfiguration = vendorData?.vendorConfiguration || vendorData?.vendor_configuration || roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
@@ -148,34 +155,37 @@ export function VendorServiceConfigurationScreen({
       // ✅ FIX: Fetch BOTH catalog services AND vendor's enabled services, then merge
       // This ensures vendor sees all available services from platform catalog
       
-      // 1. Fetch service catalog for vendor's role
+      // 1. Fetch vendor's ADDED services first (source of truth for what vendor has)
+      // 2. Fetch service catalog only for vendor's actual role (never default to veterinarian)
       let catalogServices: any[] = [];
-      try {
-        const catalogData = await apiClient.get(`/service-catalog/role/${roleId}?serviceStyle=${serviceStyle}`) as any;
-        if (catalogData?.services) {
-          catalogServices = catalogData.services;
-          console.log(`📚 Catalog services loaded: ${catalogServices.length}`);
-        }
-        // ✅ FIX: Check for error message from API (e.g., solo provider trying to access at_center)
-        if (catalogData?.message && catalogData?.success === false) {
-          toast.error(catalogData.message);
-          onBack();
-          return;
-        }
-      } catch (catalogError: any) {
-        console.warn('⚠️ Could not load catalog services:', catalogError);
-        // ✅ FIX: Show error message if API returns specific error
-        if (catalogError?.response?.data?.error || catalogError?.message) {
-          const errorMsg = catalogError?.response?.data?.error || catalogError?.message;
-          if (errorMsg.includes('Solo providers') || errorMsg.includes('at_center')) {
-            toast.error(errorMsg);
+      if (roleId) {
+        try {
+          const catalogData = await apiClient.get(`/service-catalog/role/${roleId}?serviceStyle=${serviceStyle}`) as any;
+          if (catalogData?.services) {
+            catalogServices = catalogData.services;
+            console.log(`📚 Catalog services loaded: ${catalogServices.length}`);
+          }
+          if (catalogData?.message && catalogData?.success === false) {
+            toast.error(catalogData.message);
             onBack();
             return;
           }
+        } catch (catalogError: any) {
+          console.warn('⚠️ Could not load catalog services:', catalogError);
+          if (catalogError?.response?.data?.error || catalogError?.message) {
+            const errorMsg = catalogError?.response?.data?.error || catalogError?.message;
+            if (errorMsg.includes('Solo providers') || errorMsg.includes('at_center')) {
+              toast.error(errorMsg);
+              onBack();
+              return;
+            }
+          }
         }
+      } else {
+        console.log('⚠️ No roleId - showing only vendor\'s added services (no catalog)');
       }
       
-      // 2. Fetch vendor's own enabled services
+      // 2. Fetch vendor's own added services for this style
       let vendorServices: any[] = [];
       try {
         const vendorData = await apiClient.get(`/vendor/${vendorId}/services/${serviceStyle}`) as any;
@@ -204,57 +214,58 @@ export function VendorServiceConfigurationScreen({
         }
       }
       
-      // 3. Merge: catalog services with vendor's enablement status
+      // 3. Build list: VENDOR'S ADDED SERVICES FIRST (for publishing), then catalog services not yet added
       const vendorServiceIds = new Set(vendorServices.map((s: any) => 
         s.serviceId || s.service_id || s.catalogServiceId || s.catalog_service_id || s.id
       ));
-      
-      // Create a map of vendor services for quick lookup
       const vendorServiceMap = new Map(vendorServices.map((s: any) => [
         s.serviceId || s.service_id || s.catalogServiceId || s.catalog_service_id || s.id, 
         s
       ]));
+      const catalogIds = new Set(catalogServices.map((s: any) => s.serviceId || s.service_id || s.id));
       
-      // Merge catalog with vendor status
-      const mergedServices = catalogServices.map((catalogSvc: any) => {
-        const catalogId = catalogSvc.serviceId || catalogSvc.service_id || catalogSvc.id;
-        const vendorSvc = vendorServiceMap.get(catalogId);
-        
-        return {
-          ...catalogSvc,
-          // Use vendor's data if exists, otherwise catalog data
-          id: vendorSvc?.id || catalogId,
-          serviceId: catalogId,
-          catalogServiceId: catalogId,
-          // Normalize name field
-          name: catalogSvc.name || catalogSvc.serviceName || catalogSvc.service_name || 'Unnamed Service',
-          serviceName: catalogSvc.serviceName || catalogSvc.service_name || catalogSvc.name || 'Unnamed Service',
-          // Normalize price fields - use vendor's custom price if set
-          price: vendorSvc?.customPrice || vendorSvc?.custom_price || catalogSvc.price || catalogSvc.basePrice || catalogSvc.base_price || 0,
-          basePrice: catalogSvc.basePrice || catalogSvc.base_price || catalogSvc.price || 0,
-          customPrice: vendorSvc?.customPrice || vendorSvc?.custom_price,
-          // Normalize duration - use vendor's custom duration if set
-          duration: vendorSvc?.customDuration || vendorSvc?.custom_duration || catalogSvc.duration || catalogSvc.duration_minutes || 30,
-          customDuration: vendorSvc?.customDuration || vendorSvc?.custom_duration,
-          // Normalize category fields
-          categoryName: catalogSvc.categoryName || catalogSvc.category_name || catalogSvc.category || 'Platform Services',
-          category: catalogSvc.category || catalogSvc.category_name || catalogSvc.categoryName || 'Platform Services',
-          subCategoryName: catalogSvc.subCategoryName || catalogSvc.sub_category_name || catalogSvc.subCategory || '',
-          subCategory: catalogSvc.subCategory || catalogSvc.sub_category_name || catalogSvc.subCategoryName || '',
-          // ✅ Key: Show vendor's enablement status
-          isEnabled: vendorSvc ? (vendorSvc.isEnabled !== undefined ? vendorSvc.isEnabled : (vendorSvc.is_enabled !== undefined ? vendorSvc.is_enabled : true)) : false,
-          publishStatus: vendorSvc?.publishStatus || vendorSvc?.publish_status || 'draft',
-          // Normalize description
-          description: vendorSvc?.customDescription || vendorSvc?.custom_description || catalogSvc.description || '',
-          customDescription: vendorSvc?.customDescription || vendorSvc?.custom_description || '',
-          // Flag to indicate source
-          isPlatformService: true,
-          isVendorEnabled: vendorServiceIds.has(catalogId),
-        };
+      // Helper: format a catalog item with optional vendor overrides
+      const formatMerged = (catalogSvc: any, vendorSvc: any, catalogId: string) => ({
+        ...catalogSvc,
+        id: vendorSvc?.id || catalogId,
+        serviceId: catalogId,
+        catalogServiceId: catalogId,
+        name: catalogSvc.name || catalogSvc.serviceName || catalogSvc.service_name || 'Unnamed Service',
+        serviceName: catalogSvc.serviceName || catalogSvc.service_name || catalogSvc.name || 'Unnamed Service',
+        price: vendorSvc?.customPrice ?? vendorSvc?.custom_price ?? catalogSvc.price ?? catalogSvc.basePrice ?? catalogSvc.base_price ?? 0,
+        basePrice: catalogSvc.basePrice ?? catalogSvc.base_price ?? catalogSvc.price ?? 0,
+        customPrice: vendorSvc?.customPrice ?? vendorSvc?.custom_price,
+        duration: vendorSvc?.customDuration ?? vendorSvc?.custom_duration ?? catalogSvc.duration ?? catalogSvc.duration_minutes ?? 30,
+        customDuration: vendorSvc?.customDuration ?? vendorSvc?.custom_duration,
+        categoryName: catalogSvc.categoryName || catalogSvc.category_name || catalogSvc.category || 'Platform Services',
+        category: catalogSvc.category || catalogSvc.category_name || catalogSvc.categoryName || 'Platform Services',
+        subCategoryName: catalogSvc.subCategoryName || catalogSvc.sub_category_name || catalogSvc.subCategory || '',
+        subCategory: catalogSvc.subCategory || catalogSvc.sub_category_name || catalogSvc.subCategoryName || '',
+        isEnabled: vendorSvc ? (vendorSvc.isEnabled !== undefined ? vendorSvc.isEnabled : (vendorSvc.is_enabled !== undefined ? vendorSvc.is_enabled : true)) : false,
+        publishStatus: vendorSvc?.publishStatus || vendorSvc?.publish_status || 'draft',
+        description: vendorSvc?.customDescription || vendorSvc?.custom_description || catalogSvc.description || '',
+        customDescription: vendorSvc?.customDescription || vendorSvc?.custom_description || '',
+        isPlatformService: true,
+        isVendorEnabled: !!vendorSvc,
       });
       
-      // Add any vendor custom services that aren't from catalog
-      const catalogIds = new Set(catalogServices.map((s: any) => s.serviceId || s.service_id || s.id));
+      // Vendor's added services FIRST (so they always show for publishing, regardless of catalog role)
+      const vendorAddedFromCatalog: any[] = [];
+      catalogServices.forEach((catalogSvc: any) => {
+        const catalogId = catalogSvc.serviceId || catalogSvc.service_id || catalogSvc.id;
+        const vendorSvc = vendorServiceMap.get(catalogId);
+        if (vendorSvc) {
+          vendorAddedFromCatalog.push(formatMerged(catalogSvc, vendorSvc, catalogId));
+        }
+      });
+      const catalogNotAdded = catalogServices
+        .filter((catalogSvc: any) => !vendorServiceIds.has(catalogSvc.serviceId || catalogSvc.service_id || catalogSvc.id))
+        .map((catalogSvc: any) => {
+          const catalogId = catalogSvc.serviceId || catalogSvc.service_id || catalogSvc.id;
+          return formatMerged(catalogSvc, null, catalogId);
+        });
+      
+      // Vendor services not in catalog (e.g. custom or from different catalog)
       const customVendorServices = vendorServices
         .filter((s: any) => {
           const svcId = s.serviceId || s.service_id || s.catalogServiceId || s.id;
@@ -264,9 +275,9 @@ export function VendorServiceConfigurationScreen({
           ...svc,
           name: svc.name || svc.serviceName || svc.service_name || 'Custom Service',
           serviceName: svc.serviceName || svc.service_name || svc.name || 'Custom Service',
-          price: svc.price || svc.basePrice || svc.base_price || 0,
-          basePrice: svc.basePrice || svc.base_price || svc.price || 0,
-          duration: svc.duration || svc.duration_minutes || 30,
+          price: svc.price ?? svc.basePrice ?? svc.base_price ?? 0,
+          basePrice: svc.basePrice ?? svc.base_price ?? svc.price ?? 0,
+          duration: svc.duration ?? svc.duration_minutes ?? 30,
           categoryName: svc.categoryName || svc.category_name || 'Custom Services',
           isEnabled: svc.isEnabled !== undefined ? svc.isEnabled : (svc.is_enabled !== undefined ? svc.is_enabled : true),
           publishStatus: svc.publishStatus || svc.publish_status || 'draft',
@@ -274,8 +285,9 @@ export function VendorServiceConfigurationScreen({
           isVendorEnabled: true,
         }));
       
-      const allServices = [...mergedServices, ...customVendorServices];
-      console.log(`✅ Total services: ${allServices.length} (${mergedServices.length} from catalog, ${customVendorServices.length} custom)`);
+      // ✅ FIX: Vendor's added services first, then catalog not yet added
+      const allServices = [...vendorAddedFromCatalog, ...customVendorServices, ...catalogNotAdded];
+      console.log(`✅ Total services: ${allServices.length} (${vendorAddedFromCatalog.length} added, ${customVendorServices.length} custom, ${catalogNotAdded.length} available to add)`);
       
       setServices(allServices);
     } catch (error) {
@@ -523,6 +535,39 @@ export function VendorServiceConfigurationScreen({
     }
   };
 
+  // ✅ Save edits from Edit modal (unpublished services only)
+  const saveEditService = async () => {
+    if (!editingService) return;
+    if (editForm.price <= 0) {
+      toast.error('Price must be greater than 0');
+      return;
+    }
+    if (editForm.duration < 5) {
+      toast.error('Duration must be at least 5 minutes');
+      return;
+    }
+    try {
+      setSavingEdit(true);
+      const data = await apiClient.put(`/vendor/${vendorId}/services/${editingService.id}`, {
+        customPrice: editForm.price,
+        customDuration: editForm.duration,
+        description: editForm.description,
+      }) as any;
+      if (data && data.success) {
+        toast.success('Service updated. You can publish when ready.');
+        setEditingService(null);
+        await loadServices();
+      } else {
+        toast.error(data?.error || 'Failed to update service');
+      }
+    } catch (error) {
+      console.error('Error updating service:', error);
+      toast.error('Failed to update service');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const saveConfiguration = async () => {
     try {
       setSaving(true);
@@ -728,21 +773,11 @@ export function VendorServiceConfigurationScreen({
   const publishedCount = services.filter(s => s.publishStatus === 'published').length;
   const pendingCount = services.filter(s => s.publishStatus === 'pending_approval').length;
 
-  const getStyleIcon = () => {
-    switch (serviceStyle) {
-      case 'at_home': return '🏠';
-      case 'at_center': return '🏥';
-      case 'tele': return '📱';
-    }
-  };
-
-  const getStyleName = () => {
-    switch (serviceStyle) {
-      case 'at_home': return 'Home Services';
-      case 'at_center': return 'Book at Clinic';
-      case 'tele': return 'Tele Consultation';
-    }
-  };
+  // ✅ Role-based labels (e.g. "Training center booking" for trainers)
+  const roleNameForLabels = roleNameProp ?? vendorData?.roleName ?? vendorData?.role_name ?? '';
+  const styleLabelConfig = getServiceStyleLabelForRole(roleNameForLabels, serviceStyle);
+  const getStyleIcon = () => styleLabelConfig.icon;
+  const getStyleName = () => styleLabelConfig.label;
 
   const getStatusBadge = (service: Service) => {
     // Only show publish status badge - the enabled/disabled state is shown by the Switch toggle
@@ -1250,23 +1285,27 @@ export function VendorServiceConfigurationScreen({
                             {/* Description Preview */}
                             <p className="text-xs text-gray-600 line-clamp-2">{service.description}</p>
 
-                            {/* ✅ NEW: Service Action Buttons */}
+                            {/* ✅ Service Action Buttons: Edit only when unpublished; Delete only when unpublished; Unpublish only when published */}
                             {service.isEnabled && (
                               <div className="flex gap-1 mt-2">
-                                {/* Edit Button - Available for all services */}
-                                <button
-                                  onClick={() => {
-                                    setEditingService(service);
-                                    if (!expandedServices.has(service.id)) {
-                                      toggleExpanded(service.id);
-                                    }
-                                  }}
-                                  className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors flex items-center gap-1"
-                                  title="Edit service"
-                                >
-                                  <Edit className="w-3 h-3" />
-                                  Edit
-                                </button>
+                                {/* Edit Button - Only for unpublished (draft/rejected) services */}
+                                {(service.publishStatus === 'draft' || service.publishStatus === 'rejected') && (
+                                  <button
+                                    onClick={() => {
+                                      setEditingService(service);
+                                      setEditForm({
+                                        price: service.customPrice ?? service.price ?? 0,
+                                        duration: service.customDuration ?? service.duration ?? 30,
+                                        description: service.customDescription ?? service.description ?? '',
+                                      });
+                                    }}
+                                    className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 transition-colors flex items-center gap-1"
+                                    title="Edit service"
+                                  >
+                                    <Edit className="w-3 h-3" />
+                                    Edit
+                                  </button>
+                                )}
                                 
                                 {/* Unpublish Button - Only for published services */}
                                 {service.publishStatus === 'published' && (
@@ -1277,11 +1316,10 @@ export function VendorServiceConfigurationScreen({
                                   >
                                     📴 Unpublish
                                   </button>
-                                )
-                                } 
+                                )}
                                 
-                                {/* Delete Button - Available for all services that are not published */}
-                                {service.publishStatus !== 'published' && (
+                                {/* Delete Button - Only for unpublished services */}
+                                {(service.publishStatus === 'draft' || service.publishStatus === 'rejected') && (
                                   <button
                                     onClick={() => setShowDeleteDialog(service)}
                                     className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100 transition-colors flex items-center gap-1"
@@ -1290,8 +1328,7 @@ export function VendorServiceConfigurationScreen({
                                     <Trash2 className="w-3 h-3" />
                                     Delete
                                   </button>
-                                )
-                                }
+                                )}
                               </div>
                             )}
                           </div>
@@ -1464,6 +1501,62 @@ export function VendorServiceConfigurationScreen({
         }))}
       />
       
+      {/* ✅ Edit Service Modal: open with service data, save updates and close */}
+      <Dialog open={!!editingService} onOpenChange={(open) => !open && setEditingService(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Service</DialogTitle>
+            <DialogDescription>
+              Update price, duration, and description. After saving, you can publish when ready.
+            </DialogDescription>
+          </DialogHeader>
+          {editingService && (
+            <div className="space-y-4 py-4">
+              <p className="text-sm font-medium text-gray-700">{editingService.name || editingService.serviceName}</p>
+              <div className="space-y-2">
+                <Label className="text-xs text-gray-700">Price (₹) *</Label>
+                <Input
+                  type="number"
+                  value={editForm.price}
+                  onChange={(e) => setEditForm((f) => ({ ...f, price: parseInt(e.target.value, 10) || 0 }))}
+                  min={0}
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-gray-700">Duration (minutes) *</Label>
+                <Input
+                  type="number"
+                  value={editForm.duration}
+                  onChange={(e) => setEditForm((f) => ({ ...f, duration: parseInt(e.target.value, 10) || 0 }))}
+                  min={5}
+                  max={1440}
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-gray-700">Description (optional)</Label>
+                <Textarea
+                  value={editForm.description}
+                  onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                  placeholder="Service description..."
+                  rows={3}
+                  className="text-sm"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingService(null)}>
+              Cancel
+            </Button>
+            <Button onClick={saveEditService} disabled={savingEdit}>
+              {savingEdit ? 'Saving...' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ✅ NEW: Delete Confirmation Dialog */}
       <Dialog open={!!showDeleteDialog} onOpenChange={() => setShowDeleteDialog(null)}>
         <DialogContent className="max-w-md">

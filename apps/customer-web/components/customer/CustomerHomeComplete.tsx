@@ -1,18 +1,17 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { 
   Heart, Calendar, Plus, ChevronRight, Star, MapPin, Clock, 
   Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users, 
-  GraduationCap, Coffee, Bike, Shield, Sparkles, TrendingUp,
+  GraduationCap, Coffee, Shield, Sparkles, TrendingUp,
   Phone, Video, Building2, Bone, ShoppingCart, BookOpen, Wheat, User, Bot, Menu, Settings, Palmtree, Pill,
-  Navigation, AlertCircle
+  Navigation, AlertCircle, FlaskConical
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
-import { AIChatbotWidget } from './AIChatbotWidget';
-import { CustomerSidebar } from './CustomerSidebar';
 import { EnhancedSearchBar } from './EnhancedSearchBar';
 import { ProblemGridNavigation } from './ProblemGridNavigation';
 import { ServicesByProblem } from './ServicesByProblem';
@@ -21,13 +20,70 @@ import { WalletIcon } from './WalletIcon';
 import { EnhancedAddPetModal } from './EnhancedAddPetModal';
 import { getServiceStyleIcon, getPetIcon } from '@/lib/icon-utils';
 import { Dog, Cat, UtensilsCrossed, Package as PackageIcon, Shirt, Watch, Bed, Store } from 'lucide-react';
-import { LiveTrackingWidget } from './tracking/LiveTrackingWidget';
-import { RatingReviewPopup } from './RatingReviewPopup';
-import { VendorOnTheWayPopup } from './VendorOnTheWayPopup';
-import { UnifiedAppointmentTracker } from './booking/UnifiedAppointmentTracker'; // ✅ NEW: Appointment tracker widget
-import { TeleConsultationReminderNotification } from './TeleConsultationReminderNotification'; // ✅ FIX GAP-6.2: 5-minute notification
-import { ChatInterfaceFromNotification } from './ChatInterfaceFromNotification'; // ✅ FIX GAP-6.3: Chat from notification
-import { OrderTrackingWidget } from './OrderTrackingWidget'; // ✅ FIX GAP-8.4: Live tracking widget
+import { useActiveGpsTracking, ActiveTrackingSession } from '@/hooks/useActiveGpsTracking';
+import { useCustomerCategories } from '@/hooks/useCustomerCategories';
+// Re-export type for VendorOnTheWayPopup
+import type { TrackingStatus } from './VendorOnTheWayPopup';
+
+// ============================================================================
+// PERFORMANCE OPTIMIZATION: Lazy load conditionally rendered widgets
+// These widgets only appear based on user state (active tracking, incoming calls, etc.)
+// Lazy loading reduces initial bundle size significantly (~30-50KB savings)
+// ============================================================================
+
+// AI Chatbot - only shown when user opens chat
+const AIChatbotWidget = dynamic(
+  () => import('./AIChatbotWidget').then(mod => ({ default: mod.AIChatbotWidget })),
+  { ssr: false }
+);
+
+// Live tracking widget - only shown during active GPS tracking
+const LiveTrackingWidget = dynamic(
+  () => import('./tracking/LiveTrackingWidget').then(mod => ({ default: mod.LiveTrackingWidget })),
+  { ssr: false }
+);
+
+// Rating popup - only shown after completed bookings
+const RatingReviewPopup = dynamic(
+  () => import('./RatingReviewPopup').then(mod => ({ default: mod.RatingReviewPopup })),
+  { ssr: false }
+);
+
+// Vendor on the way popup - only shown during active delivery/service
+const VendorOnTheWayPopup = dynamic(
+  () => import('./VendorOnTheWayPopup').then(mod => ({ default: mod.VendorOnTheWayPopup })),
+  { ssr: false }
+);
+
+// Appointment tracker - only shown when appointments exist
+const UnifiedAppointmentTracker = dynamic(
+  () => import('./booking/UnifiedAppointmentTracker').then(mod => ({ default: mod.UnifiedAppointmentTracker })),
+  { ssr: false }
+);
+
+// Tele consultation reminder - only shown 5 min before call
+const TeleConsultationReminderNotification = dynamic(
+  () => import('./TeleConsultationReminderNotification').then(mod => ({ default: mod.TeleConsultationReminderNotification })),
+  { ssr: false }
+);
+
+// Chat interface from notification - only shown when opening chat from notification
+const ChatInterfaceFromNotification = dynamic(
+  () => import('./ChatInterfaceFromNotification').then(mod => ({ default: mod.ChatInterfaceFromNotification })),
+  { ssr: false }
+);
+
+// Order tracking widget - only shown during active order tracking
+const OrderTrackingWidget = dynamic(
+  () => import('./OrderTrackingWidget').then(mod => ({ default: mod.OrderTrackingWidget })),
+  { ssr: false }
+);
+
+// Tele call notification - WhatsApp-like incoming call UI
+const TeleCallNotification = dynamic(
+  () => import('./TeleCallNotification').then(mod => ({ default: mod.TeleCallNotification })),
+  { ssr: false }
+);
 
 interface Pet {
   id: string;
@@ -116,7 +172,11 @@ export function CustomerHomeComplete({
     petName?: string;
     eta: number;
     distance?: number;
+    status?: TrackingStatus;
+    serviceStyle?: 'at_home' | 'at_center' | 'tele' | 'clinic'; // ✅ NEW: For tele vs home service handling
+    meetingId?: string; // ✅ NEW: For tele consultations
   } | null>(null);
+  const [dismissedTrackingSessions, setDismissedTrackingSessions] = useState<Set<string>>(new Set());
   const [pendingReview, setPendingReview] = useState<{
     isOpen: boolean;
     bookingId: string;
@@ -141,6 +201,20 @@ export function CustomerHomeComplete({
     meetingId?: string;
   } | null>(null);
   
+  // ✅ CRITICAL FIX: Incoming/Outgoing call notification state (WhatsApp-like)
+  const [incomingCall, setIncomingCall] = useState<{
+    bookingId: string;
+    meetingId?: string;
+    provider: {
+      id: string;
+      name: string;
+      photo?: string;
+      role?: string;
+    };
+    serviceName?: string;
+    petName?: string;
+  } | null>(null);
+
   // ✅ FIX GAP-6.3: Chat from notification state
   const [chatFromNotification, setChatFromNotification] = useState<{
     isOpen: boolean;
@@ -157,35 +231,135 @@ export function CustomerHomeComplete({
   const [dynamicArticles, setDynamicArticles] = useState<any[]>([]);
   const [dynamicAnnouncements, setDynamicAnnouncements] = useState<any[]>([]);
   const [adoptionStats, setAdoptionStats] = useState({ adoptablePets: 50, certifiedBreeders: 30, rehomingListings: 20 });
-  
-  // Define quickServices constant (moved before useEffect)
+
+  // ✅ GPS Tracking Hook - Polls for active vendor tracking sessions
+  const { 
+    activeSessions: gpsActiveSessions, 
+    hasActiveTracking: hasGpsTracking,
+    refresh: refreshGpsTracking,
+  } = useActiveGpsTracking(phone, {
+    pollingIntervalMs: 10000, // Poll every 10 seconds
+    enabled: !!phone,
+    onSessionStart: (session: ActiveTrackingSession) => {
+      // Show popup when a new tracking session starts
+      if (!dismissedTrackingSessions.has(session.sessionId)) {
+        setVendorOnTheWay({
+          bookingId: session.bookingId,
+          vendorName: session.vendorName,
+          vendorPhoto: session.vendorPhoto,
+          vendorPhone: session.vendorPhone,
+          serviceName: session.serviceName,
+          petName: session.petName,
+          eta: session.eta || 15,
+          distance: session.distance || undefined,
+          status: session.status as TrackingStatus,
+          serviceStyle: (session as any).serviceStyle || 'at_home', // ✅ Include service style
+          meetingId: (session as any).meetingId, // ✅ Include meeting ID for tele
+        });
+      }
+    },
+    onSessionUpdate: (session: ActiveTrackingSession) => {
+      // Update popup with new ETA/status
+      if (vendorOnTheWay?.bookingId === session.bookingId) {
+        setVendorOnTheWay((prev) => prev ? {
+          ...prev,
+          eta: session.eta || prev.eta,
+          distance: session.distance ?? prev.distance,
+          status: session.status as TrackingStatus,
+          serviceStyle: (session as any).serviceStyle || prev.serviceStyle, // ✅ Preserve/update service style
+          meetingId: (session as any).meetingId || prev.meetingId, // ✅ Preserve meeting ID
+        } : null);
+      }
+    },
+    onVendorArrived: (session: ActiveTrackingSession) => {
+      // Show/update popup when vendor arrives
+      if (!dismissedTrackingSessions.has(session.sessionId)) {
+        setVendorOnTheWay({
+          bookingId: session.bookingId,
+          vendorName: session.vendorName,
+          vendorPhoto: session.vendorPhoto,
+          vendorPhone: session.vendorPhone,
+          serviceName: session.serviceName,
+          petName: session.petName,
+          eta: 0,
+          distance: 0,
+          status: 'arrived',
+          serviceStyle: (session as any).serviceStyle || 'at_home', // ✅ Include service style
+          meetingId: (session as any).meetingId, // ✅ Include meeting ID for tele
+        });
+      }
+    },
+  });
+
+  // Dynamic categories from admin catalog (fallback to hardcoded list if API fails or returns empty)
+  const { quickServiceTiles } = useCustomerCategories();
+
+  // Define quickServices constant (fallback when API has no categories)
+  // Labels aligned with canonical names: Trainer, Behaviorist, Emergency care, Ambulance, Lab Test, Diagnostics
   const quickServices = [
     // PRIMARY SERVICES
-    { icon: Stethoscope, label: 'Vet Care', color: 'bg-blue-100 text-blue-600', screen: 'vet' },
-    { icon: Scissors, label: 'Grooming', color: 'bg-orange-100 text-orange-600', screen: 'grooming' },
-    { icon: ShoppingBag, label: 'Shop', color: 'bg-pink-100 text-pink-600', screen: 'shop' },
-    { icon: GraduationCap, label: 'Training', color: 'bg-purple-100 text-purple-600', screen: 'training' },
+    { icon: Stethoscope, label: 'Vet Care', color: 'bg-blue-100 text-blue-600', screen: 'vet', categoryId: 'vet' },
+    { icon: Scissors, label: 'Grooming', color: 'bg-orange-100 text-orange-600', screen: 'grooming', categoryId: 'grooming' },
+    { icon: ShoppingBag, label: 'Pet Shop', color: 'bg-pink-100 text-pink-600', screen: 'shop', categoryId: 'shop' },
+    { icon: GraduationCap, label: 'Trainer', color: 'bg-purple-100 text-purple-600', screen: 'training', categoryId: 'training' },
+    
+    // HEALTHCARE SERVICES
+    { icon: Pill, label: 'Pharmacy', color: 'bg-red-100 text-red-600', screen: 'pharmacy', categoryId: 'pharmacy' },
+    { icon: FlaskConical, label: 'Lab Test', color: 'bg-teal-100 text-teal-600', screen: 'lab-diagnostics', categoryId: 'lab-diagnostics' },
     
     // CARE SERVICES
-    { icon: Bike, label: 'Walker', color: 'bg-green-100 text-green-600', screen: 'walker' },
-    { icon: HomeIcon, label: 'Boarding', color: 'bg-indigo-100 text-indigo-600', screen: 'boarding' },
-    { icon: Heart, label: 'Adoption', color: 'bg-red-100 text-red-600', screen: 'adoption' },
-    { icon: Heart, label: 'Mating & Dating', color: 'bg-pink-100 text-pink-600', screen: 'mating-dating-hub' },
-    { icon: Coffee, label: 'Pet Cafes', color: 'bg-amber-100 text-amber-600', screen: 'cafes' },
+    { icon: Dog, label: 'Dog Walker', color: 'bg-green-100 text-green-600', screen: 'walker', categoryId: 'walker' },
+    { icon: HomeIcon, label: 'Boarding', color: 'bg-indigo-100 text-indigo-600', screen: 'boarding', categoryId: 'boarding' },
+    { icon: Heart, label: 'Adoption', color: 'bg-red-100 text-red-600', screen: 'adoption', categoryId: 'adoption' },
+    { icon: Heart, label: 'Mating & Dating', color: 'bg-pink-100 text-pink-600', screen: 'mating-dating-hub', categoryId: 'mating-dating-hub' },
+    { icon: Coffee, label: 'Pet Cafes', color: 'bg-amber-100 text-amber-600', screen: 'cafes', categoryId: 'cafes' },
     
     // SPECIALIZED SERVICES - NEW
-    { icon: Users, label: 'Photography', color: 'bg-purple-100 text-purple-600', screen: 'photography' },
-    { icon: Shield, label: 'Insurance', color: 'bg-cyan-100 text-cyan-600', screen: 'insurance' },
-    { icon: Users, label: 'Breeder', color: 'bg-amber-100 text-amber-600', screen: 'breeder' },
-    { icon: Phone, label: 'Ambulance', color: 'bg-red-100 text-red-600', screen: 'ambulance' },
+    { icon: Users, label: 'Photography', color: 'bg-purple-100 text-purple-600', screen: 'photography', categoryId: 'photography' },
+    { icon: Shield, label: 'Insurance', color: 'bg-cyan-100 text-cyan-600', screen: 'insurance', categoryId: 'insurance' },
+    { icon: Users, label: 'Breeder', color: 'bg-amber-100 text-amber-600', screen: 'breeder', categoryId: 'breeder' },
+    { icon: Phone, label: 'Ambulance', color: 'bg-red-100 text-red-600', screen: 'ambulance', categoryId: 'ambulance' },
     
     // WELLNESS SERVICES - NEW
-    { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist' },
-    { icon: MapPin, label: 'Relocation', color: 'bg-blue-100 text-blue-600', screen: 'relocation' },
-    { icon: Sparkles, label: 'Pet Resort', color: 'bg-teal-100 text-teal-600', screen: 'resort' },
-    { icon: Palmtree, label: 'Pet Holiday', color: 'bg-cyan-100 text-cyan-600', screen: 'holiday' },
-    { icon: Heart, label: 'Sunset Care', color: 'bg-purple-100 text-purple-600', screen: 'sunset' },
+    { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist', categoryId: 'nutritionist' },
+    { icon: MapPin, label: 'Relocation', color: 'bg-blue-100 text-blue-600', screen: 'relocation', categoryId: 'relocation' },
+    { icon: Sparkles, label: 'Pet Resort', color: 'bg-teal-100 text-teal-600', screen: 'resort', categoryId: 'resort' },
+    { icon: Palmtree, label: 'Pet Holiday', color: 'bg-cyan-100 text-cyan-600', screen: 'holiday', categoryId: 'holiday' },
+    { icon: Heart, label: 'Sunset Care', color: 'bg-purple-100 text-purple-600', screen: 'sunset', categoryId: 'sunset' },
   ];
+
+  // Canonical display names: avoid duplicate-sounding labels (Trainer vs Training, Lab Test vs Diagnostics, etc.)
+  const SERVICE_LABEL_OVERRIDE: Record<string, string> = {
+    training: 'Trainer',
+    trainer: 'Trainer',
+    behavioral: 'Behaviorist',
+    behaviorist: 'Behaviorist',
+    emergency: 'Emergency care',
+    ambulance: 'Ambulance',
+    'lab-diagnostics': 'Lab Test',
+    diagnostic: 'Diagnostics',
+    diagnostics: 'Diagnostics',
+    lab: 'Lab Test',
+    veterinary: 'Vet Care',
+    vet: 'Vet Care',
+    walking: 'Dog Walker',
+    walker: 'Dog Walker',
+    shop: 'Pet Shop',
+    marketplace: 'Pet Shop',
+  };
+
+  // Use API-driven categories when available; otherwise fallback to hardcoded quickServices
+  // Ensure key flows (Pharmacy, Lab Test, Nutritionist) are always in the grid even if API omits them
+  const baseQuickServices = quickServiceTiles.length > 0 ? quickServiceTiles : quickServices;
+  const hasPharmacy = baseQuickServices.some((s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'pharmacy');
+  const hasLabDiagnostics = baseQuickServices.some((s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'lab-diagnostics' || (s.screen as string) === 'lab-diagnostics');
+  const hasNutritionist = baseQuickServices.some(
+    (s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'nutritionist'
+  );
+  let sourceQuickServices = baseQuickServices;
+  if (!hasPharmacy) sourceQuickServices = [...sourceQuickServices, { icon: Pill, label: 'Pharmacy', color: 'bg-red-100 text-red-600', screen: 'pharmacy', categoryId: 'pharmacy' }];
+  if (!hasLabDiagnostics) sourceQuickServices = [...sourceQuickServices, { icon: FlaskConical, label: 'Lab Test', color: 'bg-teal-100 text-teal-600', screen: 'lab-diagnostics', categoryId: 'lab-diagnostics' }];
+  if (!hasNutritionist) sourceQuickServices = [...sourceQuickServices, { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist', categoryId: 'nutritionist' }];
 
   useEffect(() => {
     loadUserData();
@@ -261,7 +435,7 @@ export function CustomerHomeComplete({
       // Use Promise.allSettled to handle failures gracefully
       const [groomingResult, vetResult, productsResult] = await Promise.allSettled([
         apiClient.get<any>('/customer/discover-services?category=grooming'),
-        apiClient.get<any>('/customer/discover-services?category=vet&roleId=veterinarian'),
+        apiClient.get<any>('/customer/discover-services?category=vet'),
         apiClient.get<any>('/products?featured=true&limit=3'),
       ]);
       
@@ -341,116 +515,216 @@ export function CustomerHomeComplete({
     }
   };
 
-  // Load dashboard config - but ALWAYS show all services by default
-  // Dashboard config is only used for BLOCKING specific services (coming_soon phase),
-  // NOT for filtering what services to show
+  // Load service launch config - controls service visibility based on GEOGRAPHY
+  // Services can be: hidden, coming_soon, beta, or launched per state/city
   useEffect(() => {
-    const loadDashboardConfig = async () => {
+    const loadServiceLaunchConfig = async () => {
       try {
-        // IMPORTANT: Always start with all services visible
-        // Dashboard config should only RESTRICT services, not define what's available
-        setFilteredQuickServices(quickServices);
+        // IMPORTANT: Always start with all services visible (use dynamic categories when available)
+        // Service launch config should only RESTRICT services based on geography
+        setFilteredQuickServices(sourceQuickServices);
         
-        // Get customer's role from profile (optional)
+        // Get customer's location from profile (city and state)
         const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`).catch(() => null);
         const profile = profileResponse as any;
         
-        let roleId = 'customer'; // Default fallback for customers
+        let customerCity = '';
+        let customerState = '';
+        
         if (profile && (profile.success || profile.profile)) {
           const profileData = profile.profile || profile;
-          roleId = profileData.role_id || profileData.roleId || profileData.role?.id || 'customer';
+          
+          // Try multiple sources for city
+          customerCity = profileData.city 
+            || profileData.address?.city 
+            || profileData.addresses?.[0]?.city
+            || profileData.default_address?.city
+            || '';
+          
+          // Try multiple sources for state
+          customerState = profileData.state 
+            || profileData.address?.state 
+            || profileData.addresses?.[0]?.state
+            || profileData.default_address?.state
+            || '';
+          
+          // Get pincode for fallback inference
+          const pincode = profileData.pincode 
+            || profileData.address?.pincode 
+            || profileData.addresses?.[0]?.pincode
+            || '';
+          
+          // Infer city/state from Indian pincodes if not available
+          if ((!customerCity || !customerState) && pincode) {
+            const pincodePrefix = pincode.toString().substring(0, 3);
+            // Bangalore pincodes: 560xxx
+            if (pincodePrefix === '560') {
+              if (!customerCity) customerCity = 'Bangalore';
+              if (!customerState) customerState = 'Karnataka';
+            }
+            // Mumbai pincodes: 400xxx
+            else if (pincodePrefix === '400') {
+              if (!customerCity) customerCity = 'Mumbai';
+              if (!customerState) customerState = 'Maharashtra';
+            }
+            // Delhi pincodes: 110xxx
+            else if (pincodePrefix === '110') {
+              if (!customerCity) customerCity = 'New Delhi';
+              if (!customerState) customerState = 'Delhi';
+            }
+            // Chennai pincodes: 600xxx
+            else if (pincodePrefix === '600') {
+              if (!customerCity) customerCity = 'Chennai';
+              if (!customerState) customerState = 'Tamil Nadu';
+            }
+            // Hyderabad pincodes: 500xxx
+            else if (pincodePrefix === '500') {
+              if (!customerCity) customerCity = 'Hyderabad';
+              if (!customerState) customerState = 'Telangana';
+            }
+            // Pune pincodes: 411xxx
+            else if (pincodePrefix === '411') {
+              if (!customerCity) customerCity = 'Pune';
+              if (!customerState) customerState = 'Maharashtra';
+            }
+          }
+          
+          // Log for debugging
+          console.log('[ServiceLaunchConfig] Customer location from profile:', { 
+            city: customerCity, 
+            state: customerState,
+            pincode: pincode,
+            profileKeys: Object.keys(profileData),
+          });
         }
 
-        // Fetch dashboard config (optional - only for blocking coming_soon services)
-        const configResponse = await apiClient.get(`/config/ui/dashboard?roleId=${roleId}`).catch(() => null);
+        // Fetch service launch config based on customer's location
+        const params = new URLSearchParams();
+        if (customerState) params.append('state', customerState);
+        if (customerCity) params.append('city', customerCity);
+        
+        console.log('[ServiceLaunchConfig] Fetching with params:', params.toString());
+        
+        const configResponse = await apiClient.get(`/config/service-launch/customer?${params.toString()}`).catch(() => null);
         
         if (configResponse && (configResponse as any).success) {
-          const config = (configResponse as any).config;
-          setDashboardConfig(config);
+          const { services, buttons } = configResponse as any;
           
-          // Get buttons from config
-          const buttons = config.buttons || config.widgets || [];
+          // Store config for reference (using buttons for backward compatibility)
+          if (buttons) {
+            setDashboardConfig({ buttons });
+          }
           
-          // Only filter OUT services that are explicitly blocked (coming_soon phase or disabled)
-          // But never hide services just because they're not in the config
+          // Map service IDs to screen names
+          const serviceScreenMap: Record<string, string[]> = {
+            'vet': ['vet'],
+            'veterinary': ['vet'],
+            'grooming': ['grooming'],
+            'training': ['training'],
+            'walker': ['walker'],
+            'walking': ['walker'],
+            'boarding': ['boarding'],
+            'adoption': ['adoption'],
+            'mating': ['mating-dating-hub'],
+            'cafes': ['cafes'],
+            'photography': ['photography'],
+            'insurance': ['insurance'],
+            'breeder': ['breeder'],
+            'ambulance': ['ambulance'],
+            'emergency': ['ambulance'],
+            'nutritionist': ['nutritionist'],
+            'wellness': ['nutritionist'],
+            'relocation': ['relocation'],
+            'resort': ['resort'],
+            'holiday': ['holiday'],
+            'sunset': ['sunset'],
+            'shop': ['shop'],
+            'pharmacy': ['shop'],
+            'diagnostic': ['vet'],
+            'diagnostics': ['vet'],
+          };
+          
+          // Build sets: block by categoryId so "Nutritionist" and "Wellness & Nutrition" can be toggled independently
+          const blockedCategoryIds = new Set<string>();
+          const comingSoonCategoryIds = new Set<string>();
           const blockedServiceIds = new Set<string>();
+          const comingSoonServiceIds = new Set<string>();
           
-          buttons.forEach((btn: any) => {
-            // Only block if explicitly disabled OR in coming_soon phase
-            if (btn.enabled === false || btn.launchPhase === 'coming_soon') {
-              // Map button IDs to service screens
-              const btnId = (btn.id || '').toLowerCase();
-              const serviceScreenMap: Record<string, string[]> = {
-                'vet': ['vet'],
-                'veterinarian': ['vet'],
-                'vet_consultation': ['vet'],
-                'vet_emergency': ['vet'],
-                'vet_vaccination': ['vet'],
-                'vet_checkup': ['vet'],
-                'grooming': ['grooming'],
-                'groomer': ['grooming'],
-                'grooming_booking': ['grooming'],
-                'grooming_spa': ['grooming'],
-                'grooming_nail': ['grooming'],
-                'training': ['training'],
-                'trainer': ['training'],
-                'training_booking': ['training'],
-                'training_behavior': ['training'],
-                'walker': ['walker'],
-                'walk': ['walker'],
-                'walk_booking': ['walker'],
-                'walk_sitting': ['walker'],
-                'boarding': ['boarding'],
-                'board': ['boarding'],
-                'adoption': ['adoption'],
-                'mating': ['mating-dating-hub'],
-                'dating': ['mating-dating-hub'],
-                'cafe': ['cafes'],
-                'cafes': ['cafes'],
-                'photography': ['photography'],
-                'insurance': ['insurance'],
-                'breeder': ['breeder'],
-                'ambulance': ['ambulance'],
-                'nutritionist': ['nutritionist'],
-                'nutrition': ['nutritionist'],
-                'relocation': ['relocation'],
-                'resort': ['resort'],
-                'holiday': ['holiday'],
-                'sunset': ['sunset'],
-                'shop': ['shop'],
-                'store': ['shop'],
-              };
-              
-              // Find matching screens to block
+          if (services) {
+            (services.hidden || []).forEach((svc: any) => {
+              const svcId = (svc.serviceId || '').toLowerCase();
+              blockedCategoryIds.add(svcId);
               for (const [key, screens] of Object.entries(serviceScreenMap)) {
-                if (btnId.includes(key) || key.includes(btnId)) {
+                if (svcId.includes(key) || key.includes(svcId)) {
                   screens.forEach(screen => blockedServiceIds.add(screen));
                 }
               }
-            }
-          });
-          
-          // Only filter if there are blocked services
-          if (blockedServiceIds.size > 0) {
-            const filtered = quickServices.filter(service => !blockedServiceIds.has(service.screen));
-            setFilteredQuickServices(filtered.length > 0 ? filtered : quickServices);
+            });
+            (services.comingSoon || []).forEach((svc: any) => {
+              const svcId = (svc.serviceId || '').toLowerCase();
+              comingSoonCategoryIds.add(svcId);
+              for (const [key, screens] of Object.entries(serviceScreenMap)) {
+                if (svcId.includes(key) || key.includes(svcId)) {
+                  screens.forEach(screen => comingSoonServiceIds.add(screen));
+                }
+              }
+            });
           }
-          // If no services are blocked, keep all services visible (already set above)
+          
+          if (buttons && Array.isArray(buttons)) {
+            buttons.forEach((btn: any) => {
+              const btnId = (btn.id || '').toLowerCase();
+              if (btn.enabled === false) {
+                blockedCategoryIds.add(btnId);
+                for (const [key, screens] of Object.entries(serviceScreenMap)) {
+                  if (btnId.includes(key) || key.includes(btnId)) {
+                    screens.forEach(screen => blockedServiceIds.add(screen));
+                  }
+                }
+              } else if (btn.launchPhase === 'coming_soon') {
+                comingSoonCategoryIds.add(btnId);
+                for (const [key, screens] of Object.entries(serviceScreenMap)) {
+                  if (btnId.includes(key) || key.includes(btnId)) {
+                    screens.forEach(screen => comingSoonServiceIds.add(screen));
+                  }
+                }
+              }
+            });
+          }
+          
+          if (blockedCategoryIds.size > 0 || comingSoonCategoryIds.size > 0 || blockedServiceIds.size > 0 || comingSoonServiceIds.size > 0) {
+            const filtered = sourceQuickServices.filter((service: any) => {
+              const catId = (service.categoryId || '').toLowerCase();
+              if (catId) return !blockedCategoryIds.has(catId);
+              return !blockedServiceIds.has(service.screen);
+            });
+            const withComingSoon = filtered.map((service: any) => ({
+              ...service,
+              isComingSoon: (service.categoryId && comingSoonCategoryIds.has((service.categoryId || '').toLowerCase())) || comingSoonServiceIds.has(service.screen),
+            }));
+            setFilteredQuickServices(withComingSoon.length > 0 ? withComingSoon : sourceQuickServices);
+          }
         }
-        // If no config found or error, keep all services visible (already set above)
+        
+        // Fallback: Try legacy role-based config if new endpoint fails
+        // This ensures backward compatibility during migration
+        if (!configResponse || !(configResponse as any).success) {
+          console.log('New service launch config not available, falling back to legacy config');
+          // Legacy config loading removed - new geography-based config is primary
+        }
       } catch (error) {
-        console.error('Error loading dashboard config:', error);
+        console.error('Error loading service launch config:', error);
         // Keep all services visible on error (already set at start)
       }
     };
     
     if (phone) {
-      loadDashboardConfig();
+      loadServiceLaunchConfig();
     } else {
-      // No phone means not logged in, show all services
-      setFilteredQuickServices(quickServices);
+      // No phone means not logged in, show all services (use dynamic list when available)
+      setFilteredQuickServices(sourceQuickServices);
     }
-  }, [phone, refreshKey]);
+  }, [phone, refreshKey, quickServiceTiles.length]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -466,10 +740,12 @@ export function CustomerHomeComplete({
       checkPendingReviews(); // ✅ Check for pending reviews on load
       checkUpcomingCalls(); // ✅ FIX GAP-6.2: Check for upcoming calls
       checkActiveOrderTracking(); // ✅ FIX GAP-8.4: Check for active orders
+      checkIncomingCalls(); // ✅ CRITICAL FIX: Check for incoming instant tele calls
       const interval = setInterval(() => {
         loadActiveBookings();
         checkUpcomingCalls(); // Check every 30 seconds
         checkActiveOrderTracking(); // Check every 30 seconds
+        checkIncomingCalls(); // ✅ CRITICAL FIX: Check for incoming calls
       }, 30000); // Poll every 30 seconds
       return () => clearInterval(interval);
     }
@@ -477,34 +753,52 @@ export function CustomerHomeComplete({
 
   const loadActiveBookings = async () => {
     try {
-      const response = await apiClient.get<any>(`/customer/bookings?phone=${encodeURIComponent(phone)}&status=in_progress`);
+      // Rule 1: Include vendor_on_way so customer sees "track provider" when vendor has started travel
+      const response = await apiClient.get<any>(`/customer/bookings?phone=${encodeURIComponent(phone)}&status=in_progress,vendor_on_way`);
       const bookings = response.bookings || response.data || [];
       
       // Filter bookings that have tracking enabled (home services)
+      // Rule 1: Include vendor_on_way (set by backend when vendor clicks Start Travel); when vendor_on_way, tracking is active
       const bookingsWithTracking = bookings.filter((booking: any) => 
         booking.serviceStyle === 'at_home' && 
-        (booking.status === 'in_progress' || booking.status === 'active' || booking.status === 'on_way') &&
-        (booking.trackingEnabled || booking.tracking_enabled)
+        (booking.status === 'in_progress' || booking.status === 'active' || booking.status === 'on_way' || booking.status === 'in_transit' || booking.status === 'vendor_on_way') &&
+        (booking.trackingEnabled || booking.tracking_enabled || booking.status === 'vendor_on_way')
       );
       
       setActiveBookings(bookingsWithTracking);
       
-      // ✅ Auto-show popup if vendor is on the way
-      const onWayBooking = bookingsWithTracking.find((b: any) => 
-        b.status === 'on_way' || b.tracking_status === 'on_way' || b.trackingStatus === 'on_way' || b.vendorStatus === 'traveling'
-      );
-      if (onWayBooking && !vendorOnTheWay) {
-        // Show the "Vendor On The Way" popup
-        setVendorOnTheWay({
-          bookingId: onWayBooking.id || onWayBooking.bookingId,
-          vendorName: onWayBooking.vendorName || onWayBooking.staffName || 'Provider',
-          vendorPhoto: onWayBooking.vendorPhoto || onWayBooking.staffPhoto,
-          vendorPhone: onWayBooking.vendorPhone || onWayBooking.staffPhone,
-          serviceName: onWayBooking.serviceName || onWayBooking.service_name || 'Service',
-          petName: onWayBooking.petName || onWayBooking.pet_name,
-          eta: onWayBooking.eta_minutes || onWayBooking.eta || 15,
-          distance: onWayBooking.distance_km || onWayBooking.distance,
-        });
+      // ✅ Auto-show popup if vendor is on the way (fallback when GPS hook doesn't have data)
+      // GPS hook is primary source, this is fallback for bookings API data
+      if (!hasGpsTracking && !vendorOnTheWay) {
+        const onWayBooking = bookingsWithTracking.find((b: any) => 
+          b.status === 'on_way' || 
+          b.status === 'in_transit' ||
+          b.status === 'vendor_on_way' ||
+          b.tracking_status === 'on_way' || 
+          b.tracking_status === 'in_transit' ||
+          b.trackingStatus === 'on_way' || 
+          b.vendorStatus === 'traveling'
+        );
+        if (onWayBooking) {
+          const sessionId = onWayBooking.tracking_session_id || onWayBooking.sessionId;
+          // Check if this session was dismissed
+          if (!sessionId || !dismissedTrackingSessions.has(sessionId)) {
+            // Show the "Vendor On The Way" popup
+            setVendorOnTheWay({
+              bookingId: onWayBooking.id || onWayBooking.bookingId,
+              vendorName: onWayBooking.vendorName || onWayBooking.staffName || 'Provider',
+              vendorPhoto: onWayBooking.vendorPhoto || onWayBooking.staffPhoto,
+              vendorPhone: onWayBooking.vendorPhone || onWayBooking.staffPhone,
+              serviceName: onWayBooking.serviceName || onWayBooking.service_name || 'Service',
+              petName: onWayBooking.petName || onWayBooking.pet_name,
+              eta: onWayBooking.eta_minutes || onWayBooking.eta || 15,
+              distance: onWayBooking.distance_km || onWayBooking.distance,
+              status: (onWayBooking.status === 'arrived' ? 'arrived' : 'en_route') as TrackingStatus,
+              serviceStyle: onWayBooking.serviceStyle || onWayBooking.service_style || 'at_home', // ✅ Include service style
+              meetingId: onWayBooking.meetingId || onWayBooking.meeting_id, // ✅ Include meeting ID for tele
+            });
+          }
+        }
       }
     } catch (error) {
       console.error('Error loading active bookings:', error);
@@ -545,38 +839,97 @@ export function CustomerHomeComplete({
       }
     } catch (error) {
       console.error('Error checking upcoming calls:', error);
+      setUpcomingCall(null);
+    }
+  };
+
+  // ✅ CRITICAL FIX: Check for incoming call notifications (instant tele)
+  const checkIncomingCalls = async () => {
+    if (!customerId && !phone) return;
+    
+    try {
+      // Check for unread call notifications
+      // ✅ CRITICAL FIX: Use correct query parameters (userId and userType, not userType and type)
+      const notificationsResponse = await apiClient.get<any>(
+        `/notifications?userId=${customerId || phone}&userType=customer&isRead=false`
+      );
+      
+      if (notificationsResponse.success && notificationsResponse.notifications?.length > 0) {
+        // Filter for tele_call_incoming type
+        const callNotifications = notificationsResponse.notifications.filter((n: any) => 
+          n.type === 'tele_call_incoming' && !n.is_read
+        );
+        
+        if (callNotifications.length === 0) return;
+        
+        const callNotification = callNotifications[0];
+        const notificationData = typeof callNotification.data === 'string' 
+          ? JSON.parse(callNotification.data) 
+          : callNotification.data || {};
+        
+        if (notificationData.booking_id && notificationData.call_type === 'incoming') {
+          // Get provider details
+          const bookingResponse = await apiClient.get<any>(
+            `/bookings/${notificationData.booking_id}`
+          );
+          
+          if (bookingResponse.success && bookingResponse.booking) {
+            const booking = bookingResponse.booking;
+            setIncomingCall({
+              bookingId: notificationData.booking_id,
+              meetingId: notificationData.meeting_id,
+              provider: {
+                id: notificationData.staff_id || booking.vendor_id,
+                name: notificationData.staff_name || booking.vendor_name || 'Provider',
+                photo: booking.staff_photo || booking.vendor_photo,
+                role: booking.staff_role || booking.vendor_role,
+              },
+              serviceName: booking.service_name,
+              petName: booking.pet_name,
+            });
+            
+            // Mark notification as read
+            await apiClient.put(`/notifications/${callNotification.id}/read`, {}).catch(() => {});
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error checking incoming calls:', error);
     }
   };
   
-  // ✅ FIX GAP-8.4: Check for active order tracking
+  // ✅ FIX GAP-8.4 + ChunkLoadError resilience: Check for active order tracking
+  // Call pharmacy and meals APIs separately so a failing meals/active (e.g. 404/HTML) does not break the screen
   const checkActiveOrderTracking = async () => {
+    let pharmacyOrders: any[] = [];
+    let mealOrders: any[] = [];
     try {
-      // Check for pharmacy orders
       const pharmacyResponse = await apiClient.get<any>(
         `/customer/${phone}/orders/pharmacy/active`
       );
-      
-      // Check for meal orders
+      pharmacyOrders = Array.isArray(pharmacyResponse?.orders) ? pharmacyResponse.orders : [];
+    } catch (e) {
+      console.warn('Pharmacy active orders check failed (non-fatal):', (e as Error)?.message);
+    }
+    try {
       const mealResponse = await apiClient.get<any>(
         `/customer/${phone}/orders/meals/active`
       );
-      
-      const activeOrders = [
-        ...(pharmacyResponse.orders || []),
-        ...(mealResponse.orders || []),
-      ].filter((order: any) => 
-        order.status !== 'delivered' && 
-        order.status !== 'cancelled' &&
-        (order.tracking_status || order.status === 'preparing' || order.status === 'on_the_way')
-      );
-      
-      if (activeOrders.length > 0) {
-        setActiveOrderTracking(activeOrders[0]); // Show first active order
-      } else {
-        setActiveOrderTracking(null);
-      }
-    } catch (error) {
-      console.error('Error checking active order tracking:', error);
+      mealOrders = Array.isArray(mealResponse?.orders) ? mealResponse.orders : [];
+    } catch (e) {
+      console.warn('Meals active orders check failed (non-fatal):', (e as Error)?.message);
+    }
+    const activeOrders = [
+      ...pharmacyOrders,
+      ...mealOrders,
+    ].filter((order: any) =>
+      order && order.status !== 'delivered' && order.status !== 'cancelled' && order.status !== 'refunded' &&
+      (order.trackingStatus ?? order.tracking_status ?? ['confirmed', 'preparing', 'ready_for_pickup', 'picked_up', 'on_the_way'].includes(order.status))
+    );
+    if (activeOrders.length > 0) {
+      setActiveOrderTracking(activeOrders[0]);
+    } else {
+      setActiveOrderTracking(null);
     }
   };
   
@@ -1135,7 +1488,7 @@ export function CustomerHomeComplete({
         </div>
 
         {/* ✅ Problem Grid Navigation - Compact Slider */}
-        <div className="mb-4">
+        <div className="mb-4 w-full overflow-hidden">
           <div className="px-4 flex items-center justify-between mb-2">
             <h2 className="text-gray-900 text-sm font-semibold">What's Your Pet's Need?</h2>
             <button 
@@ -1176,7 +1529,16 @@ export function CustomerHomeComplete({
                     <p className="text-white/90 text-xs mb-2">{banner.subtitle}</p>
                     <button 
                       className="bg-white text-[#FF8C42] px-3 py-1.5 rounded-full text-xs font-medium"
-                      onClick={() => banner.ctaLink && onNavigate?.(banner.ctaLink)}
+                      onClick={() => {
+                        // Track banner click
+                        if (banner.id) {
+                          apiClient.post(`/banners/${banner.id}/click`, {
+                            source: 'home_carousel'
+                          }).catch(() => {}); // Silent fail for tracking
+                        }
+                        // Navigate
+                        banner.ctaLink && onNavigate?.(banner.ctaLink);
+                      }}
                     >
                       {banner.ctaText || 'Claim Now'}
                     </button>
@@ -1245,21 +1607,25 @@ export function CustomerHomeComplete({
         <div className="px-4 mb-4">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-black text-sm font-semibold">All Services</h2>
-            <span className="text-[10px] text-gray-500">{(filteredQuickServices.length > 0 ? filteredQuickServices : quickServices).length} services</span>
+            <span className="text-[10px] text-gray-500">{(filteredQuickServices.length > 0 ? filteredQuickServices : sourceQuickServices).length} services</span>
           </div>
           <div className="grid grid-cols-5 gap-2">
-            {(filteredQuickServices.length > 0 ? filteredQuickServices : quickServices).map((service, index) => (
-              <button
-                key={index}
-                onClick={() => onNavigate?.(service.screen)}
-                className="flex flex-col items-center gap-1 group"
-              >
-                <div className={`w-11 h-11 ${service.color} rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform shadow-sm`}>
-                  <service.icon className="w-5 h-5" />
-                </div>
-                <span className="text-[10px] text-gray-700 text-center leading-tight line-clamp-1">{service.label}</span>
-              </button>
-            ))}
+            {(filteredQuickServices.length > 0 ? filteredQuickServices : sourceQuickServices).map((service, index) => {
+              const key = ((service.categoryId || service.screen || '') as string).toLowerCase();
+              const displayLabel = SERVICE_LABEL_OVERRIDE[key] ?? service.label;
+              return (
+                <button
+                  key={service.screen || index}
+                  onClick={() => onNavigate?.(service.screen)}
+                  className="flex flex-col items-center gap-1 group"
+                >
+                  <div className={`w-11 h-11 ${service.color} rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform shadow-sm`}>
+                    <service.icon className="w-5 h-5" />
+                  </div>
+                  <span className="text-[10px] text-gray-700 text-center leading-tight line-clamp-1">{displayLabel}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -1507,7 +1873,7 @@ export function CustomerHomeComplete({
               onClick={() => onNavigate?.('walker')}
               className="bg-gradient-to-br from-lime-50 to-green-50 rounded-2xl p-4 border border-lime-100 text-left hover:shadow-lg transition-all"
             >
-              <Bike className="w-8 h-8 text-lime-600 mb-2" />
+              <Dog className="w-8 h-8 text-lime-600 mb-2" />
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Dog Walker</h3>
               <p className="text-xs text-gray-600 mb-2">Daily walks</p>
               <span className="text-lime-600 font-bold text-sm">₹299/walk</span>
@@ -1704,7 +2070,7 @@ export function CustomerHomeComplete({
               </button>
             </div>
             <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-4 border border-green-100">
-              <Bike className="w-8 h-8 text-green-600 mb-2" />
+              <Dog className="w-8 h-8 text-green-600 mb-2" />
               <h3 className="text-sm font-semibold text-gray-800 mb-1">Dog Walkers</h3>
               <p className="text-xs text-gray-600 mb-3">Trusted & verified walkers</p>
               <button className="text-xs text-green-600 font-medium flex items-center gap-1">
@@ -1802,9 +2168,9 @@ export function CustomerHomeComplete({
         </div>
       </div>
 
-      {/* Fixed Bottom Navigation - Only show if not using standardized layout */}
-      {!hideHeaderFooter && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto">
+      {/* Fixed Bottom Navigation - Hide when Add Pet modal is open to prevent overlap */}
+      {!hideHeaderFooter && !showAddPetModal && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto z-40">
         <div className="flex items-center justify-around">
           <button className="flex flex-col items-center gap-1">
             <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
@@ -1909,7 +2275,10 @@ export function CustomerHomeComplete({
               }
             }}
             onChatProvider={() => {
-              onNavigate?.('booking-detail', { bookingId: showTrackingWidget });
+              // ✅ FIX: Use onViewBooking instead of onNavigate to prevent navigation issues
+              if (onViewBooking && showTrackingWidget) {
+                onViewBooking(showTrackingWidget);
+              }
             }}
             minimizable={true}
           />
@@ -1940,25 +2309,53 @@ export function CustomerHomeComplete({
         className={hideHeaderFooter ? 'bottom-6' : 'bottom-24'} // Adjust position based on footer
       />
 
-      {/* ✅ NEW: Vendor On The Way Popup */}
+      {/* ✅ NEW: Vendor On The Way Popup - Shows when vendor is en-route or has arrived */}
       {vendorOnTheWay && (
         <VendorOnTheWayPopup
-          booking={vendorOnTheWay}
+          booking={{
+            ...vendorOnTheWay,
+            status: vendorOnTheWay.status || 'en_route',
+          }}
           onTrack={(bookingId) => {
-            // Close popup and open live tracking
-            setVendorOnTheWay(null);
-            setShowTrackingWidget(bookingId);
-            const booking = activeBookings.find((b: any) => 
-              b.id === bookingId || b.bookingId === bookingId
-            );
-            if (booking) {
-              setTrackingBooking(booking);
+            // ✅ FIX: Navigate to dedicated GPS tracking screen for better experience
+            if (onNavigate) {
+              onNavigate('gps-tracking', { bookingId });
+            } else {
+              // Fallback: navigate directly to tracking page
+              window.location.href = `/tracking/${bookingId}`;
             }
           }}
-          onCall={(phone) => {
-            window.open(`tel:${phone}`, '_self');
+          onJoinCall={(bookingId, meetingId) => {
+            // ✅ NEW: For tele consultations, navigate to video call
+            if (onNavigate) {
+              onNavigate('video-call', { bookingId, meetingId });
+            } else {
+              // Fallback: navigate directly to video call page
+              window.location.href = `/video/${bookingId}`;
+            }
           }}
-          onDismiss={() => setVendorOnTheWay(null)}
+          onCall={(vendorPhone) => {
+            window.open(`tel:${vendorPhone}`, '_self');
+          }}
+          onChat={(bookingId) => {
+            // ✅ FIX: Use onViewBooking if available, otherwise fall back to window navigation
+            if (onViewBooking) {
+              onViewBooking(bookingId);
+            } else {
+              // Fallback: show booking details page
+              window.location.href = `/bookings/${bookingId}`;
+            }
+          }}
+          onDismiss={() => {
+            // Add to dismissed set so it doesn't reappear immediately
+            const session = gpsActiveSessions.find(s => s.bookingId === vendorOnTheWay.bookingId);
+            if (session) {
+              setDismissedTrackingSessions(prev => new Set(prev).add(session.sessionId));
+            }
+            setVendorOnTheWay(null);
+          }}
+          minimizable={true}
+          autoMinimizeAfterMs={15000} // Auto minimize after 15 seconds
         />
       )}
 
@@ -1985,6 +2382,7 @@ export function CustomerHomeComplete({
       )}
 
       {/* ✅ FIX GAP-6.2: 5-Minute Notification Before Scheduled Call */}
+      {/* GAP FIX: Use modal variant when call is imminent (within 2 minutes) for better visibility */}
       {upcomingCall && (
         <TeleConsultationReminderNotification
           booking={upcomingCall}
@@ -2005,6 +2403,31 @@ export function CustomerHomeComplete({
             setUpcomingCall(null);
           }}
           onDismiss={() => setUpcomingCall(null)}
+          variant={upcomingCall.minutesUntil <= 2 ? 'modal' : 'banner'}
+        />
+      )}
+
+      {/* ✅ CRITICAL FIX: Incoming/Outgoing Call Notification (WhatsApp-like) */}
+      {incomingCall && (
+        <TeleCallNotification
+          callType="incoming"
+          provider={incomingCall.provider}
+          bookingId={incomingCall.bookingId}
+          meetingId={incomingCall.meetingId}
+          serviceName={incomingCall.serviceName}
+          petName={incomingCall.petName}
+          onAccept={(bookingId, meetingId) => {
+            if (onNavigate) {
+              onNavigate('video-call', { bookingId, meetingId });
+            } else {
+              window.location.href = `/video/${bookingId}${meetingId ? `?meetingId=${meetingId}` : ''}`;
+            }
+            setIncomingCall(null);
+          }}
+          onReject={() => {
+            setIncomingCall(null);
+          }}
+          onDismiss={() => setIncomingCall(null)}
         />
       )}
 

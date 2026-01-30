@@ -248,40 +248,191 @@ class RejectVendorHandler extends BaseHandler {
 class ListVendorsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const status = context.event.queryStringParameters?.status;
-      const limit = parseInt(context.event.queryStringParameters?.limit || '50', 10);
-      const offset = parseInt(context.event.queryStringParameters?.offset || '0', 10);
+      // ✅ ENHANCED: Extract all filter parameters
+      const queryParams = context.event.queryStringParameters || {};
+      const status = queryParams.status;
+      const search = queryParams.search?.trim();
+      const category = queryParams.category;
+      const role = queryParams.role;
+      const vendorType = queryParams.vendorType;
+      const city = queryParams.city;
+      const tier = queryParams.tier;
+      const isActive = queryParams.isActive;
+      const limit = parseInt(queryParams.limit || '100', 10);
+      const offset = parseInt(queryParams.offset || '0', 10);
 
-      // ✅ SQL: Get vendors with filters
-      let vendors;
-      if (status) {
-        vendors = await select('vendors', { status }, {
-          limit,
-          offset,
-          orderBy: 'created_at',
-          orderDirection: 'DESC',
-        });
-      } else {
-        vendors = await select('vendors', {}, {
-          limit,
-          offset,
-          orderBy: 'created_at',
-          orderDirection: 'DESC',
-        });
+      console.log('[ListVendors] Filters:', { status, search, category, role, vendorType, city, tier, isActive });
+
+      // Build dynamic WHERE clause
+      let whereConditions: string[] = ['1=1'];
+      const params: any[] = [];
+      let paramIdx = 1;
+      
+      // Status filter
+      if (status && status !== 'all') {
+        whereConditions.push(`v.status = $${paramIdx}`);
+        params.push(status);
+        paramIdx++;
+      }
+
+      // Search filter - across multiple fields
+      if (search) {
+        whereConditions.push(`(
+          v.business_name ILIKE $${paramIdx} OR
+          v.owner_name ILIKE $${paramIdx} OR
+          v.phone ILIKE $${paramIdx} OR
+          v.email ILIKE $${paramIdx} OR
+          v.city ILIKE $${paramIdx} OR
+          r.name ILIKE $${paramIdx} OR
+          r.display_name ILIKE $${paramIdx}
+        )`);
+        params.push(`%${search}%`);
+        paramIdx++;
+      }
+
+      // Category filter
+      if (category && category !== 'all') {
+        whereConditions.push(`(
+          LOWER(v.category) = LOWER($${paramIdx}) OR 
+          LOWER(r.name) ILIKE $${paramIdx + 1} OR
+          LOWER(r.display_name) ILIKE $${paramIdx + 1}
+        )`);
+        params.push(category.toLowerCase());
+        params.push(`%${category}%`);
+        paramIdx += 2;
+      }
+
+      // Role ID filter
+      if (role && role !== 'all') {
+        whereConditions.push(`v.role_id = $${paramIdx}`);
+        params.push(role);
+        paramIdx++;
+      }
+
+      // City filter
+      if (city && city !== 'all') {
+        whereConditions.push(`LOWER(v.city) = LOWER($${paramIdx})`);
+        params.push(city);
+        paramIdx++;
+      }
+
+      // Tier filter
+      if (tier && tier !== 'all') {
+        whereConditions.push(`LOWER(v.tier) = LOWER($${paramIdx})`);
+        params.push(tier);
+        paramIdx++;
+      }
+
+      // Is Active filter
+      if (isActive !== undefined && isActive !== 'all') {
+        whereConditions.push(`v.is_active = $${paramIdx}`);
+        params.push(isActive === 'true');
+        paramIdx++;
+      }
+
+      const whereClause = whereConditions.join(' AND ');
+
+      // Main query with all filters
+      const vendorsResult = await query(`
+        SELECT 
+          v.id,
+          v.phone,
+          v.email,
+          v.business_name,
+          v.owner_name,
+          v.role_id,
+          v.category,
+          v.status,
+          v.tier,
+          v.is_active,
+          v.city,
+          v.state,
+          v.address,
+          v.experience_years,
+          v.rating,
+          v.created_at,
+          v.approved_at,
+          -- Role information
+          r.name as role_name,
+          r.display_name as role_display_name,
+          -- Vendor type derived from multiple sources
+          CASE 
+            WHEN vi.vendor_type IS NOT NULL AND vi.vendor_type != '' THEN vi.vendor_type
+            WHEN r.config->>'vendorConfiguration' IS NOT NULL THEN r.config->>'vendorConfiguration'
+            WHEN r.name LIKE '%_solo' OR r.name LIKE 'solo_%' OR LOWER(r.display_name) LIKE '%solo%' THEN 'solo'
+            ELSE 'business'
+          END as vendor_type,
+          -- Services count
+          (SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true) as active_services_count,
+          -- Average rating
+          (SELECT COALESCE(AVG(rating), 0) FROM reviews rv WHERE rv.vendor_id = v.id) as avg_rating,
+          -- Review count
+          (SELECT COUNT(*) FROM reviews rv WHERE rv.vendor_id = v.id) as review_count
+        FROM vendors v
+        LEFT JOIN roles r ON r.id = v.role_id
+        LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
+        WHERE ${whereClause}
+        ORDER BY v.created_at DESC
+        LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
+      `, [...params, limit, offset]);
+
+      // Get total count for pagination
+      const countResult = await query(`
+        SELECT COUNT(DISTINCT v.id) as total
+        FROM vendors v
+        LEFT JOIN roles r ON r.id = v.role_id
+        LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
+        WHERE ${whereClause}
+      `, params);
+
+      const totalCount = parseInt(countResult.rows[0]?.total) || 0;
+
+      // Transform and filter by vendor type (derived field, done in memory)
+      let vendors = (vendorsResult.rows || []).map((v: any) => ({
+        id: v.id,
+        vendorId: v.id,
+        businessName: v.business_name,
+        ownerName: v.owner_name,
+        fullName: v.business_name || v.owner_name,
+        phone: v.phone,
+        email: v.email,
+        status: v.status,
+        tier: v.tier || 'Bronze',
+        isActive: v.is_active,
+        // Role and type info
+        roleId: v.role_id,
+        roleName: v.role_name,
+        roleDisplayName: v.role_display_name,
+        category: v.category || v.role_name || 'General',
+        vendorType: v.vendor_type,
+        vendor_type: v.vendor_type,
+        // Location
+        city: v.city,
+        location: v.city ? `${v.city}${v.state ? ', ' + v.state : ''}` : null,
+        address: v.address,
+        // Experience
+        experience: v.experience_years ? `${v.experience_years} years` : null,
+        experienceYears: v.experience_years,
+        // Rating
+        rating: parseFloat(v.avg_rating) || parseFloat(v.rating) || 0,
+        reviewCount: parseInt(v.review_count) || 0,
+        // Services
+        activeServicesCount: parseInt(v.active_services_count) || 0,
+        // Dates
+        createdAt: v.created_at,
+        approvedAt: v.approved_at,
+      }));
+
+      // Apply vendor type filter (derived field)
+      if (vendorType && vendorType !== 'all') {
+        vendors = vendors.filter((v: any) => v.vendorType === vendorType);
       }
 
       return this.success({
-        vendors: vendors.map(v => ({
-          id: v.id,
-          businessName: v.business_name,
-          ownerName: v.owner_name,
-          phone: v.phone,
-          email: v.email,
-          status: v.status,
-          tier: v.tier,
-          createdAt: v.created_at,
-        })),
-        total: vendors.length,
+        vendors,
+        total: totalCount,
+        filtered: vendors.length,
+        filters: { status, search, category, role, vendorType, city, tier, isActive }
       });
     } catch (error: any) {
       console.error('Error in ListVendorsHandler:', error);
@@ -348,11 +499,17 @@ async function requireAdminAuth(c: any): Promise<{ authorized: boolean; userId?:
         console.log('[ADMIN AUTH] UAT Mode: Allowing admin access with valid token');
         return { authorized: true, userId: result.payload?.sub || 'uat-admin-user' };
       } catch (tokenError) {
-        // In UAT mode, still allow if token format looks valid
-        if (token.startsWith('eyJ')) {
-          console.log('[ADMIN AUTH] UAT Mode: Allowing admin access (token verification skipped)');
+        // SECURITY FIX: Only allow UAT bypass in non-production environments
+        const isProduction = process.env.NODE_ENV === 'production' || 
+                             process.env.STAGE === 'prod' || 
+                             process.env.AWS_LAMBDA_FUNCTION_NAME?.includes('prod');
+        
+        if (!isProduction && token.startsWith('eyJ')) {
+          console.log('[ADMIN AUTH] UAT Mode (DEV ONLY): Allowing admin access (token verification skipped)');
           return { authorized: true, userId: 'uat-admin-user' };
         }
+        // In production, require valid token
+        console.warn('[ADMIN AUTH] Token verification failed in production');
       }
     }
   }
@@ -548,7 +705,7 @@ export function registerAdminEndpoints(app: Hono) {
               formData.city || 'Unknown',
               formData.state || 'Unknown',
               formData.address || 'Unknown',
-              formData.pincode || formData.pinCode || '000000'
+              formData.pincode || formData.pinCode || ''
             ]
           );
           vendorId = insertResult.rows[0].id;
@@ -607,7 +764,7 @@ export function registerAdminEndpoints(app: Hono) {
           if (appPayload.state && (!vendorRecord?.state || vendorRecord.state === 'Unknown' || vendorRecord.state === 'Not specified')) {
             facilityUpdate.state = appPayload.state;
           }
-          if ((appPayload.pincode || appPayload.pinCode) && (!vendorRecord?.pincode || vendorRecord.pincode === '000000')) {
+          if ((appPayload.pincode || appPayload.pinCode) && (!vendorRecord?.pincode || vendorRecord.pincode === '000000' || vendorRecord.pincode === '')) {
             facilityUpdate.pincode = appPayload.pincode || appPayload.pinCode;
           }
           if (appPayload.latitude && !vendorRecord?.latitude) {
@@ -938,7 +1095,12 @@ export function registerAdminEndpoints(app: Hono) {
           'ACTIVATED',
           s.vendor_id::uuid,
           r.id as selected_role_id,
-          COALESCE(vi_vendor.vendor_type, 'business') as vendor_type,
+          -- Vendor type derived from role name if vendor_identity.vendor_type is NULL
+          CASE 
+            WHEN vi_vendor.vendor_type IS NOT NULL THEN vi_vendor.vendor_type
+            WHEN r.name LIKE '%_solo' OR r.name LIKE 'solo_%' OR LOWER(r.display_name) LIKE '%solo%' THEN 'solo'
+            ELSE 'business'
+          END as vendor_type,
           s.name as full_name,
           COALESCE(v.business_name, s.name) as business_name,
           s.email,

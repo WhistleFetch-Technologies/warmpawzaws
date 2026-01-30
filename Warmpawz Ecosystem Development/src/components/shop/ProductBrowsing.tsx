@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Search, Filter, ChevronDown, X, Star, Heart, ShoppingCart } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { authenticatedGet } from '../../utils/authenticatedFetch';
-import { projectId } from '../../utils/supabase/info';
+import { getApiBaseUrl } from '../../utils/api-config';
 
 interface Product {
   id: string;
@@ -73,7 +73,7 @@ export function ProductBrowsing() {
     try {
       setLoading(true);
       const data = await authenticatedGet(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/products`,
+        `${getApiBaseUrl()}/products`,
         false // Public endpoint
       );
       setProducts(data.products || []);
@@ -87,7 +87,7 @@ export function ProductBrowsing() {
   const fetchWishlist = async () => {
     try {
       const data = await authenticatedGet(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/wishlist`,
+        `${getApiBaseUrl()}/customer/wishlist`,
         true // Requires auth
       );
       setWishlist(new Set(data.productIds || []));
@@ -161,7 +161,7 @@ export function ProductBrowsing() {
 
       // Update backend
       await authenticatedGet(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/wishlist/${productId}/${isInWishlist ? 'remove' : 'add'}`,
+        `${getApiBaseUrl()}/customer/wishlist/${productId}/${isInWishlist ? 'remove' : 'add'}`,
         true
       );
     } catch (error) {

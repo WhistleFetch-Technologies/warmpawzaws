@@ -7,7 +7,7 @@ import { Switch } from '../ui/switch';
 import { Slider } from '../ui/slider';
 import { toast } from 'sonner@2.0.3';
 import { Save, MapPin, Clock, Truck, ShieldAlert } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface SchedulingPolicy {
   vendorId: string;
@@ -39,8 +39,8 @@ export function MultiServiceSchedulingPolicy({ vendorId }: { vendorId: string })
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/scheduling-policy`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/scheduling-policy`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -60,12 +60,12 @@ export function MultiServiceSchedulingPolicy({ vendorId }: { vendorId: string })
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/scheduling-policy`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/scheduling-policy`,
         {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(policy)
         }

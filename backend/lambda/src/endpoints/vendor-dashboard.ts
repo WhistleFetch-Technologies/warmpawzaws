@@ -16,8 +16,9 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
-import { query, select } from '../database/rds-connection';
+import { query, select, insert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { getEffectiveCapabilities } from '../utils/capability-filter';
@@ -35,8 +36,58 @@ class VendorDashboardHandler extends BaseHandler {
       return this.error('Vendor ID is required', 400);
     }
 
-    // ✅ SQL: Get vendor profile
-    const vendors = await select('vendors', { id: vendorId });
+    // ✅ CRITICAL FIX: Check both vendors table and vendor_identity table
+    // If vendor only exists in vendor_identity (approved), auto-create the vendor record
+    let vendors = await select('vendors', { id: vendorId });
+    
+    if (vendors.length === 0) {
+      console.log(`[DASHBOARD] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
+      const identities = await select('vendor_identity', { id: vendorId });
+      
+      if (identities.length > 0) {
+        const identity = identities[0];
+        if (identity.onboarding_status === 'APPROVED' || identity.onboarding_status === 'ACTIVATED') {
+          // Check if vendor exists by phone (there might be an existing vendor with different ID)
+          const vendorByPhone = await select('vendors', { phone: identity.phone });
+          if (vendorByPhone.length > 0) {
+            vendors = vendorByPhone;
+            console.log(`[DASHBOARD] Found existing vendor by phone: ${vendors[0].id}`);
+          } else {
+            // Get application data for vendor details
+            const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
+            const application = applications.length > 0 ? applications[0] : null;
+            const payload = application?.application_payload || {};
+            
+            // Create vendors record
+            console.log(`[DASHBOARD] Auto-creating vendor record for approved vendor ${vendorId}`);
+            const newVendor = await insert('vendors', {
+              id: vendorId,
+              phone: identity.phone,
+              email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
+              business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+              owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
+              role_id: identity.selected_role_id,
+              category: 'general',
+              address: payload.address || 'Not specified',
+              city: payload.city || 'Not specified',
+              state: payload.state || 'Not specified',
+              pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
+              status: 'active',
+              is_active: true,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+            vendors = newVendor;
+            console.log(`[DASHBOARD] Created vendor record for ${vendorId}`);
+          }
+        } else {
+          return this.error('Vendor not approved or activated', 403);
+        }
+      } else {
+        return this.error('Vendor not found', 404);
+      }
+    }
+    
     if (vendors.length === 0) {
       return this.error('Vendor not found', 404);
     }
@@ -380,6 +431,23 @@ export function registerVendorDashboardEndpoints(app: Hono) {
             };
             allowedServiceStyles = rawStyles.map((s: string) => styleMapping[s] || s);
             
+            // ✅ DYNAMIC SERVICE STYLES: Handle center-capable solo roles correctly
+            const vendorConfiguration = roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
+            const roleName = (role.name || '').toLowerCase().replace(/\s+/g, '_');
+            
+            // Center-capable roles CAN have at_center even as solo (trainers, groomers, vets)
+            const CENTER_CAPABLE_SOLO_ROLES = ['pet_trainer', 'trainer', 'pet_groomer', 'groomer', 'veterinarian', 'vet'];
+            const SOLO_ONLY_ROLES = ['pet_sitter', 'sitter', 'pet_walker', 'walker', 'pet_taxi'];
+            const isCenterCapableSolo = CENTER_CAPABLE_SOLO_ROLES.includes(roleName);
+            const isSoloOnlyRole = SOLO_ONLY_ROLES.includes(roleName);
+            
+            if (vendorConfiguration === 'solo' && isSoloOnlyRole && !isCenterCapableSolo) {
+              allowedServiceStyles = allowedServiceStyles.filter(style => style !== 'at_center');
+              console.log(`[Vendor Dashboard] Solo-only role (${roleName}) - filtered at_center. Allowed: ${allowedServiceStyles.join(', ')}`);
+            } else if (vendorConfiguration === 'solo' && isCenterCapableSolo) {
+              console.log(`[Vendor Dashboard] Center-capable solo (${roleName}) - keeping all: ${allowedServiceStyles.join(', ')}`);
+            }
+            
             try {
               const allPermissions = await query(
                 `SELECT role_id, permission_name 
@@ -396,6 +464,18 @@ export function registerVendorDashboardEndpoints(app: Hono) {
         } catch (roleError: any) {
           console.warn(`[Vendor Services] Failed to load role ${vendor.role_id}:`, roleError.message);
         }
+      }
+      
+      // ✅ DYNAMIC SERVICE STYLES: Vendor table solo check (secondary source)
+      const vendorRoleNameDash = role?.name?.toLowerCase().replace(/\s+/g, '_') || '';
+      const vendorCenterCapableRolesDash = ['pet_trainer', 'trainer', 'pet_groomer', 'groomer', 'veterinarian', 'vet'];
+      const isVendorCenterCapableDash = vendorCenterCapableRolesDash.includes(vendorRoleNameDash);
+      
+      if ((vendor.vendor_configuration === 'solo' || vendor.vendorConfiguration === 'solo' || vendor.vendor_type === 'solo') && !isVendorCenterCapableDash) {
+        allowedServiceStyles = allowedServiceStyles.filter(style => style !== 'at_center');
+        console.log(`[Vendor Dashboard] Solo vendor (${vendorRoleNameDash}) - not center-capable, filtered: ${allowedServiceStyles.join(', ')}`);
+      } else if (vendor.vendor_configuration === 'solo' || vendor.vendorConfiguration === 'solo' || vendor.vendor_type === 'solo') {
+        console.log(`[Vendor Dashboard] Solo vendor (${vendorRoleNameDash}) - center-capable, keeping all: ${allowedServiceStyles.join(', ')}`);
       }
 
       const serviceStyles = ['at_home', 'at_center', 'tele'];
@@ -473,12 +553,19 @@ export function registerVendorDashboardEndpoints(app: Hono) {
   app.get('/vendor/staff', async (c) => {
     const vendorId = c.req.header('X-Vendor-Id') || (c as any).get('vendorId') || (c as any).get('userId');
     
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'vendor-dashboard.ts:/vendor/staff',message:'ENTRY - vendor/staff endpoint called',data:{vendorId,path:c.req.path,xVendorIdHeader:c.req.header('X-Vendor-Id')},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
     if (!vendorId) {
       return c.json({ error: 'Vendor authentication required' }, 401);
     }
     
     try {
       const staff = await select('staff', { vendor_id: vendorId, is_active: true });
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'vendor-dashboard.ts:/vendor/staff:result',message:'Staff query result',data:{vendorId,staffCount:staff.length,staffSample:staff.slice(0,3).map((s:any)=>({id:s.id,name:s.name,vendor_id:s.vendor_id}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E'})}).catch(()=>{});
+      // #endregion
       return c.json({
         success: true,
         count: staff.length,
@@ -519,14 +606,14 @@ function createApiGatewayEvent(req: any): any {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'vendor-dashboard-handler',
     functionVersion: '$LATEST',
   };

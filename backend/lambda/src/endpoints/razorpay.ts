@@ -25,6 +25,7 @@ import { createHmac, randomUUID } from 'crypto';
 import { getRazorpayConfig, getRazorpayAuthHeader, razorpayRequest } from '../utils/razorpay-client';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { DEFAULT_COMMISSION_RATE } from '../lib/constants/commission';
 
 // Razorpay configuration is imported from utils
 
@@ -36,158 +37,148 @@ class CreateRazorpayOrderHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       const body = this.parseBody(context.event);
-      const { bookingId, amount, currency = 'INR', customerId } = body;
+      const { bookingId, orderId: pharmacyOrderId, amount, currency = 'INR', customerId, type } = body;
 
-      this.validateRequired(body, ['bookingId', 'amount']);
+      const isPharmacyOrder = type === 'pharmacy_order';
+      if (isPharmacyOrder) {
+        if (!pharmacyOrderId || amount == null) {
+          return this.error('orderId and amount are required for pharmacy_order', 400);
+        }
+      } else {
+        // Return 400 for missing required fields (do not throw - would become 500 in BaseHandler)
+        const missing = ['bookingId', 'amount'].filter((f) => !body[f]);
+        if (missing.length > 0) {
+          return this.error(`Missing required fields: ${missing.join(', ')}`, 400);
+        }
+      }
 
-      console.log('[RAZORPAY-CREATE-ORDER] Starting order creation:', { bookingId, amount, customerId });
+      console.log('[RAZORPAY-CREATE-ORDER] Starting order creation:', { type: type || 'booking', bookingId, pharmacyOrderId, amount, customerId });
 
-      // ✅ FIX: Get Razorpay config - use getRazorpayConfig directly with its built-in fallbacks
-      // It tries: Secrets Manager (with timeout) → Database → Environment Variables
       let config: any;
       try {
-        // Call getRazorpayConfig directly - it handles all fallbacks internally
-        // No need for Promise.race wrapper - getRazorpayConfig has its own timeout handling
         config = await getRazorpayConfig();
         console.log('[RAZORPAY-CREATE-ORDER] ✅ Config loaded successfully');
       } catch (error: any) {
         console.error('[RAZORPAY-CREATE-ORDER] ❌ Failed to load Razorpay config:', error.message);
-        // getRazorpayConfig already tried all fallbacks, so if it fails, config is truly missing
         return this.error('Payment gateway configuration error. Please configure Razorpay in Platform Settings or environment variables.', 500);
       }
 
       if (!config || !config.keyId || !config.keySecret) {
-        console.error('[RAZORPAY-CREATE-ORDER] ❌ Razorpay config invalid:', { hasKeyId: !!config?.keyId, hasKeySecret: !!config?.keySecret });
+        console.error('[RAZORPAY-CREATE-ORDER] ❌ Razorpay config invalid');
         return this.error('Payment gateway configuration error', 500);
       }
-      
-      console.log('[RAZORPAY-CREATE-ORDER] ✅ Razorpay config loaded successfully');
 
-      // ✅ SQL: Get booking details with timeout handling
-      console.log('[RAZORPAY-CREATE-ORDER] Fetching booking:', bookingId);
       let booking: any;
       let vendor: any;
-      
-      try {
-        // ✅ FIX: Add timeout to database queries to prevent Lambda timeout
-        const bookingPromise = select('bookings', { id: bookingId });
-        const bookingResult = await Promise.race([
-          bookingPromise,
-          new Promise<any[]>((_, reject) => 
-            setTimeout(() => reject(new Error('Booking query timeout')), 5000) // 5s timeout
-          )
+      let receipt: string;
+      let notes: Record<string, string>;
+      let customerIdFinal: string;
+      let vendorIdFinal: string;
+
+      if (isPharmacyOrder) {
+        const orderResult = await Promise.race([
+          select('pharmacy_orders', { id: pharmacyOrderId }),
+          new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('Query timeout')), 5000)),
         ]);
-        
-        if (bookingResult.length === 0) {
-          console.error('[RAZORPAY-CREATE-ORDER] Booking not found:', bookingId);
+        if (!orderResult || orderResult.length === 0) {
+          return this.error('Pharmacy order not found', 404);
+        }
+        const order = orderResult[0];
+        if (order.status !== 'invoice_generated') {
+          return this.error('Order is not in invoice state. Please wait for pharmacy to send invoice.', 400);
+        }
+        customerIdFinal = customerId || order.customer_id;
+        vendorIdFinal = order.pharmacy_id;
+        const vendorResult = await select('vendors', { id: vendorIdFinal });
+        vendor = vendorResult.length > 0 ? vendorResult[0] : null;
+        const shortId = String(pharmacyOrderId).replace(/-/g, '').substring(0, 32);
+        receipt = `po_${shortId}`;
+        notes = { pharmacyOrderId: String(pharmacyOrderId), customerId: customerIdFinal, vendorId: vendorIdFinal };
+      } else {
+        const bookingResult = await Promise.race([
+          select('bookings', { id: bookingId }),
+          new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('Booking query timeout')), 5000)),
+        ]);
+        if (!bookingResult || bookingResult.length === 0) {
           return this.error('Booking not found', 404);
         }
-        
         booking = bookingResult[0];
-        console.log('[RAZORPAY-CREATE-ORDER] Booking found:', { vendorId: booking.vendor_id, customerId: booking.customer_id });
-
-        // ✅ Get vendor details for marketplace mode with timeout
-        console.log('[RAZORPAY-CREATE-ORDER] Fetching vendor:', booking.vendor_id);
         const vendorPromise = select('vendors', { id: booking.vendor_id });
         const vendorResult = await Promise.race([
           vendorPromise,
-          new Promise<any[]>((_, reject) => 
-            setTimeout(() => reject(new Error('Vendor query timeout')), 5000) // 5s timeout
-          )
+          new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('Vendor query timeout')), 5000)),
         ]);
         vendor = vendorResult.length > 0 ? vendorResult[0] : null;
-      } catch (dbError: any) {
-        console.error('[RAZORPAY-CREATE-ORDER] Database query error:', dbError.message);
-        if (dbError.message.includes('timeout')) {
-          return this.error('Database query timed out. Please try again.', 504);
-        }
-        return this.error('Failed to fetch booking details', 500);
+        customerIdFinal = customerId || booking.customer_id;
+        vendorIdFinal = booking.vendor_id;
+        const shortBookingId = bookingId.replace(/-/g, '').substring(0, 32);
+        receipt = `bk_${shortBookingId}`;
+        notes = { bookingId, customerId: customerIdFinal, vendorId: vendorIdFinal };
       }
 
-      // ✅ Create Razorpay Order with marketplace mode (automatic transfers)
-      // Note: Razorpay receipt max length is 40 characters
-      // Use shortened format: "bk_" + first 32 chars of UUID (without hyphens) = 35 chars
-      const shortBookingId = bookingId.replace(/-/g, '').substring(0, 32);
       const orderData: any = {
-        amount: Math.round(amount * 100), // Convert to paise
+        amount: Math.round(Number(amount) * 100),
         currency: currency,
-        receipt: `bk_${shortBookingId}`,
-        notes: {
-          bookingId: bookingId,
-          customerId: customerId || booking.customer_id,
-          vendorId: booking.vendor_id,
-        },
+        receipt,
+        notes,
       };
 
-      // ✅ If vendor has linked account and marketplace mode enabled, add transfers
+      // If vendor has linked account and marketplace mode enabled, add transfers
       if (vendor?.razorpay_account_id && vendor.bank_verified) {
-        console.log('[RAZORPAY-CREATE-ORDER] Vendor has Razorpay account, calculating commission');
-        // ✅ FIX: Use faster commission lookup with aggressive timeout
-        // Default to 10% commission to avoid blocking on slow DB queries
-        let tierCommission = 10; // Default 10% commission
+        let tierCommission = DEFAULT_COMMISSION_RATE;
         try {
           tierCommission = await Promise.race([
-            getVendorTierCommission(booking.vendor_id),
-            new Promise<number>((resolve) => setTimeout(() => resolve(10), 2000)) // ✅ FIX: Reduced to 2s timeout
+            getVendorTierCommission(vendorIdFinal),
+            new Promise<number>((resolve) => setTimeout(() => resolve(DEFAULT_COMMISSION_RATE), 2000))
           ]);
         } catch (error) {
-          console.warn('[RAZORPAY-CREATE-ORDER] Failed to get tier commission, using default:', error);
-          tierCommission = 10; // Default commission
+          tierCommission = DEFAULT_COMMISSION_RATE;
         }
-
-        const commissionAmount = Math.round((amount * tierCommission / 100) * 100); // In paise
-        const vendorShare = Math.round(amount * 100) - commissionAmount;
-
-        // Add transfer configuration for marketplace mode
+        const amt = Number(amount);
+        const commissionAmount = Math.round((amt * tierCommission / 100) * 100);
+        const vendorShare = Math.round(amt * 100) - commissionAmount;
         orderData.transfers = [
           {
             account: vendor.razorpay_account_id,
             amount: vendorShare,
             currency: currency,
-            notes: {
-              booking_id: bookingId,
-              vendor_id: booking.vendor_id,
-              commission_rate: tierCommission.toString(),
-            },
+            notes: isPharmacyOrder
+              ? { pharmacy_order_id: String(pharmacyOrderId), vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() }
+              : { booking_id: bookingId, vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() },
             on_hold: false,
           },
         ];
-        console.log('[RAZORPAY-CREATE-ORDER] Transfer configured:', { vendorShare, commissionAmount, tierCommission });
       }
 
-      // ✅ FIX: Create Razorpay order with proper timeout (no double timeout)
-      // Removed Promise.race - razorpayRequest already has timeout handling
-      console.log('[RAZORPAY-CREATE-ORDER] Creating Razorpay order with data:', { 
-        amount: orderData.amount, 
-        currency: orderData.currency,
-        hasTransfers: !!orderData.transfers 
-      });
-      const razorpayOrder = await razorpayRequest('/orders', 'POST', orderData, 20000) as any; // ✅ FIX: 20s timeout, removed double timeout
+      const razorpayOrder = await razorpayRequest('/orders', 'POST', orderData, 20000) as any;
 
       if (!razorpayOrder || !razorpayOrder.id) {
         console.error('[RAZORPAY-CREATE-ORDER] Invalid Razorpay response:', razorpayOrder);
         return this.error('Failed to create payment order', 500);
       }
 
-      console.log('[RAZORPAY-CREATE-ORDER] Razorpay order created:', razorpayOrder.id);
+      if (isPharmacyOrder) {
+        await query(
+          `INSERT INTO payments (booking_id, pharmacy_order_id, customer_id, vendor_id, razorpay_order_id, amount, currency, payment_method, payment_status)
+           VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8)`,
+          [pharmacyOrderId, customerIdFinal, vendorIdFinal, razorpayOrder.id, Number(amount), currency, 'razorpay', 'pending']
+        );
+      } else {
+        await insert('payments', {
+          booking_id: bookingId,
+          customer_id: customerIdFinal,
+          vendor_id: vendorIdFinal,
+          razorpay_order_id: razorpayOrder.id,
+          amount: Number(amount),
+          currency: currency,
+          payment_method: 'razorpay',
+          payment_status: 'pending',
+        });
+      }
 
-      // ✅ SQL: Create payment record (customer_id is required)
-      console.log('[RAZORPAY-CREATE-ORDER] Creating payment record');
-      await insert('payments', {
-        booking_id: bookingId,
-        customer_id: customerId || booking.customer_id, // Required field
-        vendor_id: booking.vendor_id,
-        razorpay_order_id: razorpayOrder.id,
-        amount: amount,
-        currency: currency,
-        payment_method: 'razorpay',
-        payment_status: 'pending',
-      });
-
-      console.log('[RAZORPAY-CREATE-ORDER] Order creation successful');
       return this.success({
         orderId: razorpayOrder.id,
-        amount: razorpayOrder.amount / 100, // Convert back to rupees
+        amount: razorpayOrder.amount / 100,
         currency: razorpayOrder.currency,
         keyId: config.keyId,
       });
@@ -260,48 +251,63 @@ class VerifyPaymentHandler extends BaseHandler {
         }
       );
 
-      // ✅ SQL: Update booking payment status and confirm booking
       const payment = payments[0];
-      await update(
-        'bookings',
-        { id: payment.booking_id },
-        { 
-          payment_status: 'paid',
-          status: 'confirmed', // ✅ CRITICAL: Confirm booking after payment
-          updated_at: new Date().toISOString(),
-        }
-      );
+      const pharmacyOrderId = payment.pharmacy_order_id;
 
-      // ✅ Trigger automatic settlement if marketplace mode is enabled
-      try {
-        const vendors = await select('vendors', { id: payment.vendor_id });
-        const vendor = vendors.length > 0 ? vendors[0] : null;
-        
-        if (vendor?.razorpay_account_id && vendor.bank_verified) {
-          // Queue automatic settlement
-          const { sendToSQS } = await import('../utils/aws-clients');
-          await sendToSQS('settlement-queue', {
-            type: 'auto_settle_booking',
-            bookingId: payment.booking_id,
-            vendorId: payment.vendor_id,
-            paymentId: payment.id,
+      if (pharmacyOrderId) {
+        // Pharmacy order: update status and create delivery_tracking with OTP for later use at dispatch
+        await update('pharmacy_orders', { id: pharmacyOrderId }, {
+          payment_status: 'paid',
+          razorpay_payment_id: razorpay_payment_id,
+          status: 'payment_confirmed',
+          updated_at: new Date().toISOString(),
+        });
+        const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
+        const existing = await select('delivery_tracking', { pharmacy_order_id: pharmacyOrderId });
+        if (existing.length === 0) {
+          await insert('delivery_tracking', {
+            pharmacy_order_id: pharmacyOrderId,
+            status: 'assigned',
+            delivery_otp: deliveryOtp,
+            assigned_at: new Date().toISOString(),
           });
         }
-      } catch (error) {
-        console.error('Failed to queue automatic settlement:', error);
-      }
-
-      // ✅ Publish payment processed event
-      try {
-        const { publishPaymentProcessed } = await import('../utils/sns-client');
-        await publishPaymentProcessed({
-          paymentId: razorpay_payment_id,
-          bookingId: payment.booking_id,
-          amount: payment.amount,
-          status: 'completed',
-        });
-      } catch (error) {
-        console.error('Failed to publish payment processed event:', error);
+      } else if (payment.booking_id) {
+        await update(
+          'bookings',
+          { id: payment.booking_id },
+          { 
+            payment_status: 'paid',
+            status: 'confirmed',
+            updated_at: new Date().toISOString(),
+          }
+        );
+        try {
+          const vendors = await select('vendors', { id: payment.vendor_id });
+          const vendor = vendors.length > 0 ? vendors[0] : null;
+          if (vendor?.razorpay_account_id && vendor.bank_verified) {
+            const { sendToSQS } = await import('../utils/aws-clients');
+            await sendToSQS('settlement-queue', {
+              type: 'auto_settle_booking',
+              bookingId: payment.booking_id,
+              vendorId: payment.vendor_id,
+              paymentId: payment.id,
+            });
+          }
+        } catch (error) {
+          console.error('Failed to queue automatic settlement:', error);
+        }
+        try {
+          const { publishPaymentProcessed } = await import('../utils/sns-client');
+          await publishPaymentProcessed({
+            paymentId: razorpay_payment_id,
+            bookingId: payment.booking_id,
+            amount: payment.amount,
+            status: 'completed',
+          });
+        } catch (error) {
+          console.error('Failed to publish payment processed event:', error);
+        }
       }
 
       return this.success({
@@ -699,7 +705,9 @@ export function registerRazorpayEndpoints(app: Hono) {
         console.error('❌ [RAZORPAY-CREATE-ORDER] Unhandled error:', error);
         console.error('❌ [RAZORPAY-CREATE-ORDER] Error stack:', error?.stack);
         const errorMessage = error?.message || 'Internal server error';
-        const statusCode = error?.statusCode || 500;
+        // Missing required fields = 400 Bad Request (validation), not 500
+        const statusCode = error?.statusCode
+          || (errorMessage.includes('Missing required') ? 400 : 500);
         return c.json({ 
           error: errorMessage,
           message: errorMessage 
@@ -759,6 +767,124 @@ export function registerRazorpayEndpoints(app: Hono) {
     const result = await refundHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
+
+  /**
+   * GET /razorpay/ifsc/:ifscCode
+   * Lookup bank details by IFSC code using Razorpay IFSC API
+   * This is a public API that doesn't require Razorpay authentication
+   */
+  app.get('/razorpay/ifsc/:ifscCode', async (c) => {
+    try {
+      const { ifscCode } = c.req.param();
+      
+      if (!ifscCode || !/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(ifscCode)) {
+        return c.json({ 
+          error: 'Invalid IFSC code format. Must be 11 characters (e.g., HDFC0001234)' 
+        }, 400);
+      }
+
+      // Razorpay IFSC API is public and doesn't require authentication
+      const response = await fetch(`https://ifsc.razorpay.com/${ifscCode.toUpperCase()}`);
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return c.json({ 
+            error: 'IFSC code not found',
+            ifsc: ifscCode.toUpperCase()
+          }, 404);
+        }
+        throw new Error(`IFSC lookup failed: ${response.statusText}`);
+      }
+
+      const bankData = await response.json();
+      
+      return c.json({
+        success: true,
+        ifsc: bankData.IFSC || ifscCode.toUpperCase(),
+        bank: bankData.BANK || '',
+        branch: bankData.BRANCH || '',
+        address: bankData.ADDRESS || '',
+        city: bankData.CITY || '',
+        district: bankData.DISTRICT || '',
+        state: bankData.STATE || '',
+        contact: bankData.CONTACT || '',
+        imps: bankData.IMPS === true,
+        neft: bankData.NEFT === true,
+        rtgs: bankData.RTGS === true,
+        upi: bankData.UPI === true,
+        micr: bankData.MICR || '',
+      });
+    } catch (error: any) {
+      console.error('Error looking up IFSC code:', error);
+      return c.json({ 
+        error: error.message || 'Failed to lookup IFSC code' 
+      }, 500);
+    }
+  });
+
+  /**
+   * POST /razorpay/verify-bank-account
+   * Verify bank account details using Razorpay Marketplace API
+   * Requires Razorpay authentication
+   */
+  app.post('/razorpay/verify-bank-account', async (c) => {
+    try {
+      const { account_number, ifsc_code, beneficiary_name } = await c.req.json();
+      
+      if (!account_number || !ifsc_code || !beneficiary_name) {
+        return c.json({ 
+          error: 'account_number, ifsc_code, and beneficiary_name are required' 
+        }, 400);
+      }
+
+      // Get Razorpay config
+      const config = await getRazorpayConfig();
+      const authHeader = await getRazorpayAuthHeader();
+
+      // Use Razorpay's fund account validation API
+      // Note: This requires a linked account, so we'll use a simpler validation
+      // For full verification, the account needs to be added to a linked account first
+      
+      // First, validate IFSC format and get bank details
+      const ifscResponse = await fetch(`https://ifsc.razorpay.com/${ifsc_code.toUpperCase()}`);
+      if (!ifscResponse.ok) {
+        return c.json({ 
+          error: 'Invalid IFSC code',
+          details: 'IFSC code not found in Razorpay database'
+        }, 400);
+      }
+
+      const ifscData = await ifscResponse.json();
+
+      // Validate account number format (9-18 digits)
+      if (!/^\d{9,18}$/.test(account_number)) {
+        return c.json({ 
+          error: 'Invalid account number',
+          details: 'Account number must be 9-18 digits'
+        }, 400);
+      }
+
+      // Return validation result
+      return c.json({
+        success: true,
+        valid: true,
+        bank_details: {
+          bank: ifscData.BANK || '',
+          branch: ifscData.BRANCH || '',
+          city: ifscData.CITY || '',
+          state: ifscData.STATE || '',
+          ifsc: ifsc_code.toUpperCase(),
+        },
+        account_number: account_number.replace(/\d(?=\d{4})/g, '*'), // Mask all but last 4 digits
+        message: 'Bank account details validated. Full verification requires adding to Razorpay linked account.',
+      });
+    } catch (error: any) {
+      console.error('Error verifying bank account:', error);
+      return c.json({ 
+        error: error.message || 'Failed to verify bank account' 
+      }, 500);
+    }
+  });
 }
 
 // ✅ FIX: Accept pre-parsed body since Hono doesn't have req.body
@@ -791,8 +917,9 @@ function createLambdaContext(): any {
 /**
  * ✅ FIX: Optimized vendor tier commission lookup - single query instead of multiple
  * Get vendor tier commission rate from database with optimized query
+ * @exported - Used by vendor-booking-actions.ts for earnings calculation
  */
-async function getVendorTierCommission(vendorId: string): Promise<number> {
+export async function getVendorTierCommission(vendorId: string): Promise<number> {
   try {
     // ✅ FIX: Single optimized query that checks all conditions at once
     // This reduces database round trips from 3-4 queries to 1 query
@@ -842,12 +969,12 @@ async function getVendorTierCommission(vendorId: string): Promise<number> {
       return parseFloat(rows[0].commission_rate);
     }
 
-    // Fallback to 10% if no tier found (reduced from 15% to match default)
-    return 10.0;
+    // Fallback to default commission rate if no tier found
+    return DEFAULT_COMMISSION_RATE;
   } catch (error) {
     console.error('Error getting vendor tier commission:', error);
-    // Fallback to 10% on error (reduced from 15% to match default)
-    return 10.0;
+    // Fallback to default commission rate on error
+    return DEFAULT_COMMISSION_RATE;
   }
 }
 

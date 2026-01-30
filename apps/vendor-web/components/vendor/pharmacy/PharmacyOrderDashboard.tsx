@@ -1,8 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { LogisticsPartnerAssignment } from './LogisticsPartnerAssignment'; // ✅ FIX GAP-8.3: Logistics partner integration
+import { PerforaInvoiceUpload } from './PerforaInvoiceUpload';
+import { toast } from 'sonner';
 
 // 2D Sketch-style SVG Icons
 const Icons = {
@@ -99,18 +102,20 @@ const Icons = {
   ),
 };
 
-// Types
+// Types (match backend GET /pharmacy/orders/incoming/:vendorId)
 interface IncomingOrder {
-  id: string;
+  id?: string;
   order_id: string;
-  order_number: string;
+  order_number?: string;
+  broadcast_id?: string;
   customer_name: string;
   customer_phone: string;
-  distance_km: number;
+  distance_from_customer?: number;
+  distance_km?: number;
   delivery_fee: number;
-  eta_minutes: number;
+  eta_minutes?: number;
   expiresIn: number;
-  items: Array<{ id: string; product_name: string; quantity: number }>;
+  items: Array<{ id?: string; product_name?: string; medicine_name?: string; name?: string; quantity: number }>;
   prescription?: {
     medication_name: string;
     dosage: string;
@@ -135,9 +140,11 @@ interface ActiveOrder {
 interface PharmacyOrderDashboardProps {
   vendorId: string;
   vendorName?: string;
+  onBack?: () => void;
 }
 
-export default function PharmacyOrderDashboard({ vendorId, vendorName }: PharmacyOrderDashboardProps) {
+export default function PharmacyOrderDashboard({ vendorId, vendorName, onBack }: PharmacyOrderDashboardProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'incoming' | 'active' | 'completed'>('incoming');
   const [incomingOrders, setIncomingOrders] = useState<IncomingOrder[]>([]);
   const [activeOrders, setActiveOrders] = useState<ActiveOrder[]>([]);
@@ -153,7 +160,8 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName }: Pharmac
     try {
       const response = await apiClient.get(`/pharmacy/orders/incoming/${vendorId}`);
       if (response && (response as any).success) {
-        setIncomingOrders((response as any).incomingOrders || []);
+        const data = response as any;
+        setIncomingOrders(data.incomingOrders ?? data.orders ?? []);
       }
     } catch (error) {
       console.error('Error fetching incoming orders:', error);
@@ -210,7 +218,7 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName }: Pharmac
     try {
       const response = await apiClient.post(`/pharmacy/orders/${order.order_id}/accept`, {
         pharmacyId: vendorId,
-        availableItems: order.items.map(i => i.product_name),
+        availableItems: (order.items || []).map((i: any) => i.product_name || i.medicine_name || i.name || 'Item'),
         unavailableItems: [],
       });
 
@@ -218,8 +226,8 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName }: Pharmac
         // Open invoice modal
         setSelectedOrder(order);
         setInvoiceItems(order.items.map(i => ({
-          name: i.product_name,
-          price: 0, // Pharmacy will fill in prices
+          name: i.product_name || i.medicine_name || i.name || 'Item',
+          price: Number(i.unit_price ?? i.price ?? 0) || 0,
           quantity: i.quantity,
         })));
         setShowInvoiceModal(true);
@@ -244,26 +252,30 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName }: Pharmac
     }
   };
 
-  // Generate invoice
+  // Generate invoice (proforma: subtotal + delivery + platform + convenience)
   const handleGenerateInvoice = async () => {
     if (!selectedOrder) return;
 
     const deliveryFee = (selectedOrder as IncomingOrder).delivery_fee || 40;
-    
+
     try {
       const response = await apiClient.post(`/pharmacy/orders/${(selectedOrder as IncomingOrder).order_id}/invoice`, {
-        items: invoiceItems,
-        deliveryFee,
-        taxRate: 5,
+        invoiceItems: invoiceItems.map((i) => ({
+          name: i.name,
+          quantity: i.quantity,
+          unit_price: i.price,
+        })),
       });
 
       if (response && (response as any).success) {
         setShowInvoiceModal(false);
         setSelectedOrder(null);
         await fetchActiveOrders();
+        toast.success('Invoice sent to customer');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error generating invoice:', error);
+      toast.error(error?.message || 'Failed to send invoice');
     }
   };
 
@@ -343,6 +355,14 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName }: Pharmac
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onBack ?? (() => router.push('/'))}
+                className="w-10 h-10 flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                aria-label="Back to dashboard"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+              </button>
               <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center text-white">
                 {Icons.pill}
               </div>
@@ -417,7 +437,7 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName }: Pharmac
                           {Icons.receipt}
                         </div>
                         <div>
-                          <h3 className="font-semibold text-slate-800">{order.order_number}</h3>
+                          <h3 className="font-semibold text-slate-800">{order.order_number || order.order_id?.slice(0, 8)}</h3>
                           <p className="text-sm text-slate-500">{order.customer_name}</p>
                         </div>
                       </div>
@@ -428,7 +448,39 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName }: Pharmac
                         </div>
                         <p className="text-sm text-slate-500 flex items-center gap-1 justify-end mt-1">
                           {Icons.mapPin}
-                          {order.distance_km} km away
+                          {(order.distance_km ?? order.distance_from_customer ?? 0)} km away
+                          {((o: any) => {
+                            const lat = o.customer_lat ?? o.delivery_latitude ?? o.delivery_address?.latitude ?? o.delivery_address?.lat;
+                            const lng = o.customer_lng ?? o.delivery_longitude ?? o.delivery_address?.longitude ?? o.delivery_address?.lng;
+                            const addr = [o.delivery_address?.addressLine1, o.delivery_address?.city, o.delivery_address?.pincode].filter(Boolean).join(', ');
+                            if (lat != null && lng != null) {
+                              return (
+                                <a
+                                  href={`https://www.google.com/maps?q=${lat},${lng}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="ml-2 text-amber-600 hover:text-amber-700 text-xs font-medium"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  View on Map
+                                </a>
+                              );
+                            }
+                            if (addr) {
+                              return (
+                                <a
+                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="ml-2 text-amber-600 hover:text-amber-700 text-xs font-medium"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  View on Map
+                                </a>
+                              );
+                            }
+                            return null;
+                          })(order)}
                         </p>
                       </div>
                     </div>
@@ -446,17 +498,20 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName }: Pharmac
                     )}
 
                     <div className="space-y-2">
-                      {order.items.map((item, idx) => (
+                      {(order.items || []).map((item: any, idx: number) => (
                         <div key={idx} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
                           <div className="flex items-center gap-3">
                             <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-500">
                               {Icons.pill}
                             </div>
-                            <span className="text-slate-700">{item.product_name}</span>
+                            <span className="text-slate-700">{item.product_name || item.medicine_name || item.name || 'Item'}</span>
                           </div>
-                          <span className="text-slate-500 text-sm">Qty: {item.quantity}</span>
+                          <span className="text-slate-500 text-sm">Qty: {item.quantity ?? 1}</span>
                         </div>
                       ))}
+                      {(!order.items || order.items.length === 0) && (
+                        <p className="text-slate-500 text-sm py-2">Prescription order — add items in invoice</p>
+                      )}
                     </div>
 
                     <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
@@ -503,7 +558,7 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName }: Pharmac
             ) : (
               activeOrders.map((order) => (
                 <div key={order.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-lg transition-shadow">
-                  <div className="p-4 border-b border-slate-100">
+                    <div className="p-4 border-b border-slate-100">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">
@@ -514,9 +569,32 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName }: Pharmac
                           <p className="text-sm text-slate-500">{order.customer_name} • {order.customer_phone}</p>
                         </div>
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(order.status)}`}>
-                        {getStatusLabel(order.status)}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {(() => {
+                          const o = order as any;
+                          const lat = o.customer_lat ?? o.delivery_latitude ?? o.delivery_address?.latitude ?? o.delivery_address?.lat;
+                          const lng = o.customer_lng ?? o.delivery_longitude ?? o.delivery_address?.longitude ?? o.delivery_address?.lng;
+                          const addr = [o.delivery_address?.addressLine1, o.delivery_address?.city, o.delivery_address?.pincode].filter(Boolean).join(', ');
+                          if (lat != null && lng != null) {
+                            return (
+                              <a href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 text-xs font-medium flex items-center gap-1">
+                                {Icons.mapPin} Map
+                              </a>
+                            );
+                          }
+                          if (addr) {
+                            return (
+                              <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr)}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 text-xs font-medium flex items-center gap-1">
+                                {Icons.mapPin} Map
+                              </a>
+                            );
+                          }
+                          return null;
+                        })()}
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(order.status)}`}>
+                          {getStatusLabel(order.status)}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -554,9 +632,9 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName }: Pharmac
                             latitude: (order as any).delivery_latitude || (order as any).customer_latitude || (order as any).deliveryAddress?.latitude || 0,
                             longitude: (order as any).delivery_longitude || (order as any).customer_longitude || (order as any).deliveryAddress?.longitude || 0,
                           }}
-                          items={order.items.map((item: any) => ({
-                            name: item.product_name,
-                            quantity: item.quantity || 1,
+                          items={(order.items || []).map((item: any) => ({
+                            name: item.product_name || item.name || item.medicine_name || 'Item',
+                            quantity: item.quantity ?? 1,
                           }))}
                           onPartnerAssigned={(partnerId) => {
                             console.log('Partner assigned:', partnerId);

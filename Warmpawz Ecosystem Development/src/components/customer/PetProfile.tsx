@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface PetProfileProps {
   phone: string;
@@ -72,10 +72,10 @@ export function PetProfile({
       console.log(`🐾 [PET-PROFILE] Loading booking history for pet: ${petId} (${petName})`);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/bookings/pet/${phone}/${petId}`,
+        `${getApiBaseUrl()}/customer/bookings/pet/${phone}/${petId}`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );

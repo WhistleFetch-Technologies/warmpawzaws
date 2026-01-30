@@ -1,5 +1,0 @@
-./api-contract-verification.sh: line 39: /regions: syntax error: operand expected (error token is "/regions")
-[0;34mℹ️ Starting API Contract Verification[0m
-==========================================
-
-[0;32m✅ API Contract Verification Complete[0m

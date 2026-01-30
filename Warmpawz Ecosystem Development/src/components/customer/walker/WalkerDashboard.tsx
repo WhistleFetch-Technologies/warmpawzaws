@@ -16,7 +16,7 @@ import {
   Shield,
   Video
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface WalkerDashboardProps {
   phone: string;
@@ -62,9 +62,9 @@ export function WalkerDashboard({ phone, onNavigate, onBack, data, onBrowseProvi
       
       // Fetch all approved vendors from database
       const vendorsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/services`,
+        `${getApiBaseUrl()}/customer/services`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` },
+          headers: { Authorization: (getAuthHeaders().Authorization || "") },
         }
       );
 

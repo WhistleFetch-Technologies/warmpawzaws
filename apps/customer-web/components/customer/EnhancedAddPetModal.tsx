@@ -444,7 +444,7 @@ export function EnhancedAddPetModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end justify-center">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-end justify-center">
       <div 
         className="bg-white w-full max-w-lg rounded-t-3xl flex flex-col"
         style={{ height: '95vh', maxHeight: '95vh' }}
@@ -501,8 +501,8 @@ export function EnhancedAddPetModal({
           </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-5">
+        {/* Content - pb-32 ensures Coat Type and bottom fields scroll above any fixed UI */}
+        <div className="flex-1 overflow-y-auto p-5 pb-32">
           {/* Step 1: Photo */}
           {step === 'photo' && (
             <div className="space-y-6">

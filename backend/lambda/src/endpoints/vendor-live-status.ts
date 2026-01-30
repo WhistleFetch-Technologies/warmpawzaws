@@ -984,6 +984,196 @@ export function registerVendorLiveStatusEndpoints(app: Hono) {
     }
   });
 
+  // ============================================================================
+  // GO-LIVE ENDPOINTS
+  // ============================================================================
+
+  /**
+   * GET /vendor/:vendorId/go-live/checklist
+   * Get go-live checklist with completion status for each item
+   * Used by vendor app to display go-live requirements
+   */
+  app.get("/vendor/:vendorId/go-live/checklist", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      // Handle test IDs
+      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return c.json({
+          success: true,
+          items: [],
+          canGoLive: false,
+          completedCount: 0,
+          requiredCount: 4,
+          message: 'Invalid vendor ID',
+        });
+      }
+
+      // Check vendor exists
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      const vendor = vendors[0];
+
+      // Check if vendor is approved
+      if (vendor.status !== 'approved' && vendor.status !== 'active') {
+        return c.json({
+          success: true,
+          items: [],
+          canGoLive: false,
+          completedCount: 0,
+          requiredCount: 4,
+          message: 'Vendor must be approved by admin before going live',
+          vendorStatus: vendor.status,
+        });
+      }
+
+      // Check if already live
+      const isAlreadyLive = vendor.is_live === true || vendor.go_live_at !== null;
+
+      // Build the checklist
+      const checklist = await buildGoLiveChecklist(vendorId);
+
+      return c.json({
+        success: true,
+        ...checklist,
+        isAlreadyLive,
+        goLiveAt: vendor.go_live_at || null,
+        vendorId,
+        vendorStatus: vendor.status,
+      });
+    } catch (error: any) {
+      console.error('Error getting go-live checklist:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/go-live
+   * Activate the vendor and set go_live_at timestamp
+   * Validates all required checklist items are complete
+   */
+  app.post("/vendor/:vendorId/go-live", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      // Handle test IDs
+      if (vendorId === 'test-vendor-id' || !isValidUUID(vendorId)) {
+        return c.json({
+          success: false,
+          error: 'Invalid vendor ID',
+        }, 400);
+      }
+
+      // Check vendor exists
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
+      const vendor = vendors[0];
+
+      // Check if vendor is approved
+      if (vendor.status !== 'approved' && vendor.status !== 'active') {
+        return c.json({
+          success: false,
+          error: 'Vendor must be approved by admin before going live',
+          vendorStatus: vendor.status,
+        }, 400);
+      }
+
+      // Check if already live
+      if (vendor.go_live_at !== null) {
+        return c.json({
+          success: true,
+          message: 'Vendor is already live',
+          goLiveAt: vendor.go_live_at,
+          isLive: true,
+        });
+      }
+
+      // Build and validate checklist
+      const checklist = await buildGoLiveChecklist(vendorId);
+
+      if (!checklist.canGoLive) {
+        const incompleteItems = checklist.items
+          .filter(item => item.required && !item.completed)
+          .map(item => item.title);
+
+        return c.json({
+          success: false,
+          error: 'Cannot go live. Please complete all required items.',
+          incompleteItems,
+          checklist,
+        }, 400);
+      }
+
+      // Set go_live_at and update status
+      const goLiveAt = new Date().toISOString();
+
+      await update('vendors', { id: vendorId }, {
+        go_live_at: goLiveAt,
+        is_live: true,
+        is_active: true,
+        status: 'active',
+        updated_at: goLiveAt,
+      });
+
+      // Also update vendor_setup_completion if exists
+      try {
+        const setupCompletion = await select('vendor_setup_completion', { vendor_id: vendorId });
+        if (setupCompletion.length > 0) {
+          await update('vendor_setup_completion', { vendor_id: vendorId }, {
+            go_live_at: goLiveAt,
+            is_go_live_ready: true,
+            go_live_ready_at: goLiveAt,
+          });
+        } else {
+          // Create setup completion record if doesn't exist
+          await query(
+            `INSERT INTO vendor_setup_completion (vendor_id, go_live_at, is_go_live_ready, go_live_ready_at)
+             VALUES ($1, $2, true, $2)
+             ON CONFLICT (vendor_id) DO UPDATE SET 
+               go_live_at = $2,
+               is_go_live_ready = true,
+               go_live_ready_at = $2`,
+            [vendorId, goLiveAt]
+          );
+        }
+      } catch (setupError: any) {
+        console.warn('[GO-LIVE] Error updating setup completion:', setupError.message);
+        // Don't fail go-live for setup completion errors
+      }
+
+      // Sync services to customer app discovery
+      try {
+        // Get all vendor services
+        const vendorServices = await select('vendor_services', {
+          vendor_id: vendorId,
+          is_enabled: true,
+        });
+
+        console.log(`✅ Vendor ${vendorId} is now LIVE with ${vendorServices.length} services`);
+      } catch (syncError: any) {
+        console.warn('[GO-LIVE] Error syncing services:', syncError.message);
+        // Don't fail go-live for sync errors
+      }
+
+      return c.json({
+        success: true,
+        message: 'Congratulations! Your business is now live!',
+        goLiveAt,
+        isLive: true,
+        vendorId,
+      });
+    } catch (error: any) {
+      console.error('Error going live:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
   /**
    * GET /discover/live-vendors
    * Get all live vendors for customer app discovery
@@ -1352,4 +1542,150 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+// ============================================================================
+// BANK VERIFICATION CHECK
+// ============================================================================
+
+/**
+ * Check if vendor has a verified bank account
+ */
+export async function checkBankVerification(vendorId: string): Promise<{
+  hasVerifiedBank: boolean;
+  verifiedAccountCount: number;
+  totalAccountCount: number;
+  primaryAccount: any | null;
+}> {
+  try {
+    // Check which table exists
+    const schemaCheck = await query(`
+      SELECT 
+        EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as has_bank_accounts,
+        EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_details') as has_bank_details
+    `);
+    
+    const schema = schemaCheck.rows[0] || {};
+    const tableName = schema.has_bank_accounts ? 'vendor_bank_accounts' : (schema.has_bank_details ? 'vendor_bank_details' : null);
+    
+    if (!tableName) {
+      return {
+        hasVerifiedBank: false,
+        verifiedAccountCount: 0,
+        totalAccountCount: 0,
+        primaryAccount: null,
+      };
+    }
+
+    const accounts = await query(
+      `SELECT * FROM ${tableName} 
+       WHERE vendor_id = $1 
+       ORDER BY is_primary DESC, created_at DESC`,
+      [vendorId]
+    );
+
+    const verifiedAccounts = accounts.rows.filter((a: any) => 
+      a.is_verified === true || a.verification_status === 'verified'
+    );
+    const primaryAccount = accounts.rows.find((a: any) => a.is_primary === true) || null;
+
+    return {
+      hasVerifiedBank: verifiedAccounts.length > 0,
+      verifiedAccountCount: verifiedAccounts.length,
+      totalAccountCount: accounts.rows.length,
+      primaryAccount,
+    };
+  } catch (error: any) {
+    console.error('[LIVE-STATUS] Error checking bank verification:', error.message);
+    return {
+      hasVerifiedBank: false,
+      verifiedAccountCount: 0,
+      totalAccountCount: 0,
+      primaryAccount: null,
+    };
+  }
+}
+
+// ============================================================================
+// GO-LIVE CHECKLIST FUNCTIONS
+// ============================================================================
+
+/**
+ * Build go-live checklist for a vendor
+ * Returns all checklist items with their completion status
+ */
+export async function buildGoLiveChecklist(vendorId: string): Promise<{
+  items: Array<{
+    id: string;
+    title: string;
+    completed: boolean;
+    required: boolean;
+    details?: any;
+  }>;
+  canGoLive: boolean;
+  completedCount: number;
+  requiredCount: number;
+}> {
+  // Run all checks in parallel for performance
+  const [profileResult, bankResult, servicesResult, scheduleResult] = await Promise.all([
+    calculateVendorProfileCompletion(vendorId),
+    checkBankVerification(vendorId),
+    checkServicesEnabled(vendorId),
+    checkScheduleUpToDate(vendorId),
+  ]);
+
+  const items = [
+    {
+      id: 'profile_completion',
+      title: 'Complete your business profile',
+      completed: profileResult.percentage >= 80, // Allow 80% for flexibility
+      required: true,
+      details: {
+        percentage: profileResult.percentage,
+        missingFields: profileResult.missingFields,
+      },
+    },
+    {
+      id: 'bank_verification',
+      title: 'Add and verify bank account',
+      completed: bankResult.hasVerifiedBank,
+      required: true,
+      details: {
+        verifiedAccountCount: bankResult.verifiedAccountCount,
+        totalAccountCount: bankResult.totalAccountCount,
+      },
+    },
+    {
+      id: 'services_configured',
+      title: 'Add at least one service',
+      completed: servicesResult.hasEnabledServices,
+      required: true,
+      details: {
+        enabledCount: servicesResult.enabledCount,
+        totalCount: servicesResult.totalCount,
+        servicesByStyle: servicesResult.servicesByStyle,
+      },
+    },
+    {
+      id: 'availability_configured',
+      title: 'Set up your availability schedule',
+      completed: scheduleResult.isUpToDate,
+      required: true,
+      details: {
+        hasScheduleSlots: scheduleResult.hasScheduleSlots,
+        configuredDays: scheduleResult.configuredDays,
+        nextAvailableDate: scheduleResult.nextAvailableDate,
+      },
+    },
+  ];
+
+  const requiredItems = items.filter(item => item.required);
+  const completedRequired = requiredItems.filter(item => item.completed);
+
+  return {
+    items,
+    canGoLive: completedRequired.length === requiredItems.length,
+    completedCount: items.filter(item => item.completed).length,
+    requiredCount: requiredItems.length,
+  };
 }

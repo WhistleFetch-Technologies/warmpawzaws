@@ -12,13 +12,13 @@ import {
   Dog, Cat, Search, Filter, TrendingUp, Heart, Activity,
   ArrowLeft, Download, BarChart3, PieChart as PieChartIcon, Info
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { 
   PieChart, Pie, Cell, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer 
 } from 'recharts';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 interface PetStats {
   totalPets: number;
@@ -79,7 +79,7 @@ export function PetIntelligenceSystem({ onBack }: PetIntelligenceSystemProps) {
     try {
       // Load pet statistics
       const statsRes = await fetch(`${API_BASE}/admin/pets/stats`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       if (statsRes.ok) {
         const statsData = await statsRes.json();
@@ -88,7 +88,7 @@ export function PetIntelligenceSystem({ onBack }: PetIntelligenceSystemProps) {
 
       // Load all pets
       const petsRes = await fetch(`${API_BASE}/admin/pets/all`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       if (petsRes.ok) {
         const petsData = await petsRes.json();
@@ -97,7 +97,7 @@ export function PetIntelligenceSystem({ onBack }: PetIntelligenceSystemProps) {
 
       // Load breed insights
       const insightsRes = await fetch(`${API_BASE}/admin/pets/breed-insights`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       if (insightsRes.ok) {
         const insightsData = await insightsRes.json();

@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate } from 'lucide-react';
+import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate, Bike, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
+import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 
 interface WalkerBookingRouterProps {
   phone: string;
@@ -448,36 +449,62 @@ export function WalkerBookingRouter({
 
   const selectedServiceOption = serviceOptions.find(s => s.id === selectedServiceType);
 
-  const renderStepIndicator = () => {
-    const steps = selectedServiceType === 'tele' 
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const dashboardStats = [
+    { value: '30+', label: 'Walkers' },
+    { value: '2K+', label: 'Walks' },
+    { value: '*4.8', label: 'Rating' }
+  ];
+
+  const getServiceTitle = () => {
+    if (walker?.name) return `Book with ${walker.name}`;
+    return 'Dog Walking';
+  };
+
+  const getServiceSubtitle = () => {
+    if (selectedServiceType === 'at_home') return 'Walker comes to you';
+    return 'Professional pet walking services';
+  };
+
+  // ✅ FIX: Prepare step indicators for header
+  const getStepIndicators = (): StepInfo[] | undefined => {
+    if (step === 'payment' || step === 'confirmation') return undefined;
+    
+    const stepLabels = selectedServiceType === 'tele' 
       ? ['Service', 'Date/Time', 'Pet', 'Payment']
       : ['Service', 'Date/Time', 'Pet', 'Address', 'Payment'];
     const currentStepMap: Record<BookingStep, number> = {
       service: 0, datetime: 1, pet: 2, address: 3, payment: selectedServiceType === 'tele' ? 3 : 4, confirmation: 5
     };
     const currentIdx = currentStepMap[step];
-
-    return (
-      <div className="flex items-center justify-center gap-2 mb-6">
-        {steps.map((s, idx) => (
-          <div key={s} className="flex items-center">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-              idx <= currentIdx ? 'bg-[#FF8C42] text-white' : 'bg-gray-200 text-gray-500'
-            }`}>
-              {idx < currentIdx ? <CheckCircle2 className="w-5 h-5" /> : idx + 1}
-            </div>
-            {idx < steps.length - 1 && (
-              <div className={`w-8 h-0.5 ${idx < currentIdx ? 'bg-[#FF8C42]' : 'bg-gray-200'}`} />
-            )}
-          </div>
-        ))}
-      </div>
-    );
+    
+    return stepLabels.map((label, idx) => ({
+      label,
+      isCompleted: idx < currentIdx,
+      isCurrent: idx === currentIdx
+    }));
   };
 
   return (
-    <div className="px-4 py-6">
-        {step !== 'confirmation' && renderStepIndicator()}
+    <div className="min-h-screen bg-gray-50">
+      {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame - Hide when on payment step */}
+      {step !== 'payment' && (
+        <ServiceDashboardHeader
+          serviceName={getServiceTitle()}
+          serviceSubtitle={getServiceSubtitle()}
+          serviceIcon={Bike}
+          iconColor="text-white"
+          stats={dashboardStats}
+          steps={getStepIndicators()}
+          onBack={handleBack}
+          showBackButton={true}
+          headerColor="bg-gradient-to-r from-green-500 via-green-600 to-green-700"
+        />
+      )}
+
+      {/* Main Content */}
+      <div className="max-w-md mx-auto px-4 py-6">
+        {/* Step indicator moved to header */}
 
         {/* Service Selection */}
         {step === 'service' && (
@@ -873,9 +900,10 @@ export function WalkerBookingRouter({
           </div>
         )}
 
-        {/* ✅ UniversalPaymentPage Integration */}
+        {/* ✅ UniversalPaymentPage Integration - Full screen overlay */}
         {step === 'payment' && showPaymentPage && (
-          <UniversalPaymentPage
+          <div className="fixed inset-0 z-50 bg-white">
+            <UniversalPaymentPage
             type="booking"
             serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
             serviceName={selectedServiceOption?.name || serviceName || 'Pet Walking'}
@@ -900,6 +928,7 @@ export function WalkerBookingRouter({
             onBack={() => setShowPaymentPage(false)}
             onSuccess={handlePaymentSuccess}
           />
+          </div>
         )}
 
         {/* Confirmation */}
@@ -1097,6 +1126,7 @@ export function WalkerBookingRouter({
             }}
           />
         )}
+      </div>
     </div>
   );
 }

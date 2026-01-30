@@ -14,6 +14,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 import { websocketService } from '../lib/services/websocket-service';
@@ -102,22 +103,27 @@ class CreatePharmacyOrderHandler extends BaseHandler {
         status: 'pending',
         broadcast_status: 'broadcasting',
         current_radius: 5,
+        current_broadcast_radius_km: 5, // For server-side expansion processor
         notes: notes || null,
         broadcast_started_at: new Date(),
         broadcast_expires_at: new Date(Date.now() + MAX_BROADCAST_DURATION),
+        last_expanded_at: null, // Will be set when first expansion occurs
+        expansion_count: 0, // Track number of expansions
         created_at: new Date(),
         updated_at: new Date(),
       };
 
       const [order] = await insert('pharmacy_orders', orderData);
 
-      // Create broadcast record
+      // Create broadcast record with expansion tracking
       await insert('pharmacy_broadcasts', {
         order_id: order.id,
         current_radius: 5,
         status: 'broadcasting',
         started_at: new Date(),
         next_expansion_at: new Date(Date.now() + RADIUS_EXPANSION_INTERVAL),
+        last_expanded_at: null, // Will be set by server-side expansion processor
+        expansion_count: 0,
       });
 
       // Start broadcasting to nearby pharmacies (first radius)
@@ -293,7 +299,10 @@ class ExpandBroadcastRadiusHandler extends BaseHandler {
           po.delivery_longitude,
           po.broadcast_status,
           po.current_radius,
+          po.current_broadcast_radius_km,
           po.broadcast_expires_at,
+          po.expansion_count,
+          po.last_expanded_at,
           pb.current_radius as broadcast_radius
         FROM pharmacy_orders po
         LEFT JOIN pharmacy_broadcasts pb ON pb.order_id = po.id
@@ -351,15 +360,23 @@ class ExpandBroadcastRadiusHandler extends BaseHandler {
 
       const notifiedCount = await this.broadcastToNewPharmacies(orderId, location, currentRadius, nextRadius);
 
-      // Update order and broadcast records
+      // Get current expansion count
+      const currentExpansionCount = order.expansion_count || 0;
+
+      // Update order and broadcast records with expansion tracking
       await update('pharmacy_orders', { id: orderId }, {
         current_radius: nextRadius,
+        current_broadcast_radius_km: nextRadius,
+        last_expanded_at: new Date(),
+        expansion_count: currentExpansionCount + 1,
         updated_at: new Date(),
       });
 
       await update('pharmacy_broadcasts', { order_id: orderId }, {
         current_radius: nextRadius,
         next_expansion_at: nextRadius < 20 ? new Date(Date.now() + RADIUS_EXPANSION_INTERVAL) : null,
+        last_expanded_at: new Date(),
+        expansion_count: currentExpansionCount + 1,
       });
 
       return this.success({
@@ -756,6 +773,57 @@ class GetBroadcastStatusHandler extends BaseHandler {
 }
 
 // ============================================================================
+// PROCESS ALL PENDING EXPANSIONS HANDLER (Server-side scheduled job endpoint)
+// ============================================================================
+
+class ProcessBroadcastExpansionsHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    try {
+      // Import the expansion processor
+      const { processAllPendingExpansions } = await import('../jobs/pharmacy-broadcast-expansion-processor');
+      
+      const results = await processAllPendingExpansions();
+
+      return this.success({
+        success: true,
+        message: `Processed ${results.processedCount} broadcasts: ${results.expandedCount} expanded, ${results.expiredCount} expired, ${results.failedCount} failed`,
+        ...results,
+      });
+    } catch (error: any) {
+      console.error('Error processing broadcast expansions:', error);
+      return this.error(error.message || 'Failed to process expansions', 500);
+    }
+  }
+}
+
+// ============================================================================
+// GET EXPANSION STATUS HANDLER
+// ============================================================================
+
+class GetExpansionStatusHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const orderId = context.event.pathParameters?.orderId;
+
+    if (!orderId) {
+      return this.error('Order ID is required', 400);
+    }
+
+    try {
+      const { getExpansionStatus } = await import('../jobs/pharmacy-broadcast-expansion-processor');
+      const status = await getExpansionStatus(orderId);
+
+      return this.success({
+        success: true,
+        ...status,
+      });
+    } catch (error: any) {
+      console.error('Error getting expansion status:', error);
+      return this.error(error.message || 'Failed to get expansion status', 500);
+    }
+  }
+}
+
+// ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
 
@@ -765,6 +833,8 @@ export function registerPharmacyBroadcastEndpoints(app: Hono) {
   const acceptOrderHandler = new PharmacyAcceptOrderHandler();
   const submitInvoiceHandler = new PharmacySubmitInvoiceHandler();
   const getStatusHandler = new GetBroadcastStatusHandler();
+  const processExpansionsHandler = new ProcessBroadcastExpansionsHandler();
+  const expansionStatusHandler = new GetExpansionStatusHandler();
 
   // Create pharmacy order and start broadcast
   app.post('/pharmacy/orders/create', async (c) => {
@@ -776,9 +846,9 @@ export function registerPharmacyBroadcastEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
     const result = await createOrderHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -792,9 +862,9 @@ export function registerPharmacyBroadcastEndpoints(app: Hono) {
       body: '',
       pathParameters: { orderId: c.req.param('orderId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
     const result = await expandRadiusHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -809,9 +879,9 @@ export function registerPharmacyBroadcastEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: { orderId: c.req.param('orderId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
     const result = await acceptOrderHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -826,9 +896,9 @@ export function registerPharmacyBroadcastEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: { orderId: c.req.param('orderId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
     const result = await submitInvoiceHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -842,10 +912,61 @@ export function registerPharmacyBroadcastEndpoints(app: Hono) {
       body: '',
       pathParameters: { orderId: c.req.param('orderId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
     const result = await getStatusHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // ============================================================================
+  // SERVER-SIDE SCHEDULED JOB ENDPOINTS
+  // ============================================================================
+
+  /**
+   * POST /pharmacy/broadcasts/process-expansion
+   * 
+   * Server-side endpoint to process all pending broadcast radius expansions.
+   * Called by AWS Lambda scheduled event (EventBridge) or can be invoked manually.
+   * 
+   * Expansion logic:
+   * - 5km → 10km (after 2 minutes)
+   * - 10km → 20km (after 4 minutes)
+   * - Expire (after 6 minutes if no acceptance)
+   */
+  app.post('/pharmacy/broadcasts/process-expansion', async (c) => {
+    const event = {
+      httpMethod: 'POST',
+      path: '/pharmacy/broadcasts/process-expansion',
+      headers: {},
+      body: '',
+      pathParameters: {},
+      queryStringParameters: {},
+      requestContext: { requestId: randomUUID() },
+    };
+    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast-expansion', functionVersion: '$LATEST' };
+    const result = await processExpansionsHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  /**
+   * GET /pharmacy/orders/:orderId/expansion-status
+   * 
+   * Get the expansion status for a specific order.
+   * Returns current radius, expansion count, and next expansion time.
+   */
+  app.get('/pharmacy/orders/:orderId/expansion-status', async (c) => {
+    const event = {
+      httpMethod: 'GET',
+      path: `/pharmacy/orders/${c.req.param('orderId')}/expansion-status`,
+      headers: {},
+      body: '',
+      pathParameters: { orderId: c.req.param('orderId') },
+      queryStringParameters: {},
+      requestContext: { requestId: randomUUID() },
+    };
+    const context = { requestId: randomUUID(), functionName: 'pharmacy-broadcast', functionVersion: '$LATEST' };
+    const result = await expansionStatusHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }

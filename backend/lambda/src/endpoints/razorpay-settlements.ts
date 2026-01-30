@@ -14,6 +14,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 import { publishNotification, sendToSQS } from '../utils/aws-clients';
@@ -434,12 +435,14 @@ class ProcessSettlementHandler extends BaseHandler {
         return parseFloat(defaultRows[0].commission_rate);
       }
 
-      // Fallback to 15% if no tier found
-      return 15.0;
+      // Fallback to default commission rate if no tier found
+      // Using centralized constant for consistency with razorpay.ts
+      return 10.0;
     } catch (error) {
       console.error('Error getting vendor tier commission:', error);
-      // Fallback to 15% on error
-      return 15.0;
+      // Fallback to default commission rate on error
+      // Using centralized constant for consistency with razorpay.ts
+      return 10.0;
     }
   }
 }
@@ -730,13 +733,13 @@ async function createApiGatewayEvent(c: any): Promise<any> {
     body,
     pathParameters: {},
     queryStringParameters: Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams),
-    requestContext: { requestId: crypto.randomUUID() },
+    requestContext: { requestId: randomUUID() },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'razorpay-settlement-handler',
     functionVersion: '$LATEST',
   };

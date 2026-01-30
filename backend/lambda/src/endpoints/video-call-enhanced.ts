@@ -18,8 +18,10 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
+import { getDiscoveryRules } from '../lib/rule-engine';
 import { 
   ChimeSDKMeetingsClient, 
   CreateMeetingCommand, 
@@ -105,20 +107,16 @@ class CreateOrJoinMeetingHandler extends BaseHandler {
         );
       }
 
-      // ✅ FIX: Check scheduled time - allow joining if:
-      // 1. Scheduled time has passed (with 5 minute grace period before)
-      // 2. Or booking is already in_progress
+      // Rule engine: video_call_grace_period_minutes
       const scheduledDate = booking.scheduled_date || booking.scheduledDate;
       const scheduledTime = booking.scheduled_time || booking.scheduledTime;
       
       if (scheduledDate && scheduledTime && bookingStatus === 'confirmed') {
         try {
-          // Parse scheduled datetime
+          const rules = await getDiscoveryRules('all', 'video_call');
+          const gracePeriodMinutes = rules.video_call_grace_period_minutes ?? 5;
           const scheduledDateTime = new Date(`${scheduledDate}T${scheduledTime}:00`);
           const now = new Date();
-          
-          // Allow joining 5 minutes before scheduled time
-          const gracePeriodMinutes = 5;
           const earliestJoinTime = new Date(scheduledDateTime.getTime() - gracePeriodMinutes * 60 * 1000);
           
           if (now < earliestJoinTime) {
@@ -616,22 +614,45 @@ class NotifyReadyHandler extends BaseHandler {
       const targetId = participantType === 'customer' ? booking.vendor_id : booking.customer_id;
       const targetType = participantType === 'customer' ? 'vendor' : 'customer';
 
-      // Insert notification
+      // Get video call session for meeting ID
+      const sessions = await select('video_call_sessions', { booking_id: bookingId });
+      const meetingId = sessions.length > 0 ? sessions[0].meeting_id : undefined;
+
+      // ✅ FIX: Use recipient_id/recipient_type so vendor/customer notification APIs find it; type for tele_call_incoming
       await insert('notifications', {
-        user_id: targetId,
-        user_type: targetType,
-        type: 'video_call_ready',
-        title: 'Ready for Video Call',
+        recipient_id: targetId,
+        recipient_type: targetType,
+        type: 'tele_call_incoming',
+        title: 'Incoming Video Call',
         message: `Your ${participantType === 'customer' ? 'customer' : 'doctor'} is ready to start the video consultation`,
         data: JSON.stringify({
           booking_id: bookingId,
+          meeting_id: meetingId,
           participant_type: participantType,
+          call_type: 'incoming',
+          staff_id: booking.staff_id,
         }),
         is_read: false,
         created_at: new Date(),
       });
 
-      // TODO: Send push notification
+      // ✅ FIX: Send push notification
+      try {
+        const { pushNotificationService } = await import('../lib/services/push-notification-service');
+        await pushNotificationService.sendEventNotification({
+          eventType: 'tele_call_incoming',
+          recipientId: targetId,
+          recipientType: targetType,
+          relatedId: bookingId,
+          data: {
+            bookingId,
+            meetingId,
+            callType: 'incoming',
+          },
+        });
+      } catch (pushError) {
+        console.warn('Failed to send push notification for video call:', pushError);
+      }
 
       return this.success({
         success: true,
@@ -665,9 +686,9 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
     const result = await createOrJoinHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -688,9 +709,9 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
       body: JSON.stringify(mappedBody),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
     const result = await createOrJoinHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -704,9 +725,9 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
       body: '',
       pathParameters: { bookingId: c.req.param('bookingId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
     const result = await getInfoHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -720,9 +741,9 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
       body: '',
       pathParameters: { bookingId: c.req.param('bookingId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
     const result = await attendeeStatusHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -737,9 +758,9 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: { bookingId: c.req.param('bookingId') },
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
     const result = await endHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -754,9 +775,9 @@ export function registerVideoCallEnhancedEndpoints(app: Hono) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: crypto.randomUUID() },
+      requestContext: { requestId: randomUUID() },
     };
-    const context = { requestId: crypto.randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
+    const context = { requestId: randomUUID(), functionName: 'video-call', functionVersion: '$LATEST' };
     const result = await notifyReadyHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });

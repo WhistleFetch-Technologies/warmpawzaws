@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, FileText, MessageCircle, Video, PhoneCall, CalendarPlus, Download, Share2, Star } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { copyTextToClipboard } from '../../utils/shareUtils';
 import { PrescriptionModal } from './PrescriptionModal';
 import { CommunicationHub } from '../communication/CommunicationHub';
@@ -55,9 +55,9 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
       setLoading(true);
       console.log('🔍 [BOOKING-DETAIL] Loading booking:', bookingId);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${bookingId}`,
+        `${getApiBaseUrl()}/bookings/${bookingId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -82,9 +82,9 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
     try {
       setLoadingPrescription(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/prescription/booking/${bookingId}`,
+        `${getApiBaseUrl()}/prescription/booking/${bookingId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
       if (response.ok) {

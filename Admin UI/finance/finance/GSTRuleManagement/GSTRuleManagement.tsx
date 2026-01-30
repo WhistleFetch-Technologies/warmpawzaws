@@ -42,7 +42,7 @@ import {
 	CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 
 interface GSTRule {
 	id: string;
@@ -108,7 +108,7 @@ export function GSTRuleManagement() {
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [currentRule, setCurrentRule] = useState<Partial<GSTRule> | null>(null);
 
-	const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+	const API_BASE = `${getApiBaseUrl()}`;
 
 	useEffect(() => {
 		loadRules();
@@ -118,7 +118,7 @@ export function GSTRuleManagement() {
 		setLoading(true);
 		try {
 			const response = await fetch(`${API_BASE}/admin/finance/gst-rules`, {
-				headers: { Authorization: `Bearer ${publicAnonKey}` },
+				headers: { ...getAuthHeaders() },
 			});
 
 			if (response.ok) {
@@ -147,7 +147,7 @@ export function GSTRuleManagement() {
 				method,
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${publicAnonKey}`,
+					...getAuthHeaders(),
 				},
 				body: JSON.stringify(currentRule),
 			});
@@ -177,7 +177,7 @@ export function GSTRuleManagement() {
 				`${API_BASE}/admin/finance/gst-rules/${ruleId}`,
 				{
 					method: "DELETE",
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 

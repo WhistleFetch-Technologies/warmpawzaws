@@ -24,7 +24,7 @@ import {
   Brain,
   Home
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface ProblemCategoryMapperProps {
   onBack: () => void;
@@ -37,7 +37,7 @@ export function ProblemCategoryMapper({ onBack }: ProblemCategoryMapperProps) {
   const [testResults, setTestResults] = useState<any>(null);
   const [selectedProblem, setSelectedProblem] = useState<any>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   const vendorTypes = [
     {

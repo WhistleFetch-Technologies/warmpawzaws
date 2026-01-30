@@ -23,7 +23,7 @@ import {
   ShoppingCart,
   User
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { useCart } from '../../../context/CartContext';
 
 interface ClinicProfileViewProps {
@@ -70,7 +70,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
   const [selectedService, setSelectedService] = useState<ServiceData | null>(null);
   const { itemCount } = useCart();
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadClinicData();
@@ -85,7 +85,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       // Fetch facility data (includes vendor, facility, reviews)
       const facilityResponse = await fetch(`${API_BASE}/customer/facility/${clinicId}`, {
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         }
       });
 
@@ -104,7 +104,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       // Fetch services from the customer services endpoint and filter by vendorId
       const servicesResponse = await fetch(`${API_BASE}/customer/clinic/${clinicId}/services`, {
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         }
       });
 
@@ -140,7 +140,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       // Fetch doctors from the customer doctors endpoint and filter by vendorId
       const doctorsResponse = await fetch(`${API_BASE}/customer/doctors/search?roleId=veterinarian`, {
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         }
       });
 

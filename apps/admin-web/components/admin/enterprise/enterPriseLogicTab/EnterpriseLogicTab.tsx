@@ -19,7 +19,7 @@ export function EnterpriseLogicTab() {
 				onNavigate={(view) => router.push(`/${view}`)}
 			/>
 			<div className="flex-1 space-y-6 p-6">
-				<div className="bg-linear-to-r from-slate-900 to-slate-800 p-6 rounded-xl text-white shadow-lg">
+				<div className="bg-gradient-to-r from-slate-900 to-slate-800 p-6 rounded-xl text-white shadow-lg">
 					<div className="flex items-center gap-4 mb-4">
 						<Link href="/enterprise">
 							<Button variant="ghost" className="text-white">

@@ -3,7 +3,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Send, Paperclip, Image as ImageIcon, FileText, CalendarPlus } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface Message {
   id: string;
@@ -63,9 +63,9 @@ export function ChatRoom({ channelId, userId, userName, otherUserName, isConsult
       if (!silent) setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/chat/booking/${channelId}/conversation`,
+        `${getApiBaseUrl()}/chat/booking/${channelId}/conversation`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -93,11 +93,11 @@ export function ChatRoom({ channelId, userId, userName, otherUserName, isConsult
       setInputText(''); // Clear input immediately
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/chat/booking/${channelId}/message`,
+        `${getApiBaseUrl()}/chat/booking/${channelId}/message`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

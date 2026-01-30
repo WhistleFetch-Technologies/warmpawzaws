@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { AlertCircle, Activity, Heart, Thermometer, Wind, Droplets, Brain, Plus, Search, Filter, Bell, Eye, FileText, TrendingUp, TrendingDown, Minus, CheckCircle, XCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface VendorPatientMonitoringProps {
   vendorId: string;
@@ -130,9 +130,9 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/patient-monitoring/${vendorId}/dashboard`,
+        `${getApiBaseUrl()}/vendor/patient-monitoring/${vendorId}/dashboard`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
       const data = await response.json();
@@ -151,11 +151,11 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
     try {
       setLoading(true);
       const url = filterStatus === 'all' 
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/patient-monitoring/${vendorId}/monitors`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/patient-monitoring/${vendorId}/monitors?status=${filterStatus}`;
+        ? `${getApiBaseUrl()}/vendor/patient-monitoring/${vendorId}/monitors`
+        : `${getApiBaseUrl()}/vendor/patient-monitoring/${vendorId}/monitors?status=${filterStatus}`;
       
       const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       const data = await response.json();
       if (data.success) {
@@ -172,9 +172,9 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
   const fetchVitals = async (monitorId: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/patient-monitoring/${vendorId}/monitors/${monitorId}/vitals?hours=24`,
+        `${getApiBaseUrl()}/vendor/patient-monitoring/${vendorId}/monitors/${monitorId}/vitals?hours=24`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
       const data = await response.json();
@@ -189,11 +189,11 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
   const admitPatient = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/patient-monitoring/${vendorId}/monitors`,
+        `${getApiBaseUrl()}/vendor/patient-monitoring/${vendorId}/monitors`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -256,11 +256,11 @@ export function VendorPatientMonitoring({ vendorId }: VendorPatientMonitoringPro
       if (vitalForm.painScore) body.painScore = parseFloat(vitalForm.painScore);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/patient-monitoring/${vendorId}/monitors/${selectedMonitor.id}/vitals`,
+        `${getApiBaseUrl()}/vendor/patient-monitoring/${vendorId}/monitors/${selectedMonitor.id}/vitals`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(body)

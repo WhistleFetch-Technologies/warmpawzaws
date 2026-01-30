@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, UtensilsCrossed, Apple, Activity, ChevronDown, ChevronUp } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 /**
  * 🍽️ MEAL PLAN VIEWER COMPONENT
@@ -70,10 +70,10 @@ export default function MealPlanViewer({ customerId }: MealPlanViewerProps) {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${customerId}/meal-plans`,
+        `${getApiBaseUrl()}/customer/${customerId}/meal-plans`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );

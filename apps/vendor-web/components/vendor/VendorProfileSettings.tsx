@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { User, Save, LogOut, Loader2, Mail, Phone, Building2, MapPin } from 'lucide-react';
+import { User, Save, LogOut, Loader2, Mail, Phone, Info, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
@@ -22,15 +21,8 @@ export function VendorProfileSettings({ vendorId, vendorData, onBack }: VendorPr
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState({
-    businessName: '',
-    ownerName: '',
     email: '',
     phone: '',
-    address: '',
-    city: '',
-    state: '',
-    pincode: '',
-    description: ''
   });
 
   useEffect(() => {
@@ -44,15 +36,8 @@ export function VendorProfileSettings({ vendorId, vendorData, onBack }: VendorPr
       // Load vendor profile from API or use vendorData
       if (vendorData) {
         setProfile({
-          businessName: vendorData.businessName || vendorData.business_name || '',
-          ownerName: vendorData.ownerName || vendorData.owner_name || '',
           email: vendorData.email || vendorData.contactEmail || '',
           phone: vendorData.phone || vendorData.contactPhone || '',
-          address: vendorData.address || '',
-          city: vendorData.city || '',
-          state: vendorData.state || '',
-          pincode: vendorData.pincode || vendorData.zipCode || '',
-          description: vendorData.description || vendorData.businessDescription || ''
         });
       } else {
         // Try to fetch from API
@@ -61,15 +46,8 @@ export function VendorProfileSettings({ vendorId, vendorData, onBack }: VendorPr
           if (response && response.success && response.vendor) {
             const v = response.vendor;
             setProfile({
-              businessName: v.businessName || v.business_name || '',
-              ownerName: v.ownerName || v.owner_name || '',
               email: v.email || v.contactEmail || '',
               phone: v.phone || v.contactPhone || '',
-              address: v.address || '',
-              city: v.city || '',
-              state: v.state || '',
-              pincode: v.pincode || v.zipCode || '',
-              description: v.description || v.businessDescription || ''
             });
           }
         } catch (error) {
@@ -89,31 +67,25 @@ export function VendorProfileSettings({ vendorId, vendorData, onBack }: VendorPr
       setSaving(true);
       
       const response = await apiClient.put(`/vendor/${vendorId}/profile`, {
-        businessName: profile.businessName,
-        ownerName: profile.ownerName,
         email: profile.email,
         phone: profile.phone,
-        address: profile.address,
-        city: profile.city,
-        state: profile.state,
-        pincode: profile.pincode,
-        description: profile.description
       }) as any;
 
       if (response && response.success) {
-        toast.success('Profile updated successfully!');
+        toast.success('Account settings updated successfully!');
         // Update localStorage vendor data
         const currentVendorData = JSON.parse(localStorage.getItem('vendorData') || '{}');
         localStorage.setItem('vendorData', JSON.stringify({
           ...currentVendorData,
-          ...profile
+          email: profile.email,
+          phone: profile.phone,
         }));
       } else {
-        throw new Error(response?.message || 'Failed to update profile');
+        throw new Error(response?.message || 'Failed to update settings');
       }
     } catch (error: any) {
       console.error('Error saving profile:', error);
-      toast.error(error.message || 'Failed to update profile');
+      toast.error(error.message || 'Failed to update settings');
     } finally {
       setSaving(false);
     }
@@ -150,74 +122,51 @@ export function VendorProfileSettings({ vendorId, vendorData, onBack }: VendorPr
           <div>
             <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
               <User className="w-6 h-6" />
-              Profile Settings
+              Account Settings
             </h2>
-            <p className="text-sm text-gray-600 mt-1">Manage your vendor profile information</p>
+            <p className="text-sm text-gray-600 mt-1">Manage your account contact information</p>
           </div>
         </div>
       </div>
 
       <div className="p-6 space-y-6">
-        {/* Business Information */}
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Building2 className="w-5 h-5" />
-            Business Information
-          </h3>
-          <div className="space-y-4">
+        {/* Info Banner - Redirect to Vendor Profile */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
             <div>
-              <Label htmlFor="businessName" className="text-sm font-semibold text-gray-700">
-                Business Name *
-              </Label>
-              <Input
-                id="businessName"
-                value={profile.businessName}
-                onChange={(e) => setProfile({ ...profile, businessName: e.target.value })}
-                placeholder="Enter business name"
-                className="mt-1"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="ownerName" className="text-sm font-semibold text-gray-700">
-                Owner Name *
-              </Label>
-              <Input
-                id="ownerName"
-                value={profile.ownerName}
-                onChange={(e) => setProfile({ ...profile, ownerName: e.target.value })}
-                placeholder="Enter owner name"
-                className="mt-1"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="description" className="text-sm font-semibold text-gray-700">
-                Business Description
-              </Label>
-              <Textarea
-                id="description"
-                value={profile.description}
-                onChange={(e) => setProfile({ ...profile, description: e.target.value })}
-                placeholder="Describe your business..."
-                rows={4}
-                className="mt-1"
-              />
+              <p className="text-sm text-blue-800 font-medium">
+                Looking for Business & Address Information?
+              </p>
+              <p className="text-sm text-blue-700 mt-1">
+                Business details, address, and service area are managed from your <strong>Vendor Profile</strong> in the dashboard. 
+                Go to Dashboard → Profile to update those details.
+              </p>
+              <button
+                onClick={onBack}
+                className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Go to Dashboard
+              </button>
             </div>
           </div>
         </div>
 
         {/* Contact Information */}
-        <div className="border-t border-gray-200 pt-6">
+        <div>
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Phone className="w-5 h-5" />
             Contact Information
           </h3>
+          <p className="text-sm text-gray-500 mb-4">
+            This is the contact information associated with your account for notifications and support.
+          </p>
           <div className="space-y-4">
             <div>
               <Label htmlFor="email" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                 <Mail className="w-4 h-4" />
-                Email *
+                Account Email
               </Label>
               <Input
                 id="email"
@@ -227,11 +176,12 @@ export function VendorProfileSettings({ vendorId, vendorData, onBack }: VendorPr
                 placeholder="Enter email address"
                 className="mt-1"
               />
+              <p className="text-xs text-gray-400 mt-1">Used for account notifications and support communications</p>
             </div>
 
             <div>
               <Label htmlFor="phone" className="text-sm font-semibold text-gray-700">
-                Phone Number *
+                Account Phone Number
               </Label>
               <Input
                 id="phone"
@@ -242,70 +192,7 @@ export function VendorProfileSettings({ vendorId, vendorData, onBack }: VendorPr
                 className="mt-1"
                 maxLength={10}
               />
-            </div>
-          </div>
-        </div>
-
-        {/* Address Information */}
-        <div className="border-t border-gray-200 pt-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <MapPin className="w-5 h-5" />
-            Address Information
-          </h3>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="address" className="text-sm font-semibold text-gray-700">
-                Street Address
-              </Label>
-              <Input
-                id="address"
-                value={profile.address}
-                onChange={(e) => setProfile({ ...profile, address: e.target.value })}
-                placeholder="Enter street address"
-                className="mt-1"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="city" className="text-sm font-semibold text-gray-700">
-                  City
-                </Label>
-                <Input
-                  id="city"
-                  value={profile.city}
-                  onChange={(e) => setProfile({ ...profile, city: e.target.value })}
-                  placeholder="Enter city"
-                  className="mt-1"
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="state" className="text-sm font-semibold text-gray-700">
-                  State
-                </Label>
-                <Input
-                  id="state"
-                  value={profile.state}
-                  onChange={(e) => setProfile({ ...profile, state: e.target.value })}
-                  placeholder="Enter state"
-                  className="mt-1"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label htmlFor="pincode" className="text-sm font-semibold text-gray-700">
-                Pincode
-              </Label>
-              <Input
-                id="pincode"
-                value={profile.pincode}
-                onChange={(e) => setProfile({ ...profile, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) })}
-                placeholder="Enter pincode"
-                className="mt-1"
-                maxLength={6}
-              />
+              <p className="text-xs text-gray-400 mt-1">Used for OTP verification and urgent notifications</p>
             </div>
           </div>
         </div>
@@ -325,7 +212,7 @@ export function VendorProfileSettings({ vendorId, vendorData, onBack }: VendorPr
             ) : (
               <>
                 <Save className="w-4 h-4 mr-2" />
-                Save Profile
+                Save Settings
               </>
             )}
           </Button>

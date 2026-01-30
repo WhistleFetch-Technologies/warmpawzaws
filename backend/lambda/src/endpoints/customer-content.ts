@@ -24,12 +24,14 @@ export function registerCustomerContentEndpoints(app: Hono) {
    */
   app.get("/customer/banners", async (c) => {
     try {
-      const position = c.req.query('position') || 'home_top';
+      // position query param: home_top -> main (banners.type), all -> all types
+      const positionParam = c.req.query('position') || 'home_top';
+      const bannerType = positionParam === 'all' ? 'all' : (positionParam === 'home_top' ? 'main' : positionParam);
       const limit = parseInt(c.req.query('limit') || '10', 10);
 
       const now = new Date().toISOString();
 
-      // Fetch active banners
+      // Fetch active banners (banners table has type: main, spotlight, category, service)
       const bannersResult = await query(
         `SELECT 
           id,
@@ -38,30 +40,30 @@ export function registerCustomerContentEndpoints(app: Hono) {
           image_url,
           cta_text,
           cta_link,
-          position,
+          type,
           display_order,
           metadata,
           start_date,
           end_date
         FROM banners
         WHERE is_active = true
-        AND (position = $1 OR $1 = 'all')
+        AND (type = $1 OR $1 = 'all')
         AND (start_date IS NULL OR start_date <= $2)
         AND (end_date IS NULL OR end_date >= $2)
         ORDER BY display_order ASC, created_at DESC
         LIMIT $3`,
-        [position, now, limit]
+        [bannerType, now, limit]
       ).catch(() => ({ rows: [] }));
 
-      // Map banners to frontend format
+      // Map banners to frontend format (type exposed as position for backward compat)
       const banners = (bannersResult.rows || []).map((b: any) => ({
         id: b.id,
         title: b.title,
-        subtitle: b.subtitle || b.description,
+        subtitle: b.subtitle,
         imageUrl: b.image_url,
         ctaText: b.cta_text || 'Learn More',
         ctaLink: b.cta_link,
-        position: b.position,
+        position: b.type || 'main',
         displayOrder: b.display_order || 0,
         // Extract gradient colors from metadata or use defaults
         gradientFrom: b.metadata?.gradient_from || '#FF8C42',
@@ -123,6 +125,7 @@ export function registerCustomerContentEndpoints(app: Hono) {
    * Query params: category (optional), limit (optional), featured (optional)
    */
   app.get("/customer/articles", async (c) => {
+    const startTime = Date.now();
     try {
       const category = c.req.query('category');
       const limit = parseInt(c.req.query('limit') || '5', 10);
@@ -163,7 +166,15 @@ export function registerCustomerContentEndpoints(app: Hono) {
         LIMIT $${paramIndex}`;
       params.push(limit);
 
-      const articlesResult = await query(articlesQuery, params).catch(() => ({ rows: [] }));
+      const articlesResult = await query(articlesQuery, params).catch((err: any) => {
+        const duration = Date.now() - startTime;
+        // ✅ Enhanced logging for 503 diagnosis
+        console.warn(`[articles] Query failed after ${duration}ms:`, err?.message || err);
+        if (err?.message?.includes('connection pool') || err?.message?.includes('too many clients')) {
+          console.error('[articles] ⚠️ Connection pool exhausted - returning default articles');
+        }
+        return { rows: [] };
+      });
 
       // Map articles to frontend format
       const articles = (articlesResult.rows || []).map((a: any) => ({
