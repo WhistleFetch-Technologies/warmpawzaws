@@ -420,7 +420,7 @@ export function NutritionistBookingRouter({
         // Regular booking: CreateBookingRequestSchema expects camelCase (customerId, vendorId, serviceId UUID, bookingDate, bookingTime, serviceType)
         const vendorIdValue = effectiveVendorId || '';
         const opt = selectedServiceOption as { serviceId?: string; service_id?: string } | undefined;
-        const serviceIdValue = opt?.serviceId ?? opt?.service_id ?? serviceId ?? selectedServiceOption?.id ?? '';
+        const serviceIdValue = opt?.service_id ?? opt?.serviceId ?? serviceId ?? selectedServiceOption?.id ?? '';
         if (!vendorIdValue || !serviceIdValue) {
           toast.error('Missing vendor or service. Please go back and select a service.');
           setProcessing(false);

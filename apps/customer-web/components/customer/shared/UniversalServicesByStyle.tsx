@@ -384,6 +384,7 @@ export function UniversalServicesByStyle({
     setSelectedServices(newSelection);
   };
 
+  // ✅ FIX: Pass all selected services to booking (matches vet/grooming flow)
   const handleBookServices = () => {
     if (selectedServices.size === 0) {
       if (profileProvider?.services && profileProvider.services.length > 0) {
@@ -397,7 +398,29 @@ export function UniversalServicesByStyle({
     ).filter(Boolean);
 
     if (selectedServicesData.length > 0) {
-      handleSelectService(profileProvider!, selectedServicesData[0]);
+      const firstService = selectedServicesData[0];
+      const bookingData: any = {
+        vendorId: profileProvider!.providerId || profileProvider!.vendorId,
+        vendorName: profileProvider!.name,
+        serviceStyle,
+        selectedServices: selectedServicesData,
+        serviceId: firstService?.id || firstService?.serviceId,
+        serviceName: firstService?.name,
+        price: totalPrice,
+        duration: selectedServicesData.reduce((sum, s) => sum + (s?.duration || 0), 0),
+        providerName: profileProvider!.name,
+        service: firstService, // Backward compatibility
+      };
+      if (profileProvider!.providerType === 'vendor') {
+        bookingData.vendorId = profileProvider!.providerId;
+        bookingData.vendorName = profileProvider!.name;
+      } else {
+        bookingData.staffId = profileProvider!.staffId || profileProvider!.providerId;
+        bookingData.staffName = profileProvider!.name;
+        bookingData.vendorId = profileProvider!.vendorId;
+        bookingData.vendorName = profileProvider!.vendorName;
+      }
+      onNavigate(bookingScreen, bookingData);
     }
   };
 

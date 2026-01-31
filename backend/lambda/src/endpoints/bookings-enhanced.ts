@@ -125,6 +125,26 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const body = this.parseBody(context.event);
     const requestId = context.requestId;
 
+    // ✅ FORENSIC FIX: Resolve customerId from customerPhone when missing (CreateBookingRequestSchema requires customerId)
+    if (!body.customerId && body.customerPhone) {
+      try {
+        const custResult = await query(
+          `SELECT id FROM customers WHERE phone = $1 LIMIT 1`,
+          [String(body.customerPhone).trim()]
+        );
+        const rows = (custResult as any).rows || custResult;
+        if (rows?.length > 0) {
+          body.customerId = rows[0].id;
+          console.log(`[BOOKING] Resolved customerId from customerPhone: ${body.customerId}`);
+        }
+      } catch (e) {
+        console.warn('[BOOKING] Could not resolve customerId from customerPhone:', e);
+      }
+    }
+    if (!body.customerId) {
+      return this.error('customerId or customerPhone (to resolve customer) is required', 400, 'VALIDATION_ERROR', undefined, requestId);
+    }
+
     // Validate request with Zod schema
     const validationResult = CreateBookingRequestSchema.safeParse(body);
     if (!validationResult.success) {
@@ -1039,6 +1059,8 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
       petAge: petInfo?.age || null,
       petPhoto: petInfo?.photo_url || null,
       amount: parseFloat(booking.total_amount || '0'),
+      price: parseFloat(booking.total_amount || '0'),
+      totalAmount: parseFloat(booking.total_amount || '0'),
       // Multi-service: expose selectedServices and totalDurationMinutes
       selectedServices: parseSelectedServices(booking.selected_services),
       totalDurationMinutes:

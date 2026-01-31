@@ -23,6 +23,7 @@ interface GroomingBookingRouterProps {
   price?: number;
   duration?: number;
   selectedServices?: any[]; // ✅ NEW: Multiple selected services from salon profile
+  vendorName?: string; // ✅ NEW: Salon/center name for display
   // ✅ NEW: Pre-filled booking data (from provider profile, etc.) - skip to payment if all provided
   bookingDate?: string;
   bookingTime?: string;
@@ -63,6 +64,7 @@ export function GroomingBookingRouter({
   price,
   duration,
   selectedServices, // ✅ NEW: Multiple selected services
+  vendorName: vendorNameProp,
   bookingDate: preFilledDate, // ✅ NEW: Pre-filled booking date
   bookingTime: preFilledTime, // ✅ NEW: Pre-filled booking time
   petId: preFilledPetId, // ✅ NEW: Pre-filled pet ID
@@ -846,7 +848,7 @@ export function GroomingBookingRouter({
             serviceStyle={selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
             category="grooming"
             vendorId={vendorId || ''}
-            vendorName={groomer?.name || 'Grooming Professional'}
+            vendorName={groomer?.name || vendorNameProp || 'Grooming Professional'}
             vendorAddress={selectedServiceType === 'at_center' ? (groomer?.address || groomer?.business_address) : undefined} // ✅ NEW: Clinic address
             staffName={selectedServiceType === 'at_home' ? (groomer?.name || 'Grooming Professional') : undefined} // ✅ NEW: Staff name for home services
             staffPhoto={selectedServiceType === 'at_home' ? (groomer?.photo || groomer?.profile_photo) : undefined} // ✅ NEW: Staff photo for home services
@@ -1291,21 +1293,31 @@ export function GroomingBookingRouter({
                   })}
                 </div>
               ) : (
-                /* Fallback: Single service display */
-                <div className="flex items-center gap-3 pb-4 border-b">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                    selectedServiceType === 'at_home' ? 'bg-green-100 text-green-600' :
-                    'bg-purple-100 text-purple-600'
-                  }`}>
-                    {selectedServiceType === 'at_home' ? <Home className="w-6 h-6" /> :
-                     <Building2 className="w-6 h-6" />}
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold">{selectedServiceOption?.name}</h3>
-                    <p className="text-sm text-gray-500">{selectedServiceOption?.duration} mins</p>
-                  </div>
-                  <p className="font-bold">₹{selectedServiceOption?.price}</p>
-                </div>
+                /* Fallback: Single service display - with fallbacks for missing data */
+                (() => {
+                  const svc = selectedServiceOption || allSelectedServices?.[0];
+                  const svcName = svc?.name || svc?.serviceName || serviceName || 'Grooming Service';
+                  const svcDuration = svc?.duration ?? duration ?? 0;
+                  const svcPrice = svc?.price ?? price ?? 0;
+                  return (
+                    <div className="flex items-center gap-3 pb-4 border-b">
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                        selectedServiceType === 'at_home' ? 'bg-green-100 text-green-600' :
+                        'bg-purple-100 text-purple-600'
+                      }`}>
+                        {selectedServiceType === 'at_home' ? <Home className="w-6 h-6" /> :
+                         <Building2 className="w-6 h-6" />}
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-semibold">{svcName}</h3>
+                        {svcDuration > 0 && (
+                          <p className="text-sm text-gray-500">{svcDuration} mins</p>
+                        )}
+                      </div>
+                      <p className="font-bold">₹{Number(svcPrice).toLocaleString('en-IN')}</p>
+                    </div>
+                  );
+                })()
               )}
 
               {/* Date & Time */}
@@ -1348,9 +1360,9 @@ export function GroomingBookingRouter({
               <div className="flex justify-between items-center text-lg">
                 <span className="font-bold">Total</span>
                 <span className="font-bold text-orange-600">
-                  ₹{allSelectedServices && allSelectedServices.length > 0 
+                  ₹{(allSelectedServices && allSelectedServices.length > 0 
                     ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
-                    : (selectedServiceOption?.price || 0)}
+                    : (selectedServiceOption?.price ?? allSelectedServices?.[0]?.price ?? price ?? 0)).toLocaleString('en-IN')}
                 </span>
               </div>
             </div>

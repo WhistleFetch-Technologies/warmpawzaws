@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { AddAddressModal } from '../shared/AddAddressModal';
 import { trackBookingStep, useBookingAnalytics } from '@/lib/analytics';
 
 interface VetBookingRouterProps {
@@ -23,12 +24,14 @@ interface VetBookingRouterProps {
   serviceStyle?: string; // ✅ FIX: Add serviceStyle to preserve context
   price?: number; // ✅ FIX: Add price
   duration?: number; // ✅ FIX: Add duration
+  selectedServices?: any[]; // ✅ NEW: Multiple selected services (from VetServicesByStyle, etc.)
+  vendorName?: string; // ✅ NEW: Clinic/center/vendor name for display
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
 }
 
-type BookingStep = 'service' | 'details' | 'payment' | 'confirmation';
+type BookingStep = 'service' | 'details' | 'address' | 'payment' | 'confirmation';
 
 interface TimeSlot {
   time: string;
@@ -56,13 +59,15 @@ export function VetBookingRouter({
   serviceStyle,
   price,
   duration,
+  selectedServices,
+  vendorName: vendorNameProp,
   onBack, 
   onNavigate, 
   onViewBooking 
 }: VetBookingRouterProps) {
   // ✅ FIX: If serviceType/serviceStyle is provided, skip service selection and go to details
-  // This preserves the service-style context when coming from service listing
-  const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService);
+  // ✅ NEW: Also consider selectedServices (multi-service from VetServicesByStyle)
+  const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService || (selectedServices && selectedServices.length > 0));
   const initialStep: BookingStep = hasServiceContext ? 'details' : 'service';
   const [step, setStep] = useState<BookingStep>(initialStep);
   
@@ -76,6 +81,22 @@ export function VetBookingRouter({
       initializedRef.current = true;
     }
   }, [serviceId, serviceType, serviceStyle, step]);
+  
+  // ✅ Sync allSelectedServices when selectedServices prop changes
+  useEffect(() => {
+    if (selectedServices && selectedServices.length > 0) {
+      setAllSelectedServices(selectedServices.map((s: any) => ({
+        id: s.id || s.serviceId,
+        serviceId: s.serviceId || s.id,
+        name: s.name || s.serviceName,
+        serviceName: s.serviceName || s.name,
+        price: s.price ?? 0,
+        duration: s.duration ?? 0,
+        serviceStyle: s.serviceStyle || serviceStyle || serviceType,
+      })));
+    }
+  }, [selectedServices, serviceStyle, serviceType]);
+  
   const [loading, setLoading] = useState(false);
   // ✅ FIX: Map 'clinic' to 'at_center', use serviceStyle if provided, otherwise fall back to serviceType
   const normalizedServiceType = (serviceStyle || serviceType) === 'clinic' ? 'at_center' : (serviceStyle || serviceType || 'tele');
@@ -89,9 +110,24 @@ export function VetBookingRouter({
   const [processing, setProcessing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [vendorServices, setVendorServices] = useState<any[]>([]);
+  // ✅ NEW: Store all selected services for multi-service booking
+  const [allSelectedServices, setAllSelectedServices] = useState<any[]>(() => {
+    if (selectedServices && selectedServices.length > 0) {
+      return selectedServices.map((s: any) => ({
+        id: s.id || s.serviceId,
+        serviceId: s.serviceId || s.id,
+        name: s.name || s.serviceName,
+        serviceName: s.serviceName || s.name,
+        price: s.price ?? 0,
+        duration: s.duration ?? 0,
+        serviceStyle: s.serviceStyle || serviceStyle || serviceType,
+      }));
+    }
+    return [];
+  });
   // ✅ FIX: Initialize selectedVendorService with passed service data if available
   const [selectedVendorService, setSelectedVendorService] = useState<any>(
-    selectedService || (serviceId ? {
+    selectedService || (selectedServices && selectedServices.length > 0 ? selectedServices[0] : null) || (serviceId ? {
       id: serviceId,
       serviceId: serviceId,
       name: serviceName,
@@ -115,6 +151,7 @@ export function VetBookingRouter({
     const stepToAnalyticsMap: Record<BookingStep, string> = {
       'service': 'service_selection',
       'details': 'schedule_selection',
+      'address': 'address_selection',
       'payment': 'payment_initiated',
       'confirmation': 'booking_confirmed',
     };
@@ -138,6 +175,9 @@ export function VetBookingRouter({
   
   // Add Pet/Address modal states
   const [showAddPetModal, setShowAddPetModal] = useState(false);
+  const [addresses, setAddresses] = useState<any[]>([]);
+  const [selectedAddress, setSelectedAddress] = useState<any | null>(null);
+  const [showAddAddressModal, setShowAddAddressModal] = useState(false);
   
   // User profile data for header
   const [userName, setUserName] = useState('User');
@@ -466,7 +506,27 @@ export function VetBookingRouter({
     }
   };
   
-  // Address refresh removed - address is part of vendor profile
+  // Load addresses when at_home (for address step)
+  const refreshAddresses = async () => {
+    if (selectedServiceType !== 'at_home') return;
+    try {
+      const addressResponse = await apiClient.get(`/customer/${phone}/addresses`) as any;
+      if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
+        setAddresses(addressResponse.addresses);
+        const defaultAddr = addressResponse.addresses.find((a: any) => a.isDefault);
+        if (defaultAddr && !selectedAddress) setSelectedAddress(defaultAddr);
+        else if (addressResponse.addresses.length > 0 && !selectedAddress) setSelectedAddress(addressResponse.addresses[0]);
+      } else {
+        setAddresses([]);
+      }
+    } catch (e) {
+      setAddresses([]);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedServiceType === 'at_home') refreshAddresses();
+  }, [selectedServiceType]);
 
   // Check for active packages when customer and vendor are known
   const checkForActivePackages = async () => {
@@ -513,7 +573,9 @@ export function VetBookingRouter({
   };
 
   const handleNext = () => {
-    const steps: BookingStep[] = ['service', 'details', 'payment', 'confirmation'];
+    const steps: BookingStep[] = selectedServiceType === 'at_home'
+      ? ['service', 'details', 'address', 'payment', 'confirmation']
+      : ['service', 'details', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
     
     if (currentIdx < steps.length - 1) {
@@ -547,7 +609,9 @@ export function VetBookingRouter({
   };
 
   const handleBack = () => {
-    const steps: BookingStep[] = ['service', 'details', 'payment', 'confirmation'];
+    const steps: BookingStep[] = selectedServiceType === 'at_home'
+      ? ['service', 'details', 'address', 'payment', 'confirmation']
+      : ['service', 'details', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
     
     if (currentIdx > 0) {
@@ -658,18 +722,17 @@ export function VetBookingRouter({
     { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
   ];
 
-  // ✅ FIX: Prepare step indicators for header
+  // ✅ FIX: Prepare step indicators for header (include Address when at_home)
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
     
-    const stepLabels = ['Service', 'Details', 'Payment'];
-    const currentStepMap: Record<BookingStep, number> = {
-      service: 0,
-      details: 1,
-      payment: 2,
-      confirmation: 3
-    };
-    const currentIdx = currentStepMap[step];
+    const stepLabels = selectedServiceType === 'at_home'
+      ? ['Service', 'Details', 'Address', 'Payment']
+      : ['Service', 'Details', 'Payment'];
+    const currentStepMap: Record<BookingStep, number> = selectedServiceType === 'at_home'
+      ? { service: 0, details: 1, address: 2, payment: 3, confirmation: 4 }
+      : { service: 0, details: 1, address: 1, payment: 2, confirmation: 3 };
+    const currentIdx = currentStepMap[step] ?? 0;
     
     return stepLabels.map((label, idx) => ({
       label,
@@ -942,10 +1005,87 @@ export function VetBookingRouter({
             </div>
           </div>
 
-            {/* Address is already part of vendor profile - removed per user request */}
+            {/* Address step only for at_home - handled in address step below */}
 
               </div>
             )}
+
+        {/* Address Step - only for at_home */}
+        {step === 'address' && selectedServiceType === 'at_home' && (
+          <div className="space-y-4 pb-24">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">Select Your Address</h2>
+              <button
+                onClick={() => setShowAddAddressModal(true)}
+                className="flex items-center gap-1 px-3 py-1.5 bg-blue-100 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-200 transition"
+              >
+                <Plus className="w-4 h-4" />
+                Add Address
+              </button>
+            </div>
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-blue-600 flex-shrink-0" />
+              <p className="text-sm text-blue-800">An address is required for home visit.</p>
+            </div>
+            <div className="space-y-3">
+              {addresses.length > 0 ? (
+                addresses.map((addr) => (
+                  <button
+                    key={addr.id}
+                    onClick={() => setSelectedAddress(addr)}
+                    className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
+                      selectedAddress?.id === addr.id ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:border-orange-200'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold text-gray-900">{addr.label || 'Address'}</h3>
+                          {addr.isDefault && (
+                            <span className="px-2 py-0.5 bg-orange-100 text-[#FF7A35] text-xs rounded-full">Default</span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600">{addr.addressLine1 || addr.address}</p>
+                        <p className="text-sm text-gray-500">{addr.city} - {addr.pincode}</p>
+                      </div>
+                      {selectedAddress?.id === addr.id && (
+                        <CheckCircle2 className="w-6 h-6 text-[#FF8C42]" />
+                      )}
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
+                  <div className="w-16 h-16 mx-auto mb-3 bg-gray-100 rounded-full flex items-center justify-center">
+                    <MapPin className="w-8 h-8 text-gray-400" />
+                  </div>
+                  <p className="text-gray-600 font-medium mb-2">No addresses saved</p>
+                  <p className="text-sm text-gray-500 mb-4">Add an address to continue with the booking</p>
+                  <button
+                    onClick={() => setShowAddAddressModal(true)}
+                    className="px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition"
+                  >
+                    + Add Your Address
+                  </button>
+                </div>
+              )}
+            </div>
+            {selectedAddress && addresses.length > 0 && (
+              <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                <p className="text-sm text-[#FF6B35] font-medium">
+                  ✓ Home visit at: {selectedAddress?.label || 'Selected Address'}
+                </p>
+              </div>
+            )}
+            <Button
+              onClick={handleNext}
+              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
+              disabled={!selectedAddress}
+            >
+              {selectedAddress ? 'Continue to Payment' : 'Select an Address to Continue'}
+            </Button>
+          </div>
+        )}
             
         {/* Fixed Continue Button - Above Footer */}
         {step === 'details' && (
@@ -962,7 +1102,9 @@ export function VetBookingRouter({
                   ? 'Select Date & Time' 
                   : !selectedPet 
                     ? 'Select a Pet' 
-                    : 'Continue to Payment'}
+                    : selectedServiceType === 'at_home' 
+                      ? 'Continue to Address' 
+                      : 'Continue to Payment'}
             </Button>
             </div>
           </div>
@@ -974,19 +1116,54 @@ export function VetBookingRouter({
             <h2 className="text-lg sm:text-xl font-bold text-gray-900">Booking Summary</h2>
             
             <div className="bg-white rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4 shadow-sm">
-              {/* Service */}
-              <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
-                <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600`}>
-                  {selectedServiceType === 'tele' ? <Video className="w-5 h-5 sm:w-6 sm:h-6" /> :
-                   selectedServiceType === 'at_home' ? <Home className="w-5 h-5 sm:w-6 sm:h-6" /> :
-                   <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />}
+              {/* Service(s) - multi-service or single with fallbacks */}
+              {allSelectedServices && allSelectedServices.length > 0 ? (
+                <div className="space-y-3 pb-3 sm:pb-4 border-b">
+                  {allSelectedServices.map((svc: any, idx: number) => (
+                    <div key={svc.id || svc.serviceId || idx} className="flex items-center gap-2 sm:gap-3">
+                      <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600`}>
+                        {selectedServiceType === 'tele' ? <Video className="w-5 h-5 sm:w-6 sm:h-6" /> :
+                         selectedServiceType === 'at_home' ? <Home className="w-5 h-5 sm:w-6 sm:h-6" /> :
+                         <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-sm sm:text-base">{svc.name || svc.serviceName || 'Service'}</h3>
+                        {(svc.duration ?? 0) > 0 && (
+                          <p className="text-xs sm:text-sm text-gray-500">{svc.duration} mins</p>
+                        )}
+                      </div>
+                      <p className="font-bold text-sm sm:text-base flex-shrink-0">₹{(svc.price ?? 0).toLocaleString('en-IN')}</p>
+                    </div>
+                  ))}
+                  {allSelectedServices.length > 1 && (
+                    <div className="flex justify-between items-center pt-2 font-bold text-sm sm:text-base">
+                      <span>Subtotal</span>
+                      <span className="text-orange-600">₹{allSelectedServices.reduce((sum, s) => sum + (s.price ?? 0), 0).toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-sm sm:text-base">{selectedServiceOption?.name}</h3>
-                  <p className="text-xs sm:text-sm text-gray-500">{selectedServiceOption?.duration} mins</p>
+              ) : (
+                <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
+                  <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600`}>
+                    {selectedServiceType === 'tele' ? <Video className="w-5 h-5 sm:w-6 sm:h-6" /> :
+                     selectedServiceType === 'at_home' ? <Home className="w-5 h-5 sm:w-6 sm:h-6" /> :
+                     <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-sm sm:text-base">
+                      {selectedServiceOption?.name || selectedVendorService?.name || serviceName || 'Vet Consultation'}
+                    </h3>
+                    {(selectedServiceOption?.duration ?? selectedVendorService?.duration ?? duration) > 0 && (
+                      <p className="text-xs sm:text-sm text-gray-500">
+                        {selectedServiceOption?.duration ?? selectedVendorService?.duration ?? duration} mins
+                      </p>
+                    )}
+                  </div>
+                  <p className="font-bold text-sm sm:text-base flex-shrink-0">
+                    ₹{(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0).toLocaleString('en-IN')}
+                  </p>
                 </div>
-                <p className="font-bold text-sm sm:text-base flex-shrink-0">₹{selectedServiceOption?.price}</p>
-              </div>
+              )}
 
               {/* Date & Time */}
               <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
@@ -1029,7 +1206,11 @@ export function VetBookingRouter({
             <div className="bg-white rounded-xl p-3 sm:p-4 shadow-sm">
               <div className="flex justify-between items-center text-base sm:text-lg">
                 <span className="font-bold">Total</span>
-                <span className="font-bold text-orange-600">₹{selectedServiceOption?.price}</span>
+                <span className="font-bold text-orange-600">
+                  ₹{(allSelectedServices && allSelectedServices.length > 0
+                    ? allSelectedServices.reduce((sum, s) => sum + (s.price ?? 0), 0)
+                    : (selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0)).toLocaleString('en-IN')}
+                </span>
               </div>
             </div>
           </div>
@@ -1095,22 +1276,39 @@ export function VetBookingRouter({
           
           // Only render if we have a valid UUID
           if (finalServiceId && uuidRegex.test(finalServiceId)) {
+            const totalBaseAmount = allSelectedServices && allSelectedServices.length > 0
+              ? allSelectedServices.reduce((sum, s) => sum + (s.price ?? 0), 0)
+              : (selectedVendorService?.price ?? selectedServiceOption?.price ?? 0);
+            const totalDuration = allSelectedServices && allSelectedServices.length > 0
+              ? allSelectedServices.reduce((sum, s) => sum + (s.duration ?? 0), 0)
+              : (selectedVendorService?.duration ?? selectedServiceOption?.duration ?? 15);
+            const displayVendorName = vendorNameProp || doctor?.name || doctor?.clinic_name || doctor?.clinicName || 'Veterinary Clinic';
             return (
               <UniversalPaymentPage
                 type="booking"
                 vendorId={(vendorId || doctorId || clinicId || '') as string}
-                vendorName={doctor?.name || doctor?.clinic_name || 'Veterinary Clinic'}
+                vendorName={displayVendorName}
                 serviceId={finalServiceId}
-                serviceName={selectedVendorService.name || selectedServiceOption?.name || 'Vet Consultation'}
-                serviceDescription={`${selectedServiceOption?.name} for ${selectedPet.name}`}
+                serviceName={allSelectedServices?.length > 1 ? `${allSelectedServices.length} Services` : (selectedVendorService.name || selectedServiceOption?.name || 'Vet Consultation')}
+                serviceDescription={allSelectedServices?.length > 1 ? allSelectedServices.map((s: any) => s.name || s.serviceName).join(', ') : `${selectedServiceOption?.name || selectedVendorService?.name} for ${selectedPet.name}`}
                 serviceStyle={selectedServiceType === 'tele' ? 'tele' : selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
                 bookingDate={selectedDate}
                 bookingTime={selectedTime}
                 petId={selectedPet.id}
                 petName={selectedPet.name}
                 petBreed={selectedPet.breed}
-                baseAmount={selectedVendorService.price || selectedServiceOption?.price || 0}
-                duration={selectedVendorService.duration || selectedServiceOption?.duration || 15}
+                addressId={selectedServiceType === 'at_home' ? selectedAddress?.id : undefined}
+                address={selectedServiceType === 'at_home' && selectedAddress ? {
+                  id: selectedAddress.id,
+                  label: selectedAddress.label,
+                  addressLine1: selectedAddress.addressLine1 || selectedAddress.address,
+                  city: selectedAddress.city,
+                  pincode: selectedAddress.pincode,
+                  state: selectedAddress.state,
+                } : undefined}
+                baseAmount={totalBaseAmount}
+                duration={totalDuration}
+                selectedServices={allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : undefined}
                 customerPhone={phone}
                 customerId={customerId || undefined}
                 onBack={() => setShowPaymentPage(false)}
@@ -1149,8 +1347,12 @@ export function VetBookingRouter({
               </div>
               <div className="space-y-2 sm:space-y-3 pt-3 sm:pt-4 border-t">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs sm:text-sm text-gray-500">Service</span>
-                  <span className="font-medium text-xs sm:text-sm text-right ml-2">{selectedServiceOption?.name}</span>
+                  <span className="text-xs sm:text-sm text-gray-500">Service{allSelectedServices?.length > 1 ? 's' : ''}</span>
+                  <span className="font-medium text-xs sm:text-sm text-right ml-2">
+                    {allSelectedServices && allSelectedServices.length > 1
+                      ? allSelectedServices.map((s: any) => s.name || s.serviceName).join(', ')
+                      : (selectedServiceOption?.name || selectedVendorService?.name)}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-xs sm:text-sm text-gray-500">Date</span>
@@ -1317,8 +1519,17 @@ export function VetBookingRouter({
             }}
           />
         )}
-        
-        {/* Add Address Modal */}
+
+        {/* Add Address Modal - in-context for at_home booking step */}
+        <AddAddressModal
+          phone={phone}
+          isOpen={showAddAddressModal}
+          onClose={() => setShowAddAddressModal(false)}
+          onSuccess={() => {
+            refreshAddresses();
+            setShowAddAddressModal(false);
+          }}
+        />
         </div>
       </div>
       

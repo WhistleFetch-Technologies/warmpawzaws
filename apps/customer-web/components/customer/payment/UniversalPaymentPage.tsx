@@ -1015,8 +1015,27 @@ export function UniversalPaymentPage({
         }
         
         // Create booking with correct API format
-        // ✅ Try all possible booking creation endpoints
-        // CRITICAL: Lambda may not be deployed with latest code, try all variations
+        // ✅ CRITICAL: CreateBookingRequestSchema requires customerId (UUID). Resolve from customerPhone if missing.
+        let resolvedCustomerId = customerId;
+        if (!resolvedCustomerId && customerPhone) {
+          try {
+            const byPhoneRes = await apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`) as any;
+            resolvedCustomerId = byPhoneRes?.customer?.id ?? byPhoneRes?.id;
+            if (!resolvedCustomerId) {
+              const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(customerPhone)}`) as any;
+              const profile = profileRes?.profile ?? profileRes;
+              resolvedCustomerId = profile?.id ?? profile?.customerId;
+            }
+          } catch (e) {
+            console.warn('Could not resolve customerId from customerPhone:', e);
+          }
+        }
+        if (!resolvedCustomerId) {
+          toast.error('Could not load your profile. Please sign in and try again.');
+          setProcessing(false);
+          return;
+        }
+        
         let bookingRes: any;
         
         // Get customer name from profile
@@ -1040,7 +1059,7 @@ export function UniversalPaymentPage({
           : bookingTime;
 
         const bookingPayload = {
-          customerId: customerId, // ✅ Required UUID
+          customerId: resolvedCustomerId, // ✅ Required UUID (resolved above)
           vendorId: vendorId, // ✅ Required UUID
           serviceId: finalServiceId, // ✅ Required UUID (resolved above)
           serviceName: serviceName, // ✅ Service name for booking
@@ -1058,11 +1077,11 @@ export function UniversalPaymentPage({
           selectedServices: selectedServices && selectedServices.length > 0 
             ? selectedServices.map(s => ({
                 id: s.id || s.serviceId,
-                serviceId: s.serviceId || s.id,
+                serviceId: s.service_id || s.serviceId || s.id,
                 name: s.name || s.serviceName,
-                price: s.price || s.custom_price || 0,
-                duration: s.duration || s.duration_minutes || 30,
-                quantity: s.quantity || 1,
+                price: Number(s.price) || Number(s.custom_price) || 0,
+                duration: Number(s.duration) || Number(s.duration_minutes) || 30,
+                quantity: Number(s.quantity) || 1,
               }))
             : undefined,
         };
@@ -1594,8 +1613,24 @@ export function UniversalPaymentPage({
     );
   }
 
-  const displayName = serviceName || productName || 'Service';
-  const displayDescription = serviceDescription || '';
+  // ✅ Derive display values from selectedServices when available (universal payment for all flows)
+  const effectiveSelectedServices = selectedServices && selectedServices.length > 0
+    ? selectedServices
+    : null;
+  const firstServiceFromArray = effectiveSelectedServices?.[0];
+  
+  const displayName = serviceName || productName 
+    || firstServiceFromArray?.name || firstServiceFromArray?.serviceName 
+    || 'Service';
+  const displayDescription = serviceDescription || firstServiceFromArray?.description || '';
+  const displayAmount = Number(baseAmount) || (effectiveSelectedServices 
+    ? effectiveSelectedServices.reduce((sum: number, s: any) => sum + (Number(s.price) || 0), 0)
+    : 0);
+  const displayDuration = (duration != null && (typeof duration !== 'string' || duration !== '')) 
+    ? Number(duration) 
+    : (effectiveSelectedServices 
+        ? effectiveSelectedServices.reduce((sum: number, s: any) => sum + (Number(s.duration) || 0), 0)
+        : firstServiceFromArray?.duration);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-orange-50 pb-48">
@@ -1649,38 +1684,76 @@ export function UniversalPaymentPage({
           </Card>
         )}
 
-        {/* Booking/Order Summary */}
+        {/* Booking/Order Summary - Universal display for all service booking flows */}
         <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
           <h2 className="text-lg font-bold text-gray-900 mb-4">
             {type === 'booking' ? 'Booking Summary' : 'Order Summary'}
           </h2>
           
-          {/* Booking/Order Summary */}
-          <div className="flex items-start gap-4 pb-4 border-b border-gray-100">
-            <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${
-              serviceStyle === 'tele' ? 'bg-blue-100' :
-              serviceStyle === 'at_home' ? 'bg-green-100' : 
-              serviceStyle === 'at_center' ? 'bg-purple-100' : 'bg-orange-100'
-            }`}>
-              {serviceStyle === 'tele' ? '📱' : serviceStyle === 'at_home' ? '🏠' : serviceStyle === 'at_center' ? '🏥' : '🛒'}
+          {/* Multi-service or single service display */}
+          {effectiveSelectedServices && effectiveSelectedServices.length > 0 ? (
+            <div className="space-y-3 pb-4 border-b border-gray-100">
+              {effectiveSelectedServices.map((svc: any, idx: number) => {
+                const svcName = svc.name || svc.serviceName || 'Service';
+                const svcPrice = Number(svc.price) || 0;
+                const svcDuration = svc.duration != null ? Number(svc.duration) : null;
+                const svcStyle = svc.serviceStyle || svc.service_style || serviceStyle;
+                return (
+                  <div key={svc.id || svc.serviceId || idx} className="flex items-start gap-4">
+                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${
+                      svcStyle === 'tele' ? 'bg-blue-100' :
+                      svcStyle === 'at_home' ? 'bg-green-100' : 
+                      svcStyle === 'at_center' ? 'bg-purple-100' : 'bg-orange-100'
+                    }`}>
+                      {svcStyle === 'tele' ? '📱' : svcStyle === 'at_home' ? '🏠' : svcStyle === 'at_center' ? '🏥' : '🛒'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-gray-900">{svcName}</h3>
+                      {idx === 0 && <p className="text-sm text-gray-500">{vendorName}</p>}
+                      {svcDuration != null && svcDuration > 0 && (
+                        <p className="text-sm text-gray-400 flex items-center gap-1 mt-1">
+                          <Clock className="w-3 h-3" /> {svcDuration} mins
+                        </p>
+                      )}
+                    </div>
+                    <p className="font-bold text-[#FF8C42]">₹{svcPrice.toLocaleString('en-IN')}</p>
+                  </div>
+                );
+              })}
+              {effectiveSelectedServices.length > 1 && (
+                <div className="flex justify-between items-center pt-2 font-bold">
+                  <span>Subtotal</span>
+                  <span className="text-[#FF8C42]">₹{displayAmount.toLocaleString('en-IN')}</span>
+                </div>
+              )}
             </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-gray-900">{displayName}</h3>
-              <p className="text-sm text-gray-500">{vendorName}</p>
-              {displayDescription && (
-                <p className="text-sm text-gray-400 mt-1 line-clamp-2">{displayDescription}</p>
-              )}
-              {duration && (
-                <p className="text-sm text-gray-400 flex items-center gap-1 mt-1">
-                  <Clock className="w-3 h-3" /> {duration} mins
-                </p>
-              )}
-              {quantity > 1 && (
-                <p className="text-sm text-gray-400 mt-1">Quantity: {quantity}</p>
-              )}
+          ) : (
+            <div className="flex items-start gap-4 pb-4 border-b border-gray-100">
+              <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${
+                serviceStyle === 'tele' ? 'bg-blue-100' :
+                serviceStyle === 'at_home' ? 'bg-green-100' : 
+                serviceStyle === 'at_center' ? 'bg-purple-100' : 'bg-orange-100'
+              }`}>
+                {serviceStyle === 'tele' ? '📱' : serviceStyle === 'at_home' ? '🏠' : serviceStyle === 'at_center' ? '🏥' : '🛒'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-gray-900">{displayName}</h3>
+                <p className="text-sm text-gray-500">{vendorName}</p>
+                {displayDescription && (
+                  <p className="text-sm text-gray-400 mt-1 line-clamp-2">{displayDescription}</p>
+                )}
+                {displayDuration != null && displayDuration > 0 && (
+                  <p className="text-sm text-gray-400 flex items-center gap-1 mt-1">
+                    <Clock className="w-3 h-3" /> {displayDuration} mins
+                  </p>
+                )}
+                {quantity > 1 && (
+                  <p className="text-sm text-gray-400 mt-1">Quantity: {quantity}</p>
+                )}
+              </div>
+              <p className="font-bold text-[#FF8C42]">₹{displayAmount.toLocaleString('en-IN')}</p>
             </div>
-            <p className="font-bold text-[#FF8C42]">₹{baseAmount}</p>
-          </div>
+          )}
           
           {/* Schedule (for bookings) */}
           {type === 'booking' && (bookingDate || bookingTime) && (

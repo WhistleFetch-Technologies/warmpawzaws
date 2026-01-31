@@ -658,8 +658,13 @@ export function UniversalBookingRouter({
       } else {
         // Regular booking: CreateBookingRequestSchema expects camelCase (customerId, vendorId, serviceId UUID, bookingDate, bookingTime, serviceType)
         const vendorIdValue = doctorId || vendorId || clinicId || '';
+        const servicesToSend = (allSelectedServices && allSelectedServices.length > 0)
+          ? allSelectedServices
+          : (selectedServices && selectedServices.length > 0 ? selectedServices : null);
+        const firstService = servicesToSend?.[0];
         const opt = selectedServiceOption as { serviceId?: string; service_id?: string; id?: string } | undefined;
-        const serviceIdValue = opt?.serviceId ?? opt?.service_id ?? serviceId ?? opt?.id ?? '';
+        const serviceIdValue = (firstService?.service_id || firstService?.serviceId || firstService?.id)
+          || opt?.service_id || opt?.serviceId || serviceId || opt?.id || '';
         if (!vendorIdValue || !serviceIdValue) {
           toast.error('Missing vendor or service. Please go back and select a service.');
           setProcessing(false);
@@ -680,17 +685,14 @@ export function UniversalBookingRouter({
         const serviceTypeEnum = selectedServiceType === 'clinic' || selectedServiceType === 'at_center' ? 'at_center' : selectedServiceType === 'at_home' ? 'at_home' : 'tele';
 
         // Build selectedServices for multi-service booking (vet/universal flow)
-        const servicesToSend = (allSelectedServices && allSelectedServices.length > 0)
-          ? allSelectedServices
-          : (selectedServices && selectedServices.length > 0 ? selectedServices : null);
         const selectedServicesForApi = servicesToSend && servicesToSend.length > 0
           ? servicesToSend.map((s: any) => ({
               id: s.id || s.serviceId,
-              serviceId: s.serviceId || s.id,
+              serviceId: s.service_id || s.serviceId || s.id,
               name: s.name || s.serviceName,
-              price: typeof s.price === 'number' ? s.price : (s.custom_price ?? 0),
-              duration: typeof s.duration === 'number' ? s.duration : (s.duration_minutes ?? 30),
-              quantity: typeof s.quantity === 'number' ? s.quantity : 1,
+              price: Number(s.price) || Number(s.custom_price) || 0,
+              duration: Number(s.duration) || Number(s.duration_minutes) || 30,
+              quantity: Number(s.quantity) || 1,
             }))
           : undefined;
 
@@ -1179,7 +1181,10 @@ export function UniversalBookingRouter({
                     </div>
                   );
                 }
-                // Fallback to single service display
+                // Fallback to single service display - with fallbacks for missing data
+                const svcName = selectedServiceOption?.name || selectedVendorService?.name || serviceName || 'Service';
+                const svcDuration = selectedServiceOption?.duration ?? selectedVendorService?.duration ?? duration ?? 0;
+                const svcPrice = selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0;
                 return (
                   <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
                     <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600`}>
@@ -1188,10 +1193,12 @@ export function UniversalBookingRouter({
                        <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-sm sm:text-base">{selectedServiceOption?.name}</h3>
-                      <p className="text-xs sm:text-sm text-gray-500">{selectedServiceOption?.duration} mins</p>
+                      <h3 className="font-semibold text-sm sm:text-base">{svcName}</h3>
+                      {svcDuration > 0 && (
+                        <p className="text-xs sm:text-sm text-gray-500">{svcDuration} mins</p>
+                      )}
                     </div>
-                    <p className="font-bold text-sm sm:text-base flex-shrink-0">₹{selectedServiceOption?.price}</p>
+                    <p className="font-bold text-sm sm:text-base flex-shrink-0">₹{svcPrice.toLocaleString('en-IN')}</p>
                   </div>
                 );
               })()}
@@ -1244,9 +1251,10 @@ export function UniversalBookingRouter({
                       : (selectedServices && selectedServices.length > 0 ? selectedServices : []);
                     
                     if (servicesToCalculate.length > 0) {
-                      return `₹${servicesToCalculate.reduce((sum, s) => sum + (s.price || 0), 0)}`;
+                      return `₹${servicesToCalculate.reduce((sum, s) => sum + (s.price || 0), 0).toLocaleString('en-IN')}`;
                     }
-                    return `₹${selectedServiceOption?.price || 0}`;
+                    const fallbackPrice = selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0;
+                    return `₹${Number(fallbackPrice).toLocaleString('en-IN')}`;
                   })()}
                 </span>
               </div>
