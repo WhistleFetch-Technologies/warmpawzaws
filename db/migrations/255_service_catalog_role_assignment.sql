@@ -61,10 +61,15 @@ WHERE (applicable_roles IS NULL OR array_length(applicable_roles, 1) IS NULL)
   AND (category_id = 'pharmacy' OR category_name ILIKE '%pharmacy%' OR service_id LIKE 'pharmacy_%');
 
 -- Nutrition: pet_nutritionist, nutritionist, nutritionist_center
+-- ✅ FIX: Exclude vet services by checking it's NOT already assigned to vet roles
 UPDATE service_catalog
 SET applicable_roles = ARRAY['pet_nutritionist', 'nutritionist', 'nutritionist_center']
 WHERE (applicable_roles IS NULL OR array_length(applicable_roles, 1) IS NULL)
-  AND (category_id = 'wellness' OR category_name ILIKE '%nutrition%' OR service_id LIKE 'nutrition_%');
+  AND (
+    (category_id = 'nutrition' OR category_name ILIKE '%nutrition%' OR service_id LIKE 'nutrition_%' OR service_name ILIKE '%diet%' OR service_name ILIKE '%meal plan%')
+    -- ✅ Exclude if it's a vet service (checkup, vaccination, surgery, etc.)
+    AND NOT (category_id = 'veterinary' OR category_name ILIKE '%veterinar%' OR service_id LIKE 'vet_%' OR service_name ILIKE '%checkup%' OR service_name ILIKE '%vaccination%' OR service_name ILIKE '%surgery%')
+  );
 
 -- Photography: pet_photographer, photographer
 UPDATE service_catalog

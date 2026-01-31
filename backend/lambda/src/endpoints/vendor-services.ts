@@ -28,11 +28,17 @@ import { isValidUUID, normalizeVendorService } from '../types/entities';
  * So vendor service management discovers catalog services for the vendor's role.
  */
 const roleMappings: Record<string, string[]> = {
+  // ✅ FIX: Healthcare roles with clinic services
   'veterinarian': ['vet', 'veterinarian', 'vet_clinic', 'vet_solo'],
   'vet_solo': ['vet', 'veterinarian', 'vet_clinic', 'vet_solo', 'solo_vet'],
   'veterinary_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian'],
   'vet_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian', 'vet_solo'],
   'diagnostics_center': ['diagnostics_center', 'vet_clinic', 'veterinarian'],
+  
+  // ✅ FIX: Nutritionist should ONLY see nutrition services, NOT vet services
+  'nutritionist': ['nutritionist', 'pet_nutritionist'],
+  'nutritionist_center': ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
+  
   'pet_pharmacy': ['pharmacy', 'pet_pharmacy'],
   'pet_ambulance': ['ambulance', 'pet_ambulance'],
   'ambulance': ['ambulance', 'pet_ambulance'],
@@ -230,11 +236,23 @@ export function registerVendorServicesEndpoints(app: Hono) {
         'pharmacy': ['delivery', 'pickup'],
         'pet_products_store': ['delivery', 'pickup'],
         'pet_ambulance': ['at_home'],
+        'ambulance': ['at_home'],
         'pet_photographer': ['at_center', 'at_home'],
+        'photographer': ['at_center', 'at_home'],
         'pet_sunset_services': ['at_center', 'at_home'],
+        'sunset': ['at_center', 'at_home'],
         'event_organizer': ['at_center'],
         'insurance': ['at_center'],
         'pet_breeder': ['at_center', 'at_home'],
+        'breeder': ['at_center', 'at_home'],
+        'relocation': ['at_home'],
+        'pet_relocation': ['at_home'],
+        'resort': ['at_center'],
+        'holiday': ['at_center'],
+        'nutritionist_center': ['at_center', 'at_home', 'tele'],
+        'adoption_center': ['at_center'],
+        'pet_shelter': ['at_center'],
+        'seller': ['at_center', 'delivery', 'pickup'],
       };
 
       if (vendor.role_id) {

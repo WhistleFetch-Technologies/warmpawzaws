@@ -27,12 +27,17 @@ import { isValidUUID } from '../types/entities';
  * so that catalog discovery shows the right services per vendor role.
  */
 const roleMappings: Record<string, string[]> = {
-  // Healthcare – vet solo and vet clinic both see vet services
+  // ✅ FIX: Healthcare roles with clinic services
   'veterinarian': ['vet', 'veterinarian', 'vet_clinic', 'vet_solo'],
   'vet_solo': ['vet', 'veterinarian', 'vet_clinic', 'vet_solo', 'solo_vet'],
   'veterinary_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian'],
   'vet_clinic': ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian', 'vet_solo'],
   'diagnostics_center': ['diagnostics_center', 'vet_clinic', 'veterinarian'],
+  
+  // ✅ FIX: Nutritionist should ONLY see nutrition services, NOT vet services
+  'nutritionist': ['nutritionist', 'pet_nutritionist'],
+  'nutritionist_center': ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
+  
   'pet_pharmacy': ['pharmacy', 'pet_pharmacy'],
   'pet_ambulance': ['ambulance', 'pet_ambulance'],
   'ambulance': ['ambulance', 'pet_ambulance'],
@@ -263,11 +268,13 @@ export function registerServiceCatalogEndpoints(app: Hono) {
       // Remove duplicates and null/undefined
       const uniqueRoles = [...new Set(acceptableRoles.filter(Boolean))];
 
+      // ✅ STRICT: Only return services that explicitly list this role (no NULL/empty = show to all)
       let catalogQuery = `
         SELECT * FROM service_catalog
         WHERE status = 'active'
         AND publish_status = 'published'
-        AND (applicable_roles && $1::text[] OR applicable_roles IS NULL OR array_length(applicable_roles, 1) IS NULL)
+        AND array_length(applicable_roles, 1) > 0
+        AND applicable_roles && $1::text[]
       `;
 
       const params: any[] = [uniqueRoles];
@@ -306,7 +313,7 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         name: service.service_name,
         description: service.description,
         categoryId: service.category_id,
-        categoryName: service.category_name,
+        categoryName: service.category_name && String(service.category_name).trim() ? service.category_name : (service.category_id === 'veterinary' ? 'Veterinary Services' : service.category_id === 'diagnostic' ? 'Diagnostics & Lab' : service.category_id === 'grooming' ? 'Grooming & Hygiene' : service.category_id || 'General'),
         subCategoryId: service.sub_category_id,
         subCategoryName: service.sub_category_name,
         applicableRoles: service.applicable_roles || [],
