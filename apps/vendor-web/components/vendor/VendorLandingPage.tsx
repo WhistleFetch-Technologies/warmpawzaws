@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 // ✅ AWS Serverless: Removed Supabase dependencies - using apiClient with Cognito auth
 import { useVendorNotificationService } from './useVendorNotificationService';
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
-import { getVendorRoleId } from '@/lib/vendor-utils';
+import { getVendorRoleId, isDiagnosticsCenter } from '@/lib/vendor-utils';
 // ❌ REMOVED: Staff management has been decommissioned
 // import { VendorStaffPage } from './VendorStaffPage';
 // import { DoctorManagement } from './clinic/DoctorManagement';
@@ -1235,10 +1235,17 @@ export function VendorLandingPage({
             <div className="max-w-6xl mx-auto px-4 py-6">
               <DiagnosticResults
                 vendorId={vendorId}
+                vendorData={vendorData}
                 onBack={() => {
                   setShowDiagnostics(false);
-                  const r = (vendorData?.roleName || vendorData?.roleId || '').toLowerCase().replace(/\s+/g, '_');
-                  if (r.includes('diagnostics_center') || r.includes('diagnostic_center')) setShowDiagnosticsOrders(true);
+                  // ✅ FIX: Use proper role detection helper
+                  if (isDiagnosticsCenter(vendorData)) {
+                    setShowDiagnosticsOrders(true);
+                  }
+                }}
+                onNavigateToOrders={() => {
+                  setShowDiagnostics(false);
+                  setShowDiagnosticsOrders(true);
                 }}
               />
             </div>
@@ -1588,9 +1595,39 @@ export function VendorLandingPage({
             onNavigateToPrescription={() => setShowPrescription(true)}
             onNavigateToPrescriptionList={() => setShowPrescriptionList(true)} // ✅ NEW
             onNavigateToDiagnostics={() => {
-              const r = (vendorData?.roleName || vendorData?.roleId || '').toLowerCase().replace(/\s+/g, '_');
-              if (r.includes('diagnostics_center') || r.includes('diagnostic_center')) setShowDiagnosticsOrders(true);
-              else setShowDiagnostics(true);
+              // ✅ FIX: Use proper role detection helper
+              // Quick check: Direct role.name check first (fastest path)
+              const roleName = vendorData?.role?.name || vendorData?.roleName || vendorData?.role_name;
+              const isDiagnosticsCenterDirect = roleName && (
+                roleName.toLowerCase().includes('diagnostics_center') ||
+                roleName.toLowerCase().includes('diagnostic_center') ||
+                roleName.toLowerCase() === 'diagnostics'
+              );
+              
+              // Also use the helper function for comprehensive check
+              const vendorDataWithCapabilities = {
+                ...vendorData,
+                capabilities: capabilities || []
+              };
+              const isDiagnosticsCenterHelper = isDiagnosticsCenter(vendorDataWithCapabilities);
+              
+              const shouldShowOrders = isDiagnosticsCenterDirect || isDiagnosticsCenterHelper;
+              
+              console.log('🔍 [VendorLandingPage] onNavigateToDiagnostics:', {
+                roleName,
+                isDiagnosticsCenterDirect,
+                isDiagnosticsCenterHelper,
+                shouldShowOrders,
+                vendorData: vendorData ? { id: vendorData.id, role: vendorData.role } : null
+              });
+              
+              if (shouldShowOrders) {
+                console.log('✅ [VendorLandingPage] Detected diagnostics center - showing orders dashboard');
+                setShowDiagnosticsOrders(true);
+              } else {
+                console.log('⚠️ [VendorLandingPage] Not diagnostics center - showing test catalog');
+                setShowDiagnostics(true);
+              }
             }}
             onNavigateToPricing={() => setShowPricing(true)} // ✅ NEW
             onNavigateToProgressTracking={() => setShowProgressTracking(true)}

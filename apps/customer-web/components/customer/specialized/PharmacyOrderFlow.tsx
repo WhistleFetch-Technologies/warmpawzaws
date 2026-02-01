@@ -1026,33 +1026,33 @@ export function PharmacyOrderFlow({
           </>
         )}
       </main>
-    </div>
 
-    {/* Add Address Modal - when no addresses or add new */}
-    <AddAddressModal
-      phone={customerPhone}
-      isOpen={showAddAddressModal}
-      onClose={() => setShowAddAddressModal(false)}
-      onSuccess={(newAddr) => {
-        setShowAddAddressModal(false);
-        // Normalize and add to list, then reload to get full data
-        const normalized = {
-          id: newAddr?.id || newAddr?.address_id,
-          label: newAddr?.label || newAddr?.address_type || 'home',
-          addressLine1: newAddr?.addressLine1 || newAddr?.address_line1 || newAddr?.address,
-          address: newAddr?.addressLine1 || newAddr?.address_line1 || newAddr?.address,
-          city: newAddr?.city,
-          state: newAddr?.state,
-          pincode: newAddr?.pincode,
-          coordinates: newAddr?.coordinates,
-          latitude: newAddr?.latitude ?? (typeof newAddr?.coordinates === 'string' ? (() => { try { const c = JSON.parse(newAddr.coordinates); return c?.lat ?? c?.latitude; } catch { return null; } })() : newAddr?.coordinates?.lat),
-          longitude: newAddr?.longitude ?? (typeof newAddr?.coordinates === 'string' ? (() => { try { const c = JSON.parse(newAddr.coordinates); return c?.lng ?? c?.longitude; } catch { return null; } })() : newAddr?.coordinates?.lng),
-        };
-        setAddresses((prev) => [...prev.filter((a) => a.id !== normalized.id), normalized]);
-        setSelectedAddress(normalized);
-        loadAddresses(); // Reload to ensure we have complete data
-      }}
-    />
+      {/* Add Address Modal - when no addresses or add new */}
+      <AddAddressModal
+        phone={customerPhone}
+        isOpen={showAddAddressModal}
+        onClose={() => setShowAddAddressModal(false)}
+        onSuccess={(newAddr) => {
+          setShowAddAddressModal(false);
+          // Normalize and add to list, then reload to get full data
+          const normalized = {
+            id: newAddr?.id || newAddr?.address_id,
+            label: newAddr?.label || newAddr?.address_type || 'home',
+            addressLine1: newAddr?.addressLine1 || newAddr?.address_line1 || newAddr?.address,
+            address: newAddr?.addressLine1 || newAddr?.address_line1 || newAddr?.address,
+            city: newAddr?.city,
+            state: newAddr?.state,
+            pincode: newAddr?.pincode,
+            coordinates: newAddr?.coordinates,
+            latitude: newAddr?.latitude ?? (typeof newAddr?.coordinates === 'string' ? (() => { try { const c = JSON.parse(newAddr.coordinates); return c?.lat ?? c?.latitude; } catch { return null; } })() : newAddr?.coordinates?.lat),
+            longitude: newAddr?.longitude ?? (typeof newAddr?.coordinates === 'string' ? (() => { try { const c = JSON.parse(newAddr.coordinates); return c?.lng ?? c?.longitude; } catch { return null; } })() : newAddr?.coordinates?.lng),
+          };
+          setAddresses((prev) => [...prev.filter((a) => a.id !== normalized.id), normalized]);
+          setSelectedAddress(normalized);
+          loadAddresses(); // Reload to ensure we have complete data
+        }}
+      />
+    </div>
   );
 }
 

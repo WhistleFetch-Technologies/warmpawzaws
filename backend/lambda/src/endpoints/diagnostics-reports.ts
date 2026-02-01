@@ -94,23 +94,323 @@ class UploadDiagnosticReportHandler extends BaseHandler {
       const actualCustomerId = customerId || booking?.customer_id;
       const actualPetId = petId || booking?.pet_id;
 
-      // Create the diagnostic report
-      const [report] = await insert('diagnostic_reports', {
-        booking_id: bookingId,
-        vendor_id: vendorId,
-        customer_id: actualCustomerId,
-        pet_id: actualPetId,
-        prescribing_vet_id: prescribingVetId || null,
-        prescribing_vet_booking_id: prescribingVetBookingId || null,
-        report_type: reportType || 'lab',
-        test_name: testName,
-        report_url: reportUrl,
-        summary: summary || null,
-        findings: findings || null,
-        status: 'ready',
-        created_at: new Date(),
-        updated_at: new Date(),
-      });
+      // ✅ FIX: Use raw SQL INSERT with dynamic column building to avoid column errors
+      // Check which columns exist first and their constraints
+      const schemaCheck = await query(`
+        SELECT 
+          column_name,
+          is_nullable,
+          column_default
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' AND table_name = 'diagnostic_reports'
+      `);
+      
+      const existingColumns = new Set(schemaCheck.rows.map((r: any) => r.column_name));
+      const columnInfo = new Map(
+        schemaCheck.rows.map((r: any) => [r.column_name, { isNullable: r.is_nullable === 'YES', hasDefault: !!r.column_default }])
+      );
+      
+      console.log('[DIAGNOSTIC-REPORT-UPLOAD] Existing columns:', Array.from(existingColumns));
+      console.log('[DIAGNOSTIC-REPORT-UPLOAD] Column constraints:', Object.fromEntries(columnInfo));
+      
+      // Build columns and values arrays dynamically
+      const columns: string[] = [];
+      const values: any[] = [];
+      const placeholders: string[] = [];
+      let paramIndex = 1;
+      
+      // Handle diagnostic_booking_id (NOT NULL in 008 schema)
+      // If it exists and is NOT NULL, we need to provide a value or make it nullable
+      if (existingColumns.has('diagnostic_booking_id')) {
+        const colInfo = columnInfo.get('diagnostic_booking_id');
+        const isNullable = colInfo?.isNullable ?? false;
+        
+        if (!isNullable) {
+          // diagnostic_booking_id is NOT NULL - try to find it from diagnostic_bookings table
+          // First check if diagnostic_bookings table exists
+          const { rows: tableCheck } = await query(`
+            SELECT EXISTS (
+              SELECT 1 FROM information_schema.tables 
+              WHERE table_schema = 'public' AND table_name = 'diagnostic_bookings'
+            ) as table_exists
+          `);
+          
+          if (tableCheck[0]?.table_exists) {
+            // diagnostic_bookings table exists - try to find matching diagnostic_booking
+            // Check if diagnostic_bookings has a booking_id column that links to bookings
+            const { rows: colCheck } = await query(`
+              SELECT column_name 
+              FROM information_schema.columns 
+              WHERE table_schema = 'public' 
+                AND table_name = 'diagnostic_bookings' 
+                AND column_name IN ('booking_id', 'id')
+            `);
+            
+            const diagnosticBookingCols = colCheck.map((r: any) => r.column_name);
+            
+            if (diagnosticBookingCols.includes('booking_id')) {
+              // diagnostic_bookings has booking_id column - try to find match
+              const { rows: diagnosticBookings } = await query(`
+                SELECT id FROM diagnostic_bookings 
+                WHERE booking_id = $1
+                LIMIT 1
+              `, [bookingId]);
+              
+              if (diagnosticBookings.length > 0) {
+                columns.push('diagnostic_booking_id');
+                values.push(diagnosticBookings[0].id);
+                placeholders.push(`$${paramIndex++}`);
+                console.log('[DIAGNOSTIC-REPORT-UPLOAD] Found diagnostic_booking_id:', diagnosticBookings[0].id);
+              } else {
+                // No match found - we need to make diagnostic_booking_id nullable or skip it
+                // For now, we'll skip it and let the database handle the constraint
+                // But we should also add booking_id as a fallback
+                console.warn('[DIAGNOSTIC-REPORT-UPLOAD] diagnostic_booking_id is NOT NULL but no matching diagnostic_booking found. This may cause an error.');
+              }
+            } else {
+              // diagnostic_bookings doesn't have booking_id - can't map
+              console.warn('[DIAGNOSTIC-REPORT-UPLOAD] diagnostic_booking_id is NOT NULL but diagnostic_bookings table has no booking_id column');
+            }
+          } else {
+            // diagnostic_bookings table doesn't exist - diagnostic_booking_id constraint is invalid
+            // We'll skip it and use booking_id instead
+            console.warn('[DIAGNOSTIC-REPORT-UPLOAD] diagnostic_booking_id is NOT NULL but diagnostic_bookings table does not exist');
+          }
+        } else {
+          // diagnostic_booking_id is nullable - skip it, use booking_id instead
+          console.log('[DIAGNOSTIC-REPORT-UPLOAD] diagnostic_booking_id is nullable, using booking_id instead');
+        }
+      }
+      
+      // Add booking_id if it exists (preferred for our flow)
+      if (existingColumns.has('booking_id')) {
+        columns.push('booking_id');
+        values.push(bookingId);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      
+      if (existingColumns.has('vendor_id')) {
+        columns.push('vendor_id');
+        values.push(vendorId);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      
+      if (existingColumns.has('customer_id')) {
+        columns.push('customer_id');
+        values.push(actualCustomerId);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      
+      if (existingColumns.has('pet_id')) {
+        columns.push('pet_id');
+        values.push(actualPetId);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      
+      if (existingColumns.has('prescribing_vet_id') && prescribingVetId) {
+        columns.push('prescribing_vet_id');
+        values.push(prescribingVetId);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      
+      if (existingColumns.has('prescribing_vet_booking_id') && prescribingVetBookingId) {
+        columns.push('prescribing_vet_booking_id');
+        values.push(prescribingVetBookingId);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      
+      // Handle test_id (NOT NULL in 008 schema) - use testName or generate from testName
+      if (existingColumns.has('test_id')) {
+        const colInfo = columnInfo.get('test_id');
+        const isNullable = colInfo?.isNullable ?? false;
+        
+        if (!isNullable) {
+          // test_id is NOT NULL - generate from testName or use testName as-is
+          const testId = testName.toLowerCase().replace(/[^a-z0-9]/g, '_') || `test_${Date.now()}`;
+          columns.push('test_id');
+          values.push(testId);
+          placeholders.push(`$${paramIndex++}`);
+          console.log('[DIAGNOSTIC-REPORT-UPLOAD] Generated test_id:', testId);
+        } else if (testName) {
+          // test_id is nullable but we have testName - use it
+          const testId = testName.toLowerCase().replace(/[^a-z0-9]/g, '_') || `test_${Date.now()}`;
+          columns.push('test_id');
+          values.push(testId);
+          placeholders.push(`$${paramIndex++}`);
+        }
+      }
+      
+      // Handle test_name (NOT NULL in 008 schema)
+      if (existingColumns.has('test_name')) {
+        const colInfo = columnInfo.get('test_name');
+        const isNullable = colInfo?.isNullable ?? false;
+        
+        if (!isNullable || testName) {
+          columns.push('test_name');
+          values.push(testName);
+          placeholders.push(`$${paramIndex++}`);
+        }
+      }
+      
+      if (existingColumns.has('summary') && summary) {
+        columns.push('summary');
+        values.push(summary);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      
+      if (existingColumns.has('findings') && findings) {
+        columns.push('findings');
+        values.push(findings);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      
+      if (existingColumns.has('status')) {
+        columns.push('status');
+        values.push('ready');
+        placeholders.push(`$${paramIndex++}`);
+      }
+      
+      // Handle report_url vs report_file_url (NOT NULL in 008 schema)
+      if (existingColumns.has('report_url')) {
+        const colInfo = columnInfo.get('report_url');
+        const isNullable = colInfo?.isNullable ?? false;
+        
+        if (!isNullable || reportUrl) {
+          columns.push('report_url');
+          values.push(reportUrl);
+          placeholders.push(`$${paramIndex++}`);
+        }
+      } else if (existingColumns.has('report_file_url')) {
+        columns.push('report_file_url');
+        values.push(reportUrl);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      
+      // Handle uploaded_by (NOT NULL in 008 schema) - use vendorId or find staff
+      if (existingColumns.has('uploaded_by')) {
+        const colInfo = columnInfo.get('uploaded_by');
+        const isNullable = colInfo?.isNullable ?? false;
+        
+        if (!isNullable) {
+          // uploaded_by is NOT NULL - try to find staff_id from vendor
+          try {
+            const { rows: staffRows } = await query(`
+              SELECT id FROM staff 
+              WHERE vendor_id = $1 
+              ORDER BY created_at ASC 
+              LIMIT 1
+            `, [vendorId]);
+            
+            if (staffRows.length > 0) {
+              columns.push('uploaded_by');
+              values.push(staffRows[0].id);
+              placeholders.push(`$${paramIndex++}`);
+              console.log('[DIAGNOSTIC-REPORT-UPLOAD] Found staff_id for uploaded_by:', staffRows[0].id);
+            } else {
+              // No staff found - try to use vendorId directly if staff table allows it
+              // Or create a placeholder staff entry
+              // For now, we'll use a fallback: try to find any staff for this vendor or use vendorId
+              console.warn('[DIAGNOSTIC-REPORT-UPLOAD] No staff found for vendor, trying alternative approach');
+              
+              // Check if we can use vendorId directly (if staff table has vendor_id as UUID)
+              const { rows: vendorAsStaff } = await query(`
+                SELECT id FROM staff 
+                WHERE id = $1 OR vendor_id::text = $1::text
+                LIMIT 1
+              `, [vendorId]);
+              
+              if (vendorAsStaff.length > 0) {
+                columns.push('uploaded_by');
+                values.push(vendorAsStaff[0].id);
+                placeholders.push(`$${paramIndex++}`);
+              } else {
+                // Last resort: we'll need to make uploaded_by nullable or skip it
+                // But since it's NOT NULL, we must provide a value
+                // For now, log error and return
+                return this.error('uploaded_by is required but no staff found for vendor. Please ensure vendor has staff members.', 400);
+              }
+            }
+          } catch (error: any) {
+            console.error('[DIAGNOSTIC-REPORT-UPLOAD] Error finding staff for uploaded_by:', error.message);
+            return this.error('uploaded_by is required but could not be determined', 400);
+          }
+        } else {
+          // uploaded_by is nullable - skip it
+          console.log('[DIAGNOSTIC-REPORT-UPLOAD] uploaded_by is nullable, skipping');
+        }
+      }
+      
+      // Handle uploaded_at (has default in 008 schema, but include if needed)
+      if (existingColumns.has('uploaded_at')) {
+        const colInfo = columnInfo.get('uploaded_at');
+        const hasDefault = colInfo?.hasDefault ?? false;
+        
+        if (!hasDefault) {
+          // uploaded_at doesn't have default - provide it
+          columns.push('uploaded_at');
+          values.push(new Date());
+          placeholders.push(`$${paramIndex++}`);
+        }
+      }
+      
+      // Handle report_type - map to allowed values
+      // Constraint now allows: 'pdf', 'image', 'document', 'blood_test', 'urine_test', 'stool_test', 'imaging', 'biopsy', 'other', 'lab', 'pathology'
+      if (existingColumns.has('report_type') && reportType) {
+        // Map reportType to allowed values
+        // API sends: 'lab', 'imaging', 'pathology', or file format types
+        let dbReportType: string;
+        
+        // Direct mapping for test categories
+        if (reportType === 'lab') {
+          dbReportType = 'blood_test'; // or 'lab' - both are allowed
+        } else if (reportType === 'imaging') {
+          dbReportType = 'imaging'; // Direct match
+        } else if (reportType === 'pathology') {
+          dbReportType = 'biopsy'; // or 'pathology' - both are allowed
+        } else if (['pdf', 'image', 'document', 'blood_test', 'urine_test', 'stool_test', 'imaging', 'biopsy', 'other', 'lab', 'pathology'].includes(reportType)) {
+          // Already a valid value
+          dbReportType = reportType;
+        } else {
+          // Default to 'other' for unknown values
+          dbReportType = 'other';
+        }
+        
+        columns.push('report_type');
+        values.push(dbReportType);
+        placeholders.push(`$${paramIndex++}`);
+        console.log('[DIAGNOSTIC-REPORT-UPLOAD] Using report_type:', dbReportType, '(from input:', reportType, ')');
+      }
+      
+      // Add timestamps
+      if (existingColumns.has('created_at')) {
+        columns.push('created_at');
+        values.push(new Date());
+        placeholders.push(`$${paramIndex++}`);
+      }
+      
+      if (existingColumns.has('updated_at')) {
+        columns.push('updated_at');
+        values.push(new Date());
+        placeholders.push(`$${paramIndex++}`);
+      }
+      
+      // Ensure we have at least test_name and report_url/file_url
+      if (columns.length === 0) {
+        return this.error('No valid columns found in diagnostic_reports table. Please run migration 514.', 500);
+      }
+      
+      // Build and execute raw SQL INSERT
+      const insertQuery = `
+        INSERT INTO diagnostic_reports (${columns.join(', ')})
+        VALUES (${placeholders.join(', ')})
+        RETURNING *
+      `;
+      
+      console.log('[DIAGNOSTIC-REPORT-UPLOAD] Insert query:', insertQuery);
+      console.log('[DIAGNOSTIC-REPORT-UPLOAD] Columns:', columns);
+      
+      const insertResult = await query(insertQuery, values);
+      const report = insertResult.rows[0];
 
       // Create medical record entry
       await insert('medical_records', {
@@ -301,18 +601,68 @@ class GetReportsForBookingHandler extends BaseHandler {
     }
 
     try {
-      const { rows: reports } = await query(
-        `SELECT 
-          dr.*,
-          v.business_name as vendor_name,
-          rv.business_name as reviewing_vet_name
+      // ✅ FIX: Check if reviewed_by column exists before using it in JOIN
+      const columnCheck = await query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'diagnostic_reports' 
+          AND column_name IN ('reviewed_by', 'reviewed_at', 'review_notes')
+      `);
+      
+      const existingColumns = new Set(columnCheck.rows.map((r: any) => r.column_name));
+      const hasReviewedBy = existingColumns.has('reviewed_by');
+      const hasReviewedAt = existingColumns.has('reviewed_at');
+      const hasReviewNotes = existingColumns.has('review_notes');
+      
+      // ✅ FIX: Build query dynamically - explicitly select only existing columns (avoid dr.*)
+      // Get all column names from diagnostic_reports table
+      const allColumnsCheck = await query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'diagnostic_reports'
+        ORDER BY ordinal_position
+      `);
+      
+      const allColumnNames = allColumnsCheck.rows.map((r: any) => r.column_name);
+      // Filter out reviewed_by, reviewed_at, review_notes if they don't exist
+      const safeColumnNames = allColumnNames.filter(col => {
+        if (col === 'reviewed_by') return hasReviewedBy;
+        if (col === 'reviewed_at') return hasReviewedAt;
+        if (col === 'review_notes') return hasReviewNotes;
+        return true;
+      });
+      
+      const selectColumns = safeColumnNames.map(col => `dr.${col}`).join(', ');
+      
+      let reportsQuery = `
+        SELECT 
+          ${selectColumns},
+          v.business_name as vendor_name
+      `;
+      
+      if (hasReviewedBy) {
+        reportsQuery += `,
+          rv.business_name as reviewing_vet_name`;
+      }
+      
+      reportsQuery += `
         FROM diagnostic_reports dr
         LEFT JOIN vendors v ON v.id = dr.vendor_id
-        LEFT JOIN vendors rv ON rv.id = dr.reviewed_by
+      `;
+      
+      if (hasReviewedBy) {
+        reportsQuery += `
+        LEFT JOIN vendors rv ON rv.id = dr.reviewed_by`;
+      }
+      
+      reportsQuery += `
         WHERE dr.booking_id = $1 OR dr.prescribing_vet_booking_id = $1
-        ORDER BY dr.created_at DESC`,
-        [bookingId]
-      );
+        ORDER BY dr.created_at DESC
+      `;
+      
+      const { rows: reports } = await query(reportsQuery, [bookingId]);
 
       return this.success({
         success: true,
@@ -327,10 +677,10 @@ class GetReportsForBookingHandler extends BaseHandler {
           summary: r.summary,
           findings: r.findings,
           status: r.status,
-          reviewedBy: r.reviewed_by,
-          reviewedByName: r.reviewing_vet_name,
-          reviewedAt: r.reviewed_at,
-          reviewNotes: r.review_notes,
+          reviewedBy: hasReviewedBy ? (r.reviewed_by || null) : null,
+          reviewedByName: hasReviewedBy ? (r.reviewing_vet_name || null) : null,
+          reviewedAt: hasReviewedAt ? (r.reviewed_at || null) : null,
+          reviewNotes: hasReviewNotes ? (r.review_notes || null) : null,
           createdAt: r.created_at,
         })),
         count: reports.length,
@@ -355,9 +705,36 @@ class GetPendingReportsForVetHandler extends BaseHandler {
     }
 
     try {
-      const { rows: reports } = await query(
-        `SELECT 
-          dr.*,
+      // ✅ FIX: Check if reviewed_by column exists before using it
+      const columnCheck = await query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'diagnostic_reports' 
+          AND column_name = 'reviewed_by'
+      `);
+      
+      const hasReviewedBy = columnCheck.rows.length > 0;
+      
+      // ✅ FIX: Get all column names and filter out reviewed_by if it doesn't exist
+      const allColumnsCheck = await query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'diagnostic_reports'
+        ORDER BY ordinal_position
+      `);
+      
+      const allColumnNames = allColumnsCheck.rows.map((r: any) => r.column_name);
+      const safeColumnNames = hasReviewedBy 
+        ? allColumnNames 
+        : allColumnNames.filter(col => col !== 'reviewed_by');
+      
+      const selectColumns = safeColumnNames.map(col => `dr.${col}`).join(', ');
+      
+      let reportsQuery = `
+        SELECT 
+          ${selectColumns},
           v.business_name as diagnostics_vendor_name,
           c.full_name as customer_name,
           p.name as pet_name,
@@ -368,10 +745,15 @@ class GetPendingReportsForVetHandler extends BaseHandler {
         LEFT JOIN pets p ON p.id = dr.pet_id
         WHERE dr.prescribing_vet_id = $1 
           AND dr.status IN ('ready', 'requires_action')
-          AND dr.reviewed_by IS NULL
-        ORDER BY dr.created_at DESC`,
-        [vetId]
-      );
+      `;
+      
+      if (hasReviewedBy) {
+        reportsQuery += ` AND dr.reviewed_by IS NULL`;
+      }
+      
+      reportsQuery += ` ORDER BY dr.created_at DESC`;
+      
+      const { rows: reports } = await query(reportsQuery, [vetId]);
 
       return this.success({
         success: true,

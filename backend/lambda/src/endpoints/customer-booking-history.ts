@@ -124,8 +124,11 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
           // ✅ Include cancellation/refund info
           cancellationReason: b.cancellation_reason,
           rescheduledFromBookingId: b.rescheduled_from_booking_id,
+          // ✅ FIX: Include notes field for diagnostic test names
+          notes: b.notes,
           // Multi-service: list of services and total duration
           selectedServices: parseSelectedServices(b.selected_services),
+          selected_services: b.selected_services, // ✅ FIX: Include raw selected_services for frontend parsing
           totalDurationMinutes: b.total_duration_minutes != null ? Number(b.total_duration_minutes) : undefined,
         })),
         stats: {

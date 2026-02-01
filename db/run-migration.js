@@ -65,10 +65,20 @@ async function runMigration(migrationFile) {
     console.log('─'.repeat(50));
 
     // Execute migration
-    await client.query(sql);
-
-    console.log('─'.repeat(50));
-    console.log('✅ Migration completed successfully!');
+    try {
+      await client.query(sql);
+      console.log('─'.repeat(50));
+      console.log('✅ Migration completed successfully!');
+    } catch (error) {
+      console.error('─'.repeat(50));
+      console.error('❌ Migration failed:');
+      console.error(error.message);
+      if (error.stack) {
+        console.error('\nStack trace:');
+        console.error(error.stack);
+      }
+      throw error;
+    }
 
     // Verify tables were created
     console.log('');

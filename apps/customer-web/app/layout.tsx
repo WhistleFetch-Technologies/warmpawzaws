@@ -44,10 +44,10 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               // Inline fallback config (ensures API URL is always available immediately)
-              // Deployed API: WarmpawzStack-dev (rrg9107m3d). Override via runtime-config.js or env.
+              // Deployed API: Main API Gateway (z0b3obweb6). Override via runtime-config.js or env.
               if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
                 window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-                  apiBaseUrl: 'https://rrg9107m3d.execute-api.ap-south-1.amazonaws.com',
+                  apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
                   uatMode: true
                 };
               }

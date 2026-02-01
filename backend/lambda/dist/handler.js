@@ -127556,20 +127556,28 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
       if (isUATMode2 && otp === "123456") {
         console.log(`[AUTH] UAT Mode: Accepting fixed OTP 123456 for ${phone} (database check skipped)`);
         isValid = true;
-        try {
-          const records = await select("otp_tokens", {
-            phone,
-            is_used: false
-          });
-          if (records.length > 0) {
-            await query(
-              "UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1",
-              [records[0].id]
-            );
-          }
-        } catch (e) {
-          console.warn("[AUTH] UAT Mode: Could not mark existing OTP as used:", e);
-        }
+        Promise.race([
+          (async () => {
+            try {
+              const records = await select("otp_tokens", {
+                phone,
+                is_used: false
+              });
+              if (records.length > 0) {
+                await query(
+                  "UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1",
+                  [records[0].id]
+                );
+              }
+            } catch (e) {
+              console.warn("[AUTH] UAT Mode: Could not mark existing OTP as used:", e);
+            }
+          })(),
+          new Promise((resolve) => setTimeout(resolve, 2e3))
+          // 2 second timeout
+        ]).catch((e) => {
+          console.warn("[AUTH] UAT Mode: OTP cleanup timeout or error:", e);
+        });
       } else {
         console.log(`[AUTH] Production Mode: Verifying OTP against database for ${phone}`);
         isValid = await verifyOtp(phone, otp);
@@ -127584,198 +127592,116 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
       }
       const phoneDigits = phone.replace(/\D/g, "");
       const normalizedPhone = phoneDigits.length > 10 ? phoneDigits.slice(-10) : phoneDigits.length === 9 ? "0" + phoneDigits : phoneDigits;
-      let staffMember = null;
-      let isStaffLogin = false;
-      try {
-        const staffQuery = await query(`
-          SELECT s.id, s.name, s.vendor_id, s.phone, s.role, s.is_active
-          FROM staff s
-          WHERE s.phone = $1 OR s.phone = $2
-          LIMIT 1
-        `, [phone, normalizedPhone]);
-        if (staffQuery.rows && staffQuery.rows.length > 0) {
-          staffMember = staffQuery.rows[0];
-          if (staffMember.vendor_id && staffMember.is_active !== false) {
-            const vendorQuery = await query(`
-              SELECT v.id, v.business_name, vi.vendor_type
-              FROM vendors v
-              LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
-              WHERE v.id = $1::uuid
-              LIMIT 1
-            `, [staffMember.vendor_id]);
-            if (vendorQuery.rows && vendorQuery.rows.length > 0) {
-              const vendor = vendorQuery.rows[0];
-              const vendorType = vendor.vendor_type || "business";
-              if (vendorType !== "solo") {
-                isStaffLogin = true;
-                console.log(`[AUTH] \u2705 Phone ${phone} belongs to STAFF member ${staffMember.id}, vendor: ${staffMember.vendor_id}`);
-              } else {
-                console.warn(`[AUTH] Staff ${staffMember.id} belongs to solo vendor - treating as customer`);
-              }
-            }
-          }
-        }
-      } catch (staffError) {
-        console.warn("[AUTH] Error checking staff table:", staffError.message);
-      }
       let role = body.role || "customer";
-      if (isStaffLogin && staffMember) {
-        role = "vendor";
-        console.log(`[AUTH] Staff login detected - forcing role to 'vendor'`);
-      }
       let userId;
       let userData;
-      if (isStaffLogin && staffMember) {
-        const staffVendorId = staffMember.vendor_id;
-        let vendorIdentity = await select("vendor_identity", { phone: normalizedPhone });
-        if (vendorIdentity.length === 0 && phone !== normalizedPhone) {
-          vendorIdentity = await select("vendor_identity", { phone });
-        }
-        let resolvedRoleId = null;
-        if (staffMember.role) {
-          try {
-            const roleQuery = await query(`
-              SELECT id, name, display_name 
-              FROM roles 
-              WHERE (name = $1 OR display_name = $1 OR LOWER(name) = LOWER($1) OR LOWER(display_name) = LOWER($1))
-                AND is_active = true
-              LIMIT 1
-            `, [staffMember.role]);
-            if (roleQuery.rows && roleQuery.rows.length > 0) {
-              resolvedRoleId = roleQuery.rows[0].id;
-              console.log(`[AUTH] Resolved staff role "${staffMember.role}" to role ID: ${resolvedRoleId}`);
-            }
-          } catch (roleError) {
-            console.warn("[AUTH] Error resolving role:", roleError.message);
-          }
-        }
-        const vendorInfo = await select("vendors", { id: staffVendorId });
-        const vendor = vendorInfo.length > 0 ? vendorInfo[0] : null;
-        if (vendorIdentity.length > 0) {
-          const identity = vendorIdentity[0];
-          const updateData = {
-            onboarding_status: "ACTIVATED",
-            vendor_id: staffVendorId,
-            updated_at: (/* @__PURE__ */ new Date()).toISOString()
-          };
-          if (resolvedRoleId) {
-            updateData.selected_role_id = resolvedRoleId;
-          }
-          await update("vendor_identity", { id: identity.id }, updateData);
-          console.log(`[AUTH] \u2705 Updated vendor_identity ${identity.id} to ACTIVATED for staff phone ${normalizedPhone}`);
-          userId = identity.id;
-          userData = {
-            id: identity.id,
-            phone: normalizedPhone,
-            onboarding_status: "ACTIVATED",
-            vendor_id: staffVendorId,
-            role_id: resolvedRoleId,
-            vendor_identity_id: identity.id,
-            business_name: vendor?.business_name,
-            is_staff: true,
-            staff_id: staffMember.id,
-            staff_name: staffMember.name
-          };
-        } else {
-          const newIdentity = await insert("vendor_identity", {
-            phone: normalizedPhone,
-            vendor_id: staffVendorId,
-            onboarding_status: "ACTIVATED",
-            selected_role_id: resolvedRoleId,
-            vendor_type: "business",
-            business_name: vendor?.business_name
-          });
-          console.log(`[AUTH] \u2705 Created vendor_identity for staff phone ${normalizedPhone} with ACTIVATED status`);
-          userId = newIdentity[0].id;
-          userData = {
-            id: newIdentity[0].id,
-            phone: normalizedPhone,
-            onboarding_status: "ACTIVATED",
-            vendor_id: staffVendorId,
-            role_id: resolvedRoleId,
-            vendor_identity_id: newIdentity[0].id,
-            business_name: vendor?.business_name,
-            is_staff: true,
-            staff_id: staffMember.id,
-            staff_name: staffMember.name
-          };
-        }
-        return this.success({
-          verified: true,
-          message: "OTP verified successfully",
-          token: {
-            access_token: `staff_session_${normalizedPhone}_${Date.now()}`,
-            refresh_token: `staff_refresh_${normalizedPhone}_${Date.now()}`,
-            expires_in: 3600,
-            token_type: "Bearer"
-          },
-          user: {
-            id: userId,
-            phone: normalizedPhone,
-            role: "vendor",
-            is_active: true,
-            is_staff: true,
-            staff_id: staffMember.id,
-            staff_name: staffMember.name
-          },
-          state: "existing",
-          profile: {
-            id: userId,
-            phone: normalizedPhone,
-            onboarding_status: "ACTIVATED",
-            vendor_id: staffVendorId,
-            role_id: resolvedRoleId,
-            roleId: resolvedRoleId,
-            vendor_type: "business",
-            business_name: vendor?.business_name,
-            is_staff: true,
-            staff_info: {
-              staff_id: staffMember.id,
-              staff_name: staffMember.name,
-              staff_role: staffMember.role
-            }
-          },
-          staff_info: {
-            staff_id: staffMember.id,
-            staff_name: staffMember.name,
-            vendor_id: staffVendorId
-          }
-        }, context.requestId);
-      }
       if (role === "customer") {
-        const customers = await select("customers", { phone });
+        let customers = [];
+        try {
+          const customerQueryPromise = select("customers", { phone });
+          const customerQueryTimeout = new Promise(
+            (_, reject) => setTimeout(() => reject(new Error("Customer query timeout")), 5e3)
+          );
+          customers = await Promise.race([customerQueryPromise, customerQueryTimeout]);
+        } catch (customerQueryError) {
+          console.warn("[AUTH] Customer query timed out or failed, treating as new customer:", customerQueryError.message);
+          customers = [];
+        }
         let isNewCustomer2 = false;
         if (customers.length > 0) {
           userId = customers[0].id;
           userData = customers[0];
-          await update("customers", { id: userId }, {
-            last_login_at: (/* @__PURE__ */ new Date()).toISOString(),
-            updated_at: (/* @__PURE__ */ new Date()).toISOString()
-          });
-          console.log(`[AUTH] Updated last_login_at for customer ${userId}`);
-          const { createOrUpdateCustomerIdentity: createOrUpdateCustomerIdentity2 } = await Promise.resolve().then(() => (init_customer_state(), customer_state_exports));
-          const identityId = await createOrUpdateCustomerIdentity2(phone, userId);
-          if (!userData.customer_identity_id) {
-            await update("customers", { id: userId }, { customer_identity_id: identityId });
+          try {
+            const updatePromise = update("customers", { id: userId }, {
+              last_login_at: (/* @__PURE__ */ new Date()).toISOString(),
+              updated_at: (/* @__PURE__ */ new Date()).toISOString()
+            });
+            const updateTimeout = new Promise(
+              (_, reject) => setTimeout(() => reject(new Error("Update timeout")), 5e3)
+            );
+            await Promise.race([updatePromise, updateTimeout]);
+            console.log(`[AUTH] Updated last_login_at for customer ${userId}`);
+          } catch (updateError) {
+            console.warn("[AUTH] Could not update customer last_login_at:", updateError.message);
+          }
+          let identityId;
+          try {
+            const { createOrUpdateCustomerIdentity: createOrUpdateCustomerIdentity2 } = await Promise.resolve().then(() => (init_customer_state(), customer_state_exports));
+            const identityPromise = createOrUpdateCustomerIdentity2(phone, userId);
+            const identityTimeout = new Promise(
+              (_, reject) => setTimeout(() => reject(new Error("Identity creation timeout")), 5e3)
+            );
+            identityId = await Promise.race([identityPromise, identityTimeout]);
+          } catch (identityError) {
+            console.warn("[AUTH] Could not create/update customer identity:", identityError.message);
+          }
+          if (identityId && !userData.customer_identity_id) {
+            try {
+              const linkPromise = update("customers", { id: userId }, { customer_identity_id: identityId });
+              const linkTimeout = new Promise(
+                (_, reject) => setTimeout(() => reject(new Error("Link timeout")), 5e3)
+              );
+              await Promise.race([linkPromise, linkTimeout]);
+            } catch (linkError) {
+              console.warn("[AUTH] Could not link customer identity:", linkError.message);
+            }
           }
         } else {
           isNewCustomer2 = true;
-          const { createOrUpdateCustomerIdentity: createOrUpdateCustomerIdentity2 } = await Promise.resolve().then(() => (init_customer_state(), customer_state_exports));
-          const identityId = await createOrUpdateCustomerIdentity2(phone, void 0);
-          const newCustomers = await insert("customers", {
-            phone,
-            full_name: `Customer ${phone.slice(-4)}`,
-            // Temporary name until profile is completed
-            is_active: true,
-            status: "new",
-            onboarding_status: "PHONE_VERIFIED",
-            profile_completed: false,
-            customer_identity_id: identityId,
-            last_login_at: (/* @__PURE__ */ new Date()).toISOString()
-          });
-          userId = newCustomers[0].id;
-          userData = newCustomers[0];
-          await update("customer_identity", { id: identityId }, { customer_id: userId });
+          let identityId;
+          try {
+            const { createOrUpdateCustomerIdentity: createOrUpdateCustomerIdentity2 } = await Promise.resolve().then(() => (init_customer_state(), customer_state_exports));
+            const identityPromise = createOrUpdateCustomerIdentity2(phone, void 0);
+            const identityTimeout = new Promise(
+              (_, reject) => setTimeout(() => reject(new Error("Identity creation timeout")), 5e3)
+            );
+            identityId = await Promise.race([identityPromise, identityTimeout]);
+          } catch (identityError) {
+            console.warn("[AUTH] Could not create customer identity, continuing without it:", identityError.message);
+          }
+          let newCustomers = [];
+          try {
+            const insertPromise = insert("customers", {
+              phone,
+              full_name: `Customer ${phone.slice(-4)}`,
+              // Temporary name until profile is completed
+              is_active: true,
+              status: "new",
+              onboarding_status: "PHONE_VERIFIED",
+              profile_completed: false,
+              customer_identity_id: identityId,
+              last_login_at: (/* @__PURE__ */ new Date()).toISOString()
+            });
+            const insertTimeout = new Promise(
+              (_, reject) => setTimeout(() => reject(new Error("Customer insert timeout")), 5e3)
+            );
+            newCustomers = await Promise.race([insertPromise, insertTimeout]);
+            userId = newCustomers[0].id;
+            userData = newCustomers[0];
+          } catch (insertError) {
+            console.error("[AUTH] Failed to create customer record:", insertError.message);
+            userId = `temp_customer_${phone}_${Date.now()}`;
+            userData = {
+              id: userId,
+              phone,
+              is_active: true,
+              status: "new",
+              onboarding_status: "PHONE_VERIFIED",
+              profile_completed: false
+            };
+            console.warn("[AUTH] Using temporary customer ID due to insert failure");
+          }
+          if (identityId && userId && !userId.startsWith("temp_")) {
+            try {
+              const linkPromise = update("customer_identity", { id: identityId }, { customer_id: userId });
+              const linkTimeout = new Promise(
+                (_, reject) => setTimeout(() => reject(new Error("Link timeout")), 5e3)
+              );
+              await Promise.race([linkPromise, linkTimeout]);
+            } catch (linkError) {
+              console.warn("[AUTH] Could not link customer identity:", linkError.message);
+            }
+          }
           try {
             const { loyaltyPointsService: loyaltyPointsService2 } = await Promise.resolve().then(() => (init_loyalty_points_service(), loyalty_points_service_exports));
             await loyaltyPointsService2.awardPoints({
@@ -127790,8 +127716,25 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
           }
         }
       } else if (role === "vendor") {
-        const vendorIdentity = await select("vendor_identity", { phone });
-        const vendors = await select("vendors", { phone });
+        let vendorIdentity = [];
+        let vendors = [];
+        try {
+          const vendorQueriesPromise = Promise.all([
+            select("vendor_identity", { phone }),
+            select("vendors", { phone })
+          ]);
+          const vendorQueriesTimeout = new Promise(
+            (_, reject) => setTimeout(() => reject(new Error("Vendor queries timeout")), 5e3)
+          );
+          [vendorIdentity, vendors] = await Promise.race([
+            vendorQueriesPromise,
+            vendorQueriesTimeout
+          ]);
+        } catch (vendorQueryError) {
+          console.warn("[AUTH] Vendor queries timed out or failed, continuing with minimal data:", vendorQueryError.message);
+          vendorIdentity = [];
+          vendors = [];
+        }
         if (vendors.length > 0) {
           userId = vendors[0].id;
           userData = vendors[0];
@@ -127799,15 +127742,33 @@ var VerifyOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
             userData.onboarding_status = vendorIdentity[0].onboarding_status;
             userData.vendor_identity_id = vendorIdentity[0].id;
           }
-          await update("vendors", { id: userId }, {
-            last_login_at: (/* @__PURE__ */ new Date()).toISOString(),
-            updated_at: (/* @__PURE__ */ new Date()).toISOString()
-          });
-          console.log(`[AUTH] Updated last_login_at for vendor ${userId}, onboarding_status: ${userData.onboarding_status}`);
+          try {
+            const updatePromise = update("vendors", { id: userId }, {
+              last_login_at: (/* @__PURE__ */ new Date()).toISOString(),
+              updated_at: (/* @__PURE__ */ new Date()).toISOString()
+            });
+            const updateTimeout = new Promise(
+              (_, reject) => setTimeout(() => reject(new Error("Update timeout")), 5e3)
+            );
+            await Promise.race([updatePromise, updateTimeout]);
+            console.log(`[AUTH] Updated last_login_at for vendor ${userId}, onboarding_status: ${userData.onboarding_status}`);
+          } catch (updateError) {
+            console.warn("[AUTH] Could not update vendor last_login_at:", updateError.message);
+          }
         } else if (vendorIdentity.length > 0) {
           const identity = vendorIdentity[0];
           if (identity.vendor_id) {
-            const vendorsByVendorId = await select("vendors", { id: identity.vendor_id });
+            let vendorsByVendorId = [];
+            try {
+              const vendorByIdPromise = select("vendors", { id: identity.vendor_id });
+              const vendorByIdTimeout = new Promise(
+                (_, reject) => setTimeout(() => reject(new Error("Vendor by ID query timeout")), 5e3)
+              );
+              vendorsByVendorId = await Promise.race([vendorByIdPromise, vendorByIdTimeout]);
+            } catch (vendorByIdError) {
+              console.warn("[AUTH] Could not fetch vendor by ID:", vendorByIdError.message);
+              vendorsByVendorId = [];
+            }
             if (vendorsByVendorId.length > 0) {
               userId = vendorsByVendorId[0].id;
               userData = vendorsByVendorId[0];
@@ -128003,20 +127964,70 @@ function registerAuthEndpointsEnhanced(app3) {
     }
   });
   app3.post("/auth/verify-otp", async (c) => {
+    const startTime = Date.now();
+    const TIMEOUT_MS = 25e3;
     try {
-      const event = await createApiGatewayEvent(c);
+      const parseBodyWithTimeout = async () => {
+        return Promise.race([
+          c.req.json(),
+          new Promise(
+            (_, reject) => setTimeout(() => reject(new Error("Request body parsing timeout")), 5e3)
+          )
+        ]);
+      };
+      let event;
+      try {
+        event = await createApiGatewayEvent(c, parseBodyWithTimeout);
+      } catch (parseError) {
+        console.error("[AUTH] Error parsing request body:", parseError);
+        return c.json({
+          message: "Invalid request format",
+          error: parseError.message || "Request parsing failed"
+        }, 400);
+      }
       const context = createLambdaContext();
-      const result = await verifyOtpHandler.execute(event, context);
+      const handlerPromise = verifyOtpHandler.execute(event, context);
+      const timeoutPromise = new Promise(
+        (_, reject) => setTimeout(() => reject(new Error("Handler execution timeout")), TIMEOUT_MS)
+      );
+      const result = await Promise.race([handlerPromise, timeoutPromise]);
+      if (!result || !result.body) {
+        throw new Error("Handler returned invalid response");
+      }
       const body = JSON.parse(result.body);
+      const elapsed = Date.now() - startTime;
+      console.log(`[AUTH] verify-otp completed in ${elapsed}ms`);
       return c.json(body, result.statusCode);
     } catch (error) {
-      console.error("[AUTH] Error in verify-otp handler:", error);
-      return c.json({ error: error.message || "Internal Server Error" }, 500);
+      const elapsed = Date.now() - startTime;
+      console.error(`[AUTH] Error in verify-otp handler (${elapsed}ms):`, error);
+      console.error("[AUTH] Error stack:", error?.stack);
+      const statusCode = error?.message?.includes("timeout") ? 503 : 500;
+      const errorMessage = error?.message || "Internal Server Error";
+      return c.json({
+        message: statusCode === 503 ? "Service Unavailable" : "Internal Server Error",
+        error: errorMessage
+      }, statusCode);
     }
   });
 }
-async function createApiGatewayEvent(c) {
-  const body = await c.req.json().catch(() => ({}));
+async function createApiGatewayEvent(c, bodyParser) {
+  let body = {};
+  try {
+    if (bodyParser) {
+      body = await bodyParser();
+    } else {
+      body = await Promise.race([
+        c.req.json(),
+        new Promise(
+          (_, reject) => setTimeout(() => reject(new Error("Body parsing timeout")), 5e3)
+        )
+      ]);
+    }
+  } catch (error) {
+    console.warn("[AUTH] Error parsing request body, using empty object:", error?.message);
+    body = {};
+  }
   const headers = {};
   try {
     if (c.req.raw && c.req.raw.headers) {
@@ -128049,7 +128060,7 @@ async function createApiGatewayEvent(c) {
       requestId: `req-${Date.now()}-${Math.random().toString(36).substring(7)}`
     },
     headers,
-    body: body ? JSON.stringify(body) : void 0,
+    body: body && Object.keys(body).length > 0 ? JSON.stringify(body) : void 0,
     isBase64Encoded: false
   };
 }
@@ -175493,15 +175504,24 @@ async function resolveCustomerId(identifier) {
 function registerCustomerProfileEndpoints(app3) {
   app3.get("/customer/profile/unified/:identifier", async (c) => {
     try {
-      const { identifier } = c.req.param();
+      const identifier = c.req.param("identifier");
+      console.log("[profile/unified] Request received for identifier:", identifier);
+      if (!identifier) {
+        console.error("[profile/unified] No identifier provided");
+        return c.json({ error: "Identifier is required" }, 400);
+      }
       let customerId;
       try {
+        console.log("[profile/unified] Resolving customer ID for:", identifier);
         customerId = await resolveCustomerId(identifier);
+        console.log("[profile/unified] Resolved customer ID:", customerId);
       } catch (error) {
         console.error("[profile/unified] Error resolving customer ID:", error);
-        return c.json({ success: true, profile: null, _degraded: true }, 200);
+        console.error("[profile/unified] Error stack:", error?.stack);
+        return c.json({ success: true, profile: null, _degraded: true, error: error?.message }, 200);
       }
       if (!customerId) {
+        console.log("[profile/unified] Customer not found for identifier:", identifier);
         return c.json({ error: "Customer not found" }, 404);
       }
       let customers;
@@ -175565,6 +175585,7 @@ function registerCustomerProfileEndpoints(app3) {
       const onboardingStatus = customer.onboarding_status || "INIT";
       const profileCompleted = customer.profile_completed || false;
       const customerStatus = customer.status || "new";
+      console.log("[profile/unified] Successfully fetched profile for customer:", customerId);
       return c.json({
         success: true,
         profile: {
@@ -175604,7 +175625,15 @@ function registerCustomerProfileEndpoints(app3) {
       });
     } catch (error) {
       console.error("[profile/unified] Error fetching unified customer profile:", error);
-      return c.json({ success: true, profile: null, _degraded: true }, 200);
+      console.error("[profile/unified] Error message:", error?.message);
+      console.error("[profile/unified] Error stack:", error?.stack);
+      console.error("[profile/unified] Error name:", error?.name);
+      return c.json({
+        success: true,
+        profile: null,
+        _degraded: true,
+        error: error?.message || "Unknown error"
+      }, 200);
     }
   });
   app3.get("/customer/profile", async (c) => {
@@ -213528,22 +213557,238 @@ var UploadDiagnosticReportHandler = class extends BaseHandler {
       const booking = bookings.length > 0 ? bookings[0] : null;
       const actualCustomerId = customerId || booking?.customer_id;
       const actualPetId = petId || booking?.pet_id;
-      const [report] = await insert("diagnostic_reports", {
-        booking_id: bookingId,
-        vendor_id: vendorId,
-        customer_id: actualCustomerId,
-        pet_id: actualPetId,
-        prescribing_vet_id: prescribingVetId || null,
-        prescribing_vet_booking_id: prescribingVetBookingId || null,
-        report_type: reportType || "lab",
-        test_name: testName,
-        report_url: reportUrl,
-        summary: summary || null,
-        findings: findings || null,
-        status: "ready",
-        created_at: /* @__PURE__ */ new Date(),
-        updated_at: /* @__PURE__ */ new Date()
-      });
+      const schemaCheck = await query(`
+        SELECT 
+          column_name,
+          is_nullable,
+          column_default
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' AND table_name = 'diagnostic_reports'
+      `);
+      const existingColumns = new Set(schemaCheck.rows.map((r) => r.column_name));
+      const columnInfo = new Map(
+        schemaCheck.rows.map((r) => [r.column_name, { isNullable: r.is_nullable === "YES", hasDefault: !!r.column_default }])
+      );
+      console.log("[DIAGNOSTIC-REPORT-UPLOAD] Existing columns:", Array.from(existingColumns));
+      console.log("[DIAGNOSTIC-REPORT-UPLOAD] Column constraints:", Object.fromEntries(columnInfo));
+      const columns = [];
+      const values = [];
+      const placeholders = [];
+      let paramIndex = 1;
+      if (existingColumns.has("diagnostic_booking_id")) {
+        const colInfo = columnInfo.get("diagnostic_booking_id");
+        const isNullable = colInfo?.isNullable ?? false;
+        if (!isNullable) {
+          const { rows: tableCheck } = await query(`
+            SELECT EXISTS (
+              SELECT 1 FROM information_schema.tables 
+              WHERE table_schema = 'public' AND table_name = 'diagnostic_bookings'
+            ) as table_exists
+          `);
+          if (tableCheck[0]?.table_exists) {
+            const { rows: colCheck } = await query(`
+              SELECT column_name 
+              FROM information_schema.columns 
+              WHERE table_schema = 'public' 
+                AND table_name = 'diagnostic_bookings' 
+                AND column_name IN ('booking_id', 'id')
+            `);
+            const diagnosticBookingCols = colCheck.map((r) => r.column_name);
+            if (diagnosticBookingCols.includes("booking_id")) {
+              const { rows: diagnosticBookings } = await query(`
+                SELECT id FROM diagnostic_bookings 
+                WHERE booking_id = $1
+                LIMIT 1
+              `, [bookingId]);
+              if (diagnosticBookings.length > 0) {
+                columns.push("diagnostic_booking_id");
+                values.push(diagnosticBookings[0].id);
+                placeholders.push(`$${paramIndex++}`);
+                console.log("[DIAGNOSTIC-REPORT-UPLOAD] Found diagnostic_booking_id:", diagnosticBookings[0].id);
+              } else {
+                console.warn("[DIAGNOSTIC-REPORT-UPLOAD] diagnostic_booking_id is NOT NULL but no matching diagnostic_booking found. This may cause an error.");
+              }
+            } else {
+              console.warn("[DIAGNOSTIC-REPORT-UPLOAD] diagnostic_booking_id is NOT NULL but diagnostic_bookings table has no booking_id column");
+            }
+          } else {
+            console.warn("[DIAGNOSTIC-REPORT-UPLOAD] diagnostic_booking_id is NOT NULL but diagnostic_bookings table does not exist");
+          }
+        } else {
+          console.log("[DIAGNOSTIC-REPORT-UPLOAD] diagnostic_booking_id is nullable, using booking_id instead");
+        }
+      }
+      if (existingColumns.has("booking_id")) {
+        columns.push("booking_id");
+        values.push(bookingId);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      if (existingColumns.has("vendor_id")) {
+        columns.push("vendor_id");
+        values.push(vendorId);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      if (existingColumns.has("customer_id")) {
+        columns.push("customer_id");
+        values.push(actualCustomerId);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      if (existingColumns.has("pet_id")) {
+        columns.push("pet_id");
+        values.push(actualPetId);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      if (existingColumns.has("prescribing_vet_id") && prescribingVetId) {
+        columns.push("prescribing_vet_id");
+        values.push(prescribingVetId);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      if (existingColumns.has("prescribing_vet_booking_id") && prescribingVetBookingId) {
+        columns.push("prescribing_vet_booking_id");
+        values.push(prescribingVetBookingId);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      if (existingColumns.has("test_id")) {
+        const colInfo = columnInfo.get("test_id");
+        const isNullable = colInfo?.isNullable ?? false;
+        if (!isNullable) {
+          const testId = testName.toLowerCase().replace(/[^a-z0-9]/g, "_") || `test_${Date.now()}`;
+          columns.push("test_id");
+          values.push(testId);
+          placeholders.push(`$${paramIndex++}`);
+          console.log("[DIAGNOSTIC-REPORT-UPLOAD] Generated test_id:", testId);
+        } else if (testName) {
+          const testId = testName.toLowerCase().replace(/[^a-z0-9]/g, "_") || `test_${Date.now()}`;
+          columns.push("test_id");
+          values.push(testId);
+          placeholders.push(`$${paramIndex++}`);
+        }
+      }
+      if (existingColumns.has("test_name")) {
+        const colInfo = columnInfo.get("test_name");
+        const isNullable = colInfo?.isNullable ?? false;
+        if (!isNullable || testName) {
+          columns.push("test_name");
+          values.push(testName);
+          placeholders.push(`$${paramIndex++}`);
+        }
+      }
+      if (existingColumns.has("summary") && summary) {
+        columns.push("summary");
+        values.push(summary);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      if (existingColumns.has("findings") && findings) {
+        columns.push("findings");
+        values.push(findings);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      if (existingColumns.has("status")) {
+        columns.push("status");
+        values.push("ready");
+        placeholders.push(`$${paramIndex++}`);
+      }
+      if (existingColumns.has("report_url")) {
+        const colInfo = columnInfo.get("report_url");
+        const isNullable = colInfo?.isNullable ?? false;
+        if (!isNullable || reportUrl) {
+          columns.push("report_url");
+          values.push(reportUrl);
+          placeholders.push(`$${paramIndex++}`);
+        }
+      } else if (existingColumns.has("report_file_url")) {
+        columns.push("report_file_url");
+        values.push(reportUrl);
+        placeholders.push(`$${paramIndex++}`);
+      }
+      if (existingColumns.has("uploaded_by")) {
+        const colInfo = columnInfo.get("uploaded_by");
+        const isNullable = colInfo?.isNullable ?? false;
+        if (!isNullable) {
+          try {
+            const { rows: staffRows } = await query(`
+              SELECT id FROM staff 
+              WHERE vendor_id = $1 
+              ORDER BY created_at ASC 
+              LIMIT 1
+            `, [vendorId]);
+            if (staffRows.length > 0) {
+              columns.push("uploaded_by");
+              values.push(staffRows[0].id);
+              placeholders.push(`$${paramIndex++}`);
+              console.log("[DIAGNOSTIC-REPORT-UPLOAD] Found staff_id for uploaded_by:", staffRows[0].id);
+            } else {
+              console.warn("[DIAGNOSTIC-REPORT-UPLOAD] No staff found for vendor, trying alternative approach");
+              const { rows: vendorAsStaff } = await query(`
+                SELECT id FROM staff 
+                WHERE id = $1 OR vendor_id::text = $1::text
+                LIMIT 1
+              `, [vendorId]);
+              if (vendorAsStaff.length > 0) {
+                columns.push("uploaded_by");
+                values.push(vendorAsStaff[0].id);
+                placeholders.push(`$${paramIndex++}`);
+              } else {
+                return this.error("uploaded_by is required but no staff found for vendor. Please ensure vendor has staff members.", 400);
+              }
+            }
+          } catch (error) {
+            console.error("[DIAGNOSTIC-REPORT-UPLOAD] Error finding staff for uploaded_by:", error.message);
+            return this.error("uploaded_by is required but could not be determined", 400);
+          }
+        } else {
+          console.log("[DIAGNOSTIC-REPORT-UPLOAD] uploaded_by is nullable, skipping");
+        }
+      }
+      if (existingColumns.has("uploaded_at")) {
+        const colInfo = columnInfo.get("uploaded_at");
+        const hasDefault = colInfo?.hasDefault ?? false;
+        if (!hasDefault) {
+          columns.push("uploaded_at");
+          values.push(/* @__PURE__ */ new Date());
+          placeholders.push(`$${paramIndex++}`);
+        }
+      }
+      if (existingColumns.has("report_type") && reportType) {
+        let dbReportType;
+        if (reportType === "lab") {
+          dbReportType = "blood_test";
+        } else if (reportType === "imaging") {
+          dbReportType = "imaging";
+        } else if (reportType === "pathology") {
+          dbReportType = "biopsy";
+        } else if (["pdf", "image", "document", "blood_test", "urine_test", "stool_test", "imaging", "biopsy", "other", "lab", "pathology"].includes(reportType)) {
+          dbReportType = reportType;
+        } else {
+          dbReportType = "other";
+        }
+        columns.push("report_type");
+        values.push(dbReportType);
+        placeholders.push(`$${paramIndex++}`);
+        console.log("[DIAGNOSTIC-REPORT-UPLOAD] Using report_type:", dbReportType, "(from input:", reportType, ")");
+      }
+      if (existingColumns.has("created_at")) {
+        columns.push("created_at");
+        values.push(/* @__PURE__ */ new Date());
+        placeholders.push(`$${paramIndex++}`);
+      }
+      if (existingColumns.has("updated_at")) {
+        columns.push("updated_at");
+        values.push(/* @__PURE__ */ new Date());
+        placeholders.push(`$${paramIndex++}`);
+      }
+      if (columns.length === 0) {
+        return this.error("No valid columns found in diagnostic_reports table. Please run migration 514.", 500);
+      }
+      const insertQuery = `
+        INSERT INTO diagnostic_reports (${columns.join(", ")})
+        VALUES (${placeholders.join(", ")})
+        RETURNING *
+      `;
+      console.log("[DIAGNOSTIC-REPORT-UPLOAD] Insert query:", insertQuery);
+      console.log("[DIAGNOSTIC-REPORT-UPLOAD] Columns:", columns);
+      const insertResult = await query(insertQuery, values);
+      const report = insertResult.rows[0];
       await insert("medical_records", {
         pet_id: actualPetId,
         customer_id: actualCustomerId,
@@ -217741,7 +217986,7 @@ function registerTaxInvoicePdfEndpoints(app3) {
                  v.state as vendor_state,
                  v.pincode as vendor_pincode,
                  v.gst_number as vendor_gst,
-                 c.name as customer_name,
+                 c.full_name as customer_name,
                  c.phone as customer_phone,
                  c.email as customer_email,
                  c.address as customer_address,
@@ -222175,32 +222420,20 @@ app2.onError((err, c) => {
   }
   return c.json({ error: errorMessage }, 500, corsHeaders);
 });
-var CORS_PREFLIGHT_200 = (origin) => ({
-  statusCode: 200,
-  body: "",
-  headers: {
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-    "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
-    "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Max-Age": "86400",
-    "Content-Length": "0"
-  }
-});
 var handler = async (event, context) => {
-  if (!event || typeof event !== "object") {
-    return CORS_PREFLIGHT_200("https://d2aoyjj8ine0wk.cloudfront.net");
-  }
   try {
-    let method;
-    let hasPreflightHeaders = false;
+    let isOptions = false;
     try {
-      method = event?.requestContext?.http?.method || event?.requestContext?.httpMethod || event?.httpMethod;
-      hasPreflightHeaders = !!(event?.headers?.["access-control-request-method"] || event?.headers?.["Access-Control-Request-Method"]);
+      const httpMethod = event?.requestContext?.http?.method || event?.requestContext?.httpMethod || event?.httpMethod;
+      isOptions = httpMethod === "OPTIONS" || !!event?.headers?.["access-control-request-method"] || !!event?.headers?.["Access-Control-Request-Method"];
     } catch {
-      hasPreflightHeaders = true;
+      try {
+        isOptions = !!event?.headers?.["access-control-request-method"] || !!event?.headers?.["Access-Control-Request-Method"];
+      } catch {
+        isOptions = true;
+      }
     }
-    if (method === "OPTIONS" || hasPreflightHeaders) {
+    if (isOptions) {
       try {
         const origin = event?.headers?.origin || event?.headers?.Origin || event?.headers?.["origin"] || event?.headers?.["Origin"] || "";
         const allowedOrigins2 = [
@@ -222221,11 +222454,13 @@ var handler = async (event, context) => {
           "https://warmpawz.com",
           "https://www.warmpawz.com"
         ];
-        let allowedOrigin = allowedOrigins2[0];
+        let allowedOrigin = "https://d2aoyjj8ine0wk.cloudfront.net";
         if (origin) {
           const normalizedOrigin = origin.toLowerCase();
           const normalizedAllowedOrigins = allowedOrigins2.map((o) => o.toLowerCase());
           if (normalizedAllowedOrigins.includes(normalizedOrigin)) {
+            allowedOrigin = origin;
+          } else if (normalizedOrigin.includes("cloudfront.net")) {
             allowedOrigin = origin;
           }
         }
@@ -222245,17 +222480,12 @@ var handler = async (event, context) => {
           }
         };
       } catch (optionsError) {
-        const origin = event?.headers?.origin || event?.headers?.Origin || event?.headers?.["origin"] || event?.headers?.["Origin"] || "";
-        const defaultOrigin = "https://d1s6ykkj381k58.cloudfront.net";
-        let allowedOrigin = defaultOrigin;
-        if (origin && origin.toLowerCase().includes("cloudfront.net")) {
-          allowedOrigin = origin;
-        }
+        console.error("[HANDLER] Error in OPTIONS handler, but returning 200 OK:", optionsError);
         return {
           statusCode: 200,
           body: "",
           headers: {
-            "Access-Control-Allow-Origin": allowedOrigin,
+            "Access-Control-Allow-Origin": "https://d2aoyjj8ine0wk.cloudfront.net",
             "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
             "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
             "Access-Control-Allow-Credentials": "true",
@@ -222264,6 +222494,20 @@ var handler = async (event, context) => {
           }
         };
       }
+    }
+    if (!event || typeof event !== "object") {
+      return {
+        statusCode: 200,
+        body: "",
+        headers: {
+          "Access-Control-Allow-Origin": "https://d2aoyjj8ine0wk.cloudfront.net",
+          "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+          "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
+          "Access-Control-Allow-Credentials": "true",
+          "Access-Control-Max-Age": "86400",
+          "Content-Length": "0"
+        }
+      };
     }
     try {
       const uatMode = event.headers?.["x-uat-mode"] === "true" || event.headers?.["X-UAT-Mode"] === "true";
@@ -222444,20 +222688,15 @@ var handler = async (event, context) => {
     }
   } catch (outerError) {
     try {
-      const method = event?.requestContext?.http?.method || event?.requestContext?.httpMethod || event?.httpMethod;
-      const hasPreflightHeaders = event?.headers?.["access-control-request-method"] || event?.headers?.["Access-Control-Request-Method"];
-      if (method === "OPTIONS" || hasPreflightHeaders) {
-        const origin = event?.headers?.origin || event?.headers?.Origin || event?.headers?.["origin"] || event?.headers?.["Origin"] || "";
-        const defaultOrigin = "https://d1s6ykkj381k58.cloudfront.net";
-        let allowedOrigin = defaultOrigin;
-        if (origin && origin.toLowerCase().includes("cloudfront.net")) {
-          allowedOrigin = origin;
-        }
+      const httpMethod = event?.requestContext?.http?.method || event?.requestContext?.httpMethod || event?.httpMethod;
+      const hasPreflight = !!event?.headers?.["access-control-request-method"] || !!event?.headers?.["Access-Control-Request-Method"];
+      if (httpMethod === "OPTIONS" || hasPreflight) {
+        console.error("[HANDLER] Outer error, but returning 200 OK for OPTIONS:", outerError);
         return {
           statusCode: 200,
           body: "",
           headers: {
-            "Access-Control-Allow-Origin": allowedOrigin,
+            "Access-Control-Allow-Origin": "https://d2aoyjj8ine0wk.cloudfront.net",
             "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
             "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
             "Access-Control-Allow-Credentials": "true",
@@ -222471,7 +222710,7 @@ var handler = async (event, context) => {
         statusCode: 200,
         body: "",
         headers: {
-          "Access-Control-Allow-Origin": "https://d1s6ykkj381k58.cloudfront.net",
+          "Access-Control-Allow-Origin": "https://d2aoyjj8ine0wk.cloudfront.net",
           "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
           "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
           "Access-Control-Allow-Credentials": "true",
@@ -222480,34 +222719,18 @@ var handler = async (event, context) => {
         }
       };
     }
-    try {
-      const origin = event?.headers?.origin || event?.headers?.Origin || event?.headers?.["origin"] || event?.headers?.["Origin"] || "";
-      const allowedOrigin = getAllowedOrigin(origin);
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: "Internal Server Error" }),
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": allowedOrigin,
-          "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-          "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
-          "Access-Control-Allow-Credentials": "true"
-        }
-      };
-    } catch {
-      return {
-        statusCode: 200,
-        body: "",
-        headers: {
-          "Access-Control-Allow-Origin": "https://d1s6ykkj381k58.cloudfront.net",
-          "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-          "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
-          "Access-Control-Allow-Credentials": "true",
-          "Access-Control-Max-Age": "86400",
-          "Content-Length": "0"
-        }
-      };
-    }
+    console.error("[HANDLER] Unhandled outer error:", outerError);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "Internal Server Error" }),
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "https://d2aoyjj8ine0wk.cloudfront.net",
+        "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+        "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
+        "Access-Control-Allow-Credentials": "true"
+      }
+    };
   }
 };
 // Annotate the CommonJS export names for ESM import in node:

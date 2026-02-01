@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { PharmacyOrderFlow } from '../../../../components/customer/specialized/PharmacyOrderFlow';
 
-export default function PrescriptionOrderPageClient() {
+function PrescriptionOrderPageContent() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -78,5 +78,17 @@ export default function PrescriptionOrderPageClient() {
         }}
       />
     </div>
+  );
+}
+
+export default function PrescriptionOrderPageClient() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white flex items-center justify-center">
+        <div className="w-10 h-10 border-2 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
+      </div>
+    }>
+      <PrescriptionOrderPageContent />
+    </Suspense>
   );
 }

@@ -19,9 +19,15 @@ export function getVendorRoleId(vendorData: any): string | null {
 
 /**
  * Get vendor role name from vendor data
+ * Handles multiple data structures: roleName, role.name, role_name, etc.
  */
 export function getVendorRoleName(vendorData: any): string | null {
   if (!vendorData) return null;
+  
+  // ✅ FIX: Check role.name first (most common structure from backend)
+  if (vendorData.role?.name) {
+    return vendorData.role.name;
+  }
   
   return vendorData.roleName ||
          vendorData.role_name ||
@@ -135,6 +141,81 @@ export function normalizeRoleName(roleName: string | null | undefined): string {
     .trim()
     .replace(/\s+/g, '_')
     .replace(/[^a-z0-9_]/g, '');
+}
+
+/**
+ * Check if vendor is a diagnostics center
+ * Handles role name variations: diagnostics_center, diagnostic_center, etc.
+ * Also checks capabilities as fallback if roleName is not available.
+ */
+export function isDiagnosticsCenter(vendorData: any): boolean {
+  if (!vendorData) {
+    console.log('🔍 [isDiagnosticsCenter] No vendorData provided');
+    return false;
+  }
+  
+  // ✅ FIX: Check role.name directly first (most common structure)
+  const roleNameFromRole = vendorData.role?.name;
+  const roleName = roleNameFromRole || getVendorRoleName(vendorData);
+  const roleId = getVendorRoleId(vendorData);
+  
+  // Debug logging
+  console.log('🔍 [isDiagnosticsCenter] Checking vendor:', {
+    roleNameFromRole,
+    roleName,
+    roleId,
+    hasRoleName: !!roleName,
+    hasRoleId: !!roleId,
+    roleObject: vendorData.role,
+    vendorDataKeys: Object.keys(vendorData || {})
+  });
+  
+  // Normalize role name
+  const normalizedRoleName = normalizeRoleName(roleName || '');
+  
+  // Check for diagnostics center role patterns
+  const diagnosticsCenterPatterns = [
+    'diagnostics_center',
+    'diagnostic_center',
+    'diagnostics',
+  ];
+  
+  // Check if role name matches any pattern
+  const matchesRoleName = diagnosticsCenterPatterns.some(pattern => 
+    normalizedRoleName === pattern || normalizedRoleName.includes(pattern)
+  );
+  
+  // If roleId is a UUID, we can't check it directly, so rely on roleName
+  // If roleId is not a UUID and contains diagnostics_center, check it too
+  const isRoleIdUUID = roleId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(roleId);
+  const matchesRoleId = !isRoleIdUUID && roleId && 
+    diagnosticsCenterPatterns.some(pattern => 
+      roleId.toLowerCase().includes(pattern)
+    );
+  
+  // ✅ FIX: Also check capabilities as fallback
+  // Check if vendor has diagnostic_results capability (indicates diagnostics center)
+  const hasDiagnosticCapability = vendorData.capabilities?.some?.((cap: any) => 
+    (typeof cap === 'string' && (cap === 'diagnostic_results' || cap === 'diagnostics' || cap === 'test_catalog')) ||
+    (cap?.name && (cap.name === 'diagnostic_results' || cap.name === 'diagnostics' || cap.name === 'test_catalog'))
+  ) || false;
+  
+  // ✅ FIX: Check vendorType or other indicators
+  const vendorType = (vendorData.vendorType || vendorData.vendor_type || '').toLowerCase();
+  const matchesVendorType = vendorType.includes('diagnostic') || vendorType.includes('diagnostics');
+  
+  const result = matchesRoleName || matchesRoleId || hasDiagnosticCapability || matchesVendorType;
+  
+  console.log('🔍 [isDiagnosticsCenter] Result:', {
+    normalizedRoleName,
+    matchesRoleName,
+    matchesRoleId,
+    hasDiagnosticCapability,
+    matchesVendorType,
+    finalResult: result
+  });
+  
+  return result;
 }
 
 /**

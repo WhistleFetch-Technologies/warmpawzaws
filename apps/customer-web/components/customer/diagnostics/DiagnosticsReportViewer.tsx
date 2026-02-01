@@ -93,6 +93,62 @@ export function DiagnosticsReportViewer({
     loadVetAppointments();
   }, [bookingId]);
 
+  // ✅ Helper function to extract test code from test name (e.g., "Liver Function Test (LFT)" -> "LFT")
+  const extractTestCode = (testName: string): string => {
+    if (!testName) return '';
+    const match = testName.match(/\(([^)]+)\)/);
+    return match ? match[1] : '';
+  };
+
+  // ✅ Helper function to extract category from report_type
+  const getCategoryFromReportType = (reportType: string): string => {
+    if (!reportType) return 'General';
+    const typeMap: Record<string, string> = {
+      'blood_test': 'Hematology',
+      'urine_test': 'Urine Analysis',
+      'stool_test': 'Stool Analysis',
+      'imaging': 'Imaging',
+      'biopsy': 'Pathology',
+      'lab': 'Laboratory',
+      'pathology': 'Pathology',
+      'other': 'General'
+    };
+    return typeMap[reportType.toLowerCase()] || 'General';
+  };
+
+  // ✅ Helper function to determine if report is abnormal from findings
+  const isAbnormalFromFindings = (findings: string | null | undefined, status: string): boolean => {
+    if (!findings) return status === 'requires_action';
+    const abnormalKeywords = ['abnormal', 'elevated', 'high', 'low', 'decreased', 'increased', 'needs attention', 'attention required'];
+    const findingsLower = findings.toLowerCase();
+    return abnormalKeywords.some(keyword => findingsLower.includes(keyword)) || status === 'requires_action';
+  };
+
+  // ✅ Helper function to map backend status to frontend status
+  const mapBackendStatusToFrontend = (backendStatus: string): 'pending' | 'processing' | 'completed' => {
+    if (!backendStatus) return 'processing';
+    
+    const statusLower = backendStatus.toLowerCase();
+    
+    // Backend statuses that mean the report is ready/completed
+    if (statusLower === 'ready' || 
+        statusLower === 'reviewed' || 
+        statusLower === 'completed' ||
+        statusLower === 'requires_action') {
+      return 'completed';
+    }
+    
+    // Backend statuses that mean it's still processing
+    if (statusLower === 'pending' || 
+        statusLower === 'processing' ||
+        statusLower === 'in_progress') {
+      return 'processing';
+    }
+    
+    // Default to processing for unknown statuses
+    return 'processing';
+  };
+
   const loadReportData = async () => {
     try {
       setLoading(true);
@@ -121,63 +177,54 @@ export function DiagnosticsReportViewer({
         });
       }
 
-      if (reportsRes.status === 'fulfilled' && reportsRes.value?.reports) {
-        setReports(reportsRes.value.reports.map((r: any) => ({
-          id: r.id,
-          testName: r.test_name,
-          testCode: r.test_code,
-          category: r.category || 'General',
-          reportUrl: r.report_url,
-          reportDate: r.created_at,
-          status: r.status || 'completed',
-          findings: r.findings,
-          normalRange: r.normal_range,
-          result: r.result_value,
-          isAbnormal: r.is_abnormal,
-          labName: r.lab_name,
-          reviewedBy: r.reviewed_by,
-          reviewedAt: r.reviewed_at
-        })));
+      if (reportsRes.status === 'fulfilled' && reportsRes.value?.reports && Array.isArray(reportsRes.value.reports) && reportsRes.value.reports.length > 0) {
+        // ✅ FIX: Map backend response to frontend format correctly
+        setReports(reportsRes.value.reports.map((r: any) => {
+          const testName = r.testName || r.test_name || 'Unknown Test';
+          const testCode = extractTestCode(testName);
+          const findings = r.findings || '';
+          const summary = r.summary || '';
+          // ✅ FIX: Map backend status (ready, reviewed, etc.) to frontend status (completed, processing, etc.)
+          const backendStatus = r.status || 'ready';
+          const status = mapBackendStatusToFrontend(backendStatus);
+          
+          // Extract result from findings or summary (look for patterns like "145 U/L" or "7.2 M/uL")
+          const resultMatch = (findings + ' ' + summary).match(/(\d+[.\d]*\s*[A-Z\/]+)/i);
+          const result = resultMatch ? resultMatch[1] : '';
+          
+          // Extract normal range from findings or summary
+          const normalRangeMatch = (findings + ' ' + summary).match(/normal\s*range[:\s]+([^.\n]+)/i);
+          const normalRange = normalRangeMatch ? normalRangeMatch[1].trim() : '';
+          
+          return {
+            id: r.id,
+            testName: testName,
+            testCode: testCode,
+            category: getCategoryFromReportType(r.reportType || r.report_type),
+            reportUrl: r.reportUrl || r.report_url || '',
+            reportDate: r.createdAt || r.created_at || new Date().toISOString(),
+            status: status,
+            findings: findings,
+            normalRange: normalRange,
+            result: result,
+            isAbnormal: isAbnormalFromFindings(findings, status),
+            labName: r.vendorName || r.vendor_name || '',
+            reviewedBy: r.reviewedByName || r.reviewed_by_name || r.reviewedBy || r.reviewed_by || '',
+            reviewedAt: r.reviewedAt || r.reviewed_at || ''
+          };
+        }));
       } else {
-        // Mock data for demo
-        setReports([
-          {
-            id: 'report-1',
-            testName: 'Complete Blood Count',
-            testCode: 'CBC',
-            category: 'Hematology',
-            reportUrl: '/reports/cbc-report.pdf',
-            reportDate: new Date().toISOString(),
-            status: 'completed',
-            findings: 'All values within normal range',
-            normalRange: 'RBC: 5.5-8.5 M/uL',
-            result: '7.2 M/uL',
-            isAbnormal: false,
-            labName: 'PetPath Diagnostics',
-            reviewedBy: 'Dr. Priya Sharma',
-            reviewedAt: new Date().toISOString()
-          },
-          {
-            id: 'report-2',
-            testName: 'Liver Function Test',
-            testCode: 'LFT',
-            category: 'Biochemistry',
-            reportUrl: '/reports/lft-report.pdf',
-            reportDate: new Date().toISOString(),
-            status: 'completed',
-            findings: 'Slightly elevated ALT levels',
-            normalRange: 'ALT: 10-120 U/L',
-            result: '145 U/L',
-            isAbnormal: true,
-            labName: 'PetPath Diagnostics',
-            reviewedBy: 'Dr. Priya Sharma',
-            reviewedAt: new Date().toISOString()
-          }
-        ]);
+        // ✅ FIX: No mock data - just set empty array if no reports found
+        setReports([]);
+        if (reportsRes.status === 'rejected') {
+          console.error('[DiagnosticsReportViewer] Failed to fetch reports:', reportsRes.reason);
+          toast.error('Failed to load reports. Please try again later.');
+        }
       }
     } catch (error) {
-      console.error('Error loading report data:', error);
+      console.error('[DiagnosticsReportViewer] Error loading report data:', error);
       toast.error('Failed to load reports');
+      setReports([]);
     } finally {
       setLoading(false);
     }
@@ -460,9 +507,12 @@ export function DiagnosticsReportViewer({
         ) : (
           <Card className="p-8 text-center bg-white border border-gray-100">
             <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <h3 className="font-semibold text-gray-700 mb-1">No Reports Yet</h3>
-            <p className="text-sm text-gray-500">
-              Reports will appear here once your tests are processed
+            <h3 className="font-semibold text-gray-700 mb-1">No Reports Available</h3>
+            <p className="text-sm text-gray-500 mb-2">
+              Reports will appear here once your tests are processed and uploaded.
+            </p>
+            <p className="text-xs text-gray-400">
+              If you believe reports should be available, please contact the diagnostic center.
             </p>
           </Card>
         )}

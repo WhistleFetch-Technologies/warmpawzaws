@@ -47,18 +47,28 @@ export function registerCustomerProfileEndpoints(app: Hono) {
    */
   app.get("/customer/profile/unified/:identifier", async (c) => {
     try {
-      const { identifier } = c.req.param();
+      const identifier = c.req.param('identifier');
+      console.log('[profile/unified] Request received for identifier:', identifier);
+      
+      if (!identifier) {
+        console.error('[profile/unified] No identifier provided');
+        return c.json({ error: 'Identifier is required' }, 400);
+      }
 
       // Resolve identifier (phone or customer ID)
       let customerId: string | null;
       try {
+        console.log('[profile/unified] Resolving customer ID for:', identifier);
         customerId = await resolveCustomerId(identifier);
+        console.log('[profile/unified] Resolved customer ID:', customerId);
       } catch (error: any) {
         console.error('[profile/unified] Error resolving customer ID:', error);
-        return c.json({ success: true, profile: null, _degraded: true }, 200);
+        console.error('[profile/unified] Error stack:', error?.stack);
+        return c.json({ success: true, profile: null, _degraded: true, error: error?.message }, 200);
       }
 
       if (!customerId) {
+        console.log('[profile/unified] Customer not found for identifier:', identifier);
         return c.json({ error: 'Customer not found' }, 404);
       }
 
@@ -143,6 +153,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       const profileCompleted = customer.profile_completed || false;
       const customerStatus = customer.status || 'new';
 
+      console.log('[profile/unified] Successfully fetched profile for customer:', customerId);
       return c.json({
         success: true,
         profile: {
@@ -182,7 +193,16 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[profile/unified] Error fetching unified customer profile:', error);
-      return c.json({ success: true, profile: null, _degraded: true }, 200);
+      console.error('[profile/unified] Error message:', error?.message);
+      console.error('[profile/unified] Error stack:', error?.stack);
+      console.error('[profile/unified] Error name:', error?.name);
+      // Return 200 with degraded response instead of 500
+      return c.json({ 
+        success: true, 
+        profile: null, 
+        _degraded: true,
+        error: error?.message || 'Unknown error'
+      }, 200);
     }
   });
 

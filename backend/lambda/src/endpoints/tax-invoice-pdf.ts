@@ -237,7 +237,7 @@ export function registerTaxInvoicePdfEndpoints(app: Hono) {
                  v.state as vendor_state,
                  v.pincode as vendor_pincode,
                  v.gst_number as vendor_gst,
-                 c.name as customer_name,
+                 c.full_name as customer_name,
                  c.phone as customer_phone,
                  c.email as customer_email,
                  c.address as customer_address,

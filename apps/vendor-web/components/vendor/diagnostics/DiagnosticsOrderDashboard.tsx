@@ -566,7 +566,7 @@ export function DiagnosticsOrderDashboard({
 
                 {/* Actions */}
                 <div className="p-4 flex gap-2 flex-wrap">
-                  {booking.status === 'scheduled' && booking.collectionType === 'home' && !booking.assignedStaff && (
+                  {(booking.status === 'scheduled' || booking.status === 'pending' || booking.status === 'confirmed') && booking.collectionType === 'home' && !booking.assignedStaff && (
                     <Button
                       size="sm"
                       onClick={() => {
@@ -587,7 +587,7 @@ export function DiagnosticsOrderDashboard({
                     </Button>
                   )}
                   
-                  {booking.status === 'scheduled' && (
+                  {(booking.status === 'scheduled' || booking.status === 'pending' || booking.status === 'confirmed') && (
                     <Button
                       size="sm"
                       onClick={() => handleUpdateStatus(booking.id, 'sample_collected')}

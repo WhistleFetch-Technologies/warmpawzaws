@@ -4,8 +4,8 @@
 // Official CloudFront: Admin dfof7mguaa0a5 | Vendor d1s6ykkj381k58 | Customer d2aoyjj8ine0wk
 
 (function () {
-  // Deployed API (WarmpawzStack-dev). Replace with your stack's ApiGatewayUrl if different.
-  const defaultApiBaseUrl = 'https://rrg9107m3d.execute-api.ap-south-1.amazonaws.com';
+  // Deployed API (Main API Gateway). Replace with your stack's ApiGatewayUrl if different.
+  const defaultApiBaseUrl = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
   const defaultUatMode = true;
 
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {

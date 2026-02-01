@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { FileText, Upload, Search, Calendar, ArrowLeft, Truck, Edit2, Send, FileEdit, Trash2 } from 'lucide-react';
+import { FileText, Upload, Search, Calendar, ArrowLeft, Truck, Edit2, Send, FileEdit, Trash2, ClipboardList } from 'lucide-react';
 import { CapabilityGate } from '../CapabilityGate';
 import { UploadResults } from './UploadResults';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { isDiagnosticsCenter } from '@/lib/vendor-utils';
 
 interface DiagnosticTest {
   id: string;
@@ -26,10 +27,12 @@ interface DiagnosticTest {
 
 interface DiagnosticResultsProps {
   vendorId: string;
+  vendorData?: any;
   onBack?: () => void;
+  onNavigateToOrders?: () => void;
 }
 
-export function DiagnosticResults({ vendorId, onBack }: DiagnosticResultsProps) {
+export function DiagnosticResults({ vendorId, vendorData, onBack, onNavigateToOrders }: DiagnosticResultsProps) {
   const [tests, setTests] = useState<DiagnosticTest[]>([]);
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
@@ -114,6 +117,9 @@ export function DiagnosticResults({ vendorId, onBack }: DiagnosticResultsProps) 
     );
   }
 
+  // ✅ Check if vendor is diagnostics center to show Lab Orders link
+  const showLabOrdersLink = isDiagnosticsCenter(vendorData) && onNavigateToOrders;
+
   return (
     <CapabilityGate requireAny={['diagnostic_results', 'diagnostics', 'test_catalog']} showDisabledMessage disabledMessage="Diagnostic tests management is not available for your account">
       <div className="space-y-4 w-full max-w-[430px] mx-auto">
@@ -140,6 +146,27 @@ export function DiagnosticResults({ vendorId, onBack }: DiagnosticResultsProps) 
             Add Test
           </button>
         </div>
+
+        {/* Lab Orders Link - Only for diagnostics centers */}
+        {showLabOrdersLink && (
+          <div className="bg-teal-50 border border-teal-200 rounded-lg p-3">
+            <button
+              onClick={onNavigateToOrders}
+              className="w-full flex items-center justify-between text-left hover:bg-teal-100 rounded-md p-2 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-teal-100 rounded-lg flex items-center justify-center">
+                  <ClipboardList className="w-5 h-5 text-teal-600" />
+                </div>
+                <div>
+                  <p className="font-semibold text-teal-900">Lab Orders</p>
+                  <p className="text-xs text-teal-700">View and manage diagnostic bookings</p>
+                </div>
+              </div>
+              <ArrowLeft className="w-4 h-4 text-teal-600 rotate-180" />
+            </button>
+          </div>
+        )}
 
         {/* Search */}
         <div className="relative">

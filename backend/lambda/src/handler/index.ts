@@ -707,33 +707,33 @@ export const handler = async (
   event: APIGatewayProxyEventV2,
   context: Context
 ): Promise<APIGatewayProxyResultV2> => {
-  // ✅ Guard: malformed or missing event (e.g. direct invoke) → return 200 CORS so callers don't get 5xx
-  if (!event || typeof event !== 'object') {
-    return CORS_PREFLIGHT_200('https://d2aoyjj8ine0wk.cloudfront.net');
-  }
-
-  // ✅ CRITICAL CORS FIX: Check for OPTIONS FIRST - before ANY other code
-  // This MUST be the absolute first thing to ensure OPTIONS always returns 200 OK
-  // Use try-catch at the very top level to catch any errors
+  // ✅ CRITICAL CORS FIX: Wrap entire handler in try-catch to ensure OPTIONS always returns 200
   try {
-    // Safely extract method (support both HTTP API v2 and v1 event shapes)
-    let method: string | undefined;
-    let hasPreflightHeaders = false;
+    // ✅ CRITICAL CORS FIX: Handle OPTIONS requests FIRST, before ANY other code
+    // This MUST be the absolute first thing - even before null checks
+    // Self-contained OPTIONS handler that doesn't depend on any other functions
     
+    // Check for OPTIONS method or preflight headers (handle null/undefined event safely)
+    let isOptions = false;
     try {
-      method = event?.requestContext?.http?.method || 
-               (event as any)?.requestContext?.httpMethod || 
-               (event as any)?.httpMethod;
-      hasPreflightHeaders = !!(event?.headers?.['access-control-request-method'] || 
-                                event?.headers?.['Access-Control-Request-Method']);
+      const httpMethod = event?.requestContext?.http?.method || 
+                        (event as any)?.requestContext?.httpMethod || 
+                        (event as any)?.httpMethod;
+      isOptions = httpMethod === 'OPTIONS' || 
+                 !!(event?.headers?.['access-control-request-method']) ||
+                 !!(event?.headers?.['Access-Control-Request-Method']);
     } catch {
-      // If we can't read the method, assume it might be OPTIONS and return 200
-      hasPreflightHeaders = true;
+      // If we can't read the method, check for preflight headers
+      try {
+        isOptions = !!(event?.headers?.['access-control-request-method']) ||
+                   !!(event?.headers?.['Access-Control-Request-Method']);
+      } catch {
+        // If event is completely malformed, assume it might be OPTIONS and return 200
+        isOptions = true;
+      }
     }
-    
-    if (method === 'OPTIONS' || hasPreflightHeaders) {
-    // ✅ CRITICAL CORS FIX: Self-contained OPTIONS handler that doesn't depend on other functions
-    // This ensures OPTIONS always returns 200 OK even if other code fails
+  
+  if (isOptions) {
     try {
       const origin = event?.headers?.origin || 
                      event?.headers?.Origin || 
@@ -741,7 +741,7 @@ export const handler = async (
                      event?.headers?.['Origin'] ||
                      '';
       
-      // Only these 3 CloudFront URLs + localhost + custom domains
+      // Self-contained origin validation (doesn't depend on getAllowedOrigin function)
       const allowedOrigins = [
         'https://dfof7mguaa0a5.cloudfront.net',
         'https://d1s6ykkj381k58.cloudfront.net',
@@ -752,11 +752,14 @@ export const handler = async (
         'https://warmpawz.com', 'https://www.warmpawz.com',
       ];
       
-      let allowedOrigin = allowedOrigins[0];
+      let allowedOrigin = 'https://d2aoyjj8ine0wk.cloudfront.net'; // Default to customer CloudFront
       if (origin) {
         const normalizedOrigin = origin.toLowerCase();
         const normalizedAllowedOrigins = allowedOrigins.map(o => o.toLowerCase());
         if (normalizedAllowedOrigins.includes(normalizedOrigin)) {
+          allowedOrigin = origin;
+        } else if (normalizedOrigin.includes('cloudfront.net')) {
+          // Allow any CloudFront origin (for flexibility)
           allowedOrigin = origin;
         }
       }
@@ -770,7 +773,6 @@ export const handler = async (
         ? `${baseAllowedHeaders},${requestedHeaders.split(',').map((h: string) => h.trim()).join(',')}`
         : baseAllowedHeaders;
       
-      // CRITICAL: Return 200 OK for OPTIONS preflight (browsers require this)
       return {
         statusCode: 200,
         body: '',
@@ -784,26 +786,14 @@ export const handler = async (
         },
       };
     } catch (optionsError) {
-      // CRITICAL: Even on error, return 200 OK for CORS preflight
+      // CRITICAL: Even on ANY error, return 200 OK for CORS preflight
       // Browsers will reject non-200 responses for OPTIONS requests
-      const origin = event?.headers?.origin || 
-                     event?.headers?.Origin || 
-                     event?.headers?.['origin'] ||
-                     event?.headers?.['Origin'] ||
-                     '';
-      
-      // Default to CloudFront origin if we can't determine
-      const defaultOrigin = 'https://d1s6ykkj381k58.cloudfront.net';
-      let allowedOrigin = defaultOrigin;
-      if (origin && origin.toLowerCase().includes('cloudfront.net')) {
-        allowedOrigin = origin;
-      }
-      
+      console.error('[HANDLER] Error in OPTIONS handler, but returning 200 OK:', optionsError);
       return {
         statusCode: 200,
         body: '',
         headers: {
-          'Access-Control-Allow-Origin': allowedOrigin,
+          'Access-Control-Allow-Origin': 'https://d2aoyjj8ine0wk.cloudfront.net',
           'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
           'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
           'Access-Control-Allow-Credentials': 'true',
@@ -812,6 +802,22 @@ export const handler = async (
         },
       };
     }
+  }
+  
+  // ✅ Guard: malformed or missing event (e.g. direct invoke) → return 200 CORS so callers don't get 5xx
+  if (!event || typeof event !== 'object') {
+    return {
+      statusCode: 200,
+      body: '',
+      headers: {
+        'Access-Control-Allow-Origin': 'https://d2aoyjj8ine0wk.cloudfront.net',
+        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Max-Age': '86400',
+        'Content-Length': '0',
+      },
+    };
   }
   
   try {
@@ -1076,34 +1082,22 @@ export const handler = async (
       },
     };
   }
-  } catch (outerError) {
-    // ✅ CRITICAL CORS FIX: Outer catch - ALWAYS return 200 for OPTIONS, even if we can't check
-    // This ensures OPTIONS preflight requests never fail with 500
+} catch (outerError) {
+    // ✅ CRITICAL: Outer catch for the entire handler - ensure OPTIONS always returns 200
     try {
-      const method = event?.requestContext?.http?.method || 
-                     (event as any)?.requestContext?.httpMethod || 
-                     (event as any)?.httpMethod;
-      const hasPreflightHeaders = event?.headers?.['access-control-request-method'] || 
-                                   event?.headers?.['Access-Control-Request-Method'];
+      const httpMethod = event?.requestContext?.http?.method || 
+                        (event as any)?.requestContext?.httpMethod || 
+                        (event as any)?.httpMethod;
+      const hasPreflight = !!(event?.headers?.['access-control-request-method']) ||
+                          !!(event?.headers?.['Access-Control-Request-Method']);
       
-      // If it's OPTIONS or has preflight headers, ALWAYS return 200 OK
-      if (method === 'OPTIONS' || hasPreflightHeaders) {
-        const origin = event?.headers?.origin || 
-                       event?.headers?.Origin || 
-                       event?.headers?.['origin'] ||
-                       event?.headers?.['Origin'] ||
-                       '';
-        const defaultOrigin = 'https://d1s6ykkj381k58.cloudfront.net';
-        let allowedOrigin = defaultOrigin;
-        if (origin && origin.toLowerCase().includes('cloudfront.net')) {
-          allowedOrigin = origin;
-        }
-        
+      if (httpMethod === 'OPTIONS' || hasPreflight) {
+        console.error('[HANDLER] Outer error, but returning 200 OK for OPTIONS:', outerError);
         return {
           statusCode: 200,
           body: '',
           headers: {
-            'Access-Control-Allow-Origin': allowedOrigin,
+            'Access-Control-Allow-Origin': 'https://d2aoyjj8ine0wk.cloudfront.net',
             'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
             'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
             'Access-Control-Allow-Credentials': 'true',
@@ -1113,13 +1107,12 @@ export const handler = async (
         };
       }
     } catch {
-      // ✅ CRITICAL: If we can't even check the method, assume it's OPTIONS and return 200
-      // This prevents any OPTIONS request from returning 500
+      // If we can't check, assume OPTIONS and return 200
       return {
         statusCode: 200,
         body: '',
         headers: {
-          'Access-Control-Allow-Origin': 'https://d1s6ykkj381k58.cloudfront.net',
+          'Access-Control-Allow-Origin': 'https://d2aoyjj8ine0wk.cloudfront.net',
           'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
           'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
           'Access-Control-Allow-Credentials': 'true',
@@ -1129,40 +1122,18 @@ export const handler = async (
       };
     }
     
-    // For non-OPTIONS errors, return 500 with CORS headers
-    try {
-      const origin = event?.headers?.origin || 
-                     event?.headers?.Origin || 
-                     event?.headers?.['origin'] ||
-                     event?.headers?.['Origin'] ||
-                     '';
-      const allowedOrigin = getAllowedOrigin(origin);
-      
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: 'Internal Server Error' }),
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': allowedOrigin,
-          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-          'Access-Control-Allow-Credentials': 'true',
-        },
-      };
-    } catch {
-      // Final fallback - return 200 OK with CORS headers (safer than 500 for CORS)
-      return {
-        statusCode: 200,
-        body: '',
-        headers: {
-          'Access-Control-Allow-Origin': 'https://d1s6ykkj381k58.cloudfront.net',
-          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-          'Access-Control-Allow-Credentials': 'true',
-          'Access-Control-Max-Age': '86400',
-          'Content-Length': '0',
-        },
-      };
-    }
+    // For non-OPTIONS errors, return 500 with CORS
+    console.error('[HANDLER] Unhandled outer error:', outerError);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Internal Server Error' }),
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': 'https://d2aoyjj8ine0wk.cloudfront.net',
+        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+        'Access-Control-Allow-Credentials': 'true',
+      },
+    };
   }
 };

@@ -149,11 +149,94 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         rawBookings = result.bookings || result.data?.bookings || [];
       }
       
+      // ✅ DEBUG: Log diagnostic bookings to see what data we're getting
+      console.log('[MyBookings] Loaded bookings:', rawBookings.length);
+      const diagnosticBookings = rawBookings.filter((b: any) => {
+        const serviceTypeLower = (b.service_type || b.serviceType || '').toLowerCase();
+        return serviceTypeLower === 'diagnostics' || serviceTypeLower.includes('diagnostic');
+      });
+      if (diagnosticBookings.length > 0) {
+        console.log('[MyBookings] Found diagnostic bookings:', diagnosticBookings.map((b: any) => ({
+          id: b.id,
+          serviceName: b.service_name,
+          serviceType: b.service_type,
+          notes: b.notes,
+          selected_services: b.selected_services,
+          selectedServices: b.selectedServices,
+        })));
+      }
+      
       // Map API response to Booking interface
-      const mappedBookings: Booking[] = rawBookings.map((b: any) => ({
+      const mappedBookings: Booking[] = rawBookings.map((b: any) => {
+        // ✅ FIX: Parse diagnostic test names for diagnostic bookings (same logic as BookingDetailModal)
+        let serviceName = b.service_name || b.serviceName || b.service?.name || 'Consultation';
+        
+        // Check if this is a diagnostic booking
+        const serviceTypeLower = (b.service_type || b.serviceType || '').toLowerCase();
+        const serviceIdLower = (b.service_id || b.serviceId || '').toLowerCase();
+        const serviceNameLower = (serviceName || '').toLowerCase();
+        const serviceCategoryLower = (b.service_category || b.serviceCategory || '').toLowerCase();
+        const vendorNameLower = (b.vendor_name || b.vendorName || '').toLowerCase();
+        
+        // ✅ ENHANCED: More robust diagnostic detection
+        const isDiagnostic = serviceTypeLower === 'diagnostics' || 
+                           serviceCategoryLower === 'diagnostics' || 
+                           serviceIdLower === 'diagnostics' ||
+                           serviceIdLower.includes('diagnostic') ||
+                           serviceNameLower.includes('diagnostic') ||
+                           serviceNameLower.includes('lab') ||
+                           serviceNameLower.includes('test') ||
+                           serviceNameLower === 'x-ray' || // Common fallback name for diagnostics
+                           vendorNameLower.includes('dia cent') || // Specific vendor
+                           vendorNameLower.includes('diagnostic') ||
+                           vendorNameLower.includes('lab');
+        
+        // If diagnostic, try to get test names from notes or selected_services
+        if (isDiagnostic) {
+          try {
+            let diagnosticTestNames: string[] = [];
+            
+            // Method 1: Parse notes.tests
+            if (b.notes) {
+              const notesData = typeof b.notes === 'string' 
+                ? JSON.parse(b.notes || '{}') 
+                : (b.notes || {});
+              if (Array.isArray(notesData.tests) && notesData.tests.length > 0) {
+                diagnosticTestNames = notesData.tests.map((t: any) => t.name || t.testName || t.test_name).filter(Boolean);
+              }
+            }
+            
+            // Method 2: Check selected_services
+            if (diagnosticTestNames.length === 0 && b.selected_services) {
+              const selectedServices = Array.isArray(b.selected_services) 
+                ? b.selected_services 
+                : (typeof b.selected_services === 'string' ? JSON.parse(b.selected_services || '[]') : []);
+              if (selectedServices.length > 0) {
+                diagnosticTestNames = selectedServices.map((s: any) => s.name || s.testName || s.test_name || s.serviceName).filter(Boolean);
+              }
+            }
+            
+            // Method 3: Check selectedServices (camelCase)
+            if (diagnosticTestNames.length === 0 && b.selectedServices) {
+              const selectedServices = Array.isArray(b.selectedServices) ? b.selectedServices : [];
+              if (selectedServices.length > 0) {
+                diagnosticTestNames = selectedServices.map((s: any) => s.name || s.testName || s.test_name || s.serviceName).filter(Boolean);
+              }
+            }
+            
+            // Use test names if found, otherwise keep the original service name
+            if (diagnosticTestNames.length > 0) {
+              serviceName = diagnosticTestNames.join(', ');
+            }
+          } catch (e) {
+            console.warn('[MyBookings] Failed to parse diagnostic test names:', e);
+          }
+        }
+        
+        return {
         bookingId: b.id || b.bookingId,
         serviceType: b.service_type || b.serviceType || 'at_center',
-        serviceName: b.service_name || b.serviceName || b.service?.name || 'Consultation',
+        serviceName: serviceName,
         vendorId: b.vendor_id || b.vendorId,
         vendorName: b.vendor_name || b.vendorName || b.vendor?.business_name || b.vendor?.businessName || 'Unknown Vendor',
         vendorPhone: b.vendor_phone || b.vendorPhone || b.vendor?.phone, // ✅ FIX: Map vendor phone
@@ -185,7 +268,8 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         otpCode: b.otp_code || b.otpCode,
         otpVerified: b.otp_verified || b.otpVerified,
         paymentStatus: b.payment_status || b.paymentStatus,
-      }));
+        };
+      });
       
       setBookings(mappedBookings);
     } catch (error) {

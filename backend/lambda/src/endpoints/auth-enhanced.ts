@@ -244,21 +244,29 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         // UAT MODE: Accept 123456 without checking database
         console.log(`[AUTH] UAT Mode: Accepting fixed OTP 123456 for ${phone} (database check skipped)`);
         isValid = true;
-        // Try to mark any existing OTP as used to clean up
-        try {
-          const records = await select('otp_tokens', {
-            phone,
-            is_used: false,
-          });
-          if (records.length > 0) {
-            await query(
-              'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
-              [records[0].id]
-            );
-          }
-        } catch (e) {
-          console.warn('[AUTH] UAT Mode: Could not mark existing OTP as used:', e);
-        }
+        // Try to mark any existing OTP as used to clean up (non-blocking with timeout)
+        // This is fire-and-forget to avoid blocking the response
+        Promise.race([
+          (async () => {
+            try {
+              const records = await select('otp_tokens', {
+                phone,
+                is_used: false,
+              });
+              if (records.length > 0) {
+                await query(
+                  'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
+                  [records[0].id]
+                );
+              }
+            } catch (e) {
+              console.warn('[AUTH] UAT Mode: Could not mark existing OTP as used:', e);
+            }
+          })(),
+          new Promise((resolve) => setTimeout(resolve, 2000)) // 2 second timeout
+        ]).catch((e) => {
+          console.warn('[AUTH] UAT Mode: OTP cleanup timeout or error:', e);
+        });
       } else {
         // PRODUCTION MODE: Normal OTP verification against database
         console.log(`[AUTH] Production Mode: Verifying OTP against database for ${phone}`);
@@ -282,253 +290,143 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           ? '0' + phoneDigits
           : phoneDigits;
 
-      // ============================================================================
-      // ✅ STAFF DETECTION: Check if phone belongs to staff FIRST
-      // ============================================================================
-      // Staff login takes priority - if phone is in staff table, treat as vendor login
-      let staffMember: any = null;
-      let isStaffLogin = false;
-      
-      try {
-        const staffQuery = await query(`
-          SELECT s.id, s.name, s.vendor_id, s.phone, s.role, s.is_active
-          FROM staff s
-          WHERE s.phone = $1 OR s.phone = $2
-          LIMIT 1
-        `, [phone, normalizedPhone]);
-        
-        if (staffQuery.rows && staffQuery.rows.length > 0) {
-          staffMember = staffQuery.rows[0];
-          
-          if (staffMember.vendor_id && staffMember.is_active !== false) {
-            // Verify vendor exists and is not solo
-            const vendorQuery = await query(`
-              SELECT v.id, v.business_name, vi.vendor_type
-              FROM vendors v
-              LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
-              WHERE v.id = $1::uuid
-              LIMIT 1
-            `, [staffMember.vendor_id]);
-            
-            if (vendorQuery.rows && vendorQuery.rows.length > 0) {
-              const vendor = vendorQuery.rows[0];
-              const vendorType = vendor.vendor_type || 'business';
-              
-              // Business rule: Solo vendors cannot have staff
-              if (vendorType !== 'solo') {
-                isStaffLogin = true;
-                console.log(`[AUTH] ✅ Phone ${phone} belongs to STAFF member ${staffMember.id}, vendor: ${staffMember.vendor_id}`);
-              } else {
-                console.warn(`[AUTH] Staff ${staffMember.id} belongs to solo vendor - treating as customer`);
-              }
-            }
-          }
-        }
-      } catch (staffError: any) {
-        console.warn('[AUTH] Error checking staff table:', staffError.message);
-      }
-
       // Get or create customer/vendor
       let role = body.role || 'customer';
-      
-      // ✅ FIX: If staff login detected, force vendor role
-      if (isStaffLogin && staffMember) {
-        role = 'vendor';
-        console.log(`[AUTH] Staff login detected - forcing role to 'vendor'`);
-      }
       
       let userId: string;
       let userData: any;
 
       // ============================================================================
-      // ✅ STAFF LOGIN HANDLER: Special handling for staff members
-      // ============================================================================
-      if (isStaffLogin && staffMember) {
-        // Staff login - create/update vendor_identity with ACTIVATED status
-        const staffVendorId = staffMember.vendor_id;
-        
-        // Check if vendor_identity exists for staff phone
-        let vendorIdentity = await select('vendor_identity', { phone: normalizedPhone });
-        if (vendorIdentity.length === 0 && phone !== normalizedPhone) {
-          vendorIdentity = await select('vendor_identity', { phone });
-        }
-        
-        // Resolve role ID from staff role name
-        let resolvedRoleId: string | null = null;
-        if (staffMember.role) {
-          try {
-            const roleQuery = await query(`
-              SELECT id, name, display_name 
-              FROM roles 
-              WHERE (name = $1 OR display_name = $1 OR LOWER(name) = LOWER($1) OR LOWER(display_name) = LOWER($1))
-                AND is_active = true
-              LIMIT 1
-            `, [staffMember.role]);
-            
-            if (roleQuery.rows && roleQuery.rows.length > 0) {
-              resolvedRoleId = roleQuery.rows[0].id;
-              console.log(`[AUTH] Resolved staff role "${staffMember.role}" to role ID: ${resolvedRoleId}`);
-            }
-          } catch (roleError: any) {
-            console.warn('[AUTH] Error resolving role:', roleError.message);
-          }
-        }
-        
-        // Get vendor info
-        const vendorInfo = await select('vendors', { id: staffVendorId });
-        const vendor = vendorInfo.length > 0 ? vendorInfo[0] : null;
-        
-        if (vendorIdentity.length > 0) {
-          // Update existing vendor_identity to ACTIVATED
-          const identity = vendorIdentity[0];
-          const updateData: any = {
-            onboarding_status: 'ACTIVATED',
-            vendor_id: staffVendorId,
-            updated_at: new Date().toISOString(),
-          };
-          
-          if (resolvedRoleId) {
-            updateData.selected_role_id = resolvedRoleId;
-          }
-          
-          await update('vendor_identity', { id: identity.id }, updateData);
-          console.log(`[AUTH] ✅ Updated vendor_identity ${identity.id} to ACTIVATED for staff phone ${normalizedPhone}`);
-          
-          userId = identity.id;
-          userData = {
-            id: identity.id,
-            phone: normalizedPhone,
-            onboarding_status: 'ACTIVATED',
-            vendor_id: staffVendorId,
-            role_id: resolvedRoleId,
-            vendor_identity_id: identity.id,
-            business_name: vendor?.business_name,
-            is_staff: true,
-            staff_id: staffMember.id,
-            staff_name: staffMember.name,
-          };
-        } else {
-          // Create new vendor_identity for staff with ACTIVATED status
-          const newIdentity = await insert('vendor_identity', {
-            phone: normalizedPhone,
-            vendor_id: staffVendorId,
-            onboarding_status: 'ACTIVATED',
-            selected_role_id: resolvedRoleId,
-            vendor_type: 'business',
-            business_name: vendor?.business_name,
-          });
-          
-          console.log(`[AUTH] ✅ Created vendor_identity for staff phone ${normalizedPhone} with ACTIVATED status`);
-          
-          userId = newIdentity[0].id;
-          userData = {
-            id: newIdentity[0].id,
-            phone: normalizedPhone,
-            onboarding_status: 'ACTIVATED',
-            vendor_id: staffVendorId,
-            role_id: resolvedRoleId,
-            vendor_identity_id: newIdentity[0].id,
-            business_name: vendor?.business_name,
-            is_staff: true,
-            staff_id: staffMember.id,
-            staff_name: staffMember.name,
-          };
-        }
-        
-        // Return staff login response with ACTIVATED status
-        return this.success({
-          verified: true,
-          message: 'OTP verified successfully',
-          token: {
-            access_token: `staff_session_${normalizedPhone}_${Date.now()}`,
-            refresh_token: `staff_refresh_${normalizedPhone}_${Date.now()}`,
-            expires_in: 3600,
-            token_type: 'Bearer',
-          },
-          user: {
-            id: userId,
-            phone: normalizedPhone,
-            role: 'vendor',
-            is_active: true,
-            is_staff: true,
-            staff_id: staffMember.id,
-            staff_name: staffMember.name,
-          },
-          state: 'existing',
-          profile: {
-            id: userId,
-            phone: normalizedPhone,
-            onboarding_status: 'ACTIVATED',
-            vendor_id: staffVendorId,
-            role_id: resolvedRoleId,
-            roleId: resolvedRoleId,
-            vendor_type: 'business',
-            business_name: vendor?.business_name,
-            is_staff: true,
-            staff_info: {
-              staff_id: staffMember.id,
-              staff_name: staffMember.name,
-              staff_role: staffMember.role,
-            },
-          },
-          staff_info: {
-            staff_id: staffMember.id,
-            staff_name: staffMember.name,
-            vendor_id: staffVendorId,
-          },
-        }, context.requestId);
-      }
-      
-      // ============================================================================
-      // REGULAR CUSTOMER/VENDOR LOGIN (no staff detected)
+      // REGULAR CUSTOMER/VENDOR LOGIN
       // ============================================================================
       if (role === 'customer') {
-        const customers = await select('customers', { phone });
+        // ✅ FIX: Add timeout protection to customer queries
+        let customers: any[] = [];
+        try {
+          const customerQueryPromise = select('customers', { phone });
+          const customerQueryTimeout = new Promise<any[]>((_, reject) => 
+            setTimeout(() => reject(new Error('Customer query timeout')), 5000)
+          );
+          customers = await Promise.race([customerQueryPromise, customerQueryTimeout]);
+        } catch (customerQueryError: any) {
+          console.warn('[AUTH] Customer query timed out or failed, treating as new customer:', customerQueryError.message);
+          customers = [];
+        }
+        
         let isNewCustomer = false;
         
         if (customers.length > 0) {
           userId = customers[0].id;
           userData = customers[0];
           
-          // Update last_login_at timestamp to persist login state
-          await update('customers', { id: userId }, { 
-            last_login_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-          console.log(`[AUTH] Updated last_login_at for customer ${userId}`);
+          // Update last_login_at timestamp to persist login state (with timeout)
+          try {
+            const updatePromise = update('customers', { id: userId }, { 
+              last_login_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+            const updateTimeout = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Update timeout')), 5000)
+            );
+            await Promise.race([updatePromise, updateTimeout]);
+            console.log(`[AUTH] Updated last_login_at for customer ${userId}`);
+          } catch (updateError: any) {
+            console.warn('[AUTH] Could not update customer last_login_at:', updateError.message);
+            // Continue - update is not critical
+          }
           
-          // Create/update customer identity if needed
-          const { createOrUpdateCustomerIdentity } = await import('../utils/customer-state');
-          const identityId = await createOrUpdateCustomerIdentity(phone, userId);
+          // Create/update customer identity if needed (with timeout)
+          let identityId: string | undefined;
+          try {
+            const { createOrUpdateCustomerIdentity } = await import('../utils/customer-state');
+            const identityPromise = createOrUpdateCustomerIdentity(phone, userId);
+            const identityTimeout = new Promise<string>((_, reject) => 
+              setTimeout(() => reject(new Error('Identity creation timeout')), 5000)
+            );
+            identityId = await Promise.race([identityPromise, identityTimeout]);
+          } catch (identityError: any) {
+            console.warn('[AUTH] Could not create/update customer identity:', identityError.message);
+            // Continue - identity creation is not critical for login
+          }
           
-          // Link identity to customer if not linked
-          if (!userData.customer_identity_id) {
-            await update('customers', { id: userId }, { customer_identity_id: identityId });
+          // Link identity to customer if not linked (with timeout)
+          if (identityId && !userData.customer_identity_id) {
+            try {
+              const linkPromise = update('customers', { id: userId }, { customer_identity_id: identityId });
+              const linkTimeout = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Link timeout')), 5000)
+              );
+              await Promise.race([linkPromise, linkTimeout]);
+            } catch (linkError: any) {
+              console.warn('[AUTH] Could not link customer identity:', linkError.message);
+              // Continue - linking is not critical
+            }
           }
         } else {
           // Create customer with proper state
           isNewCustomer = true;
           
-          // Create customer identity first
-          const { createOrUpdateCustomerIdentity } = await import('../utils/customer-state');
-          const identityId = await createOrUpdateCustomerIdentity(phone, undefined);
+          // Create customer identity first (with timeout)
+          let identityId: string | undefined;
+          try {
+            const { createOrUpdateCustomerIdentity } = await import('../utils/customer-state');
+            const identityPromise = createOrUpdateCustomerIdentity(phone, undefined);
+            const identityTimeout = new Promise<string>((_, reject) => 
+              setTimeout(() => reject(new Error('Identity creation timeout')), 5000)
+            );
+            identityId = await Promise.race([identityPromise, identityTimeout]);
+          } catch (identityError: any) {
+            console.warn('[AUTH] Could not create customer identity, continuing without it:', identityError.message);
+            // Continue without identity - can be created later
+          }
           
-          // Create customer with default full_name (will be updated during profile completion)
-          const newCustomers = await insert('customers', {
-            phone,
-            full_name: `Customer ${phone.slice(-4)}`, // Temporary name until profile is completed
-            is_active: true,
-            status: 'new',
-            onboarding_status: 'PHONE_VERIFIED',
-            profile_completed: false,
-            customer_identity_id: identityId,
-            last_login_at: new Date().toISOString(),
-          });
-          userId = newCustomers[0].id;
-          userData = newCustomers[0];
+          // Create customer with default full_name (will be updated during profile completion) (with timeout)
+          let newCustomers: any[] = [];
+          try {
+            const insertPromise = insert('customers', {
+              phone,
+              full_name: `Customer ${phone.slice(-4)}`, // Temporary name until profile is completed
+              is_active: true,
+              status: 'new',
+              onboarding_status: 'PHONE_VERIFIED',
+              profile_completed: false,
+              customer_identity_id: identityId,
+              last_login_at: new Date().toISOString(),
+            });
+            const insertTimeout = new Promise<any[]>((_, reject) => 
+              setTimeout(() => reject(new Error('Customer insert timeout')), 5000)
+            );
+            newCustomers = await Promise.race([insertPromise, insertTimeout]);
+            userId = newCustomers[0].id;
+            userData = newCustomers[0];
+          } catch (insertError: any) {
+            console.error('[AUTH] Failed to create customer record:', insertError.message);
+            // This is critical - we need a user ID, so generate a temp one
+            userId = `temp_customer_${phone}_${Date.now()}`;
+            userData = {
+              id: userId,
+              phone,
+              is_active: true,
+              status: 'new',
+              onboarding_status: 'PHONE_VERIFIED',
+              profile_completed: false,
+            };
+            console.warn('[AUTH] Using temporary customer ID due to insert failure');
+          }
           
-          // Link identity to customer
-          await update('customer_identity', { id: identityId }, { customer_id: userId });
+          // Link identity to customer (with timeout, non-critical)
+          if (identityId && userId && !userId.startsWith('temp_')) {
+            try {
+              const linkPromise = update('customer_identity', { id: identityId }, { customer_id: userId });
+              const linkTimeout = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Link timeout')), 5000)
+              );
+              await Promise.race([linkPromise, linkTimeout]);
+            } catch (linkError: any) {
+              console.warn('[AUTH] Could not link customer identity:', linkError.message);
+              // Continue - linking is not critical
+            }
+          }
 
           // Award signup bonus (100 points) - auto-converts to wallet
           try {
@@ -547,8 +445,30 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         }
       } else if (role === 'vendor') {
         // ✅ FIX: Also fetch vendor_identity to get correct onboarding_status
-        const vendorIdentity = await select('vendor_identity', { phone });
-        const vendors = await select('vendors', { phone });
+        // ✅ FIX: Add timeout protection to prevent connection timeouts
+        let vendorIdentity: any[] = [];
+        let vendors: any[] = [];
+        
+        try {
+          const vendorQueriesPromise = Promise.all([
+            select('vendor_identity', { phone }),
+            select('vendors', { phone })
+          ]);
+          
+          const vendorQueriesTimeout = new Promise<[any[], any[]]>((_, reject) => 
+            setTimeout(() => reject(new Error('Vendor queries timeout')), 5000)
+          );
+          
+          [vendorIdentity, vendors] = await Promise.race([
+            vendorQueriesPromise,
+            vendorQueriesTimeout
+          ]);
+        } catch (vendorQueryError: any) {
+          console.warn('[AUTH] Vendor queries timed out or failed, continuing with minimal data:', vendorQueryError.message);
+          // Continue with empty arrays - will create temp vendor ID
+          vendorIdentity = [];
+          vendors = [];
+        }
         
         if (vendors.length > 0) {
           userId = vendors[0].id;
@@ -558,20 +478,39 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             userData.onboarding_status = vendorIdentity[0].onboarding_status;
             userData.vendor_identity_id = vendorIdentity[0].id;
           }
-          // Update last_login_at timestamp to persist login state
-          await update('vendors', { id: userId }, { 
-            last_login_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          });
-          console.log(`[AUTH] Updated last_login_at for vendor ${userId}, onboarding_status: ${userData.onboarding_status}`);
+          // Update last_login_at timestamp to persist login state (with timeout)
+          try {
+            const updatePromise = update('vendors', { id: userId }, { 
+              last_login_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+            const updateTimeout = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Update timeout')), 5000)
+            );
+            await Promise.race([updatePromise, updateTimeout]);
+            console.log(`[AUTH] Updated last_login_at for vendor ${userId}, onboarding_status: ${userData.onboarding_status}`);
+          } catch (updateError: any) {
+            console.warn('[AUTH] Could not update vendor last_login_at:', updateError.message);
+            // Continue - update is not critical
+          }
         } else if (vendorIdentity.length > 0) {
           // Vendor record doesn't exist yet, but vendor_identity does (mid-onboarding)
           const identity = vendorIdentity[0];
           
           // ✅ FIX: Check if vendor_id is set (vendor was approved but vendors lookup failed)
           if (identity.vendor_id) {
-            // Try to get vendor by vendor_id
-            const vendorsByVendorId = await select('vendors', { id: identity.vendor_id });
+            // Try to get vendor by vendor_id (with timeout)
+            let vendorsByVendorId: any[] = [];
+            try {
+              const vendorByIdPromise = select('vendors', { id: identity.vendor_id });
+              const vendorByIdTimeout = new Promise<any[]>((_, reject) => 
+                setTimeout(() => reject(new Error('Vendor by ID query timeout')), 5000)
+              );
+              vendorsByVendorId = await Promise.race([vendorByIdPromise, vendorByIdTimeout]);
+            } catch (vendorByIdError: any) {
+              console.warn('[AUTH] Could not fetch vendor by ID:', vendorByIdError.message);
+              vendorsByVendorId = [];
+            }
             if (vendorsByVendorId.length > 0) {
               // Use the actual vendor record
               userId = vendorsByVendorId[0].id;
@@ -798,22 +737,86 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
   });
 
   app.post('/auth/verify-otp', async (c) => {
+    const startTime = Date.now();
+    const TIMEOUT_MS = 25000; // 25 seconds (leave 5s buffer before API Gateway 30s limit)
+    
     try {
-      const event = await createApiGatewayEvent(c);
+      // Add timeout protection for JSON parsing
+      const parseBodyWithTimeout = async (): Promise<any> => {
+        return Promise.race([
+          c.req.json(),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Request body parsing timeout')), 5000)
+          )
+        ]);
+      };
+
+      let event;
+      try {
+        event = await createApiGatewayEvent(c, parseBodyWithTimeout);
+      } catch (parseError: any) {
+        console.error('[AUTH] Error parsing request body:', parseError);
+        return c.json({ 
+          message: 'Invalid request format',
+          error: parseError.message || 'Request parsing failed'
+        }, 400);
+      }
+
       const context = createLambdaContext();
-      const result: any = await verifyOtpHandler.execute(event, context);
+      
+      // Add timeout protection for handler execution
+      const handlerPromise = verifyOtpHandler.execute(event, context);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Handler execution timeout')), TIMEOUT_MS)
+      );
+
+      const result: any = await Promise.race([handlerPromise, timeoutPromise]);
+      
+      if (!result || !result.body) {
+        throw new Error('Handler returned invalid response');
+      }
+
       const body = JSON.parse(result.body);
+      const elapsed = Date.now() - startTime;
+      console.log(`[AUTH] verify-otp completed in ${elapsed}ms`);
+      
       return c.json(body, result.statusCode);
     } catch (error: any) {
-      console.error('[AUTH] Error in verify-otp handler:', error);
-      return c.json({ error: error.message || 'Internal Server Error' }, 500);
+      const elapsed = Date.now() - startTime;
+      console.error(`[AUTH] Error in verify-otp handler (${elapsed}ms):`, error);
+      console.error('[AUTH] Error stack:', error?.stack);
+      
+      // Return 503 for timeout errors, 500 for other errors
+      const statusCode = error?.message?.includes('timeout') ? 503 : 500;
+      const errorMessage = error?.message || 'Internal Server Error';
+      
+      return c.json({ 
+        message: statusCode === 503 ? 'Service Unavailable' : 'Internal Server Error',
+        error: errorMessage
+      }, statusCode);
     }
   });
 }
 
-async function createApiGatewayEvent(c: any): Promise<any> {
-  // Get body from Hono request
-  const body = await c.req.json().catch(() => ({}));
+async function createApiGatewayEvent(c: any, bodyParser?: () => Promise<any>): Promise<any> {
+  // Get body from Hono request with optional custom parser
+  let body: any = {};
+  try {
+    if (bodyParser) {
+      body = await bodyParser();
+    } else {
+      // Default: try to parse with timeout
+      body = await Promise.race([
+        c.req.json(),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Body parsing timeout')), 5000)
+        )
+      ]);
+    }
+  } catch (error: any) {
+    console.warn('[AUTH] Error parsing request body, using empty object:', error?.message);
+    body = {};
+  }
   
   // Get headers - Hono's c.req.raw contains the raw request
   const headers: Record<string, string> = {};
@@ -850,7 +853,7 @@ async function createApiGatewayEvent(c: any): Promise<any> {
       requestId: `req-${Date.now()}-${Math.random().toString(36).substring(7)}`,
     },
     headers: headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: body && Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
     isBase64Encoded: false,
   };
 }

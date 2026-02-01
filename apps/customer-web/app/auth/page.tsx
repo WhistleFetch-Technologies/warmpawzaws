@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient, isUatMode } from '@/lib/api-client';
 import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
@@ -8,7 +8,7 @@ import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeS
 // UAT Mode Configuration - uses runtime config (deploy-time) for static exports
 const UAT_OTP = '123456'; // Static OTP for UAT testing
 
-export default function AuthPage() {
+function AuthPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectAfterLogin = searchParams?.get('redirect');
@@ -218,17 +218,26 @@ export default function AuthPage() {
         // Get customer profile and pets to check onboarding status
         try {
           const profileResponse = await apiClient.get<any>(`/customer/profile/unified/${phone}`);
+          console.log('✅ [Auth] Profile response:', profileResponse);
           
           // Store customer state from database (not localStorage)
-          if (profileResponse.profile) {
-            const onboardingStatus = profileResponse.profile.onboarding_status || profileResponse.profile.onboardingStatus;
-            const profileCompleted = profileResponse.profile.profile_completed || profileResponse.profile.onboardingComplete;
-            const hasName = !!profileResponse.profile.name && profileResponse.profile.name !== `Customer ${phone.slice(-4)}`;
+          if (profileResponse?.profile) {
+            const profile = profileResponse.profile;
+            const onboardingStatus = profile.onboarding_status || profile.onboardingStatus || 'INIT';
+            const profileCompleted = profile.profile_completed || profile.onboardingComplete || false;
+            const hasName = !!profile.name && profile.name !== `Customer ${phone.slice(-4)}`;
+            
+            console.log('📊 [Auth] Profile check:', {
+              onboardingStatus,
+              profileCompleted,
+              hasName,
+              name: profile.name
+            });
             
             // Store in localStorage for CustomerApp to use
-            localStorage.setItem('customerData', JSON.stringify(profileResponse.profile));
-            localStorage.setItem('customerId', profileResponse.profile.id);
-            localStorage.setItem('customerProfile', JSON.stringify(profileResponse.profile));
+            localStorage.setItem('customerData', JSON.stringify(profile));
+            localStorage.setItem('customerId', profile.id);
+            localStorage.setItem('customerProfile', JSON.stringify(profile));
             
             // Also check if customer has pets
             let hasPets = false;
@@ -237,32 +246,58 @@ export default function AuthPage() {
               if (petsResponse?.pets && Array.isArray(petsResponse.pets) && petsResponse.pets.length > 0) {
                 hasPets = true;
                 localStorage.setItem('customerPets', JSON.stringify(petsResponse.pets));
+                console.log('✅ [Auth] Found pets:', petsResponse.pets.length);
               }
-            } catch {
-              // No pets yet
+            } catch (petError) {
+              console.warn('⚠️ [Auth] No pets found or error fetching pets:', petError);
+              // No pets yet - this is OK
             }
             
-            // Customer is onboarded if:
+            // ✅ FIX: Customer is onboarded if:
             // 1. Status is COMPLETED, OR
             // 2. profile_completed is true, OR  
             // 3. They have a real name AND have pets (legacy data fix)
-            const isOnboarded = onboardingStatus === 'COMPLETED' || profileCompleted || (hasName && hasPets);
+            // 4. They have a profile with name (even without pets, if they've used the app before)
+            const isOnboarded = onboardingStatus === 'COMPLETED' || 
+                               profileCompleted || 
+                               (hasName && hasPets) ||
+                               (hasName && profile.id); // If they have a name and profile ID, they've been onboarded
+            
+            console.log('🎯 [Auth] Onboarding decision:', { isOnboarded, onboardingStatus, profileCompleted, hasName, hasPets });
             
             if (isOnboarded) {
               localStorage.setItem('customerOnboardingComplete', 'true');
               localStorage.setItem('customerJourneyStage', 'have-pet');
+              console.log('✅ [Auth] Customer is onboarded - going to home');
             } else if (hasName && !hasPets) {
               // Has profile but no pets - skip to pet step
               localStorage.setItem('customerOnboardingComplete', 'false');
               localStorage.setItem('customerJourneyStage', 'have-pet');
-              localStorage.setItem('customerProfile', JSON.stringify(profileResponse.profile));
+              localStorage.setItem('customerProfile', JSON.stringify(profile));
+              console.log('⚠️ [Auth] Customer has profile but no pets - showing pet profile');
             } else {
               localStorage.setItem('customerOnboardingComplete', 'false');
+              console.log('🆕 [Auth] New customer - will show onboarding');
             }
+          } else {
+            console.warn('⚠️ [Auth] No profile in response:', profileResponse);
+            // Customer doesn't exist yet - will be created by backend on first profile access
+            localStorage.setItem('customerOnboardingComplete', 'false');
           }
-        } catch {
-          // Customer doesn't exist yet - will be created by backend on first profile access
-          localStorage.setItem('customerOnboardingComplete', 'false');
+        } catch (profileError: any) {
+          console.error('❌ [Auth] Error fetching profile:', profileError);
+          // ✅ FIX: If profile fetch fails but customer exists, check localStorage for cached data
+          const cachedProfile = localStorage.getItem('customerProfile');
+          const cachedOnboarding = localStorage.getItem('customerOnboardingComplete');
+          
+          if (cachedProfile && cachedOnboarding === 'true') {
+            console.log('✅ [Auth] Using cached profile data');
+            // Keep existing onboarding status
+          } else {
+            // Customer doesn't exist yet - will be created by backend on first profile access
+            localStorage.setItem('customerOnboardingComplete', 'false');
+            console.log('🆕 [Auth] No cached profile - new customer');
+          }
         }
         
         router.push(redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/');
@@ -666,5 +701,20 @@ export default function AuthPage() {
       {/* Referral Code Modal Overlay - Alternative full-screen modal */}
       {/* This can be enabled if you prefer a modal approach */}
     </div>
+  );
+}
+
+export default function AuthPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-[#FF8C42]">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <div className="text-white text-lg">Loading...</div>
+        </div>
+      </div>
+    }>
+      <AuthPageContent />
+    </Suspense>
   );
 }

@@ -125,12 +125,77 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
       const rawBooking = result.booking || result.data?.booking || result;
       console.log('✅ [BOOKING-DETAIL] Raw booking loaded:', rawBooking);
       
+      // ✅ FIX: Parse notes for diagnostic bookings to extract test names
+      let diagnosticTests: any[] = [];
+      let diagnosticTestNames: string[] = [];
+      // ✅ FIX: Enhanced diagnostic detection - check multiple fields and keywords
+      const serviceTypeLower = (rawBooking.serviceType || '').toLowerCase();
+      const serviceTypeLower2 = (rawBooking.service_type || '').toLowerCase();
+      const serviceCategoryLower = (rawBooking.serviceCategory || rawBooking.service_category || '').toLowerCase();
+      const serviceIdLower = (rawBooking.serviceId || '').toLowerCase();
+      const serviceNameLower = (rawBooking.serviceName || rawBooking.service_name || '').toLowerCase();
+      
+      const isDiagnostic = serviceTypeLower === 'diagnostics' || 
+                         serviceTypeLower2 === 'diagnostics' || 
+                         serviceCategoryLower === 'diagnostics' || 
+                         serviceIdLower === 'diagnostics' ||
+                         serviceIdLower.includes('diagnostic') ||
+                         serviceNameLower.includes('diagnostic') ||
+                         serviceNameLower.includes('lab') ||
+                         serviceNameLower.includes('test');
+      
+      // ✅ FIX: Try multiple ways to get diagnostic tests
+      if (isDiagnostic) {
+        try {
+          // Method 1: Parse notes.tests
+          if (rawBooking.notes) {
+            const notesData = typeof rawBooking.notes === 'string' 
+              ? JSON.parse(rawBooking.notes || '{}') 
+              : (rawBooking.notes || {});
+            if (Array.isArray(notesData.tests) && notesData.tests.length > 0) {
+              diagnosticTests = notesData.tests;
+              diagnosticTestNames = diagnosticTests.map((t: any) => t.name || t.testName || t.test_name).filter(Boolean);
+              console.log('✅ [BOOKING-DETAIL] Found diagnostic tests from notes.tests:', diagnosticTestNames);
+            }
+          }
+          
+          // Method 2: Check selected_services for diagnostic tests
+          if (diagnosticTests.length === 0 && rawBooking.selected_services) {
+            const selectedServices = Array.isArray(rawBooking.selected_services) 
+              ? rawBooking.selected_services 
+              : (typeof rawBooking.selected_services === 'string' ? JSON.parse(rawBooking.selected_services || '[]') : []);
+            if (selectedServices.length > 0) {
+              diagnosticTests = selectedServices;
+              diagnosticTestNames = diagnosticTests.map((s: any) => s.name || s.testName || s.test_name || s.serviceName).filter(Boolean);
+              console.log('✅ [BOOKING-DETAIL] Found diagnostic tests from selected_services:', diagnosticTestNames);
+            }
+          }
+          
+          // Method 3: Check selectedServices (camelCase)
+          if (diagnosticTests.length === 0 && rawBooking.selectedServices) {
+            const selectedServices = Array.isArray(rawBooking.selectedServices) 
+              ? rawBooking.selectedServices 
+              : [];
+            if (selectedServices.length > 0) {
+              diagnosticTests = selectedServices;
+              diagnosticTestNames = diagnosticTests.map((s: any) => s.name || s.testName || s.test_name || s.serviceName).filter(Boolean);
+              console.log('✅ [BOOKING-DETAIL] Found diagnostic tests from selectedServices:', diagnosticTestNames);
+            }
+          }
+        } catch (e) {
+          console.warn('⚠️ [BOOKING-DETAIL] Failed to parse diagnostic tests:', e);
+        }
+      }
+      
       // ✅ FIX: Transform enriched booking data to flat fields the UI expects
       const bookingData = {
         ...rawBooking,
-        // Service fields
-        serviceName: rawBooking.serviceName || rawBooking.service?.name || rawBooking.service_name || 'Service',
+        // Service fields - for diagnostics, use test names instead of service name
+        serviceName: (isDiagnostic && diagnosticTestNames.length > 0)
+          ? diagnosticTestNames.join(', ') // Use test names for diagnostics
+          : (rawBooking.serviceName || rawBooking.service?.name || rawBooking.service_name || 'Service'),
         serviceType: rawBooking.serviceType || rawBooking.service?.category || rawBooking.service_type,
+        serviceCategory: rawBooking.serviceCategory || rawBooking.service?.category || rawBooking.service_category,
         // ✅ FIX: Map service_type to serviceStyle, but don't default to 'at_center' for tele consultations
         serviceStyle: rawBooking.serviceStyle || rawBooking.service_style || rawBooking.service_type || null,
         duration: rawBooking.duration || rawBooking.service?.duration || rawBooking.duration_minutes || 60,
@@ -154,7 +219,19 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         completionOTP: rawBooking.completionOTP || rawBooking.otp_code,
         otpVerified: rawBooking.otpVerified || rawBooking.otp_verified,
         // Multi-service: pass through for list display and total
-        selectedServices: rawBooking.selectedServices ?? (Array.isArray(rawBooking.selected_services) ? rawBooking.selected_services : []),
+        // ✅ FIX: For diagnostics, if no selectedServices but we have tests, create them
+        // Also ensure selectedServices is always populated for diagnostics with tests
+        selectedServices: (isDiagnostic && diagnosticTests.length > 0)
+          ? diagnosticTests.map((test: any) => ({
+              id: test.id || test.testId || test.test_id || `test-${Date.now()}-${Math.random()}`,
+              serviceId: test.serviceId || test.service_id || rawBooking.serviceId,
+              name: test.name || test.testName || test.test_name || test.serviceName || 'Diagnostic Test',
+              serviceName: test.name || test.testName || test.test_name || test.serviceName || 'Diagnostic Test',
+              price: parseFloat(test.price || test.amount || test.unitPrice || 0),
+              duration: parseInt(test.duration || test.duration_minutes || 30),
+              quantity: parseInt(test.quantity || 1),
+            }))
+          : (rawBooking.selectedServices ?? (Array.isArray(rawBooking.selected_services) ? rawBooking.selected_services : [])),
         totalDurationMinutes: rawBooking.totalDurationMinutes ?? rawBooking.total_duration_minutes,
         totalAmount: rawBooking.totalAmount ?? rawBooking.total_amount ?? rawBooking.amount,
       };
@@ -496,11 +573,33 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                       {booking.serviceType === 'walker' ? '🐕' : 
                        booking.serviceType === 'grooming' ? '✂️' : 
                        booking.serviceType === 'vet' ? '🏥' : 
+                       booking.serviceType === 'diagnostics' ? '🧪' :
                        booking.serviceType === 'boarding' ? '🏠' : '🐾'}
                     </div>
                     <div className="flex-1">
                       <h4 className="font-semibold text-gray-800">
-                        {booking.serviceName || 'Service'}
+                        {/* ✅ FIX: For diagnostics, show test names from notes if available, otherwise fallback to serviceName */}
+                        {(() => {
+                          const isDiagnostic = booking.serviceType === 'diagnostics' || 
+                                               (booking.serviceType || '').toLowerCase().includes('diagnostic');
+                          if (isDiagnostic && booking.notes) {
+                            try {
+                              const notesData = typeof booking.notes === 'string' 
+                                ? JSON.parse(booking.notes || '{}') 
+                                : (booking.notes || {});
+                              const tests = Array.isArray(notesData.tests) ? notesData.tests : [];
+                              if (tests.length > 0) {
+                                const testNames = tests.map((t: any) => t.name || t.testName || t.test_name).filter(Boolean);
+                                if (testNames.length > 0) {
+                                  return testNames.join(', ');
+                                }
+                              }
+                            } catch (e) {
+                              console.warn('Failed to parse notes for test names:', e);
+                            }
+                          }
+                          return booking.serviceName || 'Service';
+                        })()}
                       </h4>
                       <p className="text-sm text-gray-600">
                         {booking.duration ? `${booking.duration} min` : ''} 
@@ -842,14 +941,49 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               )}
 
               {/* Diagnostics: View Reports Button - For diagnostics bookings with ready reports */}
-              {(booking.serviceId === 'diagnostics' || booking.serviceType === 'diagnostics') && 
-               ['reports_ready', 'completed'].includes(booking.status) && (
+              {(() => {
+                // ✅ FIX: More robust detection of diagnostic bookings
+                const isDiagnostic = 
+                  booking.serviceId === 'diagnostics' || 
+                  booking.serviceType === 'diagnostics' ||
+                  booking.serviceCategory === 'diagnostics' ||
+                  booking.service_category === 'diagnostics' ||
+                  (booking.serviceName && booking.serviceName.toLowerCase().includes('diagnostic')) ||
+                  (booking.service?.category && booking.service.category.toLowerCase().includes('diagnostic')) ||
+                  (booking.service?.name && booking.service.name.toLowerCase().includes('diagnostic'));
+                
+                // ✅ FIX: Case-insensitive status check - handle multiple formats
+                const statusStr = (booking.status || '').toString();
+                const statusLower = statusStr.toLowerCase().replace(/\s/g, '_').replace(/-/g, '_');
+                const hasReportsReady = 
+                  statusLower === 'reports_ready' || 
+                  statusLower === 'reportsready' ||
+                  statusLower === 'completed' ||
+                  statusStr === 'Reports_ready' ||
+                  statusStr === 'Reports Ready' ||
+                  (statusLower.includes('report') && statusLower.includes('ready')) ||
+                  statusLower === 'ready';
+                
+                const shouldShow = isDiagnostic && hasReportsReady;
+                console.log('🔍 [BOOKING-DETAIL] View Reports Button Check:', {
+                  isDiagnostic,
+                  status: booking.status,
+                  statusLower,
+                  hasReportsReady,
+                  shouldShow,
+                  serviceId: booking.serviceId,
+                  serviceType: booking.serviceType,
+                  serviceCategory: booking.serviceCategory,
+                });
+                
+                return shouldShow;
+              })() && (
                 <Button
                   onClick={() => {
                     onNavigate?.('diagnostics-reports', { bookingId: booking.id });
                     onClose();
                   }}
-                  className="w-full bg-teal-500 hover:bg-teal-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                  className="w-full bg-teal-500 hover:bg-teal-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors mb-3"
                 >
                   <FileText className="w-5 h-5" />
                   View Lab Reports

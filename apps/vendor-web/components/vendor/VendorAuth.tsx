@@ -238,7 +238,40 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         verifyPayload.referralCode = referralCode.trim();
         localStorage.setItem('pendingReferralCode', referralCode.trim());
       }
-      const verifyData = await apiClient.post<any>('/auth/verify-otp', verifyPayload);
+      
+      // ✅ FIX: Add retry logic for timeout/503 errors (max 2 retries)
+      let verifyData: any;
+      let lastError: any;
+      const maxRetries = 2;
+      
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          if (attempt > 0) {
+            console.log(`🔄 [VendorAuth] Retry attempt ${attempt} of ${maxRetries}...`);
+            // Wait before retry (exponential backoff: 1s, 2s)
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          }
+          
+          verifyData = await apiClient.post<any>('/auth/verify-otp', verifyPayload);
+          // Success - break out of retry loop
+          break;
+        } catch (err: any) {
+          lastError = err;
+          const isTimeoutError = err.statusCode === 503 || 
+                                err.message?.includes('timeout') || 
+                                err.message?.includes('took too long') ||
+                                err.message?.includes('temporarily unavailable');
+          
+          // If it's a timeout error and we have retries left, continue
+          if (isTimeoutError && attempt < maxRetries) {
+            console.warn(`⚠️ [VendorAuth] Timeout error on attempt ${attempt + 1}, will retry...`);
+            continue;
+          }
+          
+          // If it's not a timeout error, or we're out of retries, throw
+          throw err;
+        }
+      }
       
       console.log('📋 [VendorAuth] OTP verification result:', verifyData);
       
@@ -365,7 +398,17 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       });
     } catch (error: any) {
       console.error('❌ [VendorAuth] Login error:', error);
-      setError(error.message || 'Network error. Please try again.');
+      
+      // ✅ FIX: Provide better error messages for timeout/503 errors
+      let errorMessage = error.message || 'Network error. Please try again.';
+      
+      if (error.statusCode === 503 || error.message?.includes('timeout') || error.message?.includes('took too long')) {
+        errorMessage = 'The request took too long. Please check your connection and try again.';
+      } else if (error.message?.includes('temporarily unavailable')) {
+        errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
+      }
+      
+      setError(errorMessage);
       setLoading(false);
     }
   };

@@ -19,8 +19,8 @@ function getRuntimeConfig(): RuntimeConfig {
   return window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
 }
 
-/** Deployed API URL (WarmpawzStack-dev). Override via runtime config or NEXT_PUBLIC_API_BASE_URL. */
-const SERVERLESS_API_URL = 'https://rrg9107m3d.execute-api.ap-south-1.amazonaws.com';
+/** Deployed API URL (Main API Gateway). Override via runtime config or NEXT_PUBLIC_API_BASE_URL. */
+const SERVERLESS_API_URL = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
 
 /**
  * Get the API Base URL from runtime config (deployed) or environment (local dev)
