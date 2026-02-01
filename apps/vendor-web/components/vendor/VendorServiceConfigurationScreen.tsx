@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Plus, Save, Check, AlertCircle, Clock, DollarSign, Info, Package, ChevronDown, ChevronUp, X, Edit, Trash2, Search, Stethoscope, Scissors, Heart, Activity, Sparkles, GraduationCap, Home, Phone, Syringe, Pill, FileText, Camera, MapPin, Dog, Cat, Users, Building2 } from 'lucide-react';
+import { ArrowLeft, Plus, Save, Check, AlertCircle, Clock, DollarSign, Info, Package, ChevronDown, ChevronUp, X, Edit, Trash2, Search, Stethoscope, Scissors, Heart, Activity, Sparkles, GraduationCap, Home, Phone, Syringe, Pill, FileText, Camera, MapPin, Dog, Cat, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -30,6 +30,7 @@ interface VendorServiceConfigurationScreenProps {
   roleId?: string | null; // ✅ Optional: pass from parent (e.g. fetched from /vendor/:id/services)
   roleName?: string | null; // ✅ Role name for role-based labels (e.g. "Training center booking")
   onBack: () => void;
+  onBrowseCatalog?: () => void; // ✅ Optional: navigate to Browse Catalog from inside config screen
 }
 
 interface Service {
@@ -73,7 +74,8 @@ export function VendorServiceConfigurationScreen({
   roleConfig,
   roleId: roleIdProp,
   roleName: roleNameProp,
-  onBack 
+  onBack,
+  onBrowseCatalog,
 }: VendorServiceConfigurationScreenProps) {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
@@ -977,10 +979,10 @@ export function VendorServiceConfigurationScreen({
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-24">
-        {/* Header */}
+        {/* Header - Service Management > [Style] with Browse Catalog link */}
         <div className="p-4 bg-white border-b sticky top-0 z-10">
           <div className="flex items-center gap-3 mb-3">
-            <button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
+            <button onClick={onBack} className="w-8 h-8 flex items-center justify-center" title="Back to Service Management">
               <ArrowLeft className="w-5 h-5 text-gray-700" />
             </button>
             <div className="flex-1">
@@ -988,8 +990,18 @@ export function VendorServiceConfigurationScreen({
                 <span className="text-xl">{getStyleIcon()}</span>
                 <h1 className="font-semibold text-gray-900">{getStyleName()}</h1>
               </div>
-              <p className="text-xs text-gray-500">{vendorData?.businessName || vendorData?.fullName}</p>
+              <p className="text-xs text-gray-500">Service Management · {vendorData?.businessName || vendorData?.fullName}</p>
             </div>
+            {onBrowseCatalog && (
+              <button
+                onClick={onBrowseCatalog}
+                className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                title="Browse platform catalog"
+              >
+                <Package className="w-4 h-4" />
+                Add from Catalog
+              </button>
+            )}
           </div>
 
           {/* ✅ Search Bar */}
@@ -1051,23 +1063,6 @@ export function VendorServiceConfigurationScreen({
                 </Button>
               )}
 
-              {/* PHASE 1.1: Room Management Button (for at_center services) */}
-              {serviceStyle === 'at_center' && (
-                <Button
-                  onClick={() => {
-                    if (typeof window !== 'undefined') {
-                      window.location.href = `/rooms?serviceStyle=${serviceStyle}`;
-                    } else {
-                      toast.info('Please go to Room Management to configure consultation rooms');
-                    }
-                  }}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white text-sm"
-                >
-                  <Building2 className="w-4 h-4 mr-2" />
-                  Manage Consultation Rooms
-                </Button>
-              )}
-              
               <button
                 onClick={() => setShowBulkActions(!showBulkActions)}
                 className="w-full text-xs font-medium text-[#FF8C42] py-2 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors"
