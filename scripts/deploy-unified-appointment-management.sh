@@ -9,9 +9,12 @@ echo "🚀 Deploying Unified Appointment Management Component (Vendor Web)..."
 echo "======================================================================"
 echo ""
 
-# Configuration
+# Configuration - ONLY official CloudFront URLs (do not create or discover new URLs)
+# Official Vendor: https://d1s6ykkj381k58.cloudfront.net
 APP_NAME="vendor-web"
 S3_BUCKET="warmpawz-dev-vendor-frontend-ap-south-1"
+CLOUDFRONT_DIST_ID="E95171GX1I6HN"
+CLOUDFRONT_URL="https://d1s6ykkj381k58.cloudfront.net"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -33,24 +36,7 @@ if [ ! -f "$COMPONENT_PATH" ]; then
 fi
 
 echo -e "${GREEN}✅ Component found: ${COMPONENT_PATH}${NC}"
-
-# Get CloudFront distribution ID
-echo -e "${BLUE}📡 Getting CloudFront distribution...${NC}"
-CLOUDFRONT_DIST_ID=$(aws cloudfront list-distributions \
-  --query "DistributionList.Items[?Origins.Items[?DomainName==\`${S3_BUCKET}.s3.ap-south-1.amazonaws.com\`]].Id" \
-  --output text 2>/dev/null | awk '{print $1}' | head -1 || echo "")
-
-if [ -z "$CLOUDFRONT_DIST_ID" ] || [ "$CLOUDFRONT_DIST_ID" = "None" ]; then
-  echo -e "${YELLOW}⚠️  Could not find CloudFront distribution for ${S3_BUCKET}${NC}"
-  echo -e "${YELLOW}   Continuing with build only...${NC}"
-  CLOUDFRONT_DIST_ID=""
-else
-  CLOUDFRONT_URL=$(aws cloudfront list-distributions \
-    --query "DistributionList.Items[?Id==\`${CLOUDFRONT_DIST_ID}\`].DomainName" \
-    --output text 2>/dev/null | awk '{print $1}' | head -1 || echo "")
-  echo -e "${GREEN}✅ CloudFront Distribution: ${CLOUDFRONT_DIST_ID}${NC}"
-  echo -e "${GREEN}   URL: ${CLOUDFRONT_URL}${NC}"
-fi
+echo -e "${GREEN}✅ CloudFront (official): ${CLOUDFRONT_URL}${NC}"
 
 # Step 1: Build the app
 echo ""
@@ -156,9 +142,7 @@ echo -e "${BLUE}📋 Deployment Summary:${NC}"
 echo -e "   Component: UniversalAppointmentManagement"
 echo -e "   Location: apps/${APP_NAME}/components/shared/"
 echo -e "   S3 Bucket: ${S3_BUCKET}"
-if [ -n "$CLOUDFRONT_URL" ]; then
-  echo -e "   CloudFront URL: https://${CLOUDFRONT_URL}"
-fi
+echo -e "   CloudFront URL: ${CLOUDFRONT_URL}"
 echo -e "   API Endpoint: ${API_ENDPOINT}"
 echo ""
 echo -e "${GREEN}🎉 Deployment complete!${NC}"

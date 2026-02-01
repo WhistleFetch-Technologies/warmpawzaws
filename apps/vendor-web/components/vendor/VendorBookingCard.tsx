@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { 
   Phone, 
   Video, 
@@ -44,7 +45,7 @@ export function VendorBookingCard({
   onOpenChat,
   onOpenPrescription,
 }: BookingCardProps) {
-  
+  const router = useRouter();
   const isVet = hasVendorRole(vendorData, ['veterinarian', 'vet']);
   const isDogWalking = booking.serviceName?.toLowerCase().includes('walk') || 
                       booking.serviceName?.toLowerCase().includes('walking');
@@ -176,7 +177,7 @@ export function VendorBookingCard({
         {/* Call Button - TELE ONLY */}
         {booking.communicationType === 'video' && booking.serviceType === 'tele' && booking.status !== 'completed' && (
           <button
-            onClick={() => alert('Video call interface would open here.\n\nIntegrate with your video call provider (Jitsi, Agora, Twilio, etc.)')}
+            onClick={() => router.push(`/video/${booking.bookingId || booking.id}`)}
             className="flex-1 min-w-[100px] py-2 px-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1"
           >
             <Video className="w-3.5 h-3.5" />

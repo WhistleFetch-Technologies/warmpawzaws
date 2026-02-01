@@ -312,11 +312,25 @@ export default function ServiceCatalogPage() {
     { id: 'all', label: 'All Styles', icon: 'All' },
   ];
 
-  const ROLES = [
-    'veterinarian', 'vet_clinic', 'pet_groomer', 'pet_trainer', 'pet_walker',
-    'pet_sitter', 'pet_boarder', 'pet_cafe', 'pharmacy', 'ambulance',
-    'diagnostics_center', 'pet_photographer', 'pet_transport',
+  // ✅ FIX: Canonical roles (post-migration 250/521/522) - fetch active roles from API
+  const CANONICAL_ROLES_FALLBACK = [
+    'vet_solo', 'vet_clinic', 'groomer_solo', 'groomer_center', 'trainer_solo', 'trainer_center',
+    'walker', 'sitter', 'boarding', 'cafe', 'pharmacy', 'ambulance', 'photographer', 'resort',
+    'breeder', 'sunset', 'adoption_center', 'seller', 'relocation', 'diagnostics_center',
+    'nutritionist', 'nutritionist_center', 'insurance', 'holiday', 'event_organizer',
   ];
+  const [catalogRoles, setCatalogRoles] = useState<string[]>(CANONICAL_ROLES_FALLBACK);
+  useEffect(() => {
+    apiClient.get<any>('/admin/roles').then((r: any) => {
+      const roles = r?.roles || r?.data || [];
+      const names = Array.isArray(roles) 
+        ? roles.filter((x: any) => x.isActive !== false && x.is_active !== false)
+          .map((x: any) => x.name || x.roleCode || x.roleId).filter(Boolean)
+        : [];
+      if (names.length > 0) setCatalogRoles(names);
+    }).catch(() => {});
+  }, []);
+  const ROLES = catalogRoles;
 
   return (
     <AdminLayout>

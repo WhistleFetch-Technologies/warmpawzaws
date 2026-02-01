@@ -105,7 +105,12 @@ export function AddServiceModal({
   const loadRoles = async () => {
     try {
       const data = await apiClient.get<any>('/admin/roles');
-      setRoles(data.roles || []);
+      const allRoles = data.roles || data?.data || [];
+      // ✅ FIX: Filter to active roles only (canonical roles post-migration)
+      const activeRoles = Array.isArray(allRoles) 
+        ? allRoles.filter((r: any) => r.isActive !== false && r.is_active !== false)
+        : [];
+      setRoles(activeRoles);
     } catch (error) {
       console.error('Error loading roles:', error);
     }

@@ -444,13 +444,14 @@ export function registerVendorDashboardMissingEndpoints(app: Hono) {
 
       const bookings = await query(
         `SELECT b.*, p.name as pet_name, p.species, p.breed,
-                c.name as customer_name, c.phone as customer_phone,
-                s.name as service_name,
+                c.full_name as customer_name, c.phone as customer_phone,
+                COALESCE(s.name, vs.service_name) as service_name,
                 st.name as staff_name
          FROM bookings b
          LEFT JOIN pets p ON b.pet_id = p.id
          LEFT JOIN customers c ON b.customer_id = c.id
          LEFT JOIN services s ON b.service_id = s.id
+         LEFT JOIN vendor_services vs ON vs.id = b.service_id
          LEFT JOIN staff st ON b.staff_id = st.id
          WHERE b.vendor_id = $1 
            AND b.booking_date = $2

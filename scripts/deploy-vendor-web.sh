@@ -6,10 +6,10 @@ set -e
 
 echo "🚀 Deploying vendor-web to AWS dev environment..."
 
-# Configuration - ONLY use official Vendor CloudFront URL
+# Configuration - ONLY official CloudFront URLs (do not create or discover new URLs)
+# Official Vendor: https://d1s6ykkj381k58.cloudfront.net
 APP_NAME="vendor-web"
 S3_BUCKET="warmpawz-dev-vendor-frontend-ap-south-1"
-# Official Vendor CloudFront (ONLY this URL for vendor component)
 CLOUDFRONT_DIST_ID="E95171GX1I6HN"
 CLOUDFRONT_URL="https://d1s6ykkj381k58.cloudfront.net"
 

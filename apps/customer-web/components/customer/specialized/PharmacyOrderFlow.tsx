@@ -24,6 +24,7 @@ import {
   Key, Eye, EyeOff, Copy, User
 } from 'lucide-react';
 import { DeliveryOTPVerification } from '../DeliveryOTPVerification';
+import { AddAddressModal } from '../shared/AddAddressModal';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -88,6 +89,35 @@ interface Invoice {
   totalAmount: number;
 }
 
+/** Resolve lat/lng from an address (API may return coordinates in latitude/longitude, lat/lng, or coordinates object/JSON). */
+function getAddressLatLng(addr: any): { lat: number; lng: number } | null {
+  if (!addr) return null;
+  let lat = addr.latitude ?? addr.lat;
+  let lng = addr.longitude ?? addr.lng;
+  if (lat != null && lng != null && !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lng))) {
+    return { lat: Number(lat), lng: Number(lng) };
+  }
+  const coords = addr.coordinates;
+  if (coords) {
+    if (typeof coords === 'string') {
+      try {
+        const parsed = JSON.parse(coords);
+        lat = parsed.lat ?? parsed.latitude;
+        lng = parsed.lng ?? parsed.longitude;
+      } catch {
+        return null;
+      }
+    } else {
+      lat = coords.lat ?? coords.latitude;
+      lng = coords.lng ?? coords.longitude;
+    }
+    if (lat != null && lng != null && !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lng))) {
+      return { lat: Number(lat), lng: Number(lng) };
+    }
+  }
+  return null;
+}
+
 export function PharmacyOrderFlow({
   customerPhone,
   customerId,
@@ -122,6 +152,9 @@ export function PharmacyOrderFlow({
   
   // Notes
   const [notes, setNotes] = useState('');
+  
+  // Add address modal (when no addresses)
+  const [showAddAddressModal, setShowAddAddressModal] = useState(false);
   
   // Delivery tracking & OTP state
   const [deliveryStatus, setDeliveryStatus] = useState<string>('pending');
@@ -211,7 +244,10 @@ export function PharmacyOrderFlow({
 
   const loadAddresses = async () => {
     try {
-      const res = await apiClient.get<any>(`/customer/${customerPhone}/addresses`);
+      // Use phone query param for address lookup (customer may be identified by phone)
+      const res = await apiClient.get<any>(
+        `/customer/addresses?phone=${encodeURIComponent(customerPhone)}`
+      );
       const addressList = res.addresses || [];
       setAddresses(addressList);
       
@@ -266,12 +302,12 @@ export function PharmacyOrderFlow({
       return;
     }
 
-    const lat = selectedAddress.latitude ?? selectedAddress.lat;
-    const lng = selectedAddress.longitude ?? selectedAddress.lng;
-    if (lat == null || lng == null || Number.isNaN(Number(lat)) || Number.isNaN(Number(lng))) {
-      toast.error('Selected address must have location. Please choose an address with map location or add a new one.');
+    const latLng = getAddressLatLng(selectedAddress);
+    if (!latLng) {
+      toast.error('Selected address must have a map location. Please select an address added with Google search or add a new one.');
       return;
     }
+    const { lat, lng } = latLng;
 
     if (!prescriptionUrl && !prescriptionId) {
       toast.error('Please upload a prescription');
@@ -601,24 +637,46 @@ export function PharmacyOrderFlow({
                 Delivery Address
               </h2>
               
-              <div className="space-y-3">
-                {addresses.map((addr) => (
-                  <button
-                    key={addr.id}
-                    onClick={() => setSelectedAddress(addr)}
-                    className={`w-full text-left p-4 rounded-xl border-2 transition ${
-                      selectedAddress?.id === addr.id
-                        ? 'border-[#FF8C42] bg-orange-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
+              {addresses.length === 0 ? (
+                <div className="text-center py-8">
+                  <MapPin className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-600 mb-4">No delivery address saved. Add one to continue.</p>
+                  <Button
+                    onClick={() => setShowAddAddressModal(true)}
+                    className="bg-[#FF8C42] hover:bg-[#E67A35]"
                   >
-                    <p className="font-medium text-gray-900">{addr.label || 'Home'}</p>
-                    <p className="text-sm text-gray-500 mt-1">
-                      {addr.addressLine1 || addr.address}, {addr.city} - {addr.pincode}
-                    </p>
-                  </button>
-                ))}
-              </div>
+                    <MapPin className="w-4 h-4 mr-2" />
+                    Add Delivery Address
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {addresses.map((addr) => (
+                    <button
+                      key={addr.id}
+                      onClick={() => setSelectedAddress(addr)}
+                      className={`w-full text-left p-4 rounded-xl border-2 transition ${
+                        selectedAddress?.id === addr.id
+                          ? 'border-[#FF8C42] bg-orange-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <p className="font-medium text-gray-900">{addr.label || 'Home'}</p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        {addr.addressLine1 || addr.address}, {addr.city} - {addr.pincode}
+                      </p>
+                    </button>
+                  ))}
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowAddAddressModal(true)}
+                    className="w-full border-dashed border-2 border-gray-300 py-4"
+                  >
+                    <MapPin className="w-4 h-4 mr-2" />
+                    Add New Address
+                  </Button>
+                </div>
+              )}
             </Card>
 
             <Card className="bg-white rounded-2xl p-5 border border-gray-100">
@@ -718,7 +776,7 @@ export function PharmacyOrderFlow({
               pharmaciesPending={broadcastStatus.notifiedPharmaciesCount}
               pharmaciesRejected={0}
               isSearching={true}
-              customerLocation={selectedAddress ? { lat: selectedAddress.latitude ?? selectedAddress.lat, lng: selectedAddress.longitude ?? selectedAddress.lng } : undefined}
+              customerLocation={selectedAddress ? (() => { const ll = getAddressLatLng(selectedAddress); return ll ? { lat: ll.lat, lng: ll.lng } : undefined; })() : undefined}
               pharmacies={broadcasts}
             />
             <p className="text-center text-gray-500 text-sm">
@@ -882,18 +940,21 @@ export function PharmacyOrderFlow({
             )}
 
             {/* Google Maps live tracking - when out for delivery and we have delivery address */}
-            {isOutForDelivery && orderId && selectedAddress && (
-              <LiveOrderTracking
-                orderId={orderId}
-                orderType="pharmacy"
-                deliveryAddress={{
-                  lat: selectedAddress.latitude ?? selectedAddress.lat,
-                  lng: selectedAddress.longitude ?? selectedAddress.lng,
-                  address: [selectedAddress.addressLine1, selectedAddress.city, selectedAddress.pincode].filter(Boolean).join(', '),
-                }}
-                onBack={onBack}
-              />
-            )}
+            {isOutForDelivery && orderId && selectedAddress && (() => {
+              const ll = getAddressLatLng(selectedAddress);
+              return ll ? (
+                <LiveOrderTracking
+                  orderId={orderId}
+                  orderType="pharmacy"
+                  deliveryAddress={{
+                    lat: ll.lat,
+                    lng: ll.lng,
+                    address: [selectedAddress.addressLine1, selectedAddress.city, selectedAddress.pincode].filter(Boolean).join(', '),
+                  }}
+                  onBack={onBack}
+                />
+              ) : null;
+            })()}
 
             {/* Delivery OTP Verification - Show when out for delivery */}
             {isOutForDelivery && orderId && deliveryOtp && !otpVerified && (
@@ -966,6 +1027,32 @@ export function PharmacyOrderFlow({
         )}
       </main>
     </div>
+
+    {/* Add Address Modal - when no addresses or add new */}
+    <AddAddressModal
+      phone={customerPhone}
+      isOpen={showAddAddressModal}
+      onClose={() => setShowAddAddressModal(false)}
+      onSuccess={(newAddr) => {
+        setShowAddAddressModal(false);
+        // Normalize and add to list, then reload to get full data
+        const normalized = {
+          id: newAddr?.id || newAddr?.address_id,
+          label: newAddr?.label || newAddr?.address_type || 'home',
+          addressLine1: newAddr?.addressLine1 || newAddr?.address_line1 || newAddr?.address,
+          address: newAddr?.addressLine1 || newAddr?.address_line1 || newAddr?.address,
+          city: newAddr?.city,
+          state: newAddr?.state,
+          pincode: newAddr?.pincode,
+          coordinates: newAddr?.coordinates,
+          latitude: newAddr?.latitude ?? (typeof newAddr?.coordinates === 'string' ? (() => { try { const c = JSON.parse(newAddr.coordinates); return c?.lat ?? c?.latitude; } catch { return null; } })() : newAddr?.coordinates?.lat),
+          longitude: newAddr?.longitude ?? (typeof newAddr?.coordinates === 'string' ? (() => { try { const c = JSON.parse(newAddr.coordinates); return c?.lng ?? c?.longitude; } catch { return null; } })() : newAddr?.coordinates?.lng),
+        };
+        setAddresses((prev) => [...prev.filter((a) => a.id !== normalized.id), normalized]);
+        setSelectedAddress(normalized);
+        loadAddresses(); // Reload to ensure we have complete data
+      }}
+    />
   );
 }
 

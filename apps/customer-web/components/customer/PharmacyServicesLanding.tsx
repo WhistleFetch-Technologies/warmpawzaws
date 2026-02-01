@@ -129,7 +129,7 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
         stats={dashboardStats}
         onBack={onBack}
         showBackButton={true}
-        headerColor="bg-gradient-to-r from-pink-600 via-pink-700 to-pink-800"
+        headerColor="bg-[#FF8C42]"
       />
 
       {/* Main Content */}
@@ -348,46 +348,16 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
                 </Card>
               ))
             ) : (
-              // Placeholder pharmacies
-              [
-                { name: 'PetMeds Pharmacy', orders: 1200, deliveryTime: 25 },
-                { name: 'VetCare Pharmacy', orders: 980, deliveryTime: 30 },
-                { name: 'Healthy Paws Pharmacy', orders: 1550, deliveryTime: 20 }
-              ].map((pharmacy, i) => (
-                <Card 
-                  key={i}
-                  className="p-4 cursor-pointer hover:shadow-md transition-all bg-white border border-gray-100 shadow-sm"
-                  onClick={() => onNavigate?.('pharmacy_store')}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-16 h-16 bg-gradient-to-br from-pink-600 to-pink-700 rounded-xl flex items-center justify-center text-white text-xl font-bold">
-                      {pharmacy.name.charAt(0)}
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold mb-1">{pharmacy.name}</h3>
-                      <p className="text-xs text-gray-500 mb-2">Licensed • Home Delivery</p>
-                      <div className="flex items-center gap-3 text-xs">
-                        <div className="flex items-center gap-1 text-amber-500">
-                          <Star className="w-3 h-3 fill-current" />
-                          <span className="font-semibold">4.7</span>
-                          <span className="text-gray-400">({pharmacy.orders})</span>
-                        </div>
-                        <div className="flex items-center gap-1 text-gray-500">
-                          <MapPin className="w-3 h-3" />
-                          <span>{((i + 1) * 1.5).toFixed(1)}km</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="flex items-center gap-1 text-green-600 text-xs font-semibold mb-1">
-                        <Clock className="w-3 h-3" />
-                        <span>{pharmacy.deliveryTime} min</span>
-                      </div>
-                      <div className="text-xs text-gray-400">delivery</div>
-                    </div>
-                  </div>
-                </Card>
-              ))
+              <Card className="p-8 text-center bg-white border border-gray-100 shadow-sm">
+                <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-4">
+                  <MapPin className="w-8 h-8 text-gray-400" />
+                </div>
+                <h3 className="font-semibold text-gray-800 mb-2">No nearby pharmacies</h3>
+                <p className="text-gray-500 text-sm mb-4">Pharmacies will appear when available. You can still order medicine via Order Medicine.</p>
+                <Button onClick={() => onNavigate?.('pharmacy_order_flow')} className="bg-blue-600 hover:bg-blue-700">
+                  Order Medicine
+                </Button>
+              </Card>
             )}
           </div>
         </div>

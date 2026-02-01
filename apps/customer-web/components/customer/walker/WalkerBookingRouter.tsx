@@ -498,7 +498,7 @@ export function WalkerBookingRouter({
           steps={getStepIndicators()}
           onBack={handleBack}
           showBackButton={true}
-          headerColor="bg-gradient-to-r from-green-500 via-green-600 to-green-700"
+          headerColor="bg-[#FF8C42]"
         />
       )}
 
@@ -835,16 +835,18 @@ export function WalkerBookingRouter({
             <h2 className="text-lg font-bold text-gray-900">Booking Summary</h2>
             
             <div className="bg-white rounded-xl p-4 space-y-4">
-              {/* Service */}
+              {/* Service - with fallbacks for missing data */}
               <div className="flex items-center gap-3 pb-4 border-b">
                 <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-orange-100 text-[#FF8C42]">
                   <Home className="w-6 h-6" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-semibold">{selectedServiceOption?.name}</h3>
-                  <p className="text-sm text-gray-500">{selectedServiceOption?.duration} mins</p>
+                  <h3 className="font-semibold">{selectedServiceOption?.name || serviceName || 'Pet Walking'}</h3>
+                  {(selectedServiceOption?.duration ?? duration) > 0 && (
+                    <p className="text-sm text-gray-500">{selectedServiceOption?.duration ?? duration} mins</p>
+                  )}
                 </div>
-                <p className="font-bold">₹{selectedServiceOption?.price}</p>
+                <p className="font-bold">₹{(selectedServiceOption?.price ?? price ?? 0).toLocaleString('en-IN')}</p>
               </div>
 
               {/* Date & Time */}
@@ -886,7 +888,7 @@ export function WalkerBookingRouter({
             <div className="bg-white rounded-xl p-4">
               <div className="flex justify-between items-center text-lg">
                 <span className="font-bold">Total</span>
-                <span className="font-bold text-[#FF8C42]">₹{selectedServiceOption?.price}</span>
+                <span className="font-bold text-[#FF8C42]">₹{(selectedServiceOption?.price ?? price ?? 0).toLocaleString('en-IN')}</span>
               </div>
             </div>
 

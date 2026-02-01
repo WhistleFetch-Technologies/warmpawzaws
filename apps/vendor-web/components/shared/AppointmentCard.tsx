@@ -7,6 +7,7 @@
  */
 
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import { Clock, User, Phone, Home, Video, MapPin, MessageSquare, Navigation, CheckCircle2, Play, Radio, Map } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -65,6 +66,7 @@ export function AppointmentCard({
   showActions = true,
   className = '',
 }: AppointmentCardProps) {
+  const router = useRouter();
   const serviceType = appointment.serviceType?.toLowerCase();
   
   // Determine service style icon and colors
@@ -279,15 +281,19 @@ export function AppointmentCard({
               )}
 
               {serviceType === 'tele' && (
-                <a
-                  href={`https://meet.jit.si/warmpawz-${appointment.bookingId}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const bid = appointment.bookingId || appointment.id;
+                    if (bid) router.push(`/video/${bid}`);
+                  }}
                   className="flex-1 min-w-[80px] py-1.5 px-3 bg-purple-100 text-purple-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1 hover:bg-purple-200"
                 >
                   <Video className="w-3.5 h-3.5" />
                   Join
-                </a>
+                </button>
               )}
             </div>
           )}

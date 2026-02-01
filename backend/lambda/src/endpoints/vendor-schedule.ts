@@ -137,25 +137,27 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       } else {
         // Try with service_style first, then service_type
         try {
+          // ✅ FIX: Check both service_style (single) AND service_styles (array) for migrated slots
           scheduleSlots = await query(
             `SELECT *, time_window_start as start_time, time_window_end as end_time 
              FROM vendor_availability_v2
              WHERE vendor_id = $1
              AND day_of_week = $2
-             AND service_style = $3
-             AND is_enabled = true
-             ORDER BY time_window_start`,
+             AND (COALESCE(service_style, service_type) = $3 
+                  OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
+             AND COALESCE(is_enabled, is_available, true) = true
+             ORDER BY COALESCE(time_window_start, start_time)`,
             [vendorId, dayOfWeek, serviceStyle]
           );
         } catch (queryErr: any) {
-          if (queryErr.message?.includes('service_style')) {
+          if (queryErr.message?.includes('service_style') || queryErr.message?.includes('service_styles')) {
             scheduleSlots = await query(
               `SELECT *, start_time as time_window_start, end_time as time_window_end 
                FROM vendor_availability_v2
                WHERE vendor_id = $1
                AND day_of_week = $2
-               AND service_type = $3
-               AND is_available = true
+               AND (service_type = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
+               AND COALESCE(is_available, is_enabled, true) = true
                ORDER BY start_time`,
               [vendorId, dayOfWeek, serviceStyle]
             );

@@ -92,9 +92,9 @@ export function VendorLiveTrackingPopup({
   useEffect(() => {
     const fetchApiKey = async () => {
       try {
-        const response = await apiClient.get('/config/google-maps-api-key') as any;
-        if (response.apiKey) {
-          setGoogleMapsApiKey(response.apiKey);
+        const response = await apiClient.get('/config/google-maps-key') as any;
+        if (response?.apiKey || response?.key) {
+          setGoogleMapsApiKey(response.apiKey || response.key);
         }
       } catch (error) {
         console.warn('Could not fetch Google Maps API key:', error);

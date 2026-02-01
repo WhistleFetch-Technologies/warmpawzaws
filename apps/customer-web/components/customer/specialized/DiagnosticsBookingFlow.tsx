@@ -1,9 +1,16 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { TestTube, Calendar, Clock, FileText, Truck } from 'lucide-react';
+import { TestTube, Calendar, Clock, FileText, Truck, CreditCard } from 'lucide-react';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { toast } from 'sonner';
+
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
 
 interface DiagnosticsBookingFlowProps {
   vendorId: string;
@@ -42,20 +49,47 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
   const [selectedTime, setSelectedTime] = useState('');
   const [patientName, setPatientName] = useState('');
   const [patientAge, setPatientAge] = useState('');
+  const [selectedPetId, setSelectedPetId] = useState<string>('');
+  const [customerPets, setCustomerPets] = useState<{ id: string; name: string; species?: string; breed?: string; age?: string }[]>([]);
   const [address, setAddress] = useState('');
   const [preferredSampleType, setPreferredSampleType] = useState<'home' | 'center'>('center');
+
+  // Payment-before-booking: step 'form' | 'payment'; booking is created only after payment success
+  const [step, setStep] = useState<'form' | 'payment'>('form');
+  const [pendingBookingPayload, setPendingBookingPayload] = useState<Record<string, unknown> | null>(null);
+  const pendingPayloadRef = useRef<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     loadTests();
   }, [vendorId]);
 
+  // Load customer pets for optional "Link to pet" (so vendor sees full pet info)
+  useEffect(() => {
+    if (!customerPhone) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cust = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
+        const customerId = cust.customer?.id;
+        if (!customerId) return;
+        const petsRes = await apiClient.get<any>(`/customer/${customerId}/pets`);
+        const list = (petsRes.pets ?? petsRes.data ?? []).filter(Boolean);
+        if (!cancelled) setCustomerPets(list.map((p: any) => ({ id: p.id, name: p.name || p.pet_name, species: p.species || p.type, breed: p.breed, age: (p.age || p.age_years?.[0]) ?? p.age_years })));
+      } catch {
+        if (!cancelled) setCustomerPets([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [customerPhone]);
+
   const loadTests = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/diagnostics/tests`);
+      // publishedOnly=true: only tests with is_available=true (published) for booking
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/diagnostics/tests?publishedOnly=true`);
       
       if (response.success && response.tests) {
-        setTests(response.tests.filter((t: DiagnosticTest) => t.is_available));
+        setTests(response.tests);
       }
     } catch (err: any) {
       console.error('Error loading tests:', err);
@@ -104,19 +138,60 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
     return matchesSearch && matchesCategory;
   });
 
+  // Build booking payload (used for payment step and for create-after-payment)
+  const buildBookingPayload = async (): Promise<{ payload: Record<string, unknown>; customerId: string }> => {
+    const customerResponse = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
+    const customerId = customerResponse.customer?.id;
+    if (!customerId) {
+      throw new Error('Customer not found');
+    }
+    const selectedTestDetails = selectedTests.map(id => tests.find(t => t.id === id)).filter(Boolean);
+    const totalAmountNum = Number(getTotalPrice());
+    const payload: Record<string, unknown> = {
+      serviceId: 'diagnostics',
+      vendorId,
+      customerId,
+      serviceType: preferredSampleType === 'home' ? 'at_home' : 'at_center',
+      bookingType: 'scheduled',
+      bookingDate: selectedDate,
+      bookingTime: selectedTime,
+      address: preferredSampleType === 'home' ? address : undefined,
+      amount: totalAmountNum,
+      notes: JSON.stringify({
+        tests: selectedTestDetails.map(t => ({
+          id: t?.id,
+          name: t?.test_name,
+          code: t?.test_code,
+          category: t?.category,
+          price: t?.price,
+          is_free_home_collection: t?.is_free_home_collection,
+          home_collection_fee: t?.home_collection_fee,
+        })),
+        patientName,
+        patientAge,
+        preferredSampleType,
+        ...(selectedPetId ? { petId: selectedPetId } : {}),
+        homeCollectionFee: preferredSampleType === 'home' ? totalAmountNum - selectedTestDetails.reduce((s, t) => s + (Number(t?.price) ?? 0), 0) : 0,
+        preparationInstructions: selectedTestDetails.map(t => t?.preparation_instructions).filter(Boolean),
+      }),
+      totalAmount: totalAmountNum,
+    };
+    if (selectedPetId) payload.petId = selectedPetId;
+    return { payload, customerId };
+  };
+
+  // Form submit: go to payment step (do NOT create booking yet)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (selectedTests.length === 0) {
       setError('Please select at least one test');
       return;
     }
-
     if (!selectedDate || !selectedTime) {
       setError('Please select date and time');
       return;
     }
-
     if (!patientName.trim()) {
       setError('Patient name is required');
       return;
@@ -126,56 +201,153 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
     setError(null);
 
     try {
-      const customerResponse = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
-      const customerId = customerResponse.customer?.id;
+      const { payload, customerId } = await buildBookingPayload();
+      setPendingBookingPayload(payload);
+      pendingPayloadRef.current = payload;
+      setStep('payment');
+    } catch (err: any) {
+      console.error('Error preparing payment:', err);
+      setError(err.message || 'Failed to proceed');
+    } finally {
+      setProcessing(false);
+    }
+  };
 
-      if (!customerId) {
-        throw new Error('Customer not found');
+  // Load Razorpay checkout script (required before opening checkout)
+  const loadRazorpayScript = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if (typeof window === 'undefined') {
+        reject(new Error('Window not available'));
+        return;
+      }
+      if (window.Razorpay) {
+        resolve();
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load Razorpay'));
+      document.body.appendChild(script);
+    });
+  };
+
+  // Preload Razorpay when user reaches payment step so Pay button works immediately
+  useEffect(() => {
+    if (step === 'payment' && typeof window !== 'undefined' && !window.Razorpay) {
+      loadRazorpayScript().catch(() => {});
+    }
+  }, [step]);
+
+  // Payment step: create Razorpay order (no booking yet), then on success create booking
+  const handlePayNow = async () => {
+    if (!pendingBookingPayload || !pendingPayloadRef.current) {
+      setError('Booking details missing. Please go back and try again.');
+      return;
+    }
+
+    const payload = pendingPayloadRef.current;
+    const customerId = payload.customerId as string;
+    const amount = Number(payload.amount ?? payload.totalAmount ?? 0);
+    if (!customerId || amount <= 0) {
+      setError('Invalid booking details.');
+      return;
+    }
+
+    setProcessing(true);
+    setError(null);
+
+    try {
+      const orderRes = await apiClient.post<any>('/razorpay/create-order', {
+        type: 'diagnostics',
+        amount,
+        customerId,
+        vendorId,
+      }, undefined, 45000);
+
+      const orderId = orderRes?.orderId ?? orderRes?.data?.orderId;
+      const keyId = orderRes?.keyId ?? orderRes?.data?.keyId;
+      if (!orderId) {
+        throw new Error('Failed to create payment order');
       }
 
-      const selectedTestDetails = selectedTests.map(id => tests.find(t => t.id === id)).filter(Boolean);
-      
-      const totalAmountNum = Number(getTotalPrice());
-      const bookingData = {
-        serviceId: 'diagnostics',
-        vendorId,
-        customerId,
-        serviceType: preferredSampleType === 'home' ? 'at_home' : 'at_center',
-        bookingType: 'scheduled',
-        bookingDate: selectedDate,
-        bookingTime: selectedTime,
-        address: preferredSampleType === 'home' ? address : undefined,
-        notes: JSON.stringify({
-          tests: selectedTestDetails.map(t => ({
-            id: t?.id,
-            name: t?.test_name,
-            code: t?.test_code,
-            category: t?.category,
-            price: t?.price,
-            is_free_home_collection: t?.is_free_home_collection,
-            home_collection_fee: t?.home_collection_fee,
-          })),
-          patientName,
-          patientAge,
-          preferredSampleType,
-          homeCollectionFee: preferredSampleType === 'home' ? totalAmountNum - selectedTestDetails.reduce((s, t) => s + (Number(t?.price) ?? 0), 0) : 0,
-          preparationInstructions: selectedTestDetails.map(t => t?.preparation_instructions).filter(Boolean),
-        }),
-        totalAmount: totalAmountNum,
+      const options = {
+        key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
+        amount: amount * 100,
+        currency: 'INR',
+        name: 'Warmpawz',
+        description: 'Diagnostic tests booking',
+        order_id: orderId,
+        handler: async (response: any) => {
+          try {
+            await apiClient.post('/razorpay/verify-payment', {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+
+            const createPayload = { ...pendingPayloadRef.current };
+            let bookingResponse: any;
+            try {
+              bookingResponse = await apiClient.post<any>('/bookings/create', createPayload);
+            } catch (createErr: any) {
+              const statusCode = createErr?.statusCode ?? createErr?.status;
+              const apiMessage =
+                (typeof createErr?.response === 'object' && createErr.response?.error != null)
+                  ? (typeof createErr.response.error === 'string' ? createErr.response.error : createErr.response.error?.message)
+                  : createErr?.message;
+              const message = apiMessage || (statusCode === 409 ? 'This time slot is already booked. Please select a different date or time.' : 'Failed to create booking.');
+              setError(message);
+              toast.error(message);
+              setProcessing(false);
+              return;
+            }
+
+            const bookingId =
+              bookingResponse?.data?.bookingId ??
+              bookingResponse?.bookingId ??
+              bookingResponse?.booking?.id;
+            if (bookingResponse?.success && bookingId) {
+              toast.success('Payment successful! Booking confirmed.');
+              if (onSuccess) onSuccess(bookingId);
+            } else {
+              const msg = (typeof bookingResponse?.error === 'string' ? bookingResponse.error : bookingResponse?.error?.message) ?? 'Failed to create booking';
+              setError(msg);
+              toast.error(msg);
+            }
+          } catch (err: any) {
+            console.error('Payment verify or booking create failed:', err);
+            const msg = err?.message || 'Payment verified but booking failed. Please contact support.';
+            setError(msg);
+            toast.error(msg);
+          } finally {
+            setProcessing(false);
+          }
+        },
+        prefill: { contact: customerPhone },
+        theme: { color: '#FF8C42' },
+        modal: {
+          ondismiss: () => {
+            setProcessing(false);
+            toast.info('Payment cancelled');
+          },
+        },
       };
 
-      const bookingResponse = await apiClient.post<any>('/bookings/create', bookingData);
-
-      if (bookingResponse.success && bookingResponse.booking) {
-        if (onSuccess) {
-          onSuccess(bookingResponse.booking.id);
-        }
+      if (!window.Razorpay) {
+        await loadRazorpayScript();
+      }
+      if (window.Razorpay) {
+        const razorpay = new window.Razorpay(options);
+        razorpay.open();
       } else {
-        throw new Error(bookingResponse.error || 'Failed to create booking');
+        throw new Error('Payment gateway not loaded');
       }
     } catch (err: any) {
-      console.error('Error creating booking:', err);
-      setError(err.message || 'Failed to book diagnostic tests');
+      console.error('Payment error:', err);
+      setError(err?.message || 'Failed to start payment');
+      toast.error(err?.message || 'Failed to start payment');
     } finally {
       setProcessing(false);
     }
@@ -200,13 +372,86 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
             stats={dashboardStats}
             onBack={onBack}
             showBackButton={true}
-            headerColor="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700"
+            headerColor="bg-[#FF8C42]"
           />
         )}
         <div className="flex items-center justify-center p-8">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-3"></div>
             <p className="text-gray-600">Loading diagnostic tests...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Payment step: show order summary and Pay button (booking created only after payment success)
+  if (step === 'payment') {
+    const total = getTotalPrice();
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {onBack && (
+          <ServiceDashboardHeader
+            serviceName="Diagnostic Labs"
+            serviceSubtitle="Lab tests & diagnostics"
+            serviceIcon={TestTube}
+            iconColor="text-white"
+            stats={dashboardStats}
+            onBack={onBack}
+            showBackButton={true}
+            headerColor="bg-[#FF8C42]"
+          />
+        )}
+        <div className="max-w-md mx-auto px-4 pb-24">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4 mt-4">Payment</h2>
+          <p className="text-gray-600 mb-4">
+            Complete payment to confirm your diagnostic tests. Booking and time slot will be reserved only after successful payment.
+          </p>
+          <div className="bg-white rounded-xl shadow-sm p-4 mb-6">
+            <p className="font-semibold text-gray-900">{selectedTests.length} test(s) selected</p>
+            <p className="text-sm text-gray-600 mt-1">
+              {selectedTests.map(id => tests.find(t => t.id === id)?.test_name).filter(Boolean).join(', ')}
+            </p>
+            <p className="text-sm text-gray-500 mt-2">
+              {selectedDate} • {selectedTime} • {preferredSampleType === 'home' ? 'Home collection' : 'At center'}
+            </p>
+            <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-200">
+              <span className="font-semibold text-gray-900">Total</span>
+              <span className="text-xl font-bold text-orange-600">₹{total}</span>
+            </div>
+          </div>
+          {error && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 mb-4">
+              {error}
+              <p className="text-sm mt-2 text-red-600">Change date & time below and pay again to retry.</p>
+            </div>
+          )}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => { setStep('form'); setError(null); setPendingBookingPayload(null); pendingPayloadRef.current = null; }}
+              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+            >
+              {error ? 'Change date & time' : 'Back'}
+            </button>
+            <button
+              type="button"
+              onClick={handlePayNow}
+              disabled={processing}
+              className="flex-1 px-4 py-3 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {processing ? (
+                <>
+                  <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <CreditCard className="w-5 h-5" />
+                  Pay ₹{total}
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>
@@ -225,7 +470,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
           stats={dashboardStats}
           onBack={onBack}
           showBackButton={true}
-          headerColor="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700"
+          headerColor="bg-[#FF8C42]"
         />
       )}
       
@@ -407,6 +652,28 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
             </div>
           </div>
 
+          {/* Optional: Link to pet so vendor sees full pet profile */}
+          {customerPets.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-0">
+                Link to my pet (optional)
+              </label>
+              <select
+                value={selectedPetId}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedPetId(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              >
+                <option value="">No pet linked</option>
+                {customerPets.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}{p.species ? ` (${p.species})` : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Linking a pet helps the diagnostic center see breed and history.</p>
+            </div>
+          )}
+
           {/* Sample Collection Type */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -521,7 +788,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
             disabled={processing || selectedTests.length === 0}
             className="flex-1 px-0 py-0 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
-            {processing ? 'Booking...' : `Book Tests - ₹${getTotalPrice()}`}
+            {processing ? 'Preparing...' : `Continue to Payment - ₹${getTotalPrice()}`}
           </button>
         </div>
       </form>

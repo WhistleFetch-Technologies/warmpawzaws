@@ -52,6 +52,15 @@ export function registerPrescriptionEndpoints(app: Hono) {
         createdByRole,
       } = prescriptionData;
 
+      // Resolve customerId from booking when missing or not a valid UUID (e.g. AddVetSummaryModal sends only bookingId)
+      if ((!customerId || !isValidUUID(customerId)) && bookingId && isValidUUID(bookingId)) {
+        const bookings = await select('bookings', { id: bookingId });
+        if (bookings.length > 0 && (bookings[0] as any).customer_id) {
+          prescriptionData.customerId = (bookings[0] as any).customer_id;
+          console.log(`[Prescription] Resolved customerId from booking ${bookingId}: ${prescriptionData.customerId}`);
+        }
+      }
+
       // Check if vendor has prescription capability (try both naming conventions)
       let hasPrescriptionCapability = await checkVendorCapability(vendorId, 'prescription_create') || 
                                       await checkVendorCapability(vendorId, 'prescriptions');

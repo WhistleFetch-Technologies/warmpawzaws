@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { ArrowLeft, Settings, User, Building2, CreditCard, Clock, Bell, Power } from 'lucide-react';
 
@@ -37,7 +38,16 @@ interface VendorSettingsPageProps {
 }
 
 export function VendorSettingsPage({ vendorId, onBack }: VendorSettingsPageProps) {
-  const [activeTab, setActiveTab] = useState<'golive' | 'profile' | 'bank' | 'schedule' | 'notifications'>('golive');
+  const searchParams = useSearchParams();
+  const tabParam = searchParams?.get('tab');
+  const initialTab = (['golive', 'profile', 'bank', 'schedule', 'notifications'].includes(tabParam || '') ? tabParam : 'golive') as 'golive' | 'profile' | 'bank' | 'schedule' | 'notifications';
+  const [activeTab, setActiveTab] = useState<'golive' | 'profile' | 'bank' | 'schedule' | 'notifications'>(initialTab);
+
+  useEffect(() => {
+    if (tabParam && ['golive', 'profile', 'bank', 'schedule', 'notifications'].includes(tabParam)) {
+      setActiveTab(tabParam as any);
+    }
+  }, [tabParam]);
   const [profile, setProfile] = useState<VendorProfile | null>(null);
   const [bankDetails, setBankDetails] = useState<BankDetails | null>(null);
   const [loading, setLoading] = useState(true);

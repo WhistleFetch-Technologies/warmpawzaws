@@ -12,9 +12,11 @@ import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { copyTextToClipboard } from '@/lib/shareUtils';
 
+import { useRouter } from 'next/navigation';
 import { BookingDetailModal } from './BookingDetailModal';
-import { RateServiceModal } from './RateServiceModal'; // ✅ FIX: Import RateServiceModal
-import { StandardizedHeader } from './shared/StandardizedHeader'; // ✅ FIX: Import for consistent UI
+import { RateServiceModal } from './RateServiceModal';
+import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { UtensilsCrossed } from 'lucide-react';
 
 interface BookingOccurrence {
   occurrenceId: string;
@@ -83,6 +85,7 @@ interface RefundPolicy {
 }
 
 export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine, onNavigate }: MyBookingsProps) {
+  const router = useRouter();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
@@ -356,21 +359,38 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
     );
   }
 
+  const dashboardStats = [
+    { value: String(bookings.length), label: 'Total' },
+    { value: String(bookings.filter(b => ['pending', 'confirmed', 'in_progress'].includes(b.status)).length), label: 'Upcoming' },
+    { value: String(bookings.filter(b => b.status === 'completed').length), label: 'Completed' }
+  ];
+
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
-      {/* ✅ FIX: Standardized Header for consistent UI with mobile-optimized container */}
-      <StandardizedHeader
-        userName={userName}
-        userProfilePhoto={userProfilePhoto}
-        title="My Bookings"
-        subtitle="View and manage your appointments"
-        showBackButton={true}
-        showPets={false}
+      <ServiceDashboardHeader
+        serviceName="My Bookings"
+        serviceSubtitle="View and manage your appointments"
+        serviceIcon={Calendar}
+        iconColor="text-white"
+        stats={dashboardStats}
         onBack={onBack}
-        customerPhone={phone}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
       />
       
       <div className="max-w-[430px] mx-auto">
+        {/* Meal Plan Orders - Access meal tracker at will (OBJECTIVE 1) */}
+        <div className="px-4 py-3 bg-white border-b border-gray-100">
+          <button
+            onClick={() => router.push(phone ? `/orders/meal-plans?phone=${encodeURIComponent(phone)}` : '/orders/meal-plans')}
+            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 font-medium hover:bg-emerald-100 transition-colors"
+          >
+            <UtensilsCrossed className="w-5 h-5" />
+            Meal Plan Orders & Tracking
+          </button>
+          <p className="text-xs text-gray-500 mt-1.5 text-center">Track your meal plan deliveries and access order status</p>
+        </div>
+
         {/* Filter Tabs */}
         <div className="flex gap-2 px-4 py-3 bg-white border-b border-gray-100">
           {[

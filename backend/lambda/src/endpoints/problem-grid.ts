@@ -594,8 +594,9 @@ export function registerProblemGridEndpoints(app: Hono) {
 
       // Get vendors with matching specializations or roles
       // Use rev for reviews (is_published works when is_approved column is missing); join roles for role name filter (problem_grid_mappings.role_id is role name TEXT, vendors.role_id is UUID)
+      // Note: Do not use SELECT DISTINCT with GROUP BY + ORDER BY - PostgreSQL requires ORDER BY columns in select list when using DISTINCT. GROUP BY already deduplicates.
       let servicesQuery = `
-        SELECT DISTINCT
+        SELECT
           vs.id as service_id,
           vs.service_name as name,
           vs.service_name as description,
@@ -607,7 +608,8 @@ export function registerProblemGridEndpoints(app: Hono) {
           COALESCE(AVG(rev.rating), 0) as vendor_rating,
           COUNT(DISTINCT rev.id) as vendor_reviews,
           v.city,
-          v.state
+          v.state,
+          vs.created_at
         FROM vendor_services vs
         INNER JOIN vendors v ON vs.vendor_id = v.id
         LEFT JOIN roles r ON v.role_id = r.id
@@ -1161,21 +1163,54 @@ export function registerProblemGridEndpoints(app: Hono) {
         });
       }
 
-      // Format problems with icons, descriptions, and allowed service styles
+      // Get role's allowed service styles from role config (Walker = at_home only; solo = At Home + Tele per admin)
+      let roleAllowedStyles: string[] = ['at_home', 'at_center', 'tele'];
+      try {
+        const roleNameNorm = (roleId || '').toLowerCase().trim().replace(/\s+/g, '_');
+        const rolesByKey = await query(
+          `SELECT id, name, config FROM roles WHERE (name = $1 OR id::text = $1) AND (is_active = true OR is_active IS NULL) LIMIT 1`,
+          [roleNameNorm]
+        ).catch(() => ({ rows: [] }));
+        const roleRow = rolesByKey.rows?.[0];
+        if (roleRow?.config) {
+          const config = typeof roleRow.config === 'string' ? JSON.parse(roleRow.config) : roleRow.config;
+          const serviceStylesConfig = config.serviceStyles || config.service_styles;
+          const selected = serviceStylesConfig?.selected ?? (Array.isArray(serviceStylesConfig) ? serviceStylesConfig : []);
+          if (Array.isArray(selected) && selected.length > 0) {
+            const toKey = (s: string) => {
+              const k = (s || '').toLowerCase().replace(/\s+/g, '_');
+              if (k === 'at_clinic' || k === 'at_center') return 'at_center';
+              if (k === 'video_consultation' || k === 'video' || k === 'tele_consultation') return 'tele';
+              return k;
+            };
+            roleAllowedStyles = [...new Set(selected.map((s: string) => toKey(s)).filter(Boolean))];
+            if (roleAllowedStyles.length === 0) roleAllowedStyles = ['at_home', 'at_center', 'tele'];
+          }
+        }
+      } catch (e) {
+        console.warn('Could not load role config for allowed service styles:', (e as Error).message);
+      }
+
+      // Format problems with icons, descriptions, and allowed service styles (intersect with role config)
       const problems = problemsResult.rows.map((row: any) => {
-        // Parse allowed_service_styles - handle both string and array formats
-        let allowedServiceStyles: string[] = ['at_home', 'at_center', 'tele'];
+        // Parse allowed_service_styles from problem mapping
+        let mappingStyles: string[] = ['at_home', 'at_center', 'tele'];
         try {
           if (row.allowed_service_styles) {
             if (typeof row.allowed_service_styles === 'string') {
-              allowedServiceStyles = JSON.parse(row.allowed_service_styles);
+              mappingStyles = JSON.parse(row.allowed_service_styles);
             } else if (Array.isArray(row.allowed_service_styles)) {
-              allowedServiceStyles = row.allowed_service_styles;
+              mappingStyles = row.allowed_service_styles;
             }
           }
         } catch (e) {
           console.warn('Failed to parse allowed_service_styles for problem:', row.id);
         }
+        // Intersect with role's allowed styles so Walker only shows At Home (and Tele if configured)
+        const allowedServiceStyles = mappingStyles.filter((s: string) =>
+          roleAllowedStyles.includes((s || '').toLowerCase().replace(/\s+/g, '_'))
+        );
+        const finalStyles = allowedServiceStyles.length > 0 ? allowedServiceStyles : ['at_home'];
 
         return {
           id: row.id,
@@ -1184,7 +1219,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           icon: getProblemEmoji(row.id, roleId),
           description: `Find ${row.displayName || row.name} specialists`,
           roleId: row.roleId,
-          allowedServiceStyles,
+          allowedServiceStyles: finalStyles,
           keywords: [row.name.toLowerCase(), row.id.toLowerCase()]
         };
       });

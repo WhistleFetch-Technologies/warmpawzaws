@@ -363,7 +363,7 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
         stats={dashboardStats}
         onBack={onBack}
         showBackButton={true}
-        headerColor="bg-gradient-to-r from-teal-600 via-teal-700 to-teal-800"
+        headerColor="bg-[#FF8C42]"
       />
 
       {/* Main Content */}

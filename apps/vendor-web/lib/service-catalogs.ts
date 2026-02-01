@@ -647,21 +647,33 @@ const SELLER_SERVICES: ServiceCatalogItem[] = [
 export const SERVICE_CATALOGS: Record<string, ServiceCatalogItem[]> = {
   veterinarian: VETERINARIAN_SERVICES,
   vet: VETERINARIAN_SERVICES,
+  vet_solo: VETERINARIAN_SERVICES,
+  vet_clinic: VETERINARIAN_SERVICES,
+  veterinary_clinic: VETERINARIAN_SERVICES,
   groomer: GROOMER_SERVICES,
   pet_groomer: GROOMER_SERVICES,
+  groomer_solo: GROOMER_SERVICES,
+  groomer_center: GROOMER_SERVICES,
   walker: WALKER_SERVICES,
   pet_walker: WALKER_SERVICES,
+  dog_walker: WALKER_SERVICES,
   trainer: TRAINER_SERVICES,
   pet_trainer: TRAINER_SERVICES,
+  trainer_solo: TRAINER_SERVICES,
+  trainer_center: TRAINER_SERVICES,
   pharmacy: PHARMACY_SERVICES,
   pet_pharmacy: PHARMACY_SERVICES,
   nutritionist: NUTRITIONIST_SERVICES,
   pet_nutritionist: NUTRITIONIST_SERVICES,
+  nutritionist_solo: NUTRITIONIST_SERVICES,
+  nutritionist_center: NUTRITIONIST_SERVICES,
   seller: SELLER_SERVICES,
   pet_products_store: SELLER_SERVICES,
   ecommerce: SELLER_SERVICES,
   diagnostics: DIAGNOSTICS_SERVICES,
   diagnostics_center: DIAGNOSTICS_SERVICES,
+  diagnostics_provider: DIAGNOSTICS_SERVICES,
+  diagnostics_solo: DIAGNOSTICS_SERVICES,
   diagnostic_center: DIAGNOSTICS_SERVICES,
 };
 
@@ -693,17 +705,17 @@ export function getServiceCatalogForRole(
     return SERVICE_CATALOGS[normalizedRoleId];
   }
   
-  // Try role name variations
+  // Try role name variations (canonical roles post-migration 521/522)
   const roleVariations: Record<string, string[]> = {
-    'veterinarian': ['vet', 'veterinary', 'veterinary_clinic'],
-    'pet_groomer': ['groomer', 'grooming'],
-    'pet_walker': ['walker', 'walking'],
-    'pet_trainer': ['trainer', 'training'],
+    'veterinarian': ['vet', 'vet_solo', 'vet_clinic', 'veterinary', 'veterinary_clinic'],
+    'pet_groomer': ['groomer', 'groomer_solo', 'groomer_center', 'grooming'],
+    'pet_walker': ['walker', 'dog_walker', 'walking'],
+    'pet_trainer': ['trainer', 'trainer_solo', 'trainer_center', 'training'],
     'pet_pharmacy': ['pharmacy', 'pharmacist'],
-    'pet_nutritionist': ['nutritionist', 'nutrition'],
+    'pet_nutritionist': ['nutritionist', 'nutritionist_solo', 'nutritionist_center', 'nutrition'],
     'pet_products_store': ['seller', 'store', 'retailer', 'ecommerce'],
     'diagnostics': ['diagnostics_center', 'diagnostic_center', 'diagnostics_provider', 'diagnostics_solo'],
-    'diagnostics_center': ['diagnostics', 'diagnostic_center'],
+    'diagnostics_center': ['diagnostics', 'diagnostic_center', 'diagnostics_provider', 'diagnostics_solo'],
   };
   
   for (const [mainRole, variations] of Object.entries(roleVariations)) {

@@ -68,6 +68,82 @@ const BASE_CAPABILITIES = [
   'bank_verification', // Verification - Bank account verification
 ];
 
+// Only these 25 canonical roles are active; inactive roles are removed from catalog/DB
+const CANONICAL_ACTIVE_ROLE_NAMES: string[] = [
+  'vet_solo', 'vet_clinic', 'groomer_solo', 'groomer_center', 'trainer_solo', 'trainer_center',
+  'boarding', 'walker', 'sitter', 'adoption_center', 'cafe', 'photographer', 'pharmacy', 'seller',
+  'ambulance', 'insurance', 'nutritionist', 'nutritionist_center', 'relocation', 'resort', 'holiday',
+  'sunset', 'breeder', 'diagnostics_center', 'event_organizer',
+];
+
+// Map canonical role name -> legacy definition key (for config/capabilities)
+const CANONICAL_TO_LEGACY_DEF: Record<string, string> = {
+  vet_solo: 'veterinarian',
+  vet_clinic: 'veterinary_clinic',
+  groomer_solo: 'pet_groomer',
+  groomer_center: 'pet_groomer',
+  trainer_solo: 'pet_trainer',
+  trainer_center: 'pet_trainer',
+  boarding: 'pet_boarding',
+  walker: 'pet_walker',
+  sitter: 'pet_sitter',
+  adoption_center: 'pet_shelter',
+  cafe: 'pet_cafe',
+  photographer: 'pet_photographer',
+  pharmacy: 'pet_pharmacy',
+  seller: 'pet_products_store',
+  ambulance: 'pet_ambulance',
+  insurance: 'insurance',
+  nutritionist: 'nutritionist',
+  nutritionist_center: 'nutritionist',
+  relocation: 'pet_taxi',
+  resort: 'pet_resort',
+  holiday: 'pet_holiday_planner',
+  sunset: 'pet_sunset_services',
+  breeder: 'pet_breeder',
+  diagnostics_center: 'veterinary_clinic',
+  event_organizer: 'event_organizer',
+};
+
+// Display names for canonical roles (catalog/admin)
+const CANONICAL_ROLE_DISPLAY_NAMES: Record<string, string> = {
+  vet_solo: 'Veterinarian (Solo)',
+  vet_clinic: 'Veterinary Clinic',
+  groomer_solo: 'Pet Groomer (Solo)',
+  groomer_center: 'Pet Grooming Salon',
+  trainer_solo: 'Pet Trainer (Solo)',
+  trainer_center: 'Pet Training Center',
+  boarding: 'Pet Boarding / Kennel',
+  walker: 'Pet Walker',
+  sitter: 'Pet Sitter',
+  adoption_center: 'Pet Shelter / NGO',
+  cafe: 'Pet Cafe',
+  photographer: 'Pet Photographer',
+  pharmacy: 'Pet Pharmacy',
+  seller: 'Pet Store / Retailer',
+  ambulance: 'Pet Ambulance',
+  insurance: 'Pet Insurance Provider',
+  nutritionist: 'Pet Nutritionist',
+  nutritionist_center: 'Nutritionist (Center)',
+  relocation: 'Pet Relocation',
+  resort: 'Pet Resort',
+  holiday: 'Pet Holiday Planner',
+  sunset: 'Pet Sunset Services',
+  breeder: 'Pet Breeder',
+  diagnostics_center: 'Diagnostics Center',
+  event_organizer: 'Event Organizer',
+};
+
+function getDefinitionsForCanonicalRolesOnly(): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const canonicalName of CANONICAL_ACTIVE_ROLE_NAMES) {
+    const legacyKey = CANONICAL_TO_LEGACY_DEF[canonicalName];
+    const def = STANDARD_ROLE_DEFINITIONS[legacyKey];
+    if (def) out[canonicalName] = { ...def };
+  }
+  return out;
+}
+
 const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
   'veterinarian': {
     vendorTypes: ['healthcare_provider'],
@@ -387,6 +463,23 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
       'packages'
     ],
     icon: '📅',
+    category: 'lifestyle',
+  },
+  'pet_holiday_planner': {
+    vendorTypes: ['service_provider'],
+    serviceStyles: ['at_center', 'at_home', 'online'],
+    pricingControl: { canControlPrice: true, canControlDuration: true },
+    capabilities: [
+      ...BASE_CAPABILITIES,
+      'bookings',
+      'chat',
+      'staff',
+      'facility_management',
+      'schedule',
+      'custom_services',
+      'packages'
+    ],
+    icon: '🏖️',
     category: 'lifestyle',
   },
   'pet_sunset_services': {
@@ -946,7 +1039,8 @@ export function registerRoleSeedingEndpoints(app: Hono) {
       // Query param: updateOnly=true = only update existing roles, never create; only touch config/display fields; preserve is_active, is_system_role
       const updateOnly = (c.req.query('updateOnly') ?? 'true') === 'true';
 
-      for (const [roleId, def] of Object.entries(STANDARD_ROLE_DEFINITIONS)) {
+      const definitionsToSeed = getDefinitionsForCanonicalRolesOnly();
+      for (const [roleId, def] of Object.entries(definitionsToSeed)) {
         try {
           const existing = await select('roles', { name: roleId });
 
@@ -959,7 +1053,7 @@ export function registerRoleSeedingEndpoints(app: Hono) {
             // Legacy full-seed path: create new role (only when updateOnly=false)
             const roleData: any = {
               name: roleId,
-              display_name: KNOWN_ROLE_NAMES[roleId] || roleId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+              display_name: CANONICAL_ROLE_DISPLAY_NAMES[roleId] || KNOWN_ROLE_NAMES[roleId] || roleId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
               description: `Standard ${KNOWN_ROLE_NAMES[roleId] || roleId} role`,
               is_system_role: true,
               is_active: true,
@@ -985,8 +1079,8 @@ export function registerRoleSeedingEndpoints(app: Hono) {
           const current = existing[0] as any;
           const currentConfig = (current.config && typeof current.config === 'object') ? current.config : {};
           const updateData: any = {
-            display_name: KNOWN_ROLE_NAMES[roleId] ?? current.display_name ?? roleId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
-            description: current.description ?? `Standard ${KNOWN_ROLE_NAMES[roleId] || roleId} role`,
+            display_name: CANONICAL_ROLE_DISPLAY_NAMES[roleId] ?? KNOWN_ROLE_NAMES[roleId] ?? current.display_name ?? roleId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+            description: current.description ?? `Standard ${CANONICAL_ROLE_DISPLAY_NAMES[roleId] || KNOWN_ROLE_NAMES[roleId] || roleId} role`,
             config: {
               ...currentConfig,
               category: def.category ?? currentConfig.category ?? 'general',
@@ -1009,7 +1103,7 @@ export function registerRoleSeedingEndpoints(app: Hono) {
         success: true,
         message: updateOnly ? 'Roles update completed (existing only; status preserved)' : 'Roles seeding completed',
         stats,
-        totalRoles: Object.keys(STANDARD_ROLE_DEFINITIONS).length,
+        totalRoles: Object.keys(definitionsToSeed).length,
       });
     } catch (error: any) {
       console.error('Error seeding roles:', error);
@@ -1041,12 +1135,13 @@ export function registerRoleSeedingEndpoints(app: Hono) {
         errors: [] as string[],
       };
 
-      for (const [roleId, def] of Object.entries(STANDARD_ROLE_DEFINITIONS)) {
+      const definitionsToResurrect = getDefinitionsForCanonicalRolesOnly();
+      for (const [roleId, def] of Object.entries(definitionsToResurrect)) {
         try {
           const roleData: any = {
             name: roleId,
-            display_name: KNOWN_ROLE_NAMES[roleId] || roleId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
-            description: `Standard ${KNOWN_ROLE_NAMES[roleId] || roleId} role`,
+            display_name: CANONICAL_ROLE_DISPLAY_NAMES[roleId] || KNOWN_ROLE_NAMES[roleId] || roleId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+            description: `Standard ${CANONICAL_ROLE_DISPLAY_NAMES[roleId] || KNOWN_ROLE_NAMES[roleId] || roleId} role`,
             is_system_role: true,
             is_active: true,
             config: {
@@ -1094,7 +1189,7 @@ export function registerRoleSeedingEndpoints(app: Hono) {
         success: true,
         message: 'Roles resurrection completed',
         stats,
-        totalRoles: Object.keys(STANDARD_ROLE_DEFINITIONS).length,
+        totalRoles: Object.keys(definitionsToResurrect).length,
       });
     } catch (error: any) {
       console.error('Error resurrecting roles:', error);

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
@@ -84,14 +85,27 @@ interface TimeSlot {
   booked?: boolean;
 }
 
+/** Format DB time (e.g. "10:00:00" or "10:00") to 12h (e.g. "10:00 AM") */
+function formatDbTimeTo12h(raw: string): string {
+  if (!raw || typeof raw !== 'string') return '10:00 AM';
+  if (raw.includes('AM') || raw.includes('PM')) return raw.trim();
+  const parts = raw.replace(/\.\d+$/, '').split(':');
+  const h = parseInt(parts[0] || '10', 10);
+  const m = parseInt(parts[1] || '0', 10);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 || 12;
+  return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
 export function VendorBookingManagement({ 
   vendorId, 
   vendorData, 
   onBack,
-  chatEnabled = true, // Default to true for backwards compatibility
+  chatEnabled = true,
   vendorPhone,
   vendorName
 }: VendorBookingManagementProps) {
+  const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [activeFilter, setActiveFilter] = useState<'today' | 'week' | 'month'>('today');
   const [activeView, setActiveView] = useState<'consultations' | 'locations'>('consultations');
@@ -268,24 +282,36 @@ export function VendorBookingManagement({
         console.log('📦 [VENDOR-UI] Raw booking data from API:', bookingsData);
         console.log('📊 [VENDOR-UI] Debug info:', bookingsData.debug);
         
-        // Map bookings to expected format
-        const mappedBookings = (bookingsData.bookings || []).map((booking: any) => ({
+        // Map bookings to expected format - use booking-specific data (not vendor address for all)
+        const mappedBookings = (bookingsData.bookings || []).map((booking: any) => {
+          // Format time: DB returns booking_time (e.g. "10:00:00") or scheduledTime
+          const rawTime = booking.booking_time || booking.scheduledTime || booking.time || booking.scheduled_time;
+          const timeStr = typeof rawTime === 'string' 
+            ? (rawTime.includes('AM') || rawTime.includes('PM') ? rawTime : formatDbTimeTo12h(rawTime))
+            : '10:00 AM';
+          // Location: booking address first (customer/destination), fallback to vendor for at_center
+          const isAtHome = (booking.service_type || booking.serviceType || '').toString().toLowerCase().includes('home') || 
+            (booking.service_style || booking.serviceStyle || '').toString().toLowerCase().includes('home');
+          const location = (isAtHome ? (booking.address || booking.destination_address || booking.location || booking.delivery_address) : null)
+            || (booking.address || booking.destination_address || booking.location || booking.delivery_address)
+            || vendorData?.address || vendorData?.location || 'Clinic Location';
+          return {
           id: booking.id,
-          bookingId: booking.id, // ✅ ADD: Main booking ID
-          time: booking.scheduledTime || booking.time || '10:00 AM',
-          customerName: booking.customerName || 'Customer',
-          customerId: booking.customerId || null, // ✅ ADD: Customer ID for chat
-          petName: booking.petName || 'Pet',
-          petType: booking.petType || booking.petBreed || 'Pet',
-          location: vendorData?.address || vendorData?.location || 'Clinic Location',
-          consultationType: booking.serviceType || 'scheduled',
-          communicationType: booking.serviceType === 'tele' ? 'video' : 'in-person',
-          serviceType: booking.serviceType || 'at_center', // ✅ ADD
+          bookingId: booking.id,
+          time: timeStr,
+          customerName: booking.customer?.name || booking.customer_name || booking.customerName || 'Customer',
+          customerId: booking.customer_id || booking.customerId || booking.customer?.id || null,
+          petName: booking.pet_name || booking.petName || 'Pet',
+          petType: booking.pet_type || booking.petType || booking.pet_breed || booking.petBreed || 'Pet',
+          location,
+          consultationType: booking.service_type || booking.serviceType || 'scheduled',
+          communicationType: (booking.service_type || booking.serviceType) === 'tele' ? 'video' : 'in-person',
+          serviceType: booking.service_type || booking.serviceType || 'at_center',
           status: booking.status || 'confirmed',
-          phone: booking.customerPhone || '+91 0000000000',
-          date: booking.scheduledDate || booking.date || selectedDate,
+          phone: booking.customer?.phone || booking.customer_phone || booking.customerPhone || '+91 0000000000',
+          date: booking.booking_date || booking.scheduledDate || booking.date || selectedDate,
           price: booking.price || 0,
-          serviceName: booking.serviceName || 'Service',
+          serviceName: booking.service?.name || booking.service_name || booking.serviceName || 'Service',
           duration: booking.duration || 30,
           
           // ✅ NEW: Chat fields
@@ -297,8 +323,12 @@ export function VendorBookingManagement({
           // ✅ NEW: Prescription fields (vet only)
           hasPrescription: booking.hasPrescription || false,
           prescriptionUrl: booking.prescriptionUrl || null,
-          prescriptionNotes: booking.prescriptionNotes || null
-        }));
+          prescriptionNotes: booking.prescriptionNotes || null,
+          // Preserve meetingId, service_type etc. for downstream
+          meetingId: booking.meeting_id || booking.meetingId,
+          meeting_id: booking.meeting_id || booking.meetingId,
+        };
+        });
         
         setBookings(mappedBookings);
         console.log(`✅ Loaded ${mappedBookings.length} bookings for vendor ${vendorId}`);
@@ -373,12 +403,18 @@ export function VendorBookingManagement({
         customer: t.customerName || t.customer || 'Customer',
       }));
       
+      // API returns { success, earnings: { totalEarnings, thisPeriod, ... }, period } - extract numbers only
+      const eNum = (res: any, field: 'thisPeriod' | 'totalEarnings') => {
+        const earn = res?.earnings;
+        if (earn && typeof earn === 'object') return Number(earn[field]) || 0;
+        return Number(res?.[field] ?? res?.totalEarnings) || 0;
+      };
       setEarningsData({
-        today: todayData?.totalEarnings || todayData?.earnings || 0,
-        thisWeek: weekData?.totalEarnings || weekData?.earnings || 0,
-        thisMonth: monthData?.totalEarnings || monthData?.earnings || 0,
-        pending: totalData?.pendingSettlement || totalData?.pending || monthData?.pendingSettlement || 0,
-        total: totalData?.totalEarnings || totalData?.earnings || 0,
+        today: eNum(todayData, 'thisPeriod') || eNum(todayData, 'totalEarnings'),
+        thisWeek: eNum(weekData, 'thisPeriod') || eNum(weekData, 'totalEarnings'),
+        thisMonth: eNum(monthData, 'thisPeriod') || eNum(monthData, 'totalEarnings'),
+        pending: Number(totalData?.earnings?.pendingSettlement ?? totalData?.pendingSettlement ?? totalData?.pending ?? monthData?.earnings?.pendingSettlement ?? 0) || 0,
+        total: eNum(totalData, 'totalEarnings'),
         transactions,
         dailyTrend: dailyTrend.map((d: any, index: number) => ({
           day: d.day || d.date || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index],
@@ -431,8 +467,8 @@ export function VendorBookingManagement({
         txnId: s.transactionId || s.txnId || s.utr || `TXN${s.id?.slice(0, 8)?.toUpperCase() || 'XXXXXX'}`,
       }));
       
-      // Extract bank account info
-      const bankAccount = bankData?.bankAccount || bankData?.bank || bankData?.data;
+      // Extract bank account info (bankDetails from GET /vendor/:id/bank-details)
+      const bankAccount = bankData?.bankDetails || bankData?.bankAccount || bankData?.bank || bankData?.data;
       
       setPayoutsData({
         availableForPayout: summary.availableForPayout || summary.available || summary.pendingAmount || 0,
@@ -468,6 +504,11 @@ export function VendorBookingManagement({
   const handleRequestPayout = async () => {
     if (!payoutsData?.availableForPayout || payoutsData.availableForPayout <= 0) {
       alert('No amount available for payout');
+      return;
+    }
+    if (!payoutsData?.bankAccount?.verified) {
+      alert('Please add and verify your bank account in Settings first. Automatic settlement requires a verified bank account.');
+      router.push('/settings?tab=bank');
       return;
     }
     
@@ -1320,13 +1361,20 @@ export function VendorBookingManagement({
                         </div>
                         <div className="flex-1">
                           <div className="font-medium text-gray-900">{payoutsData.bankAccount.bankName}</div>
-                          <div className="text-sm text-gray-600">{payoutsData.bankAccount.accountNumber}</div>
+                          <div className="text-sm text-gray-600">
+                            {payoutsData.bankAccount.accountNumber?.includes('*') || payoutsData.bankAccount.accountNumber?.includes('•')
+                              ? payoutsData.bankAccount.accountNumber
+                              : `****${String(payoutsData.bankAccount.accountNumber || '').slice(-4)}`}
+                          </div>
                         </div>
                         <div className="flex flex-col items-end gap-1">
                           {payoutsData.bankAccount.verified && (
                             <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">Verified</span>
                           )}
-                          <button className="text-sm text-[#FF8C42] font-medium">
+                          <button
+                            onClick={() => router.push('/settings?tab=bank')}
+                            className="text-sm text-[#FF8C42] font-medium hover:underline"
+                          >
                             Change
                           </button>
                         </div>
@@ -1338,7 +1386,10 @@ export function VendorBookingManagement({
                   ) : (
                     <div className="border border-dashed border-gray-300 rounded-xl p-4 text-center">
                       <div className="text-gray-500 mb-2">No bank account linked</div>
-                      <button className="text-sm text-[#FF8C42] font-medium">
+                      <button
+                        onClick={() => router.push('/settings?tab=bank')}
+                        className="text-sm text-[#FF8C42] font-medium hover:underline"
+                      >
                         + Add Bank Account
                       </button>
                     </div>

@@ -45,20 +45,23 @@ export function useNotificationService({ phone, enabled, onNewNotification }: No
         
         if (notifications.length > 0) {
             const latestNotification = notifications[0];
+            // API returns DB rows: id, is_read (snake_case). Support both id/notificationId and is_read/read.
+            const notificationId = latestNotification.id ?? latestNotification.notificationId;
+            const isRead = latestNotification.is_read ?? latestNotification.read;
             
-            console.log(`🔔 [NOTIFICATION-SERVICE] Latest: ${latestNotification.notificationId}, Last: ${lastNotificationIdRef.current}`);
+            console.log(`🔔 [NOTIFICATION-SERVICE] Latest: ${notificationId}, Last: ${lastNotificationIdRef.current}`);
             
             // Skip initial load to avoid showing old notifications
             if (isInitialLoadRef.current) {
-              lastNotificationIdRef.current = latestNotification.notificationId;
+              lastNotificationIdRef.current = notificationId ?? null;
               isInitialLoadRef.current = false;
               console.log(`🔔 [NOTIFICATION-SERVICE] Initial load complete, will track future notifications`);
               return;
             }
             
-            // Check if there's a new notification
-            if (latestNotification.notificationId !== lastNotificationIdRef.current && !latestNotification.read) {
-              lastNotificationIdRef.current = latestNotification.notificationId;
+            // Check if there's a new notification (by id and unread)
+            if (notificationId != null && notificationId !== lastNotificationIdRef.current && !isRead) {
+              lastNotificationIdRef.current = notificationId;
               
               console.log(`🎉 [NOTIFICATION-SERVICE] NEW NOTIFICATION DETECTED!`, latestNotification);
               

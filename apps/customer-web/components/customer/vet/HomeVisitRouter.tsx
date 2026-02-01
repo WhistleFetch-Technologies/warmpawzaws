@@ -52,6 +52,8 @@ interface HomeVisitRouterProps {
   phone: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
+  initialAddressFromBook?: any;
+  onConsumeInitialAddress?: () => void;
 }
 
 type FlowStep = 
@@ -63,7 +65,7 @@ type FlowStep =
 // MAIN COMPONENT
 // ============================================================================
 
-export function HomeVisitRouter({ phone, onBack, onNavigate }: HomeVisitRouterProps) {
+export function HomeVisitRouter({ phone, onBack, onNavigate, initialAddressFromBook, onConsumeInitialAddress }: HomeVisitRouterProps) {
   const [step, setStep] = useState<FlowStep>('provider-list');
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
 
@@ -128,6 +130,8 @@ export function HomeVisitRouter({ phone, onBack, onNavigate }: HomeVisitRouterPr
           onBack={handleBack}
           onNavigate={onNavigate}
           onProceedToPayment={handleProceedToPayment}
+          initialSelectedAddress={initialAddressFromBook}
+          onConsumeInitialAddress={onConsumeInitialAddress}
         />
       );
 

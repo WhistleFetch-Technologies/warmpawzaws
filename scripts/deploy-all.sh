@@ -154,6 +154,9 @@ fi
 cd "$PROJECT_ROOT/infrastructure/cdk"
 npm install --silent
 
+# Avoid concurrent access on cdk.out: remove stale output so only this run uses it
+rm -rf cdk.out 2>/dev/null || true
+
 STACK_NAME="WarmpawzStack-$ENVIRONMENT"
 
 echo "  Synthesizing CloudFormation..."
@@ -202,6 +205,11 @@ echo -e "  Stack:           $STACK_NAME"
 if [ -n "$API_URL" ]; then
     echo -e "  API URL:         ${GREEN}$API_URL${NC}"
 fi
+echo ""
+echo "Official CloudFront URLs (do not create new URLs):"
+echo "  • Admin:    https://dfof7mguaa0a5.cloudfront.net"
+echo "  • Vendor:   https://d1s6ykkj381k58.cloudfront.net"
+echo "  • Customer: https://d2aoyjj8ine0wk.cloudfront.net"
 echo ""
 echo -e "${GREEN}Deployment successful! 🎉${NC}"
 echo ""

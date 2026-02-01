@@ -94,13 +94,23 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
       let walkerList: any[] = [];
       try {
         const endpoint = `/customer/discover-services?category=walker&serviceStyle=at_home&roleId=walker${locationParams}`;
-        const data = await apiClient.get<{ vendors?: any[]; providers?: any[]; services?: any[]; staff?: any[] }>(endpoint);
+        const data = await apiClient.get<{ success?: boolean; vendors?: any[]; providers?: any[]; services?: any[]; staff?: any[] }>(endpoint);
         walkerList = data.vendors || data.providers || data.services || data.staff || [];
+        // Fallback: try category-only (no roleId) so backend returns all walker/pet_walker roles
+        if (walkerList.length === 0) {
+          const fallbackUrl = `/customer/discover-services?category=walker&serviceStyle=at_home${locationParams}`;
+          const fallback = await apiClient.get<{ vendors?: any[]; providers?: any[] }>(fallbackUrl);
+          walkerList = fallback.vendors || fallback.providers || [];
+        }
       } catch (_) {
         // Fallback: vendors/search with serviceStyle=at_home
-        const params = new URLSearchParams({ roleId: 'pet_walker', serviceStyle: 'at_home', ...(searchQuery && { query: searchQuery }) });
-        const data = await apiClient.get<{ vendors?: any[]; services?: any[]; staff?: any[] }>(`/customer/vendors/search?${params.toString()}`);
-        walkerList = data.vendors || data.services || data.staff || [];
+        try {
+          const params = new URLSearchParams({ roleId: 'pet_walker', serviceStyle: 'at_home', ...(searchQuery && { query: searchQuery }) });
+          const data = await apiClient.get<{ vendors?: any[]; services?: any[]; staff?: any[] }>(`/customer/vendors/search?${params.toString()}`);
+          walkerList = data.vendors || data.services || data.staff || [];
+        } catch (__) {
+          walkerList = [];
+        }
       }
       setWalkers(walkerList);
     } catch (error) {
@@ -137,7 +147,7 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
         stats={dashboardStats}
         onBack={onBack}
         showBackButton={true}
-        headerColor="bg-gradient-to-r from-green-500 via-green-600 to-green-700"
+        headerColor="bg-[#FF8C42]"
       />
       
       {/* Search Bar - Moved below header */}

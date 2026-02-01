@@ -24,6 +24,22 @@ export SUPABASE_DB_URL="postgresql://postgres:password@db.project.supabase.co:54
 npm run migrate:up
 ```
 
+### `npm run migrate:delete-inactive-roles`
+Permanently deletes inactive roles from the database (keeps only the 25 canonical active roles). Run after `250_role_cleanup_canonical_24.sql` has been applied.
+
+**Option A – AWS RDS (recommended; uses tested script in `scripts/`):**
+```bash
+ENVIRONMENT=dev ./scripts/run-migration-251-delete-inactive-roles.sh
+# or
+ENVIRONMENT=dev node scripts/run-migration-rds-node.js 251_permanent_delete_inactive_roles.sql
+```
+
+**Option B – Direct DATABASE_URL:**
+```bash
+export DATABASE_URL="postgresql://user:password@host:port/database"
+cd db && npm run migrate:delete-inactive-roles
+```
+
 ### `npm run migrate:status`
 Checks the current state of the database schema, including:
 - Number of tables

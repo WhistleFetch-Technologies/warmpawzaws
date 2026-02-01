@@ -476,23 +476,31 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
   /**
    * GET /vendor/:vendorId/diagnostics/tests
-   * Get all diagnostic tests offered by this center
-   * Requires 'diagnostics' or 'test_catalog' capability
+   * Get all diagnostic tests offered by this center.
+   * Requires diagnostics capability (diagnostics, diagnostic_results, test_catalog, or diagnostic_lab).
+   * Optional query publishedOnly=true returns only is_available=true (for customer booking flow).
    */
   app.get("/vendor/:vendorId/diagnostics/tests", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      
-      // Check if vendor has diagnostics capability (try multiple capability names)
+      const publishedOnly = c.req.query('publishedOnly') === 'true';
+
+      // Check if vendor has diagnostics capability (include diagnostic_lab for vet clinics; 'diagnostic lab' with space for admin-stored display name)
       const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostic_results') ||
                                        await checkVendorCapability(vendorId, 'diagnostics') ||
-                                       await checkVendorCapability(vendorId, 'test_catalog');
+                                       await checkVendorCapability(vendorId, 'test_catalog') ||
+                                       await checkVendorCapability(vendorId, 'diagnostic_lab') ||
+                                       await checkVendorCapability(vendorId, 'diagnostic lab');
       if (!hasDiagnosticsCapability) {
         return c.json({ error: 'Vendor does not have diagnostics capability' }, 403);
       }
-      
-      const rows = await select('diagnostic_tests', 
-        { vendor_id: vendorId },
+
+      const filter: Record<string, any> = { vendor_id: vendorId };
+      if (publishedOnly) {
+        filter.is_available = true;
+      }
+      const rows = await select('diagnostic_tests',
+        filter,
         { orderBy: 'created_at', orderDirection: 'DESC' }
       );
       // Normalize: some DBs use test_category (migration 057), frontend expects category
@@ -500,7 +508,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         ...r,
         category: r.category ?? r.test_category,
       }));
-      
+
       return c.json({ success: true, tests, total: tests.length });
     } catch (error: any) {
       console.error('Error fetching diagnostic tests:', error);
@@ -510,8 +518,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
   /**
    * GET /customer/diagnostics/vendors-with-tests
-   * Discovery: vendors (diagnostics_center) with their diagnostic tests (category, service_style).
-   * Used by customer web for lab listing and filter by specialization / at_center vs at_home.
+   * Discovery: vendors with published diagnostic tests (diagnostics centers + vet clinics with lab tests enabled).
+   * Includes: diagnostics_center, diagnostic_center, and vet_clinic/veterinary_clinic/vet with diagnostics capability.
+   * Only vendors that have at least one published (is_available = true) test are returned.
    */
   app.get("/customer/diagnostics/vendors-with-tests", async (c) => {
     try {
@@ -526,7 +535,28 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
-          AND (LOWER(r.name) IN ('diagnostics_center', 'diagnostic_center'))
+          AND (
+            (LOWER(r.name) IN ('diagnostics_center', 'diagnostic_center'))
+            OR (
+              (
+                LOWER(r.name) IN ('vet_clinic', 'veterinary_clinic', 'vet')
+                OR (LOWER(TRIM(r.name)) LIKE '%vet%' AND LOWER(TRIM(r.name)) LIKE '%clinic%')
+                OR LOWER(REPLACE(TRIM(r.name), ' ', '_')) IN ('vet_clinic', 'veterinary_clinic')
+              )
+              AND EXISTS (
+                SELECT 1 FROM role_permissions rp
+                WHERE rp.role_id = v.role_id
+                AND (
+                  LOWER(rp.permission_name) IN ('diagnostics', 'diagnostic_results', 'test_catalog', 'diagnostic_lab')
+                  OR REPLACE(LOWER(TRIM(rp.permission_name)), ' ', '_') = 'diagnostic_lab'
+                )
+              )
+            )
+          )
+          AND EXISTS (
+            SELECT 1 FROM diagnostic_tests dt
+            WHERE dt.vendor_id = v.id AND dt.is_available = true
+          )
       `;
       const vendorParams: any[] = [];
       let pi = 1;
@@ -608,22 +638,23 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/diagnostics/tests
    * Add a new diagnostic test
-   * Requires 'diagnostics' or 'test_catalog' capability
+   * Requires diagnostics capability (diagnostics, diagnostic_results, test_catalog, or diagnostic_lab)
    */
   app.post("/vendor/:vendorId/diagnostics/tests", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      
-      // Check if vendor has diagnostics capability (try multiple capability names)
+
       const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostic_results') ||
                                        await checkVendorCapability(vendorId, 'diagnostics') ||
-                                       await checkVendorCapability(vendorId, 'test_catalog');
+                                       await checkVendorCapability(vendorId, 'test_catalog') ||
+                                       await checkVendorCapability(vendorId, 'diagnostic_lab') ||
+                                       await checkVendorCapability(vendorId, 'diagnostic lab');
       if (!hasDiagnosticsCapability) {
         return c.json({ error: 'Vendor does not have diagnostics capability' }, 403);
       }
-      
+
       const testData = await c.req.json();
-      
+
       // ✅ FIX: Use raw SQL with only guaranteed columns first, then try with extended columns
       // This handles the case where migration 503 hasn't been run yet
       try {
@@ -725,13 +756,15 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       // Check if vendor has diagnostics capability (try multiple capability names)
       const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostic_results') ||
                                        await checkVendorCapability(vendorId, 'diagnostics') ||
-                                       await checkVendorCapability(vendorId, 'test_catalog');
+                                       await checkVendorCapability(vendorId, 'test_catalog') ||
+                                       await checkVendorCapability(vendorId, 'diagnostic_lab') ||
+                                       await checkVendorCapability(vendorId, 'diagnostic lab');
       if (!hasDiagnosticsCapability) {
         return c.json({ error: 'Vendor does not have diagnostics capability' }, 403);
       }
-      
+
       const testData = await c.req.json();
-      
+
       // Build update object with only provided fields - core fields first
       const coreUpdateFields: any = {};
       const extendedUpdateFields: any = {};
@@ -845,15 +878,16 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       const { status, date } = c.req.query();
-      
-      // Check if vendor has diagnostics capability
+
       const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostic_results') ||
                                        await checkVendorCapability(vendorId, 'diagnostics') ||
-                                       await checkVendorCapability(vendorId, 'test_catalog');
+                                       await checkVendorCapability(vendorId, 'test_catalog') ||
+                                       await checkVendorCapability(vendorId, 'diagnostic_lab') ||
+                                       await checkVendorCapability(vendorId, 'diagnostic lab');
       if (!hasDiagnosticsCapability) {
         return c.json({ error: 'Vendor does not have diagnostics capability' }, 403);
       }
-      
+
       // Build query conditions: diagnostics bookings have notes with "tests" array (from DiagnosticsBookingFlow)
       // or may use service_id from diagnostics vendor_services; service_id is UUID so we match by notes
       let conditions = `b.vendor_id = $1 AND (b.notes IS NOT NULL AND (b.notes::text LIKE '%"tests"%' OR b.notes::text LIKE '%"test_name"%'))`;
@@ -920,18 +954,38 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         }
       }
       
-      // Format response
-      const formattedBookings = bookings.map(b => ({
-        ...b,
-        reports: reports.filter(r => (r.booking_id || r.diagnostic_booking_id) === b.id),
-        assigned_staff: (b.assigned_staff_id || b.assigned_staff_name || b.assigned_agent_name) ? {
-          id: b.assigned_staff_id,
-          name: b.assigned_staff_name || b.assigned_agent_name,
-          phone: b.assigned_staff_phone || b.assigned_agent_phone
-        } : null,
-        collection_otp: b.collection_otp,
-        collection_status: b.collection_status
-      }));
+      // Format response - enrich pet/patient from notes when pet_id is null (e.g. diagnostics patientName/patientAge)
+      const formattedBookings = bookings.map((b: any) => {
+        let pet_name = b.pet_name;
+        let pet_type = b.pet_type;
+        let pet_age: string | undefined;
+        if ((!pet_name || pet_name === 'Unknown Pet') && b.notes) {
+          try {
+            const notesObj = typeof b.notes === 'string' ? JSON.parse(b.notes) : b.notes;
+            if (notesObj && typeof notesObj === 'object') {
+              if (notesObj.patientName) pet_name = notesObj.patientName;
+              if (notesObj.petType || notesObj.pet_type) pet_type = notesObj.petType || notesObj.pet_type;
+              if (notesObj.patientAge != null || notesObj.petAge != null) pet_age = String(notesObj.patientAge ?? notesObj.petAge ?? '');
+            }
+          } catch {
+            // notes not JSON
+          }
+        }
+        return {
+          ...b,
+          pet_name: pet_name || 'Patient',
+          pet_type: pet_type || '',
+          pet_age: pet_age ?? b.pet_age ?? undefined,
+          reports: reports.filter((r: any) => (r.booking_id || r.diagnostic_booking_id) === b.id),
+          assigned_staff: (b.assigned_staff_id || b.assigned_staff_name || b.assigned_agent_name) ? {
+            id: b.assigned_staff_id,
+            name: b.assigned_staff_name || b.assigned_agent_name,
+            phone: b.assigned_staff_phone || b.assigned_agent_phone
+          } : null,
+          collection_otp: b.collection_otp,
+          collection_status: b.collection_status
+        };
+      });
       
       return c.json({ 
         success: true, 
@@ -1125,62 +1179,81 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       }
       const address = addresses[0];
 
-      // Get meal plan details
-      const mealPlans = await select('meal_plans', { id: mealPlanId });
+      // Get meal plan: by id first; if not found (e.g. mobile sent service id), use first meal plan for vendor
+      let mealPlans = await select('meal_plans', { id: mealPlanId });
+      if (mealPlans.length === 0 && vendorId) {
+        const fallback = await query(
+          `SELECT * FROM meal_plans WHERE vendor_id = $1 AND (is_active IS NULL OR is_active = true) ORDER BY created_at DESC LIMIT 1`,
+          [vendorId]
+        ).catch(() => ({ rows: [] }));
+        if ((fallback as any).rows?.length > 0) {
+          mealPlans = (fallback as any).rows;
+        }
+      }
       if (mealPlans.length === 0) {
         return c.json({ error: 'Meal plan not found' }, 404);
       }
       const mealPlan = mealPlans[0];
+      const effectiveMealPlanId = mealPlan.id;
+      const unitPrice = parseFloat(mealPlan.price_per_meal || mealPlan.price || totalAmount || 0);
+      const qty = quantity || 1;
+      const subtotalVal = unitPrice * qty;
+      const totalVal = totalAmount != null ? Number(totalAmount) : subtotalVal;
 
-      // Generate order number
+      const customers = await select('customers', { id: customerId });
+      const customerPhone = customers[0]?.phone || '';
+
       const orderNumber = `MP-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+      const shippingAddrStr = typeof address.address === 'string'
+        ? address.address
+        : [address.address, address.addressLine1, address.city, address.pincode].filter(Boolean).join(', ');
 
-      // Create order
-      const order = await insert('orders', {
+      const orderPayload: Record<string, any> = {
         customer_id: customerId,
         vendor_id: vendorId,
         order_number: orderNumber,
         order_status: 'pending',
-        order_type: 'meal_plan_delivery',
-        total_amount: totalAmount || 0,
+        subtotal: subtotalVal,
+        tax_amount: 0,
+        shipping_amount: 0,
+        discount_amount: 0,
+        total_amount: totalVal,
+        shipping_address: shippingAddrStr || JSON.stringify({ address: address.address, city: address.city, pincode: address.pincode, state: address.state || '' }),
+        shipping_city: address.city || address.address_city || '',
+        shipping_state: address.state || address.address_state || '',
+        shipping_pincode: address.pincode || address.address_pincode || '',
+        shipping_phone: customerPhone,
         payment_method: 'online',
-        shipping_address: JSON.stringify({
-          address: address.address,
-          city: address.city,
-          pincode: address.pincode,
-          state: address.state || '',
-        }),
+        order_type: 'meal_plan_delivery',
         delivery_date: deliveryDate,
-        delivery_time: deliveryTime,
-      });
+        delivery_time: typeof deliveryTime === 'string' ? deliveryTime : JSON.stringify(deliveryTime || {}),
+      };
 
-      // Create order item
+      const order = await insert('orders', orderPayload);
+
       await insert('order_items', {
         order_id: order[0].id,
-        service_id: mealPlanId,
-        quantity: quantity || 1,
-        price: mealPlan.price || totalAmount,
-        total: (mealPlan.price || totalAmount) * (quantity || 1),
-        item_type: 'meal_plan',
+        service_id: effectiveMealPlanId,
+        name: mealPlan.name || 'Meal Plan',
+        quantity: qty,
+        unit_price: unitPrice,
+        total_price: unitPrice * qty,
       });
 
-      // Store meal plan specific data
       await insert('meal_plan_orders', {
         order_id: order[0].id,
-        meal_plan_id: mealPlanId,
+        meal_plan_id: effectiveMealPlanId,
         pet_id: petId,
-        quantity: quantity || 1,
+        quantity: qty,
         delivery_date: deliveryDate,
-        delivery_time: deliveryTime,
-      }).catch(() => {
-        // Table might not exist, that's okay
-        console.log('meal_plan_orders table not found, skipping');
-      });
+        delivery_time: typeof deliveryTime === 'string' ? deliveryTime : JSON.stringify(deliveryTime || {}),
+      }).catch(() => {});
 
       return c.json({
         success: true,
         order: order[0],
         order_id: order[0].id,
+        orderId: order[0].id,
         message: 'Meal plan order created successfully',
       });
     } catch (error: any) {
@@ -1623,14 +1696,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
   /**
    * GET /vendor/:vendorId/meal-orders
-   * Get meal/nutrition delivery orders for a vendor (Phase 3: from meal_orders table)
+   * Get meal/nutrition delivery orders for a vendor.
+   * Returns from BOTH meal_orders (MealOrderCheckout flow) AND orders table (MealPlanBookingFlow /nutrition/delivery-orders flow).
    */
   app.get("/vendor/:vendorId/meal-orders", async (c) => {
     try {
       const { vendorId } = c.req.param();
       const status = c.req.query('status');
 
-      let ordersQuery = `
+      const allOrders: any[] = [];
+
+      // 1. From meal_orders table (MealOrderCheckout /meal/orders/create flow)
+      let mealOrdersQuery = `
         SELECT mo.id, mo.customer_id, mo.vendor_id, mo.meal_plan_id, mo.pet_id,
                mo.order_type, mo.quantity, mo.special_instructions, mo.subtotal, mo.delivery_fee,
                mo.platform_fee, mo.total_amount, mo.status, mo.payment_status,
@@ -1644,22 +1721,90 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
         WHERE mo.vendor_id = $1
       `;
-      const params: any[] = [vendorId];
+      const mealParams: any[] = [vendorId];
       if (status) {
-        params.push(status);
-        ordersQuery += ` AND mo.status = $${params.length}`;
+        mealParams.push(status);
+        mealOrdersQuery += ` AND mo.status = $${mealParams.length}`;
       }
-      ordersQuery += ` ORDER BY mo.created_at DESC LIMIT 100`;
+      mealOrdersQuery += ` ORDER BY mo.created_at DESC LIMIT 100`;
 
-      const result = await query(ordersQuery, params).catch(() => ({ rows: [] }));
-      const orders = result.rows.map((o: any) => ({
-        ...o,
-        order_number: o.id?.toString().slice(-8) || '',
-        items: [],
-        delivery_address: typeof o.delivery_address === 'string' ? (() => { try { return JSON.parse(o.delivery_address); } catch { return {}; } })() : o.delivery_address,
-      }));
+      const mealResult = await query(mealOrdersQuery, mealParams).catch(() => ({ rows: [] }));
+      for (const o of mealResult.rows) {
+        allOrders.push({
+          ...o,
+          source: 'meal_orders',
+          order_number: o.id?.toString().slice(-8) || '',
+          items: [],
+          delivery_address: typeof o.delivery_address === 'string' ? (() => { try { return JSON.parse(o.delivery_address); } catch { return {}; } })() : o.delivery_address,
+        });
+      }
 
-      return c.json({ success: true, orders, total: orders.length });
+      // 2. From orders table (MealPlanBookingFlow /nutrition/delivery-orders flow)
+      try {
+        const hasOrderType = await query(
+          `SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'order_type' LIMIT 1`
+        ).then((r: any) => (r?.rows?.length || 0) > 0);
+        if (hasOrderType) {
+          let ordQuery = `
+            SELECT o.id, o.customer_id, o.vendor_id, o.order_number, o.order_status as status,
+                   o.total_amount, o.shipping_address as delivery_address, o.created_at,
+                   o.delivery_date as scheduled_delivery_date, o.delivery_time as scheduled_delivery_slot,
+                   c.full_name as customer_name, c.phone as customer_phone,
+                   (SELECT mp.name FROM meal_plan_orders mpo LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id WHERE mpo.order_id = o.id LIMIT 1) as meal_name
+            FROM orders o
+            LEFT JOIN customers c ON o.customer_id = c.id
+            WHERE o.vendor_id = $1 AND o.order_type = 'meal_plan_delivery'
+          `;
+          const ordParams: any[] = [vendorId];
+          if (status) {
+            ordParams.push(status);
+            ordQuery += ` AND o.order_status = $${ordParams.length}`;
+          }
+          ordQuery += ` ORDER BY o.created_at DESC LIMIT 100`;
+
+          const ordResult = await query(ordQuery, ordParams).catch(() => ({ rows: [] }));
+          for (const o of ordResult.rows) {
+            const parsedAddr = typeof o.delivery_address === 'string' ? (() => { try { return JSON.parse(o.delivery_address); } catch { return {}; } })() : o.delivery_address;
+            allOrders.push({
+              id: o.id,
+              customer_id: o.customer_id,
+              vendor_id: o.vendor_id,
+              meal_plan_id: null,
+              pet_id: null,
+              order_type: 'meal_plan_delivery',
+              quantity: 1,
+              special_instructions: null,
+              subtotal: o.total_amount,
+              delivery_fee: 0,
+              platform_fee: 0,
+              total_amount: o.total_amount,
+              status: o.status,
+              payment_status: 'pending',
+              scheduled_delivery_date: o.scheduled_delivery_date,
+              scheduled_delivery_slot: o.scheduled_delivery_slot,
+              delivery_address: parsedAddr,
+              customer_name: o.customer_name,
+              customer_phone: o.customer_phone,
+              meal_name: o.meal_name || 'Meal Plan',
+              created_at: o.created_at,
+              source: 'orders',
+              order_number: o.order_number || o.id?.toString().slice(-8) || '',
+              items: [],
+            });
+          }
+        }
+      } catch (ordErr) {
+        console.warn('[meal-orders] Could not fetch from orders table:', (ordErr as Error)?.message);
+      }
+
+      // Dedupe by id and sort by created_at desc
+      const seen = new Set<string>();
+      const deduped = allOrders
+        .filter((o) => { const k = String(o.id); if (seen.has(k)) return false; seen.add(k); return true; })
+        .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+        .slice(0, 100);
+
+      return c.json({ success: true, orders: deduped, total: deduped.length });
     } catch (error: any) {
       console.error('Error fetching meal orders:', error);
       return c.json({ success: true, orders: [], total: 0 });

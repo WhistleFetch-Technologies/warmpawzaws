@@ -53,40 +53,16 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
             rating: 4.8,
             totalReviews: 0,
           },
+          bookings: [],
           timeframe,
         });
       }
 
       console.log(`📊 [DASHBOARD] Fetching dashboard for vendor: ${vendorId}, timeframe: ${timeframe}`);
 
-      // Get vendor
+      // Get vendor (post-role-migration: vendor may be in vendor_identity only; still show bookings)
       const vendors = await select('vendors', { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({
-          success: true,
-          vendor: {
-            vendorId,
-            fullName: 'Vendor',
-            businessName: null,
-            vendorType: 'service_provider',
-            serviceStyle: 'both',
-            address: 'Location not set',
-            isActive: false,
-          },
-          stats: {
-            appointments: 0,
-            consultations: 0,
-            earnings: 0,
-            pendingEarnings: 0,
-            completedServices: 0,
-            rating: 4.8,
-            totalReviews: 0,
-          },
-          timeframe,
-        });
-      }
-
-      const vendor = vendors[0];
+      const vendor = vendors.length > 0 ? vendors[0] : null;
 
       // Calculate date range
       const now = new Date();
@@ -101,15 +77,16 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       }
 
-      // Get bookings for vendor with enrichment
+      // Get bookings for vendor with enrichment (always query by vendorId so placeholder shows post-migration)
       const bookings = await query(
         `SELECT b.*,
-                s.name as service_name,
-                s.category as service_category,
+                COALESCE(s.name, vs.service_name) as service_name,
+                COALESCE(s.category, vs.category) as service_category,
                 c.full_name as customer_name,
                 c.phone as customer_phone
          FROM bookings b
          LEFT JOIN services s ON b.service_id = s.id
+         LEFT JOIN vendor_services vs ON vs.id = b.service_id
          LEFT JOIN customers c ON b.customer_id = c.id
          WHERE b.vendor_id = $1 
            AND b.booking_date >= $2
@@ -183,7 +160,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        vendor: {
+        vendor: vendor ? {
           vendorId: vendor.id,
           fullName: vendor.owner_name,
           businessName: vendor.business_name,
@@ -193,9 +170,17 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           phone: vendor.phone,
           email: vendor.email,
           isActive: vendor.is_active,
+        } : {
+          vendorId,
+          fullName: 'Vendor',
+          businessName: null,
+          vendorType: 'service_provider',
+          serviceStyle: 'both',
+          address: 'Location not set',
+          isActive: false,
         },
         stats,
-        bookings: enrichedBookings, // ✅ Include bookings array
+        bookings: enrichedBookings, // ✅ Always include so vendor dashboard shows placeholders post-migration
         timeframe,
       });
     } catch (error: any) {
@@ -226,37 +211,23 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
             rating: 4.8,
             totalReviews: 0,
           },
+          bookings: [],
         });
       }
 
       console.log(`📊 [DASHBOARD] Fetching dashboard for vendor: ${vendorId}, timeframe: ${timeframe}`);
 
-      // Get vendor
+      // Get vendor (post-role-migration: still return bookings so dashboard shows placeholders)
       const vendors = await select('vendors', { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({
-          success: true,
-          stats: {
-            todayBookings: 0,
-            pendingBookings: 0,
-            completedToday: 0,
-            earnings: 0,
-            pendingSettlement: 0,
-            rating: 4.8,
-            totalReviews: 0,
-          },
-        });
-      }
-
-      const vendor = vendors[0];
+      const vendor = vendors.length > 0 ? vendors[0] : null;
 
       // Get today's date
       const today = new Date().toISOString().split('T')[0];
 
-      // Get bookings stats
+      // Get bookings stats (include pending in today_bookings so new appointments show)
       const bookingsStats = await query(
         `SELECT 
-          COUNT(*) FILTER (WHERE booking_date = $1 AND status = 'confirmed') as today_bookings,
+          COUNT(*) FILTER (WHERE booking_date = $1 AND status IN ('pending', 'confirmed')) as today_bookings,
           COUNT(*) FILTER (WHERE status IN ('pending', 'confirmed')) as pending_bookings,
           COUNT(*) FILTER (WHERE booking_date = $1 AND status = 'completed') as completed_today
         FROM bookings 
@@ -300,12 +271,13 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       const bookingsResult = await query(
         `SELECT b.*,
-                s.name as service_name,
-                s.category as service_category,
+                COALESCE(s.name, vs.service_name) as service_name,
+                COALESCE(s.category, vs.category) as service_category,
                 c.full_name as customer_name,
                 c.phone as customer_phone
          FROM bookings b
          LEFT JOIN services s ON b.service_id = s.id
+         LEFT JOIN vendor_services vs ON vs.id = b.service_id
          LEFT JOIN customers c ON b.customer_id = c.id
          WHERE b.vendor_id = $1 
            AND b.booking_date >= $2
@@ -595,6 +567,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const completedBookings = transactions.filter((t: any) => t.status === 'settled' || t.status === 'paid_out').length;
       const averageBookingValue = totalBookings > 0 ? summary.totalEarnings / totalBookings : 0;
 
+      // Use computed total from vendor_earnings for lifetime so completed bookings show immediately
+      const totalEarningsLifetime = period === 'lifetime' ? summary.totalEarnings : parseFloat(vendor.total_earnings || '0');
+
       return c.json({
         success: true,
         earnings: {
@@ -606,7 +581,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           bankVerified: vendor.bank_verified || false,
           razorpayAccountId: vendor.razorpay_account_id || null,
           pendingPayout: parseFloat(vendor.pending_payout || '0'),
-          totalEarningsLifetime: parseFloat(vendor.total_earnings || '0'),
+          totalEarningsLifetime,
           pendingTierDeduction,
           tierDeductions: deductionRows.map((d: any) => ({
             tierName: d.tier_name,

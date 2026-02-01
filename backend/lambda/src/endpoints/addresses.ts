@@ -47,28 +47,99 @@ export function registerAddressEndpoints(app: Hono) {
         [customer[0].id]
       ).catch(() => ({ rows: [] }));
 
+      let list = addresses.rows.map((addr: any) => ({
+        id: addr.id,
+        customerId: addr.customer_id,
+        label: addr.address_type,
+        name: addr.full_name,
+        phone: addr.phone,
+        addressLine1: addr.address_line1,
+        addressLine2: addr.address_line2,
+        city: addr.city,
+        state: addr.state,
+        pincode: addr.pincode,
+        landmark: addr.landmark,
+        coordinates: addr.coordinates || null,
+        isDefault: addr.is_default,
+        createdAt: addr.created_at,
+        updatedAt: addr.updated_at,
+      }));
+
+      // When no saved addresses exist, use profile address/pincode so checkout doesn't block
+      const cust = customer[0] as any;
+      if (list.length === 0 && (cust?.address || cust?.pincode)) {
+        list = [{
+          id: 'profile',
+          customerId: cust.id,
+          label: 'home',
+          name: cust.full_name || '',
+          phone: cust.phone || '',
+          addressLine1: cust.address || '',
+          addressLine2: null,
+          city: cust.city || '',
+          state: cust.state || '',
+          pincode: cust.pincode || '',
+          landmark: null,
+          coordinates: null,
+          isDefault: true,
+          createdAt: null,
+          updatedAt: null,
+        }];
+      }
+
       return c.json({
         success: true,
-        addresses: addresses.rows.map((addr: any) => ({
+        addresses: list,
+      });
+    } catch (error: any) {
+      console.error('Error fetching addresses:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/addresses/:addressId
+   * Get a single address by ID (for vendor GPS destination lookup when booking has address_id)
+   */
+  app.get("/customer/addresses/:addressId", async (c) => {
+    try {
+      const { addressId } = c.req.param();
+      const addresses = await query(
+        `SELECT * FROM customer_addresses WHERE id = $1`,
+        [addressId]
+      ).catch(() => ({ rows: [] }));
+      if (addresses.rows.length === 0) {
+        return c.json({ error: 'Address not found' }, 404);
+      }
+      const addr = addresses.rows[0] as any;
+      let latitude: number | null = null;
+      let longitude: number | null = null;
+      if (addr.coordinates) {
+        try {
+          const coords = typeof addr.coordinates === 'string' ? JSON.parse(addr.coordinates) : addr.coordinates;
+          latitude = coords?.lat ?? coords?.latitude ?? null;
+          longitude = coords?.lng ?? coords?.longitude ?? null;
+        } catch {
+          // ignore
+        }
+      }
+      return c.json({
+        success: true,
+        address: {
           id: addr.id,
           customerId: addr.customer_id,
-          label: addr.address_type,
-          name: addr.full_name,
-          phone: addr.phone,
           addressLine1: addr.address_line1,
           addressLine2: addr.address_line2,
           city: addr.city,
           state: addr.state,
           pincode: addr.pincode,
-          landmark: addr.landmark,
-          coordinates: addr.coordinates || null,
-          isDefault: addr.is_default,
-          createdAt: addr.created_at,
-          updatedAt: addr.updated_at,
-        })),
+          latitude,
+          longitude,
+          coordinates: addr.coordinates,
+        },
       });
     } catch (error: any) {
-      console.error('Error fetching addresses:', error);
+      console.error('Error fetching address:', error);
       return c.json({ error: error.message }, 500);
     }
   });

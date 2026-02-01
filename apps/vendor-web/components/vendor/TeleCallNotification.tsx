@@ -176,22 +176,24 @@ export function TeleCallNotification({
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="p-6 flex gap-4 justify-center">
-          {/* Reject Button */}
+        {/* Action Buttons - big round green Accept / red Reject (calling style) */}
+        <div className="p-6 flex gap-8 justify-center items-center">
+          {/* Reject - big red round */}
           <button
             onClick={handleReject}
-            className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center shadow-lg transition-transform hover:scale-110"
+            className="w-20 h-20 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center shadow-xl transition-transform hover:scale-110 active:scale-95"
+            aria-label="Reject call"
           >
-            <PhoneOff className="w-8 h-8 text-white" />
+            <PhoneOff className="w-10 h-10 text-white" />
           </button>
 
-          {/* Accept Button */}
+          {/* Accept - big green round */}
           <button
             onClick={handleAccept}
-            className="w-16 h-16 rounded-full bg-green-500 hover:bg-green-600 flex items-center justify-center shadow-lg transition-transform hover:scale-110"
+            className="w-20 h-20 rounded-full bg-green-500 hover:bg-green-600 flex items-center justify-center shadow-xl transition-transform hover:scale-110 active:scale-95"
+            aria-label="Accept call"
           >
-            <Phone className="w-8 h-8 text-white" />
+            <Phone className="w-10 h-10 text-white" />
           </button>
         </div>
 

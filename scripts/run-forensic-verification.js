@@ -65,6 +65,7 @@ function isOrderOnlyRole(role) {
 }
 
 /** API discovery only: discover-services then vendor/:id/services (no DB). */
+/** Try up to 5 vendors until one has services (some vendors have no enabled services). */
 async function discoverForRole(roleId, flowName) {
   const ctx = { vendorId: null, serviceId: null, roleId, apiProviderCount: 0 };
   try {
@@ -78,21 +79,26 @@ async function discoverForRole(roleId, flowName) {
       log(flowName, 'discover', 'API discover-services: no providers', { roleId });
       return ctx;
     }
-    const first = list[0];
-    ctx.vendorId = first.id ?? first.vendor_id ?? first.vendorId;
-    if (!ctx.vendorId) {
-      log(flowName, 'discover', 'API discover-services: first provider missing vendor id', { first: Object.keys(first) });
-      return ctx;
+    const toTry = list.slice(0, 5);
+    for (const provider of toTry) {
+      const vendorId = provider.id ?? provider.vendor_id ?? provider.vendorId;
+      if (!vendorId) continue;
+      try {
+        const servicesRes = await apiRequest(`/customer/vendor/${vendorId}/services`, 'GET');
+        let services = servicesRes?.services ?? servicesRes?.data ?? [];
+        if (servicesRes?.allServices) services = servicesRes.allServices;
+        if (Array.isArray(services) && services.length > 0) {
+          const s = services[0];
+          ctx.vendorId = vendorId;
+          ctx.serviceId = s.id ?? s.serviceId ?? s.service_id;
+          log(flowName, 'discover', 'API discovery resolved (discover-services + vendor/services)', { vendorId: ctx.vendorId, serviceId: ctx.serviceId });
+          return ctx;
+        }
+      } catch {
+        continue;
+      }
     }
-    const servicesRes = await apiRequest(`/customer/vendor/${ctx.vendorId}/services`, 'GET');
-    const services = servicesRes?.services ?? servicesRes?.data ?? [];
-    if (!Array.isArray(services) || services.length === 0) {
-      log(flowName, 'discover', 'API vendor/services: no services', { vendorId: ctx.vendorId });
-      return ctx;
-    }
-    const s = services[0];
-    ctx.serviceId = s.id ?? s.serviceId ?? s.service_id;
-    log(flowName, 'discover', 'API discovery resolved (discover-services + vendor/services)', { vendorId: ctx.vendorId, serviceId: ctx.serviceId });
+    log(flowName, 'discover', 'API vendor/services: no vendors with services (tried ' + toTry.length + ')', { roleId });
   } catch (e) {
     log(flowName, 'discover', 'API discovery error', { error: e.message });
   }

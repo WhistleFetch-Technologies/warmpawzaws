@@ -21,7 +21,7 @@ export function useWebSocket(userId?: string, userType: 'customer' | 'vendor' = 
 
     // Get API base URL from runtime config
     const apiBaseUrl = getApiBaseUrl() || 
-                       'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+                       'https://rrg9107m3d.execute-api.ap-south-1.amazonaws.com';
 
     // Create or get WebSocket client
     clientRef.current = createWebSocketClient(apiBaseUrl, userId, userType);

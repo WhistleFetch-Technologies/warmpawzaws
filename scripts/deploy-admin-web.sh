@@ -17,7 +17,8 @@ done
 
 echo "🚀 Deploying admin-web to AWS dev environment..."
 
-# Configuration
+# Configuration - ONLY official CloudFront URLs (do not create or discover new URLs)
+# Official Admin: https://dfof7mguaa0a5.cloudfront.net
 APP_NAME="admin-web"
 S3_BUCKET="warmpawz-dev-admin-frontend-ap-south-1"
 CLOUDFRONT_DIST_ID="E1WPXL8WBOWOE8"

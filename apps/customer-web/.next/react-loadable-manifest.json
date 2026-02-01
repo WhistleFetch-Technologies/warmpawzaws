@@ -32,7 +32,7 @@
   "components/customer/CustomerHomeComplete.tsx -> ./TeleCallNotification": {
     "id": 15784,
     "files": [
-      "static/chunks/5784.c75ab9ac45134b74.js"
+      "static/chunks/5784.c74dd93c5903a689.js"
     ]
   },
   "components/customer/CustomerHomeComplete.tsx -> ./TeleConsultationReminderNotification": {
@@ -50,7 +50,7 @@
   "components/customer/CustomerHomeComplete.tsx -> ./booking/UnifiedAppointmentTracker": {
     "id": 70963,
     "files": [
-      "static/chunks/963.d152ca7f41cce236.js"
+      "static/chunks/963.2011f637c1652f39.js"
     ]
   },
   "components/customer/CustomerHomeComplete.tsx -> ./tracking/LiveTrackingWidget": {
@@ -68,19 +68,19 @@
   "components/customer/CustomerPetProfile.tsx -> @/lib/photo-upload-enhanced": {
     "id": 86000,
     "files": [
-      "static/chunks/6000.1abbf096904f1d1d.js"
+      "static/chunks/6000.ae608101c2b20e61.js"
     ]
   },
   "components/customer/CustomerUserProfile.tsx -> @/lib/photo-upload-enhanced": {
     "id": 86000,
     "files": [
-      "static/chunks/6000.1abbf096904f1d1d.js"
+      "static/chunks/6000.ae608101c2b20e61.js"
     ]
   },
   "components/customer/EnhancedAddPetModal.tsx -> @/lib/photo-upload-enhanced": {
     "id": 86000,
     "files": [
-      "static/chunks/6000.1abbf096904f1d1d.js"
+      "static/chunks/6000.ae608101c2b20e61.js"
     ]
   },
   "components/customer/PrescriptionDocument.tsx -> html2canvas": {
@@ -125,7 +125,7 @@
   "components/customer/wrappers/CustomerHomeWrapper.tsx -> ../booking/ChimeVideoCall": {
     "id": 94474,
     "files": [
-      "static/chunks/4474-71efd1539a7ef2fd.js"
+      "static/chunks/4474-cddad0a97b20eccc.js"
     ]
   },
   "lib/api-client.ts -> ./error-handling": {

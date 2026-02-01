@@ -17,10 +17,10 @@ done
 
 echo "🚀 Deploying customer-web to AWS dev environment..."
 
-# Configuration - ONLY use official Customer CloudFront URL
+# Configuration - ONLY official CloudFront URLs (do not create or discover new URLs)
+# Official Customer: https://d2aoyjj8ine0wk.cloudfront.net
 APP_NAME="customer-web"
 S3_BUCKET="warmpawz-dev-customer-frontend-ap-south-1"
-# Official Customer CloudFront (ONLY this URL for customer component)
 CLOUDFRONT_DIST_ID="E2RDORGXSWJJ87"
 CLOUDFRONT_URL="https://d2aoyjj8ine0wk.cloudfront.net"
 
@@ -65,11 +65,10 @@ fi
 echo -e "${BLUE}🔧 Injecting runtime-config.js...${NC}"
 cd "$PROJECT_ROOT"
 
-# Get API endpoint. For Customer app with UAT mode:
-# - Prefer USE_SERVERLESS_API=1 to use z0b3obweb6 (supports UAT tokens; CDK API uses Cognito-only)
-# - Else prefer api.dev.warmpawz.com (official API domain) when in CDK outputs
-# - Else CDK ApiGatewayUrl, then serverless fallback
-USE_SERVERLESS_API="${USE_SERVERLESS_API:-0}"
+# Get API endpoint. For Customer app with UAT mode (phone login, no Cognito):
+# - Default USE_SERVERLESS_API=1 so POST /customer/profile and other customer routes work with UAT token (CDK api.dev.warmpawz.com uses Cognito-only → 401)
+# - Set USE_SERVERLESS_API=0 to use api.dev.warmpawz.com (requires Cognito JWT)
+USE_SERVERLESS_API="${USE_SERVERLESS_API:-1}"
 SERVERLESS_API="https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"
 
 if [ "$USE_SERVERLESS_API" = "1" ] || [ "$USE_SERVERLESS_API" = "true" ]; then

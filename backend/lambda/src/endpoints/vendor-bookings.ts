@@ -17,7 +17,7 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
-import { select, update, query } from '../database/rds-connection';
+import { select, update, query, insert } from '../database/rds-connection';
 import { logBookingStatusChange } from '../utils/audit-log';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds, parseSelectedServices } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -34,9 +34,10 @@ export function registerVendorBookingsEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       
-      // Check capability - allow if vendor has booking_view or booking_create
-      const hasBookingCapability = await checkVendorCapability(vendorId, 'booking_view') || 
-                                   await checkVendorCapability(vendorId, 'booking_create');
+      // Check capability - allow booking_view, booking_create, or bookings (post-role-migration)
+      const hasBookingCapability = await checkVendorCapability(vendorId, 'booking_view') ||
+                                   await checkVendorCapability(vendorId, 'booking_create') ||
+                                   await checkVendorCapability(vendorId, 'bookings');
       if (!hasBookingCapability) {
         return c.json({ error: 'Vendor does not have booking viewing capability' }, 403);
       }
@@ -481,6 +482,31 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         'Vendor marked booking as completed'
       );
 
+      // Insert vendor_earnings so earnings API and UI show completed booking
+      const vid = booking.vendor_id || vendorId;
+      if (vid) {
+        const existing = await query(
+          'SELECT id FROM vendor_earnings WHERE booking_id = $1 LIMIT 1',
+          [bookingId]
+        ).catch(() => ({ rows: [] }));
+        if (!existing.rows?.length) {
+          const totalAmount = parseFloat(booking.total_amount || '0') || 0;
+          const commissionRatePct = 15; // 15%
+          const commissionAmount = Math.round(totalAmount * (commissionRatePct / 100) * 100) / 100;
+          const amount = Math.round((totalAmount - commissionAmount) * 100) / 100;
+          await insert('vendor_earnings', {
+            vendor_id: vid,
+            booking_id: bookingId,
+            amount,
+            commission_amount: commissionAmount,
+            total_amount: totalAmount,
+            commission_rate: commissionRatePct,
+            status: 'pending',
+            realized_at: new Date().toISOString(),
+          }).catch((err) => console.warn('vendor_earnings insert:', err?.message));
+        }
+      }
+
       // Publish notification event
       try {
         const { publishBookingStatusUpdated } = await import('../utils/sns-client');
@@ -534,12 +560,27 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
       // ✅ FIX: Extract pet_id from notes if not in pet_id column
       // Legacy bookings stored pet_id in notes as "Pet ID: <uuid>"
+      // Diagnostics store notes as JSON with optional petId, patientName, patientAge
       let petIdToUse = booking.pet_id;
-      if (!petIdToUse && booking.notes) {
-        const petIdMatch = booking.notes.match(/Pet ID:\s*([0-9a-f-]{36})/i);
+      let notesParsed: { petId?: string; patientName?: string; patientAge?: string; [key: string]: any } | null = null;
+      if (booking.notes) {
+        const petIdMatch = typeof booking.notes === 'string' && booking.notes.match(/Pet ID:\s*([0-9a-f-]{36})/i);
         if (petIdMatch) {
           petIdToUse = petIdMatch[1];
           console.log(`📋 [BOOKING-DETAILS] Extracted pet_id from notes: ${petIdToUse}`);
+        }
+        // Diagnostics (and similar) store JSON in notes with patientName, patientAge, optional petId
+        try {
+          const parsed = typeof booking.notes === 'string' ? JSON.parse(booking.notes) : booking.notes;
+          if (parsed && typeof parsed === 'object') {
+            notesParsed = parsed;
+            if (!petIdToUse && (parsed.petId || parsed.pet_id)) {
+              petIdToUse = parsed.petId || parsed.pet_id;
+              console.log(`📋 [BOOKING-DETAILS] Extracted pet_id from notes JSON: ${petIdToUse}`);
+            }
+          }
+        } catch {
+          // notes is not JSON (e.g. plain "Pet: Name") - ignore
         }
       }
       if (!petIdToUse && booking.special_instructions) {
@@ -568,10 +609,10 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         booking.vendor_id
           ? select('vendors', { id: booking.vendor_id }).catch(() => [])
           : Promise.resolve([]),
-        // Prescriptions
+        // Prescriptions (omit is_active filter for schema compatibility; table may not have is_active)
         query(
           `SELECT * FROM prescriptions 
-           WHERE booking_id = $1 AND is_active = true
+           WHERE booking_id = $1
            ORDER BY created_at DESC`,
           [bookingId]
         ).catch(() => ({ rows: [] })),
@@ -623,11 +664,11 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         customerEmail: customer.length > 0 ? customer[0].email : null,
         customerAddress: customer.length > 0 ? customer[0].address : null,
         
-        // Pet details - use extracted petIdToUse
-        petName: pet.length > 0 ? pet[0].name : booking.pet_name || 'Unknown Pet',
-        petType: pet.length > 0 ? pet[0].species : booking.pet_type || '',
-        petBreed: pet.length > 0 ? pet[0].breed : booking.pet_breed || '',
-        petAge: pet.length > 0 ? (pet[0].age_years || pet[0].age) : booking.pet_age || '',
+        // Pet details - use pet from DB, or fallback to notes (diagnostics: patientName/patientAge)
+        petName: pet.length > 0 ? pet[0].name : (booking.pet_name || (notesParsed?.patientName ?? null) || 'Unknown Pet'),
+        petType: pet.length > 0 ? pet[0].species : (booking.pet_type || (notesParsed?.petType ?? notesParsed?.pet_type ?? '') || ''),
+        petBreed: pet.length > 0 ? pet[0].breed : (booking.pet_breed || (notesParsed?.breed ?? '') || ''),
+        petAge: pet.length > 0 ? (pet[0].age_years != null ? `${pet[0].age_years}` : (pet[0].age != null ? `${pet[0].age}` : '')) : (booking.pet_age || (notesParsed?.patientAge != null ? String(notesParsed.patientAge) : (notesParsed?.petAge != null ? String(notesParsed.petAge) : '')) || ''),
         petWeight: pet.length > 0 ? (pet[0].weight_kg || pet[0].weight) : null,
         petPhoto: pet.length > 0 ? pet[0].profile_photo_url : null,
         // Pet object for structured access
@@ -639,7 +680,15 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           age: pet[0].age_years || pet[0].age,
           weight: pet[0].weight_kg || pet[0].weight,
           photo_url: pet[0].profile_photo_url,
-        } : null,
+        } : (notesParsed?.patientName || notesParsed?.patientAge ? {
+          id: petIdToUse || null,
+          name: notesParsed.patientName || 'Patient',
+          species: notesParsed.petType || notesParsed.pet_type || '',
+          breed: notesParsed.breed || '',
+          age: notesParsed.patientAge ?? notesParsed.petAge ?? null,
+          weight: null,
+          photo_url: null,
+        } : null),
         
         // Service details
         serviceName: service.length > 0 ? service[0].name : booking.service_name || 'Unknown Service',
@@ -719,9 +768,10 @@ export function registerVendorBookingsEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       
-      // Check capability - allow if vendor has booking_view or booking_create
-      const hasBookingCapability = await checkVendorCapability(vendorId, 'booking_view') || 
-                                   await checkVendorCapability(vendorId, 'booking_create');
+      // Check capability - allow booking_view, booking_create, or bookings (post-role-migration)
+      const hasBookingCapability = await checkVendorCapability(vendorId, 'booking_view') ||
+                                   await checkVendorCapability(vendorId, 'booking_create') ||
+                                   await checkVendorCapability(vendorId, 'bookings');
       if (!hasBookingCapability) {
         return c.json({ error: 'Vendor does not have booking viewing capability' }, 403);
       }

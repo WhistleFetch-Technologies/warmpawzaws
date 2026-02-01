@@ -37,34 +37,61 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c; // Distance in km
 }
 
+/** Map canonical role names to customer-facing discovery categories (align with CustomerHomeComplete tiles). */
 function getCategoryFromRole(roleId: string): string {
   const roleCategoryMap: Record<string, string> = {
-    'vet_clinic': 'vet', 'veterinarian': 'vet', 'vet_solo': 'vet',
+    // Vet
+    'vet_clinic': 'vet', 'veterinarian': 'vet', 'vet_solo': 'vet', 'vet': 'vet',
+    // Grooming
     'grooming_salon': 'grooming', 'pet_groomer': 'grooming', 'groomer': 'grooming', 'groomer_solo': 'grooming', 'groomer_center': 'grooming', 'grooming_solo': 'grooming',
-    'trainer': 'training', 'pet_trainer': 'training', 'trainer_solo': 'training', 'trainer_center': 'training', 'training_solo': 'training',
-    'dog_walker': 'walker', 'pet_walker': 'walker', 'walker': 'walker', 'walker_solo': 'walker',
-    'boarding_resort': 'boarding', 'pet_boarding': 'boarding',
+    // Training
+    'trainer': 'training', 'pet_trainer': 'training', 'trainer_solo': 'training', 'trainer_center': 'training', 'training_solo': 'training', 'solo': 'training',
+    // Walker
+    'dog_walker': 'walker', 'pet_walker': 'walker', 'walker': 'walker', 'walker_solo': 'walker', 'walking': 'walker',
+    // Boarding
+    'boarding': 'boarding', 'boarding_resort': 'boarding', 'pet_boarding': 'boarding', 'pet_boarder': 'boarding', 'pet_daycare': 'boarding',
+    // Nutrition
     'nutritionist': 'nutrition', 'pet_nutritionist': 'nutrition', 'nutritionist_center': 'nutrition', 'nutritionist_solo': 'nutrition',
-    'ngo': 'adoption', 'shelter': 'adoption', 'breeder': 'adoption',
-    'pet_store': 'marketplace',
+    // Adoption (shelter / adoption center)
+    'adoption_center': 'adoption', 'ngo': 'adoption', 'shelter': 'adoption', 'pet_shelter': 'adoption', 'pet_adoption_center': 'adoption',
+    // Shop / marketplace
+    'seller': 'shop', 'pet_store': 'shop', 'pet_products_store': 'shop',
+    // Diagnostics / lab
     'diagnostics_center': 'diagnostics', 'diagnostics_provider': 'diagnostics', 'diagnostics_solo': 'diagnostics',
-    'pharmacy': 'pharmacy',
-    'cafe': 'cafe',
+    // Pharmacy, cafe, photography, insurance, ambulance, breeder, relocation, resort, holiday, sunset
+    'pharmacy': 'pharmacy', 'pet_pharmacy': 'pharmacy',
+    'cafe': 'cafes', 'pet_cafe': 'cafes',
+    'photographer': 'photography', 'pet_photographer': 'photography',
+    'insurance': 'insurance', 'pet_insurance': 'insurance',
+    'ambulance': 'ambulance', 'pet_ambulance': 'ambulance',
+    'breeder': 'breeder', 'pet_breeder': 'breeder',
+    'relocation': 'relocation', 'pet_taxi': 'relocation', 'pet_transport': 'relocation', 'pet_relocation': 'relocation',
+    'resort': 'resort', 'pet_resort': 'resort',
+    'holiday': 'holiday',
+    'sunset': 'sunset', 'pet_sunset_services': 'sunset',
+    'event_organizer': 'events', 'pet_event_organizer': 'events',
+    // Behaviourist, sitting
     'behaviourist': 'behaviourist', 'pet_behaviourist': 'behaviourist', 'behaviourist_solo': 'behaviourist',
     'pet_sitter': 'sitting', 'sitter': 'sitting', 'sitter_solo': 'sitting',
   };
   return roleCategoryMap[roleId] || roleCategoryMap[roleId?.toLowerCase?.()] || 'other';
 }
 
-/** DB-driven: role names that have at least one approved vendor with published services */
+/** DB-driven: role names that have at least one approved/active vendor with any published service.
+ * Aligned with admin active vendors: no r.is_active filter so walker/trainer/groomer/vet all appear. */
 async function getDiscoverableRoleNames(): Promise<string[]> {
   const result = await query(`
     SELECT DISTINCT r.name AS role_name
     FROM vendors v
     INNER JOIN roles r ON v.role_id = r.id
-    INNER JOIN vendor_services vs ON vs.vendor_id = v.id
-    WHERE v.status = 'approved' AND v.is_active = true AND r.is_active = true
-      AND vs.is_enabled = true AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
+    WHERE (v.status = 'approved' OR v.status = 'active')
+      AND v.is_active = true
+      AND EXISTS (
+        SELECT 1 FROM vendor_services vs
+        WHERE vs.vendor_id = v.id
+          AND vs.is_enabled = true
+          AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+      )
     ORDER BY r.name
   `);
   return (result.rows || []).map((r: any) => r.role_name).filter(Boolean);
@@ -76,18 +103,56 @@ const ROLE_ID_ALIASES: Record<string, string> = {
   diagnostics: 'diagnostics_center',
 };
 
-/** Resolve target role names for discovery: from category or roleId, restricted to DB-discoverable roles */
+/** Static role names per category for discovery when DB-driven list is empty. Align with 25 canonical roles. */
+const CATEGORY_ROLE_NAMES: Record<string, string[]> = {
+  vet: ['veterinarian', 'vet_clinic', 'vet_solo', 'vet'],
+  grooming: ['groomer', 'groomer_solo', 'groomer_center', 'grooming_solo', 'pet_groomer'],
+  training: ['trainer', 'trainer_solo', 'trainer_center', 'training_solo', 'pet_trainer', 'solo'],
+  walker: ['walker', 'walker_solo', 'pet_walker', 'dog_walker'],
+  walking: ['walker', 'walker_solo', 'pet_walker', 'dog_walker'],
+  boarding: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_boarding'],
+  nutrition: ['nutritionist', 'nutritionist_solo', 'nutritionist_center', 'pet_nutritionist'],
+  nutritionist: ['nutritionist', 'nutritionist_solo', 'nutritionist_center', 'pet_nutritionist'],
+  adoption: ['adoption_center', 'pet_shelter', 'pet_adoption_center'],
+  shop: ['seller', 'pet_products_store'],
+  diagnostics: ['diagnostics_center', 'diagnostics_provider', 'diagnostics_solo'],
+  'lab-diagnostics': ['diagnostics_center', 'diagnostics_provider', 'diagnostics_solo'],
+  pharmacy: ['pharmacy', 'pet_pharmacy'],
+  cafes: ['cafe', 'pet_cafe'],
+  cafe: ['cafe', 'pet_cafe'],
+  photography: ['photographer', 'pet_photographer'],
+  insurance: ['insurance', 'pet_insurance'],
+  ambulance: ['ambulance', 'pet_ambulance'],
+  breeder: ['breeder', 'pet_breeder'],
+  relocation: ['relocation', 'pet_taxi', 'pet_transport', 'pet_relocation'],
+  resort: ['resort', 'pet_resort'],
+  holiday: ['holiday'],
+  sunset: ['sunset', 'pet_sunset_services'],
+  events: ['event_organizer', 'pet_event_organizer'],
+  behaviourist: ['behaviourist', 'behaviourist_solo', 'pet_behaviourist'],
+  sitting: ['pet_sitter', 'sitter_solo', 'sitter'],
+};
+
+/** Resolve target role names for discovery: from category or roleId, restricted to DB-discoverable roles.
+ * When category/roleId is provided: return ALL discoverable roles in that category (e.g. walker → walker_solo, pet_walker, dog_walker).
+ * Falls back to static CATEGORY_ROLE_NAMES when no discoverable roles exist so new vendors are still queryable. */
 async function resolveTargetRolesForDiscovery(category?: string | null, roleId?: string | null): Promise<string[]> {
   const discoverable = await getDiscoverableRoleNames();
+  let rawCategory = category?.toLowerCase().trim() || (roleId ? getCategoryFromRole(roleId) : null);
+  // Normalize customer tile categoryIds to discovery category (e.g. lab-diagnostics → diagnostics for role lookup)
+  if (rawCategory === 'lab-diagnostics') rawCategory = 'diagnostics';
+  const effectiveCategory = rawCategory && getCategoryFromRole(rawCategory) !== 'other' ? getCategoryFromRole(rawCategory) : rawCategory;
+  if (effectiveCategory) {
+    const fromDb = discoverable.filter((role) => getCategoryFromRole(role) === effectiveCategory);
+    if (fromDb.length > 0) return fromDb;
+    // Support both normalized and raw (e.g. lab-diagnostics, cafes) for customer tile categoryIds
+    return CATEGORY_ROLE_NAMES[effectiveCategory] || CATEGORY_ROLE_NAMES[rawCategory!] || [];
+  }
   if (roleId) {
     const lower = roleId.toLowerCase().trim();
     const canonical = ROLE_ID_ALIASES[lower] || lower;
     const match = discoverable.find((r) => r.toLowerCase() === canonical || r.toLowerCase() === lower);
     return match ? [match] : [];
-  }
-  if (category) {
-    const cat = category.toLowerCase();
-    return discoverable.filter((role) => getCategoryFromRole(role) === cat);
   }
   return discoverable;
 }
@@ -100,21 +165,27 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
    */
   app.get('/customer/discovery/meta', async (c) => {
     try {
+      // Align with admin active vendors: (approved|active), any published/draft service, no r.is_active
       const rolesResult = await query(`
         SELECT DISTINCT r.name AS roleName, r.display_name AS roleDisplayName
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
-        INNER JOIN vendor_services vs ON vs.vendor_id = v.id
-        WHERE v.status = 'approved' AND v.is_active = true AND r.is_active = true
-          AND vs.is_enabled = true AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
+        WHERE (v.status = 'approved' OR v.status = 'active')
+          AND v.is_active = true
+          AND EXISTS (
+            SELECT 1 FROM vendor_services vs
+            WHERE vs.vendor_id = v.id AND vs.is_enabled = true
+              AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+          )
         ORDER BY r.name
       `);
       const stylesResult = await query(`
         SELECT DISTINCT vs.service_style AS serviceStyle
         FROM vendor_services vs
         INNER JOIN vendors v ON v.id = vs.vendor_id
-        WHERE v.status = 'approved' AND v.is_active = true
-          AND vs.is_enabled = true AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
+        WHERE (v.status = 'approved' OR v.status = 'active') AND v.is_active = true
+          AND vs.is_enabled = true
+          AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
           AND vs.service_style IS NOT NULL
         ORDER BY vs.service_style
       `);
@@ -138,7 +209,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         success: true,
         roles: [],
         serviceStyles: ['at_center', 'at_home', 'tele'],
-        categories: ['vet', 'grooming', 'training', 'walker', 'nutrition', 'boarding', 'diagnostics'],
+        categories: ['vet', 'grooming', 'training', 'walker', 'nutrition', 'boarding', 'diagnostics', 'shop', 'cafes', 'photography', 'insurance', 'ambulance', 'breeder', 'adoption', 'relocation', 'resort', 'holiday', 'sunset'],
       }, 200);
     }
   });
@@ -458,23 +529,48 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const serviceStyle = c.req.query('serviceStyle'); // ⚠️ NEW: Filter by service style
       const roleId = c.req.query('roleId'); // ⚠️ NEW: Filter by role
 
-      // ⚠️ CRITICAL: For at_home and tele services, return ONLY solo providers
-      // Staff has been decommissioned - now only vendor_type='solo' providers serve home/tele
+      // ⚠️ For at_home and tele: align with admin active vendors source so walkers/trainers/groomers/vets all discover.
+      // When category/roleId given: use same criteria as /admin/vendors/active (any published service), then filter by role.
       if (serviceStyle === 'at_home' || serviceStyle === 'tele') {
         const allProviders: any[] = [];
         const targetRoles = await resolveTargetRolesForDiscovery(category || null, roleId || null);
-        
-        // ========== Get ONLY solo vendors with at_home/tele services (DB-driven role filter) ==========
-        // ✅ Include vendor_type='solo' OR role name contains 'solo' OR role in category (e.g. pet_trainer for training)
-        const vendorParams: any[] = [serviceStyle];
-        let vendorParamIdx = 2;
-        const soloOrCategoryRole = targetRoles.length > 0
-          ? ` OR r.name = ANY($${vendorParamIdx})`
+        const targetRolesLower = targetRoles.map((r) => r.toLowerCase());
+        console.log('[discover-services] at_home/tele category=%s roleId=%s targetRoles=%s', category, roleId, JSON.stringify(targetRolesLower));
+
+        // Match role name exactly or with spaces normalized to underscores (e.g. "Pet Walker" -> pet_walker). Require role so role_id NULL vendors are excluded.
+        const roleRestrictClause = targetRolesLower.length > 0
+          ? ` AND r.id IS NOT NULL AND (LOWER(r.name) = ANY($1::text[]) OR LOWER(REPLACE(COALESCE(r.name, ''), ' ', '_')) = ANY($1::text[]))`
           : '';
-        if (targetRoles.length > 0) {
-          vendorParams.push(targetRoles);
-          vendorParamIdx++;
-        }
+        const soloCondition = targetRolesLower.length > 0
+          ? ''
+          : ` AND (
+              v.vendor_type = 'solo'
+              OR r.name LIKE '%_solo'
+              OR r.name LIKE '%Solo%'
+              OR LOWER(r.name) LIKE '%solo%'
+            )`;
+
+        // When targetRoles set: same source as admin – vendors with ANY published service (any style). No service_style filter so walkers/trainers show.
+        const vendorParams: any[] = targetRolesLower.length > 0 ? targetRolesLower : [];
+        const isWalkerCategory = (category?.toLowerCase() === 'walker' || category?.toLowerCase() === 'walking') || (targetRolesLower.length > 0 && targetRolesLower.some((r: string) => ['walker', 'walker_solo', 'pet_walker', 'dog_walker'].includes(r)));
+        // Walker category: relax to any enabled service so active walkers without publish_status set are discoverable
+        const existsServiceClause = targetRolesLower.length > 0
+          ? (isWalkerCategory
+              ? ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true)`
+              : ` AND EXISTS (
+              SELECT 1 FROM vendor_services vs
+              WHERE vs.vendor_id = v.id
+                AND vs.is_enabled = true
+                AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+            )`)
+          : ` AND EXISTS (
+              SELECT 1 FROM vendor_services vs
+              WHERE vs.vendor_id = v.id
+                AND (vs.service_style = $1 OR vs.service_style IS NULL)
+                AND vs.is_enabled = true
+                AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+            )`;
+        if (targetRolesLower.length === 0) vendorParams.unshift(serviceStyle);
 
         let vendorQuery = `
           SELECT DISTINCT v.id, v.business_name, v.owner_name, v.phone, v.city, v.state,
@@ -483,31 +579,30 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                  v.vendor_type, v.metadata
           FROM vendors v
           LEFT JOIN roles r ON v.role_id = r.id
-          INNER JOIN vendor_services vs ON vs.vendor_id = v.id
-          WHERE v.status = 'approved' 
+          WHERE (v.status = 'approved' OR v.status = 'active')
             AND v.is_active = true
-            AND COALESCE(v.is_online, true) = true
-            AND (
-              v.vendor_type = 'solo' 
-              OR r.name LIKE '%_solo' 
-              OR r.name LIKE '%Solo%'
-              OR LOWER(r.name) LIKE '%solo%'${soloOrCategoryRole}
-            )
-            -- ✅ EXCLUDE business/clinic keywords from at_home/tele listings
+            AND (${targetRolesLower.length > 0 ? '1=1' : "COALESCE(v.is_online, true) = true"})
+            ${soloCondition}
+            ${roleRestrictClause}
             AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%clinic%'
             AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%hospital%'
             AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%center%'
             AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%centre%'
             AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%salon%'
             AND COALESCE(LOWER(v.business_name), '') NOT LIKE '% business%'
-            AND vs.service_style = $1
-            AND vs.is_enabled = true
-            AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
+            ${existsServiceClause}
         `;
 
         vendorQuery += ` LIMIT 50`;
-        
-        const vendorResults = await query(vendorQuery, vendorParams).catch(() => ({ rows: [] }));
+
+        let vendorResults: { rows: any[] };
+        try {
+          vendorResults = await query(vendorQuery, vendorParams);
+        } catch (err: any) {
+          console.error('[discover-services] at_home query error:', err?.message, err?.stack);
+          vendorResults = { rows: [] };
+        }
+        console.log('[discover-services] at_home found %s vendors', vendorResults.rows?.length ?? 0);
         
         for (const vendor of vendorResults.rows) {
           // ✅ ENRICHED: Get next available slot for solo vendor
@@ -598,16 +693,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             totalReviews = parseInt(reviewsResult.rows[0]?.review_count || '0', 10);
           } catch (reviewErr) { /* Continue */ }
 
-          // ✅ ENRICHED: Consultation price (min price from vendor_services for this style)
+          // ✅ ENRICHED: Consultation price (min price from any published service so walkers/trainers show a price)
           let consultationFee = 0;
           let minPrice = 0;
           try {
             const priceResult = await query(
               `SELECT MIN(COALESCE(vs.custom_price, vs.price, 0))::numeric as min_price
                FROM vendor_services vs
-               WHERE vs.vendor_id = $1 AND vs.service_style = $2 AND vs.is_enabled = true
-                 AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)`,
-              [vendor.id, serviceStyle]
+               WHERE vs.vendor_id = $1 AND vs.is_enabled = true
+                 AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)`,
+              [vendor.id]
             );
             minPrice = parseFloat(priceResult.rows[0]?.min_price || '0') || 0;
             consultationFee = minPrice;
@@ -2894,14 +2989,29 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           // ✅ FIX: Align with getCategoryFromRole - include all center/solo role name variants so discoverable vendors populate.
           // Vet center uses discover-services; by-style must match same role set for grooming/training/walker.
           const categoryRoles: Record<string, string[]> = {
-            'vet': ['veterinarian', 'vet_clinic', 'vet', 'Veterinarian'],
+            'vet': ['veterinarian', 'vet_clinic', 'vet_solo', 'vet', 'Veterinarian'],
             'grooming': ['groomer', 'grooming_salon', 'pet_groomer', 'groomer_center', 'groomer_solo', 'grooming_solo'],
             'training': ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo', 'training_solo'],
             'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist_center', 'nutritionist_solo'],
+            'nutrition': ['nutritionist', 'pet_nutritionist', 'nutritionist_center', 'nutritionist_solo'],
             'walker': ['walker', 'pet_walker', 'dog_walker', 'walker_solo'],
+            'boarding': ['boarding', 'pet_boarder', 'pet_boarding'],
+            'adoption': ['adoption_center', 'pet_shelter', 'pet_adoption_center'],
+            'shop': ['seller', 'pet_products_store'],
+            'cafes': ['cafe', 'pet_cafe'],
+            'cafe': ['cafe', 'pet_cafe'],
+            'photography': ['photographer', 'pet_photographer'],
+            'insurance': ['insurance', 'pet_insurance'],
+            'ambulance': ['ambulance', 'pet_ambulance'],
+            'breeder': ['breeder', 'pet_breeder'],
+            'relocation': ['relocation', 'pet_taxi', 'pet_transport', 'pet_relocation'],
+            'resort': ['resort', 'pet_resort'],
+            'holiday': ['holiday'],
+            'sunset': ['sunset', 'pet_sunset_services'],
             'behaviourist': ['behaviourist', 'pet_behaviourist', 'behaviourist_solo'],
             'sitting': ['pet_sitter', 'sitter', 'sitter_solo'],
-            'diagnostics': ['diagnostics_provider', 'diagnostics_center', 'diagnostics_solo'],
+            'diagnostics': ['diagnostics_center', 'diagnostics_provider', 'diagnostics_solo'],
+            'lab-diagnostics': ['diagnostics_center', 'diagnostics_provider', 'diagnostics_solo'],
           };
           const roles = categoryRoles[category.toLowerCase()];
           if (roles) {
@@ -3107,25 +3217,37 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         ? 'COALESCE((SELECT COUNT(*) FROM reviews WHERE staff_id = s.id), 0)' 
         : '0';
 
-      // Category role mapping - comprehensive list including solo providers and display names
+      // Category role mapping - all canonical roles so discovery works for every customer tile
       const categoryRoles: Record<string, string[]> = {
         'vet': ['Veterinarian', 'veterinarian', 'vet', 'vet_clinic', 'vet_solo', 'Veterinarian (Solo)', 'Vet Solo', 'Veterinary Clinic'],
-        'grooming': ['Groomer', 'groomer', 'pet_groomer', 'grooming_salon', 'grooming_solo', 'Groomer (Solo)', 'Grooming Salon'],
-        'training': ['Trainer', 'trainer', 'pet_trainer', 'training_solo', 'Trainer (Solo)', 'Pet Trainer'],
+        'grooming': ['Groomer', 'groomer', 'pet_groomer', 'grooming_salon', 'groomer_center', 'groomer_solo', 'grooming_solo', 'Groomer (Solo)', 'Grooming Salon'],
+        'training': ['Trainer', 'trainer', 'pet_trainer', 'trainer_center', 'trainer_solo', 'training_solo', 'Trainer (Solo)', 'Pet Trainer'],
         'walker': ['Walker', 'walker', 'pet_walker', 'dog_walker', 'walker_solo', 'Dog Walker', 'Walker (Solo)'],
-        'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist_solo', 'Pet Nutritionist', 'Nutritionist (Solo)'],
-        'nutrition': ['nutritionist', 'pet_nutritionist', 'nutritionist_solo', 'Pet Nutritionist', 'Nutritionist (Solo)'],
+        'boarding': ['boarding', 'pet_boarder', 'pet_boarding'],
+        'adoption': ['adoption_center', 'pet_shelter', 'pet_adoption_center'],
+        'shop': ['seller', 'pet_products_store'],
+        'cafes': ['cafe', 'pet_cafe'],
+        'cafe': ['cafe', 'pet_cafe'],
+        'photography': ['photographer', 'pet_photographer'],
+        'insurance': ['insurance', 'pet_insurance'],
+        'ambulance': ['ambulance', 'pet_ambulance'],
+        'breeder': ['breeder', 'pet_breeder'],
+        'relocation': ['relocation', 'pet_taxi', 'pet_transport', 'pet_relocation'],
+        'resort': ['resort', 'pet_resort'],
+        'holiday': ['holiday'],
+        'sunset': ['sunset', 'pet_sunset_services'],
+        'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist_center', 'nutritionist_solo', 'Pet Nutritionist', 'Nutritionist (Solo)'],
+        'nutrition': ['nutritionist', 'pet_nutritionist', 'nutritionist_center', 'nutritionist_solo', 'Pet Nutritionist', 'Nutritionist (Solo)'],
         'behaviourist': ['behaviourist', 'pet_behaviourist', 'behaviourist_solo', 'Pet Behaviourist', 'Behaviourist (Solo)'],
         'sitting': ['pet_sitter', 'sitter', 'sitter_solo', 'Pet Sitter', 'Sitter (Solo)'],
-        'diagnostics': ['diagnostics_provider', 'diagnostics_solo', 'Diagnostics Provider', 'Diagnostics (Solo)'],
+        'diagnostics': ['diagnostics_center', 'diagnostics_provider', 'diagnostics_solo', 'Diagnostics Provider', 'Diagnostics (Solo)'],
+        'lab-diagnostics': ['diagnostics_center', 'diagnostics_provider', 'diagnostics_solo'],
       };
 
-      // ✅ FIX: Use roleId if provided, otherwise use category mapping
-      // If both category and roleId are provided, combine them for better matching
+      // ✅ FIX: Use roleId if provided, otherwise use category mapping.
+      // Resolve roleId to full category role list so walkers (walker_solo, pet_walker, dog_walker) and solo trainers (trainer_solo, pet_trainer) are discovered.
       let targetRoles: string[] = [];
       if (roleId) {
-        // If roleId is provided, try to get role name from database
-        // ✅ FIX: Avoid uuid = text comparison - only compare name/display_name with text
         try {
           const roles = await query(
             `SELECT name, display_name FROM roles WHERE LOWER(name) = LOWER($1) OR LOWER(display_name) = LOWER($1)`,
@@ -3133,24 +3255,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           );
           if (roles.rows.length > 0) {
             const role = roles.rows[0];
-            targetRoles = [role.name, role.display_name, roleId];
-            // Also add common variations based on role name
-            if (role.name.toLowerCase().includes('vet') || role.name.toLowerCase().includes('veterinarian')) {
-              targetRoles.push(...categoryRoles['vet']);
-            }
+            targetRoles = [role.name, role.display_name, roleId].filter(Boolean);
           } else {
-            // If not found in DB, use roleId as-is and add common variations
             targetRoles = [roleId];
-            if (roleId.toLowerCase().includes('vet') || roleId.toLowerCase().includes('veterinarian')) {
-              targetRoles.push(...categoryRoles['vet']);
-            }
+          }
+          // Resolve roleId to category and add all role variants (walker → walker_solo, pet_walker, dog_walker; trainer → trainer_solo, pet_trainer)
+          const roleCategory = getCategoryFromRole(roleId);
+          if (roleCategory && categoryRoles[roleCategory]) {
+            targetRoles = [...new Set([...targetRoles, ...categoryRoles[roleCategory]])];
           }
         } catch (err) {
           console.warn('Error fetching role:', err);
-          // Fallback: use roleId as-is and add category roles if category matches
           targetRoles = [roleId];
-          if (roleId.toLowerCase().includes('vet') || roleId.toLowerCase().includes('veterinarian')) {
-            targetRoles.push(...categoryRoles['vet']);
+          const roleCategory = getCategoryFromRole(roleId);
+          if (roleCategory && categoryRoles[roleCategory]) {
+            targetRoles = [...new Set([...targetRoles, ...categoryRoles[roleCategory]])];
           }
         }
       }
@@ -3158,9 +3277,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // ✅ FIX: Also include category roles if category is provided (combine with roleId results)
       if (category) {
         const categoryRoleList = categoryRoles[category.toLowerCase()] || [];
-        // Merge category roles with existing targetRoles, avoiding duplicates
-        const combinedRoles = [...new Set([...targetRoles, ...categoryRoleList])];
-        targetRoles = combinedRoles;
+        targetRoles = [...new Set([...targetRoles, ...categoryRoleList])];
       }
       
       // ✅ FIX: If no roles found, use category as fallback
@@ -3523,10 +3640,29 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         });
       }
 
-      // ========== 3. FALLBACK: Get SOLO vendors only with at_home/tele services ==========
-      // ✅ RULE: Home/Tele listing = only solo providers (same as discover-services)
+      // ========== 3. FALLBACK: Vendors with at_home/tele – align with admin active (any published service when category set) ==========
       const vendorIdsWithStaff = new Set(providers.map(p => p.vendorId).filter(Boolean));
       
+      const vendorFallbackSoloCondition = targetRoles.length > 0
+        ? ''
+        : ` AND (
+            v.vendor_type = 'solo'
+            OR r.name LIKE '%_solo'
+            OR r.name LIKE '%Solo%'
+            OR LOWER(r.name) LIKE '%solo%'
+          )`;
+      const vendorFallbackExistsService = targetRoles.length > 0
+        ? ` AND EXISTS (
+            SELECT 1 FROM vendor_services vs
+            WHERE vs.vendor_id = v.id AND vs.is_enabled = true
+              AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+          )`
+        : ` AND EXISTS (
+            SELECT 1 FROM vendor_services vs
+            WHERE vs.vendor_id = v.id AND (vs.service_style = $1 OR vs.service_style IS NULL)
+              AND vs.is_enabled = true
+              AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+          )`;
       let vendorFallbackQuery = `
         SELECT DISTINCT ON (v.id)
           v.id as vendor_id,
@@ -3546,37 +3682,27 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           (SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id) as review_count
         FROM vendors v
         LEFT JOIN roles r ON v.role_id = r.id
-        INNER JOIN vendor_services vs ON vs.vendor_id = v.id
-        WHERE v.status = 'approved' 
+        WHERE (v.status = 'approved' OR v.status = 'active')
           AND v.is_active = true
-          AND (
-            v.vendor_type = 'solo'
-            OR r.name LIKE '%_solo'
-            OR r.name LIKE '%Solo%'
-            OR LOWER(r.name) LIKE '%solo%'
-          )
+          ${vendorFallbackSoloCondition}
           AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%clinic%'
           AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%hospital%'
           AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%center%'
           AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%centre%'
           AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%salon%'
           AND COALESCE(LOWER(v.business_name), '') NOT LIKE '% business%'
-          AND vs.service_style = $1
-          AND vs.is_enabled = true
-          AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
+          ${vendorFallbackExistsService}
       `;
       
-      const vendorFallbackParams: any[] = [serviceStyle];
-      let vendorFallbackParamIdx = 2;
+      const vendorFallbackParams: any[] = targetRoles.length > 0 ? [] : [serviceStyle];
+      let vendorFallbackParamIdx = targetRoles.length > 0 ? 1 : 2;
 
       if (targetRoles.length > 0) {
-        // ✅ FIX: Use OR condition to also match role_id if it's in the targetRoles
         vendorFallbackQuery += ` AND (
-          r.name = ANY($${vendorFallbackParamIdx}) 
-          OR v.role_id::text = ANY($${vendorFallbackParamIdx})
-          OR r.display_name = ANY($${vendorFallbackParamIdx})
+          LOWER(r.name) = ANY($${vendorFallbackParamIdx}::text[])
+          OR LOWER(r.display_name) = ANY($${vendorFallbackParamIdx}::text[])
         )`;
-        vendorFallbackParams.push(targetRoles);
+        vendorFallbackParams.push(targetRoles.map((r: string) => r.toLowerCase()));
         vendorFallbackParamIdx++;
       }
 
@@ -3611,7 +3737,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             vs.category
            FROM vendor_services vs
            WHERE vs.vendor_id = $1 
-             AND vs.service_style = $2
+             AND (vs.service_style = $2 OR vs.service_style IS NULL)
              AND vs.is_enabled = true
              AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
            ORDER BY vs.price ASC`,

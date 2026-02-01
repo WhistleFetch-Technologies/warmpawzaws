@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { Suspense, useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { 
   Package, MapPin, Calendar, Clock, CheckCircle, Truck, Home,
@@ -31,8 +31,18 @@ interface MealPlanOrder {
   delivery_partner_phone?: string;
 }
 
-export default function MealPlanOrdersPage() {
+// Format delivery slot from API (object or string) to display time
+function formatDeliveryTime(slot: any): string {
+  if (!slot) return '';
+  if (typeof slot === 'string') return slot;
+  if (slot.start) return slot.start;
+  if (slot.end) return slot.end;
+  return '';
+}
+
+function MealPlanOrdersContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [orders, setOrders] = useState<MealPlanOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<MealPlanOrder | null>(null);
@@ -43,21 +53,33 @@ export default function MealPlanOrdersPage() {
 
   useEffect(() => {
     loadOrders();
-  }, []);
+  }, [searchParams]);
 
   const loadOrders = async () => {
     try {
       setLoading(true);
-      // Get customer ID from phone or session
-      const customerPhone = localStorage.getItem('customerPhone') || '';
+      // Get customer ID: phone from URL (from My Bookings) first, then localStorage
+      const phoneFromUrl = searchParams?.get('phone') || '';
+      const customerPhone = phoneFromUrl || localStorage.getItem('customerPhone') || '';
+      if (!customerPhone) {
+        setOrders([]);
+        return;
+      }
       const customer: any = await apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
       const customerId = customer?.customer?.id || customer?.id;
 
       if (customerId) {
-        const response: any = await apiClient.get(`/customer/orders?customerId=${customerId}&orderType=meal_plan_delivery`);
-        const mealPlanOrders = (response?.orders || []).filter((o: any) => 
-          o.order_type === 'meal_plan_delivery' || o.orderType === 'meal_plan_delivery'
-        );
+        const response: any = await apiClient.get(`/customer/meal-plan-orders?customerId=${customerId}`);
+        const mealPlanOrders = (response?.orders || []).map((o: any) => ({
+          ...o,
+          meal_plan_name: o.meal_plan_name || o.meal_plan_id || 'Meal Plan',
+          // Map API fields to page shape so "Track Order" and delivery display work
+          delivery_date: o.delivery_date || o.scheduled_delivery_date || o.created_at,
+          delivery_time: o.delivery_time || formatDeliveryTime(o.scheduled_delivery_slot) || '',
+          delivery_address: typeof o.delivery_address === 'string' 
+            ? (() => { try { const p = JSON.parse(o.delivery_address); return p?.address || p?.addressLine1 || o.delivery_address; } catch { return o.delivery_address; } })() 
+            : (o.delivery_address?.address || o.delivery_address?.addressLine1 || ''),
+        }));
         setOrders(mealPlanOrders);
       }
     } catch (error) {
@@ -189,11 +211,11 @@ export default function MealPlanOrdersPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4" />
-                        <span>Delivery: {new Date(order.delivery_date).toLocaleDateString()}</span>
+                        <span>Delivery: {order.delivery_date ? new Date(order.delivery_date).toLocaleDateString() : '—'}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Clock className="w-4 h-4" />
-                        <span>{order.delivery_time}</span>
+                        <span>{order.delivery_time || '—'}</span>
                       </div>
                       <div className="flex items-center gap-2 col-span-2">
                         <MapPin className="w-4 h-4" />
@@ -312,31 +334,21 @@ export default function MealPlanOrdersPage() {
                   </div>
                 )}
 
-                {selectedOrder?.id === order.id && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-600">
-                          Ordered: {new Date(order.created_at).toLocaleString()}
-                        </p>
-                        {order.updated_at && (
-                          <p className="text-sm text-gray-600">
-                            Updated: {new Date(order.updated_at).toLocaleString()}
-                          </p>
-                        )}
-                      </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          router.push(`/orders/${order.id}`);
-                        }}
-                        className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
-                      >
-                        View Details
-                      </button>
-                    </div>
+                {/* Track Order: always visible so customer can access meal tracker at will (OBJECTIVE 1) */}
+                <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
+                  <div className="text-sm text-gray-600">
+                    Ordered: {new Date(order.created_at).toLocaleString()}
                   </div>
-                )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      router.push(`/track/${order.id}`);
+                    }}
+                    className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
+                  >
+                    Track Order
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -346,3 +358,16 @@ export default function MealPlanOrdersPage() {
   );
 }
 
+export default function MealPlanOrdersPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500" />
+        </div>
+      }
+    >
+      <MealPlanOrdersContent />
+    </Suspense>
+  );
+}

@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { AddAddressModal } from './AddAddressModal';
 
 // ============================================================================
 // TYPES
@@ -102,6 +103,9 @@ interface UniversalProviderProfileProps {
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onProceedToPayment: (bookingData: any) => void;
+  /** When user returns from address book after selecting an address */
+  initialSelectedAddress?: any;
+  onConsumeInitialAddress?: () => void;
 }
 
 // ============================================================================
@@ -134,6 +138,20 @@ function formatTime12Hour(time24: string): string {
 // COMPONENT
 // ============================================================================
 
+/** Normalize address from address book (addressLine1, etc.) to profile shape */
+function normalizeAddress(raw: any): Address {
+  if (!raw) return { id: '', label: 'Address', address: '' };
+  const addressLine = [raw.addressLine1, raw.addressLine2, raw.city, raw.state, raw.pincode].filter(Boolean).join(', ') || raw.address || '';
+  return {
+    id: raw.id || '',
+    label: raw.label || raw.name || 'Address',
+    address: addressLine,
+    city: raw.city,
+    pincode: raw.pincode,
+    isDefault: raw.isDefault,
+  };
+}
+
 export function UniversalProviderProfile({
   phone,
   provider,
@@ -142,6 +160,8 @@ export function UniversalProviderProfile({
   onBack,
   onNavigate,
   onProceedToPayment,
+  initialSelectedAddress,
+  onConsumeInitialAddress,
 }: UniversalProviderProfileProps) {
   const [activeTab, setActiveTab] = useState<'services' | 'about' | 'reviews'>('services');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
@@ -159,8 +179,17 @@ export function UniversalProviderProfile({
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<Address | null>(null);
+  const [showAddAddressModal, setShowAddAddressModal] = useState(false);
   const [notes, setNotes] = useState('');
   const [customerId, setCustomerId] = useState<string | null>(null);
+
+  // When returning from address book with a selected address, pre-select it
+  useEffect(() => {
+    if (initialSelectedAddress && initialSelectedAddress.id) {
+      setSelectedAddress(normalizeAddress(initialSelectedAddress));
+      onConsumeInitialAddress?.();
+    }
+  }, [initialSelectedAddress]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Generate next 7 days
   const dates = Array.from({ length: 7 }, (_, i) => {
@@ -185,6 +214,23 @@ export function UniversalProviderProfile({
       loadTimeSlots(selectedDate);
     }
   }, [selectedDate, showBookingForm]);
+
+  const refreshAddresses = async () => {
+    if (serviceStyle !== 'at_home') return;
+    try {
+      const addressResponse = await apiClient.get(`/customer/${phone}/addresses`) as any;
+      if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
+        const normalized = addressResponse.addresses.map((a: any) => normalizeAddress(a));
+        setAddresses(normalized);
+        if (normalized.length > 0 && !selectedAddress) {
+          const defaultAddr = addressResponse.addresses.find((a: any) => a.isDefault);
+          setSelectedAddress(normalizeAddress(defaultAddr || addressResponse.addresses[0]));
+        }
+      }
+    } catch (e) {
+      console.log('Could not refresh addresses', e);
+    }
+  };
 
   const loadCustomerData = async () => {
     try {
@@ -341,8 +387,14 @@ export function UniversalProviderProfile({
       customerId,
       vendorId,
       staffId: provider.staffId,
-      serviceId: firstService.serviceId,
-      services: selectedServicesList,
+      serviceId: firstService.serviceId || (firstService as any).service_id || firstService.id,
+      services: selectedServicesList.map((s: any) => ({
+        ...s,
+        serviceId: s.serviceId || (s as any).service_id || s.id,
+        name: s.name || s.serviceName,
+        price: Number(s.price) || 0,
+        duration: Number(s.duration) || 0,
+      })),
       bookingDate: selectedDate,
       bookingTime: selectedTime,
       serviceType: serviceStyle,
@@ -603,13 +655,13 @@ export function UniversalProviderProfile({
             </div>
           </div>
 
-          {/* Address Selection (for at_home) */}
+          {/* Address Selection (for at_home) - modal in-context, no navigation */}
           {serviceStyle === 'at_home' && (
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="font-medium text-sm">Delivery Address</h3>
                 <button 
-                  onClick={() => onNavigate('add-address')}
+                  onClick={() => setShowAddAddressModal(true)}
                   className="text-orange-500 text-sm flex items-center gap-1"
                 >
                   <Plus className="w-4 h-4" />
@@ -617,7 +669,18 @@ export function UniversalProviderProfile({
                 </button>
               </div>
               <div className="space-y-2">
-                {addresses.map((addr) => (
+                {addresses.length === 0 ? (
+                  <div className="text-center py-4 border-2 border-dashed border-gray-200 rounded-xl">
+                    <p className="text-sm text-gray-500 mb-2">No addresses saved</p>
+                    <button
+                      onClick={() => setShowAddAddressModal(true)}
+                      className="text-orange-500 text-sm font-medium"
+                    >
+                      + Add your address
+                    </button>
+                  </div>
+                ) : (
+                addresses.map((addr) => (
                   <button
                     key={addr.id}
                     onClick={() => setSelectedAddress(addr)}
@@ -635,7 +698,8 @@ export function UniversalProviderProfile({
                       {selectedAddress?.id === addr.id && <Check className="w-5 h-5" />}
                     </div>
                   </button>
-                ))}
+                ))
+                )}
               </div>
             </div>
           )}
@@ -880,6 +944,19 @@ export function UniversalProviderProfile({
           </div>
         )}
       </div>
+
+      {/* Add Address Modal - in-context so user stays on provider profile (no navigate to address_book) */}
+      <AddAddressModal
+        phone={phone}
+        isOpen={showAddAddressModal}
+        onClose={() => setShowAddAddressModal(false)}
+        onSuccess={(savedAddress) => {
+          refreshAddresses();
+          if (savedAddress) setSelectedAddress(normalizeAddress(savedAddress));
+          setShowAddAddressModal(false);
+        }}
+        customerName={provider?.name ? '' : undefined}
+      />
     </div>
   );
 }

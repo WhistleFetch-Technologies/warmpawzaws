@@ -335,11 +335,15 @@ export function UnifiedAppointmentTracker({
                     }`}>
                       {formatCountdown(secondsRemaining)}
                     </span>
-                    {item.bookingTime && (
-                      <span className="text-xs text-gray-500">
-                        at {new Date(item.bookingTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    )}
+                    {item.bookingTime && (() => {
+                      const d = new Date(item.bookingTime!);
+                      const valid = !Number.isNaN(d.getTime());
+                      return valid ? (
+                        <span className="text-xs text-gray-500">
+                          at {d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      ) : null;
+                    })()}
                   </div>
                 )}
 

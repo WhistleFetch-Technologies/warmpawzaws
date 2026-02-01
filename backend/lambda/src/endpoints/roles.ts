@@ -199,14 +199,29 @@ class GetRoleByIdHandler extends BaseHandler {
       return this.error('Role ID is required', 400);
     }
 
-    const roles = await select('roles', { id: roleId });
-    
+    // ✅ FIX: Support both UUID and role name (after migration vendors may pass name)
+    let roles = await select('roles', { id: roleId });
+    if (roles.length === 0) {
+      // Fallback: lookup by name (canonical role names: walker, vet_clinic, groomer_solo, etc.)
+      const roleNameNorm = (roleId || '').toLowerCase().trim().replace(/\s+/g, '_');
+      roles = await select('roles', { name: roleNameNorm });
+    }
+    if (roles.length === 0) {
+      // Try display_name or case-insensitive name
+      const roleNameNorm = (roleId || '').toLowerCase().trim().replace(/\s+/g, '_');
+      const byName = await query(
+        `SELECT * FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1`,
+        [roleNameNorm || roleId]
+      );
+      if (byName?.rows?.length) roles = byName.rows;
+    }
     if (roles.length === 0) {
       return this.error('Role not found', 404);
     }
 
     const role = roles[0];
-    const permissions = await select('role_permissions', { role_id: roleId });
+    const effectiveRoleId = role.id; // Use role's UUID for role_permissions (FK references roles.id)
+    const permissions = await select('role_permissions', { role_id: effectiveRoleId });
     const capabilities = permissions.map(p => p.permission_name);
     
     // Extract config fields from JSONB config column (same as GetRolesHandler)

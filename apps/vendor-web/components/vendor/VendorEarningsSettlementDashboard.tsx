@@ -18,7 +18,6 @@ import {
   Wallet, PiggyBank, ArrowDownLeft, ArrowUpRight
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { EnhancedBankAccountForm } from '@/components/shared/EnhancedBankAccountForm';
 
 interface VendorEarningsSettlementDashboardProps {
   vendorId: string;
@@ -108,8 +107,6 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   // Bank account states
   const [bankAccount, setBankAccount] = useState<any>(null);
   const [bankVerified, setBankVerified] = useState(false);
-  const [showBankForm, setShowBankForm] = useState(false);
-  const [savingBank, setSavingBank] = useState(false);
   
   // Settlement breakup modal
   const [showBreakupModal, setShowBreakupModal] = useState(false);
@@ -311,44 +308,17 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
     }
   };
 
-  const handleSaveBankDetails = async (formData: any) => {
-    setSavingBank(true);
-    try {
-      const bankRes = await apiClient.post<any>(`/vendor/${vendorId}/bank-account`, formData);
-      if (bankRes.success) {
-        setBankAccount(bankRes.bankDetails || bankRes.bankAccount);
-        
-        // Create Razorpay linked account
-        try {
-          await apiClient.post<any>('/razorpay/linked-account/create', { vendor_id: vendorId });
-          await apiClient.post<any>('/razorpay/linked-account/bank', {
-            vendor_id: vendorId,
-            account_number: formData.account_number,
-            ifsc_code: formData.ifsc_code,
-            beneficiary_name: formData.account_holder_name
-          });
-        } catch (e) {
-          console.log('Linked account may already exist');
-        }
-        
-        setShowBankForm(false);
-        await loadBankAccount();
-      }
-    } catch (error: any) {
-      console.error('Failed to save bank details:', error);
-      throw error;
-    } finally {
-      setSavingBank(false);
-    }
-  };
-
   const handleRequestPayout = async () => {
     const availableAmount = analytics?.pendingAmount || 0;
     if (availableAmount <= 0) {
       alert('No amount available for payout');
       return;
     }
-    
+    if (!bankVerified || !bankAccount) {
+      alert('Please add and verify your bank account in Settings first. Automatic settlement requires a verified bank account.');
+      router.push('/settings?tab=bank');
+      return;
+    }
     if (!confirm(`Request payout of ₹${availableAmount.toLocaleString()}?`)) return;
     
     setRequestingPayout(true);
@@ -606,14 +576,14 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                   {bankAccount ? (
                     <>
                       <span className="text-sm text-gray-600">
-                        Account: {bankAccount.account_number?.replace(/\d(?=\d{4})/g, '*')} | IFSC: {bankAccount.ifsc_code}
+                        Account: {bankAccount.account_number?.includes('*') || bankAccount.account_number?.includes('•') ? bankAccount.account_number : `****${String(bankAccount.account_number || '').slice(-4)}`} | IFSC: {bankAccount.ifsc_code}
                       </span>
-                      <Button variant="outline" size="sm" onClick={() => setShowBankForm(true)}>
+                      <Button variant="outline" size="sm" onClick={() => router.push('/settings?tab=bank')}>
                         Change Account
                       </Button>
                     </>
                   ) : (
-                    <Button onClick={() => setShowBankForm(true)} className="bg-amber-600 hover:bg-amber-700 text-white">
+                    <Button onClick={() => router.push('/settings?tab=bank')} className="bg-amber-600 hover:bg-amber-700 text-white">
                       Add Bank Account
                     </Button>
                   )}
@@ -633,10 +603,10 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
               <div className="flex-1">
                 <h3 className="font-semibold text-green-800">Bank Account Verified ✓</h3>
                 <p className="text-sm text-green-700">
-                  {bankAccount.account_holder_name} | {bankAccount.bank_name} | ****{bankAccount.account_number?.slice(-4)}
+                  {bankAccount.account_holder_name} | {bankAccount.bank_name} | {bankAccount.account_number?.includes('*') || bankAccount.account_number?.includes('•') ? bankAccount.account_number : `****${String(bankAccount.account_number || '').slice(-4)}`}
                 </p>
               </div>
-              <Button variant="outline" size="sm" onClick={() => setShowBankForm(true)}>
+              <Button variant="outline" size="sm" onClick={() => router.push('/settings?tab=bank')}>
                 Change
               </Button>
             </div>
@@ -1294,36 +1264,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
         document.body
       )}
 
-      {/* Bank Account Form Modal - portaled to body so it shows above Reporting container */}
-      {showBankForm && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="bank-modal-title">
-          <div className="bg-white rounded-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 id="bank-modal-title" className="text-lg font-bold text-gray-900">{bankAccount ? 'Change Bank Account' : 'Add Bank Account'}</h3>
-              <button onClick={() => setShowBankForm(false)} className="text-gray-400 hover:text-gray-600" aria-label="Close">✕</button>
-            </div>
-            
-            <p className="text-sm text-gray-600 mb-4">
-              Your bank account will be verified via Razorpay. IFSC code will auto-validate.
-            </p>
-            
-            <EnhancedBankAccountForm
-              initialData={bankAccount ? {
-                account_holder_name: bankAccount.account_holder_name || '',
-                account_number: bankAccount.account_number || '',
-                ifsc_code: bankAccount.ifsc_code || '',
-                bank_name: bankAccount.bank_name || '',
-                branch_name: bankAccount.branch_name || ''
-              } : undefined}
-              onSubmit={handleSaveBankDetails}
-              onCancel={() => setShowBankForm(false)}
-              submitLabel={bankAccount ? 'Update Bank Account' : 'Save & Verify'}
-              showVerification={true}
-            />
-          </div>
-        </div>,
-        document.body
-      )}
+      {/* Bank account Add/Change redirects to Settings > Bank tab */}
     </div>
   );
 }

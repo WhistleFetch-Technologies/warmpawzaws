@@ -362,8 +362,18 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           paymentData.total_amount = totalAmount; // Total including all fees and taxes
         }
 
-        const columns = Object.keys(paymentData);
-        const values = Object.values(paymentData);
+        // Only insert columns that exist on payments table (avoids 42703 when migrations not yet applied)
+        const colsResult = await client.query<{ column_name: string }>(
+          `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'payments'`
+        );
+        const existingColumns = new Set(colsResult.rows.map((r) => r.column_name));
+        const filteredData: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(paymentData)) {
+          if (existingColumns.has(k)) filteredData[k] = v;
+        }
+
+        const columns = Object.keys(filteredData);
+        const values = Object.values(filteredData);
         const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
 
         const result = await client.query(

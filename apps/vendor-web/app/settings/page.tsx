@@ -3,10 +3,10 @@
 export const dynamic = 'force-dynamic';
 
 import { VendorSettingsPage } from '@/components/vendor/VendorSettingsPage';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 
-export default function SettingsPage() {
+function SettingsContent() {
   const router = useRouter();
   const [vendorId, setVendorId] = useState<string | null>(null);
 
@@ -35,4 +35,12 @@ export default function SettingsPage() {
   }
 
   return <VendorSettingsPage vendorId={vendorId} onBack={() => router.back()} />;
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-orange-500" /></div>}>
+      <SettingsContent />
+    </Suspense>
+  );
 }

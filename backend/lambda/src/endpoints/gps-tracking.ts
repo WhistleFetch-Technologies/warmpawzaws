@@ -30,6 +30,7 @@ import {
   Location,
 } from '../lib/services/gps-tracking-service';
 import { isUATMode } from '../lib/utils/uat-mode';
+import { geocodeAddress } from '../lib/utils/geocode';
 
 // Default/Mock coordinates for UAT mode (Mumbai central)
 const UAT_DEFAULT_DESTINATION: Location = {
@@ -115,6 +116,13 @@ export function registerGpsTrackingEndpoints(app: Hono) {
           const lng = addr.longitude ?? addr.coordinates?.lng ?? (typeof addr.coordinates === 'string' ? (() => { try { const c = JSON.parse(addr.coordinates); return c?.lng; } catch { return null; } })() : null);
           if (lat != null && lng != null) {
             destinationLocation = { latitude: parseFloat(String(lat)), longitude: parseFloat(String(lng)) };
+          } else if (addr.address || addr.full_address) {
+            // Geocode customer address when it has text but no coords
+            const geocoded = await geocodeAddress(addr.address || addr.full_address);
+            if (geocoded) {
+              destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+              console.log('[GPS Tracking] Geocoded customer_addresses to destination:', geocoded.latitude, geocoded.longitude);
+            }
           }
         }
       }
@@ -134,10 +142,21 @@ export function registerGpsTrackingEndpoints(app: Hono) {
         };
       }
 
-      // If booking has address text but no coords, use default so Start Travel works (address displayed in UI)
-      if (!destinationLocation && (booking.address || (booking as any).destination_address)) {
-        console.log('[GPS Tracking] No coordinates for booking; using default destination (address text present)');
-        destinationLocation = { ...UAT_DEFAULT_DESTINATION };
+      // If booking has address text but no coords, geocode using Google Maps API for real destination
+      if (!destinationLocation) {
+        const addressText = booking.address || (booking as any).destination_address || 
+          (booking as any).location || (booking as any).delivery_address || 
+          (booking as any).customer_address;
+        if (addressText) {
+          const geocoded = await geocodeAddress(addressText);
+          if (geocoded) {
+            destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+            console.log('[GPS Tracking] Geocoded address to destination:', geocoded.latitude, geocoded.longitude);
+          } else {
+            console.log('[GPS Tracking] Geocoding failed; using default destination (address text present)');
+            destinationLocation = { ...UAT_DEFAULT_DESTINATION };
+          }
+        }
       }
 
       // ✅ UAT MODE: Use mock destination if no address configured

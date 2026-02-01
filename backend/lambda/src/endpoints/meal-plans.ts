@@ -573,7 +573,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       
       const totalAmount = subtotal + deliveryFee + platformFee + convenienceFee;
 
-      // Create order with all fee components
+      // Create order with all fee components (meal_orders has platform_fee only; store combined fee there)
       const result = await insert('meal_orders', {
         customer_id: customerId,
         vendor_id: plan.vendor_id,
@@ -584,8 +584,7 @@ export function registerMealPlanEndpoints(app: Hono) {
         special_instructions: specialInstructions,
         subtotal,
         delivery_fee: deliveryFee,
-        platform_fee: platformFee,
-        convenience_fee: convenienceFee, // ✅ FIX GAP 6.2: Include convenience fee
+        platform_fee: platformFee + convenienceFee,
         total_amount: totalAmount,
         delivery_address: JSON.stringify(deliveryAddress),
         customer_lat: deliveryAddress.lat,

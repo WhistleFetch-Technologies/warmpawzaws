@@ -49,6 +49,8 @@ interface GroomingHomeVisitRouterProps {
   phone: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
+  initialAddressFromBook?: any;
+  onConsumeInitialAddress?: () => void;
 }
 
 type FlowStep = 
@@ -60,7 +62,7 @@ type FlowStep =
 // MAIN COMPONENT
 // ============================================================================
 
-export function GroomingHomeVisitRouter({ phone, onBack, onNavigate }: GroomingHomeVisitRouterProps) {
+export function GroomingHomeVisitRouter({ phone, onBack, onNavigate, initialAddressFromBook, onConsumeInitialAddress }: GroomingHomeVisitRouterProps) {
   const [step, setStep] = useState<FlowStep>('provider-list');
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
 
@@ -125,6 +127,8 @@ export function GroomingHomeVisitRouter({ phone, onBack, onNavigate }: GroomingH
           onBack={handleBack}
           onNavigate={onNavigate}
           onProceedToPayment={handleProceedToPayment}
+          initialSelectedAddress={initialAddressFromBook}
+          onConsumeInitialAddress={onConsumeInitialAddress}
         />
       );
 

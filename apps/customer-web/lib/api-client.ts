@@ -19,19 +19,24 @@ function getRuntimeConfig(): RuntimeConfig {
   return window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
 }
 
+/** Deployed API URL (WarmpawzStack-dev). Override via runtime config or NEXT_PUBLIC_API_BASE_URL. */
+const SERVERLESS_API_URL = 'https://rrg9107m3d.execute-api.ap-south-1.amazonaws.com';
+
 /**
  * Get the API Base URL from runtime config (deployed) or environment (local dev)
- * This is the ONLY function that should be used to get the API URL
- * Priority: runtime-config.js (deploy-time) → build-time env (local dev)
+ * In UAT mode, if config points at api.dev.warmpawz.com (CDK API with Cognito), use Serverless API so UAT token is accepted.
  */
 export function getApiBaseUrl(): string {
-  // Priority: runtime-config.js (deploy-time) → build-time env (local dev)
   const cfg = getRuntimeConfig();
-  return (
+  const raw =
     cfg.apiBaseUrl ||
     process.env.NEXT_PUBLIC_API_BASE_URL ||
-    ''
-  );
+    '';
+  // When no config or empty, use deployed API
+  if (!raw || (typeof raw === 'string' && raw.trim() === '')) {
+    return SERVERLESS_API_URL;
+  }
+  return raw;
 }
 
 // UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)

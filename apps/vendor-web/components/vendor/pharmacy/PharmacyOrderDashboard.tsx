@@ -115,6 +115,8 @@ interface IncomingOrder {
   delivery_fee: number;
   eta_minutes?: number;
   expiresIn: number;
+  prescription_id?: string;
+  prescription_url?: string;
   items: Array<{ id?: string; product_name?: string; medicine_name?: string; name?: string; quantity: number }>;
   prescription?: {
     medication_name: string;
@@ -488,11 +490,41 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName, onBack }:
 
                   {/* Order Items */}
                   <div className="p-4">
-                    {order.prescription && (
+                    {(order.prescription || (order as any).prescription_url || (order as any).prescription_id) && (
                       <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
-                        <div className="flex items-center gap-2 text-blue-700 mb-2">
-                          {Icons.clipboard}
-                          <span className="text-sm font-medium">Prescription from {order.prescription.vet_name}</span>
+                        <div className="flex items-center justify-between gap-2 text-blue-700">
+                          <div className="flex items-center gap-2">
+                            {Icons.clipboard}
+                            <span className="text-sm font-medium">
+                              {order.prescription ? `Prescription from ${order.prescription.vet_name || 'Doctor'}` : 'Prescription attached'}
+                            </span>
+                          </div>
+                          {((order as any).prescription_url) ? (
+                            <a
+                              href={(order as any).prescription_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-medium text-blue-600 hover:text-blue-800 underline"
+                            >
+                              View Prescription
+                            </a>
+                          ) : (order as any).prescription_id ? (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const res = await apiClient.get(`/prescriptions/${(order as any).prescription_id}?includeDetails=true`) as any;
+                                  const url = res?.prescription?.file_url || res?.file_url;
+                                  if (url) window.open(url, '_blank');
+                                  else toast.error('Prescription not available');
+                                } catch {
+                                  toast.error('Could not load prescription');
+                                }
+                              }}
+                              className="text-sm font-medium text-blue-600 hover:text-blue-800 underline"
+                            >
+                              View Prescription
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     )}
@@ -599,10 +631,38 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName, onBack }:
                   </div>
 
                   <div className="p-4">
+                    {((order as any).prescription_url || (order as any).prescription_id) && (
+                      <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-blue-700">Prescription</span>
+                          {(order as any).prescription_url ? (
+                            <a href={(order as any).prescription_url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-blue-600 hover:text-blue-800 underline">
+                              View Prescription
+                            </a>
+                          ) : (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const res = await apiClient.get(`/prescriptions/${(order as any).prescription_id}?includeDetails=true`) as any;
+                                  const url = res?.prescription?.file_url || res?.file_url;
+                                  if (url) window.open(url, '_blank');
+                                  else toast.error('Prescription not available');
+                                } catch {
+                                  toast.error('Could not load prescription');
+                                }
+                              }}
+                              className="text-sm font-medium text-blue-600 hover:text-blue-800 underline"
+                            >
+                              View Prescription
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     <div className="space-y-2 mb-4">
-                      {order.items.map((item, idx) => (
+                      {(order.items || []).map((item: any, idx: number) => (
                         <div key={idx} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
-                          <span className="text-slate-700">{item.product_name}</span>
+                          <span className="text-slate-700">{item.product_name || item.medicine_name || item.name}</span>
                           <div className="flex items-center gap-4">
                             <span className="text-slate-500 text-sm">Qty: {item.quantity}</span>
                             {item.unit_price && (

@@ -1,5 +1,9 @@
 #!/bin/bash
 # Get all deployment URLs from Terraform outputs and AWS
+# Official CloudFront URLs only (do not create new URLs):
+#   Admin:    https://dfof7mguaa0a5.cloudfront.net
+#   Vendor:   https://d1s6ykkj381k58.cloudfront.net
+#   Customer: https://d2aoyjj8ine0wk.cloudfront.net
 
 set -e
 
@@ -104,6 +108,11 @@ else
   fi
 fi
 
+echo ""
+echo "📌 OFFICIAL CLOUDFRONT URLS (use only these; do not create new):"
+echo "   Admin:    https://dfof7mguaa0a5.cloudfront.net"
+echo "   Vendor:   https://d1s6ykkj381k58.cloudfront.net"
+echo "   Customer: https://d2aoyjj8ine0wk.cloudfront.net"
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
 echo "✅ URL discovery complete"

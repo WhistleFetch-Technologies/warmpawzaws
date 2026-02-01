@@ -449,12 +449,18 @@ export function VendorServiceCatalogView({
       console.log('🔍 [GROUPING] After search filter:', filteredServices.length, 'services');
     }
 
+    // ✅ Only group services that have a proper category (no "Uncategorized" section)
+    const withCategory = filteredServices.filter(service => {
+      const raw = service.categoryName || service.category_name || service.category;
+      return raw && String(raw).trim() && String(raw).toLowerCase() !== 'uncategorized';
+    });
+
     // Group by category and subcategory
     const grouped: { [key: string]: CategoryGroup } = {};
 
-    filteredServices.forEach(service => {
+    withCategory.forEach(service => {
       // Handle both camelCase and snake_case field names
-      const categoryName = service.categoryName || service.category_name || service.category || 'Uncategorized';
+      const categoryName = service.categoryName || service.category_name || service.category || 'General';
       const categoryId = service.categoryId || service.category_id || categoryName;
       const catKey = categoryId;
       
@@ -758,10 +764,13 @@ export function VendorServiceCatalogView({
       <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
         <div className="bg-white border-b border-gray-200 p-4">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={onBack}>
+            <Button variant="ghost" size="icon" onClick={onBack} title="Back to Service Management">
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <h1 className="text-lg font-semibold">Service Catalog</h1>
+            <div>
+              <h1 className="text-lg font-semibold">Browse Catalog</h1>
+              <p className="text-xs text-gray-500">Service Management</p>
+            </div>
           </div>
         </div>
         <div className="flex items-center justify-center h-64">
@@ -779,13 +788,13 @@ export function VendorServiceCatalogView({
       {/* Header */}
       <div className="bg-white border-b border-gray-200 p-4 sticky top-0 z-10">
         <div className="flex items-center gap-3 mb-4">
-          <Button variant="ghost" size="icon" onClick={onBack}>
+          <Button variant="ghost" size="icon" onClick={onBack} title="Back to Service Management">
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-lg font-semibold">Service Catalog</h1>
+            <h1 className="text-lg font-semibold">Browse Catalog</h1>
             <p className="text-xs text-gray-500">
-              {services.length} services • {groupedServices.length} categories
+              Service Management · {services.length} services · {groupedServices.length} categories
             </p>
           </div>
         </div>

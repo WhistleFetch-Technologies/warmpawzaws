@@ -40,8 +40,30 @@ export function registerNotificationEndpoints(app: Hono) {
         return c.json({ error: 'userId is required' }, 400);
       }
 
-      // Handle test IDs - return empty notifications
-      if (userId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
+      // Resolve customer by phone when userId is not a UUID (customer app sends phone before customerId is loaded)
+      // Normalize phone to digits-only so "+91 98765 43210" and "919876543210" both match DB
+      let effectiveUserId = userId;
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+      if (!isUuid && userType === 'customer' && userId !== 'test-vendor-id') {
+        try {
+          const rawPhone = decodeURIComponent(String(userId)).trim();
+          const digitsOnly = rawPhone.replace(/\D/g, '');
+          const customers = await select('customers', { phone: digitsOnly });
+          if (customers.length > 0 && (customers[0] as any).id) {
+            effectiveUserId = (customers[0] as any).id;
+          } else if (digitsOnly !== rawPhone) {
+            const alt = await select('customers', { phone: rawPhone });
+            if (alt.length > 0 && (alt[0] as any).id) {
+              effectiveUserId = (alt[0] as any).id;
+            }
+          }
+        } catch (_) {
+          // Fall through to empty result
+        }
+      }
+
+      // Handle test IDs or unresolved non-UUID - return empty notifications
+      if (userId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectiveUserId)) {
         return c.json({
           success: true,
           notifications: [],
@@ -55,7 +77,7 @@ export function registerNotificationEndpoints(app: Hono) {
         WHERE recipient_id = $1 AND recipient_type = $2
       `;
 
-      const params: any[] = [userId, userType];
+      const params: any[] = [effectiveUserId, userType];
       let paramIndex = 3;
 
       if (isRead !== undefined) {
@@ -72,7 +94,7 @@ export function registerNotificationEndpoints(app: Hono) {
       // Count unread
       const unreadCount = await query(
         'SELECT COUNT(*) as count FROM notifications WHERE recipient_id = $1 AND recipient_type = $2 AND is_read = false',
-        [userId, userType]
+        [effectiveUserId, userType]
       );
 
       return c.json({

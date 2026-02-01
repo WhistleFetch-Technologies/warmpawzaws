@@ -107652,7 +107652,11 @@ async function insert(table, data) {
     "pricing",
     "services_config",
     "notification_preferences",
-    "search_vector_data"
+    "search_vector_data",
+    "channels",
+    // notifications.channels is JSONB
+    "data"
+    // notifications.data is JSONB (booking_id, meeting_id, etc.)
   ]);
   const isJsonbColumn = (key) => {
     return jsonbColumns.has(key) || key.endsWith("_config") || key.endsWith("_metadata") || key.endsWith("_payload") || key.endsWith("_data") || key.endsWith("_settings");
@@ -123772,11 +123776,17 @@ var init_razorpay = __esm({
       async handle(context) {
         try {
           const body = this.parseBody(context.event);
-          const { bookingId, orderId: pharmacyOrderId, amount, currency = "INR", customerId, type } = body;
+          const { bookingId, orderId: pharmacyOrderId, amount, currency = "INR", customerId, vendorId, type } = body;
           const isPharmacyOrder = type === "pharmacy_order";
+          const isDiagnosticsOrder = type === "diagnostics";
           if (isPharmacyOrder) {
             if (!pharmacyOrderId || amount == null) {
               return this.error("orderId and amount are required for pharmacy_order", 400);
+            }
+          } else if (isDiagnosticsOrder) {
+            const missing = ["amount", "customerId", "vendorId"].filter((f) => !body[f]);
+            if (missing.length > 0) {
+              return this.error(`Missing required fields for diagnostics order: ${missing.join(", ")}`, 400);
             }
           } else {
             const missing = ["bookingId", "amount"].filter((f) => !body[f]);
@@ -123822,6 +123832,17 @@ var init_razorpay = __esm({
             const shortId = String(pharmacyOrderId).replace(/-/g, "").substring(0, 32);
             receipt = `po_${shortId}`;
             notes = { pharmacyOrderId: String(pharmacyOrderId), customerId: customerIdFinal, vendorId: vendorIdFinal };
+          } else if (isDiagnosticsOrder) {
+            customerIdFinal = customerId;
+            vendorIdFinal = vendorId;
+            const vendorResult = await Promise.race([
+              select("vendors", { id: vendorIdFinal }),
+              new Promise((_, reject) => setTimeout(() => reject(new Error("Vendor query timeout")), 5e3))
+            ]);
+            vendor = vendorResult.length > 0 ? vendorResult[0] : null;
+            const shortId = String(Date.now()).replace(/-/g, "").substring(0, 32);
+            receipt = `diag_${shortId}`;
+            notes = { type: "diagnostics", customerId: customerIdFinal, vendorId: vendorIdFinal };
           } else {
             const bookingResult = await Promise.race([
               select("bookings", { id: bookingId }),
@@ -123862,12 +123883,13 @@ var init_razorpay = __esm({
             const amt = Number(amount);
             const commissionAmount = Math.round(amt * tierCommission / 100 * 100);
             const vendorShare = Math.round(amt * 100) - commissionAmount;
+            const transferNotes = isPharmacyOrder ? { pharmacy_order_id: String(pharmacyOrderId), vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() } : isDiagnosticsOrder ? { type: "diagnostics", vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() } : { booking_id: bookingId, vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() };
             orderData.transfers = [
               {
                 account: vendor.razorpay_account_id,
                 amount: vendorShare,
                 currency,
-                notes: isPharmacyOrder ? { pharmacy_order_id: String(pharmacyOrderId), vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() } : { booking_id: bookingId, vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() },
+                notes: transferNotes,
                 on_hold: false
               }
             ];
@@ -123883,6 +123905,7 @@ var init_razorpay = __esm({
            VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8)`,
               [pharmacyOrderId, customerIdFinal, vendorIdFinal, razorpayOrder.id, Number(amount), currency, "razorpay", "pending"]
             );
+          } else if (isDiagnosticsOrder) {
           } else {
             await insert("payments", {
               booking_id: bookingId,
@@ -123943,8 +123966,22 @@ var init_razorpay = __esm({
           }
           const payments = await select("payments", { razorpay_order_id });
           if (payments.length === 0) {
+            try {
+              const razorpayOrder = await razorpayRequest(`/orders/${razorpay_order_id}`, "GET", void 0, 1e4);
+              const notes = razorpayOrder?.notes || {};
+              const orderType = typeof notes === "object" && notes !== null ? notes.type || notes.orderType : void 0;
+              if (orderType === "diagnostics") {
+                console.log("[PAYMENT-VERIFY] Diagnostics order verified (no pre-inserted payment row), returning success");
+                return this.success({
+                  message: "Payment verified successfully",
+                  paymentId: razorpay_payment_id,
+                  orderId: razorpay_order_id
+                });
+              }
+            } catch (fetchErr) {
+              console.warn("[PAYMENT-VERIFY] Could not fetch Razorpay order for diagnostics check:", fetchErr?.message);
+            }
             console.error("[PAYMENT-VERIFY] Payment record not found for order:", razorpay_order_id);
-            "[PAYMENT-VERIFY] Payment not found for order:", razorpay_order_id;
             return this.error("Payment record not found. Please contact support with your order ID.", 404);
           }
           await update(
@@ -130155,6 +130192,24 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
   async handle(context) {
     const body = this.parseBody(context.event);
     const requestId = context.requestId;
+    if (!body.customerId && body.customerPhone) {
+      try {
+        const custResult = await query(
+          `SELECT id FROM customers WHERE phone = $1 LIMIT 1`,
+          [String(body.customerPhone).trim()]
+        );
+        const rows = custResult.rows || custResult;
+        if (rows?.length > 0) {
+          body.customerId = rows[0].id;
+          console.log(`[BOOKING] Resolved customerId from customerPhone: ${body.customerId}`);
+        }
+      } catch (e) {
+        console.warn("[BOOKING] Could not resolve customerId from customerPhone:", e);
+      }
+    }
+    if (!body.customerId) {
+      return this.error("customerId or customerPhone (to resolve customer) is required", 400, "VALIDATION_ERROR", void 0, requestId);
+    }
     const validationResult = import_bookings.CreateBookingRequestSchema.safeParse(body);
     if (!validationResult.success) {
       return this.error(
@@ -130905,6 +130960,8 @@ var GetBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
       petAge: petInfo?.age || null,
       petPhoto: petInfo?.photo_url || null,
       amount: parseFloat(booking.total_amount || "0"),
+      price: parseFloat(booking.total_amount || "0"),
+      totalAmount: parseFloat(booking.total_amount || "0"),
       // Multi-service: expose selectedServices and totalDurationMinutes
       selectedServices: parseSelectedServices(booking.selected_services),
       totalDurationMinutes: booking.total_duration_minutes != null ? Number(booking.total_duration_minutes) : null
@@ -132604,8 +132661,16 @@ var CreatePaymentHandlerEnhanced = class extends BaseHandlerEnhanced {
             paymentData.convenience_fee = convenienceFee;
             paymentData.total_amount = totalAmount;
           }
-          const columns = Object.keys(paymentData);
-          const values = Object.values(paymentData);
+          const colsResult = await client2.query(
+            `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'payments'`
+          );
+          const existingColumns = new Set(colsResult.rows.map((r) => r.column_name));
+          const filteredData = {};
+          for (const [k, v] of Object.entries(paymentData)) {
+            if (existingColumns.has(k)) filteredData[k] = v;
+          }
+          const columns = Object.keys(filteredData);
+          const values = Object.values(filteredData);
           const placeholders = columns.map((_, i) => `$${i + 1}`).join(", ");
           const result = await client2.query(
             `INSERT INTO payments (${columns.join(", ")}) VALUES (${placeholders}) RETURNING *`,
@@ -134332,6 +134397,88 @@ function registerCustomerEndpointsEnhanced(app3) {
       return c.json({ success: true, orders: [] }, 200);
     }
   });
+  app3.get("/customer/meal-plan-orders", async (c) => {
+    try {
+      const customerId = c.req.query("customerId");
+      if (!customerId) {
+        return c.json({ success: false, error: "customerId is required" }, 400);
+      }
+      const allOrders = [];
+      const mealResult = await query(
+        `SELECT mo.*, mp.name as meal_plan_name, v.business_name as vendor_name
+         FROM meal_orders mo
+         LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
+         LEFT JOIN vendors v ON mo.vendor_id = v.id
+         WHERE mo.customer_id = $1
+         ORDER BY mo.created_at DESC`,
+        [customerId]
+      ).catch(() => ({ rows: [] }));
+      for (const o of mealResult.rows || []) {
+        allOrders.push({
+          id: o.id,
+          order_number: o.order_number || o.id?.toString().slice(-8),
+          order_type: "meal_plan_delivery",
+          orderType: "meal_plan_delivery",
+          meal_plan_id: o.meal_plan_id,
+          meal_plan_name: o.meal_name || o.meal_plan_name,
+          pet_id: o.pet_id,
+          vendor_id: o.vendor_id,
+          vendor_name: o.vendor_name,
+          total_amount: o.total_amount,
+          status: o.status,
+          delivery_address: o.delivery_address,
+          scheduled_delivery_date: o.scheduled_delivery_date,
+          scheduled_delivery_slot: o.scheduled_delivery_slot,
+          created_at: o.created_at,
+          source: "meal_orders"
+        });
+      }
+      try {
+        const hasOrderType = await query(
+          `SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'order_type' LIMIT 1`
+        ).then((r) => (r?.rows?.length || 0) > 0);
+        if (hasOrderType) {
+          const ordResult = await query(
+            `SELECT o.id, o.order_number, o.order_status as status, o.total_amount, o.shipping_address as delivery_address,
+                    o.delivery_date as scheduled_delivery_date, o.delivery_time as scheduled_delivery_slot, o.created_at,
+                    o.vendor_id, v.business_name as vendor_name,
+                    (SELECT mp.name FROM meal_plan_orders mpo LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id WHERE mpo.order_id = o.id LIMIT 1) as meal_plan_name
+             FROM orders o
+             LEFT JOIN vendors v ON o.vendor_id = v.id
+             WHERE o.customer_id = $1 AND o.order_type = 'meal_plan_delivery'
+             ORDER BY o.created_at DESC`,
+            [customerId]
+          ).catch(() => ({ rows: [] }));
+          for (const o of ordResult.rows || []) {
+            allOrders.push({
+              id: o.id,
+              order_number: o.order_number || o.id?.toString().slice(-8),
+              order_type: "meal_plan_delivery",
+              orderType: "meal_plan_delivery",
+              meal_plan_id: null,
+              meal_plan_name: o.meal_plan_name || "Meal Plan",
+              pet_id: null,
+              vendor_id: o.vendor_id,
+              vendor_name: o.vendor_name,
+              total_amount: o.total_amount,
+              status: o.status,
+              delivery_address: o.delivery_address,
+              scheduled_delivery_date: o.scheduled_delivery_date,
+              scheduled_delivery_slot: o.scheduled_delivery_slot,
+              created_at: o.created_at,
+              source: "orders"
+            });
+          }
+        }
+      } catch (_) {
+      }
+      allOrders.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+      return c.json({ success: true, orders: allOrders });
+    } catch (error) {
+      console.error("[meal-plan-orders] Error:", error);
+      return c.json({ success: true, orders: [] });
+    }
+  });
   app3.get("/customer/:phone/subscriptions/active", async (c) => {
     try {
       const phone = c.req.param("phone");
@@ -134905,12 +135052,25 @@ var GetRoleByIdHandler = class extends BaseHandler {
     if (!roleId) {
       return this.error("Role ID is required", 400);
     }
-    const roles = await select("roles", { id: roleId });
+    let roles = await select("roles", { id: roleId });
+    if (roles.length === 0) {
+      const roleNameNorm = (roleId || "").toLowerCase().trim().replace(/\s+/g, "_");
+      roles = await select("roles", { name: roleNameNorm });
+    }
+    if (roles.length === 0) {
+      const roleNameNorm = (roleId || "").toLowerCase().trim().replace(/\s+/g, "_");
+      const byName = await query(
+        `SELECT * FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1`,
+        [roleNameNorm || roleId]
+      );
+      if (byName?.rows?.length) roles = byName.rows;
+    }
     if (roles.length === 0) {
       return this.error("Role not found", 404);
     }
     const role = roles[0];
-    const permissions = await select("role_permissions", { role_id: roleId });
+    const effectiveRoleId = role.id;
+    const permissions = await select("role_permissions", { role_id: effectiveRoleId });
     const capabilities = permissions.map((p) => p.permission_name);
     const config = role.config || {};
     const vendorTypes = config.vendorTypes || config.vendor_types || [];
@@ -135668,6 +135828,96 @@ var BASE_CAPABILITIES = [
   "bank_verification"
   // Verification - Bank account verification
 ];
+var CANONICAL_ACTIVE_ROLE_NAMES = [
+  "vet_solo",
+  "vet_clinic",
+  "groomer_solo",
+  "groomer_center",
+  "trainer_solo",
+  "trainer_center",
+  "boarding",
+  "walker",
+  "sitter",
+  "adoption_center",
+  "cafe",
+  "photographer",
+  "pharmacy",
+  "seller",
+  "ambulance",
+  "insurance",
+  "nutritionist",
+  "nutritionist_center",
+  "relocation",
+  "resort",
+  "holiday",
+  "sunset",
+  "breeder",
+  "diagnostics_center",
+  "event_organizer"
+];
+var CANONICAL_TO_LEGACY_DEF = {
+  vet_solo: "veterinarian",
+  vet_clinic: "veterinary_clinic",
+  groomer_solo: "pet_groomer",
+  groomer_center: "pet_groomer",
+  trainer_solo: "pet_trainer",
+  trainer_center: "pet_trainer",
+  boarding: "pet_boarding",
+  walker: "pet_walker",
+  sitter: "pet_sitter",
+  adoption_center: "pet_shelter",
+  cafe: "pet_cafe",
+  photographer: "pet_photographer",
+  pharmacy: "pet_pharmacy",
+  seller: "pet_products_store",
+  ambulance: "pet_ambulance",
+  insurance: "insurance",
+  nutritionist: "nutritionist",
+  nutritionist_center: "nutritionist",
+  relocation: "pet_taxi",
+  resort: "pet_resort",
+  holiday: "pet_holiday_planner",
+  sunset: "pet_sunset_services",
+  breeder: "pet_breeder",
+  diagnostics_center: "veterinary_clinic",
+  event_organizer: "event_organizer"
+};
+var CANONICAL_ROLE_DISPLAY_NAMES = {
+  vet_solo: "Veterinarian (Solo)",
+  vet_clinic: "Veterinary Clinic",
+  groomer_solo: "Pet Groomer (Solo)",
+  groomer_center: "Pet Grooming Salon",
+  trainer_solo: "Pet Trainer (Solo)",
+  trainer_center: "Pet Training Center",
+  boarding: "Pet Boarding / Kennel",
+  walker: "Pet Walker",
+  sitter: "Pet Sitter",
+  adoption_center: "Pet Shelter / NGO",
+  cafe: "Pet Cafe",
+  photographer: "Pet Photographer",
+  pharmacy: "Pet Pharmacy",
+  seller: "Pet Store / Retailer",
+  ambulance: "Pet Ambulance",
+  insurance: "Pet Insurance Provider",
+  nutritionist: "Pet Nutritionist",
+  nutritionist_center: "Nutritionist (Center)",
+  relocation: "Pet Relocation",
+  resort: "Pet Resort",
+  holiday: "Pet Holiday Planner",
+  sunset: "Pet Sunset Services",
+  breeder: "Pet Breeder",
+  diagnostics_center: "Diagnostics Center",
+  event_organizer: "Event Organizer"
+};
+function getDefinitionsForCanonicalRolesOnly() {
+  const out = {};
+  for (const canonicalName of CANONICAL_ACTIVE_ROLE_NAMES) {
+    const legacyKey = CANONICAL_TO_LEGACY_DEF[canonicalName];
+    const def = STANDARD_ROLE_DEFINITIONS[legacyKey];
+    if (def) out[canonicalName] = { ...def };
+  }
+  return out;
+}
 var STANDARD_ROLE_DEFINITIONS = {
   "veterinarian": {
     vendorTypes: ["healthcare_provider"],
@@ -135987,6 +136237,23 @@ var STANDARD_ROLE_DEFINITIONS = {
       "packages"
     ],
     icon: "\u{1F4C5}",
+    category: "lifestyle"
+  },
+  "pet_holiday_planner": {
+    vendorTypes: ["service_provider"],
+    serviceStyles: ["at_center", "at_home", "online"],
+    pricingControl: { canControlPrice: true, canControlDuration: true },
+    capabilities: [
+      ...BASE_CAPABILITIES,
+      "bookings",
+      "chat",
+      "staff",
+      "facility_management",
+      "schedule",
+      "custom_services",
+      "packages"
+    ],
+    icon: "\u{1F3D6}\uFE0F",
     category: "lifestyle"
   },
   "pet_sunset_services": {
@@ -136486,7 +136753,8 @@ function registerRoleSeedingEndpoints(app3) {
         errors: []
       };
       const updateOnly = (c.req.query("updateOnly") ?? "true") === "true";
-      for (const [roleId, def] of Object.entries(STANDARD_ROLE_DEFINITIONS)) {
+      const definitionsToSeed = getDefinitionsForCanonicalRolesOnly();
+      for (const [roleId, def] of Object.entries(definitionsToSeed)) {
         try {
           const existing = await select("roles", { name: roleId });
           if (existing.length === 0) {
@@ -136496,7 +136764,7 @@ function registerRoleSeedingEndpoints(app3) {
             }
             const roleData = {
               name: roleId,
-              display_name: KNOWN_ROLE_NAMES[roleId] || roleId.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
+              display_name: CANONICAL_ROLE_DISPLAY_NAMES[roleId] || KNOWN_ROLE_NAMES[roleId] || roleId.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
               description: `Standard ${KNOWN_ROLE_NAMES[roleId] || roleId} role`,
               is_system_role: true,
               is_active: true,
@@ -136521,8 +136789,8 @@ function registerRoleSeedingEndpoints(app3) {
           const current = existing[0];
           const currentConfig = current.config && typeof current.config === "object" ? current.config : {};
           const updateData = {
-            display_name: KNOWN_ROLE_NAMES[roleId] ?? current.display_name ?? roleId.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
-            description: current.description ?? `Standard ${KNOWN_ROLE_NAMES[roleId] || roleId} role`,
+            display_name: CANONICAL_ROLE_DISPLAY_NAMES[roleId] ?? KNOWN_ROLE_NAMES[roleId] ?? current.display_name ?? roleId.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
+            description: current.description ?? `Standard ${CANONICAL_ROLE_DISPLAY_NAMES[roleId] || KNOWN_ROLE_NAMES[roleId] || roleId} role`,
             config: {
               ...currentConfig,
               category: def.category ?? currentConfig.category ?? "general",
@@ -136544,7 +136812,7 @@ function registerRoleSeedingEndpoints(app3) {
         success: true,
         message: updateOnly ? "Roles update completed (existing only; status preserved)" : "Roles seeding completed",
         stats,
-        totalRoles: Object.keys(STANDARD_ROLE_DEFINITIONS).length
+        totalRoles: Object.keys(definitionsToSeed).length
       });
     } catch (error) {
       console.error("Error seeding roles:", error);
@@ -136565,12 +136833,13 @@ function registerRoleSeedingEndpoints(app3) {
         skipped: 0,
         errors: []
       };
-      for (const [roleId, def] of Object.entries(STANDARD_ROLE_DEFINITIONS)) {
+      const definitionsToResurrect = getDefinitionsForCanonicalRolesOnly();
+      for (const [roleId, def] of Object.entries(definitionsToResurrect)) {
         try {
           const roleData = {
             name: roleId,
-            display_name: KNOWN_ROLE_NAMES[roleId] || roleId.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
-            description: `Standard ${KNOWN_ROLE_NAMES[roleId] || roleId} role`,
+            display_name: CANONICAL_ROLE_DISPLAY_NAMES[roleId] || KNOWN_ROLE_NAMES[roleId] || roleId.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
+            description: `Standard ${CANONICAL_ROLE_DISPLAY_NAMES[roleId] || KNOWN_ROLE_NAMES[roleId] || roleId} role`,
             is_system_role: true,
             is_active: true,
             config: {
@@ -136609,7 +136878,7 @@ function registerRoleSeedingEndpoints(app3) {
         success: true,
         message: "Roles resurrection completed",
         stats,
-        totalRoles: Object.keys(STANDARD_ROLE_DEFINITIONS).length
+        totalRoles: Object.keys(definitionsToResurrect).length
       });
     } catch (error) {
       console.error("Error resurrecting roles:", error);
@@ -138090,6 +138359,55 @@ function createLambdaContext7() {
 init_rds_connection();
 init_gps_tracking_service();
 init_uat_mode();
+
+// src/lib/utils/geocode.ts
+var _apiKeyCache = null;
+async function getApiKey() {
+  if (_apiKeyCache) return _apiKeyCache;
+  if (process.env.GOOGLE_MAPS_API_KEY) {
+    _apiKeyCache = process.env.GOOGLE_MAPS_API_KEY;
+    return _apiKeyCache;
+  }
+  try {
+    const { getSecret: getSecret2 } = await Promise.resolve().then(() => (init_secrets_manager(), secrets_manager_exports));
+    const key = await getSecret2("google-maps/api-key");
+    if (key) _apiKeyCache = key;
+  } catch {
+  }
+  return _apiKeyCache || "";
+}
+async function geocodeAddress(address) {
+  const trimmed = (address || "").toString().trim();
+  if (!trimmed) return null;
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    console.warn("[Geocode] No Google Maps API key available");
+    return null;
+  }
+  try {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(trimmed)}&key=${apiKey}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5e3);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data.status !== "OK" || !data.results?.[0]) return null;
+    const result = data.results[0];
+    const loc = result.geometry?.location;
+    if (!loc?.lat || !loc?.lng) return null;
+    return {
+      latitude: parseFloat(loc.lat),
+      longitude: parseFloat(loc.lng),
+      formattedAddress: result.formatted_address
+    };
+  } catch (err) {
+    console.warn("[Geocode] Failed:", err.message);
+    return null;
+  }
+}
+
+// src/endpoints/gps-tracking.ts
 var UAT_DEFAULT_DESTINATION = {
   latitude: 19.076,
   longitude: 72.8777
@@ -138162,6 +138480,12 @@ function registerGpsTrackingEndpoints(app3) {
           })() : null);
           if (lat != null && lng != null) {
             destinationLocation = { latitude: parseFloat(String(lat)), longitude: parseFloat(String(lng)) };
+          } else if (addr.address || addr.full_address) {
+            const geocoded = await geocodeAddress(addr.address || addr.full_address);
+            if (geocoded) {
+              destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+              console.log("[GPS Tracking] Geocoded customer_addresses to destination:", geocoded.latitude, geocoded.longitude);
+            }
           }
         }
       }
@@ -138177,9 +138501,18 @@ function registerGpsTrackingEndpoints(app3) {
           longitude: parseFloat(String(booking.longitude))
         };
       }
-      if (!destinationLocation && (booking.address || booking.destination_address)) {
-        console.log("[GPS Tracking] No coordinates for booking; using default destination (address text present)");
-        destinationLocation = { ...UAT_DEFAULT_DESTINATION };
+      if (!destinationLocation) {
+        const addressText = booking.address || booking.destination_address || booking.location || booking.delivery_address || booking.customer_address;
+        if (addressText) {
+          const geocoded = await geocodeAddress(addressText);
+          if (geocoded) {
+            destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+            console.log("[GPS Tracking] Geocoded address to destination:", geocoded.latitude, geocoded.longitude);
+          } else {
+            console.log("[GPS Tracking] Geocoding failed; using default destination (address text present)");
+            destinationLocation = { ...UAT_DEFAULT_DESTINATION };
+          }
+        }
       }
       if (!destinationLocation) {
         if (uatMode) {
@@ -138689,6 +139022,12 @@ init_base_handler();
 init_rds_connection();
 var import_client_chime_sdk_meetings = require("@aws-sdk/client-chime-sdk-meetings");
 var import_crypto19 = require("crypto");
+function isWithinVideoCallWindow(booking) {
+  if (booking.status === "completed") {
+    return { allowed: false, reason: "Video call is not allowed after the appointment is completed." };
+  }
+  return { allowed: true };
+}
 async function ensureVideoCallSessionsTable() {
   try {
     const checkResult = await query(`
@@ -138764,6 +139103,10 @@ var CreateMeetingHandler = class extends BaseHandler {
       return this.error("Booking not found", 404);
     }
     const booking = bookings[0];
+    const windowCheck = isWithinVideoCallWindow(booking);
+    if (!windowCheck.allowed) {
+      return this.error(windowCheck.reason || "Video call is not allowed for this appointment at this time.", 400);
+    }
     const serviceStyle = booking.service_style || booking.service_type || "";
     const isTeleService = ["tele", "video_consultation", "teleconsultation", "video"].includes(serviceStyle.toLowerCase());
     if (!isTeleService) {
@@ -138872,6 +139215,13 @@ var JoinMeetingHandler = class extends BaseHandler {
     if (!bookingId || !userId || !userType) {
       return this.error("bookingId, userId/participantId, and userType/participantType are required", 400);
     }
+    const bookings = await select("bookings", { id: bookingId });
+    if (bookings.length > 0) {
+      const windowCheck = isWithinVideoCallWindow(bookings[0]);
+      if (!windowCheck.allowed) {
+        return this.error(windowCheck.reason || "Video call is not allowed for this appointment at this time.", 400);
+      }
+    }
     const sessions = await select("video_call_sessions", {
       booking_id: bookingId
     });
@@ -138894,8 +139244,61 @@ var JoinMeetingHandler = class extends BaseHandler {
       );
       meetingInfo = meetingResponse.Meeting;
     } catch (getMeetingError) {
-      console.error("Error getting meeting info:", getMeetingError);
-      return this.error("Meeting has expired or is no longer available", 404);
+      console.warn("[VIDEO CALL] Meeting expired or unavailable, creating new meeting for booking:", bookingId, getMeetingError?.message);
+      const bookings2 = await select("bookings", { id: bookingId });
+      if (bookings2.length === 0) {
+        return this.error("Booking not found", 404);
+      }
+      const booking = bookings2[0];
+      const createResponse = await chimeClient.send(
+        new import_client_chime_sdk_meetings.CreateMeetingCommand({
+          ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
+          MediaRegion: process.env.AWS_REGION || "ap-south-1",
+          ExternalMeetingId: bookingId
+        })
+      );
+      if (!createResponse.Meeting?.MeetingId || !createResponse.Meeting?.MediaPlacement) {
+        return this.error("Failed to create new meeting", 500);
+      }
+      const newMeetingId = createResponse.Meeting.MeetingId;
+      const attendeeResponse = await chimeClient.send(
+        new import_client_chime_sdk_meetings.CreateAttendeeCommand({
+          MeetingId: newMeetingId,
+          ExternalUserId: `${userType}-${userId}`
+        })
+      );
+      const newAttendee = {
+        AttendeeId: attendeeResponse.Attendee?.AttendeeId,
+        JoinToken: attendeeResponse.Attendee?.JoinToken,
+        ExternalUserId: `${userType}-${userId}`
+      };
+      const updateData = {
+        meeting_id: newMeetingId,
+        customer_attendee_id: null,
+        customer_join_token: null,
+        vendor_attendee_id: null,
+        vendor_join_token: null
+      };
+      if (userType === "customer") {
+        updateData.customer_attendee_id = newAttendee.AttendeeId;
+        updateData.customer_join_token = newAttendee.JoinToken;
+      } else {
+        updateData.vendor_attendee_id = newAttendee.AttendeeId;
+        updateData.vendor_join_token = newAttendee.JoinToken;
+      }
+      await update("video_call_sessions", { id: session.id }, updateData);
+      await update("bookings", { id: bookingId }, { video_call_meeting_id: newMeetingId, video_call_started_at: (/* @__PURE__ */ new Date()).toISOString() });
+      return this.success({
+        success: true,
+        meetingId: newMeetingId,
+        meeting: {
+          MeetingId: createResponse.Meeting.MeetingId,
+          MediaPlacement: createResponse.Meeting.MediaPlacement,
+          MediaRegion: createResponse.Meeting.MediaRegion
+        },
+        attendee: newAttendee,
+        session: { id: session.id, status: session.status }
+      });
     }
     if (!meetingInfo || !meetingInfo.MediaPlacement) {
       return this.error("Meeting data is invalid or incomplete", 500);
@@ -138955,6 +139358,30 @@ var JoinMeetingHandler = class extends BaseHandler {
     });
   }
 };
+var GetAttendeesHandler = class extends BaseHandler {
+  async handle(context) {
+    const bookingId = context.event.pathParameters?.bookingId;
+    if (!bookingId) {
+      return this.error("Booking ID is required", 400);
+    }
+    const sessions = await select("video_call_sessions", { booking_id: bookingId });
+    const activeSession = sessions.find((s) => s.status === "active" || s.status === "waiting");
+    if (!activeSession) {
+      return this.success({
+        success: true,
+        customerJoined: false,
+        vendorJoined: false,
+        message: "No active meeting session"
+      });
+    }
+    const session = activeSession;
+    return this.success({
+      success: true,
+      customerJoined: !!(session.customer_attendee_id && session.customer_join_token),
+      vendorJoined: !!(session.vendor_attendee_id && session.vendor_join_token)
+    });
+  }
+};
 var EndMeetingHandler = class extends BaseHandler {
   async handle(context) {
     const bookingId = context.event.pathParameters?.bookingId;
@@ -138989,8 +139416,81 @@ var EndMeetingHandler = class extends BaseHandler {
 function registerVideoCallEndpoints(app3) {
   const createHandler = new CreateMeetingHandler();
   const getInfoHandler = new GetMeetingInfoHandler();
+  const getAttendeesHandler = new GetAttendeesHandler();
   const joinHandler = new JoinMeetingHandler();
   const endHandler = new EndMeetingHandler();
+  app3.get("/video-call/:bookingId/attendees", async (c) => {
+    const event = createApiGatewayEvent8(c.req);
+    event.pathParameters = { bookingId: c.req.param("bookingId") };
+    const context = createLambdaContext9();
+    const result = await getAttendeesHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+  app3.post("/video-call/notify-ready", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { bookingId, participantType } = body;
+      if (!bookingId || !participantType) {
+        return c.json({ error: "bookingId and participantType are required" }, 400);
+      }
+      const bookings = await select("bookings", { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: "Booking not found" }, 404);
+      }
+      const booking = bookings[0];
+      const windowCheck = isWithinVideoCallWindow(booking);
+      if (!windowCheck.allowed) {
+        return c.json({ error: windowCheck.reason || "Video call is not allowed for this appointment at this time." }, 400);
+      }
+      const targetId = participantType === "customer" ? booking.vendor_id ?? booking.vendorId : booking.customer_id ?? booking.customerId;
+      const targetType = participantType === "customer" ? "vendor" : "customer";
+      if (!targetId) {
+        console.error("[VIDEO CALL] notify-ready: missing target id", { bookingId, participantType, booking: { customer_id: booking.customer_id, vendor_id: booking.vendor_id } });
+        return c.json({ error: "Could not determine notification recipient for this booking" }, 400);
+      }
+      const sessions = await select("video_call_sessions", { booking_id: bookingId });
+      const meetingId = sessions.length > 0 ? sessions[0].meeting_id : void 0;
+      console.log("[VIDEO CALL] notify-ready: inserting notification", { bookingId, participantType, recipient_id: targetId, recipient_type: targetType, meetingId });
+      const notificationPayload = { booking_id: bookingId, meeting_id: meetingId, call_type: "incoming" };
+      const notificationRow = {
+        recipient_id: targetId,
+        recipient_type: targetType,
+        notification_type: "tele_call_incoming",
+        title: "Incoming Video Call",
+        message: `Your ${participantType === "customer" ? "customer" : "doctor"} is ready to start the video consultation`,
+        channels: { email: false, sms: false, inApp: true, push: true },
+        is_read: false,
+        created_at: /* @__PURE__ */ new Date()
+      };
+      notificationRow.data = notificationPayload;
+      try {
+        await insert("notifications", notificationRow);
+      } catch (insertErr) {
+        if (insertErr?.message?.includes("data") || insertErr?.message?.includes("column")) {
+          delete notificationRow.data;
+          await insert("notifications", notificationRow);
+        } else {
+          throw insertErr;
+        }
+      }
+      try {
+        const { pushNotificationService: pushNotificationService2 } = await Promise.resolve().then(() => (init_push_notification_service(), push_notification_service_exports));
+        await pushNotificationService2.sendEventNotification({
+          eventType: "tele_call_incoming",
+          recipientId: targetId,
+          recipientType: targetType,
+          relatedId: bookingId,
+          data: { bookingId, meetingId, callType: "incoming" }
+        });
+      } catch (pushErr) {
+        console.warn("[VIDEO CALL] Push notification failed:", pushErr?.message);
+      }
+      return c.json({ success: true, message: `Notification sent to ${targetType}` }, 200);
+    } catch (err) {
+      console.error("[VIDEO CALL] notify-ready error:", err?.message);
+      return c.json({ error: err?.message || "Failed to send notification" }, 500);
+    }
+  });
   app3.post("/video-call/create-meeting", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEvent8(c.req, body);
@@ -140740,13 +141240,18 @@ function registerSpecializedServicesEndpoints(app3) {
   app3.get("/vendor/:vendorId/diagnostics/tests", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostic_results") || await checkVendorCapability(vendorId, "diagnostics") || await checkVendorCapability(vendorId, "test_catalog");
+      const publishedOnly = c.req.query("publishedOnly") === "true";
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostic_results") || await checkVendorCapability(vendorId, "diagnostics") || await checkVendorCapability(vendorId, "test_catalog") || await checkVendorCapability(vendorId, "diagnostic_lab") || await checkVendorCapability(vendorId, "diagnostic lab");
       if (!hasDiagnosticsCapability) {
         return c.json({ error: "Vendor does not have diagnostics capability" }, 403);
       }
+      const filter = { vendor_id: vendorId };
+      if (publishedOnly) {
+        filter.is_available = true;
+      }
       const rows = await select(
         "diagnostic_tests",
-        { vendor_id: vendorId },
+        filter,
         { orderBy: "created_at", orderDirection: "DESC" }
       );
       const tests = rows.map((r) => ({
@@ -140771,7 +141276,28 @@ function registerSpecializedServicesEndpoints(app3) {
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
-          AND (LOWER(r.name) IN ('diagnostics_center', 'diagnostic_center'))
+          AND (
+            (LOWER(r.name) IN ('diagnostics_center', 'diagnostic_center'))
+            OR (
+              (
+                LOWER(r.name) IN ('vet_clinic', 'veterinary_clinic', 'vet')
+                OR (LOWER(TRIM(r.name)) LIKE '%vet%' AND LOWER(TRIM(r.name)) LIKE '%clinic%')
+                OR LOWER(REPLACE(TRIM(r.name), ' ', '_')) IN ('vet_clinic', 'veterinary_clinic')
+              )
+              AND EXISTS (
+                SELECT 1 FROM role_permissions rp
+                WHERE rp.role_id = v.role_id
+                AND (
+                  LOWER(rp.permission_name) IN ('diagnostics', 'diagnostic_results', 'test_catalog', 'diagnostic_lab')
+                  OR REPLACE(LOWER(TRIM(rp.permission_name)), ' ', '_') = 'diagnostic_lab'
+                )
+              )
+            )
+          )
+          AND EXISTS (
+            SELECT 1 FROM diagnostic_tests dt
+            WHERE dt.vendor_id = v.id AND dt.is_available = true
+          )
       `;
       const vendorParams = [];
       let pi = 1;
@@ -140846,7 +141372,7 @@ function registerSpecializedServicesEndpoints(app3) {
   app3.post("/vendor/:vendorId/diagnostics/tests", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostic_results") || await checkVendorCapability(vendorId, "diagnostics") || await checkVendorCapability(vendorId, "test_catalog");
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostic_results") || await checkVendorCapability(vendorId, "diagnostics") || await checkVendorCapability(vendorId, "test_catalog") || await checkVendorCapability(vendorId, "diagnostic_lab") || await checkVendorCapability(vendorId, "diagnostic lab");
       if (!hasDiagnosticsCapability) {
         return c.json({ error: "Vendor does not have diagnostics capability" }, 403);
       }
@@ -140925,7 +141451,7 @@ function registerSpecializedServicesEndpoints(app3) {
   app3.put("/vendor/:vendorId/diagnostics/tests/:testId", async (c) => {
     try {
       const { vendorId, testId } = c.req.param();
-      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostic_results") || await checkVendorCapability(vendorId, "diagnostics") || await checkVendorCapability(vendorId, "test_catalog");
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostic_results") || await checkVendorCapability(vendorId, "diagnostics") || await checkVendorCapability(vendorId, "test_catalog") || await checkVendorCapability(vendorId, "diagnostic_lab") || await checkVendorCapability(vendorId, "diagnostic lab");
       if (!hasDiagnosticsCapability) {
         return c.json({ error: "Vendor does not have diagnostics capability" }, 403);
       }
@@ -141023,7 +141549,7 @@ function registerSpecializedServicesEndpoints(app3) {
     try {
       const { vendorId } = c.req.param();
       const { status, date } = c.req.query();
-      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostic_results") || await checkVendorCapability(vendorId, "diagnostics") || await checkVendorCapability(vendorId, "test_catalog");
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostic_results") || await checkVendorCapability(vendorId, "diagnostics") || await checkVendorCapability(vendorId, "test_catalog") || await checkVendorCapability(vendorId, "diagnostic_lab") || await checkVendorCapability(vendorId, "diagnostic lab");
       if (!hasDiagnosticsCapability) {
         return c.json({ error: "Vendor does not have diagnostics capability" }, 403);
       }
@@ -141083,17 +141609,36 @@ function registerSpecializedServicesEndpoints(app3) {
           }
         }
       }
-      const formattedBookings = bookings.map((b) => ({
-        ...b,
-        reports: reports.filter((r) => (r.booking_id || r.diagnostic_booking_id) === b.id),
-        assigned_staff: b.assigned_staff_id || b.assigned_staff_name || b.assigned_agent_name ? {
-          id: b.assigned_staff_id,
-          name: b.assigned_staff_name || b.assigned_agent_name,
-          phone: b.assigned_staff_phone || b.assigned_agent_phone
-        } : null,
-        collection_otp: b.collection_otp,
-        collection_status: b.collection_status
-      }));
+      const formattedBookings = bookings.map((b) => {
+        let pet_name = b.pet_name;
+        let pet_type = b.pet_type;
+        let pet_age;
+        if ((!pet_name || pet_name === "Unknown Pet") && b.notes) {
+          try {
+            const notesObj = typeof b.notes === "string" ? JSON.parse(b.notes) : b.notes;
+            if (notesObj && typeof notesObj === "object") {
+              if (notesObj.patientName) pet_name = notesObj.patientName;
+              if (notesObj.petType || notesObj.pet_type) pet_type = notesObj.petType || notesObj.pet_type;
+              if (notesObj.patientAge != null || notesObj.petAge != null) pet_age = String(notesObj.patientAge ?? notesObj.petAge ?? "");
+            }
+          } catch {
+          }
+        }
+        return {
+          ...b,
+          pet_name: pet_name || "Patient",
+          pet_type: pet_type || "",
+          pet_age: pet_age ?? b.pet_age ?? void 0,
+          reports: reports.filter((r) => (r.booking_id || r.diagnostic_booking_id) === b.id),
+          assigned_staff: b.assigned_staff_id || b.assigned_staff_name || b.assigned_agent_name ? {
+            id: b.assigned_staff_id,
+            name: b.assigned_staff_name || b.assigned_agent_name,
+            phone: b.assigned_staff_phone || b.assigned_agent_phone
+          } : null,
+          collection_otp: b.collection_otp,
+          collection_status: b.collection_status
+        };
+      });
       return c.json({
         success: true,
         bookings: formattedBookings,
@@ -141224,51 +141769,72 @@ function registerSpecializedServicesEndpoints(app3) {
         return c.json({ error: "Address not found" }, 404);
       }
       const address = addresses[0];
-      const mealPlans = await select("meal_plans", { id: mealPlanId });
+      let mealPlans = await select("meal_plans", { id: mealPlanId });
+      if (mealPlans.length === 0 && vendorId) {
+        const fallback = await query(
+          `SELECT * FROM meal_plans WHERE vendor_id = $1 AND (is_active IS NULL OR is_active = true) ORDER BY created_at DESC LIMIT 1`,
+          [vendorId]
+        ).catch(() => ({ rows: [] }));
+        if (fallback.rows?.length > 0) {
+          mealPlans = fallback.rows;
+        }
+      }
       if (mealPlans.length === 0) {
         return c.json({ error: "Meal plan not found" }, 404);
       }
       const mealPlan = mealPlans[0];
+      const effectiveMealPlanId = mealPlan.id;
+      const unitPrice = parseFloat(mealPlan.price_per_meal || mealPlan.price || totalAmount || 0);
+      const qty = quantity || 1;
+      const subtotalVal = unitPrice * qty;
+      const totalVal = totalAmount != null ? Number(totalAmount) : subtotalVal;
+      const customers = await select("customers", { id: customerId });
+      const customerPhone = customers[0]?.phone || "";
       const orderNumber = `MP-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-      const order = await insert("orders", {
+      const shippingAddrStr = typeof address.address === "string" ? address.address : [address.address, address.addressLine1, address.city, address.pincode].filter(Boolean).join(", ");
+      const orderPayload = {
         customer_id: customerId,
         vendor_id: vendorId,
         order_number: orderNumber,
         order_status: "pending",
-        order_type: "meal_plan_delivery",
-        total_amount: totalAmount || 0,
+        subtotal: subtotalVal,
+        tax_amount: 0,
+        shipping_amount: 0,
+        discount_amount: 0,
+        total_amount: totalVal,
+        shipping_address: shippingAddrStr || JSON.stringify({ address: address.address, city: address.city, pincode: address.pincode, state: address.state || "" }),
+        shipping_city: address.city || address.address_city || "",
+        shipping_state: address.state || address.address_state || "",
+        shipping_pincode: address.pincode || address.address_pincode || "",
+        shipping_phone: customerPhone,
         payment_method: "online",
-        shipping_address: JSON.stringify({
-          address: address.address,
-          city: address.city,
-          pincode: address.pincode,
-          state: address.state || ""
-        }),
+        order_type: "meal_plan_delivery",
         delivery_date: deliveryDate,
-        delivery_time: deliveryTime
-      });
+        delivery_time: typeof deliveryTime === "string" ? deliveryTime : JSON.stringify(deliveryTime || {})
+      };
+      const order = await insert("orders", orderPayload);
       await insert("order_items", {
         order_id: order[0].id,
-        service_id: mealPlanId,
-        quantity: quantity || 1,
-        price: mealPlan.price || totalAmount,
-        total: (mealPlan.price || totalAmount) * (quantity || 1),
-        item_type: "meal_plan"
+        service_id: effectiveMealPlanId,
+        name: mealPlan.name || "Meal Plan",
+        quantity: qty,
+        unit_price: unitPrice,
+        total_price: unitPrice * qty
       });
       await insert("meal_plan_orders", {
         order_id: order[0].id,
-        meal_plan_id: mealPlanId,
+        meal_plan_id: effectiveMealPlanId,
         pet_id: petId,
-        quantity: quantity || 1,
+        quantity: qty,
         delivery_date: deliveryDate,
-        delivery_time: deliveryTime
+        delivery_time: typeof deliveryTime === "string" ? deliveryTime : JSON.stringify(deliveryTime || {})
       }).catch(() => {
-        console.log("meal_plan_orders table not found, skipping");
       });
       return c.json({
         success: true,
         order: order[0],
         order_id: order[0].id,
+        orderId: order[0].id,
         message: "Meal plan order created successfully"
       });
     } catch (error) {
@@ -141641,7 +142207,8 @@ function registerSpecializedServicesEndpoints(app3) {
     try {
       const { vendorId } = c.req.param();
       const status = c.req.query("status");
-      let ordersQuery = `
+      const allOrders = [];
+      let mealOrdersQuery = `
         SELECT mo.id, mo.customer_id, mo.vendor_id, mo.meal_plan_id, mo.pet_id,
                mo.order_type, mo.quantity, mo.special_instructions, mo.subtotal, mo.delivery_fee,
                mo.platform_fee, mo.total_amount, mo.status, mo.payment_status,
@@ -141655,26 +142222,97 @@ function registerSpecializedServicesEndpoints(app3) {
         LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
         WHERE mo.vendor_id = $1
       `;
-      const params = [vendorId];
+      const mealParams = [vendorId];
       if (status) {
-        params.push(status);
-        ordersQuery += ` AND mo.status = $${params.length}`;
+        mealParams.push(status);
+        mealOrdersQuery += ` AND mo.status = $${mealParams.length}`;
       }
-      ordersQuery += ` ORDER BY mo.created_at DESC LIMIT 100`;
-      const result = await query(ordersQuery, params).catch(() => ({ rows: [] }));
-      const orders = result.rows.map((o) => ({
-        ...o,
-        order_number: o.id?.toString().slice(-8) || "",
-        items: [],
-        delivery_address: typeof o.delivery_address === "string" ? (() => {
-          try {
-            return JSON.parse(o.delivery_address);
-          } catch {
-            return {};
+      mealOrdersQuery += ` ORDER BY mo.created_at DESC LIMIT 100`;
+      const mealResult = await query(mealOrdersQuery, mealParams).catch(() => ({ rows: [] }));
+      for (const o of mealResult.rows) {
+        allOrders.push({
+          ...o,
+          source: "meal_orders",
+          order_number: o.id?.toString().slice(-8) || "",
+          items: [],
+          delivery_address: typeof o.delivery_address === "string" ? (() => {
+            try {
+              return JSON.parse(o.delivery_address);
+            } catch {
+              return {};
+            }
+          })() : o.delivery_address
+        });
+      }
+      try {
+        const hasOrderType = await query(
+          `SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'order_type' LIMIT 1`
+        ).then((r) => (r?.rows?.length || 0) > 0);
+        if (hasOrderType) {
+          let ordQuery = `
+            SELECT o.id, o.customer_id, o.vendor_id, o.order_number, o.order_status as status,
+                   o.total_amount, o.shipping_address as delivery_address, o.created_at,
+                   o.delivery_date as scheduled_delivery_date, o.delivery_time as scheduled_delivery_slot,
+                   c.full_name as customer_name, c.phone as customer_phone,
+                   (SELECT mp.name FROM meal_plan_orders mpo LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id WHERE mpo.order_id = o.id LIMIT 1) as meal_name
+            FROM orders o
+            LEFT JOIN customers c ON o.customer_id = c.id
+            WHERE o.vendor_id = $1 AND o.order_type = 'meal_plan_delivery'
+          `;
+          const ordParams = [vendorId];
+          if (status) {
+            ordParams.push(status);
+            ordQuery += ` AND o.order_status = $${ordParams.length}`;
           }
-        })() : o.delivery_address
-      }));
-      return c.json({ success: true, orders, total: orders.length });
+          ordQuery += ` ORDER BY o.created_at DESC LIMIT 100`;
+          const ordResult = await query(ordQuery, ordParams).catch(() => ({ rows: [] }));
+          for (const o of ordResult.rows) {
+            const parsedAddr = typeof o.delivery_address === "string" ? (() => {
+              try {
+                return JSON.parse(o.delivery_address);
+              } catch {
+                return {};
+              }
+            })() : o.delivery_address;
+            allOrders.push({
+              id: o.id,
+              customer_id: o.customer_id,
+              vendor_id: o.vendor_id,
+              meal_plan_id: null,
+              pet_id: null,
+              order_type: "meal_plan_delivery",
+              quantity: 1,
+              special_instructions: null,
+              subtotal: o.total_amount,
+              delivery_fee: 0,
+              platform_fee: 0,
+              total_amount: o.total_amount,
+              status: o.status,
+              payment_status: "pending",
+              scheduled_delivery_date: o.scheduled_delivery_date,
+              scheduled_delivery_slot: o.scheduled_delivery_slot,
+              delivery_address: parsedAddr,
+              customer_name: o.customer_name,
+              customer_phone: o.customer_phone,
+              meal_name: o.meal_name || "Meal Plan",
+              created_at: o.created_at,
+              source: "orders",
+              order_number: o.order_number || o.id?.toString().slice(-8) || "",
+              items: []
+            });
+          }
+        }
+      } catch (ordErr) {
+        console.warn("[meal-orders] Could not fetch from orders table:", ordErr?.message);
+      }
+      const seen = /* @__PURE__ */ new Set();
+      const deduped = allOrders.filter((o) => {
+        const k = String(o.id);
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      }).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()).slice(0, 100);
+      return c.json({ success: true, orders: deduped, total: deduped.length });
     } catch (error) {
       console.error("Error fetching meal orders:", error);
       return c.json({ success: true, orders: [], total: 0 });
@@ -144115,39 +144753,81 @@ function calculateDistance2(lat1, lon1, lat2, lon2) {
 }
 function getCategoryFromRole(roleId) {
   const roleCategoryMap = {
+    // Vet
     "vet_clinic": "vet",
     "veterinarian": "vet",
     "vet_solo": "vet",
+    "vet": "vet",
+    // Grooming
     "grooming_salon": "grooming",
     "pet_groomer": "grooming",
     "groomer": "grooming",
     "groomer_solo": "grooming",
     "groomer_center": "grooming",
     "grooming_solo": "grooming",
+    // Training
     "trainer": "training",
     "pet_trainer": "training",
     "trainer_solo": "training",
     "trainer_center": "training",
     "training_solo": "training",
+    "solo": "training",
+    // Walker
     "dog_walker": "walker",
     "pet_walker": "walker",
     "walker": "walker",
     "walker_solo": "walker",
+    "walking": "walker",
+    // Boarding
+    "boarding": "boarding",
     "boarding_resort": "boarding",
     "pet_boarding": "boarding",
+    "pet_boarder": "boarding",
+    "pet_daycare": "boarding",
+    // Nutrition
     "nutritionist": "nutrition",
     "pet_nutritionist": "nutrition",
     "nutritionist_center": "nutrition",
     "nutritionist_solo": "nutrition",
+    // Adoption (shelter / adoption center)
+    "adoption_center": "adoption",
     "ngo": "adoption",
     "shelter": "adoption",
-    "breeder": "adoption",
-    "pet_store": "marketplace",
+    "pet_shelter": "adoption",
+    "pet_adoption_center": "adoption",
+    // Shop / marketplace
+    "seller": "shop",
+    "pet_store": "shop",
+    "pet_products_store": "shop",
+    // Diagnostics / lab
     "diagnostics_center": "diagnostics",
     "diagnostics_provider": "diagnostics",
     "diagnostics_solo": "diagnostics",
+    // Pharmacy, cafe, photography, insurance, ambulance, breeder, relocation, resort, holiday, sunset
     "pharmacy": "pharmacy",
-    "cafe": "cafe",
+    "pet_pharmacy": "pharmacy",
+    "cafe": "cafes",
+    "pet_cafe": "cafes",
+    "photographer": "photography",
+    "pet_photographer": "photography",
+    "insurance": "insurance",
+    "pet_insurance": "insurance",
+    "ambulance": "ambulance",
+    "pet_ambulance": "ambulance",
+    "breeder": "breeder",
+    "pet_breeder": "breeder",
+    "relocation": "relocation",
+    "pet_taxi": "relocation",
+    "pet_transport": "relocation",
+    "pet_relocation": "relocation",
+    "resort": "resort",
+    "pet_resort": "resort",
+    "holiday": "holiday",
+    "sunset": "sunset",
+    "pet_sunset_services": "sunset",
+    "event_organizer": "events",
+    "pet_event_organizer": "events",
+    // Behaviourist, sitting
     "behaviourist": "behaviourist",
     "pet_behaviourist": "behaviourist",
     "behaviourist_solo": "behaviourist",
@@ -144162,9 +144842,14 @@ async function getDiscoverableRoleNames() {
     SELECT DISTINCT r.name AS role_name
     FROM vendors v
     INNER JOIN roles r ON v.role_id = r.id
-    INNER JOIN vendor_services vs ON vs.vendor_id = v.id
-    WHERE v.status = 'approved' AND v.is_active = true AND r.is_active = true
-      AND vs.is_enabled = true AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
+    WHERE (v.status = 'approved' OR v.status = 'active')
+      AND v.is_active = true
+      AND EXISTS (
+        SELECT 1 FROM vendor_services vs
+        WHERE vs.vendor_id = v.id
+          AND vs.is_enabled = true
+          AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+      )
     ORDER BY r.name
   `);
   return (result.rows || []).map((r) => r.role_name).filter(Boolean);
@@ -144173,17 +144858,49 @@ var ROLE_ID_ALIASES = {
   diagnostic_center: "diagnostics_center",
   diagnostics: "diagnostics_center"
 };
+var CATEGORY_ROLE_NAMES = {
+  vet: ["veterinarian", "vet_clinic", "vet_solo", "vet"],
+  grooming: ["groomer", "groomer_solo", "groomer_center", "grooming_solo", "pet_groomer"],
+  training: ["trainer", "trainer_solo", "trainer_center", "training_solo", "pet_trainer", "solo"],
+  walker: ["walker", "walker_solo", "pet_walker", "dog_walker"],
+  walking: ["walker", "walker_solo", "pet_walker", "dog_walker"],
+  boarding: ["boarding", "pet_boarder", "pet_daycare", "pet_boarding"],
+  nutrition: ["nutritionist", "nutritionist_solo", "nutritionist_center", "pet_nutritionist"],
+  nutritionist: ["nutritionist", "nutritionist_solo", "nutritionist_center", "pet_nutritionist"],
+  adoption: ["adoption_center", "pet_shelter", "pet_adoption_center"],
+  shop: ["seller", "pet_products_store"],
+  diagnostics: ["diagnostics_center", "diagnostics_provider", "diagnostics_solo"],
+  "lab-diagnostics": ["diagnostics_center", "diagnostics_provider", "diagnostics_solo"],
+  pharmacy: ["pharmacy", "pet_pharmacy"],
+  cafes: ["cafe", "pet_cafe"],
+  cafe: ["cafe", "pet_cafe"],
+  photography: ["photographer", "pet_photographer"],
+  insurance: ["insurance", "pet_insurance"],
+  ambulance: ["ambulance", "pet_ambulance"],
+  breeder: ["breeder", "pet_breeder"],
+  relocation: ["relocation", "pet_taxi", "pet_transport", "pet_relocation"],
+  resort: ["resort", "pet_resort"],
+  holiday: ["holiday"],
+  sunset: ["sunset", "pet_sunset_services"],
+  events: ["event_organizer", "pet_event_organizer"],
+  behaviourist: ["behaviourist", "behaviourist_solo", "pet_behaviourist"],
+  sitting: ["pet_sitter", "sitter_solo", "sitter"]
+};
 async function resolveTargetRolesForDiscovery(category, roleId) {
   const discoverable = await getDiscoverableRoleNames();
+  let rawCategory = category?.toLowerCase().trim() || (roleId ? getCategoryFromRole(roleId) : null);
+  if (rawCategory === "lab-diagnostics") rawCategory = "diagnostics";
+  const effectiveCategory = rawCategory && getCategoryFromRole(rawCategory) !== "other" ? getCategoryFromRole(rawCategory) : rawCategory;
+  if (effectiveCategory) {
+    const fromDb = discoverable.filter((role) => getCategoryFromRole(role) === effectiveCategory);
+    if (fromDb.length > 0) return fromDb;
+    return CATEGORY_ROLE_NAMES[effectiveCategory] || CATEGORY_ROLE_NAMES[rawCategory] || [];
+  }
   if (roleId) {
     const lower = roleId.toLowerCase().trim();
     const canonical = ROLE_ID_ALIASES[lower] || lower;
     const match2 = discoverable.find((r) => r.toLowerCase() === canonical || r.toLowerCase() === lower);
     return match2 ? [match2] : [];
-  }
-  if (category) {
-    const cat = category.toLowerCase();
-    return discoverable.filter((role) => getCategoryFromRole(role) === cat);
   }
   return discoverable;
 }
@@ -144194,17 +144911,22 @@ function registerServiceDiscoveryEndpoints(app3) {
         SELECT DISTINCT r.name AS roleName, r.display_name AS roleDisplayName
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
-        INNER JOIN vendor_services vs ON vs.vendor_id = v.id
-        WHERE v.status = 'approved' AND v.is_active = true AND r.is_active = true
-          AND vs.is_enabled = true AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
+        WHERE (v.status = 'approved' OR v.status = 'active')
+          AND v.is_active = true
+          AND EXISTS (
+            SELECT 1 FROM vendor_services vs
+            WHERE vs.vendor_id = v.id AND vs.is_enabled = true
+              AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+          )
         ORDER BY r.name
       `);
       const stylesResult = await query(`
         SELECT DISTINCT vs.service_style AS serviceStyle
         FROM vendor_services vs
         INNER JOIN vendors v ON v.id = vs.vendor_id
-        WHERE v.status = 'approved' AND v.is_active = true
-          AND vs.is_enabled = true AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
+        WHERE (v.status = 'approved' OR v.status = 'active') AND v.is_active = true
+          AND vs.is_enabled = true
+          AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
           AND vs.service_style IS NOT NULL
         ORDER BY vs.service_style
       `);
@@ -144228,7 +144950,7 @@ function registerServiceDiscoveryEndpoints(app3) {
         success: true,
         roles: [],
         serviceStyles: ["at_center", "at_home", "tele"],
-        categories: ["vet", "grooming", "training", "walker", "nutrition", "boarding", "diagnostics"]
+        categories: ["vet", "grooming", "training", "walker", "nutrition", "boarding", "diagnostics", "shop", "cafes", "photography", "insurance", "ambulance", "breeder", "adoption", "relocation", "resort", "holiday", "sunset"]
       }, 200);
     }
   });
@@ -144474,13 +145196,30 @@ function registerServiceDiscoveryEndpoints(app3) {
       if (serviceStyle === "at_home" || serviceStyle === "tele") {
         const allProviders = [];
         const targetRoles2 = await resolveTargetRolesForDiscovery(category || null, roleId || null);
-        const vendorParams = [serviceStyle];
-        let vendorParamIdx = 2;
-        const soloOrCategoryRole = targetRoles2.length > 0 ? ` OR r.name = ANY($${vendorParamIdx})` : "";
-        if (targetRoles2.length > 0) {
-          vendorParams.push(targetRoles2);
-          vendorParamIdx++;
-        }
+        const targetRolesLower = targetRoles2.map((r) => r.toLowerCase());
+        console.log("[discover-services] at_home/tele category=%s roleId=%s targetRoles=%s", category, roleId, JSON.stringify(targetRolesLower));
+        const roleRestrictClause = targetRolesLower.length > 0 ? ` AND r.id IS NOT NULL AND (LOWER(r.name) = ANY($1::text[]) OR LOWER(REPLACE(COALESCE(r.name, ''), ' ', '_')) = ANY($1::text[]))` : "";
+        const soloCondition = targetRolesLower.length > 0 ? "" : ` AND (
+              v.vendor_type = 'solo'
+              OR r.name LIKE '%_solo'
+              OR r.name LIKE '%Solo%'
+              OR LOWER(r.name) LIKE '%solo%'
+            )`;
+        const vendorParams = targetRolesLower.length > 0 ? targetRolesLower : [];
+        const isWalkerCategory = category?.toLowerCase() === "walker" || category?.toLowerCase() === "walking" || targetRolesLower.length > 0 && targetRolesLower.some((r) => ["walker", "walker_solo", "pet_walker", "dog_walker"].includes(r));
+        const existsServiceClause = targetRolesLower.length > 0 ? isWalkerCategory ? ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true)` : ` AND EXISTS (
+              SELECT 1 FROM vendor_services vs
+              WHERE vs.vendor_id = v.id
+                AND vs.is_enabled = true
+                AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+            )` : ` AND EXISTS (
+              SELECT 1 FROM vendor_services vs
+              WHERE vs.vendor_id = v.id
+                AND (vs.service_style = $1 OR vs.service_style IS NULL)
+                AND vs.is_enabled = true
+                AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+            )`;
+        if (targetRolesLower.length === 0) vendorParams.unshift(serviceStyle);
         let vendorQuery2 = `
           SELECT DISTINCT v.id, v.business_name, v.owner_name, v.phone, v.city, v.state,
                  v.latitude, v.longitude, r.name as role_name, r.display_name as role_display_name,
@@ -144488,29 +145227,28 @@ function registerServiceDiscoveryEndpoints(app3) {
                  v.vendor_type, v.metadata
           FROM vendors v
           LEFT JOIN roles r ON v.role_id = r.id
-          INNER JOIN vendor_services vs ON vs.vendor_id = v.id
-          WHERE v.status = 'approved' 
+          WHERE (v.status = 'approved' OR v.status = 'active')
             AND v.is_active = true
-            AND COALESCE(v.is_online, true) = true
-            AND (
-              v.vendor_type = 'solo' 
-              OR r.name LIKE '%_solo' 
-              OR r.name LIKE '%Solo%'
-              OR LOWER(r.name) LIKE '%solo%'${soloOrCategoryRole}
-            )
-            -- \u2705 EXCLUDE business/clinic keywords from at_home/tele listings
+            AND (${targetRolesLower.length > 0 ? "1=1" : "COALESCE(v.is_online, true) = true"})
+            ${soloCondition}
+            ${roleRestrictClause}
             AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%clinic%'
             AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%hospital%'
             AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%center%'
             AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%centre%'
             AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%salon%'
             AND COALESCE(LOWER(v.business_name), '') NOT LIKE '% business%'
-            AND vs.service_style = $1
-            AND vs.is_enabled = true
-            AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
+            ${existsServiceClause}
         `;
         vendorQuery2 += ` LIMIT 50`;
-        const vendorResults2 = await query(vendorQuery2, vendorParams).catch(() => ({ rows: [] }));
+        let vendorResults2;
+        try {
+          vendorResults2 = await query(vendorQuery2, vendorParams);
+        } catch (err) {
+          console.error("[discover-services] at_home query error:", err?.message, err?.stack);
+          vendorResults2 = { rows: [] };
+        }
+        console.log("[discover-services] at_home found %s vendors", vendorResults2.rows?.length ?? 0);
         for (const vendor of vendorResults2.rows) {
           let nextAvailableSlot = null;
           try {
@@ -144592,9 +145330,9 @@ function registerServiceDiscoveryEndpoints(app3) {
             const priceResult = await query(
               `SELECT MIN(COALESCE(vs.custom_price, vs.price, 0))::numeric as min_price
                FROM vendor_services vs
-               WHERE vs.vendor_id = $1 AND vs.service_style = $2 AND vs.is_enabled = true
-                 AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)`,
-              [vendor.id, serviceStyle]
+               WHERE vs.vendor_id = $1 AND vs.is_enabled = true
+                 AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)`,
+              [vendor.id]
             );
             minPrice = parseFloat(priceResult.rows[0]?.min_price || "0") || 0;
             consultationFee = minPrice;
@@ -146386,14 +147124,29 @@ function registerServiceDiscoveryEndpoints(app3) {
         let paramIndex = 2;
         if (category) {
           const categoryRoles2 = {
-            "vet": ["veterinarian", "vet_clinic", "vet", "Veterinarian"],
+            "vet": ["veterinarian", "vet_clinic", "vet_solo", "vet", "Veterinarian"],
             "grooming": ["groomer", "grooming_salon", "pet_groomer", "groomer_center", "groomer_solo", "grooming_solo"],
             "training": ["trainer", "pet_trainer", "trainer_center", "trainer_solo", "training_solo"],
             "nutritionist": ["nutritionist", "pet_nutritionist", "nutritionist_center", "nutritionist_solo"],
+            "nutrition": ["nutritionist", "pet_nutritionist", "nutritionist_center", "nutritionist_solo"],
             "walker": ["walker", "pet_walker", "dog_walker", "walker_solo"],
+            "boarding": ["boarding", "pet_boarder", "pet_boarding"],
+            "adoption": ["adoption_center", "pet_shelter", "pet_adoption_center"],
+            "shop": ["seller", "pet_products_store"],
+            "cafes": ["cafe", "pet_cafe"],
+            "cafe": ["cafe", "pet_cafe"],
+            "photography": ["photographer", "pet_photographer"],
+            "insurance": ["insurance", "pet_insurance"],
+            "ambulance": ["ambulance", "pet_ambulance"],
+            "breeder": ["breeder", "pet_breeder"],
+            "relocation": ["relocation", "pet_taxi", "pet_transport", "pet_relocation"],
+            "resort": ["resort", "pet_resort"],
+            "holiday": ["holiday"],
+            "sunset": ["sunset", "pet_sunset_services"],
             "behaviourist": ["behaviourist", "pet_behaviourist", "behaviourist_solo"],
             "sitting": ["pet_sitter", "sitter", "sitter_solo"],
-            "diagnostics": ["diagnostics_provider", "diagnostics_center", "diagnostics_solo"]
+            "diagnostics": ["diagnostics_center", "diagnostics_provider", "diagnostics_solo"],
+            "lab-diagnostics": ["diagnostics_center", "diagnostics_provider", "diagnostics_solo"]
           };
           const roles = categoryRoles2[category.toLowerCase()];
           if (roles) {
@@ -146564,14 +147317,28 @@ function registerServiceDiscoveryEndpoints(app3) {
       const reviewCountSubquery = has_reviews_table && has_reviews_staff_id ? "COALESCE((SELECT COUNT(*) FROM reviews WHERE staff_id = s.id), 0)" : "0";
       const categoryRoles = {
         "vet": ["Veterinarian", "veterinarian", "vet", "vet_clinic", "vet_solo", "Veterinarian (Solo)", "Vet Solo", "Veterinary Clinic"],
-        "grooming": ["Groomer", "groomer", "pet_groomer", "grooming_salon", "grooming_solo", "Groomer (Solo)", "Grooming Salon"],
-        "training": ["Trainer", "trainer", "pet_trainer", "training_solo", "Trainer (Solo)", "Pet Trainer"],
+        "grooming": ["Groomer", "groomer", "pet_groomer", "grooming_salon", "groomer_center", "groomer_solo", "grooming_solo", "Groomer (Solo)", "Grooming Salon"],
+        "training": ["Trainer", "trainer", "pet_trainer", "trainer_center", "trainer_solo", "training_solo", "Trainer (Solo)", "Pet Trainer"],
         "walker": ["Walker", "walker", "pet_walker", "dog_walker", "walker_solo", "Dog Walker", "Walker (Solo)"],
-        "nutritionist": ["nutritionist", "pet_nutritionist", "nutritionist_solo", "Pet Nutritionist", "Nutritionist (Solo)"],
-        "nutrition": ["nutritionist", "pet_nutritionist", "nutritionist_solo", "Pet Nutritionist", "Nutritionist (Solo)"],
+        "boarding": ["boarding", "pet_boarder", "pet_boarding"],
+        "adoption": ["adoption_center", "pet_shelter", "pet_adoption_center"],
+        "shop": ["seller", "pet_products_store"],
+        "cafes": ["cafe", "pet_cafe"],
+        "cafe": ["cafe", "pet_cafe"],
+        "photography": ["photographer", "pet_photographer"],
+        "insurance": ["insurance", "pet_insurance"],
+        "ambulance": ["ambulance", "pet_ambulance"],
+        "breeder": ["breeder", "pet_breeder"],
+        "relocation": ["relocation", "pet_taxi", "pet_transport", "pet_relocation"],
+        "resort": ["resort", "pet_resort"],
+        "holiday": ["holiday"],
+        "sunset": ["sunset", "pet_sunset_services"],
+        "nutritionist": ["nutritionist", "pet_nutritionist", "nutritionist_center", "nutritionist_solo", "Pet Nutritionist", "Nutritionist (Solo)"],
+        "nutrition": ["nutritionist", "pet_nutritionist", "nutritionist_center", "nutritionist_solo", "Pet Nutritionist", "Nutritionist (Solo)"],
         "behaviourist": ["behaviourist", "pet_behaviourist", "behaviourist_solo", "Pet Behaviourist", "Behaviourist (Solo)"],
         "sitting": ["pet_sitter", "sitter", "sitter_solo", "Pet Sitter", "Sitter (Solo)"],
-        "diagnostics": ["diagnostics_provider", "diagnostics_solo", "Diagnostics Provider", "Diagnostics (Solo)"]
+        "diagnostics": ["diagnostics_center", "diagnostics_provider", "diagnostics_solo", "Diagnostics Provider", "Diagnostics (Solo)"],
+        "lab-diagnostics": ["diagnostics_center", "diagnostics_provider", "diagnostics_solo"]
       };
       let targetRoles = [];
       if (roleId) {
@@ -146582,28 +147349,26 @@ function registerServiceDiscoveryEndpoints(app3) {
           );
           if (roles.rows.length > 0) {
             const role = roles.rows[0];
-            targetRoles = [role.name, role.display_name, roleId];
-            if (role.name.toLowerCase().includes("vet") || role.name.toLowerCase().includes("veterinarian")) {
-              targetRoles.push(...categoryRoles["vet"]);
-            }
+            targetRoles = [role.name, role.display_name, roleId].filter(Boolean);
           } else {
             targetRoles = [roleId];
-            if (roleId.toLowerCase().includes("vet") || roleId.toLowerCase().includes("veterinarian")) {
-              targetRoles.push(...categoryRoles["vet"]);
-            }
+          }
+          const roleCategory = getCategoryFromRole(roleId);
+          if (roleCategory && categoryRoles[roleCategory]) {
+            targetRoles = [.../* @__PURE__ */ new Set([...targetRoles, ...categoryRoles[roleCategory]])];
           }
         } catch (err) {
           console.warn("Error fetching role:", err);
           targetRoles = [roleId];
-          if (roleId.toLowerCase().includes("vet") || roleId.toLowerCase().includes("veterinarian")) {
-            targetRoles.push(...categoryRoles["vet"]);
+          const roleCategory = getCategoryFromRole(roleId);
+          if (roleCategory && categoryRoles[roleCategory]) {
+            targetRoles = [.../* @__PURE__ */ new Set([...targetRoles, ...categoryRoles[roleCategory]])];
           }
         }
       }
       if (category) {
         const categoryRoleList = categoryRoles[category.toLowerCase()] || [];
-        const combinedRoles = [.../* @__PURE__ */ new Set([...targetRoles, ...categoryRoleList])];
-        targetRoles = combinedRoles;
+        targetRoles = [.../* @__PURE__ */ new Set([...targetRoles, ...categoryRoleList])];
       }
       if (targetRoles.length === 0 && category) {
         targetRoles = categoryRoles[category.toLowerCase()] || [];
@@ -146911,6 +147676,22 @@ function registerServiceDiscoveryEndpoints(app3) {
         });
       }
       const vendorIdsWithStaff = new Set(providers.map((p) => p.vendorId).filter(Boolean));
+      const vendorFallbackSoloCondition = targetRoles.length > 0 ? "" : ` AND (
+            v.vendor_type = 'solo'
+            OR r.name LIKE '%_solo'
+            OR r.name LIKE '%Solo%'
+            OR LOWER(r.name) LIKE '%solo%'
+          )`;
+      const vendorFallbackExistsService = targetRoles.length > 0 ? ` AND EXISTS (
+            SELECT 1 FROM vendor_services vs
+            WHERE vs.vendor_id = v.id AND vs.is_enabled = true
+              AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+          )` : ` AND EXISTS (
+            SELECT 1 FROM vendor_services vs
+            WHERE vs.vendor_id = v.id AND (vs.service_style = $1 OR vs.service_style IS NULL)
+              AND vs.is_enabled = true
+              AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+          )`;
       let vendorFallbackQuery = `
         SELECT DISTINCT ON (v.id)
           v.id as vendor_id,
@@ -146930,34 +147711,25 @@ function registerServiceDiscoveryEndpoints(app3) {
           (SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id) as review_count
         FROM vendors v
         LEFT JOIN roles r ON v.role_id = r.id
-        INNER JOIN vendor_services vs ON vs.vendor_id = v.id
-        WHERE v.status = 'approved' 
+        WHERE (v.status = 'approved' OR v.status = 'active')
           AND v.is_active = true
-          AND (
-            v.vendor_type = 'solo'
-            OR r.name LIKE '%_solo'
-            OR r.name LIKE '%Solo%'
-            OR LOWER(r.name) LIKE '%solo%'
-          )
+          ${vendorFallbackSoloCondition}
           AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%clinic%'
           AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%hospital%'
           AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%center%'
           AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%centre%'
           AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%salon%'
           AND COALESCE(LOWER(v.business_name), '') NOT LIKE '% business%'
-          AND vs.service_style = $1
-          AND vs.is_enabled = true
-          AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
+          ${vendorFallbackExistsService}
       `;
-      const vendorFallbackParams = [serviceStyle];
-      let vendorFallbackParamIdx = 2;
+      const vendorFallbackParams = targetRoles.length > 0 ? [] : [serviceStyle];
+      let vendorFallbackParamIdx = targetRoles.length > 0 ? 1 : 2;
       if (targetRoles.length > 0) {
         vendorFallbackQuery += ` AND (
-          r.name = ANY($${vendorFallbackParamIdx}) 
-          OR v.role_id::text = ANY($${vendorFallbackParamIdx})
-          OR r.display_name = ANY($${vendorFallbackParamIdx})
+          LOWER(r.name) = ANY($${vendorFallbackParamIdx}::text[])
+          OR LOWER(r.display_name) = ANY($${vendorFallbackParamIdx}::text[])
         )`;
-        vendorFallbackParams.push(targetRoles);
+        vendorFallbackParams.push(targetRoles.map((r) => r.toLowerCase()));
         vendorFallbackParamIdx++;
       }
       vendorFallbackQuery += ` ORDER BY v.id, avg_rating DESC NULLS LAST LIMIT ${Math.min(100, Math.max(1, maxResults))}`;
@@ -146981,7 +147753,7 @@ function registerServiceDiscoveryEndpoints(app3) {
             vs.category
            FROM vendor_services vs
            WHERE vs.vendor_id = $1 
-             AND vs.service_style = $2
+             AND (vs.service_style = $2 OR vs.service_style IS NULL)
              AND vs.is_enabled = true
              AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
            ORDER BY vs.price ASC`,
@@ -147462,7 +148234,25 @@ function registerNotificationEndpoints(app3) {
       if (!userId) {
         return c.json({ error: "userId is required" }, 400);
       }
-      if (userId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
+      let effectiveUserId = userId;
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+      if (!isUuid && userType === "customer" && userId !== "test-vendor-id") {
+        try {
+          const rawPhone = decodeURIComponent(String(userId)).trim();
+          const digitsOnly = rawPhone.replace(/\D/g, "");
+          const customers = await select("customers", { phone: digitsOnly });
+          if (customers.length > 0 && customers[0].id) {
+            effectiveUserId = customers[0].id;
+          } else if (digitsOnly !== rawPhone) {
+            const alt = await select("customers", { phone: rawPhone });
+            if (alt.length > 0 && alt[0].id) {
+              effectiveUserId = alt[0].id;
+            }
+          }
+        } catch (_) {
+        }
+      }
+      if (userId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectiveUserId)) {
         return c.json({
           success: true,
           notifications: [],
@@ -147474,7 +148264,7 @@ function registerNotificationEndpoints(app3) {
         SELECT * FROM notifications
         WHERE recipient_id = $1 AND recipient_type = $2
       `;
-      const params = [userId, userType];
+      const params = [effectiveUserId, userType];
       let paramIndex = 3;
       if (isRead !== void 0) {
         notificationQuery += ` AND is_read = $${paramIndex}`;
@@ -147486,7 +148276,7 @@ function registerNotificationEndpoints(app3) {
       const notifications = await query(notificationQuery, params);
       const unreadCount = await query(
         "SELECT COUNT(*) as count FROM notifications WHERE recipient_id = $1 AND recipient_type = $2 AND is_read = false",
-        [userId, userType]
+        [effectiveUserId, userType]
       );
       return c.json({
         success: true,
@@ -148652,20 +149442,21 @@ function registerVendorScheduleEndpoints(app3) {
              FROM vendor_availability_v2
              WHERE vendor_id = $1
              AND day_of_week = $2
-             AND service_style = $3
-             AND is_enabled = true
-             ORDER BY time_window_start`,
+             AND (COALESCE(service_style, service_type) = $3 
+                  OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
+             AND COALESCE(is_enabled, is_available, true) = true
+             ORDER BY COALESCE(time_window_start, start_time)`,
             [vendorId, dayOfWeek, serviceStyle]
           );
         } catch (queryErr) {
-          if (queryErr.message?.includes("service_style")) {
+          if (queryErr.message?.includes("service_style") || queryErr.message?.includes("service_styles")) {
             scheduleSlots = await query(
               `SELECT *, start_time as time_window_start, end_time as time_window_end 
                FROM vendor_availability_v2
                WHERE vendor_id = $1
                AND day_of_week = $2
-               AND service_type = $3
-               AND is_available = true
+               AND (service_type = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
+               AND COALESCE(is_available, is_enabled, true) = true
                ORDER BY start_time`,
               [vendorId, dayOfWeek, serviceStyle]
             );
@@ -149939,7 +150730,13 @@ function registerCustomerBookingHistoryEndpoints(app3) {
           review: reviews.rows.length > 0 ? reviews.rows[0] : null,
           // Multi-service: list of services and total duration
           selectedServices: parseSelectedServices(booking.selected_services).length > 0 ? parseSelectedServices(booking.selected_services) : void 0,
-          totalDurationMinutes: booking.total_duration_minutes != null ? Number(booking.total_duration_minutes) : void 0
+          totalDurationMinutes: booking.total_duration_minutes != null ? Number(booking.total_duration_minutes) : void 0,
+          // Price/amount for booking details (fix ₹0 on customer and mobile)
+          amount: booking.total_amount != null ? parseFloat(booking.total_amount) : void 0,
+          total_amount: booking.total_amount != null ? parseFloat(booking.total_amount) : void 0,
+          totalAmount: booking.total_amount != null ? parseFloat(booking.total_amount) : void 0,
+          price: booking.total_amount != null ? parseFloat(booking.total_amount) : booking.base_price != null ? parseFloat(booking.base_price) : void 0,
+          base_price: booking.base_price != null ? parseFloat(booking.base_price) : void 0
         }
       });
     } catch (error) {
@@ -150409,6 +151206,13 @@ function registerPrescriptionEndpoints(app3) {
         createdBy,
         createdByRole
       } = prescriptionData;
+      if ((!customerId || !isValidUUID(customerId)) && bookingId && isValidUUID(bookingId)) {
+        const bookings = await select("bookings", { id: bookingId });
+        if (bookings.length > 0 && bookings[0].customer_id) {
+          prescriptionData.customerId = bookings[0].customer_id;
+          console.log(`[Prescription] Resolved customerId from booking ${bookingId}: ${prescriptionData.customerId}`);
+        }
+      }
       let hasPrescriptionCapability = await checkVendorCapability(vendorId, "prescription_create") || await checkVendorCapability(vendorId, "prescriptions");
       if (!hasPrescriptionCapability) {
         let roleId = null;
@@ -155313,11 +156117,15 @@ function registerPetEndpoints(app3) {
 var import_crypto26 = require("crypto");
 init_rds_connection();
 var roleMappings = {
+  // ✅ FIX: Healthcare roles with clinic services
   "veterinarian": ["vet", "veterinarian", "vet_clinic", "vet_solo"],
   "vet_solo": ["vet", "veterinarian", "vet_clinic", "vet_solo", "solo_vet"],
   "veterinary_clinic": ["vet_clinic", "veterinary_clinic", "vet", "veterinarian"],
   "vet_clinic": ["vet_clinic", "veterinary_clinic", "vet", "veterinarian", "vet_solo"],
   "diagnostics_center": ["diagnostics_center", "vet_clinic", "veterinarian"],
+  // ✅ FIX: Nutritionist should ONLY see nutrition services, NOT vet services
+  "nutritionist": ["nutritionist", "pet_nutritionist"],
+  "nutritionist_center": ["nutritionist", "pet_nutritionist", "nutritionist_center"],
   "pet_pharmacy": ["pharmacy", "pet_pharmacy"],
   "pet_ambulance": ["ambulance", "pet_ambulance"],
   "ambulance": ["ambulance", "pet_ambulance"],
@@ -155502,11 +156310,23 @@ function registerVendorServicesEndpoints(app3) {
         "pharmacy": ["delivery", "pickup"],
         "pet_products_store": ["delivery", "pickup"],
         "pet_ambulance": ["at_home"],
+        "ambulance": ["at_home"],
         "pet_photographer": ["at_center", "at_home"],
+        "photographer": ["at_center", "at_home"],
         "pet_sunset_services": ["at_center", "at_home"],
+        "sunset": ["at_center", "at_home"],
         "event_organizer": ["at_center"],
         "insurance": ["at_center"],
-        "pet_breeder": ["at_center", "at_home"]
+        "pet_breeder": ["at_center", "at_home"],
+        "breeder": ["at_center", "at_home"],
+        "relocation": ["at_home"],
+        "pet_relocation": ["at_home"],
+        "resort": ["at_center"],
+        "holiday": ["at_center"],
+        "nutritionist_center": ["at_center", "at_home", "tele"],
+        "adoption_center": ["at_center"],
+        "pet_shelter": ["at_center"],
+        "seller": ["at_center", "delivery", "pickup"]
       };
       if (vendor.role_id) {
         try {
@@ -158378,12 +159198,15 @@ function registerVendorOrdersEndpoints(app3) {
 // src/endpoints/service-catalog.ts
 init_rds_connection();
 var roleMappings2 = {
-  // Healthcare – vet solo and vet clinic both see vet services
+  // ✅ FIX: Healthcare roles with clinic services
   "veterinarian": ["vet", "veterinarian", "vet_clinic", "vet_solo"],
   "vet_solo": ["vet", "veterinarian", "vet_clinic", "vet_solo", "solo_vet"],
   "veterinary_clinic": ["vet_clinic", "veterinary_clinic", "vet", "veterinarian"],
   "vet_clinic": ["vet_clinic", "veterinary_clinic", "vet", "veterinarian", "vet_solo"],
   "diagnostics_center": ["diagnostics_center", "vet_clinic", "veterinarian"],
+  // ✅ FIX: Nutritionist should ONLY see nutrition services, NOT vet services
+  "nutritionist": ["nutritionist", "pet_nutritionist"],
+  "nutritionist_center": ["nutritionist", "pet_nutritionist", "nutritionist_center"],
   "pet_pharmacy": ["pharmacy", "pet_pharmacy"],
   "pet_ambulance": ["ambulance", "pet_ambulance"],
   "ambulance": ["ambulance", "pet_ambulance"],
@@ -158567,7 +159390,8 @@ function registerServiceCatalogEndpoints(app3) {
         SELECT * FROM service_catalog
         WHERE status = 'active'
         AND publish_status = 'published'
-        AND (applicable_roles && $1::text[] OR applicable_roles IS NULL OR array_length(applicable_roles, 1) IS NULL)
+        AND array_length(applicable_roles, 1) > 0
+        AND applicable_roles && $1::text[]
       `;
       const params = [uniqueRoles];
       let paramIndex = 2;
@@ -158597,7 +159421,7 @@ function registerServiceCatalogEndpoints(app3) {
         name: service.service_name,
         description: service.description,
         categoryId: service.category_id,
-        categoryName: service.category_name,
+        categoryName: service.category_name && String(service.category_name).trim() ? service.category_name : service.category_id === "veterinary" ? "Veterinary Services" : service.category_id === "diagnostic" ? "Diagnostics & Lab" : service.category_id === "grooming" ? "Grooming & Hygiene" : service.category_id || "General",
         subCategoryId: service.sub_category_id,
         subCategoryName: service.sub_category_name,
         applicableRoles: service.applicable_roles || [],
@@ -159781,6 +160605,67 @@ function registerSettlementEndpoints(app3) {
       return c.json({ error: error.message }, 500);
     }
   });
+  app3.post("/settlements/request", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { vendorId, amount } = body;
+      if (!vendorId) {
+        return c.json({ success: false, error: "vendorId is required" }, 400);
+      }
+      const requestAmount = parseFloat(amount);
+      if (isNaN(requestAmount) || requestAmount <= 0) {
+        return c.json({ success: false, error: "Valid amount is required" }, 400);
+      }
+      let bankDetails = [];
+      try {
+        const schemaCheck = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as ex`);
+        if (schemaCheck.rows[0]?.ex) {
+          const acc = await query(
+            `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 AND is_verified = true ORDER BY is_primary DESC LIMIT 1`,
+            [vendorId]
+          );
+          bankDetails = acc.rows;
+        }
+      } catch (_) {
+      }
+      if (bankDetails.length === 0) {
+        bankDetails = await select("vendor_bank_details", { vendor_id: vendorId });
+      }
+      if (bankDetails.length === 0) {
+        return c.json({ success: false, error: "Bank account not found. Add and verify your bank account in Settings first." }, 400);
+      }
+      const bank = bankDetails[0];
+      const isVerified = bank.is_verified === true || bank.isVerified === true;
+      if (!isVerified) {
+        return c.json({ success: false, error: "Bank account must be verified before requesting payout. Verify in Settings." }, 400);
+      }
+      const pendingRes = await query(
+        `SELECT COALESCE(SUM(COALESCE(net_amount, vendor_amount)), 0) as pending FROM settlements WHERE vendor_id = $1 AND (status = 'pending' OR settlement_status = 'pending')`,
+        [vendorId]
+      ).catch(() => ({ rows: [{ pending: "0" }] }));
+      const pendingAmount = parseFloat(pendingRes.rows[0]?.pending || "0");
+      if (requestAmount > pendingAmount) {
+        return c.json({ success: false, error: `Amount exceeds available (\u20B9${pendingAmount.toFixed(0)})` }, 400);
+      }
+      const payout = await insert("payouts", {
+        vendor_id: vendorId,
+        amount: requestAmount,
+        payout_status: "pending",
+        bank_account_number: bank.account_number,
+        ifsc_code: bank.ifsc_code,
+        account_holder_name: bank.account_holder_name,
+        payment_ids: []
+      }).catch(() => null);
+      return c.json({
+        success: true,
+        message: "Payout request submitted",
+        payoutId: payout?.[0]?.id
+      });
+    } catch (error) {
+      console.error("Error requesting settlement:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
   app3.get("/payouts/vendor/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
@@ -159991,6 +160876,44 @@ function registerSettlementEndpoints(app3) {
       return c.json({ error: error.message }, 500);
     }
   });
+  app3.put("/vendor/:vendorId/bank-details", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const bankData = await c.req.json().catch(() => ({}));
+      const accountNumber = bankData.accountNumber ?? bankData.account_number;
+      const ifscCode = bankData.ifscCode ?? bankData.ifsc_code;
+      const accountHolderName = bankData.accountHolderName ?? bankData.account_holder_name;
+      const bankName = bankData.bankName ?? bankData.bank_name;
+      if (!accountNumber || !ifscCode || !accountHolderName) {
+        return c.json({ error: "account_number, ifsc_code, and account_holder_name are required" }, 400);
+      }
+      const existing = await select("vendor_bank_details", { vendor_id: vendorId });
+      let bankDetails;
+      if (existing.length > 0) {
+        const updated = await update("vendor_bank_details", { vendor_id: vendorId }, {
+          account_number: accountNumber,
+          ifsc_code: (ifscCode || "").toUpperCase(),
+          account_holder_name: accountHolderName,
+          bank_name: bankName || null,
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+        bankDetails = updated[0];
+      } else {
+        const created = await insert("vendor_bank_details", {
+          vendor_id: vendorId,
+          account_number: accountNumber,
+          ifsc_code: (ifscCode || "").toUpperCase(),
+          account_holder_name: accountHolderName,
+          bank_name: bankName || null
+        });
+        bankDetails = created[0];
+      }
+      return c.json({ success: true, bankDetails, message: "Bank details saved successfully" });
+    } catch (error) {
+      console.error("Error updating bank details:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
   app3.post("/vendor/:vendorId/bank-details", async (c) => {
     try {
       const { vendorId } = c.req.param();
@@ -160150,6 +161073,10 @@ function registerSettlementEndpoints(app3) {
       return;
     }
     const bank = bankDetails[0];
+    if (!bank.is_verified && bank.is_verified !== true) {
+      console.warn(`Vendor ${vendorId} bank not verified, skipping auto payout`);
+      return;
+    }
     await insert("payouts", {
       vendor_id: vendorId,
       amount,
@@ -169210,28 +170137,90 @@ function registerAddressEndpoints(app3) {
          ORDER BY is_default DESC, created_at DESC`,
         [customer[0].id]
       ).catch(() => ({ rows: [] }));
+      let list = addresses.rows.map((addr) => ({
+        id: addr.id,
+        customerId: addr.customer_id,
+        label: addr.address_type,
+        name: addr.full_name,
+        phone: addr.phone,
+        addressLine1: addr.address_line1,
+        addressLine2: addr.address_line2,
+        city: addr.city,
+        state: addr.state,
+        pincode: addr.pincode,
+        landmark: addr.landmark,
+        coordinates: addr.coordinates || null,
+        isDefault: addr.is_default,
+        createdAt: addr.created_at,
+        updatedAt: addr.updated_at
+      }));
+      const cust = customer[0];
+      if (list.length === 0 && (cust?.address || cust?.pincode)) {
+        list = [{
+          id: "profile",
+          customerId: cust.id,
+          label: "home",
+          name: cust.full_name || "",
+          phone: cust.phone || "",
+          addressLine1: cust.address || "",
+          addressLine2: null,
+          city: cust.city || "",
+          state: cust.state || "",
+          pincode: cust.pincode || "",
+          landmark: null,
+          coordinates: null,
+          isDefault: true,
+          createdAt: null,
+          updatedAt: null
+        }];
+      }
       return c.json({
         success: true,
-        addresses: addresses.rows.map((addr) => ({
+        addresses: list
+      });
+    } catch (error) {
+      console.error("Error fetching addresses:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/customer/addresses/:addressId", async (c) => {
+    try {
+      const { addressId } = c.req.param();
+      const addresses = await query(
+        `SELECT * FROM customer_addresses WHERE id = $1`,
+        [addressId]
+      ).catch(() => ({ rows: [] }));
+      if (addresses.rows.length === 0) {
+        return c.json({ error: "Address not found" }, 404);
+      }
+      const addr = addresses.rows[0];
+      let latitude = null;
+      let longitude = null;
+      if (addr.coordinates) {
+        try {
+          const coords = typeof addr.coordinates === "string" ? JSON.parse(addr.coordinates) : addr.coordinates;
+          latitude = coords?.lat ?? coords?.latitude ?? null;
+          longitude = coords?.lng ?? coords?.longitude ?? null;
+        } catch {
+        }
+      }
+      return c.json({
+        success: true,
+        address: {
           id: addr.id,
           customerId: addr.customer_id,
-          label: addr.address_type,
-          name: addr.full_name,
-          phone: addr.phone,
           addressLine1: addr.address_line1,
           addressLine2: addr.address_line2,
           city: addr.city,
           state: addr.state,
           pincode: addr.pincode,
-          landmark: addr.landmark,
-          coordinates: addr.coordinates || null,
-          isDefault: addr.is_default,
-          createdAt: addr.created_at,
-          updatedAt: addr.updated_at
-        }))
+          latitude,
+          longitude,
+          coordinates: addr.coordinates
+        }
       });
     } catch (error) {
-      console.error("Error fetching addresses:", error);
+      console.error("Error fetching address:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -175928,7 +176917,7 @@ function registerVendorBookingsEndpoints(app3) {
   app3.get("/vendor/bookings/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const hasBookingCapability = await checkVendorCapability(vendorId, "booking_view") || await checkVendorCapability(vendorId, "booking_create");
+      const hasBookingCapability = await checkVendorCapability(vendorId, "booking_view") || await checkVendorCapability(vendorId, "booking_create") || await checkVendorCapability(vendorId, "bookings");
       if (!hasBookingCapability) {
         return c.json({ error: "Vendor does not have booking viewing capability" }, 403);
       }
@@ -176285,6 +177274,29 @@ function registerVendorBookingsEndpoints(app3) {
         "vendor",
         "Vendor marked booking as completed"
       );
+      const vid = booking.vendor_id || vendorId;
+      if (vid) {
+        const existing = await query(
+          "SELECT id FROM vendor_earnings WHERE booking_id = $1 LIMIT 1",
+          [bookingId]
+        ).catch(() => ({ rows: [] }));
+        if (!existing.rows?.length) {
+          const totalAmount = parseFloat(booking.total_amount || "0") || 0;
+          const commissionRatePct = 15;
+          const commissionAmount = Math.round(totalAmount * (commissionRatePct / 100) * 100) / 100;
+          const amount = Math.round((totalAmount - commissionAmount) * 100) / 100;
+          await insert("vendor_earnings", {
+            vendor_id: vid,
+            booking_id: bookingId,
+            amount,
+            commission_amount: commissionAmount,
+            total_amount: totalAmount,
+            commission_rate: commissionRatePct,
+            status: "pending",
+            realized_at: (/* @__PURE__ */ new Date()).toISOString()
+          }).catch((err) => console.warn("vendor_earnings insert:", err?.message));
+        }
+      }
       try {
         const { publishBookingStatusUpdated: publishBookingStatusUpdated2 } = await Promise.resolve().then(() => (init_sns_client(), sns_client_exports));
         await publishBookingStatusUpdated2({
@@ -176323,11 +177335,23 @@ function registerVendorBookingsEndpoints(app3) {
       }
       const booking = bookings[0];
       let petIdToUse = booking.pet_id;
-      if (!petIdToUse && booking.notes) {
-        const petIdMatch = booking.notes.match(/Pet ID:\s*([0-9a-f-]{36})/i);
+      let notesParsed = null;
+      if (booking.notes) {
+        const petIdMatch = typeof booking.notes === "string" && booking.notes.match(/Pet ID:\s*([0-9a-f-]{36})/i);
         if (petIdMatch) {
           petIdToUse = petIdMatch[1];
           console.log(`\u{1F4CB} [BOOKING-DETAILS] Extracted pet_id from notes: ${petIdToUse}`);
+        }
+        try {
+          const parsed = typeof booking.notes === "string" ? JSON.parse(booking.notes) : booking.notes;
+          if (parsed && typeof parsed === "object") {
+            notesParsed = parsed;
+            if (!petIdToUse && (parsed.petId || parsed.pet_id)) {
+              petIdToUse = parsed.petId || parsed.pet_id;
+              console.log(`\u{1F4CB} [BOOKING-DETAILS] Extracted pet_id from notes JSON: ${petIdToUse}`);
+            }
+          }
+        } catch {
         }
       }
       if (!petIdToUse && booking.special_instructions) {
@@ -176346,10 +177370,10 @@ function registerVendorBookingsEndpoints(app3) {
         petIdToUse ? select("pets", { id: petIdToUse }).catch(() => []) : Promise.resolve([]),
         // Vendor info
         booking.vendor_id ? select("vendors", { id: booking.vendor_id }).catch(() => []) : Promise.resolve([]),
-        // Prescriptions
+        // Prescriptions (omit is_active filter for schema compatibility; table may not have is_active)
         query(
           `SELECT * FROM prescriptions 
-           WHERE booking_id = $1 AND is_active = true
+           WHERE booking_id = $1
            ORDER BY created_at DESC`,
           [bookingId]
         ).catch(() => ({ rows: [] })),
@@ -176400,11 +177424,11 @@ function registerVendorBookingsEndpoints(app3) {
         customerPhone: customer.length > 0 ? customer[0].phone : null,
         customerEmail: customer.length > 0 ? customer[0].email : null,
         customerAddress: customer.length > 0 ? customer[0].address : null,
-        // Pet details - use extracted petIdToUse
-        petName: pet.length > 0 ? pet[0].name : booking.pet_name || "Unknown Pet",
-        petType: pet.length > 0 ? pet[0].species : booking.pet_type || "",
-        petBreed: pet.length > 0 ? pet[0].breed : booking.pet_breed || "",
-        petAge: pet.length > 0 ? pet[0].age_years || pet[0].age : booking.pet_age || "",
+        // Pet details - use pet from DB, or fallback to notes (diagnostics: patientName/patientAge)
+        petName: pet.length > 0 ? pet[0].name : booking.pet_name || (notesParsed?.patientName ?? null) || "Unknown Pet",
+        petType: pet.length > 0 ? pet[0].species : booking.pet_type || (notesParsed?.petType ?? notesParsed?.pet_type ?? "") || "",
+        petBreed: pet.length > 0 ? pet[0].breed : booking.pet_breed || (notesParsed?.breed ?? "") || "",
+        petAge: pet.length > 0 ? pet[0].age_years != null ? `${pet[0].age_years}` : pet[0].age != null ? `${pet[0].age}` : "" : booking.pet_age || (notesParsed?.patientAge != null ? String(notesParsed.patientAge) : notesParsed?.petAge != null ? String(notesParsed.petAge) : "") || "",
         petWeight: pet.length > 0 ? pet[0].weight_kg || pet[0].weight : null,
         petPhoto: pet.length > 0 ? pet[0].profile_photo_url : null,
         // Pet object for structured access
@@ -176416,6 +177440,14 @@ function registerVendorBookingsEndpoints(app3) {
           age: pet[0].age_years || pet[0].age,
           weight: pet[0].weight_kg || pet[0].weight,
           photo_url: pet[0].profile_photo_url
+        } : notesParsed?.patientName || notesParsed?.patientAge ? {
+          id: petIdToUse || null,
+          name: notesParsed.patientName || "Patient",
+          species: notesParsed.petType || notesParsed.pet_type || "",
+          breed: notesParsed.breed || "",
+          age: notesParsed.patientAge ?? notesParsed.petAge ?? null,
+          weight: null,
+          photo_url: null
         } : null,
         // Service details
         serviceName: service.length > 0 ? service[0].name : booking.service_name || "Unknown Service",
@@ -176484,7 +177516,7 @@ function registerVendorBookingsEndpoints(app3) {
   app3.get("/vendor/:vendorId/bookings", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const hasBookingCapability = await checkVendorCapability(vendorId, "booking_view") || await checkVendorCapability(vendorId, "booking_create");
+      const hasBookingCapability = await checkVendorCapability(vendorId, "booking_view") || await checkVendorCapability(vendorId, "booking_create") || await checkVendorCapability(vendorId, "bookings");
       if (!hasBookingCapability) {
         return c.json({ error: "Vendor does not have booking viewing capability" }, 403);
       }
@@ -176621,36 +177653,13 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
             rating: 4.8,
             totalReviews: 0
           },
+          bookings: [],
           timeframe
         });
       }
       console.log(`\u{1F4CA} [DASHBOARD] Fetching dashboard for vendor: ${vendorId}, timeframe: ${timeframe}`);
       const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({
-          success: true,
-          vendor: {
-            vendorId,
-            fullName: "Vendor",
-            businessName: null,
-            vendorType: "service_provider",
-            serviceStyle: "both",
-            address: "Location not set",
-            isActive: false
-          },
-          stats: {
-            appointments: 0,
-            consultations: 0,
-            earnings: 0,
-            pendingEarnings: 0,
-            completedServices: 0,
-            rating: 4.8,
-            totalReviews: 0
-          },
-          timeframe
-        });
-      }
-      const vendor = vendors[0];
+      const vendor = vendors.length > 0 ? vendors[0] : null;
       const now = /* @__PURE__ */ new Date();
       const today = now.toISOString().split("T")[0];
       let startDate = /* @__PURE__ */ new Date();
@@ -176663,12 +177672,13 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
       }
       const bookings = await query(
         `SELECT b.*,
-                s.name as service_name,
-                s.category as service_category,
+                COALESCE(s.name, vs.service_name) as service_name,
+                COALESCE(s.category, vs.category) as service_category,
                 c.full_name as customer_name,
                 c.phone as customer_phone
          FROM bookings b
          LEFT JOIN services s ON b.service_id = s.id
+         LEFT JOIN vendor_services vs ON vs.id = b.service_id
          LEFT JOIN customers c ON b.customer_id = c.id
          WHERE b.vendor_id = $1 
            AND b.booking_date >= $2
@@ -176731,7 +177741,7 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
       }));
       return c.json({
         success: true,
-        vendor: {
+        vendor: vendor ? {
           vendorId: vendor.id,
           fullName: vendor.owner_name,
           businessName: vendor.business_name,
@@ -176741,10 +177751,18 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
           phone: vendor.phone,
           email: vendor.email,
           isActive: vendor.is_active
+        } : {
+          vendorId,
+          fullName: "Vendor",
+          businessName: null,
+          vendorType: "service_provider",
+          serviceStyle: "both",
+          address: "Location not set",
+          isActive: false
         },
         stats,
         bookings: enrichedBookings,
-        // ✅ Include bookings array
+        // ✅ Always include so vendor dashboard shows placeholders post-migration
         timeframe
       });
     } catch (error) {
@@ -176767,30 +177785,17 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
             pendingSettlement: 0,
             rating: 4.8,
             totalReviews: 0
-          }
+          },
+          bookings: []
         });
       }
       console.log(`\u{1F4CA} [DASHBOARD] Fetching dashboard for vendor: ${vendorId}, timeframe: ${timeframe}`);
       const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({
-          success: true,
-          stats: {
-            todayBookings: 0,
-            pendingBookings: 0,
-            completedToday: 0,
-            earnings: 0,
-            pendingSettlement: 0,
-            rating: 4.8,
-            totalReviews: 0
-          }
-        });
-      }
-      const vendor = vendors[0];
+      const vendor = vendors.length > 0 ? vendors[0] : null;
       const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       const bookingsStats = await query(
         `SELECT 
-          COUNT(*) FILTER (WHERE booking_date = $1 AND status = 'confirmed') as today_bookings,
+          COUNT(*) FILTER (WHERE booking_date = $1 AND status IN ('pending', 'confirmed')) as today_bookings,
           COUNT(*) FILTER (WHERE status IN ('pending', 'confirmed')) as pending_bookings,
           COUNT(*) FILTER (WHERE booking_date = $1 AND status = 'completed') as completed_today
         FROM bookings 
@@ -176826,12 +177831,13 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
       }
       const bookingsResult = await query(
         `SELECT b.*,
-                s.name as service_name,
-                s.category as service_category,
+                COALESCE(s.name, vs.service_name) as service_name,
+                COALESCE(s.category, vs.category) as service_category,
                 c.full_name as customer_name,
                 c.phone as customer_phone
          FROM bookings b
          LEFT JOIN services s ON b.service_id = s.id
+         LEFT JOIN vendor_services vs ON vs.id = b.service_id
          LEFT JOIN customers c ON b.customer_id = c.id
          WHERE b.vendor_id = $1 
            AND b.booking_date >= $2
@@ -177061,6 +178067,7 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
       const totalBookings = transactions.length;
       const completedBookings = transactions.filter((t) => t.status === "settled" || t.status === "paid_out").length;
       const averageBookingValue = totalBookings > 0 ? summary.totalEarnings / totalBookings : 0;
+      const totalEarningsLifetime = period === "lifetime" ? summary.totalEarnings : parseFloat(vendor.total_earnings || "0");
       return c.json({
         success: true,
         earnings: {
@@ -177072,7 +178079,7 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
           bankVerified: vendor.bank_verified || false,
           razorpayAccountId: vendor.razorpay_account_id || null,
           pendingPayout: parseFloat(vendor.pending_payout || "0"),
-          totalEarningsLifetime: parseFloat(vendor.total_earnings || "0"),
+          totalEarningsLifetime,
           pendingTierDeduction,
           tierDeductions: deductionRows.map((d) => ({
             tierName: d.tier_name,
@@ -201625,7 +202632,7 @@ function registerProblemGridEndpoints(app3) {
       const subCategoryIds = mappingsResult.rows.map((r) => r.sub_category_id);
       const roleIds = [...new Set(mappingsResult.rows.map((r) => r.role_id))];
       let servicesQuery = `
-        SELECT DISTINCT
+        SELECT
           vs.id as service_id,
           vs.service_name as name,
           vs.service_name as description,
@@ -201637,7 +202644,8 @@ function registerProblemGridEndpoints(app3) {
           COALESCE(AVG(rev.rating), 0) as vendor_rating,
           COUNT(DISTINCT rev.id) as vendor_reviews,
           v.city,
-          v.state
+          v.state,
+          vs.created_at
         FROM vendor_services vs
         INNER JOIN vendors v ON vs.vendor_id = v.id
         LEFT JOIN roles r ON v.role_id = r.id
@@ -202096,19 +203104,49 @@ function registerProblemGridEndpoints(app3) {
           message: "Default problems (no custom mappings yet)"
         });
       }
+      let roleAllowedStyles = ["at_home", "at_center", "tele"];
+      try {
+        const roleNameNorm = (roleId || "").toLowerCase().trim().replace(/\s+/g, "_");
+        const rolesByKey = await query(
+          `SELECT id, name, config FROM roles WHERE (name = $1 OR id::text = $1) AND (is_active = true OR is_active IS NULL) LIMIT 1`,
+          [roleNameNorm]
+        ).catch(() => ({ rows: [] }));
+        const roleRow = rolesByKey.rows?.[0];
+        if (roleRow?.config) {
+          const config = typeof roleRow.config === "string" ? JSON.parse(roleRow.config) : roleRow.config;
+          const serviceStylesConfig = config.serviceStyles || config.service_styles;
+          const selected = serviceStylesConfig?.selected ?? (Array.isArray(serviceStylesConfig) ? serviceStylesConfig : []);
+          if (Array.isArray(selected) && selected.length > 0) {
+            const toKey = (s) => {
+              const k = (s || "").toLowerCase().replace(/\s+/g, "_");
+              if (k === "at_clinic" || k === "at_center") return "at_center";
+              if (k === "video_consultation" || k === "video" || k === "tele_consultation") return "tele";
+              return k;
+            };
+            roleAllowedStyles = [...new Set(selected.map((s) => toKey(s)).filter(Boolean))];
+            if (roleAllowedStyles.length === 0) roleAllowedStyles = ["at_home", "at_center", "tele"];
+          }
+        }
+      } catch (e) {
+        console.warn("Could not load role config for allowed service styles:", e.message);
+      }
       const problems = problemsResult.rows.map((row) => {
-        let allowedServiceStyles = ["at_home", "at_center", "tele"];
+        let mappingStyles = ["at_home", "at_center", "tele"];
         try {
           if (row.allowed_service_styles) {
             if (typeof row.allowed_service_styles === "string") {
-              allowedServiceStyles = JSON.parse(row.allowed_service_styles);
+              mappingStyles = JSON.parse(row.allowed_service_styles);
             } else if (Array.isArray(row.allowed_service_styles)) {
-              allowedServiceStyles = row.allowed_service_styles;
+              mappingStyles = row.allowed_service_styles;
             }
           }
         } catch (e) {
           console.warn("Failed to parse allowed_service_styles for problem:", row.id);
         }
+        const allowedServiceStyles = mappingStyles.filter(
+          (s) => roleAllowedStyles.includes((s || "").toLowerCase().replace(/\s+/g, "_"))
+        );
+        const finalStyles = allowedServiceStyles.length > 0 ? allowedServiceStyles : ["at_home"];
         return {
           id: row.id,
           name: row.name,
@@ -202116,7 +203154,7 @@ function registerProblemGridEndpoints(app3) {
           icon: getProblemEmoji(row.id, roleId),
           description: `Find ${row.displayName || row.name} specialists`,
           roleId: row.roleId,
-          allowedServiceStyles,
+          allowedServiceStyles: finalStyles,
           keywords: [row.name.toLowerCase(), row.id.toLowerCase()]
         };
       });
@@ -202811,13 +203849,14 @@ function registerVendorDashboardMissingEndpoints(app3) {
       const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       const bookings = await query(
         `SELECT b.*, p.name as pet_name, p.species, p.breed,
-                c.name as customer_name, c.phone as customer_phone,
-                s.name as service_name,
+                c.full_name as customer_name, c.phone as customer_phone,
+                COALESCE(s.name, vs.service_name) as service_name,
                 st.name as staff_name
          FROM bookings b
          LEFT JOIN pets p ON b.pet_id = p.id
          LEFT JOIN customers c ON b.customer_id = c.id
          LEFT JOIN services s ON b.service_id = s.id
+         LEFT JOIN vendor_services vs ON vs.id = b.service_id
          LEFT JOIN staff st ON b.staff_id = st.id
          WHERE b.vendor_id = $1 
            AND b.booking_date = $2
@@ -205645,6 +206684,7 @@ function registerPharmacyOrderEndpoints(app3) {
           po.order_number,
           po.customer_id,
           po.prescription_id,
+          po.prescription_url,
           po.items,
           po.subtotal,
           po.delivery_fee,
@@ -207541,9 +208581,7 @@ function registerMealPlanEndpoints(app3) {
         special_instructions: specialInstructions,
         subtotal,
         delivery_fee: deliveryFee,
-        platform_fee: platformFee,
-        convenience_fee: convenienceFee,
-        // ✅ FIX GAP 6.2: Include convenience fee
+        platform_fee: platformFee + convenienceFee,
         total_amount: totalAmount,
         delivery_address: JSON.stringify(deliveryAddress),
         customer_lat: deliveryAddress.lat,
@@ -220899,6 +221937,7 @@ registerPaymentEndpointsEnhanced(app2);
 registerRoleEndpoints(app2);
 registerRoleSeedingEndpoints(app2);
 registerOnboardingFormManagementEndpoints(app2);
+registerVendorDashboardEnhancedEndpoints(app2);
 registerVendorDashboardEndpoints(app2);
 registerBehaviorJournalEndpoints(app2);
 registerFollowupRescheduleEndpoints(app2);
@@ -220978,7 +222017,6 @@ registerConfigPoliciesEndpoints(app2);
 registerVendorSettingsEndpoints(app2);
 registerVendorPoliciesEndpoints(app2);
 registerVendorBookingsEndpoints(app2);
-registerVendorDashboardEnhancedEndpoints(app2);
 registerAppointmentReminderEndpoints(app2);
 registerVendorBookingActionsEndpoints(app2);
 registerNotificationSystemEndpoints(app2);

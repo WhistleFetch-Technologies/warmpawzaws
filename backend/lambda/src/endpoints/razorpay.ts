@@ -37,12 +37,19 @@ class CreateRazorpayOrderHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       const body = this.parseBody(context.event);
-      const { bookingId, orderId: pharmacyOrderId, amount, currency = 'INR', customerId, type } = body;
+      const { bookingId, orderId: pharmacyOrderId, amount, currency = 'INR', customerId, vendorId, type } = body;
 
       const isPharmacyOrder = type === 'pharmacy_order';
+      const isDiagnosticsOrder = type === 'diagnostics';
       if (isPharmacyOrder) {
         if (!pharmacyOrderId || amount == null) {
           return this.error('orderId and amount are required for pharmacy_order', 400);
+        }
+      } else if (isDiagnosticsOrder) {
+        // Diagnostics: payment before booking – only amount, customerId, vendorId required
+        const missing = ['amount', 'customerId', 'vendorId'].filter((f) => !body[f]);
+        if (missing.length > 0) {
+          return this.error(`Missing required fields for diagnostics order: ${missing.join(', ')}`, 400);
         }
       } else {
         // Return 400 for missing required fields (do not throw - would become 500 in BaseHandler)
@@ -94,6 +101,17 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         const shortId = String(pharmacyOrderId).replace(/-/g, '').substring(0, 32);
         receipt = `po_${shortId}`;
         notes = { pharmacyOrderId: String(pharmacyOrderId), customerId: customerIdFinal, vendorId: vendorIdFinal };
+      } else if (isDiagnosticsOrder) {
+        customerIdFinal = customerId;
+        vendorIdFinal = vendorId;
+        const vendorResult = await Promise.race([
+          select('vendors', { id: vendorIdFinal }),
+          new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('Vendor query timeout')), 5000)),
+        ]);
+        vendor = vendorResult.length > 0 ? vendorResult[0] : null;
+        const shortId = String(Date.now()).replace(/-/g, '').substring(0, 32);
+        receipt = `diag_${shortId}`;
+        notes = { type: 'diagnostics', customerId: customerIdFinal, vendorId: vendorIdFinal };
       } else {
         const bookingResult = await Promise.race([
           select('bookings', { id: bookingId }),
@@ -137,14 +155,17 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         const amt = Number(amount);
         const commissionAmount = Math.round((amt * tierCommission / 100) * 100);
         const vendorShare = Math.round(amt * 100) - commissionAmount;
+        const transferNotes = isPharmacyOrder
+          ? { pharmacy_order_id: String(pharmacyOrderId), vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() }
+          : isDiagnosticsOrder
+            ? { type: 'diagnostics', vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() }
+            : { booking_id: bookingId, vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() };
         orderData.transfers = [
           {
             account: vendor.razorpay_account_id,
             amount: vendorShare,
             currency: currency,
-            notes: isPharmacyOrder
-              ? { pharmacy_order_id: String(pharmacyOrderId), vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() }
-              : { booking_id: bookingId, vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() },
+            notes: transferNotes,
             on_hold: false,
           },
         ];
@@ -163,6 +184,8 @@ class CreateRazorpayOrderHandler extends BaseHandler {
            VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8)`,
           [pharmacyOrderId, customerIdFinal, vendorIdFinal, razorpayOrder.id, Number(amount), currency, 'razorpay', 'pending']
         );
+      } else if (isDiagnosticsOrder) {
+        // Diagnostics: booking is created after payment success; do not insert payment row here (no booking_id yet)
       } else {
         await insert('payments', {
           booking_id: bookingId,
@@ -234,10 +257,27 @@ class VerifyPaymentHandler extends BaseHandler {
         return this.error('Invalid payment signature. Please ensure payment details are correct.', 400);
       }
 
-      // ✅ SQL: Update payment status
+      // ✅ SQL: Look up payment record
       const payments = await select('payments', { razorpay_order_id });
       if (payments.length === 0) {
-        console.error('[PAYMENT-VERIFY] Payment record not found for order:', razorpay_order_id);('[PAYMENT-VERIFY] Payment not found for order:', razorpay_order_id);
+        // Diagnostics (and similar) orders: payment-before-booking – no row was inserted at create-order.
+        // Verify that this Razorpay order is a diagnostics order, then return success so frontend can create the booking.
+        try {
+          const razorpayOrder = await razorpayRequest(`/orders/${razorpay_order_id}`, 'GET', undefined, 10000) as any;
+          const notes = razorpayOrder?.notes || {};
+          const orderType = typeof notes === 'object' && notes !== null ? (notes.type || notes.orderType) : undefined;
+          if (orderType === 'diagnostics') {
+            console.log('[PAYMENT-VERIFY] Diagnostics order verified (no pre-inserted payment row), returning success');
+            return this.success({
+              message: 'Payment verified successfully',
+              paymentId: razorpay_payment_id,
+              orderId: razorpay_order_id,
+            });
+          }
+        } catch (fetchErr: any) {
+          console.warn('[PAYMENT-VERIFY] Could not fetch Razorpay order for diagnostics check:', fetchErr?.message);
+        }
+        console.error('[PAYMENT-VERIFY] Payment record not found for order:', razorpay_order_id);
         return this.error('Payment record not found. Please contact support with your order ID.', 404);
       }
 

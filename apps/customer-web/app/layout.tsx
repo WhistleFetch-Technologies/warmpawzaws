@@ -44,11 +44,10 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               // Inline fallback config (ensures API URL is always available immediately)
-              // Uses serverless API (z0b3obweb6) - supports UAT tokens for phone-based login
-              // Official: Admin dfof7mguaa0a5 | Vendor d1s6ykkj381k58 | Customer d2aoyjj8ine0wk
+              // Deployed API: WarmpawzStack-dev (rrg9107m3d). Override via runtime-config.js or env.
               if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
                 window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-                  apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
+                  apiBaseUrl: 'https://rrg9107m3d.execute-api.ap-south-1.amazonaws.com',
                   uatMode: true
                 };
               }

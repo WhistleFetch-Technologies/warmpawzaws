@@ -939,11 +939,14 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         <PrescriptionModal
           bookingId={bookingId}
           prescription={prescription}
+          customerPhone={phone}
           onClose={() => {
             setShowPrescription(false);
             loadPrescription(bookingId); // Reload in case it was added
           }}
-          onReorderMedicine={onReorderMedicine}
+          onReorderMedicine={(medications, prescriptionId, bid) => {
+            if (onReorderMedicine) onReorderMedicine(medications || [], prescriptionId, bid || bookingId);
+          }}
         />
       )}
 
@@ -997,8 +1000,14 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                   participantType: 'customer',
                   participantId: booking.customerId || phone,
                 }).catch(() => {});
+              } else {
+                const msg = createRes?.error || 'Could not start video call.';
+                toast.error(msg);
               }
-            } catch (_) {}
+            } catch (err: any) {
+              const msg = err?.response?.error || err?.responseData?.error || err?.message || 'Video call is not available for this appointment right now.';
+              toast.error(typeof msg === 'string' ? msg : 'Could not start video call.');
+            }
           }}
         />
       )}

@@ -65,7 +65,22 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       const cid = profile?.id || (profileRes as any)?.id;
       if (cid) setCustomerId(cid);
       setPets((petsRes as any)?.pets || []);
-      setAddresses((addrRes as any)?.addresses || []);
+
+      let addrList = (addrRes as any)?.addresses || [];
+      // When no saved addresses, use profile address/pincode so checkout doesn't block
+      const profileAddr = profile?.address ?? profile?.addressLine1 ?? profile?.address_line1;
+      if (addrList.length === 0 && (profileAddr || profile?.pincode)) {
+        addrList = [{
+          id: 'profile',
+          addressLine1: profileAddr || '',
+          addressLine2: null,
+          city: profile?.city || '',
+          state: profile?.state || '',
+          pincode: profile?.pincode || '',
+        }];
+        setAddressId('profile');
+      }
+      setAddresses(addrList);
     } catch (e) {
       console.error(e);
       toast.error('Failed to load checkout data');

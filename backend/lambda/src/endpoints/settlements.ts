@@ -568,6 +568,80 @@ export function registerSettlementEndpoints(app: Hono) {
   });
 
   /**
+   * POST /settlements/request
+   * Request a payout (vendor-initiated). Requires verified bank account.
+   */
+  app.post("/settlements/request", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { vendorId, amount } = body;
+
+      if (!vendorId) {
+        return c.json({ success: false, error: 'vendorId is required' }, 400);
+      }
+
+      const requestAmount = parseFloat(amount);
+      if (isNaN(requestAmount) || requestAmount <= 0) {
+        return c.json({ success: false, error: 'Valid amount is required' }, 400);
+      }
+
+      // Check vendor has verified bank account
+      let bankDetails: any[] = [];
+      try {
+        const schemaCheck = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as ex`);
+        if (schemaCheck.rows[0]?.ex) {
+          const acc = await query(
+            `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 AND is_verified = true ORDER BY is_primary DESC LIMIT 1`,
+            [vendorId]
+          );
+          bankDetails = acc.rows;
+        }
+      } catch (_) {}
+      if (bankDetails.length === 0) {
+        bankDetails = await select('vendor_bank_details', { vendor_id: vendorId });
+      }
+      if (bankDetails.length === 0) {
+        return c.json({ success: false, error: 'Bank account not found. Add and verify your bank account in Settings first.' }, 400);
+      }
+      const bank = bankDetails[0];
+      const isVerified = bank.is_verified === true || bank.isVerified === true;
+      if (!isVerified) {
+        return c.json({ success: false, error: 'Bank account must be verified before requesting payout. Verify in Settings.' }, 400);
+      }
+
+      // Get pending amount from settlements (status or settlement_status depending on schema)
+      const pendingRes = await query(
+        `SELECT COALESCE(SUM(COALESCE(net_amount, vendor_amount)), 0) as pending FROM settlements WHERE vendor_id = $1 AND (status = 'pending' OR settlement_status = 'pending')`,
+        [vendorId]
+      ).catch(() => ({ rows: [{ pending: '0' }] }));
+      const pendingAmount = parseFloat(pendingRes.rows[0]?.pending || '0');
+      if (requestAmount > pendingAmount) {
+        return c.json({ success: false, error: `Amount exceeds available (₹${pendingAmount.toFixed(0)})` }, 400);
+      }
+
+      // Create payout request record (bank details required by schema)
+      const payout = await insert('payouts', {
+        vendor_id: vendorId,
+        amount: requestAmount,
+        payout_status: 'pending',
+        bank_account_number: bank.account_number,
+        ifsc_code: bank.ifsc_code,
+        account_holder_name: bank.account_holder_name,
+        payment_ids: [],
+      }).catch(() => null);
+
+      return c.json({
+        success: true,
+        message: 'Payout request submitted',
+        payoutId: payout?.[0]?.id,
+      });
+    } catch (error: any) {
+      console.error('Error requesting settlement:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /payouts/vendor/:vendorId
    * Get vendor payout history
    */
@@ -819,6 +893,51 @@ export function registerSettlementEndpoints(app: Hono) {
   });
 
   /**
+   * PUT /vendor/:vendorId/bank-details
+   * Update vendor bank details (Settings page uses PUT)
+   */
+  app.put("/vendor/:vendorId/bank-details", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const bankData = await c.req.json().catch(() => ({}));
+      const accountNumber = bankData.accountNumber ?? bankData.account_number;
+      const ifscCode = bankData.ifscCode ?? bankData.ifsc_code;
+      const accountHolderName = bankData.accountHolderName ?? bankData.account_holder_name;
+      const bankName = bankData.bankName ?? bankData.bank_name;
+
+      if (!accountNumber || !ifscCode || !accountHolderName) {
+        return c.json({ error: 'account_number, ifsc_code, and account_holder_name are required' }, 400);
+      }
+
+      const existing = await select('vendor_bank_details', { vendor_id: vendorId });
+      let bankDetails;
+      if (existing.length > 0) {
+        const updated = await update('vendor_bank_details', { vendor_id: vendorId }, {
+          account_number: accountNumber,
+          ifsc_code: (ifscCode || '').toUpperCase(),
+          account_holder_name: accountHolderName,
+          bank_name: bankName || null,
+          updated_at: new Date().toISOString(),
+        });
+        bankDetails = updated[0];
+      } else {
+        const created = await insert('vendor_bank_details', {
+          vendor_id: vendorId,
+          account_number: accountNumber,
+          ifsc_code: (ifscCode || '').toUpperCase(),
+          account_holder_name: accountHolderName,
+          bank_name: bankName || null,
+        });
+        bankDetails = created[0];
+      }
+      return c.json({ success: true, bankDetails, message: 'Bank details saved successfully' });
+    } catch (error: any) {
+      console.error('Error updating bank details:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * POST /vendor/:vendorId/bank-details
    * Add/update vendor bank details
    */
@@ -1015,14 +1134,16 @@ export function registerSettlementEndpoints(app: Hono) {
    * Helper function to create payout
    */
   async function createPayout(settlementId: string, vendorId: string, amount: number) {
-    // Get vendor bank details
     const bankDetails = await select('vendor_bank_details', { vendor_id: vendorId });
     if (bankDetails.length === 0) {
       console.warn(`Vendor ${vendorId} has no bank details, skipping payout`);
       return;
     }
-
     const bank = bankDetails[0];
+    if (!bank.is_verified && bank.is_verified !== true) {
+      console.warn(`Vendor ${vendorId} bank not verified, skipping auto payout`);
+      return;
+    }
 
     // Create payout record
     await insert('payouts', {

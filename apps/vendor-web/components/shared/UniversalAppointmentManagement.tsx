@@ -1103,13 +1103,22 @@ export function UniversalAppointmentManagement({
         <VendorChatModal
           bookingId={chatBooking.bookingId || chatBooking.id}
           customerName={chatBooking.customerName}
+          customerPhone={chatBooking.customerPhone || chatBooking.phone}
           vendorId={userId}
           vendorPhone={userPhone || ''}
           vendorName={userName || getDisplayName()}
+          bookingStatus={chatBooking.status}
+          serviceName={chatBooking.serviceName}
+          serviceType={chatBooking.serviceType || chatBooking.service_type}
+          meetingId={chatBooking.meetingId || chatBooking.meeting_id}
           onClose={() => {
             setShowChatModal(false);
             setChatBooking(null);
             loadBookings();
+          }}
+          onVideoCallStart={(bid, mid) => {
+            setShowChatModal(false);
+            setChatBooking(null);
           }}
         />
       )}

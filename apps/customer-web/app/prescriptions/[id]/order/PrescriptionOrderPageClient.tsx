@@ -1,27 +1,32 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import PrescriptionOrderFlow from '../../../../components/customer/pharmacy/PrescriptionOrderFlow';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { PharmacyOrderFlow } from '../../../../components/customer/specialized/PharmacyOrderFlow';
 
 export default function PrescriptionOrderPageClient() {
   const params = useParams();
   const router = useRouter();
-  const [customerId, setCustomerId] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const [customerPhone, setCustomerPhone] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const prescriptionId = params.id as string;
 
   useEffect(() => {
-    // Get customer info from localStorage or session
-    const storedCustomerId = localStorage.getItem('customerId');
+    // Get customer phone from URL (e.g. ?phone=xxx) or localStorage
+    const phoneFromUrl = searchParams?.get('phone');
+    const storedPhone = typeof window !== 'undefined'
+      ? localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone') || localStorage.getItem('phone')
+      : null;
     
-    if (storedCustomerId) {
-      setCustomerId(storedCustomerId);
+    const phone = phoneFromUrl || storedPhone;
+    if (phone) {
+      setCustomerPhone(phone);
     }
     
     setLoading(false);
-  }, []);
+  }, [searchParams]);
 
   const handleBack = () => {
     router.back();
@@ -35,17 +40,26 @@ export default function PrescriptionOrderPageClient() {
     );
   }
 
-  if (!customerId) {
+  if (!customerPhone) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-xl font-semibold text-slate-800 mb-2">Please Log In</h1>
-          <p className="text-slate-500 mb-4">Log in to order medicine from your prescription</p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white flex items-center justify-center p-4">
+        <div className="text-center max-w-sm">
+          <h1 className="text-xl font-semibold text-slate-800 mb-2">Log In Required</h1>
+          <p className="text-slate-500 mb-4">
+            Please log in with your phone number to order medicine from your prescription. 
+            You can also use the app and go to My Bookings → select booking → Prescription History → Order Medicine.
+          </p>
           <button
-            onClick={() => router.push('/auth')}
+            onClick={() => router.push(`/auth?redirect=/prescriptions/${prescriptionId}/order`)}
             className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
           >
             Log In
+          </button>
+          <button
+            onClick={handleBack}
+            className="block mt-3 text-slate-500 hover:text-slate-700 text-sm"
+          >
+            Go Back
           </button>
         </div>
       </div>
@@ -54,10 +68,14 @@ export default function PrescriptionOrderPageClient() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <PrescriptionOrderFlow 
-        prescriptionId={prescriptionId} 
-        customerId={customerId} 
-        onBack={handleBack} 
+      <PharmacyOrderFlow
+        prescriptionId={prescriptionId}
+        customerPhone={customerPhone}
+        customerId={customerPhone}
+        onBack={handleBack}
+        onComplete={(orderId) => {
+          router.push(orderId ? `/track/${orderId}` : '/');
+        }}
       />
     </div>
   );

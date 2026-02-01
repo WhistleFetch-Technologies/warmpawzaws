@@ -387,6 +387,8 @@ registerPaymentEndpointsEnhanced(app);
 registerRoleEndpoints(app);
 registerRoleSeedingEndpoints(app);
 registerOnboardingFormManagementEndpoints(app);
+// ✅ FIX: Register enhanced dashboard BEFORE legacy so GET /vendor/dashboard/:vendorId returns 200 with empty data (not 404) when vendor not in vendors table
+registerVendorDashboardEnhancedEndpoints(app);
 registerVendorDashboardEndpoints(app);
 // Register specific routes BEFORE parameterized routes to avoid route conflicts
 // Order matters: specific routes (e.g., /customer/behavior-journal) must come before parameterized routes (e.g., /customer/:customerId)
@@ -479,7 +481,7 @@ registerConfigPoliciesEndpoints(app); // /config/policies, /config/fees, /config
 registerVendorSettingsEndpoints(app);
 registerVendorPoliciesEndpoints(app);
 registerVendorBookingsEndpoints(app);
-registerVendorDashboardEnhancedEndpoints(app);
+// registerVendorDashboardEnhancedEndpoints already registered above (before legacy dashboard)
 registerAppointmentReminderEndpoints(app);
 registerVendorBookingActionsEndpoints(app);
 registerNotificationSystemEndpoints(app);

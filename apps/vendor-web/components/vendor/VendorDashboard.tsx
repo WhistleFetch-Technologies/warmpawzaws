@@ -1415,17 +1415,20 @@ export function VendorDashboard({
                                         )}
                                      </button>
                                    )}
-                                   {/* TELE-HEALTH DIRECT JOIN */}
+                                   {/* TELE: P2P video call (Chime, in-app) */}
                                    {(serviceType === 'tele' || serviceType === 'teleconsultation') && (
-                                      <a
-                                        href={`https://meet.jit.si/warmpawz-${appointment.bookingId}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex-1 min-w-[80px] py-1.5 px-3 bg-purple-100 text-purple-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1"
-                                        onClick={(e) => e.stopPropagation()} 
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          const bid = appointment.bookingId || appointment.id;
+                                          if (bid) router.push(`/video/${bid}`);
+                                        }}
+                                        className="flex-1 min-w-[80px] py-1.5 px-3 bg-purple-100 text-purple-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1 hover:bg-purple-200"
                                       >
-                                         <Video className="w-3.5 h-3.5" /> Join
-                                      </a>
+                                        <Video className="w-3.5 h-3.5" /> Join
+                                      </button>
                                    )}
                                 </div>
                               </div>

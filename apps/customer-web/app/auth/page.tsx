@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient, isUatMode } from '@/lib/api-client';
 import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
 
@@ -10,6 +10,8 @@ const UAT_OTP = '123456'; // Static OTP for UAT testing
 
 export default function AuthPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectAfterLogin = searchParams?.get('redirect');
   const [phone, setPhone] = useState('');
   const [countryCode, setCountryCode] = useState('+91'); // Default to India
   const [otp, setOtp] = useState('');
@@ -43,7 +45,9 @@ export default function AuthPage() {
       // Verify token is not expired
       const { isTokenExpired } = require('@/lib/session-utils');
       if (!isTokenExpired(storedToken)) {
-        router.push('/');
+        const redirect = (typeof window !== 'undefined' && window.location?.search)
+          ? new URLSearchParams(window.location.search).get('redirect') : null;
+        router.push(redirect && redirect.startsWith('/') ? redirect : '/');
       } else {
         // Token expired, clear session
         const { clearCustomerSession } = require('@/lib/session-utils');
@@ -120,6 +124,8 @@ export default function AuthPage() {
         console.log('🔧 [UAT Mode] OTP verified successfully (static)');
         const cleanPhone = phone.replace(/\D/g, '').slice(-10);
         localStorage.setItem('customerPhone', cleanPhone);
+        localStorage.setItem('customer_phone', cleanPhone);
+        localStorage.setItem('phone', cleanPhone);
         localStorage.setItem('customerCountryCode', countryCode);
         localStorage.setItem('authToken', `uat-token-customer-${cleanPhone}-${Date.now()}`);
         
@@ -162,7 +168,7 @@ export default function AuthPage() {
           localStorage.setItem('customerOnboardingComplete', 'false');
         }
         
-        router.push('/');
+        router.push(redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/');
         return;
       }
 
@@ -172,14 +178,18 @@ export default function AuthPage() {
         return;
       }
 
+      const fullPhoneForApi = `${countryCode}${phone}`;
       const response = await apiClient.post<any>('/auth/otp/verify', { 
-        phone: `${countryCode}${phone}`, 
+        phone: fullPhoneForApi, 
         otp,
         referralCode: referralCode || undefined 
       });
       
       if (response.success || response.verified) {
-        localStorage.setItem('customerPhone', phone);
+        const shortPhone = phone.replace(/\D/g, '').slice(-10);
+        localStorage.setItem('customerPhone', shortPhone);
+        localStorage.setItem('customer_phone', shortPhone);
+        localStorage.setItem('phone', shortPhone);
         localStorage.setItem('customerCountryCode', countryCode);
         
         // Store Cognito tokens (AWS Serverless compatible)
@@ -255,7 +265,7 @@ export default function AuthPage() {
           localStorage.setItem('customerOnboardingComplete', 'false');
         }
         
-        router.push('/');
+        router.push(redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/');
       } else {
         setError('Invalid OTP. Please try again.');
       }
@@ -263,7 +273,10 @@ export default function AuthPage() {
       // UAT Fallback: If API fails but OTP matches, allow login
       if (UAT_MODE && otp === UAT_OTP) {
         console.log('🔧 [UAT Fallback] API failed, using static OTP verification');
-        localStorage.setItem('customerPhone', phone);
+        const cleanPhone = phone.replace(/\D/g, '').slice(-10);
+        localStorage.setItem('customerPhone', cleanPhone);
+        localStorage.setItem('customer_phone', cleanPhone);
+        localStorage.setItem('phone', cleanPhone);
         localStorage.setItem('customerCountryCode', countryCode);
         localStorage.setItem('authToken', 'uat-token-customer-' + Date.now());
         
@@ -307,7 +320,7 @@ export default function AuthPage() {
           localStorage.setItem('customerOnboardingComplete', 'false');
         }
         
-        router.push('/');
+        router.push(redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/');
         return;
       }
       setError(err.message || 'Failed to verify OTP');

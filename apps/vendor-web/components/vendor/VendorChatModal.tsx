@@ -62,7 +62,7 @@ interface VendorChatModalProps {
 // CHAT STATUS HELPERS
 // ============================================================================
 
-const ACTIVE_BOOKING_STATUSES = ['pending', 'confirmed', 'in_progress', 'active'];
+const ACTIVE_BOOKING_STATUSES = ['pending', 'confirmed', 'in_progress', 'active', 'vendor_on_way', 'traveling', 'arrived'];
 
 // ✅ CRITICAL FIX: Enhanced chat availability check
 // - Enabled by default for all service styles
@@ -364,8 +364,9 @@ export function VendorChatModal({
   // ✅ CRITICAL FIX: Handle video call start (WhatsApp-like experience)
   const handleStartVideoCall = async () => {
     try {
-      if (!vendorId) {
-        toast.error('Vendor ID is required');
+      const effectiveVendorId = vendorId || (typeof window !== 'undefined' ? localStorage.getItem('vendorId') || localStorage.getItem('vendor_id') || '' : '');
+      if (!effectiveVendorId) {
+        toast.error('Please sign in to start a video call');
         return;
       }
 
@@ -377,7 +378,7 @@ export function VendorChatModal({
         const createResponse = await apiClient.post('/video-call/create-meeting', {
           bookingId,
           customerId: booking?.customerId || '',
-          vendorId,
+          vendorId: effectiveVendorId,
         }) as any;
 
         if (createResponse?.success || createResponse?.meetingId) {
@@ -392,7 +393,7 @@ export function VendorChatModal({
       // Join the meeting
       const joinResponse = await apiClient.post<any>('/video-call/join', {
         bookingId,
-        userId: vendorId,
+        userId: effectiveVendorId,
         userType: 'vendor',
         meetingId: currentMeetingId,
       });
@@ -405,11 +406,11 @@ export function VendorChatModal({
           onVideoCallStart(bookingId, currentMeetingId);
         }
 
-        // Open video call in new window/tab (WhatsApp-like)
-        const videoUrl = `/video/${bookingId}?meetingId=${currentMeetingId}`;
-        window.open(videoUrl, '_blank', 'width=800,height=600');
+        // Open video in same window so vendor stays in app (no new tab / login page)
+        const videoUrl = `/video/${bookingId}${currentMeetingId ? `?meetingId=${currentMeetingId}` : ''}`;
+        window.location.href = videoUrl;
         
-        toast.success('Video call started!');
+        toast.success('Opening video call...');
       } else {
         toast.error('Failed to join video call');
       }
@@ -419,10 +420,11 @@ export function VendorChatModal({
     }
   };
 
-  // Determine if this is a tele consultation
-  const isTeleConsultation = serviceType === 'tele' || booking?.serviceType === 'tele' || 
-                             serviceName?.toLowerCase().includes('tele') ||
-                             serviceName?.toLowerCase().includes('video');
+  // Determine if this is a tele consultation (broad check so video button shows)
+  const rawType = (serviceType || booking?.serviceType || booking?.service_style || '').toString().toLowerCase();
+  const isTeleConsultation = ['tele', 'tele_consultation', 'video', 'online', 'instant_tele'].includes(rawType) ||
+    rawType.includes('tele') || rawType.includes('video') ||
+    serviceName?.toLowerCase().includes('tele') || serviceName?.toLowerCase().includes('video');
 
   // ============================================================================
   // HELPERS

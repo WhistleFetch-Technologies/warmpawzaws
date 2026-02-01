@@ -320,9 +320,9 @@ export function VendorLandingPage({
         );
         
         if (response.success && response.notifications?.length > 0) {
-          // Filter for tele_call_incoming type
+          // Filter for tele_call_incoming (backend returns notification_type, is_read)
           const callNotifications = response.notifications.filter((n: any) => 
-            n.type === 'tele_call_incoming' && !n.is_read
+            (n.notification_type || n.type) === 'tele_call_incoming' && !n.is_read
           );
           
           if (callNotifications.length === 0) return;
@@ -333,30 +333,47 @@ export function VendorLandingPage({
             : callNotification.data || {};
           
           if (notificationData.booking_id && notificationData.call_type === 'incoming') {
-            // Get booking details for customer info
-            const bookingResponse = await apiClient.get<any>(
-              `/bookings/${notificationData.booking_id}`
-            );
-            
-            if (bookingResponse.success && bookingResponse.booking) {
-              const booking = bookingResponse.booking;
-              setIncomingCall({
-                bookingId: notificationData.booking_id,
-                meetingId: notificationData.meeting_id,
-                customer: {
-                  id: booking.customer_id,
-                  name: booking.customer_name || 'Customer',
-                  photo: booking.customer_photo,
-                  phone: booking.customer_phone,
-                },
-                serviceName: booking.service_name,
-                petName: booking.pet_name,
-                isInstant: booking.service_type === 'instant_tele',
-              });
-              
-              // Mark notification as read to prevent showing again
-              await apiClient.put(`/notifications/${callNotification.id}/read`, {}).catch(() => {});
+            // Show incoming call immediately from notification data (don't block on GET /bookings 404)
+            const baseIncoming = {
+              bookingId: notificationData.booking_id,
+              meetingId: notificationData.meeting_id,
+              customer: {
+                id: '',
+                name: 'Customer',
+                photo: undefined as string | undefined,
+                phone: undefined as string | undefined,
+              },
+              serviceName: undefined as string | undefined,
+              petName: undefined as string | undefined,
+              isInstant: false,
+            };
+            setIncomingCall(baseIncoming);
+
+            // Enrich with booking details if GET /bookings succeeds (pass vendorId for backend auth)
+            try {
+              const bookingResponse = await apiClient.get<any>(
+                `/bookings/${notificationData.booking_id}?vendorId=${encodeURIComponent(vendorId)}`
+              );
+              if (bookingResponse?.success && bookingResponse?.booking) {
+                const booking = bookingResponse.booking;
+                setIncomingCall({
+                  ...baseIncoming,
+                  customer: {
+                    id: booking.customer_id || '',
+                    name: booking.customer_name || 'Customer',
+                    photo: booking.customer_photo,
+                    phone: booking.customer_phone,
+                  },
+                  serviceName: booking.service_name,
+                  petName: booking.pet_name,
+                  isInstant: booking.service_type === 'instant_tele',
+                });
+              }
+            } catch (_) {
+              // Keep base incoming call; UI already shows Accept/Reject
             }
+
+            await apiClient.put(`/notifications/${callNotification.id}/read`, {}).catch(() => {});
           }
         }
       } catch (error) {
@@ -1634,8 +1651,8 @@ export function VendorLandingPage({
               serviceName={incomingCall.serviceName}
               petName={incomingCall.petName}
               onAccept={(bookingId, meetingId) => {
-                // Open video call page
-                window.open(`/video/${bookingId}${meetingId ? `?meetingId=${meetingId}` : ''}`, '_blank');
+                // Open video call page in same window so vendor stays in app (no login popup)
+                router.push(`/video/${bookingId}${meetingId ? `?meetingId=${meetingId}` : ''}`);
                 setIncomingCall(null);
               }}
               onReject={() => {

@@ -344,7 +344,9 @@ export async function insert(
     'pricing',
     'services_config',
     'notification_preferences',
-    'search_vector_data'
+    'search_vector_data',
+    'channels', // notifications.channels is JSONB
+    'data',    // notifications.data is JSONB (booking_id, meeting_id, etc.)
   ]);
   
   // Also check for columns ending with common JSONB suffixes

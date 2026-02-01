@@ -20,7 +20,8 @@ interface PrescriptionModalProps {
   prescription?: any;
   onClose: () => void;
   readOnly?: boolean;
-  onReorderMedicine?: (medications: any[]) => void;
+  customerPhone?: string;
+  onReorderMedicine?: (medications: any[], prescriptionId?: string, bookingId?: string) => void;
 }
 
 interface Medication {
@@ -63,6 +64,7 @@ export function PrescriptionModal({
   prescription: propPrescription, 
   onClose, 
   readOnly = false, 
+  customerPhone,
   onReorderMedicine 
 }: PrescriptionModalProps) {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
@@ -147,25 +149,26 @@ Instructions: ${p.instructions || 'N/A'}
   const handleOrderMedicine = async () => {
     setOrdering(true);
     try {
-      // Use the proper prescription order flow (with pharmacy search by radius)
-      // instead of going to cart
       const prescriptionIdToUse = prescriptionId || prescriptions[0]?.id;
-      
+      const medications = prescriptions.map((p: Prescription) => ({
+        name: p.medication_name,
+        dosage: p.dosage,
+        frequency: p.frequency,
+        duration: p.duration,
+      }));
+
+      // Prefer in-app flow via callback (My Bookings → pharmacy_order_flow with address selection)
+      if (onReorderMedicine && prescriptionIdToUse) {
+        onReorderMedicine(medications, prescriptionIdToUse, bookingId);
+        onClose();
+        return;
+      }
+
+      // Standalone page: include phone in URL so address flow works
       if (prescriptionIdToUse) {
-        // Navigate to the prescription order flow page
-        // This uses PharmacyBroadcastMap with 5km, 10km, 20km radius search
-        window.location.href = `/prescriptions/${prescriptionIdToUse}/order`;
-      } else if (onReorderMedicine) {
-        // Fallback: Use callback if provided (for inline ordering)
-        const medications = prescriptions.map(p => ({
-          name: p.medication_name,
-          dosage: p.dosage,
-          frequency: p.frequency,
-          duration: p.duration,
-        }));
-        onReorderMedicine(medications);
+        const phoneParam = customerPhone ? `?phone=${encodeURIComponent(customerPhone)}` : '';
+        window.location.href = `/prescriptions/${prescriptionIdToUse}/order${phoneParam}`;
       } else {
-        // No prescription ID available - show error
         toast.error('Unable to order medicine. Please try again from your booking details.');
       }
     } catch (error) {

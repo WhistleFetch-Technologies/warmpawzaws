@@ -13,6 +13,7 @@ import { VendorServiceCatalogView } from './VendorServiceCatalogView';
 import { getVendorRoleId, hasVendorRole } from '@/lib/vendor-utils';
 import { getServiceStyleLabelForRole } from '@/lib/service-style-labels';
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
+import { CapabilityHelper } from '@/lib/capability-helper';
 
 interface VendorServiceManagementCompleteProps {
   vendorId: string;
@@ -336,6 +337,10 @@ export function VendorServiceManagementComplete({
         roleId={fetchedRoleId}
         roleName={fetchedRoleName || vendorData?.roleName || vendorData?.role_name}
         onBack={() => setSelectedServiceStyle(null)}
+        onBrowseCatalog={() => {
+          setSelectedServiceStyle(null);
+          setShowCatalogView(true);
+        }}
       />
     );
   }
@@ -434,8 +439,8 @@ export function VendorServiceManagementComplete({
         {/* ❌ REMOVED: Staff management banner - staff has been decommissioned */}
 
         {/* ✅ FIX: Platform Catalog Section - Show at top for easy access */}
-        {/* ✅ FIX: Allow solo vendors to browse catalog - services are filtered by role and allowed service styles */}
-        {(capabilities.catalog || capabilities.booking) && (
+        {/* ✅ FIX: Show Browse Catalog for any vendor with catalog, booking, OR services capability (post-migration canonical roles) */}
+        {(capabilities.catalog || capabilities.booking || capabilities.services || CapabilityHelper.hasCapability(capabilities, 'services')) && (
           <div className="p-4">
             <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl p-6 text-white">
               <div className="flex items-start justify-between mb-4">

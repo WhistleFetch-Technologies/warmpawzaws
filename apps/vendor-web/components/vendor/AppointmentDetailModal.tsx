@@ -2,16 +2,15 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, AlertCircle, Navigation, Loader2, MessageSquare, FileText, RefreshCw, History, Pill, Video, Stethoscope, Printer } from 'lucide-react';
+import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, AlertCircle, Navigation, Loader2, MessageSquare, FileText, RefreshCw, History, Pill, Video, Stethoscope, Printer, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 // Removed Supabase imports - using apiClient instead
 import { toast } from 'sonner';
 import { authenticatedFetch } from '@/lib/session-manager'; // ✅ SECURITY FIX
 import { MedicalHistoryModal } from './MedicalHistoryModal';
 import { AddVetSummaryModal } from './modals/AddVetSummaryModal';
-import { VendorPrescriptionModal } from './modals/VendorPrescriptionModal';
+import { DiagnosticsReportUpload } from './diagnostics/DiagnosticsReportUpload';
 import { CommunicationHub } from '../communication/CommunicationHub';
-import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
 import dynamic from 'next/dynamic';
 import { transformPrescriptionData } from './PrescriptionDocument';
 
@@ -118,9 +117,9 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   
   // Modal states
   const [communicationMode, setCommunicationMode] = useState<'video' | 'chat' | null>(null);
-  const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
   const [showMedicalHistory, setShowMedicalHistory] = useState(false);
   const [showVetSummaryModal, setShowVetSummaryModal] = useState(false);
+  const [showReportUploadModal, setShowReportUploadModal] = useState(false);
   const [showTracking, setShowTracking] = useState(false);
   const [showA4Document, setShowA4Document] = useState(false);
   const [selectedPrescriptionForA4, setSelectedPrescriptionForA4] = useState<any>(null);
@@ -195,6 +194,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         // Vendor (from API – used for prescription creation)
         vendorId: rawBooking.vendorId || rawBooking.vendor_id,
         staffId: rawBooking.staffId || rawBooking.staff_id,
+        // For lab/diagnostics: allow upload report
+        serviceCategory: rawBooking.serviceCategory,
       };
       
       setBooking(mappedBooking);
@@ -226,10 +227,9 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       });
       
       setActivities(allActivities);
-      // Safely process prescriptions - validate and normalize data
-      const safePrescriptions = (data.prescriptions || []).map((prescription: any) => {
+      // Safely process prescriptions from details API
+      const fromDetails = (data.prescriptions || []).map((prescription: any) => {
         try {
-          // Ensure all prescription fields are properly typed
           return {
             id: String(prescription.id || ''),
             bookingId: String(prescription.bookingId || prescription.booking_id || ''),
@@ -240,26 +240,35 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             duration: String(prescription.duration || ''),
             uploadedAt: String(prescription.uploadedAt || prescription.created_at || ''),
             uploadedBy: String(prescription.uploadedBy || prescription.uploaded_by || 'Unknown'),
-            // Preserve original data for compatibility
             ...prescription
           };
-        } catch (error) {
-          console.error('Error processing prescription:', error, prescription);
-          return {
-            id: String(prescription?.id || ''),
-            bookingId: String(prescription?.bookingId || ''),
-            notes: '',
-            medications: '',
-            dosage: '',
-            frequency: '',
-            duration: '',
-            uploadedAt: '',
-            uploadedBy: 'Unknown',
-            ...prescription
-          };
+        } catch {
+          return { id: String(prescription?.id || ''), bookingId: '', notes: '', medications: '', dosage: '', frequency: '', duration: '', uploadedAt: '', uploadedBy: 'Unknown', ...prescription };
         }
-      }).filter((p: any) => p && p.id); // Filter out invalid prescriptions
-      
+      });
+      // Merge prescriptions from history (so History tab shows them and Prescriptions tab is complete)
+      const fromHistory = (historyData?.history || [])
+        .filter((h: any) => h.type === 'prescription' && h.prescription_data)
+        .map((h: any) => {
+          const d = h.prescription_data;
+          return {
+            id: d.id || `hist_${h.id || Date.now()}`,
+            bookingId: bookingId,
+            notes: d.instructions || d.notes || '',
+            medications: d.medications || d.medication_name || '',
+            dosage: d.dosage || '',
+            frequency: d.frequency || '',
+            duration: d.duration || '',
+            uploadedAt: h.created_at || h.timestamp || '',
+            uploadedBy: d.uploadedBy || d.uploaded_by || 'Vendor',
+            ...d
+          };
+        });
+      const mergedPrescriptions = [...fromDetails];
+      fromHistory.forEach((ph: any) => {
+        if (ph.id && !mergedPrescriptions.some((p: any) => p.id === ph.id)) mergedPrescriptions.push(ph);
+      });
+      const safePrescriptions = mergedPrescriptions.filter((p: any) => p && p.id);
       setPrescriptions(safePrescriptions);
     } catch (error) {
       console.error('Error loading appointment details:', error);
@@ -268,6 +277,42 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     }
   };
   
+  // Vet/nutritionist: show prescription (vet, clinic, diagnostics, nutritionist). Others (groomer, walker, trainer): no prescription.
+  const isVetOrNutritionist = (() => {
+    if (!booking) return false;
+    const roleId = vendorData?.roleId ?? '';
+    const role = vendorData?.role ?? '';
+    const roleName = vendorData?.roleName ?? '';
+    const capabilities = vendorData?.capabilities ?? [];
+    const svcName = (booking.serviceName || booking.serviceCategory || '').toLowerCase();
+    const svcType = (booking.serviceType || '').toLowerCase();
+    return (
+      (typeof roleId === 'string' && /vet|clinic|diagnostics|nutritionist/i.test(roleId)) ||
+      (typeof role === 'string' && /vet|clinic|diagnostics|nutritionist/i.test(role)) ||
+      (typeof roleName === 'string' && /vet|clinic|diagnostics|nutritionist/i.test(roleName)) ||
+      (Array.isArray(capabilities) && (capabilities.includes('prescriptions') || capabilities.includes('prescription_create'))) ||
+      /vet|clinic|consultation|nutritionist|diagnostic/i.test(svcName) ||
+      /vet|clinic|consultation|nutritionist/i.test(svcType)
+    );
+  })();
+
+  // Lab/diagnostics booking: show Upload Report when booking is lab/diagnostics AND vendor can upload reports
+  const isDiagnosticsBooking = (() => {
+    if (!booking) return false;
+    const svcCat = (booking.serviceCategory || '').toString().toLowerCase();
+    const svcName = (booking.serviceName || '').toLowerCase();
+    const cap = vendorData?.capabilities ?? [];
+    const isLabOrDiagnostics = svcCat === 'diagnostics' || /lab|diagnostic/.test(svcName);
+    const canUploadReports = Array.isArray(cap) && cap.some((c: string) => /diagnostic_lab|diagnostic_results|diagnostics/i.test(String(c)));
+    return isLabOrDiagnostics && canUploadReports;
+  })();
+
+  // Service style: tele = video call; at_home/home = start travel
+  const rawStyle = (booking?.serviceType || booking?.serviceStyle || booking?.service_style || '').toString().toLowerCase();
+  const isTeleStyle = ['tele', 'tele_consultation', 'video', 'online', 'instant_tele'].includes(rawStyle) ||
+    (rawStyle && (rawStyle.includes('tele') || rawStyle.includes('video')));
+  const isHomeStyle = ['at_home', 'home'].includes(rawStyle);
+
   // Helper to format booking time
   const formatBookingTime = (time: string | null | undefined): string => {
     if (!time) return '09:00 AM';
@@ -330,6 +375,43 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const mapInstanceRef = useRef<any>(null); // ✅ NEW: Google Maps instance
   const routePolylineRef = useRef<any>(null); // ✅ NEW: Route polyline
 
+  const handleStartVideoCall = async () => {
+    if (!booking?.id) return;
+    setProcessing(true);
+    try {
+      toast.info('Starting video call...');
+      const createRes = await apiClient.post('/video-call/create-meeting', {
+        bookingId: booking.id,
+        customerId: booking.customerId || '',
+        vendorId: vendorData?.id || booking.vendorId,
+      }) as any;
+      if (!createRes?.success && !createRes?.meetingId) {
+        toast.error('Failed to create video call');
+        return;
+      }
+      const joinRes = await apiClient.post<any>('/video-call/join', {
+        bookingId: booking.id,
+        userId: vendorData?.id || booking.vendorId,
+        userType: 'vendor',
+      });
+      if (joinRes?.success) {
+        await apiClient.post('/video-call/notify-ready', {
+          bookingId: booking.id,
+          participantType: 'vendor',
+          participantId: vendorData?.id || booking.vendorId,
+        }).catch(() => {});
+        toast.success('Customer notified! Opening video call...');
+        window.location.href = `/video/${booking.id}`;
+      } else {
+        toast.error('Failed to join video call');
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to start video call');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const handleStartTravel = async () => {
     if (!booking) return;
     
@@ -350,10 +432,17 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           
             try {
             // Start tracking session on backend
-            // ✅ CRITICAL FIX: Use correct endpoint path
+            // ✅ CRITICAL FIX: Use vendorId from props or localStorage fallback (like video call)
+            const effectiveVendorId = vendorData?.id || booking.vendorId || 
+              (typeof window !== 'undefined' ? localStorage.getItem('vendorId') || localStorage.getItem('vendor_id') || '' : '');
+            if (!effectiveVendorId) {
+              toast.error('Please sign in to start travel tracking');
+              setProcessing(false);
+              return;
+            }
             const trackingResponse = await apiClient.post(`/tracking/start`, {
               bookingId: booking.id,
-              vendorId: vendorData?.id,
+              vendorId: effectiveVendorId,
               staffId: booking.staffId || booking.staff_id,
               startLatitude: latitude,
               startLongitude: longitude
@@ -445,9 +534,10 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             // Refresh booking status
             loadAppointmentDetails();
             onRefresh?.();
-          } catch (apiError) {
+          } catch (apiError: any) {
             console.error('Error starting travel:', apiError);
-            toast.error('Failed to start tracking session');
+            const msg = apiError?.response?.error || apiError?.responseData?.error || apiError?.message;
+            toast.error(msg || 'Failed to start tracking session');
           } finally {
             setProcessing(false);
           }
@@ -674,26 +764,26 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   }, [watchId]);
 
   const handleArrived = async () => {
-    // ✅ SECURITY FIX: Use authenticated fetch for status update
     try {
       setProcessing(true);
-      
-      // Stop GPS tracking when arrived
+      const sid = trackingSessionId ?? trackingSessionIdRef.current;
+
+      // Stop GPS tracking locally first
       stopTracking();
-      
-      // Notify backend to stop tracking
-      if (booking) {
-        await apiClient.post(`/vendor/tracking/${booking.id}/stop`, {
-          vendorId: vendorData?.id,
-          type: 'arrived'
-        }).catch(console.error);
+
+      // Mark GPS session as arrived (updates gps_tracking_sessions + notifies customer)
+      if (sid) {
+        await apiClient.post(`/tracking/${sid}/arrived`).catch((e) => {
+          console.warn('Tracking arrived endpoint failed (non-blocking):', e);
+        });
       }
-      
+
+      // Update booking status
       await apiClient.post(`/vendor/bookings/${bookingId}/status`, {
         status: 'arrived',
         note: 'Vendor has arrived at location'
       });
-      
+
       toast.success('Marked as arrived!');
       loadAppointmentDetails();
       onRefresh?.();
@@ -1062,16 +1152,31 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                         </div>
                         <div className="flex-1">
                           <p className="text-sm text-gray-900">{activity.description}</p>
-                          {/* ✅ CRITICAL FIX: Show prescription details if available */}
+                          {/* ✅ Prescription line item: details + View A4 */}
                           {activity.type === 'prescription' && (activity as any).prescriptionData && (
-                            <div className="mt-2 p-2 bg-green-50 rounded-lg">
-                              <p className="text-xs text-green-700 font-medium">Prescription Details</p>
-                              {(activity as any).prescriptionData.diagnosis && (
-                                <p className="text-xs text-gray-600 mt-1">Diagnosis: {(activity as any).prescriptionData.diagnosis}</p>
-                              )}
-                              {(activity as any).prescriptionData.medications && (
-                                <p className="text-xs text-gray-600">Medications: {JSON.stringify((activity as any).prescriptionData.medications)}</p>
-                              )}
+                            <div className="mt-2 p-2 bg-green-50 rounded-lg flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <p className="text-xs text-green-700 font-medium">Prescription</p>
+                                {(activity as any).prescriptionData.diagnosis && (
+                                  <p className="text-xs text-gray-600 mt-1">Diagnosis: {(activity as any).prescriptionData.diagnosis}</p>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  const pd = (activity as any).prescriptionData;
+                                  setSelectedPrescriptionForA4({
+                                    ...pd,
+                                    id: pd.id,
+                                    uploadedAt: activity.timestamp,
+                                    uploadedBy: activity.actor,
+                                  });
+                                  setShowA4Document(true);
+                                }}
+                                className="flex items-center gap-1 px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
+                              >
+                                <Printer className="w-3 h-3" />
+                                View A4
+                              </button>
                             </div>
                           )}
                           <p className="text-xs text-gray-500 mt-1">
@@ -1087,43 +1192,14 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
 
             {activeTab === 'prescriptions' && (
               <div className="p-4 space-y-3">
-                {/* Add Prescription Button - Always visible at top for vets */}
-                {/* ✅ Check multiple role fields and values */}
-                {(() => {
-                  try {
-                    const roleId = vendorData?.roleId;
-                    const role = vendorData?.role;
-                    const roleName = vendorData?.roleName;
-                    const capabilities = vendorData?.capabilities;
-                    
-                    // ✅ FIX: Proper role-based prescription visibility check
-                    // Only show for veterinarians, clinics, diagnostics, and nutritionists
-                    const isVet = (
-                      (roleId && typeof roleId === 'string' && String(roleId).toLowerCase().includes('vet')) ||
-                      (roleId && typeof roleId === 'string' && String(roleId).toLowerCase().includes('clinic')) ||
-                      (roleId && typeof roleId === 'string' && String(roleId).toLowerCase().includes('diagnostics')) ||
-                      (roleId && typeof roleId === 'string' && String(roleId).toLowerCase().includes('nutritionist')) ||
-                      (role && typeof role === 'string' && String(role).toLowerCase().includes('vet')) ||
-                      (roleName && typeof roleName === 'string' && String(roleName).toLowerCase().includes('vet')) ||
-                      (roleName && typeof roleName === 'string' && String(roleName).toLowerCase().includes('clinic')) ||
-                      (roleName && typeof roleName === 'string' && String(roleName).toLowerCase().includes('diagnostics')) ||
-                      (roleName && typeof roleName === 'string' && String(roleName).toLowerCase().includes('nutritionist')) ||
-                      (Array.isArray(capabilities) && capabilities.includes('prescriptions')) ||
-                      (Array.isArray(capabilities) && capabilities.includes('prescription_create'))
-                    );
-                    
-                    return isVet && booking.status !== 'cancelled';
-                  } catch (error) {
-                    console.error('Error checking vendor role:', error);
-                    return true; // Show button on error
-                  }
-                })() && (
+                {/* Single prescription = Consultation Summary only (all medicines in one) */}
+                {isVetOrNutritionist && booking.status !== 'cancelled' && (
                   <button
-                    onClick={() => setShowPrescriptionModal(true)}
+                    onClick={() => setShowVetSummaryModal(true)}
                     className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl font-medium flex items-center justify-center gap-2 hover:from-purple-700 hover:to-purple-800 transition-all shadow-lg"
                   >
-                    <Pill className="w-5 h-5" />
-                    Create Prescription
+                    <Stethoscope className="w-5 h-5" />
+                    Add Consultation Summary (Prescription)
                   </button>
                 )}
 
@@ -1238,12 +1314,12 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                       );
                     })}
                     
-                    {vendorData?.roleId === 'veterinarian' && (
+                    {isVetOrNutritionist && booking.status !== 'cancelled' && (
                       <button
-                        onClick={() => setShowPrescriptionModal(true)}
-                        className="w-full px-4 py-2 bg-green-50 text-green-700 rounded-lg font-medium hover:bg-green-100 transition-colors"
+                        onClick={() => setShowVetSummaryModal(true)}
+                        className="w-full px-4 py-2 bg-purple-50 text-purple-700 rounded-lg font-medium hover:bg-purple-100 transition-colors"
                       >
-                        + Add New Prescription
+                        + Add Consultation Summary
                       </button>
                     )}
                   </>
@@ -1264,9 +1340,19 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                 Chat
               </button>
               
-              {/* Rule 2: Video/teleconsulting starts from CHAT only (camera icon in chat). No direct Start Video Call here. */}
-              {/* HOME SERVICE Actions (Walker/Trainer/Groomer) */}
-              {(booking.serviceType === 'at_home' || booking.serviceType === 'home') && booking.status !== 'completed' && booking.status !== 'cancelled' && (
+              {/* Tele style: Video Call for all providers (vet, groomer, nutritionist, walker, trainer) */}
+              {isTeleStyle && booking.status !== 'completed' && booking.status !== 'cancelled' && (
+                <button
+                  onClick={handleStartVideoCall}
+                  disabled={processing}
+                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+                >
+                  <Video className="w-5 h-5" />
+                  Video Call
+                </button>
+              )}
+              {/* Home style: Start Travel, Mark Arrived, etc. (all providers) */}
+              {isHomeStyle && booking.status !== 'completed' && booking.status !== 'cancelled' && (
                 <>
                   {/* Phase 1: Start Travel (If confirmed) */}
                   {booking.status === 'confirmed' && (
@@ -1323,8 +1409,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               )}
             </div>
             
-            {/* Prescription Action (Vet Only) */}
-            {(vendorData?.roleId === 'veterinarian' || vendorData?.roleId === 'pet_clinic') && booking.status !== 'cancelled' && (
+            {/* Prescription + Medical History (Vet/Nutritionist only); single prescription = Consultation Summary only */}
+            {isVetOrNutritionist && booking.status !== 'cancelled' && (
               <div className="space-y-2">
                 <div className="flex gap-2">
                   <button
@@ -1335,20 +1421,23 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     Medical History
                   </button>
                   <button
-                    onClick={() => setShowPrescriptionModal(true)}
-                    className="flex-1 py-3 bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                    onClick={() => setShowVetSummaryModal(true)}
+                    className="flex-1 py-3 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 rounded-xl font-medium flex items-center justify-center gap-2"
                   >
-                    <Pill className="w-4 h-4" />
-                    {prescriptions.length > 0 ? 'Update Rx' : 'Write Rx'}
+                    <Stethoscope className="w-4 h-4" />
+                    Consultation Summary (Prescription)
                   </button>
                 </div>
-                <button
-                  onClick={() => setShowVetSummaryModal(true)}
-                  className="w-full py-3 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 rounded-xl font-medium flex items-center justify-center gap-2"
-                >
-                  <Stethoscope className="w-4 h-4" />
-                  Add Consultation Summary
-                </button>
+                {/* Lab/diagnostics: Upload Report so customer can view/download and add to medical history */}
+                {isDiagnosticsBooking && (
+                  <button
+                    onClick={() => setShowReportUploadModal(true)}
+                    className="w-full py-3 bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Upload Lab Report
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1391,7 +1480,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           userName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
           otherUserName={booking.customerName}
           userType="vendor"
-          serviceStyle={booking.serviceType === 'tele' ? 'tele' : undefined}
+          serviceStyle={isTeleStyle ? 'tele' : undefined}
           onStartVideoCall={async (bid) => {
             try {
               setProcessing(true);
@@ -1417,7 +1506,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   participantId: vendorData?.id,
                 }).catch(() => {});
                 toast.success('Customer notified! Opening video call...');
-                window.open(`/video/${bid}`, '_blank');
+                window.location.href = `/video/${bid}`;
               } else {
                 toast.error('Failed to join video call');
               }
@@ -1434,29 +1523,30 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         />
       )}
 
-      {/* Prescription Modal */}
-      {showPrescriptionModal && booking && (
-        <VendorPrescriptionModal
-          bookingId={booking.id}
-          petId={booking.petId}
-          petName={booking.petName || 'Pet'}
-          petBreed={booking.petBreed}
-          petSpecies={booking.petType}
-          customerId={booking.customerId || ''}
-          customerName={booking.customerName || 'Customer'}
-          customerPhone={booking.customerPhone}
-          vendorId={booking.vendorId || vendorData?.id || (typeof window !== 'undefined' ? localStorage.getItem('vendorId') || '' : '')}
-          vendorName={vendorData?.fullName || vendorData?.businessName || ''}
-          staffId={booking.staffId || (typeof window !== 'undefined' ? localStorage.getItem('staffId') || localStorage.getItem('staff_id') || '' : '')}
-          serviceName={booking.serviceName}
-          bookingDate={booking.date}
-          onClose={() => setShowPrescriptionModal(false)}
-          onSuccess={() => {
-            setShowPrescriptionModal(false);
-            loadAppointmentDetails(); // Refresh prescriptions
-            onRefresh?.();
-          }}
-        />
+      {/* Lab Report Upload Modal (diagnostics bookings only) */}
+      {showReportUploadModal && booking && (
+        <div className="fixed inset-0 bg-black/60 z-[65] flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-xl">
+            <DiagnosticsReportUpload
+              vendorId={booking.vendorId || vendorData?.id || (typeof window !== 'undefined' ? localStorage.getItem('vendorId') || '' : '')}
+              bookingId={bookingId}
+              bookingData={{
+                customerName: booking.customerName || 'Customer',
+                customerPhone: booking.customerPhone || '',
+                petName: booking.petName || 'Pet',
+                petId: (booking as any).petId || '',
+                customerId: (booking as any).customerId || '',
+                serviceName: booking.serviceName || 'Lab Test',
+              }}
+              onSuccess={() => {
+                setShowReportUploadModal(false);
+                loadAppointmentDetails();
+                onRefresh?.();
+              }}
+              onCancel={() => setShowReportUploadModal(false)}
+            />
+          </div>
+        </div>
       )}
 
       {/* OTP Verification Modal */}
@@ -1648,7 +1738,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         </div>
       )}
 
-      {/* A4 Prescription Document Modal */}
+      {/* A4 Prescription Document Modal (vet, patient, address, license, medicines, summary, advice, follow-up) */}
       {showA4Document && selectedPrescriptionForA4 && booking && (
         <PrescriptionDocument
           prescription={transformPrescriptionData({
@@ -1663,6 +1753,18 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             vendor_phone: vendorData?.phone,
             vendor_address: vendorData?.address,
             vendor_city: vendorData?.city,
+            vendor_state: vendorData?.state,
+            vendor_pincode: vendorData?.pincode,
+            vendor_metadata: selectedPrescriptionForA4.vendor_metadata || {
+              vetLicense: vendorData?.vetLicense ?? vendorData?.licenseNumber,
+              vciRegistrationNumber: vendorData?.vciRegistration,
+              qualification: vendorData?.qualification,
+              specialization: vendorData?.specialization,
+            },
+            prescription_date: selectedPrescriptionForA4.prescription_date || selectedPrescriptionForA4.uploadedAt || selectedPrescriptionForA4.created_at,
+            diagnosis: selectedPrescriptionForA4.diagnosis,
+            instructions: selectedPrescriptionForA4.instructions || selectedPrescriptionForA4.notes,
+            follow_up_date: selectedPrescriptionForA4.follow_up_date,
             medications: selectedPrescriptionForA4.medications || (selectedPrescriptionForA4.medication_name ? [{
               name: selectedPrescriptionForA4.medication_name,
               dosage: selectedPrescriptionForA4.dosage,

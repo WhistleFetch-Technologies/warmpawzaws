@@ -30,24 +30,24 @@ export function VendorRolesTab() {
   const [roles, setRoles] = useState<VendorRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all'); // Changed default to 'all' to show all roles
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('active');
   const [filterService, setFilterService] = useState<string>('all');
   const [showWizard, setShowWizard] = useState(false);
   const [editingRole, setEditingRole] = useState<VendorRole | null>(null);
 
   useEffect(() => {
     loadRoles();
-  }, []);
+  }, [filterStatus]);
 
   const loadRoles = async () => {
     try {
       setLoading(true);
-      // Get ALL roles including inactive ones
-      const response = await apiClient.get<any>('/admin/roles?active=false');
-      console.log('🔍 [VendorRolesTab] API Response:', response);
+      // Default: only active roles (inactive roles are removed from catalog)
+      const includeInactive = filterStatus !== 'active';
+      const response = await apiClient.get<any>(includeInactive ? '/admin/roles?active=false' : '/admin/roles');
       
       if (response && response.success && response.roles) {
-        const mappedRoles: VendorRole[] = (response.roles || []).map((r: any) => ({
+        let list = (response.roles || []).map((r: any) => ({
           id: r.id || r.roleId,
           name: r.name || r.roleCode,
           display_name: r.display_name || r.roleName,
@@ -60,8 +60,8 @@ export function VendorRolesTab() {
           isActive: r.isActive !== false && r.is_active !== false,
           config: r.config || {}, // Preserve full config object for editing
         }));
-        console.log('🔍 [VendorRolesTab] Mapped roles:', mappedRoles.length, mappedRoles);
-        setRoles(mappedRoles);
+        if (filterStatus === 'inactive') list = list.filter((r: VendorRole) => !r.isActive);
+        setRoles(list);
       } else {
         console.warn('🔍 [VendorRolesTab] No roles in response:', response);
         setRoles([]);

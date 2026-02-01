@@ -267,6 +267,24 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   const [pets, setPets] = useState<any[]>([]);
   const [selectedPet, setSelectedPet] = useState<any | null>(null);
 
+  // ✅ FIX: Listen for orderMedicineFromPrescription event (fallback when onOrderMedicine not passed)
+  useEffect(() => {
+    const handleOrderMedicineFromPrescription = (e: CustomEvent<{ prescriptionId: string; bookingId?: string; medications?: any[]; fileUrl?: string }>) => {
+      const detail = e.detail;
+      if (detail?.prescriptionId) {
+        setPrescriptionOrderData({
+          prescriptionId: detail.prescriptionId,
+          prescriptionUrl: detail.fileUrl,
+        });
+        setCurrentScreen('pharmacy_order_flow');
+        setPreviousScreen('my-bookings');
+        toast.success('Opening pharmacy order...');
+      }
+    };
+    window.addEventListener('orderMedicineFromPrescription', handleOrderMedicineFromPrescription as EventListener);
+    return () => window.removeEventListener('orderMedicineFromPrescription', handleOrderMedicineFromPrescription as EventListener);
+  }, []);
+
   // ✅ FIX: Load user profile for header display
   useEffect(() => {
     const loadUserProfile = async () => {

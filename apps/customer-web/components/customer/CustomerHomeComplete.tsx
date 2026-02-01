@@ -736,18 +736,26 @@ export function CustomerHomeComplete({
   // Load active bookings with tracking for "Attention" section
   useEffect(() => {
     if (phone) {
+      // ✅ Set customerId early so incoming-call poll uses UUID (backend matches recipient_id to UUID)
+      apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(phone)}`).then((r) => {
+        if (r?.customer?.id) setCustomerId(r.customer.id);
+      }).catch(() => {});
       loadActiveBookings();
       checkPendingReviews(); // ✅ Check for pending reviews on load
       checkUpcomingCalls(); // ✅ FIX GAP-6.2: Check for upcoming calls
       checkActiveOrderTracking(); // ✅ FIX GAP-8.4: Check for active orders
-      checkIncomingCalls(); // ✅ CRITICAL FIX: Check for incoming instant tele calls
+      checkIncomingCalls(); // ✅ WhatsApp-style: Check for incoming video call
       const interval = setInterval(() => {
         loadActiveBookings();
-        checkUpcomingCalls(); // Check every 30 seconds
-        checkActiveOrderTracking(); // Check every 30 seconds
-        checkIncomingCalls(); // ✅ CRITICAL FIX: Check for incoming calls
-      }, 30000); // Poll every 30 seconds
-      return () => clearInterval(interval);
+        checkUpcomingCalls();
+        checkActiveOrderTracking();
+        checkIncomingCalls(); // Incoming call notification (Accept/Reject)
+      }, 30000);
+      const incomingCallInterval = setInterval(checkIncomingCalls, 5000); // Poll every 5s for incoming call (like vendor)
+      return () => {
+        clearInterval(interval);
+        clearInterval(incomingCallInterval);
+      };
     }
   }, [phone, refreshKey]);
 
@@ -857,7 +865,7 @@ export function CustomerHomeComplete({
       if (notificationsResponse.success && notificationsResponse.notifications?.length > 0) {
         // Filter for tele_call_incoming type
         const callNotifications = notificationsResponse.notifications.filter((n: any) => 
-          n.type === 'tele_call_incoming' && !n.is_read
+          (n.notification_type === 'tele_call_incoming' || n.type === 'tele_call_incoming') && !n.is_read
         );
         
         if (callNotifications.length === 0) return;
@@ -868,29 +876,45 @@ export function CustomerHomeComplete({
           : callNotification.data || {};
         
         if (notificationData.booking_id && notificationData.call_type === 'incoming') {
-          // Get provider details
-          const bookingResponse = await apiClient.get<any>(
-            `/bookings/${notificationData.booking_id}`
-          );
-          
-          if (bookingResponse.success && bookingResponse.booking) {
-            const booking = bookingResponse.booking;
-            setIncomingCall({
-              bookingId: notificationData.booking_id,
-              meetingId: notificationData.meeting_id,
-              provider: {
-                id: notificationData.staff_id || booking.vendor_id,
-                name: notificationData.staff_name || booking.vendor_name || 'Provider',
-                photo: booking.staff_photo || booking.vendor_photo,
-                role: booking.staff_role || booking.vendor_role,
-              },
-              serviceName: booking.service_name,
-              petName: booking.pet_name,
-            });
-            
-            // Mark notification as read
-            await apiClient.put(`/notifications/${callNotification.id}/read`, {}).catch(() => {});
+          // Show incoming call immediately from notification data (don't block on GET /bookings 404)
+          const baseIncoming = {
+            bookingId: notificationData.booking_id,
+            meetingId: notificationData.meeting_id,
+            provider: {
+              id: notificationData.staff_id || notificationData.vendor_id || '',
+              name: notificationData.staff_name || notificationData.vendor_name || 'Provider',
+              photo: undefined as string | undefined,
+              role: undefined as string | undefined,
+            },
+            serviceName: undefined as string | undefined,
+            petName: undefined as string | undefined,
+          };
+          setIncomingCall(baseIncoming);
+
+          // Enrich with booking details if GET /bookings succeeds (pass phone for backend auth)
+          try {
+            const bookingResponse = await apiClient.get<any>(
+              `/bookings/${notificationData.booking_id}?phone=${encodeURIComponent(phone)}`
+            );
+            if (bookingResponse?.success && bookingResponse?.booking) {
+              const booking = bookingResponse.booking;
+              setIncomingCall({
+                ...baseIncoming,
+                provider: {
+                  id: notificationData.staff_id || booking.vendor_id || baseIncoming.provider.id,
+                  name: notificationData.staff_name || booking.vendor_name || baseIncoming.provider.name,
+                  photo: booking.staff_photo || booking.vendor_photo,
+                  role: booking.staff_role || booking.vendor_role,
+                },
+                serviceName: booking.service_name,
+                petName: booking.pet_name,
+              });
+            }
+          } catch (_) {
+            // Keep base incoming call; UI already shows Accept/Reject
           }
+
+          await apiClient.put(`/notifications/${callNotification.id}/read`, {}).catch(() => {});
         }
       }
     } catch (error) {
@@ -2286,6 +2310,7 @@ export function CustomerHomeComplete({
       )}
 
       {/* ✅ FIX #6: Unified Appointment Tracker Widget - Shows upcoming appointments and active bookings */}
+      {/* ✅ FIX: Chat opens chat window with vendor (not My Bookings); View Details handled by wrapper → my-bookings with booking detail modal */}
       <UnifiedAppointmentTracker
         customerPhone={phone}
         onJoinCall={(bookingId, meetingId) => {
@@ -2295,11 +2320,16 @@ export function CustomerHomeComplete({
             window.location.href = `/video/${bookingId}`;
           }
         }}
-        onOpenChat={(bookingId) => {
-          if (onViewBooking) {
-            onViewBooking(bookingId);
-          } else if (onNavigate) {
-            onNavigate('booking-details', { bookingId, chat: true });
+        onOpenChat={async (bookingId) => {
+          try {
+            const data = await apiClient.get<{ booking?: { vendorName?: string; vendorPhoto?: string }; vendorName?: string }>(`/customer/bookings/${bookingId}`) as any;
+            const booking = data?.booking || data;
+            const vendorName = booking?.vendorName || data?.vendorName || 'Service Provider';
+            const vendorPhoto = booking?.vendorPhoto || booking?.vendorPhoto;
+            setChatFromNotification({ isOpen: true, bookingId, vendorName, vendorPhoto });
+          } catch {
+            if (onViewBooking) onViewBooking(bookingId);
+            else if (onNavigate) onNavigate('my-bookings', { bookingId });
           }
         }}
         onCallProvider={(phone) => {
@@ -2337,13 +2367,17 @@ export function CustomerHomeComplete({
           onCall={(vendorPhone) => {
             window.open(`tel:${vendorPhone}`, '_self');
           }}
-          onChat={(bookingId) => {
-            // ✅ FIX: Use onViewBooking if available, otherwise fall back to window navigation
-            if (onViewBooking) {
-              onViewBooking(bookingId);
-            } else {
-              // Fallback: show booking details page
-              window.location.href = `/bookings/${bookingId}`;
+          onChat={async (bookingId) => {
+            try {
+              const data = await apiClient.get<{ booking?: { vendorName?: string; vendorPhoto?: string }; vendorName?: string }>(`/customer/bookings/${bookingId}`) as any;
+              const booking = data?.booking || data;
+              const vendorName = booking?.vendorName || data?.vendorName || vendorOnTheWay?.vendorName || 'Service Provider';
+              const vendorPhoto = booking?.vendorPhoto || booking?.vendorPhoto || vendorOnTheWay?.vendorPhoto;
+              setChatFromNotification({ isOpen: true, bookingId, vendorName, vendorPhoto });
+            } catch {
+              if (onViewBooking) onViewBooking(bookingId);
+              else if (onNavigate) onNavigate('my-bookings', { bookingId });
+              else window.location.href = `/bookings/${bookingId}`;
             }
           }}
           onDismiss={() => {

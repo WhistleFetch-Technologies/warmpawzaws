@@ -984,6 +984,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
           po.order_number,
           po.customer_id,
           po.prescription_id,
+          po.prescription_url,
           po.items,
           po.subtotal,
           po.delivery_fee,

@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { VendorServiceManagementComplete } from '@/components/vendor/VendorServiceManagementComplete';
 
 interface Service {
   id: string;
@@ -415,6 +416,52 @@ function ServiceManagementContent() {
 }
 
 export default function ServiceManagementPage() {
+  const router = useRouter();
+  const [vendorId, setVendorId] = useState<string | null>(null);
+  const [vendorData, setVendorData] = useState<any>(null);
+  const [useFullFlow, setUseFullFlow] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const storedId = typeof window !== 'undefined' ? localStorage.getItem('vendorId') : null;
+    const storedData = typeof window !== 'undefined' ? localStorage.getItem('vendorData') : null;
+    if (!storedId) {
+      setUseFullFlow(false);
+      return;
+    }
+    setVendorId(storedId);
+    let parsed: any = {};
+    try {
+      if (storedData) parsed = JSON.parse(storedData);
+    } catch { /* ignore */ }
+    apiClient.get(`/vendor/profile`).then((r: any) => {
+      const v = r?.vendor || r?.data?.vendor || r?.data || parsed;
+      const data = { ...parsed, ...v, id: v?.id || storedId };
+      setVendorData(data);
+      setUseFullFlow(true);
+    }).catch(() => {
+      setVendorData({ ...parsed, id: storedId });
+      setUseFullFlow(true);
+    });
+  }, []);
+
+  if (useFullFlow === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+      </div>
+    );
+  }
+
+  if (useFullFlow === true && vendorId && vendorData) {
+    return (
+      <VendorServiceManagementComplete
+        vendorId={vendorId}
+        vendorData={vendorData}
+        onBack={() => router.push('/')}
+      />
+    );
+  }
+
   return (
     <Suspense fallback={
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">

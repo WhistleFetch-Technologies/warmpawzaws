@@ -262,7 +262,7 @@ export function CommunicationHub({ mode, bookingId, userId, userName, otherUserN
         </div>
         <div className="flex items-center gap-2">
           {/* ✅ P2P VIDEO CALL: Start video call button for tele consultations */}
-          {(serviceStyle === 'tele' || serviceStyle === 'online') && onStartVideoCall && (
+          {(serviceStyle === 'tele' || serviceStyle === 'online' || serviceStyle === 'video') && onStartVideoCall && (
             <button 
               onClick={() => onStartVideoCall(bookingId)}
               className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center hover:bg-green-500 transition-colors"

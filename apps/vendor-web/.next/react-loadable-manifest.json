@@ -3,6 +3,13 @@
     "id": 75796,
     "files": []
   },
+  "components/vendor/ChimeVideoCall.tsx -> amazon-chime-sdk-js": {
+    "id": 60220,
+    "files": [
+      "static/chunks/a21357db.c77fe3995c86c454.js",
+      "static/chunks/vendors-29ebbc7cac7e9903.js"
+    ]
+  },
   "components/vendor/PrescriptionDocument.tsx -> html2canvas": {
     "id": 24457,
     "files": [
@@ -14,7 +21,7 @@
     "files": [
       "static/chunks/2f0b94e8.452a2d27023d71da.js",
       "static/chunks/164f4fb6.f796b9d9dfb31ec0.js",
-      "static/chunks/vendors-42d51409242766de.js"
+      "static/chunks/vendors-29ebbc7cac7e9903.js"
     ]
   },
   "components/vendor/PrescriptionHistoryModal.tsx -> ./PrescriptionDocument": {
@@ -24,26 +31,35 @@
   "components/vendor/VendorAnalytics.tsx -> ./VendorEarningsSettlementDashboard": {
     "id": 98770,
     "files": [
-      "static/chunks/vendors-42d51409242766de.js",
-      "static/chunks/1673-3f890acd69988e8c.js",
-      "static/chunks/8770-6e9fe848ca5241a5.js"
+      "static/chunks/vendors-29ebbc7cac7e9903.js",
+      "static/chunks/8770-bf3ec8beed38b322.js"
     ]
   },
   "components/vendor/VendorServiceCatalogView.tsx -> @/lib/service-catalogs": {
     "id": 44453,
     "files": []
   },
+  "node_modules/@aws-sdk/util-user-agent-browser/dist-es/createUserAgentStringParsingProvider.js -> bowser": {
+    "id": null,
+    "files": []
+  },
+  "node_modules/@smithy/core/dist-es/submodules/protocols/HttpProtocol.js -> @smithy/core/event-streams": {
+    "id": 13719,
+    "files": [
+      "static/chunks/vendors-29ebbc7cac7e9903.js"
+    ]
+  },
   "node_modules/jspdf/dist/jspdf.es.min.js -> canvg": {
     "id": 12396,
     "files": [
       "static/chunks/bc98253f.5b0f4fe717c5b99c.js",
-      "static/chunks/vendors-42d51409242766de.js"
+      "static/chunks/vendors-29ebbc7cac7e9903.js"
     ]
   },
   "node_modules/jspdf/dist/jspdf.es.min.js -> dompurify": {
     "id": 18848,
     "files": [
-      "static/chunks/vendors-42d51409242766de.js"
+      "static/chunks/vendors-29ebbc7cac7e9903.js"
     ]
   },
   "node_modules/jspdf/dist/jspdf.es.min.js -> html2canvas": {

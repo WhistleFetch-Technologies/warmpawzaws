@@ -158,6 +158,14 @@ export function ChimeVideoCall({
   const callTimerRef = useRef<NodeJS.Timeout | null>(null);
   const statusPollerRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectingToastShownRef = useRef(false);
+  const hasAutoJoinedRef = useRef(false);
+
+  // Auto-join when SDK is ready (e.g. customer accepted call or opened video from booking)
+  useEffect(() => {
+    if (status !== 'ready' || !bookingId || !participantId || hasAutoJoinedRef.current) return;
+    hasAutoJoinedRef.current = true;
+    joinMeeting();
+  }, [status, bookingId, participantId]);
 
   // Show toast when entering reconnecting state (once per reconnection cycle)
   useEffect(() => {
@@ -312,12 +320,13 @@ export function ChimeVideoCall({
         return joinMeeting(retryCount + 1);
       }
       
-      // Provide user-friendly error messages
-      let errorMessage = err.message || 'Failed to join video call';
-      if (err.status === 404) {
+      // Provide user-friendly error messages (API returns error in body; ApiError has message + statusCode)
+      const status = err.status ?? err.statusCode;
+      let errorMessage = err.response?.error || err.responseData?.error || err.message || 'Failed to join video call';
+      if (status === 404) {
         errorMessage = 'Meeting not found. Please ask the other participant to start the call first.';
-      } else if (err.status === 400) {
-        errorMessage = err.message || 'Unable to join this meeting. It may not be scheduled yet.';
+      } else if (status === 400) {
+        errorMessage = err.response?.error || err.responseData?.error || err.message || 'Unable to join this meeting. It may not be scheduled yet.';
       } else if (err.code === 'network' || err.code === 'offline') {
         errorMessage = 'Network error. Please check your internet connection and try again.';
       }

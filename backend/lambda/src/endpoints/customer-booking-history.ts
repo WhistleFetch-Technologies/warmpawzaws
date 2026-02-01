@@ -293,6 +293,12 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
           // Multi-service: list of services and total duration
           selectedServices: parseSelectedServices(booking.selected_services).length > 0 ? parseSelectedServices(booking.selected_services) : undefined,
           totalDurationMinutes: booking.total_duration_minutes != null ? Number(booking.total_duration_minutes) : undefined,
+          // Price/amount for booking details (fix ₹0 on customer and mobile)
+          amount: booking.total_amount != null ? parseFloat(booking.total_amount) : undefined,
+          total_amount: booking.total_amount != null ? parseFloat(booking.total_amount) : undefined,
+          totalAmount: booking.total_amount != null ? parseFloat(booking.total_amount) : undefined,
+          price: booking.total_amount != null ? parseFloat(booking.total_amount) : (booking.base_price != null ? parseFloat(booking.base_price) : undefined),
+          base_price: booking.base_price != null ? parseFloat(booking.base_price) : undefined,
         }
       });
     } catch (error: any) {

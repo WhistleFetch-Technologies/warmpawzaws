@@ -90,6 +90,8 @@ interface TrainerHomeVisitRouterProps {
   phone: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
+  initialAddressFromBook?: any;
+  onConsumeInitialAddress?: () => void;
 }
 
 type FlowStep = 
@@ -589,7 +591,7 @@ function PackageDetailView({ pkg, onScheduleSession, onBack, onNavigate }: Packa
 // MAIN COMPONENT
 // ============================================================================
 
-export function TrainerHomeVisitRouter({ phone, onBack, onNavigate }: TrainerHomeVisitRouterProps) {
+export function TrainerHomeVisitRouter({ phone, onBack, onNavigate, initialAddressFromBook, onConsumeInitialAddress }: TrainerHomeVisitRouterProps) {
   const [step, setStep] = useState<FlowStep>('mode-selection');
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
   const [customerPackages, setCustomerPackages] = useState<CustomerPackage[]>([]);
@@ -750,6 +752,8 @@ export function TrainerHomeVisitRouter({ phone, onBack, onNavigate }: TrainerHom
           onBack={handleBack}
           onNavigate={onNavigate}
           onProceedToPayment={handleProceedToPayment}
+          initialSelectedAddress={initialAddressFromBook}
+          onConsumeInitialAddress={onConsumeInitialAddress}
         />
       );
 
