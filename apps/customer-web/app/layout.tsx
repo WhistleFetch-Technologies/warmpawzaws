@@ -39,23 +39,18 @@ export default function RootLayout({
         />
       </head>
       <body className={baloo2.className}>
-        {/* Runtime config: Inline fallback + async external script for deploy-time override */}
+        {/* Runtime config: no hardcoded URLs. Injected at deploy from config/urls.json; local dev: NEXT_PUBLIC_API_BASE_URL */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              // Inline fallback config (ensures API URL is always available immediately)
-              // Deployed API: Main API Gateway (z0b3obweb6). Override via runtime-config.js or env.
               if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
-                window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-                  apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
-                  uatMode: true
-                };
+                window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: true };
               }
             `,
           }}
         />
-        {/* External config loaded async - won't block rendering */}
-        <script src="/runtime-config.js" async />
+        {/* Load sync so API client has correct base URL before first request (avoids localhost fallback) */}
+        <script src="/runtime-config.js" />
         <Providers>{children}</Providers>
       </body>
     </html>

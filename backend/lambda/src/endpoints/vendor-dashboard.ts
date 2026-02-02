@@ -553,19 +553,12 @@ export function registerVendorDashboardEndpoints(app: Hono) {
   app.get('/vendor/staff', async (c) => {
     const vendorId = c.req.header('X-Vendor-Id') || (c as any).get('vendorId') || (c as any).get('userId');
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'vendor-dashboard.ts:/vendor/staff',message:'ENTRY - vendor/staff endpoint called',data:{vendorId,path:c.req.path,xVendorIdHeader:c.req.header('X-Vendor-Id')},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    
     if (!vendorId) {
       return c.json({ error: 'Vendor authentication required' }, 401);
     }
     
     try {
       const staff = await select('staff', { vendor_id: vendorId, is_active: true });
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'vendor-dashboard.ts:/vendor/staff:result',message:'Staff query result',data:{vendorId,staffCount:staff.length,staffSample:staff.slice(0,3).map((s:any)=>({id:s.id,name:s.name,vendor_id:s.vendor_id}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E'})}).catch(()=>{});
-      // #endregion
       return c.json({
         success: true,
         count: staff.length,

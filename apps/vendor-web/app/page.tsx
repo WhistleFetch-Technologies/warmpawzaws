@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useRef } from 'react';
 import { VendorApp } from '@/components/vendor/VendorApp';
-import { isTokenExpired, clearVendorSession } from '@/lib/session-utils';
+import { isTokenExpired, clearVendorSession, isStaleTempVendorSession } from '@/lib/session-utils';
 
 interface VendorSession {
   phone: string;
@@ -20,12 +20,9 @@ export default function VendorHomePage() {
   const hasChecked = useRef(false); // ✅ FIX: Single check flag
 
   useEffect(() => {
-    // ✅ FIX: Strict single-run check to prevent flickering
-    if (hasChecked.current) {
-      return;
-    }
+    // Run session check on every mount so Strict Mode remount still gets session (avoids stuck loading)
     hasChecked.current = true;
-    
+
     // Synchronous session check
     const storedPhone = localStorage.getItem('vendorPhone');
     const storedToken = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
@@ -38,6 +35,13 @@ export default function VendorHomePage() {
     
     // Token expired - clear and redirect
     if (isTokenExpired(storedToken)) {
+      clearVendorSession();
+      window.location.replace('/auth');
+      return;
+    }
+
+    // Stale temp_vendor_ session – clear and show auth so user gets actual prompt (only when no valid token)
+    if (isStaleTempVendorSession(storedToken)) {
       clearVendorSession();
       window.location.replace('/auth');
       return;

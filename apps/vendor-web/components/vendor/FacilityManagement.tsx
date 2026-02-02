@@ -20,6 +20,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { getAmenitiesForVendorType } from '@/lib/master-amenities';
+import { getApiBaseUrl } from '@/lib/api-config';
 import { toast } from 'sonner';
 import { SpecializationSelector } from './SpecializationSelector'; // ✅ NEW
 import { formatOperatingHours } from '@/lib/format-utils';
@@ -149,7 +150,7 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
       formData.append('folder', 'media');
 
       const xhr = new XMLHttpRequest();
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+      const apiBaseUrl = getApiBaseUrl();
       const url = `${apiBaseUrl}/storage/upload-media`;
 
       xhr.upload.addEventListener('progress', (e) => {

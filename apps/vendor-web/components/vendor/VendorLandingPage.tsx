@@ -308,6 +308,30 @@ export function VendorLandingPage({
     }
   }, [initialVendorData?.roleId, initialVendorData?.role_id]);
 
+  // ✅ Fetch vendor profile when status is active but vendorData is null (e.g. fast-path with missing localStorage vendorData)
+  useEffect(() => {
+    if (status !== 'active' || vendorData || !vendorId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.get<any>(`/vendor/${vendorId}/profile`);
+        const profile = res?.vendor ?? res?.profile ?? res;
+        if (cancelled || !profile) return;
+        const v = { ...profile, id: profile.id || vendorId, status: 'active', isActive: true };
+        setVendorData(v);
+        try {
+          localStorage.setItem('vendorData', JSON.stringify(v));
+          if (profile.role_id || profile.roleId) {
+            localStorage.setItem('vendorRole', profile.role_id || profile.roleId);
+          }
+        } catch (_) {}
+      } catch (err) {
+        if (!cancelled) console.warn('[VendorLandingPage] Profile fetch failed (active but no vendorData):', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [status, vendorData, vendorId]);
+
   // ✅ P2P VIDEO CALL: Check for incoming calls periodically (for tele consultations)
   useEffect(() => {
     if (!vendorId || status !== 'active') return;

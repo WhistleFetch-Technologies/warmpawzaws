@@ -206,23 +206,19 @@ export function registerAddressEndpoints(app: Hono) {
         return c.json({ error: 'phone is required' }, 400);
       }
 
-      // ✅ FIX B5: More flexible validation - check for name or fullName
-      // Also handle cases where address might be in a single 'address' field
-      const name = addressData.name || addressData.fullName || body.name || body.fullName;
+      // ✅ FIX B5: More flexible validation - name optional (default 'Customer'), addressLine1/city/state/pincode required
+      const name = (addressData.name || addressData.fullName || body.name || body.fullName || '').trim() || 'Customer';
       
       // ✅ FIX B5: Handle address field variations - addressLine1, address_line1, or address
       let addressLine1 = addressData.addressLine1 || addressData.address_line1 || body.addressLine1 || body.address_line1;
       if (!addressLine1 && body.address) {
-        // If address is a single string, use it as addressLine1
         addressLine1 = typeof body.address === 'string' ? body.address.split(',')[0].trim() : body.address;
       }
       
-      // ✅ FIX B5: More flexible phone handling
       const phone = addressData.phone || body.phone || customerPhone;
       
-      if (!name || !phone || !addressLine1 || !addressData.city || !addressData.state || !addressData.pincode) {
+      if (!phone || !addressLine1 || !addressData.city || !addressData.state || !addressData.pincode) {
         const missingFields = [];
-        if (!name) missingFields.push('name');
         if (!phone) missingFields.push('phone');
         if (!addressLine1) missingFields.push('addressLine1');
         if (!addressData.city) missingFields.push('city');
@@ -230,17 +226,12 @@ export function registerAddressEndpoints(app: Hono) {
         if (!addressData.pincode) missingFields.push('pincode');
         
         console.error('Address validation failed. Missing fields:', missingFields);
-        console.error('Received data:', JSON.stringify(body, null, 2));
-        console.error('Parsed addressData:', JSON.stringify(addressData, null, 2));
         return c.json({ 
           error: `Missing required fields: ${missingFields.join(', ')}`,
           missingFields,
-          receivedData: body,
-          parsedData: addressData
         }, 400);
       }
       
-      // ✅ FIX B5: Normalize fields
       addressData.name = name;
       addressData.phone = phone;
       addressData.addressLine1 = addressLine1;
@@ -312,26 +303,29 @@ export function registerAddressEndpoints(app: Hono) {
         [customer[0].id]
       ).catch(() => ({ rows: [] }));
 
+      const mapRow = (addr: any) => ({
+        id: addr.id,
+        customerId: addr.customer_id,
+        label: addr.address_type,
+        name: addr.full_name,
+        phone: addr.phone,
+        addressLine1: addr.address_line1,
+        addressLine2: addr.address_line2,
+        city: addr.city,
+        state: addr.state,
+        pincode: addr.pincode,
+        landmark: addr.landmark,
+        coordinates: addr.coordinates || null,
+        isDefault: addr.is_default,
+        createdAt: addr.created_at,
+        updatedAt: addr.updated_at,
+      });
+
+      const created = address?.[0] || allAddresses.rows?.[0];
       return c.json({
         success: true,
-        address: address[0],
-        addresses: allAddresses.rows.map((addr: any) => ({
-          id: addr.id,
-          customerId: addr.customer_id,
-          label: addr.address_type,
-          name: addr.full_name,
-          phone: addr.phone,
-          addressLine1: addr.address_line1,
-          addressLine2: addr.address_line2,
-          city: addr.city,
-          state: addr.state,
-          pincode: addr.pincode,
-          landmark: addr.landmark,
-          coordinates: addr.coordinates || null,
-          isDefault: addr.is_default,
-          createdAt: addr.created_at,
-          updatedAt: addr.updated_at,
-        })),
+        address: created ? mapRow(created) : null,
+        addresses: allAddresses.rows.map((addr: any) => mapRow(addr)),
       });
     } catch (error: any) {
       console.error('Error adding address:', error);

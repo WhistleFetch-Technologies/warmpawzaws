@@ -467,10 +467,19 @@ async function requireAdminAuth(c: any): Promise<{ authorized: boolean; userId?:
       return { authorized: true, userId: 'uat-admin-user' };
     }
     
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace(/^Bearer\s+/i, '');
     
-    // Allow UAT tokens
-    if (token.startsWith('uat-token-') || token.startsWith('eyJ')) {
+    // Allow UAT tokens immediately (no JWT verification)
+    if (token.startsWith('uat-token-')) {
+      const suffix = token.replace('uat-token-', '');
+      if (suffix.length >= 10) {
+        console.log('[ADMIN AUTH] UAT Mode: Allowing admin access with UAT token');
+        return { authorized: true, userId: 'uat-admin-user' };
+      }
+    }
+    
+    // Allow JWT tokens (verify or allow in dev)
+    if (token.startsWith('eyJ')) {
       // JWT token or UAT token - verify it's valid
       try {
         const { extractAndVerifyAuthToken } = await import('../utils/jwt-verification');

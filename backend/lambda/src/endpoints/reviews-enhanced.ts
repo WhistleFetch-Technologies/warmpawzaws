@@ -427,17 +427,26 @@ export function registerReviewsEnhancedEndpoints(app: Hono) {
 
   // Get pending review for customer
   app.get('/reviews/pending/:customerId', async (c) => {
-    const event = {
-      httpMethod: 'GET',
-      path: `/reviews/pending/${c.req.param('customerId')}`,
-      headers: {},
-      body: '',
-      pathParameters: { customerId: c.req.param('customerId') },
-      queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: randomUUID() },
-    };
-    const context = { requestId: randomUUID(), functionName: 'reviews', functionVersion: '$LATEST' };
-    const result = await getPendingHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    try {
+      const event = {
+        httpMethod: 'GET',
+        path: `/reviews/pending/${c.req.param('customerId')}`,
+        headers: {},
+        body: '',
+        pathParameters: { customerId: c.req.param('customerId') },
+        queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
+        requestContext: { requestId: randomUUID() },
+      };
+      const context = { requestId: randomUUID(), functionName: 'reviews', functionVersion: '$LATEST' };
+      const result = await getPendingHandler.execute(event, context);
+      // Graceful degradation: return 200 with empty on 4xx/5xx so customer home loads
+      if (result.statusCode >= 400) {
+        return c.json({ success: true, reviews: [], pending: [] }, 200);
+      }
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      console.error('[reviews/pending] Error:', error);
+      return c.json({ success: true, reviews: [], pending: [] }, 200);
+    }
   });
 }

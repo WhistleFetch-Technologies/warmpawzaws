@@ -47,31 +47,28 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
       // ✅ CRITICAL: Load vendor profile and services from real API - NO MOCK DATA, NO FALLBACKS
       const [vendorResponse, servicesResponse] = await Promise.all([
         apiClient.get(`/customer/vendor/${doctorId}`),
-        apiClient.get(`/vendor/${doctorId}/services`)
+        apiClient.get(`/customer/vendor/${doctorId}/services`).catch(() => apiClient.get(`/vendor/${doctorId}/services`))
       ]);
       
       const vendorData = (vendorResponse as any)?.vendor || vendorResponse as any;
       
-      // ✅ CRITICAL: Load services from real API - extract from different response formats
+      // Extract services (customer endpoint returns { success, services: [...] }; vendor may return nested by style)
       let services: any[] = [];
-      if (servicesResponse) {
-        const servicesData = servicesResponse as any;
-        if (servicesData.services) {
-          // Handle servicesByStyle format
-          if (servicesData.services.at_home || servicesData.services.at_center || servicesData.services.tele) {
-            services = [
-              ...(servicesData.services.at_home?.services || []),
-              ...(servicesData.services.at_center?.services || []),
-              ...(servicesData.services.tele?.services || [])
-            ];
-          } else if (Array.isArray(servicesData.services)) {
-            services = servicesData.services;
-          }
-        } else if (servicesData.allServices) {
-          services = servicesData.allServices;
-        } else if (Array.isArray(servicesData)) {
-          services = servicesData;
-        }
+      const servicesData = servicesResponse as any;
+      if (servicesData?.services && Array.isArray(servicesData.services)) {
+        services = servicesData.services;
+      } else if (servicesData?.services?.at_home || servicesData?.services?.at_center || servicesData?.services?.tele) {
+        services = [
+          ...(servicesData.services.at_home?.services || []),
+          ...(servicesData.services.at_center?.services || []),
+          ...(servicesData.services.tele?.services || [])
+        ];
+      } else if (servicesData?.allServices) {
+        services = servicesData.allServices;
+      } else if (Array.isArray(servicesData?.services)) {
+        services = servicesData.services;
+      } else if (Array.isArray(servicesData)) {
+        services = servicesData;
       }
       
       // ✅ CRITICAL: Map services to use service_id (UUID) as id, not numeric vendor_services.id

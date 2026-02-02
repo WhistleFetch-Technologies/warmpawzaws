@@ -451,10 +451,6 @@ export function registerStaffEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
       
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'staff.ts:getVendorStaffHandler',message:'ENTRY - staff endpoint called',data:{vendorId,path:c.req.path,method:c.req.method},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
-      
       console.log(`[GET /staff/vendor/:vendorId] Fetching staff for vendor: ${vendorId}`);
       
       // ✅ FIX: For read operations, skip capability check entirely - just verify vendor exists
@@ -493,16 +489,10 @@ export function registerStaffEndpoints(app: Hono) {
         `, [vendorId]);
         
         console.log(`[GET /staff/vendor/:vendorId] Query returned ${vendorStaffQuery.rows?.length || 0} staff for vendor ${vendorId}`);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'staff.ts:mainQuery',message:'Main query result',data:{vendorId,rowCount:vendorStaffQuery.rows?.length||0,staffVendorIds:(vendorStaffQuery.rows||[]).slice(0,5).map((s:any)=>({name:s.name,staff_vendor_id:s.vendor_id}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,C'})}).catch(()=>{});
-        // #endregion
         staffResult.rows = vendorStaffQuery.rows || [];
         
       } catch (queryError: any) {
         console.error(`[GET /staff/vendor/:vendorId] Query failed:`, queryError.message);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'staff.ts:queryError',message:'Main query FAILED - using fallback',data:{vendorId,error:queryError.message},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         
         // Fallback: Try simple query without JOIN (handles UUID/text mismatch)
         try {
@@ -514,9 +504,6 @@ export function registerStaffEndpoints(app: Hono) {
           `, [vendorId]);
           staffResult.rows = simpleQuery.rows || [];
           console.log(`[GET /staff/vendor/:vendorId] Fallback query returned ${staffResult.rows.length} rows`);
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'staff.ts:fallbackQuery',message:'Fallback query result',data:{vendorId,rowCount:simpleQuery.rows?.length||0},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-          // #endregion
         } catch (simpleError: any) {
           console.error(`[GET /staff/vendor/:vendorId] Fallback query also failed:`, simpleError.message);
           staffResult.rows = [];
@@ -624,9 +611,6 @@ export function registerStaffEndpoints(app: Hono) {
         staff: Array.isArray(enrichedStaff) ? enrichedStaff : [], 
         total: Array.isArray(enrichedStaff) ? enrichedStaff.length : 0 
       };
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'staff.ts:RESPONSE',message:'Final response being sent',data:{vendorId,totalStaff:response.total,staffSample:(response.staff||[]).slice(0,3).map((s:any)=>({id:s.id,name:s.name,vendor_id:s.vendor_id}))},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,E'})}).catch(()=>{});
-      // #endregion
       console.log(`[GET /vendor/:vendorId/staff] Returning ${response.total} staff members`);
       return c.json(response);
     } catch (error: any) {

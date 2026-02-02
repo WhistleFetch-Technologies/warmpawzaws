@@ -1,44 +1,26 @@
-2:I[29222,["6606","static/chunks/6606-0fec9031db40acfa.js","9895","static/chunks/9895-4ef37ef4fa634842.js","7512","static/chunks/app/enterprise/logic-tab/page-2fe96501db37c32a.js"],"EnterpriseLogicTab"]
+2:I[29222,["6606","static/chunks/6606-5edc6cf9579a5133.js","9895","static/chunks/9895-4ef37ef4fa634842.js","7512","static/chunks/app/enterprise/logic-tab/page-2fe96501db37c32a.js"],"EnterpriseLogicTab"]
 3:I[4707,[],""]
 4:I[36423,[],""]
 6:I[49294,["3185","static/chunks/app/layout-cc1aa371b888cf93.js"],"Providers"]
 7:I[88735,["9895","static/chunks/9895-4ef37ef4fa634842.js","7601","static/chunks/app/error-cf198cbb5d3ba0e1.js"],"default"]
 8:I[85447,["9160","static/chunks/app/not-found-06e9724babf3c716.js"],"default"]
-5:Ta6f,
+5:T6bc,
               // Inline fallback config (ensures API URL is always available)
               if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
-                window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-                  apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
-                  uatMode: true
-                };
-                console.log('🔧 Runtime config loaded (inline fallback):', window.__WARMPAWZ_RUNTIME_CONFIG__);
+                window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: true };
               }
-              // Load external runtime-config.js to override if needed (deploy-time)
-              // Load synchronously to ensure it's available before components mount
               (function() {
                 try {
                   var script = document.createElement('script');
-                  script.src = '/runtime-config.js?v=' + Date.now(); // Cache bust
+                  script.src = '/runtime-config.js?v=' + Date.now();
                   script.async = false;
                   script.defer = false;
-                  script.onload = function() {
-                    console.log('🔧 External runtime-config.js loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
-                  };
+                  script.onload = function() { console.log('🔧 runtime-config.js loaded'); };
                   script.onerror = function() {
-                    console.warn('⚠️ Failed to load runtime-config.js, using fallback');
-                    // Ensure fallback is set if external load fails
-                    if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
-                      window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-                        apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
-                        uatMode: true
-                      };
-                    }
+                    console.warn('⚠️ runtime-config.js failed; set NEXT_PUBLIC_API_BASE_URL for local dev');
                   };
-                  // Insert at the beginning to ensure it loads first
                   document.head.insertBefore(script, document.head.firstChild);
-                } catch (e) {
-                  console.error('Error loading runtime-config.js:', e);
-                }
+                } catch (e) { console.error('Error loading runtime-config.js', e); }
               })();
               // UAT Mode: Auto-login for direct page access (e.g., /ecommerce, /vendors, etc.)
               (function() {
@@ -53,6 +35,6 @@
                   }
                 }
               })();
-            0:["J0ZqNYAXpjI0VY6xPhTla",[[["",{"children":["enterprise",{"children":["logic-tab",{"children":["__PAGE__",{}]}]}]},"$undefined","$undefined",true],["",{"children":["enterprise",{"children":["logic-tab",{"children":["__PAGE__",{},[["$L1",["$","$L2",null,{}],null],null],null]},[null,["$","$L3",null,{"parallelRouterKey":"children","segmentPath":["children","enterprise","children","logic-tab","children"],"error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$L4",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":"$undefined","notFoundStyles":"$undefined"}]],null]},[null,["$","$L3",null,{"parallelRouterKey":"children","segmentPath":["children","enterprise","children"],"error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$L4",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":"$undefined","notFoundStyles":"$undefined"}]],null]},[[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/7cca8e2c5137bd71.css","precedence":"next","crossOrigin":"$undefined"}],["$","link","1",{"rel":"stylesheet","href":"/_next/static/css/b7ecc36cc9e9d4e1.css","precedence":"next","crossOrigin":"$undefined"}]],["$","html",null,{"lang":"en","suppressHydrationWarning":true,"children":["$","body",null,{"className":"__className_f367f3","suppressHydrationWarning":true,"children":[["$","script",null,{"dangerouslySetInnerHTML":{"__html":"$5"}}],["$","$L6",null,{"children":["$","$L3",null,{"parallelRouterKey":"children","segmentPath":["children"],"error":"$7","errorStyles":[],"errorScripts":[],"template":["$","$L4",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":["$","$L8",null,{}],"notFoundStyles":[]}]}]]}]}]],null],null],["$L9",null]]]]
+            0:["6hIcTOUbiTHMQlDVgZJWk",[[["",{"children":["enterprise",{"children":["logic-tab",{"children":["__PAGE__",{}]}]}]},"$undefined","$undefined",true],["",{"children":["enterprise",{"children":["logic-tab",{"children":["__PAGE__",{},[["$L1",["$","$L2",null,{}],null],null],null]},[null,["$","$L3",null,{"parallelRouterKey":"children","segmentPath":["children","enterprise","children","logic-tab","children"],"error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$L4",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":"$undefined","notFoundStyles":"$undefined"}]],null]},[null,["$","$L3",null,{"parallelRouterKey":"children","segmentPath":["children","enterprise","children"],"error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$L4",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":"$undefined","notFoundStyles":"$undefined"}]],null]},[[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/7cca8e2c5137bd71.css","precedence":"next","crossOrigin":"$undefined"}],["$","link","1",{"rel":"stylesheet","href":"/_next/static/css/b7ecc36cc9e9d4e1.css","precedence":"next","crossOrigin":"$undefined"}]],["$","html",null,{"lang":"en","suppressHydrationWarning":true,"children":["$","body",null,{"className":"__className_f367f3","suppressHydrationWarning":true,"children":[["$","script",null,{"dangerouslySetInnerHTML":{"__html":"$5"}}],["$","$L6",null,{"children":["$","$L3",null,{"parallelRouterKey":"children","segmentPath":["children"],"error":"$7","errorStyles":[],"errorScripts":[],"template":["$","$L4",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":["$","$L8",null,{}],"notFoundStyles":[]}]}]]}]}]],null],null],["$L9",null]]]]
 9:[["$","meta","0",{"name":"viewport","content":"width=device-width, initial-scale=1"}],["$","meta","1",{"charSet":"utf-8"}],["$","title","2",{"children":"Warmpawz Admin Portal"}],["$","meta","3",{"name":"description","content":"Platform administration and governance"}],["$","meta","4",{"name":"next-size-adjust"}]]
 1:null

@@ -40,21 +40,29 @@ export function CustomerApp({ initialSession }: CustomerAppProps) {
     const determineInitialState = () => {
       console.log('🎯 CustomerApp: Checking session state', session);
       
-      const isOnboardingComplete = session.hasCompletedOnboarding || 
-        localStorage.getItem('customerOnboardingComplete') === 'true';
+      const storedOnboarding = localStorage.getItem('customerOnboardingComplete') === 'true';
+      const hasSessionOnboarded = session.hasCompletedOnboarding === true;
+      const customer = session.customer;
+      const hasCustomerWithName = !!(customer?.id && (customer?.name || customer?.full_name) && String(customer?.name || customer?.full_name).trim());
+      const hasCustomerWithUsage = !!(customer?.id && ((customer?.bookings?.length || 0) > 0 || (customer?.orders?.all?.length || 0) > 0));
+      const isOnboardingComplete = hasSessionOnboarded || storedOnboarding || hasCustomerWithName || hasCustomerWithUsage;
       const storedJourney = localStorage.getItem('customerJourneyStage');
       const storedProfile = localStorage.getItem('customerProfile');
       const storedPets = localStorage.getItem('customerPets');
       
       console.log('📊 State check:', {
         isOnboardingComplete,
+        hasSessionOnboarded,
+        storedOnboarding,
+        hasCustomerWithName,
+        hasCustomerWithUsage,
         storedJourney,
         hasProfile: !!storedProfile,
         hasPets: !!storedPets
       });
       
       if (isOnboardingComplete) {
-        // User has completed full journey - go directly to home
+        if (!storedOnboarding) localStorage.setItem('customerOnboardingComplete', 'true');
         console.log('✅ Returning user with completed profile - going to home');
         setCurrentScreen('home');
       } else if (storedProfile && !storedPets) {

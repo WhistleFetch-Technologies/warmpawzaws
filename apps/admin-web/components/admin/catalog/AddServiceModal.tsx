@@ -19,6 +19,7 @@ interface Service {
   serviceType?: string;
   duration?: number;
   applicableRoles?: string[];
+  specializationIds?: string[];
 }
 
 interface AddServiceModalProps {
@@ -41,6 +42,8 @@ export function AddServiceModal({
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
+  const [specializationsByCategory, setSpecializationsByCategory] = useState<{ specializationId: string; name: string; displayName: string }[]>([]);
+  const [loadingSpecializations, setLoadingSpecializations] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -51,7 +54,8 @@ export function AddServiceModal({
     duration: '',
     serviceType: 'at-center' as 'at-home' | 'at-center' | 'tele' | 'delivery',
     status: 'active' as 'active' | 'inactive' | 'draft',
-    applicableRoles: [] as string[]
+    applicableRoles: [] as string[],
+    specializationIds: [] as string[],
   });
 
   useEffect(() => {
@@ -60,7 +64,7 @@ export function AddServiceModal({
       loadRoles();
       
       if (service) {
-        // Populate form with service data for editing
+        const specIds = (service as any).specializationIds ?? (service as any).specialization_ids ?? [];
         setFormData({
           name: service.name || '',
           code: '',
@@ -73,10 +77,10 @@ export function AddServiceModal({
                        service.serviceType === 'at_center' ? 'at-center' : 
                        service.serviceType || 'at-center') as 'at-home' | 'at-center' | 'tele' | 'delivery',
           status: (service.status && service.status !== 'pending' ? service.status : 'active') as 'active' | 'inactive' | 'draft',
-          applicableRoles: service.applicableRoles || []
+          applicableRoles: service.applicableRoles || [],
+          specializationIds: Array.isArray(specIds) ? specIds : [],
         });
       } else {
-        // Reset form for new service
         setFormData({
           name: '',
           code: '',
@@ -87,11 +91,40 @@ export function AddServiceModal({
           duration: '',
           serviceType: 'at-center',
           status: 'active',
-          applicableRoles: []
+          applicableRoles: [],
+          specializationIds: [],
         });
       }
     }
   }, [isOpen, categoryId, subCategoryId, service]);
+
+  // Load specializations when category changes
+  useEffect(() => {
+    if (!formData.categoryId) {
+      setSpecializationsByCategory([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingSpecializations(true);
+    apiClient
+      .get<any>(`/admin/specializations?categoryId=${encodeURIComponent(formData.categoryId)}`)
+      .then((data) => {
+        if (cancelled) return;
+        const list = (data.specializations ?? data.data ?? []).map((s: any) => ({
+          specializationId: s.specializationId ?? s.specialization_id,
+          name: s.name ?? '',
+          displayName: s.displayName ?? s.display_name ?? s.name ?? '',
+        }));
+        setSpecializationsByCategory(list);
+      })
+      .catch(() => {
+        if (!cancelled) setSpecializationsByCategory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSpecializations(false);
+      });
+    return () => { cancelled = true; };
+  }, [formData.categoryId]);
 
   const loadCategories = async () => {
     try {
@@ -148,7 +181,8 @@ export function AddServiceModal({
                         formData.serviceType === 'at-center' ? 'at_center' : 
                         formData.serviceType,
           status: formData.status,
-          applicable_roles: formData.applicableRoles
+          applicable_roles: formData.applicableRoles,
+          specialization_ids: formData.specializationIds,
         });
         alert('Service updated successfully!');
       } else {
@@ -163,7 +197,8 @@ export function AddServiceModal({
           duration: formData.duration,
           serviceType: formData.serviceType,
           status: formData.status,
-          applicableRoles: formData.applicableRoles
+          applicableRoles: formData.applicableRoles,
+          specializationIds: formData.specializationIds,
         });
         alert('Service created successfully!');
       }
@@ -180,7 +215,8 @@ export function AddServiceModal({
         duration: '',
         serviceType: 'at-center',
         status: 'active',
-        applicableRoles: []
+        applicableRoles: [],
+        specializationIds: [],
       });
     } catch (error: any) {
       console.error('Error saving service:', error);
@@ -391,6 +427,43 @@ export function AddServiceModal({
                 </div>
               </div>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Specializations (optional)
+            </label>
+            <p className="text-xs text-gray-500 mb-2">Link this service to category specializations for vendor profile and problem-grid matching.</p>
+            {!formData.categoryId ? (
+              <p className="text-sm text-gray-400">Select a category first to load specializations.</p>
+            ) : loadingSpecializations ? (
+              <p className="text-sm text-gray-500">Loading…</p>
+            ) : specializationsByCategory.length === 0 ? (
+              <p className="text-sm text-gray-500">No specializations for this category.</p>
+            ) : (
+              <div className="border border-gray-300 rounded-lg p-4 max-h-40 overflow-y-auto bg-gray-50 flex flex-wrap gap-2">
+                {specializationsByCategory.map((spec) => {
+                  const selected = formData.specializationIds.includes(spec.specializationId);
+                  return (
+                    <label key={spec.specializationId} className="flex items-center gap-2 px-3 py-1.5 rounded-full border cursor-pointer transition-colors bg-white border-gray-200 hover:border-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                          if (e.target.checked) {
+                            handleChange('specializationIds', [...formData.specializationIds, spec.specializationId]);
+                          } else {
+                            handleChange('specializationIds', formData.specializationIds.filter((id) => id !== spec.specializationId));
+                          }
+                        }}
+                        className="w-4 h-4 text-[#FF8C42] border-gray-300 rounded focus:ring-[#FF8C42]"
+                      />
+                      <span className="text-sm text-gray-700">{spec.displayName || spec.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div>

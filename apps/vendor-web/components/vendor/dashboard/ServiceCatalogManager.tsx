@@ -34,7 +34,8 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
   const loadServices = async () => {
     try {
       const response = await apiClient.get<any>(`/vendor/${centerId}/services`);
-      setServices(response.services || []);
+      const list = Array.isArray(response.services) ? response.services : (response.allServices || []);
+      setServices(list);
     } catch (error) {
       console.error('Error loading services:', error);
     }

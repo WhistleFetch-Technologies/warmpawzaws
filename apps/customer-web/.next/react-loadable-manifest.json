@@ -68,19 +68,19 @@
   "components/customer/CustomerPetProfile.tsx -> @/lib/photo-upload-enhanced": {
     "id": 86000,
     "files": [
-      "static/chunks/6000.1abbf096904f1d1d.js"
+      "static/chunks/6000.ffc5e404254f9b66.js"
     ]
   },
   "components/customer/CustomerUserProfile.tsx -> @/lib/photo-upload-enhanced": {
     "id": 86000,
     "files": [
-      "static/chunks/6000.1abbf096904f1d1d.js"
+      "static/chunks/6000.ffc5e404254f9b66.js"
     ]
   },
   "components/customer/EnhancedAddPetModal.tsx -> @/lib/photo-upload-enhanced": {
     "id": 86000,
     "files": [
-      "static/chunks/6000.1abbf096904f1d1d.js"
+      "static/chunks/6000.ffc5e404254f9b66.js"
     ]
   },
   "components/customer/PrescriptionDocument.tsx -> html2canvas": {

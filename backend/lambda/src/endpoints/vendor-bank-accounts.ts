@@ -205,49 +205,77 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
 
   /**
    * POST /vendor/:vendorId/bank-accounts/:accountId/verify
-   * Initiate bank account verification via Razorpay
+   * Initiate bank account verification. Verification passes only when name, IFSC, and account number
+   * are strictly validated (Razorpay verify-bank-account returns valid: true).
    */
   app.post("/vendor/:vendorId/bank-accounts/:accountId/verify", async (c) => {
     try {
       const { vendorId, accountId } = c.req.param();
 
-      // Get account details
       const accounts = await select('vendor_bank_accounts', { id: accountId, vendor_id: vendorId });
       if (accounts.length === 0) {
         return c.json({ error: 'Bank account not found' }, 404);
       }
-
       const account = accounts[0];
 
-      // TODO: Implement actual Razorpay verification
-      // For now, simulate verification by updating status
-      
-      // In production, you would:
-      // 1. Create a Razorpay Fund Account
-      // 2. Initiate penny drop verification
-      // 3. Store the fund account ID
-      
-      await update('vendor_bank_accounts', { id: accountId }, {
-        verification_status: 'submitted',
-      });
+      const accountHolderName = account.account_holder_name || account.accountHolderName;
+      const accountNumber = account.account_number || account.accountNumber;
+      const ifscCode = (account.ifsc_code || account.ifscCode || '').toUpperCase();
 
-      // Simulate async verification (in production, this would be webhook-based)
-      setTimeout(async () => {
-        try {
-          await update('vendor_bank_accounts', { id: accountId }, {
-            is_verified: true,
-            verification_status: 'verified',
-            verified_at: new Date().toISOString(),
-          });
-          console.log(`✅ Bank account ${accountId} verified`);
-        } catch (e) {
-          console.error('Error in async verification:', e);
-        }
-      }, 5000); // 5 second delay for demo
+      if (!accountHolderName || !accountNumber || !ifscCode) {
+        return c.json({
+          success: false,
+          error: 'Bank account record missing name, account number, or IFSC. Cannot verify.',
+        }, 400);
+      }
+
+      // Strict verification: call Razorpay verify-bank-account (valid only when name + IFSC + account all verified)
+      const { getRazorpayConfig, getRazorpayAuthHeader } = await import('../utils/razorpay-client');
+      try {
+        await getRazorpayConfig();
+      } catch {
+        return c.json({
+          success: false,
+          error: 'Razorpay not configured. Bank verification unavailable.',
+        }, 503);
+      }
+
+      const verifyPayload = {
+        account_number: String(accountNumber).replace(/\s/g, ''),
+        ifsc_code: ifscCode,
+        beneficiary_name: String(accountHolderName).trim(),
+      };
+      const verifyRes = await fetch(`${c.req.url.replace(c.req.path, '')}/razorpay/verify-bank-account`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(verifyPayload),
+      });
+      const verifyData = verifyRes.ok ? await verifyRes.json().catch(() => ({})) : { valid: false };
+
+      if (verifyData.valid !== true) {
+        await update('vendor_bank_accounts', { id: accountId }, {
+          verification_status: 'failed',
+          is_verified: false,
+        });
+        return c.json({
+          success: false,
+          valid: false,
+          error: verifyData.error || 'Bank account verification failed',
+          details: verifyData.message || 'Name, IFSC, and account number must all be valid and match. Verification requires Razorpay Fund Account Validation.',
+        }, 400);
+      }
+
+      await update('vendor_bank_accounts', { id: accountId }, {
+        is_verified: true,
+        verification_status: 'verified',
+        verified_at: new Date().toISOString(),
+      });
+      console.log(`✅ Bank account ${accountId} verified (strict check passed)`);
 
       return c.json({
         success: true,
-        message: 'Verification initiated. This may take a few minutes.',
+        valid: true,
+        message: 'Bank account verified successfully.',
       });
     } catch (error: any) {
       console.error('Error initiating verification:', error);

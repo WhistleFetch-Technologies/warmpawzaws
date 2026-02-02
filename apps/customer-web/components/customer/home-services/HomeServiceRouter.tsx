@@ -343,35 +343,19 @@ export function HomeServiceRouter({
     }
   }, [selectedDate, selectedProvider?.id]);
 
-  // Detect customer location
+  // Detect customer location (silent fallback when permission denied)
   const detectCustomerLocation = useCallback(() => {
-    if (!navigator.geolocation) {
-      toast.error('Location services not available');
-      // Fallback to default location (can be set based on user profile)
-      setCustomerLocation({ lat: 19.0760, lng: 72.8777 }); // Mumbai default
-      return;
-    }
-
+    const { getCurrentPositionSafe, DEFAULT_COORDS } = require('@/lib/geolocation-utils');
     setDetectingLocation(true);
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setCustomerLocation({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        });
+    getCurrentPositionSafe(
+      (coords: { lat: number; lng: number }) => {
+        setCustomerLocation(coords);
         setDetectingLocation(false);
       },
-      (error) => {
-        console.error('Location error:', error);
-        // Fallback to default
-        setCustomerLocation({ lat: 19.0760, lng: 72.8777 });
+      () => {
+        setCustomerLocation(DEFAULT_COORDS);
         setDetectingLocation(false);
-        if (error.code === error.PERMISSION_DENIED) {
-          toast.error('Location permission denied. Showing providers in default area.');
-        }
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
+      }
     );
   }, []);
 

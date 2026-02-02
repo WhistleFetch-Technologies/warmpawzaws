@@ -1,7 +1,15 @@
 #!/usr/bin/env node
 /**
- * Run Admin Endpoints Migration on AWS RDS using Node.js
- * Connects to RDS cluster and runs the migration script
+ * Run DB migration on AWS RDS using Node.js
+ * Connects to RDS cluster and runs the migration script from db/migrations/.
+ * Verification is migration-specific (e.g. 524: service_catalog.specialization_ids column + index).
+ *
+ * Usage:
+ *   ENVIRONMENT=dev node scripts/run-migration-rds-node.js 524_service_catalog_specialization_ids.sql
+ *   ENVIRONMENT=dev node scripts/run-migration-rds-node.js 053_admin_endpoints_tables.sql
+ *
+ * Requires: AWS CLI configured; RDS cluster warmpawz-{ENVIRONMENT}-cluster; Secrets Manager secret.
+ * See docs/IMPLEMENTATION_FLOW.md.
  */
 
 const { Pool } = require('pg');
@@ -121,29 +129,54 @@ async function runMigration() {
     console.log('✅ Migration completed!');
     console.log('');
 
-    // Verify tables
-    console.log('🔍 Verifying created tables...');
-    const result = await pool.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public' 
-      AND table_name IN (
-        'support_tickets', 
-        'chat_sessions', 
-        'transactions', 
-        'vendor_payment_rules', 
-        'vendor_refund_tiers',
-        'vendor_support_requests',
-        'compliance_issues'
-      )
-      ORDER BY table_name
-    `);
+    // Verification: migration-specific (do not assume; verify what was applied)
+    const migrationBasename = path.basename(migrationPath);
+    const is524 = migrationBasename.includes('524') && (sql.includes('specialization_ids') && sql.includes('service_catalog'));
 
-    if (result.rows.length > 0) {
-      console.log('✅ Created tables:');
-      result.rows.forEach(row => console.log(`   - ${row.table_name}`));
+    if (is524) {
+      console.log('🔍 Verifying migration 524: service_catalog.specialization_ids...');
+      const colRes = await pool.query(`
+        SELECT column_name, data_type
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'service_catalog' AND column_name = 'specialization_ids'
+      `);
+      if (colRes.rows.length === 0) {
+        throw new Error('Verification failed: column service_catalog.specialization_ids not found');
+      }
+      console.log(`   ✅ Column: ${colRes.rows[0].column_name} (${colRes.rows[0].data_type})`);
+
+      const idxRes = await pool.query(`
+        SELECT indexname FROM pg_indexes
+        WHERE schemaname = 'public' AND tablename = 'service_catalog' AND indexname = 'idx_service_catalog_specialization_ids'
+      `);
+      if (idxRes.rows.length === 0) {
+        throw new Error('Verification failed: index idx_service_catalog_specialization_ids not found');
+      }
+      console.log(`   ✅ Index: ${idxRes.rows[0].indexname}`);
     } else {
-      console.log('⚠️  No tables found (may already exist or migration had issues)');
+      console.log('🔍 Verifying created tables...');
+      const result = await pool.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name IN (
+          'support_tickets', 
+          'chat_sessions', 
+          'transactions', 
+          'vendor_payment_rules', 
+          'vendor_refund_tiers',
+          'vendor_support_requests',
+          'compliance_issues'
+        )
+        ORDER BY table_name
+      `);
+
+      if (result.rows.length > 0) {
+        console.log('✅ Created tables:');
+        result.rows.forEach(row => console.log(`   - ${row.table_name}`));
+      } else {
+        console.log('⚠️  No tables found (may already exist or migration had issues)');
+      }
     }
 
     await pool.end();

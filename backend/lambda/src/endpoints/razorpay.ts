@@ -30,6 +30,60 @@ import { DEFAULT_COMMISSION_RATE } from '../lib/constants/commission';
 // Razorpay configuration is imported from utils
 
 // ============================================================================
+// STRICT BANK ACCOUNT VALIDATION (shared: name + IFSC + account number)
+// ============================================================================
+
+export interface BankVerificationResult {
+  valid: boolean;
+  error?: string;
+  details?: string;
+  bank_details?: { bank: string; branch: string; city: string; state: string; ifsc: string };
+  account_number_masked?: string;
+  message?: string;
+}
+
+/**
+ * Strict bank account validation: Name, IFSC Code, and Account Number must all be valid.
+ * Returns valid: false until Razorpay Fund Account Validation is integrated (no pass on IFSC-only).
+ */
+export async function validateBankAccountStrict(
+  account_number: string,
+  ifsc_code: string,
+  beneficiary_name: string
+): Promise<BankVerificationResult> {
+  const account = (account_number != null ? String(account_number).replace(/\s/g, '') : '');
+  const ifsc = (ifsc_code != null ? String(ifsc_code).trim().toUpperCase() : '');
+  const name = (beneficiary_name != null ? String(beneficiary_name).trim() : '');
+
+  if (!account || !ifsc || !name) {
+    return { valid: false, error: 'account_number, ifsc_code, and beneficiary_name are required', details: 'All three parameters must be provided.' };
+  }
+  if (name.length < 2 || name.length > 100) {
+    return { valid: false, error: 'Invalid beneficiary name', details: 'Beneficiary name must be between 2 and 100 characters.' };
+  }
+  if (!/[\p{L}\p{N}]/u.test(name)) {
+    return { valid: false, error: 'Invalid beneficiary name', details: 'Beneficiary name must contain at least one letter or number.' };
+  }
+  if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) {
+    return { valid: false, error: 'Invalid IFSC code', details: 'IFSC must be 11 characters (e.g. HDFC0001234).' };
+  }
+  const ifscResponse = await fetch(`https://ifsc.razorpay.com/${ifsc}`);
+  if (!ifscResponse.ok) {
+    return { valid: false, error: 'Invalid IFSC code', details: 'IFSC code not found in bank database.' };
+  }
+  const ifscData = await ifscResponse.json();
+  if (!/^\d{9,18}$/.test(account)) {
+    return { valid: false, error: 'Invalid account number', details: 'Account number must be 9–18 digits.' };
+  }
+  return {
+    valid: false,
+    bank_details: { bank: ifscData.BANK || '', branch: ifscData.BRANCH || '', city: ifscData.CITY || '', state: ifscData.STATE || '', ifsc: ifsc },
+    account_number_masked: account.replace(/\d(?=\d{4})/g, '*'),
+    message: 'Format validation passed. Verification (name + account + IFSC match) requires Razorpay Fund Account Validation.',
+  };
+}
+
+// ============================================================================
 // RAZORPAY HANDLERS
 // ============================================================================
 
@@ -864,64 +918,98 @@ export function registerRazorpayEndpoints(app: Hono) {
 
   /**
    * POST /razorpay/verify-bank-account
-   * Verify bank account details using Razorpay Marketplace API
-   * Requires Razorpay authentication
+   * Strict bank account verification: Name, IFSC Code, and Account Number must all be valid.
+   * Does NOT pass verification on IFSC-only; full verification requires Razorpay Fund Account Validation.
    */
   app.post('/razorpay/verify-bank-account', async (c) => {
     try {
-      const { account_number, ifsc_code, beneficiary_name } = await c.req.json();
-      
+      const body = await c.req.json();
+      const account_number = body?.account_number != null ? String(body.account_number).replace(/\s/g, '') : '';
+      const ifsc_code = body?.ifsc_code != null ? String(body.ifsc_code).trim().toUpperCase() : '';
+      const beneficiary_name = body?.beneficiary_name != null ? String(body.beneficiary_name).trim() : '';
+
+      // Strict: all three parameters required
       if (!account_number || !ifsc_code || !beneficiary_name) {
-        return c.json({ 
-          error: 'account_number, ifsc_code, and beneficiary_name are required' 
+        return c.json({
+          success: false,
+          valid: false,
+          error: 'account_number, ifsc_code, and beneficiary_name are required',
+          details: 'All three parameters must be provided for verification.',
         }, 400);
       }
 
-      // Get Razorpay config
-      const config = await getRazorpayConfig();
-      const authHeader = await getRazorpayAuthHeader();
+      // Strict: beneficiary name 2–100 chars, no only special chars
+      if (beneficiary_name.length < 2 || beneficiary_name.length > 100) {
+        return c.json({
+          success: false,
+          valid: false,
+          error: 'Invalid beneficiary name',
+          details: 'Beneficiary name must be between 2 and 100 characters.',
+        }, 400);
+      }
+      if (!/[\p{L}\p{N}]/u.test(beneficiary_name)) {
+        return c.json({
+          success: false,
+          valid: false,
+          error: 'Invalid beneficiary name',
+          details: 'Beneficiary name must contain at least one letter or number.',
+        }, 400);
+      }
 
-      // Use Razorpay's fund account validation API
-      // Note: This requires a linked account, so we'll use a simpler validation
-      // For full verification, the account needs to be added to a linked account first
-      
-      // First, validate IFSC format and get bank details
-      const ifscResponse = await fetch(`https://ifsc.razorpay.com/${ifsc_code.toUpperCase()}`);
-      if (!ifscResponse.ok) {
-        return c.json({ 
+      // Strict: IFSC format (11 chars: 4 letters + 0 + 6 alphanumeric)
+      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc_code)) {
+        return c.json({
+          success: false,
+          valid: false,
           error: 'Invalid IFSC code',
-          details: 'IFSC code not found in Razorpay database'
+          details: 'IFSC must be 11 characters (e.g. HDFC0001234).',
         }, 400);
       }
 
+      // IFSC lookup – must exist in Razorpay database
+      const ifscResponse = await fetch(`https://ifsc.razorpay.com/${ifsc_code}`);
+      if (!ifscResponse.ok) {
+        return c.json({
+          success: false,
+          valid: false,
+          error: 'Invalid IFSC code',
+          details: 'IFSC code not found in bank database.',
+        }, 400);
+      }
       const ifscData = await ifscResponse.json();
 
-      // Validate account number format (9-18 digits)
+      // Strict: account number 9–18 digits only
       if (!/^\d{9,18}$/.test(account_number)) {
-        return c.json({ 
+        return c.json({
+          success: false,
+          valid: false,
           error: 'Invalid account number',
-          details: 'Account number must be 9-18 digits'
+          details: 'Account number must be 9–18 digits.',
         }, 400);
       }
 
-      // Return validation result
+      // Format validation passed for all three. Do NOT return valid: true –
+      // we have not verified that name/account match the bank; that requires
+      // Razorpay Fund Account Validation (penny drop / name match).
       return c.json({
         success: true,
-        valid: true,
+        valid: false,
         bank_details: {
           bank: ifscData.BANK || '',
           branch: ifscData.BRANCH || '',
           city: ifscData.CITY || '',
           state: ifscData.STATE || '',
-          ifsc: ifsc_code.toUpperCase(),
+          ifsc: ifsc_code,
         },
-        account_number: account_number.replace(/\d(?=\d{4})/g, '*'), // Mask all but last 4 digits
-        message: 'Bank account details validated. Full verification requires adding to Razorpay linked account.',
+        account_number_masked: account_number.replace(/\d(?=\d{4})/g, '*'),
+        message: 'Format validation passed for name, IFSC, and account number. Verification (name + account + IFSC match) requires Razorpay Fund Account Validation; this endpoint cannot confirm account holder or account number.',
       });
     } catch (error: any) {
       console.error('Error verifying bank account:', error);
-      return c.json({ 
-        error: error.message || 'Failed to verify bank account' 
+      return c.json({
+        success: false,
+        valid: false,
+        error: error.message || 'Failed to verify bank account',
       }, 500);
     }
   });

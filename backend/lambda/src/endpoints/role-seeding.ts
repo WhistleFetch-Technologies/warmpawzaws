@@ -934,15 +934,21 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
           const serviceId = `svc_${roleId}_${entry.serviceStyle || mappedStyle}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
           try {
             // Use applicable_roles array (primary) and role_id (if column exists, for backward compatibility)
-            // ✅ FIX: Include role mappings in applicable_roles for better matching (e.g., 'pet_trainer' -> ['pet_trainer', 'trainer'])
+            // ✅ FIX: Include role mappings in applicable_roles for better matching (align with service-catalog roleMappings)
             const roleMappings: Record<string, string[]> = {
               'pet_trainer': ['pet_trainer', 'trainer'],
-              'pet_walker': ['pet_walker', 'walker'],
+              'pet_walker': ['pet_walker', 'walker', 'dog_walker'],
+              'walker': ['walker', 'pet_walker', 'dog_walker'],
               'pet_groomer': ['pet_groomer', 'groomer'],
               'veterinarian': ['veterinarian', 'vet'],
             };
             const mappedRoles = roleMappings[roleId] || [roleId];
             const applicableRoles = [roleId, ...mappedRoles.filter(r => r !== roleId)]; // Ensure roleId is first, then mapped roles
+            
+            // Ensure every catalog entry has a category so nothing appears uncategorized in service management
+            const roleDef = STANDARD_ROLE_DEFINITIONS[roleId];
+            const categorySlug = (roleDef?.category || 'general').replace(/\s+/g, '_');
+            const categoryName = categorySlug.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
             
             const insertData: any = {
               service_id: serviceId,
@@ -956,6 +962,8 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
               status: 'active',
               publish_status: 'published',
               display_order: 0,
+              category_id: categorySlug,
+              category_name: categoryName,
             };
             
             // Add optional columns if they exist in table
@@ -976,13 +984,17 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
                 // ✅ FIX: Include role mappings in applicable_roles (same as above)
                 const roleMappings: Record<string, string[]> = {
                   'pet_trainer': ['pet_trainer', 'trainer'],
-                  'pet_walker': ['pet_walker', 'walker'],
+                  'pet_walker': ['pet_walker', 'walker', 'dog_walker'],
+                  'walker': ['walker', 'pet_walker', 'dog_walker'],
                   'pet_groomer': ['pet_groomer', 'groomer'],
                   'veterinarian': ['veterinarian', 'vet'],
                 };
                 const mappedRoles = roleMappings[roleId] || [roleId];
                 const applicableRoles = [roleId, ...mappedRoles.filter(r => r !== roleId)];
                 
+                const roleDefMin = STANDARD_ROLE_DEFINITIONS[roleId];
+                const catSlug = (roleDefMin?.category || 'general').replace(/\s+/g, '_');
+                const catName = catSlug.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
                 await insert('service_catalog', {
                   service_id: serviceId,
                   service_name: entry.serviceName,
@@ -995,6 +1007,8 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
                   status: 'active',
                   publish_status: 'published',
                   display_order: 0,
+                  category_id: catSlug,
+                  category_name: catName,
                 });
                 console.log(`Created service (minimal columns): ${entry.serviceName} for role ${roleId}`);
                 createdCount++;

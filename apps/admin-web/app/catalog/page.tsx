@@ -26,6 +26,7 @@ interface ServiceCatalogItem {
   sub_category_id?: string;
   sub_category_name?: string;
   applicable_roles: string[];
+  specialization_ids?: string[];
   service_style: 'centre' | 'home' | 'tele' | 'ecommerce' | 'all' | 'at_center' | 'at_home';
   base_price: number;
   duration_minutes: number;
@@ -75,6 +76,8 @@ export default function ServiceCatalogPage() {
   const [editingService, setEditingService] = useState<ServiceCatalogItem | null>(null);
   const [formData, setFormData] = useState<Partial<ServiceCatalogItem>>({});
   const [saving, setSaving] = useState(false);
+  const [specializationsByCategory, setSpecializationsByCategory] = useState<{ specializationId: string; name: string; displayName: string }[]>([]);
+  const [loadingSpecializations, setLoadingSpecializations] = useState(false);
 
   // ============================================================================
   // DATA LOADING
@@ -183,6 +186,7 @@ export default function ServiceCatalogPage() {
       description: '',
       category_id: '',
       applicable_roles: [],
+      specialization_ids: [],
       service_style: 'centre',
       base_price: 0,
       duration_minutes: 30,
@@ -201,6 +205,7 @@ export default function ServiceCatalogPage() {
       description: service.description,
       category_id: service.category_id,
       applicable_roles: service.applicable_roles,
+      specialization_ids: service.specialization_ids ?? [],
       service_style: service.service_style,
       base_price: service.base_price,
       duration_minutes: service.duration_minutes,
@@ -220,7 +225,17 @@ export default function ServiceCatalogPage() {
         await apiClient.put(`/admin/service-catalog/${editingService.id}`, formData);
         setSuccess('Service updated successfully');
       } else {
-        await apiClient.post('/admin/service-catalog', formData);
+        const categoryName = categories.find(c => c.id === formData.category_id)?.display_name || categories.find(c => c.id === formData.category_id)?.name || formData.category_id || '';
+        const serviceId = formData.service_id || (formData.service_name || '').replace(/\s+/g, '_').toLowerCase().replace(/[^a-z0-9_]/g, '') || `svc_${Date.now()}`;
+        await apiClient.post('/admin/service-catalog', {
+          ...formData,
+          service_id: serviceId,
+          service_name: formData.service_name || formData.display_name || '',
+          display_name: formData.display_name || formData.service_name || '',
+          category_name: categoryName,
+          applicable_roles: formData.applicable_roles || [],
+          specialization_ids: formData.specialization_ids || [],
+        });
         setSuccess('Service created successfully');
       }
       
@@ -256,6 +271,34 @@ export default function ServiceCatalogPage() {
       setError(err.message || 'Failed to update service status');
     }
   };
+
+  // Load specializations when category changes (for create/edit modal)
+  useEffect(() => {
+    if (!showModal || !formData.category_id) {
+      setSpecializationsByCategory([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingSpecializations(true);
+    apiClient
+      .get<any>(`/admin/specializations?categoryId=${encodeURIComponent(formData.category_id)}`)
+      .then((data) => {
+        if (cancelled) return;
+        const list = (data.specializations ?? data.data ?? []).map((s: any) => ({
+          specializationId: s.specializationId ?? s.specialization_id,
+          name: s.name ?? '',
+          displayName: s.displayName ?? s.display_name ?? s.name ?? '',
+        }));
+        setSpecializationsByCategory(list);
+      })
+      .catch(() => {
+        if (!cancelled) setSpecializationsByCategory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSpecializations(false);
+      });
+    return () => { cancelled = true; };
+  }, [showModal, formData.category_id]);
 
   const handleReorder = async (serviceId: string, direction: 'up' | 'down') => {
     const currentIndex = services.findIndex(s => s.id === serviceId);
@@ -857,6 +900,47 @@ export default function ServiceCatalogPage() {
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                   />
                 </div>
+              </div>
+
+              {/* Specializations (optional) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Specializations (optional)</label>
+                <p className="text-xs text-gray-500 mb-2">Link this service to category specializations for vendor profile and problem-grid matching.</p>
+                {!formData.category_id ? (
+                  <p className="text-sm text-gray-400">Select a category first to load specializations.</p>
+                ) : loadingSpecializations ? (
+                  <p className="text-sm text-gray-500">Loading…</p>
+                ) : specializationsByCategory.length === 0 ? (
+                  <p className="text-sm text-gray-500">No specializations for this category.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 border border-gray-200 rounded-lg">
+                    {specializationsByCategory.map((spec) => {
+                      const selected = (formData.specialization_ids || []).includes(spec.specializationId);
+                      return (
+                        <button
+                          key={spec.specializationId}
+                          type="button"
+                          onClick={() => {
+                            const current = formData.specialization_ids || [];
+                            setFormData(prev => ({
+                              ...prev,
+                              specialization_ids: selected
+                                ? current.filter((id) => id !== spec.specializationId)
+                                : [...current, spec.specializationId],
+                            }));
+                          }}
+                          className={`px-3 py-1 rounded-lg text-sm transition ${
+                            selected
+                              ? 'bg-purple-500 text-white'
+                              : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
+                          }`}
+                        >
+                          {spec.displayName || spec.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Applicable Roles */}

@@ -202,21 +202,8 @@ export class WarmpawzStack extends cdk.Stack {
     });
 
     // 2. Authorized routes (specific paths before catch-all)
-    // Admin routes require admin Cognito token
-    this.apiGatewayStack.addAuthorizedRoute(
-      '/admin/{proxy+}',
-      [
-        apigateway.HttpMethod.GET,
-        apigateway.HttpMethod.POST,
-        apigateway.HttpMethod.PUT,
-        apigateway.HttpMethod.PATCH,
-        apigateway.HttpMethod.DELETE,
-        apigateway.HttpMethod.OPTIONS,
-        apigateway.HttpMethod.HEAD,
-      ],
-      lambdaIntegration,
-      'admin'
-    );
+    // Admin routes: no API Gateway authorizer - /admin/* goes via catch-all so Lambda can allow UAT (X-UAT-Mode + token)
+    // Auth is enforced in Lambda (admin.ts requireAdminAuth supports both Cognito JWT and UAT tokens).
 
     // Customer routes require customer Cognito token
     this.apiGatewayStack.addAuthorizedRoute(
@@ -365,11 +352,7 @@ export class WarmpawzStack extends cdk.Stack {
       exportName: 'Warmpawz-VendorAuthorizerId',
     });
 
-    new cdk.CfnOutput(this, 'AdminAuthorizerId', {
-      value: this.apiGatewayStack.adminAuthorizer.authorizerId,
-      description: 'Admin Cognito Authorizer ID - For Agent 3 (Auth Integration)',
-      exportName: 'Warmpawz-AdminAuthorizerId',
-    });
+    // AdminAuthorizerId output removed: /admin/* uses catch-all (Lambda auth), so admin authorizer is not attached to any route.
 
     new cdk.CfnOutput(this, 'ApiGatewayUrl', {
       value: this.apiGatewayStack.api.url || 'Not yet deployed',

@@ -200,31 +200,47 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectiveRoleId);
       
       if (isUuid) {
-        // Load by role UUID
-        response = await apiClient.get<RoleResponse>(`/config/roles/${effectiveRoleId}`);
-      } else {
-        // Try to find role by code/name - load all roles and filter
+        // Load by role UUID - may 404 if role was deleted or UUID is from another env
+        try {
+          response = await apiClient.get<RoleResponse>(`/config/roles/${effectiveRoleId}`);
+        } catch (uuidErr: any) {
+          const is404 = uuidErr?.statusCode === 404 || uuidErr?.status === 404 || (uuidErr?.message && String(uuidErr.message).includes('Role not found'));
+          if (is404 && typeof window !== 'undefined') {
+            const storedRole = localStorage.getItem('vendorRole');
+            if (storedRole === effectiveRoleId) {
+              localStorage.removeItem('vendorRole');
+              console.warn('[useVendorCapabilities] Cleared stale vendorRole (404):', effectiveRoleId);
+            }
+          }
+          response = null;
+        }
+      }
+      if (!response) {
+        // Non-UUID or UUID 404: load all roles and use first/match
         const rolesResponse = await apiClient.get<{ success: boolean; roles: any[] }>('/config/roles');
-        if (rolesResponse.success && rolesResponse.roles) {
-          const normalizedRoleId = effectiveRoleId.toLowerCase().replace(/\s+/g, '_');
-          const matchedRole = rolesResponse.roles.find((r: any) => 
-            r.name?.toLowerCase() === normalizedRoleId ||
-            r.roleCode?.toLowerCase() === normalizedRoleId ||
-            r.display_name?.toLowerCase() === normalizedRoleId.replace(/_/g, ' ') ||
-            r.id === effectiveRoleId
-          );
-          
-          if (matchedRole) {
-            response = {
-              success: true,
-              roleId: matchedRole.id,
-              roleName: matchedRole.display_name || matchedRole.name,
-              roleCode: matchedRole.name,
-              capabilities: matchedRole.capabilities || [],
-              vendorTypes: matchedRole.vendorTypes || [],
-              serviceStyles: matchedRole.serviceStyles || [],
-              pricingControl: matchedRole.pricingControl,
-            };
+        if (rolesResponse?.success && Array.isArray(rolesResponse.roles) && rolesResponse.roles.length > 0) {
+          const normalizedRoleId = effectiveRoleId?.toLowerCase().replace(/\s+/g, '_');
+          const matchedRole = normalizedRoleId
+            ? rolesResponse.roles.find((r: any) =>
+                r.name?.toLowerCase() === normalizedRoleId ||
+                r.roleCode?.toLowerCase() === normalizedRoleId ||
+                r.display_name?.toLowerCase() === normalizedRoleId.replace(/_/g, ' ') ||
+                r.id === effectiveRoleId
+              )
+            : null;
+          const roleToUse = matchedRole || rolesResponse.roles[0];
+          response = {
+            success: true,
+            roleId: roleToUse.id,
+            roleName: roleToUse.display_name || roleToUse.name,
+            roleCode: roleToUse.name,
+            capabilities: roleToUse.capabilities || [],
+            vendorTypes: roleToUse.vendorTypes || [],
+            serviceStyles: roleToUse.serviceStyles || [],
+            pricingControl: roleToUse.pricingControl,
+          };
+          if (!matchedRole && effectiveRoleId) {
+            console.log('[useVendorCapabilities] Role not found by ID, using first available role:', roleToUse.name || roleToUse.id);
           }
         }
       }

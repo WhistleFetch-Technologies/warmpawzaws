@@ -20,6 +20,7 @@ import { select, query, insert, update } from '../database/rds-connection';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { inferSpecializationIdsFromCategory } from '../utils/infer-specialization-from-category';
 
 /**
  * Map role IDs/names to service catalog applicable_roles
@@ -41,8 +42,6 @@ const roleMappings: Record<string, string[]> = {
   'pet_pharmacy': ['pharmacy', 'pet_pharmacy'],
   'pet_ambulance': ['ambulance', 'pet_ambulance'],
   'ambulance': ['ambulance', 'pet_ambulance'],
-  'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
-  'nutritionist_center': ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
   'pharmacy': ['pharmacy', 'pet_pharmacy'],
   'insurance': ['insurance', 'pet_insurance'],
   'center': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'center'],
@@ -176,6 +175,8 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         subCategoryId: service.sub_category_id,
         subCategoryName: service.sub_category_name,
         applicableRoles: service.applicable_roles || [],
+        specializationIds: service.specialization_ids || [],
+        specialization_ids: service.specialization_ids || [],
         service_style: service.service_style,
         serviceStyle: service.service_style || 'at_center',
         basePrice: parseFloat(service.base_price || '0'),
@@ -228,7 +229,11 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         // Continue with role mappings fallback
       }
 
-      // ✅ FIX: Check if role is for solo provider and filter out at_center
+      // ✅ FIX: Normalize role config (walker etc. may have serviceStyles as object { selected: ['at_home'] })
+      const rawServiceStyles = roleConfig?.serviceStyles;
+      const allowedServiceStylesArray = Array.isArray(rawServiceStyles)
+        ? rawServiceStyles
+        : (rawServiceStyles?.selected ?? rawServiceStyles?.solo ?? (rawServiceStyles ? [] : []));
       const vendorConfiguration = roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
       
       // ✅ CRITICAL: Solo providers cannot use at_center services
@@ -247,12 +252,13 @@ export function registerServiceCatalogEndpoints(app: Hono) {
             config: roleConfig,
           } : null,
           vendorTypes: roleConfig?.vendorTypes || [],
-          serviceStyles: roleConfig?.serviceStyles || [],
+          serviceStyles: allowedServiceStylesArray.length ? allowedServiceStylesArray : (roleConfig?.serviceStyles || []),
         });
       }
 
       // Use role from DB if available, otherwise use mappings (include display_name for matching)
       const roleNameNorm = role?.name?.toLowerCase().replace(/\s+/g, '_');
+      const displayNameNorm = role?.display_name?.toLowerCase().replace(/\s+/g, '_');
       const acceptableRoles = role
         ? [
             role.name,
@@ -261,7 +267,7 @@ export function registerServiceCatalogEndpoints(app: Hono) {
             ...(roleMappings[role.name] || []),
             ...(roleMappings[roleId] || []),
             ...(roleNameNorm ? (roleMappings[roleNameNorm] || []) : []),
-            ...(role.display_name ? [role.display_name.toLowerCase().replace(/\s+/g, '_')] : []),
+            ...(displayNameNorm ? (roleMappings[displayNameNorm] || [displayNameNorm]) : []),
           ]
         : (roleMappings[roleId] || [roleId]);
 
@@ -317,6 +323,8 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         subCategoryId: service.sub_category_id,
         subCategoryName: service.sub_category_name,
         applicableRoles: service.applicable_roles || [],
+        specializationIds: service.specialization_ids || [],
+        specialization_ids: service.specialization_ids || [],
         serviceStyle: service.service_style || 'at_center',
         basePrice: parseFloat(service.base_price || '0'),
         price: parseFloat(service.base_price || '0'),
@@ -341,7 +349,8 @@ export function registerServiceCatalogEndpoints(app: Hono) {
           config: roleConfig,
         } : null,
         vendorTypes: roleConfig?.vendorTypes || [],
-        serviceStyles: roleConfig?.serviceStyles || [],
+        // ✅ Align with vendor-services: return array so frontend gets allowed styles (walker has { selected: ['at_home'] })
+        serviceStyles: allowedServiceStylesArray.length ? allowedServiceStylesArray : (roleConfig?.serviceStyles || []),
       });
     } catch (error: any) {
       console.error('Error fetching service catalog:', error);
@@ -435,6 +444,8 @@ export function registerServiceCatalogEndpoints(app: Hono) {
           subCategoryId: service.sub_category_id,
           subCategoryName: service.sub_category_name,
           applicableRoles: service.applicable_roles || [],
+          specializationIds: service.specialization_ids || [],
+          specialization_ids: service.specialization_ids || [],
           serviceStyle: service.service_style,
           basePrice: parseFloat(service.base_price || '0'),
           duration: service.duration_minutes || 30,
@@ -773,24 +784,37 @@ export function registerServiceCatalogEndpoints(app: Hono) {
 
       const services = await query(catalogQuery, params);
 
+      // Helper: never expose "Uncategorized" - use role-based or generic default so all discovered services are categorized
+      const categoryDisplay = (slug: string) =>
+        slug ? String(slug).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) : '';
+      const defaultCategoryName =
+        (roleConfig?.category && categoryDisplay(roleConfig.category as string)) ||
+        (role?.display_name && String(role.display_name)) ||
+        'General';
+      const defaultCategoryId = (roleConfig?.category && String(roleConfig.category).replace(/\s+/g, '_')) || 'general';
+
       // If groupBy is 'category' or 'subcategory', group services hierarchically
       if (groupBy === 'category' || groupBy === 'subcategory') {
         const grouped: Record<string, any> = {};
         
         (services.rows || []).forEach((service: any) => {
-          // Ensure all service fields are safe (no undefined)
+          const effectiveCategoryName = service.category_name?.trim() || defaultCategoryName;
+          const effectiveCategoryId = service.category_id?.trim() || defaultCategoryId;
+          // Ensure all service fields are safe; never use "Uncategorized"
           const safeService = {
             ...service,
             id: String(service.id || service.service_id || ''),
             service_id: String(service.service_id || service.id || ''),
             service_name: String(service.service_name || ''),
-            category_id: String(service.category_id || ''),
-            category_name: String(service.category_name || 'Uncategorized'),
+            category_id: effectiveCategoryId,
+            category_name: effectiveCategoryName,
             sub_category_id: String(service.sub_category_id || ''),
             sub_category_name: String(service.sub_category_name || ''),
+            specialization_ids: service.specialization_ids || [],
+            specializationIds: service.specialization_ids || [],
           };
           
-          const categoryKey = safeService.category_name || 'Uncategorized';
+          const categoryKey = effectiveCategoryName;
           const subcategoryKey = safeService.sub_category_name || null;
           
           if (!grouped[categoryKey]) {
@@ -847,17 +871,23 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         });
       }
 
-      // Ensure all service fields are safe (no undefined)
-      const safeServices = (services.rows || []).map((service: any) => ({
-        ...service,
-        id: String(service.id || service.service_id || ''),
-        service_id: String(service.service_id || service.id || ''),
-        service_name: String(service.service_name || ''),
-        category_id: String(service.category_id || ''),
-        category_name: String(service.category_name || ''),
-        sub_category_id: String(service.sub_category_id || ''),
-        sub_category_name: String(service.sub_category_name || ''),
-      }));
+      // Ensure all service fields are safe; never return uncategorized (use role-based default)
+      const safeServices = (services.rows || []).map((service: any) => {
+        const effectiveCategoryName = service.category_name?.trim() || defaultCategoryName;
+        const effectiveCategoryId = service.category_id?.trim() || defaultCategoryId;
+        return {
+          ...service,
+          id: String(service.id || service.service_id || ''),
+          service_id: String(service.service_id || service.id || ''),
+          service_name: String(service.service_name || ''),
+          category_id: effectiveCategoryId,
+          category_name: effectiveCategoryName,
+          sub_category_id: String(service.sub_category_id || ''),
+          sub_category_name: String(service.sub_category_name || ''),
+          specialization_ids: service.specialization_ids || [],
+          specializationIds: service.specialization_ids || [],
+        };
+      });
 
       return c.json({
         success: true,
@@ -1055,6 +1085,8 @@ export function registerServiceCatalogEndpoints(app: Hono) {
           categoryId: s.category_id,
           categoryName: s.category_name,
           applicableRoles: s.applicable_roles || [],
+          specializationIds: s.specialization_ids || [],
+          specialization_ids: s.specialization_ids || [],
           serviceStyle: s.service_style || 'at_center',
           basePrice: parseFloat(s.base_price || '0'),
           duration: s.duration_minutes || 30,
@@ -1076,27 +1108,29 @@ export function registerServiceCatalogEndpoints(app: Hono) {
   app.post("/admin/service-catalog", async (c) => {
     try {
       const body = await c.req.json();
-      const {
-        service_id,
-        service_name,
-        display_name,
-        description,
-        category_id,
-        category_name,
-        sub_category_id,
-        sub_category_name,
-        applicable_roles,
-        service_style,
-        base_price,
-        duration_minutes,
-        metadata,
-        display_order,
-      } = body;
+      // Accept both snake_case and camelCase so admin UIs (Ecosystem Development, admin-web) work
+      const service_id = body.service_id ?? body.serviceId ?? null;
+      const service_name = body.service_name ?? body.serviceName ?? null;
+      const display_name = body.display_name ?? body.displayName ?? body.service_name ?? body.serviceName ?? null;
+      const description = body.description ?? '';
+      const category_id = body.category_id ?? body.categoryId ?? null;
+      const category_name = body.category_name ?? body.categoryName ?? null;
+      const sub_category_id = body.sub_category_id ?? body.subCategoryId ?? null;
+      const sub_category_name = body.sub_category_name ?? body.subCategoryName ?? null;
+      const applicable_roles = Array.isArray(body.applicable_roles) ? body.applicable_roles : (Array.isArray(body.applicableRoles) ? body.applicableRoles : []);
+      const service_style = body.service_style ?? body.serviceStyle ?? 'at_center';
+      const base_price = body.base_price ?? body.basePrice ?? 0;
+      const duration_minutes = body.duration_minutes ?? body.duration ?? 30;
+      const metadata = body.metadata ?? {};
+      const display_order = body.display_order ?? body.displayOrder ?? 0;
+      const bodySpecIds = body.specialization_ids;
+      const specializationIds = body.specializationIds;
+      const specialization_ids = Array.isArray(bodySpecIds) ? bodySpecIds : (Array.isArray(specializationIds) ? specializationIds : []);
 
       // Validation
       if (!service_id || !service_name || !applicable_roles || applicable_roles.length === 0) {
         return c.json({ 
-          error: 'service_id, service_name, and applicable_roles are required' 
+          error: 'service_id (or serviceId), service_name (or serviceName), and applicable_roles (or applicableRoles) are required' 
         }, 400);
       }
 
@@ -1120,13 +1154,14 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         sub_category_id: sub_category_id || null,
         sub_category_name: sub_category_name || null,
         applicable_roles,
-        service_style: service_style || 'at_center',
-        base_price: base_price || 0,
-        duration_minutes: duration_minutes || 30,
+        service_style: (service_style === 'centre' ? 'at_center' : service_style) || 'at_center',
+        base_price: Number(base_price) || 0,
+        duration_minutes: Number(duration_minutes) || 30,
         status: 'active',
         publish_status: 'published',
         metadata: metadata || {},
-        display_order: display_order || 0,
+        display_order: Number(display_order) || 0,
+        specialization_ids: specialization_ids.length ? specialization_ids : [],
       });
 
       return c.json({
@@ -1174,23 +1209,42 @@ export function registerServiceCatalogEndpoints(app: Hono) {
 
       const service = existing.rows[0];
 
-      // Update service
+      // Update service — accept both snake_case and camelCase so admin UIs work
       const updateData: any = {};
-      if (body.service_name !== undefined) updateData.service_name = body.service_name;
-      if (body.display_name !== undefined) updateData.display_name = body.display_name;
+      const v = (snake: any, camel: any) => snake !== undefined ? snake : camel;
+      if (v(body.service_name, body.serviceName) !== undefined) updateData.service_name = v(body.service_name, body.serviceName);
+      if (v(body.display_name, body.displayName) !== undefined) updateData.display_name = v(body.display_name, body.displayName);
       if (body.description !== undefined) updateData.description = body.description;
-      if (body.category_id !== undefined) updateData.category_id = body.category_id;
-      if (body.category_name !== undefined) updateData.category_name = body.category_name;
-      if (body.sub_category_id !== undefined) updateData.sub_category_id = body.sub_category_id;
-      if (body.sub_category_name !== undefined) updateData.sub_category_name = body.sub_category_name;
-      if (body.applicable_roles !== undefined) updateData.applicable_roles = body.applicable_roles;
-      if (body.service_style !== undefined) updateData.service_style = body.service_style;
-      if (body.base_price !== undefined) updateData.base_price = body.base_price;
-      if (body.duration_minutes !== undefined) updateData.duration_minutes = body.duration_minutes;
+      if (v(body.category_id, body.categoryId) !== undefined) updateData.category_id = v(body.category_id, body.categoryId);
+      if (v(body.category_name, body.categoryName) !== undefined) updateData.category_name = v(body.category_name, body.categoryName);
+      if (v(body.sub_category_id, body.subCategoryId) !== undefined) updateData.sub_category_id = v(body.sub_category_id, body.subCategoryId);
+      if (v(body.sub_category_name, body.subCategoryName) !== undefined) updateData.sub_category_name = v(body.sub_category_name, body.subCategoryName);
+      const applicableRoles = Array.isArray(body.applicable_roles) ? body.applicable_roles : (Array.isArray(body.applicableRoles) ? body.applicableRoles : undefined);
+      if (applicableRoles !== undefined) updateData.applicable_roles = applicableRoles;
+      const serviceStyle = body.service_style ?? body.serviceStyle;
+      if (serviceStyle !== undefined) updateData.service_style = serviceStyle === 'centre' ? 'at_center' : serviceStyle;
+      const basePrice = body.base_price ?? body.basePrice;
+      if (basePrice !== undefined) updateData.base_price = Number(basePrice);
+      const durationMinutes = body.duration_minutes ?? body.duration ?? body.durationMinutes;
+      if (durationMinutes !== undefined) updateData.duration_minutes = Number(durationMinutes);
       if (body.status !== undefined) updateData.status = body.status;
       if (body.publish_status !== undefined) updateData.publish_status = body.publish_status;
       if (body.metadata !== undefined) updateData.metadata = body.metadata;
-      if (body.display_order !== undefined) updateData.display_order = body.display_order;
+      const displayOrder = body.display_order ?? body.displayOrder;
+      if (displayOrder !== undefined) updateData.display_order = Number(displayOrder);
+      const specIds = Array.isArray(body.specialization_ids) ? body.specialization_ids : (Array.isArray(body.specializationIds) ? body.specializationIds : undefined);
+      if (specIds !== undefined) {
+        updateData.specialization_ids = specIds;
+      } else if (updateData.category_id !== undefined) {
+        // When Category is updated, dynamically infer specialization_ids so UI stays in sync
+        const newCategoryId = updateData.category_id ?? service.category_id;
+        const inferred = inferSpecializationIdsFromCategory(
+          newCategoryId,
+          updateData.service_name ?? service.service_name,
+          updateData.display_name ?? service.display_name
+        );
+        if (inferred.length > 0) updateData.specialization_ids = inferred;
+      }
 
       await update('service_catalog', { id: service.id }, updateData);
 

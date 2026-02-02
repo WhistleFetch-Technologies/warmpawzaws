@@ -2,6 +2,12 @@
 
 This directory contains all database migration scripts and utilities for the Warmpawz platform.
 
+**AWS RDS (production/staging):** Use **Node scripts in `scripts/`** to run migrations against RDS (Secrets Manager, SSL). See **`docs/IMPLEMENTATION_FLOW.md`**. Example:
+
+```bash
+ENVIRONMENT=dev node scripts/run-migration-rds-node.js 524_service_catalog_specialization_ids.sql
+```
+
 ## Setup
 
 Install dependencies:

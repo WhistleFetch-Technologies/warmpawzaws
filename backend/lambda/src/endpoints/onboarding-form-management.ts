@@ -672,9 +672,6 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
   app.get('/admin/onboarding-fields/:roleId', async (c) => {
     try {
       const { roleId } = c.req.param();
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'onboarding-form-management.ts:102',message:'Route matched - roleId extracted',data:{roleId,rawPath:c.req.path,method:c.req.method},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
 
       // Ensure onboarding_forms table exists with sections column
       await query(`

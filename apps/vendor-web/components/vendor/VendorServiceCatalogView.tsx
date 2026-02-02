@@ -268,18 +268,20 @@ export function VendorServiceCatalogView({
         if (data.allServices && Array.isArray(data.allServices)) {
           vendorServicesList = data.allServices;
         }
-        else if (data.services && typeof data.services === 'object') {
-          ['at_home', 'at_center', 'tele'].forEach(style => {
-            if (data.services[style] && data.services[style].services) {
-              vendorServicesList.push(...data.services[style].services);
+        else if (Array.isArray(data.services)) {
+          vendorServicesList = data.services;
+        }
+        else if ((data.servicesByStyle || data.services) && typeof (data.servicesByStyle || data.services) === 'object' && !Array.isArray(data.services)) {
+          const grouped = data.servicesByStyle || data.services;
+          ['at_home', 'at_center', 'tele'].forEach((style: string) => {
+            const bucket = grouped[style];
+            if (bucket?.services && Array.isArray(bucket.services)) {
+              vendorServicesList.push(...bucket.services);
             }
           });
         }
         else if (data.legacyServices && Array.isArray(data.legacyServices)) {
           vendorServicesList = data.legacyServices;
-        }
-        else if (Array.isArray(data.services)) {
-          vendorServicesList = data.services;
         }
         
         console.log('✅ [VENDOR] Parsed vendor services:', vendorServicesList.length);

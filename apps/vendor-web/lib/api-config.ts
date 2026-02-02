@@ -10,15 +10,17 @@ function getRuntimeConfig(): RuntimeConfig {
   return (window as any).__WARMPAWZ_RUNTIME_CONFIG__ || {};
 }
 
-const DEFAULT_API_BASE = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
-
+/**
+ * Get API base from runtime config or env only. Do NOT hardcode URLs.
+ * Set via runtime-config.js (injected at deploy) or NEXT_PUBLIC_API_BASE_URL.
+ */
 export function getApiBaseUrl(): string {
   const cfg = getRuntimeConfig();
   const base =
     cfg.apiBaseUrl ||
     (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) ||
     '';
-  return (base || DEFAULT_API_BASE).replace(/\/+$/, '');
+  return (base && typeof base === 'string' ? base.trim() : '').replace(/\/+$/, '');
 }
 
 /** Auth headers for API requests (Cognito id token when available). */

@@ -125,7 +125,7 @@ async function uploadWithXHR(
 ): Promise<PhotoUploadResult> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    const apiBaseUrl = getApiBaseUrl() || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    const apiBaseUrl = getApiBaseUrl();
     const url = `${apiBaseUrl}${endpoint}`;
 
     xhr.upload.addEventListener('progress', (e) => {

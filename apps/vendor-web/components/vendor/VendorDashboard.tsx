@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { clearVendorSession } from '@/lib/session-utils';
 import { CapabilityDebugOverlay } from './CapabilityDebugOverlay';
 // Removed unused import: ModuleDisabledMessage, ModuleMessages
 import { CapabilityGate } from './CapabilityGate';
@@ -267,7 +268,7 @@ export function VendorDashboard({
 
   const router = useRouter();
   
-  // ✅ NEW: Handle logout
+  // Handle logout – clear all vendor session data so login prompt and dashboard load correctly
   const handleLogout = async () => {
     if (confirm('Are you sure you want to logout?')) {
       try {
@@ -275,13 +276,8 @@ export function VendorDashboard({
       } catch (e) {
         // Ignore logout API errors
       }
-      // Clear local storage
-      localStorage.removeItem('vendorId');
-      localStorage.removeItem('vendorData');
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('refreshToken');
-      // Redirect to login
-      router.push('/auth');
+      clearVendorSession();
+      window.location.replace('/auth');
     }
   };
   
@@ -345,8 +341,8 @@ export function VendorDashboard({
         // 1. Always fetch dashboard stats
         apiClient.get(`/vendor/${vendorId}/dashboard?timeframe=${activeTab}`).catch(() => ({ success: false })),
         
-        // 2. Fetch schedule if booking enabled - USE UTILITY
-        CapabilityHelper.hasBooking(capabilities)
+        // 2. Fetch schedule for non-pharmacy vendors (all service providers receive bookings)
+        !isPharmacy
           ? apiClient.get(`/vendor/${vendorId}/bookings/today`).catch(() => ({ success: false, bookings: [] }))
           : Promise.resolve({ success: false, bookings: [] })
       ];
@@ -1178,8 +1174,8 @@ export function VendorDashboard({
               </>
             ) : (
               <>
-                {/* ✅ Stat card with role-aware labels - Hidden for Pharmacy */}
-                {capabilities.booking && (
+                {/* ✅ Stat card with role-aware labels - Always show for non-pharmacy (receive bookings) */}
+                {!isPharmacy && (
                   <button
                     key="stat-appointments"
                     onClick={() => {
@@ -1204,8 +1200,8 @@ export function VendorDashboard({
                   </div>
                 )}
 
-                {/* ✅ Sessions/Consultations Stat with role-aware labels - Hidden for Pharmacy */}
-                {(capabilities.tele || capabilities.booking) && (
+                {/* ✅ Sessions/Consultations Stat with role-aware labels - Always show for non-pharmacy */}
+                {!isPharmacy && (capabilities.tele || CapabilityHelper.hasBooking(capabilities)) && (
                   <button
                     key="stat-consultations"
                     onClick={() => {
@@ -1236,8 +1232,8 @@ export function VendorDashboard({
           </div>
         </div>
 
-        {/* 🗓️ TODAY'S SCHEDULE (Conditional) - Hidden for Pharmacy */}
-        {capabilities.booking && !isPharmacy && (
+        {/* 🗓️ TODAY'S SCHEDULE - Open appointments on landing page (always for non-pharmacy) */}
+        {!isPharmacy && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 text-center mb-3">
               {activeTab === 'today' ? labels.todayLabel : activeTab === 'week' ? `This Week's ${labels.bookings}` : `This Month's ${labels.bookings}`}
@@ -1304,7 +1300,7 @@ export function VendorDashboard({
             ) : (
               <>
                 <div className="flex items-center justify-end mb-2">
-                  <button className="text-sm text-[#FF8C42]" onClick={onNavigateToBookingManagement}>View All →</button>
+                  <button className="text-sm text-[#FF8C42]" onClick={() => { onNavigateToBookingManagement ? onNavigateToBookingManagement() : router.push('/bookings'); }}>View All →</button>
                 </div>
                 <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
                   {todaySchedule
@@ -1544,7 +1540,7 @@ export function VendorDashboard({
                 <ClipboardList className="w-6 h-6" />
                 <span className="text-xs">Orders</span>
               </button>
-            ) : capabilities.booking && (
+            ) : (
               <button 
                 onClick={() => {
                   onNavigateToBookingManagement?.();

@@ -385,37 +385,38 @@ export function VetBookingRouter({
     
     try {
       setLoading(true);
-      // ✅ CRITICAL: Use the correct endpoint that returns service_id (UUID)
-      // Try multiple endpoints to ensure we get the real data
+      const vid = vendorId || doctorId;
+      // Prefer customer endpoint so only published services with vendor price show (CRUD reflects immediately)
       let servicesResponse: any = null;
       const endpoints = [
-        `/vendor/${vendorId || doctorId}/services`,
-        `/vendor/services/${vendorId || doctorId}`,
-        `/customer/clinic/${doctorId}/services`
+        `/customer/vendor/${vid}/services`,
+        `/customer/clinic/${vid}/services`,
+        `/vendor/${vid}/services`,
+        `/vendor/services/${vid}`,
       ];
       
       for (const endpoint of endpoints) {
         try {
           servicesResponse = await apiClient.get(endpoint) as any;
-          // Check if response has services in expected format
-          if (servicesResponse?.services || servicesResponse?.allServices || (Array.isArray(servicesResponse) && servicesResponse.length > 0)) {
+          if (servicesResponse?.services?.length || servicesResponse?.allServices?.length || (Array.isArray(servicesResponse?.services) && servicesResponse.services.length > 0)) {
+            break;
+          }
+          if (servicesResponse?.services && (servicesResponse.services.at_home || servicesResponse.services.at_center || servicesResponse.services.tele)) {
             break;
           }
         } catch (e) {
-          continue; // Try next endpoint
+          continue;
         }
       }
       
       if (servicesResponse) {
-        // Extract services from different response formats
         let services: any[] = [];
         if (servicesResponse.services) {
-          // Handle servicesByStyle format
           if (servicesResponse.services.at_home || servicesResponse.services.at_center || servicesResponse.services.tele) {
             services = [
               ...(servicesResponse.services.at_home?.services || []),
               ...(servicesResponse.services.at_center?.services || []),
-              ...(servicesResponse.services.tele?.services || [])
+              ...(servicesResponse.services.tele?.services || []),
             ];
           } else if (Array.isArray(servicesResponse.services)) {
             services = servicesResponse.services;

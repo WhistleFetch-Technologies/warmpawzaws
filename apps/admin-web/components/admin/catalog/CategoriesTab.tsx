@@ -76,6 +76,7 @@ interface Specialization {
   applicableRoles?: string[];
   showInProblemGrid?: boolean;
   showInVendorProfile?: boolean;
+  showInServicesDashboard?: boolean;
 }
 
 interface Category {
@@ -302,6 +303,7 @@ function SpecializationModal({
     applicableRoles: (specialization as any)?.applicableRoles || [],
     showInProblemGrid: (specialization as any)?.showInProblemGrid ?? true,
     showInVendorProfile: (specialization as any)?.showInVendorProfile ?? true,
+    showInServicesDashboard: (specialization as any)?.showInServicesDashboard ?? true,
   });
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [iconSearch, setIconSearch] = useState('');
@@ -438,8 +440,8 @@ function SpecializationModal({
             )}
           </div>
           
-          {/* ✅ NEW: Visibility flags */}
-          <div className="flex gap-4">
+          {/* ✅ Visibility flags: control where this specialization appears (all from one place) */}
+          <div className="flex flex-wrap gap-4">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -447,7 +449,7 @@ function SpecializationModal({
                 onChange={(e) => setForm(f => ({ ...f, showInProblemGrid: e.target.checked }))}
                 className="rounded border-gray-300 text-orange-500 focus:ring-orange-500"
               />
-              <span className="text-sm text-gray-700">Show in Customer App</span>
+              <span className="text-sm text-gray-700">Show in &quot;What&apos;s your pet&apos;s need?&quot;</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -457,6 +459,15 @@ function SpecializationModal({
                 className="rounded border-gray-300 text-orange-500 focus:ring-orange-500"
               />
               <span className="text-sm text-gray-700">Show in Vendor Profile</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.showInServicesDashboard}
+                onChange={(e) => setForm(f => ({ ...f, showInServicesDashboard: e.target.checked }))}
+                className="rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+              />
+              <span className="text-sm text-gray-700">Show in Services Dashboard</span>
             </label>
           </div>
 
@@ -585,6 +596,7 @@ export function CategoriesTab() {
           applicableRoles: spec.applicableRoles || [],
           showInProblemGrid: spec.showInProblemGrid,
           showInVendorProfile: spec.showInVendorProfile,
+          showInServicesDashboard: spec.showInServicesDashboard,
         }));
         setSpecsByCategory(prev => ({ ...prev, [categoryId]: mappedSpecs }));
       }

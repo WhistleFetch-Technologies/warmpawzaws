@@ -36,8 +36,14 @@ interface UnifiedAdminSidebarProps {
 }
 
 export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSidebarProps) {
+  // Desktop (md+): sidebar open by default so "entry point" to other menus is visible. Mobile: closed.
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+
+  useEffect(() => {
+    const isDesktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
+    if (isDesktop) setOpen(true);
+  }, []);
   
   const handleSignOut = async () => {
     apiClient.clearAuth();
@@ -245,10 +251,14 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
           </div>
         </div>
 
-        {/* Bottom Items */}
+        {/* Bottom Items - Reports & Platform Settings (with active state) */}
         <div className="border-t border-gray-200 p-3 space-y-1">
           <button
-            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg transition-colors"
+            className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm rounded-lg transition-colors ${
+              activeView === 'reports'
+                ? 'text-[#FF8C42] bg-orange-50 font-medium'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            }`}
             onClick={() => {
               onNavigate('reports');
               setOpen(false);
@@ -258,7 +268,11 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
             <span>Reports</span>
           </button>
           <button
-            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 rounded-lg transition-colors"
+            className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm rounded-lg transition-colors ${
+              activeView === 'platform-settings'
+                ? 'text-[#FF8C42] bg-orange-50 font-medium'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+            }`}
             onClick={() => {
               onNavigate('platform-settings');
               setOpen(false);

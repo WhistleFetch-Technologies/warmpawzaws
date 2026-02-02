@@ -14,6 +14,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { clearVendorSession } from '@/lib/session-utils';
 import { useVendorCapabilities } from '../hooks/useVendorCapabilities';
 import { getRoleIcon, getRoleColorScheme } from '@/lib/vendor-icon-themes';
 import { hasVendorRole } from '@/lib/vendor-utils';
@@ -162,7 +163,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
     servicesNotConfigured: true,
   });
   
-  // Handle logout
+  // Handle logout – clear all vendor session data so login prompt and dashboard load correctly
   const handleLogout = async () => {
     if (confirm('Are you sure you want to logout?')) {
       try {
@@ -170,11 +171,8 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
       } catch (e) {
         // Ignore logout API errors
       }
-      localStorage.removeItem('vendorId');
-      localStorage.removeItem('vendorData');
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('refreshToken');
-      router.push('/auth');
+      clearVendorSession();
+      window.location.replace('/auth');
     }
   };
   
@@ -258,8 +256,8 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
       if (hasCustomServices || hasServiceManagement) {
         const servicesRes = await apiClient.get<any>(`/vendor/${vendorId}/services`).catch(() => ({ success: false, services: [] }));
         if (servicesRes && servicesRes.success) {
-          // Only show custom services (not from predefined catalog)
-          const customServices = (servicesRes.services || []).filter((s: any) => 
+          const servicesList = Array.isArray(servicesRes.services) ? servicesRes.services : (servicesRes.allServices || []);
+          const customServices = servicesList.filter((s: any) =>
             s.is_custom === true || s.source === 'custom' || !s.catalog_service_id
           );
           setServices(customServices);
@@ -619,8 +617,8 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
             </div>
           </div>
 
-          {/* Service Availability Note */}
-          {capabilities.booking && (
+          {/* Service Availability Note - for non-pharmacy service providers */}
+          {!isPharmacy && (
             <div className="mt-3 p-3 bg-orange-50 rounded-lg border border-orange-100">
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="w-4 h-4 text-orange-600" />
@@ -669,8 +667,8 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               </button>
             )}
             
-            {/* Schedule Management - hidden for pharmacy (Orders + Profile only) */}
-            {!isPharmacy && capabilities.booking && (
+            {/* Schedule Management - for non-pharmacy (all service providers) */}
+            {!isPharmacy && (
               <button
                 onClick={() => router.push('/solo/schedule')}
                 className="flex-1 min-w-[140px] bg-white border-2 border-green-500 text-green-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-green-500 hover:text-white transition-colors group text-center"
@@ -795,8 +793,8 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           />
         </div>
 
-        {/* Today's Schedule - Service Style Filter (No at_center for solo) */}
-        {capabilities.booking && (
+        {/* Today's Schedule - Open appointments on landing page (always for non-pharmacy) */}
+        {!isPharmacy && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 text-center mb-3">
               {activeTab === 'today' ? "Today's" : activeTab === 'week' ? 'This Week' : "This Month's"} Schedule
@@ -1000,7 +998,15 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               <span className="text-xs">Home</span>
             </button>
             
-            {capabilities.booking && (
+            {isPharmacy ? (
+              <button 
+                onClick={() => router.push('/pharmacy/orders')}
+                className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#FF8C42]"
+              >
+                <ClipboardList className="w-6 h-6" />
+                <span className="text-xs">Orders</span>
+              </button>
+            ) : (
               <button 
                 onClick={() => {
                   router.push('/bookings');

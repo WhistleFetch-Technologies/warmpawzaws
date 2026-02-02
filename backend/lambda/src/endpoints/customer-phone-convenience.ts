@@ -591,15 +591,13 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         });
       }
       
-      // ✅ FIX: Return proper error codes for connection pool exhaustion
+      // ✅ FIX: Return 200 with empty on pool exhaustion so customer home loads (non-critical)
       if (errorMessage.includes('connection pool') || errorMessage.includes('too many clients')) {
         return c.json({ 
-          success: false, 
-          error: 'Service temporarily busy. Please try again.',
-          code: 'POOL_EXHAUSTED',
+          success: true, 
           notifications: [], 
           unreadCount: 0 
-        }, 503);
+        });
       }
       
       // ✅ FIX: Return graceful fallback for other errors - don't break the UI

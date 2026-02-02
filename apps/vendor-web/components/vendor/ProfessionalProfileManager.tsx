@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { PhotoUpload } from '@/components/shared/PhotoUpload';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { AdvancedAvailabilityManager } from './AdvancedAvailabilityManager';
 
 // Specializations by role type (same as staff creation)
 const SPECIALIZATIONS_BY_ROLE: Record<string, string[]> = {
@@ -634,186 +635,13 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           </div>
         </div>
 
-        {/* Operating Hours - Enhanced Scheduling UI */}
+        {/* Availability - Advanced Scheduling only (multiple slots, service styles) */}
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <Clock className="w-5 h-5 text-blue-500" />
-              <h2 className="text-lg font-semibold">Availability Schedule</h2>
-            </div>
-            <Badge className="bg-blue-100 text-blue-700 border-blue-200">
-              {profile.availability ? 
-                Object.values(profile.availability || {}).filter((day: any) => day?.enabled).length + ' days active' 
-                : 'Not set'
-              }
-            </Badge>
-          </div>
-          
-          {/* Quick Setup Option */}
-          <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium text-gray-900">Quick Setup</p>
-                <p className="text-sm text-gray-600">Apply same hours to all weekdays</p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  const weekdaySchedule = {
-                    monday: { enabled: true, slots: [{ start: '09:00', end: '18:00' }] },
-                    tuesday: { enabled: true, slots: [{ start: '09:00', end: '18:00' }] },
-                    wednesday: { enabled: true, slots: [{ start: '09:00', end: '18:00' }] },
-                    thursday: { enabled: true, slots: [{ start: '09:00', end: '18:00' }] },
-                    friday: { enabled: true, slots: [{ start: '09:00', end: '18:00' }] },
-                    saturday: { enabled: true, slots: [{ start: '09:00', end: '14:00' }] },
-                    sunday: { enabled: false, slots: [] }
-                  };
-                  handleInputChange('availability', weekdaySchedule);
-                  handleInputChange('operating_hours', 'Mon-Fri: 9 AM - 6 PM, Sat: 9 AM - 2 PM');
-                  toast.success('Standard schedule applied!');
-                }}
-                className="bg-white hover:bg-blue-50"
-              >
-                Apply Standard Hours
-              </Button>
-            </div>
-          </div>
-
-          {/* Day-by-Day Schedule */}
-          <div className="space-y-3">
-            {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day) => {
-              const dayKey = day.toLowerCase() as keyof typeof profile.availability;
-              const dayData = profile.availability?.[dayKey] || { enabled: false, slots: [] };
-              
-              return (
-                <div 
-                  key={day} 
-                  className={`p-4 rounded-xl border-2 transition-all ${
-                    dayData.enabled 
-                      ? 'border-blue-200 bg-blue-50/50' 
-                      : 'border-gray-100 bg-gray-50/50'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newAvailability = {
-                            ...profile.availability,
-                            [dayKey]: {
-                              enabled: !dayData.enabled,
-                              slots: !dayData.enabled && (!dayData.slots || dayData.slots.length === 0)
-                                ? [{ start: '09:00', end: '18:00' }]
-                                : dayData.slots
-                            }
-                          };
-                          handleInputChange('availability', newAvailability);
-                        }}
-                        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
-                          dayData.enabled 
-                            ? 'bg-blue-500 border-blue-500' 
-                            : 'bg-white border-gray-300'
-                        }`}
-                      >
-                        {dayData.enabled && (
-                          <CheckCircle className="w-4 h-4 text-white" />
-                        )}
-                      </button>
-                      <span className={`font-medium ${dayData.enabled ? 'text-gray-900' : 'text-gray-400'}`}>
-                        {day}
-                      </span>
-                    </div>
-                    
-                    {dayData.enabled && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const newSlots = [...(dayData.slots || []), { start: '09:00', end: '18:00' }];
-                          handleInputChange('availability', {
-                            ...profile.availability,
-                            [dayKey]: { ...dayData, slots: newSlots }
-                          });
-                        }}
-                        className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                      >
-                        + Add Slot
-                      </button>
-                    )}
-                  </div>
-                  
-                  {/* Time Slots */}
-                  {dayData.enabled && dayData.slots && dayData.slots.length > 0 && (
-                    <div className="mt-3 space-y-2 pl-9">
-                      {dayData.slots.map((slot: { start: string; end: string }, idx: number) => (
-                        <div key={idx} className="flex items-center gap-2">
-                          <input
-                            type="time"
-                            value={slot.start}
-                            onChange={(e) => {
-                              const newSlots = [...dayData.slots];
-                              newSlots[idx] = { ...newSlots[idx], start: e.target.value };
-                              handleInputChange('availability', {
-                                ...profile.availability,
-                                [dayKey]: { ...dayData, slots: newSlots }
-                              });
-                            }}
-                            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
-                          />
-                          <span className="text-gray-400">to</span>
-                          <input
-                            type="time"
-                            value={slot.end}
-                            onChange={(e) => {
-                              const newSlots = [...dayData.slots];
-                              newSlots[idx] = { ...newSlots[idx], end: e.target.value };
-                              handleInputChange('availability', {
-                                ...profile.availability,
-                                [dayKey]: { ...dayData, slots: newSlots }
-                              });
-                            }}
-                            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
-                          />
-                          {dayData.slots.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newSlots = dayData.slots.filter((_: any, i: number) => i !== idx);
-                                handleInputChange('availability', {
-                                  ...profile.availability,
-                                  [dayKey]: { ...dayData, slots: newSlots }
-                                });
-                              }}
-                              className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  
-                  {!dayData.enabled && (
-                    <p className="mt-2 text-xs text-gray-400 pl-9">Not available</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          
-          {/* Legacy Text Field (Hidden but saved for backward compatibility) */}
-          <input
-            type="hidden"
-            value={profile.operating_hours || ''}
-            onChange={(e) => handleInputChange('operating_hours', e.target.value)}
+          <AdvancedAvailabilityManager
+            vendorId={vendorId}
+            vendorData={{ ...initialProfile, vendorType: 'solo', id: vendorId, isSoloProvider: true }}
+            onBack={onBack ?? (() => {})}
           />
-          
-          <p className="text-xs text-gray-500 mt-4 flex items-center gap-1">
-            <Clock className="w-3 h-3" />
-            Customers will see your availability when booking appointments
-          </p>
         </div>
 
         {/* Save Button (if changes) */}

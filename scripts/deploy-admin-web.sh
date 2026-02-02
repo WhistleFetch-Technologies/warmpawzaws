@@ -17,12 +17,16 @@ done
 
 echo "🚀 Deploying admin-web to AWS dev environment..."
 
-# Configuration - ONLY official CloudFront URLs (do not create or discover new URLs)
-# Official Admin: https://dfof7mguaa0a5.cloudfront.net
+# Configuration: read from config/urls.json or env only (no hardcoded URLs)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_NAME="admin-web"
 S3_BUCKET="warmpawz-dev-admin-frontend-ap-south-1"
 CLOUDFRONT_DIST_ID="E1WPXL8WBOWOE8"
-CLOUDFRONT_URL="https://dfof7mguaa0a5.cloudfront.net"
+if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
+  CLOUDFRONT_URL="${CLOUDFRONT_URL:-$(jq -r '.cloudfront.admin // empty' "$PROJECT_ROOT/config/urls.json")}"
+fi
+CLOUDFRONT_URL="${CLOUDFRONT_URL:-}"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -31,8 +35,6 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Step 1: Build the app (skip only when --deploy-only was passed and dist exists)
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT/apps/${APP_NAME}"
 
 if [ "$DEPLOY_ONLY" = true ] && [ -d "dist" ]; then
@@ -51,38 +53,52 @@ else
   echo -e "${GREEN}✅ Build completed successfully${NC}"
 fi
 
-# Step 1.5: Inject runtime-config.js
+# Step 1.5: Inject runtime-config.js with API Gateway URL (API calls must go to backend, not CloudFront)
 echo -e "${BLUE}🔧 Injecting runtime-config.js...${NC}"
 cd "$PROJECT_ROOT"
-
-# Get API Gateway endpoint (HTTP API v2)
-# The warmpawz API is an HTTP API (v2), so we use apigatewayv2
-API_ENDPOINT=$(aws apigatewayv2 get-apis --region ap-south-1 \
-  --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" \
-  --output text 2>/dev/null | head -1 || echo "")
-
-if [ -n "$API_ENDPOINT" ] && [ "$API_ENDPOINT" != "None" ]; then
-  echo -e "${GREEN}✅ API Gateway endpoint: $API_ENDPOINT${NC}"
-else
-  # Fallback to known API Gateway endpoint
-  API_ENDPOINT="https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"
-  echo -e "${YELLOW}⚠️  Using fallback API endpoint: $API_ENDPOINT${NC}"
+# Resolve API Gateway URL so /admin/categories, /admin/roles etc. hit the backend, not Admin CloudFront (which serves HTML)
+# Prefer CDK outputs (source of truth for dev) to avoid wrong API from AWS CLI when multiple APIs exist
+API_BASE_URL=""
+CDK_OUTPUTS="$PROJECT_ROOT/infrastructure/cdk/cdk-outputs.json"
+if [ -f "$CDK_OUTPUTS" ] && command -v jq &>/dev/null; then
+  API_BASE_URL=$(jq -r '.["WarmpawzStack-dev"].ApiGatewayUrl // empty' "$CDK_OUTPUTS")
 fi
+if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; then
+  if command -v aws &>/dev/null; then
+    API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
+  fi
+  if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
+    if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
+      API_BASE_URL=$(jq -r '.apiGatewayDefaultUrl // empty' "$PROJECT_ROOT/config/urls.json")
+    fi
+    if [ -z "$API_BASE_URL" ]; then
+      echo -e "${YELLOW}⚠️  API Gateway URL not found. Set in config/urls.json (apiGatewayDefaultUrl) or run CDK deploy first.${NC}"
+      exit 1
+    fi
+    echo -e "${YELLOW}⚠️  Using API Gateway URL from config: $API_BASE_URL${NC}"
+  else
+    echo -e "${GREEN}✅ API Gateway endpoint (from AWS): $API_BASE_URL${NC}"
+  fi
+else
+  echo -e "${GREEN}✅ API Gateway endpoint (from cdk-outputs.json): $API_BASE_URL${NC}"
+fi
+# Ensure no trailing slash
+API_BASE_URL="${API_BASE_URL%/}"
 
 # Inject runtime-config.js into dist folder
 cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
 // Runtime Configuration for Warmpawz ${APP_NAME}
-// Injected at deployment time with actual API Gateway endpoint
+// Injected at deployment - API base is API Gateway (backend), not CloudFront
 (function() {
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-    apiBaseUrl: "${API_ENDPOINT}",
+    apiBaseUrl: "${API_BASE_URL}",
     uatMode: true
   };
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
 EOF
 
-echo -e "${GREEN}✅ runtime-config.js injected${NC}"
+echo -e "${GREEN}✅ runtime-config.js injected (apiBaseUrl -> API Gateway)${NC}"
 
 # Step 2: Deploy to S3
 echo -e "${BLUE}📤 Uploading to S3 bucket: ${S3_BUCKET}...${NC}"

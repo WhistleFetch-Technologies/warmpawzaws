@@ -46,19 +46,13 @@ export function EnhancedSearchBar({
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
-  // Get user location
+  // Get user location (silent fallback when permission denied)
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-        },
-        (error) => console.log('Location access denied:', error)
-      );
-    }
+    const { getCurrentPositionSafe } = require('@/lib/geolocation-utils');
+    getCurrentPositionSafe(
+      (coords: { lat: number; lng: number }) => setUserLocation(coords),
+      () => {} // Fallback handled by onSuccess with default coords
+    );
   }, []);
 
   // Load recent searches and suggestions

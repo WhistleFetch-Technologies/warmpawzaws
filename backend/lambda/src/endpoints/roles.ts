@@ -191,27 +191,47 @@ class GetRolesHandler extends BaseHandler {
   }
 }
 
+/** Normalize role id from path: trim and strip optional { } so UUID matches DB. */
+function normalizeRoleIdFromPath(roleId: string): string {
+  const s = (roleId || '').trim();
+  if (s.length >= 38 && s.startsWith('{') && s.endsWith('}')) {
+    return s.slice(1, -1).trim();
+  }
+  return s;
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 class GetRoleByIdHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const roleId = context.event.pathParameters?.roleId;
+    const rawRoleId = context.event.pathParameters?.roleId;
+    const roleId = normalizeRoleIdFromPath(rawRoleId ?? '');
 
     if (!roleId) {
       return this.error('Role ID is required', 400);
     }
 
-    // ✅ FIX: Support both UUID and role name (after migration vendors may pass name)
-    let roles = await select('roles', { id: roleId });
+    let roles: any[] = [];
+    const isUuid = UUID_REGEX.test(roleId);
+
+    if (isUuid) {
+      // API contract: GET /config/roles/:id — resolve by primary key from DB (active roles only, same as list)
+      const byId = await query(
+        `SELECT * FROM roles WHERE id = $1::uuid AND is_active = true LIMIT 1`,
+        [roleId]
+      );
+      if (byId?.rows?.length) roles = byId.rows;
+    }
+
     if (roles.length === 0) {
-      // Fallback: lookup by name (canonical role names: walker, vet_clinic, groomer_solo, etc.)
-      const roleNameNorm = (roleId || '').toLowerCase().trim().replace(/\s+/g, '_');
-      roles = await select('roles', { name: roleNameNorm });
+      // Fallback: lookup by name (role code) — canonical names e.g. groomer_solo, vet_clinic
+      const roleNameNorm = roleId.toLowerCase().replace(/\s+/g, '_');
+      roles = await select('roles', { name: roleNameNorm, is_active: true });
     }
     if (roles.length === 0) {
-      // Try display_name or case-insensitive name
-      const roleNameNorm = (roleId || '').toLowerCase().trim().replace(/\s+/g, '_');
       const byName = await query(
         `SELECT * FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1`,
-        [roleNameNorm || roleId]
+        [roleId]
       );
       if (byName?.rows?.length) roles = byName.rows;
     }

@@ -13,7 +13,7 @@ import { VendorServiceCatalogView } from './VendorServiceCatalogView';
 import { getVendorRoleId, hasVendorRole } from '@/lib/vendor-utils';
 import { getServiceStyleLabelForRole } from '@/lib/service-style-labels';
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
-import { CapabilityHelper } from '@/lib/capability-helper';
+import CapabilityHelper from '@/lib/capability-helper';
 
 interface VendorServiceManagementCompleteProps {
   vendorId: string;
@@ -107,16 +107,8 @@ export function VendorServiceManagementComplete({
       setLoadingRoleConfig(true);
       console.log('🔧 [ROLE-CONFIG] Loading allowed service styles for vendor:', vendorId);
       
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'VendorServiceManagementComplete.tsx:78',message:'Starting role config API call',data:{vendorId,endpoint:`/vendor/${vendorId}/services`,retryCount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
-      
       // ✅ FIX: Use /vendor/:vendorId/services endpoint (now includes role config and allowedServiceStyles)
       const data = await apiClient.get(`/vendor/${vendorId}/services`) as any;
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'VendorServiceManagementComplete.tsx:81',message:'Role config API call completed',data:{success:data?.success,hasData:!!data,error:data?.error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
 
       if (data && data.success) {
         console.log('✅ [ROLE-CONFIG] API Response:', data);
@@ -198,17 +190,17 @@ export function VendorServiceManagementComplete({
           tele: 0
         };
         
-        // ✅ FIX B3: Fix double-counting - use grouped services OR allServices, not both
-        if (data.services) {
-          // Services grouped by style - use this as primary source
-          if (data.services.at_home) {
-            counts.at_home = data.services.at_home.count || data.services.at_home.services?.length || 0;
+        // ✅ FIX B3: Use servicesByStyle (grouped) for counts; backend returns services = array, servicesByStyle = grouped
+        const grouped = data.servicesByStyle || data.services;
+        if (grouped && typeof grouped === 'object' && !Array.isArray(grouped)) {
+          if (grouped.at_home) {
+            counts.at_home = grouped.at_home.count ?? grouped.at_home.services?.length ?? 0;
           }
-          if (data.services.at_center) {
-            counts.at_center = data.services.at_center.count || data.services.at_center.services?.length || 0;
+          if (grouped.at_center) {
+            counts.at_center = grouped.at_center.count ?? grouped.at_center.services?.length ?? 0;
           }
-          if (data.services.tele) {
-            counts.tele = data.services.tele.count || data.services.tele.services?.length || 0;
+          if (grouped.tele) {
+            counts.tele = grouped.tele.count ?? grouped.tele.services?.length ?? 0;
           }
         }
         
@@ -280,10 +272,6 @@ export function VendorServiceManagementComplete({
         setRoleConfig({});
       }
     } catch (error: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'VendorServiceManagementComplete.tsx:162',message:'Role config API call failed',data:{errorType:error?.name,errorMessage:error?.message,isCorsError:error?.message?.includes('CORS'),isRateLimit:error?.isRateLimit || error?.statusCode===429,statusCode:error?.statusCode || error?.response?.status,retryCount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
-      
       // ✅ FIX: Handle rate limiting with retry logic
       if (error?.isRateLimit || error?.statusCode === 429) {
         const retryAfter = error?.retryAfter || 5;
@@ -440,7 +428,7 @@ export function VendorServiceManagementComplete({
 
         {/* ✅ FIX: Platform Catalog Section - Show at top for easy access */}
         {/* ✅ FIX: Show Browse Catalog for any vendor with catalog, booking, OR services capability (post-migration canonical roles) */}
-        {(capabilities.catalog || capabilities.booking || capabilities.services || CapabilityHelper.hasCapability(capabilities, 'services')) && (
+        {((capabilities || {}).catalog || (capabilities || {}).booking || (capabilities || {}).services || CapabilityHelper.hasCapability(capabilities, 'services')) && (
           <div className="p-4">
             <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl p-6 text-white">
               <div className="flex items-start justify-between mb-4">

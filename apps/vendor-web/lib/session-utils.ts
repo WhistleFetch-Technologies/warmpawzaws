@@ -101,7 +101,8 @@ export function isHardRefresh(): boolean {
 }
 
 /**
- * Clear all vendor session data
+ * Clear all vendor session data (login and logout).
+ * Ensures no stale temp_vendor_ or partial data remains so auth prompt and dashboard load correctly.
  */
 export function clearVendorSession(): void {
   if (typeof window === 'undefined') return;
@@ -110,10 +111,14 @@ export function clearVendorSession(): void {
   localStorage.removeItem('vendorId');
   localStorage.removeItem('authToken');
   localStorage.removeItem('vendorSessionToken');
+  localStorage.removeItem('vendorAuthToken');
   localStorage.removeItem('vendorData');
   localStorage.removeItem('vendorUser');
   localStorage.removeItem('vendorApplicationStatus');
-  localStorage.removeItem('vendorRole'); // ✅ FIX: Clear roleId to prevent stale data
+  localStorage.removeItem('vendorRole');
+  localStorage.removeItem('vendorName');
+  localStorage.removeItem('businessName');
+  localStorage.removeItem('vendorCountryCode');
   
   // Clear Cognito tokens
   localStorage.removeItem('vendorTokenExpiry');
@@ -121,7 +126,13 @@ export function clearVendorSession(): void {
   localStorage.removeItem('cognitoIdToken');
   localStorage.removeItem('cognitoRefreshToken');
   
-  // ✅ FIX: Clear capability cache from sessionStorage
+  // Clear session flags so next load shows login prompt instead of redirecting
+  sessionStorage.removeItem('_warmpawz_vendor_has_session');
+  sessionStorage.removeItem('_warmpawz_vendor_just_logged_in');
+  sessionStorage.removeItem('_warmpawz_vendor_session_cleared');
+  sessionStorage.removeItem('_vendor_redirected_to_auth');
+  
+  // Clear capability cache from sessionStorage
   try {
     const keys = Object.keys(sessionStorage);
     keys.forEach(key => {
@@ -132,6 +143,24 @@ export function clearVendorSession(): void {
   } catch (e) {
     // Ignore errors
   }
+}
+
+/**
+ * Check if current session is a stale temp_vendor_ session (e.g. leftover from a previous visit).
+ * When true, we should clear and show login so the user gets the actual auth prompt.
+ * Do NOT treat as stale when we have a valid token (fresh login after OTP).
+ */
+export function isStaleTempVendorSession(token: string | null): boolean {
+  if (typeof window === 'undefined') return false;
+  const vendorId = localStorage.getItem('vendorId');
+  const justLoggedIn = sessionStorage.getItem('_warmpawz_vendor_just_logged_in');
+  if (!vendorId || !vendorId.startsWith('temp_vendor_')) return false;
+  // Right after OTP we set just_logged_in and redirect; if flag is set, never treat as stale
+  if (justLoggedIn === 'true') return false;
+  // If we have a valid (non-expired) token, assume fresh login — don't clear and send back to auth
+  if (token && token.length >= 10 && !isTokenExpired(token)) return false;
+  // Stale: temp_vendor_ + no just_logged_in flag + no valid token
+  return true;
 }
 
 /**
@@ -185,7 +214,7 @@ export function isTokenExpired(token: string | null): boolean {
       return false;
     }
     
-    // Standard JWT token validation
+    // Standard JWT token validation (JWT uses base64url; atob needs standard base64)
     const parts = token.split('.');
     if (parts.length !== 3) {
       // Not a JWT, but also not a recognized session token
@@ -193,8 +222,9 @@ export function isTokenExpired(token: string | null): boolean {
       console.log('[TokenExpiry] Unknown token format, assuming valid (backend will validate)');
       return false;
     }
-    
-    const payload = JSON.parse(atob(parts[1]));
+    const base64Payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padding = base64Payload.length % 4 ? '='.repeat(4 - (base64Payload.length % 4)) : '';
+    const payload = JSON.parse(atob(base64Payload + padding));
     if (!payload.exp) {
       // No expiry in JWT, assume valid
       console.log('[TokenExpiry] JWT without exp claim, assuming valid');

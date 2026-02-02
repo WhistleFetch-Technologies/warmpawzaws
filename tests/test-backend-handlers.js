@@ -115,23 +115,32 @@ if (!staffEndpointsContent) {
         logFail('registerStaffEndpoints function not exported');
     }
     
-    // Check for individual endpoints
-    const endpoints = [
+    // Check for individual endpoints (staff.ts)
+    const staffOnlyEndpoints = [
         { pattern: 'app\\.get.*"/staff/:staffId/appointments"', name: 'GET /staff/:staffId/appointments' },
         { pattern: 'app\\.put.*"/staff/:staffId/appointments/:bookingId/accept"', name: 'PUT /staff/:staffId/appointments/:bookingId/accept' },
         { pattern: 'app\\.put.*"/staff/:staffId/appointments/:bookingId/reject"', name: 'PUT /staff/:staffId/appointments/:bookingId/reject' },
         { pattern: 'app\\.put.*"/staff/:staffId/appointments/:bookingId/start"', name: 'PUT /staff/:staffId/appointments/:bookingId/start' },
         { pattern: 'app\\.put.*"/staff/:staffId/appointments/:bookingId/complete"', name: 'PUT /staff/:staffId/appointments/:bookingId/complete' },
-        { pattern: 'app\\.get.*"/vendor/:vendorId/staff"', name: 'GET /vendor/:vendorId/staff' },
     ];
-    
-    endpoints.forEach(({ pattern, name }) => {
+    staffOnlyEndpoints.forEach(({ pattern, name }) => {
         if (checkPattern(staffEndpointsContent, pattern, name)) {
             logPass(`Endpoint defined: ${name}`);
         } else {
             logFail(`Endpoint missing: ${name}`);
         }
     });
+
+    // GET /vendor/:vendorId/staff may be in staff.ts or vendor-dashboard-missing.ts (used by vendor-web)
+    const vendorStaffPath = 'backend/lambda/src/endpoints/vendor-dashboard-missing.ts';
+    const vendorStaffContent = readFile(vendorStaffPath);
+    const vendorStaffDefined = checkPattern(staffEndpointsContent, 'app\\.get.*"/vendor/:vendorId/staff"', 'GET /vendor/:vendorId/staff') ||
+        (vendorStaffContent && checkPattern(vendorStaffContent, 'app\\.get.*"/vendor/:vendorId/staff"', 'GET /vendor/:vendorId/staff'));
+    if (vendorStaffDefined) {
+        logPass('Endpoint defined: GET /vendor/:vendorId/staff');
+    } else {
+        logFail('Endpoint missing: GET /vendor/:vendorId/staff');
+    }
 }
 
 // Check bookings endpoint

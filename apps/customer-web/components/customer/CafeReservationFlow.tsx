@@ -82,9 +82,14 @@ export function CafeReservationFlow(props: CafeReservationFlowProps) {
         return;
       }
 
-      // Get cafe reservation service
-      const servicesResponse = await apiClient.get<any>(`/vendor/${vendorId}/services`);
-      const allServices = servicesResponse.services || servicesResponse || [];
+      // Prefer customer endpoint (only published, vendor price)
+      let servicesResponse: any;
+      try {
+        servicesResponse = await apiClient.get<any>(`/customer/vendor/${vendorId}/services`);
+      } catch {
+        servicesResponse = await apiClient.get<any>(`/vendor/${vendorId}/services`);
+      }
+      const allServices = servicesResponse?.services || servicesResponse || [];
       const cafeService = allServices.find((s: any) => 
         s.serviceType === 'cafe' || 
         s.name?.toLowerCase().includes('reservation') ||

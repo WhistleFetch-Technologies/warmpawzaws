@@ -32,16 +32,32 @@ import {
   sortItemsWithinCategory 
 } from '@/lib/service-ordering-config';
 
-// Map API categoryId to our category slug and roleId for display
+// Map API categoryId (from specialization_master) to category slug and roleId for display
+// When admin adds a specialization in Categories tab, category_id drives this mapping
 const CATEGORY_ID_TO_SLUG: Record<string, { category: string; roleId: string }> = {
   veterinary: { category: 'vet', roleId: 'veterinarian' },
+  vet: { category: 'vet', roleId: 'veterinarian' },
   grooming: { category: 'grooming', roleId: 'groomer' },
   training: { category: 'training', roleId: 'trainer' },
   walking: { category: 'walker', roleId: 'walker' },
+  walker: { category: 'walker', roleId: 'walker' },
   boarding: { category: 'boarding', roleId: 'boarding' },
   behavioral: { category: 'behavioral', roleId: 'behaviorist' },
+  behaviour: { category: 'behavioral', roleId: 'behaviorist' },
   wellness: { category: 'nutrition', roleId: 'nutritionist' },
   nutrition: { category: 'nutrition', roleId: 'nutritionist' },
+  diagnostic: { category: 'vet', roleId: 'veterinarian' },
+  diagnostics: { category: 'vet', roleId: 'veterinarian' },
+  shop: { category: 'shop', roleId: 'seller' },
+  cafe: { category: 'cafe', roleId: 'pet_cafe' },
+  photography: { category: 'photography', roleId: 'pet_photographer' },
+  insurance: { category: 'insurance', roleId: 'pet_insurance' },
+  ambulance: { category: 'ambulance', roleId: 'pet_ambulance' },
+  breeder: { category: 'breeder', roleId: 'pet_breeder' },
+  relocation: { category: 'relocation', roleId: 'pet_taxi' },
+  resort: { category: 'resort', roleId: 'pet_resort' },
+  sunset: { category: 'sunset', roleId: 'pet_sunset_services' },
+  adoption: { category: 'adoption', roleId: 'pet_shelter' },
 };
 
 function DynamicProblemIcon({ iconName, iconColor }: { iconName?: string; iconColor?: string }) {
@@ -59,6 +75,7 @@ interface LocalProblem {
   category: string;
   roleId: string;
   priority: number; // Lower number = shown first (1-20: daily, 21-40: regular, 41+: specialty)
+  allowedServiceStyles?: string[]; // From specialization_master; used to filter booking flow
 }
 
 interface ProblemGridNavigationProps {
@@ -105,7 +122,8 @@ const mapProblemsWithCategory = (problems: any[], category: string, roleId: stri
       icon: p.icon,
       category,
       roleId,
-      priority: p.priority ?? 50 // Use item's priority or default to middle
+      priority: p.priority ?? 50,
+      allowedServiceStyles: ['at_center', 'at_home', 'tele'],
     }));
 };
 
@@ -140,6 +158,7 @@ export function ProblemGridNavigation({
               category: slug.category,
               roleId: slug.roleId,
               priority: p.displayOrder ?? 50,
+              allowedServiceStyles: p.allowedServiceStyles || ['at_center', 'at_home', 'tele'],
             };
           });
         if (!cancelled) setApiProblems(mapped);
@@ -196,7 +215,8 @@ export function ProblemGridNavigation({
       title: problem.name,
       name: problem.name,
       roleId: problem.roleId,
-      category: problem.category
+      category: problem.category,
+      allowedServiceStyles: problem.allowedServiceStyles,
     });
   };
 

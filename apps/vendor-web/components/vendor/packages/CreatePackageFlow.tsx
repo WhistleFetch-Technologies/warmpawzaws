@@ -187,7 +187,8 @@ export function CreatePackageFlow({
       const response = await apiClient.get<any>(`/vendor/${vendorId}/services/enabled`);
 
       if (response.success) {
-        setAvailableServices(response.services || []);
+        const list = Array.isArray(response.services) ? response.services : (response.allServices || []);
+        setAvailableServices(list);
       }
     } catch (error) {
       console.error('Error loading services:', error);

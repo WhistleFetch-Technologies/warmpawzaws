@@ -5,23 +5,22 @@
  * should use this or align to these paths. Backend: backend/lambda (API Gateway).
  */
 
-/** Default API base (API Gateway). Override via env in each app. */
-const DEFAULT_API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  process.env.VITE_API_BASE_URL ||
-  process.env.REACT_APP_API_BASE_URL ||
-  process.env.API_BASE_URL ||
-  'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
-
 /**
- * Get API base URL (no trailing slash).
- * Browser apps: use runtime-config.js or NEXT_PUBLIC_* / VITE_*.
+ * Get API base URL (no trailing slash). Do NOT hardcode URLs.
+ * Set via runtime-config.js (injected at deploy) or env: NEXT_PUBLIC_API_BASE_URL, VITE_API_BASE_URL, REACT_APP_API_BASE_URL, API_BASE_URL.
  */
 export function getApiBaseUrl(): string {
   if (typeof window !== 'undefined' && (window as any).__WARMPAWZ_RUNTIME_CONFIG__?.apiBaseUrl) {
-    return ((window as any).__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl as string).replace(/\/+$/, '');
+    const u = ((window as any).__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl as string)?.trim?.() || '';
+    return u.replace(/\/+$/, '');
   }
-  return DEFAULT_API_BASE.replace(/\/+$/, '');
+  const fromEnv =
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    process.env.VITE_API_BASE_URL ||
+    process.env.REACT_APP_API_BASE_URL ||
+    process.env.API_BASE_URL ||
+    '';
+  return (typeof fromEnv === 'string' ? fromEnv.trim() : '').replace(/\/+$/, '');
 }
 
 /** Endpoint path constants (backend/lambda). Use with getApiBaseUrl() + path. */

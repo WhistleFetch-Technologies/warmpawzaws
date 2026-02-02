@@ -167,11 +167,20 @@ export function HomeServiceProviderProfile({
         return;
       }
 
-      // Load services
+      // Load services (prefer customer endpoint so only published + vendor price)
       let services: any[] = [];
       try {
-        const servicesData = await apiClient.get<{ services: any[] }>(`/vendor/${vendorId}/services`);
-        services = servicesData.services || [];
+        let servicesData: any;
+        try {
+          servicesData = await apiClient.get<{ success?: boolean; services?: any[] }>(`/customer/vendor/${vendorId}/services`);
+        } catch {
+          servicesData = await apiClient.get<{ services: any[] }>(`/vendor/${vendorId}/services`);
+        }
+        if (servicesData?.services && Array.isArray(servicesData.services)) {
+          services = servicesData.services;
+        } else if (Array.isArray(servicesData)) {
+          services = servicesData;
+        }
         console.log(`📦 [HOME-SERVICE-PROFILE] Found ${services.length} services`);
       } catch (e) {
         console.log('No services found');

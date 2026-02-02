@@ -60,7 +60,7 @@ export default function PricingPage() {
     try {
       setLoading(true);
       const response = await apiClient.get<any>(`/vendor/${vendorId}/services`);
-      const servicesData = response.services || [];
+      const servicesData = Array.isArray(response.services) ? response.services : (response.allServices || []);
       setServices(servicesData);
       
       // Initialize pricing state

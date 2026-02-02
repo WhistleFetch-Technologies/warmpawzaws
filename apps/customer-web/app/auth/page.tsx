@@ -225,13 +225,16 @@ function AuthPageContent() {
             const profile = profileResponse.profile;
             const onboardingStatus = profile.onboarding_status || profile.onboardingStatus || 'INIT';
             const profileCompleted = profile.profile_completed || profile.onboardingComplete || false;
-            const hasName = !!profile.name && profile.name !== `Customer ${phone.slice(-4)}`;
+            const nameVal = profile.name || profile.full_name || '';
+            const hasName = !!nameVal && String(nameVal).trim() !== '' && nameVal !== `Customer ${phone.slice(-4)}`;
+            const hasBookings = (profile.bookings?.length || 0) > 0;
             
             console.log('📊 [Auth] Profile check:', {
               onboardingStatus,
               profileCompleted,
               hasName,
-              name: profile.name
+              hasBookings,
+              name: profile.name || profile.full_name
             });
             
             // Store in localStorage for CustomerApp to use
@@ -253,15 +256,12 @@ function AuthPageContent() {
               // No pets yet - this is OK
             }
             
-            // ✅ FIX: Customer is onboarded if:
-            // 1. Status is COMPLETED, OR
-            // 2. profile_completed is true, OR  
-            // 3. They have a real name AND have pets (legacy data fix)
-            // 4. They have a profile with name (even without pets, if they've used the app before)
+            // ✅ FIX: Customer is onboarded if: backend says COMPLETED, or has profile+name, or has usage (bookings/pets)
             const isOnboarded = onboardingStatus === 'COMPLETED' || 
                                profileCompleted || 
                                (hasName && hasPets) ||
-                               (hasName && profile.id); // If they have a name and profile ID, they've been onboarded
+                               (hasName && profile.id) ||
+                               (profile.id && hasBookings);
             
             console.log('🎯 [Auth] Onboarding decision:', { isOnboarded, onboardingStatus, profileCompleted, hasName, hasPets });
             

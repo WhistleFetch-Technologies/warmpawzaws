@@ -110,23 +110,13 @@ export function HomeServiceProviderListView({
   const [sortBy, setSortBy] = useState<SortOption>('relevance');
   const [verifiedOnly, setVerifiedOnly] = useState(false);
 
-  // Get user location on mount
+  // Get user location on mount (silent fallback when permission denied)
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-        },
-        (error) => {
-          console.warn('Could not get location:', error);
-          // Default to a central location
-          setUserLocation({ lat: 12.9716, lng: 77.5946 });
-        }
-      );
-    }
+    const { getCurrentPositionSafe, DEFAULT_COORDS } = require('@/lib/geolocation-utils');
+    getCurrentPositionSafe(
+      (coords: { lat: number; lng: number }) => setUserLocation(coords),
+      () => setUserLocation(DEFAULT_COORDS)
+    );
   }, []);
 
   // Load providers when location is available

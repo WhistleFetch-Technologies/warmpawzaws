@@ -119,12 +119,11 @@ export function VendorServiceConfigurationScreen({
     }
   }, [isSoloProvider, serviceStyle, onBack]);
   
-  // Check if this vendor can control pricing based on role config
-  const canControlPrice = roleConfig?.pricingControl?.canControlPrice || false;
-  const canControlDuration = roleConfig?.pricingControl?.canControlDuration || false;
-  
-  // For at_center, check if pricing is allowed
-  const canEditPricing = serviceStyle === 'at_center' && canControlPrice;
+  // Next-gen CRUD: Vendors can edit price/duration for ALL services (catalog + custom, all styles).
+  // No platform price control — vendor-set price reflects immediately on customer web.
+  const canControlPrice = roleConfig?.pricingControl?.canControlPrice ?? true;
+  const canControlDuration = roleConfig?.pricingControl?.canControlDuration ?? true;
+  const canEditPricing = true; // Allow price edit for all services including catalog; no platform control
 
   useEffect(() => {
     // Don't load services if solo provider trying to access at_center
@@ -575,8 +574,9 @@ export function VendorServiceConfigurationScreen({
       setSaving(true);
       console.log('💾 Saving service configuration...');
       
-      // ✅ NEW: Validate services before saving
-      const servicesToSave = services.map(s => ({
+      // Only save services that have a vendor_services row (vendor-added or custom); catalog-not-added would 404 on PUT
+      const servicesWithVendorRow = services.filter(s => s.isVendorEnabled !== false);
+      const servicesToSave = servicesWithVendorRow.map(s => ({
         serviceId: s.id,
         serviceName: s.name || s.serviceName || 'Unnamed Service',
         isEnabled: s.isEnabled,
@@ -600,18 +600,17 @@ export function VendorServiceConfigurationScreen({
         return false;
       }
 
-      // Update services individually or in batch
-      // For now, update each service that has changes
-      const updatePromises = servicesToSave
-        .filter(s => s.isEnabled || s.customPrice || s.customDuration)
-        .map(service => 
-          apiClient.put(`/vendor/${vendorId}/services/${service.serviceId}`, {
-            is_enabled: service.isEnabled,
-            custom_price: service.customPrice,
-            custom_duration: service.customDuration,
-            description: service.customDescription
-          })
-        );
+      // Update all services so is_enabled (including disable), price, and duration persist; no filter so disabling a service is saved
+      const updatePromises = servicesToSave.map(service => {
+        const price = service.customPrice ?? service.price ?? 0;
+        return apiClient.put(`/vendor/${vendorId}/services/${service.serviceId}`, {
+          is_enabled: service.isEnabled,
+          price,
+          customPrice: service.customPrice,
+          customDuration: service.customDuration,
+          description: service.customDescription,
+        });
+      });
       
       await Promise.all(updatePromises);
       const data: { success: boolean; error?: string } = { success: true };
@@ -1168,31 +1167,13 @@ export function VendorServiceConfigurationScreen({
         </div>
 
         {/* Info Banner */}
-        <div className={`mx-4 mt-4 p-3 rounded-lg ${
-          isPlatformManaged 
-            ? 'bg-blue-50 border border-blue-200' 
-            : canEditPricing
-              ? 'bg-orange-50 border border-orange-200'
-              : 'bg-blue-50 border border-blue-200'
-        }`}>
+        <div className="mx-4 mt-4 p-3 rounded-lg bg-orange-50 border border-orange-200">
           <div className="flex items-start gap-2">
-            <Info className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
-              isPlatformManaged || !canEditPricing ? 'text-blue-500' : 'text-orange-500'
-            }`} />
+            <Info className="w-4 h-4 mt-0.5 flex-shrink-0 text-orange-500" />
             <div className="flex-1 text-xs">
-              {isPlatformManaged ? (
-                <p className="text-blue-700">
-                  <strong>Platform Managed:</strong> Toggle services you want to offer. Pricing is set by Warmpawz. Publish instantly.
-                </p>
-              ) : canEditPricing ? (
-                <p className="text-orange-700">
-                  <strong>Your Pricing:</strong> Set custom prices and durations. Changes require admin approval before going live.
-                </p>
-              ) : (
-                <p className="text-blue-700">
-                  <strong>Platform Managed Pricing:</strong> You can enable/disable services, but pricing is controlled by Warmpawz.
-                </p>
-              )}
+              <p className="text-orange-700">
+                <strong>Your pricing:</strong> Set price and duration for any service (catalog or custom). Publish/unpublish to show or hide on customer booking. Changes reflect immediately on customer web.
+              </p>
             </div>
           </div>
         </div>
@@ -1341,8 +1322,8 @@ export function VendorServiceConfigurationScreen({
                           </div>
                         </div>
 
-                        {/* Expand/Collapse Button */}
-                        {service.isEnabled && (canEditPricing || service.whatIncluded?.length) && (
+                        {/* Expand/Collapse Button - show for all enabled services so price/duration can be edited */}
+                        {service.isEnabled && (
                           <button
                             onClick={() => toggleExpanded(service.id)}
                             className="w-full mt-2 pt-2 border-t flex items-center justify-center gap-1 text-xs text-[#FF8C42] font-medium"

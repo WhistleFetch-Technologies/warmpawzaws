@@ -4,7 +4,6 @@
     "VendorAppDomain": "vendor.dev.warmpawz.com",
     "AdminUserPoolId": "ap-south-1_quLJHo9Pa",
     "LambdaFunctionName": "warmpawz-api-dev",
-    "AdminAuthorizerId": "9prs0e",
     "AuroraEndpoint": "warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com",
     "AdminUserPoolClientId": "780is9hkvv4c8c7e4mce62ctih",
     "AdminDomain": "admin.dev.warmpawz.com",
