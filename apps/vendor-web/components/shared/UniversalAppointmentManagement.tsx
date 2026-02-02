@@ -1013,7 +1013,7 @@ export function UniversalAppointmentManagement({
           <div className="p-4">
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <h3 className="font-semibold text-gray-900 mb-4">Payouts</h3>
-              <p className="text-gray-600 text-sm">Payout management coming soon...</p>
+              <p className="text-gray-600 text-sm">Payout management is not available.</p>
             </div>
           </div>
         )}

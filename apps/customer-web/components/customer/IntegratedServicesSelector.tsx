@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Ambulance, Microscope, Pill, MapPin, Clock, Star, Navigation, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-// Removed Supabase imports - using apiClient instead
+// Uses apiClient (API Gateway)
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiClient } from '@/lib/api-client';
 

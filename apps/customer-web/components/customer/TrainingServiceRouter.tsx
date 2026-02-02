@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { GraduationCap, Building2, Home as HomeIcon, Star, Sparkles, ChevronRight, Heart, Trophy, Package, TrendingUp, CheckCircle, Clock } from 'lucide-react';
+import { GraduationCap, Building2, Home as HomeIcon, Star, Sparkles, ChevronRight, Heart, Trophy, Package, TrendingUp, CheckCircle, Clock, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -42,12 +42,29 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   const [stats, setStats] = useState<any>(null);
   const [activePackages, setActivePackages] = useState<ActiveTrainingPackage[]>([]);
   const [petSkills, setPetSkills] = useState<PetSkillProgress[]>([]);
+  const [previousTrainer, setPreviousTrainer] = useState<any>(null);
 
   useEffect(() => {
     loadTrainingData();
     loadActiveTrainingPackages();
     loadPetSkills();
+    loadPreviousTrainer();
   }, []);
+
+  const loadPreviousTrainer = async () => {
+    try {
+      const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=training`).catch(() => null);
+      if (response?.provider) {
+        setPreviousTrainer({ id: response.provider.id, name: response.provider.businessName || response.provider.name, photo: response.provider.photo, rating: response.provider.rating || 4.8, lastVisit: response.provider.lastVisit, sessionsCount: response.provider.sessionsCount || 1 });
+      } else {
+        const pkgRes = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=training`).catch(() => null);
+        if (pkgRes?.packages?.length > 0) {
+          const pkg = pkgRes.packages[0];
+          if (pkg.vendorId && pkg.vendorName) setPreviousTrainer({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 4.8, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: pkg.sessionsUsed || 1 });
+        }
+      }
+    } catch { /* ignore */ }
+  };
 
   const loadActiveTrainingPackages = async () => {
     try {
@@ -226,6 +243,39 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       {/* Main Content */}
       <div className="max-w-md mx-auto px-4 pt-4 bg-white">
         <div className="space-y-8">
+
+          {/* Phase 1: Book again with previous trainer */}
+          {previousTrainer && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-5 h-5 text-orange-500" />
+                <h2 className="text-lg font-bold text-slate-900">Book again</h2>
+              </div>
+              <Card className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200 p-4">
+                <div className="flex items-center gap-4">
+                  {previousTrainer.photo ? (
+                    <img src={previousTrainer.photo} alt={previousTrainer.name} className="w-16 h-16 rounded-xl object-cover border-2 border-orange-200" />
+                  ) : (
+                    <div className="w-16 h-16 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 font-bold text-xl border-2 border-orange-200">
+                      {previousTrainer.name?.charAt(0) || 'T'}
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <h3 className="font-bold text-slate-900 text-lg">{previousTrainer.name}</h3>
+                    <div className="flex items-center gap-2 text-sm text-slate-600 mt-1">
+                      <Star className="w-4 h-4 fill-orange-500" /> {previousTrainer.rating}
+                      <span>•</span>
+                      <span>Last visit: {previousTrainer.lastVisit || '3 weeks ago'}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">{previousTrainer.sessionsCount || 1} session(s) with you</p>
+                  </div>
+                  <Button className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white" onClick={() => onNavigate?.('training-booking', { vendorId: previousTrainer.id })}>
+                    Book Now
+                  </Button>
+                </div>
+              </Card>
+            </div>
+          )}
           
           {/* FREE TRIAL ENTRY POINT - As per Master Plan */}
           {activePackages.length === 0 && (

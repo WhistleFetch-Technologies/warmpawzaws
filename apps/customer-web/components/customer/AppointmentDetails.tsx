@@ -36,7 +36,7 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
   const [showRateModal, setShowRateModal] = useState(false);
   const [showFollowUpModal, setShowFollowUpModal] = useState(false);
 
-  // Using apiClient instead of direct Supabase calls
+  // Uses apiClient (API Gateway)
 
   useEffect(() => {
     loadBookingDetails();

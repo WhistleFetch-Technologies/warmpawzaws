@@ -673,6 +673,18 @@ export default function PharmacyOrderDashboard({ vendorId, vendorName, onBack }:
                       ))}
                     </div>
 
+                    {/* Upload window: Perfora invoice file (image/PDF) for pharmacy orders */}
+                    {(order.status === 'confirmed' || order.status === 'invoice_generated') && (
+                      <div className="mb-4 pt-4 border-t border-slate-100">
+                        <PerforaInvoiceUpload
+                          orderId={order.id}
+                          onUploadComplete={() => {
+                            fetchActiveOrders();
+                          }}
+                        />
+                      </div>
+                    )}
+
                     {/* ✅ FIX GAP-8.3: Logistics Partner Assignment */}
                     {(order.status === 'payment_confirmed' || order.status === 'preparing' || order.status === 'dispatched') && (
                       <div className="mb-4 pt-4 border-t border-slate-100">

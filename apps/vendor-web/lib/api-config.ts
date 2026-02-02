@@ -1,6 +1,6 @@
 /**
  * API config for Vendor Web app.
- * Backend: Lambda (API Gateway). Auth: Cognito. No Supabase.
+ * Backend: Lambda (API Gateway). Auth: Cognito.
  * Use getApiBaseUrl() and getAuthHeaders() for direct fetch; prefer apiClient for requests.
  */
 

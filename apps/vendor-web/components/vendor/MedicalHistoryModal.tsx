@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { X, FileText, Pill, Calendar, Download, AlertCircle, Stethoscope, Clipboard, Activity } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-// Removed Supabase imports - using apiClient instead
+// Uses apiClient (API Gateway)
 
 interface MedicalHistoryModalProps {
   petId: string;

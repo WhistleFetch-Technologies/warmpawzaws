@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { X, Plus, MapPin, DollarSign, Save, Edit2, Trash2, Navigation, Calculator } from 'lucide-react';
-// ✅ AWS Serverless: Removed Supabase dependencies - using apiClient with Cognito auth
+// AWS Serverless: apiClient with Cognito auth
 import { toast } from 'sonner';
 
 interface DistancePricingProps {

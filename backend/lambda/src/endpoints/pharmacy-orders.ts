@@ -2377,6 +2377,45 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
   });
 
   /**
+   * GET /customer/pharmacy/medicines
+   * Customer catalog: aggregate medicines from vendors with pharmacy role (OTC / store)
+   */
+  app.get("/customer/pharmacy/medicines", async (c) => {
+    try {
+      const { rows } = await query(
+        `SELECT p.id, p.name, p.description, p.category, p.subcategory, p.price, p.stock,
+                p.images, p.vendor_id, p.created_at,
+                (p.stock IS NULL OR p.stock > 0) AS in_stock,
+                false AS prescription_required
+         FROM products p
+         INNER JOIN vendors v ON v.id = p.vendor_id
+         INNER JOIN roles r ON r.id = v.role_id AND LOWER(r.name) IN ('pharmacy', 'pet_pharmacy')
+         WHERE (p.category = 'medicine' OR p.category = 'pharmacy' OR p.category ILIKE '%medicine%')
+         AND (v.is_active IS NOT FALSE)
+         ORDER BY p.created_at DESC
+         LIMIT 200`
+      );
+      const medicines = (rows || []).map((row: any) => ({
+        id: row.id,
+        name: row.name,
+        brand: row.subcategory,
+        description: row.description,
+        category: row.category,
+        price: parseFloat(row.price) || 0,
+        stock: row.stock != null ? Number(row.stock) : null,
+        in_stock: row.in_stock !== false,
+        prescription_required: row.prescription_required === true,
+        image: Array.isArray(row.images) ? row.images[0] : row.images,
+        images: row.images,
+      }));
+      return c.json({ success: true, medicines, products: medicines });
+    } catch (error: any) {
+      console.error('Error fetching customer pharmacy medicines:', error);
+      return c.json({ success: true, medicines: [], products: [] });
+    }
+  });
+
+  /**
    * GET /customer/pharmacy/orders
    * Get pharmacy orders for a customer by phone
    */

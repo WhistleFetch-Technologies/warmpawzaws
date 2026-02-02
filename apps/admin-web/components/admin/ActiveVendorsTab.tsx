@@ -7,6 +7,14 @@ import { apiClient } from '@/lib/api-client';
 import { CustomDropdown } from './CustomDropdown';
 import { VendorDetailsModal } from './VendorDetailsModal';
 
+interface DiscoveryHealth {
+  hasPhoto: boolean;
+  hasAddress: boolean;
+  hasAvailability: boolean;
+  score: number;
+  status: 'green' | 'amber' | 'red';
+}
+
 interface ActiveVendor {
   id: string;
   name: string;
@@ -36,6 +44,7 @@ interface ActiveVendor {
   completedBookingsCount: number;
   activeServicesCount: number;
   reviewCount: number;
+  discoveryHealth?: DiscoveryHealth;
 }
 
 export function ActiveVendorsTab() {
@@ -126,7 +135,8 @@ export function ActiveVendorsTab() {
           isActive: v.isActive ?? true,
           completedBookingsCount: v.completedBookingsCount || 0,
           activeServicesCount: v.activeServicesCount || 0,
-          reviewCount: v.reviewCount || 0
+          reviewCount: v.reviewCount || 0,
+          discoveryHealth: v.discoveryHealth
         };
       });
 
@@ -420,6 +430,19 @@ export function ActiveVendorsTab() {
                     <span className={`text-xs font-semibold ${getTierColor(vendor.tierColor)}`}>
                       {vendor.tier}
                     </span>
+                    {/* Discovery health indicator (Phase 2) */}
+                    {vendor.discoveryHealth && (
+                      <span
+                        title={`Photo: ${vendor.discoveryHealth.hasPhoto ? '✓' : '✗'}, Address: ${vendor.discoveryHealth.hasAddress ? '✓' : '✗'}, Availability: ${vendor.discoveryHealth.hasAvailability ? '✓' : '✗'}`}
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full ${
+                          vendor.discoveryHealth.status === 'green' ? 'bg-green-100 text-green-700' :
+                          vendor.discoveryHealth.status === 'amber' ? 'bg-amber-100 text-amber-700' :
+                          'bg-red-100 text-red-700'
+                        }`}
+                      >
+                        {vendor.discoveryHealth.score}/3 ready
+                      </span>
+                    )}
                   </div>
                   
                   <div className="grid grid-cols-5 gap-4 text-sm">

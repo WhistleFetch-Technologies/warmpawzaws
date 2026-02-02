@@ -1,5 +1,5 @@
-import { ComingSoonPage, comingSoonPresets } from '@/components/vendor/ComingSoonPage';
+import { NotAvailablePage, notAvailablePresets } from '@/components/vendor/NotAvailablePage';
 
 export default function ControlledSubstancesPage() {
-  return <ComingSoonPage {...comingSoonPresets.controlled_substances} />;
+  return <NotAvailablePage {...notAvailablePresets.controlled_substances} />;
 }

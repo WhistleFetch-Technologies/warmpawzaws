@@ -746,6 +746,103 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
   });
 
   /**
+   * GET /customer/:phone/recommended-services
+   * Phase 4: Service recommendations - "Recommended for you" based on booking history
+   * Returns services/categories to suggest (e.g. if booked vet → suggest grooming, walking)
+   */
+  app.get("/customer/:phone/recommended-services", async (c) => {
+    try {
+      const { phone } = c.req.param();
+      const limit = parseInt(c.req.query('limit') || '5');
+
+      const customerId = await resolveCustomerIdFromPhone(phone);
+      if (!customerId) {
+        return c.json({ success: true, services: [] });
+      }
+
+      // Get customer's recent booking categories (bookings.service_id -> services.id)
+      const recentBookings = await query(
+        `SELECT DISTINCT s.category
+         FROM bookings b
+         LEFT JOIN services s ON b.service_id = s.id
+         WHERE b.customer_id = $1
+           AND b.status IN ('confirmed', 'completed')
+           AND s.category IS NOT NULL
+         ORDER BY b.created_at DESC
+         LIMIT 10`,
+        [customerId]
+      ).catch(() => ({ rows: [] }));
+
+      const usedCategories = new Set((recentBookings.rows || []).map((r: any) => (r.category || '').toLowerCase()).filter(Boolean));
+
+      // Complementary service suggestions based on what they've used
+      const categoryToSuggestions: Record<string, Array<{ name: string; screen: string; category: string }>> = {
+        vet: [
+          { name: 'Grooming', screen: 'grooming', category: 'grooming' },
+          { name: 'Dog Walking', screen: 'walker', category: 'walker' },
+          { name: 'Training', screen: 'training', category: 'training' },
+        ],
+        grooming: [
+          { name: 'Vet Consultation', screen: 'vet', category: 'vet' },
+          { name: 'Dog Walking', screen: 'walker', category: 'walker' },
+          { name: 'Training', screen: 'training', category: 'training' },
+        ],
+        training: [
+          { name: 'Vet Consultation', screen: 'vet', category: 'vet' },
+          { name: 'Grooming', screen: 'grooming', category: 'grooming' },
+          { name: 'Dog Walking', screen: 'walker', category: 'walker' },
+        ],
+        walker: [
+          { name: 'Grooming', screen: 'grooming', category: 'grooming' },
+          { name: 'Vet Consultation', screen: 'vet', category: 'vet' },
+          { name: 'Training', screen: 'training', category: 'training' },
+        ],
+        boarding: [
+          { name: 'Vet Consultation', screen: 'vet', category: 'vet' },
+          { name: 'Grooming', screen: 'grooming', category: 'grooming' },
+          { name: 'Dog Walking', screen: 'walker', category: 'walker' },
+        ],
+      };
+
+      const suggested = new Map<string, { name: string; screen: string; category: string }>();
+      for (const row of recentBookings.rows || []) {
+        const cat = (row.category || '').toLowerCase();
+        const list = categoryToSuggestions[cat] || categoryToSuggestions['vet'] || [];
+        for (const s of list) {
+          if (!usedCategories.has(s.category) && !suggested.has(s.screen)) {
+            suggested.set(s.screen, s);
+          }
+        }
+      }
+
+      // If no recent bookings, suggest popular services
+      if (suggested.size === 0) {
+        const popular = [
+          { name: 'Vet Consultation', screen: 'vet', category: 'vet' },
+          { name: 'Grooming', screen: 'grooming', category: 'grooming' },
+          { name: 'Dog Walking', screen: 'walker', category: 'walker' },
+          { name: 'Training', screen: 'training', category: 'training' },
+          { name: 'Boarding', screen: 'boarding', category: 'boarding' },
+        ];
+        popular.slice(0, limit).forEach((s) => suggested.set(s.screen, s));
+      }
+
+      const services = Array.from(suggested.values()).slice(0, limit).map((s) => ({
+        id: s.screen,
+        name: s.name,
+        screen: s.screen,
+        category: s.category,
+        serviceName: s.name,
+      }));
+
+      return c.json({ success: true, services });
+    } catch (error: any) {
+      console.error('[recommended-services] Error:', error?.message);
+      return c.json({ success: true, services: [] });
+    }
+  });
+
+  /**
    * GET /customer/:phone/packages
    * Get customer packages by phone (convenience endpoint)
    * Query params: serviceType (optional filter)

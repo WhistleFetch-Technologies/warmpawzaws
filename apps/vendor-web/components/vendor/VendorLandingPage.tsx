@@ -8,7 +8,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-// ✅ AWS Serverless: Removed Supabase dependencies - using apiClient with Cognito auth
+// AWS Serverless: apiClient with Cognito auth
 import { useVendorNotificationService } from './useVendorNotificationService';
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 import { getVendorRoleId, isDiagnosticsCenter } from '@/lib/vendor-utils';

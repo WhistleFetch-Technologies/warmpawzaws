@@ -220,7 +220,7 @@ export function SampleCollectionTracker({
   };
 
   const handleMessageCollector = () => {
-    toast.info('Chat feature coming soon!');
+    toast.info('Chat is not available.');
   };
 
   const getCurrentStepIndex = () => {

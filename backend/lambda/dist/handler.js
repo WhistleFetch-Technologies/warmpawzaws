@@ -145204,6 +145204,7 @@ function registerServiceDiscoveryEndpoints(app3) {
       const longitude = c.req.query("longitude");
       const serviceStyle = c.req.query("serviceStyle");
       const roleId = c.req.query("roleId");
+      const problemTitle = c.req.query("problemTitle");
       if (serviceStyle === "at_home" || serviceStyle === "tele") {
         const allProviders = [];
         const targetRoles2 = await resolveTargetRolesForDiscovery(category || null, roleId || null);
@@ -145337,17 +145338,39 @@ function registerServiceDiscoveryEndpoints(app3) {
           }
           let consultationFee = 0;
           let minPrice = 0;
+          let maxPrice = 0;
           try {
             const priceResult = await query(
-              `SELECT MIN(COALESCE(vs.custom_price, vs.price, 0))::numeric as min_price
+              `SELECT MIN(COALESCE(vs.custom_price, vs.price, 0))::numeric as min_price,
+                      MAX(COALESCE(vs.custom_price, vs.price, 0))::numeric as max_price
                FROM vendor_services vs
                WHERE vs.vendor_id = $1 AND vs.is_enabled = true
                  AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)`,
               [vendor.id]
             );
             minPrice = parseFloat(priceResult.rows[0]?.min_price || "0") || 0;
+            maxPrice = parseFloat(priceResult.rows[0]?.max_price || "0") || 0;
             consultationFee = minPrice;
           } catch (priceErr) {
+          }
+          let hasPackages = false;
+          try {
+            const pkgResult = await query(
+              `SELECT 1 FROM service_packages WHERE vendor_id = $1 LIMIT 1`,
+              [vendor.id]
+            );
+            hasPackages = (pkgResult.rows?.length || 0) > 0;
+          } catch {
+          }
+          let photos = [];
+          try {
+            const meta = vendor.metadata;
+            if (meta) {
+              const m = typeof meta === "string" ? JSON.parse(meta || "{}") : meta;
+              const raw2 = m?.facility_photos || m?.photos || [];
+              photos = Array.isArray(raw2) ? raw2.slice(0, 5).filter(Boolean) : [];
+            }
+          } catch {
           }
           allProviders.push({
             id: vendor.id,
@@ -145386,6 +145409,12 @@ function registerServiceDiscoveryEndpoints(app3) {
             photoUrl: vendor.profile_image || null,
             vendorProfileImage: vendor.profile_image || null,
             specializations: vendor.specializations ? Array.isArray(vendor.specializations) ? vendor.specializations : JSON.parse(vendor.specializations || "[]") : [],
+            // Phase 2: Gallery, price range, bestForProblem, hasPackages
+            photos: photos.length > 0 ? photos : void 0,
+            priceMin: minPrice > 0 ? minPrice : void 0,
+            priceMax: maxPrice > 0 && maxPrice !== minPrice ? maxPrice : void 0,
+            bestForProblem: problemTitle || void 0,
+            hasPackages: hasPackages || void 0,
             // ✅ ENRICHED: Amenities for discovery card (from metadata)
             amenities: (() => {
               try {
@@ -145622,6 +145651,25 @@ function registerServiceDiscoveryEndpoints(app3) {
             languages = ["English", "Hindi"];
           }
           const isVerified = vendor.is_verified === true || vendor.status === "approved";
+          const servicePrices = (services.rows || []).map((s) => parseFloat(s.price || s.custom_price || "0")).filter((p) => p > 0);
+          const priceMin = servicePrices.length > 0 ? Math.min(...servicePrices) : 0;
+          const priceMax = servicePrices.length > 0 ? Math.max(...servicePrices) : 0;
+          let hasPackages = false;
+          let photos = [];
+          try {
+            const pkgResult = await query(`SELECT 1 FROM service_packages WHERE vendor_id = $1 LIMIT 1`, [vendor.id]);
+            hasPackages = (pkgResult.rows?.length || 0) > 0;
+          } catch {
+          }
+          try {
+            const meta = vendor.metadata;
+            if (meta) {
+              const m = typeof meta === "string" ? JSON.parse(meta || "{}") : meta;
+              const raw2 = m?.facility_photos || m?.photos || [];
+              photos = Array.isArray(raw2) ? raw2.slice(0, 5).filter(Boolean) : [];
+            }
+          } catch {
+          }
           return {
             id: vendor.id,
             vendorId: vendor.id,
@@ -145671,7 +145719,13 @@ function registerServiceDiscoveryEndpoints(app3) {
             languages,
             isVerified,
             photoUrl: vendor.profile_image || vendor.logo_url || null,
-            vendorProfileImage: vendor.profile_image || vendor.logo_url || null
+            vendorProfileImage: vendor.profile_image || vendor.logo_url || null,
+            // Phase 2: Gallery, price range, bestForProblem, hasPackages
+            photos: photos.length > 0 ? photos : void 0,
+            priceMin: priceMin > 0 ? priceMin : void 0,
+            priceMax: priceMax > 0 && priceMax !== priceMin ? priceMax : void 0,
+            bestForProblem: problemTitle || void 0,
+            hasPackages: hasPackages || void 0
           };
         })
       );
@@ -147083,6 +147137,7 @@ function registerServiceDiscoveryEndpoints(app3) {
       const category = c.req.query("category");
       const roleId = c.req.query("roleId");
       const specialization = c.req.query("specialization");
+      const problemTitle = c.req.query("problemTitle");
       const latitude = c.req.query("latitude");
       const longitude = c.req.query("longitude");
       const rules = await getDiscoveryRules(
@@ -147115,6 +147170,7 @@ function registerServiceDiscoveryEndpoints(app3) {
             v.city,
             v.latitude,
             v.longitude,
+            v.metadata,
             r.name as role_name,
             r.display_name as role_display_name,
             (SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id) as avg_rating,
@@ -147223,6 +147279,25 @@ function registerServiceDiscoveryEndpoints(app3) {
             if (customerLat && customerLng && vendor.latitude && vendor.longitude) {
               distance = calculateDistance2(customerLat, customerLng, parseFloat(vendor.latitude), parseFloat(vendor.longitude));
             }
+            const servicePrices = (servicesResult.rows || []).map((s) => parseFloat(s.price || "0")).filter((p) => p > 0);
+            const priceMin = servicePrices.length > 0 ? Math.min(...servicePrices) : 0;
+            const priceMax = servicePrices.length > 0 ? Math.max(...servicePrices) : 0;
+            let hasPackages = false;
+            let photos = [];
+            try {
+              const pkgRes = await query(`SELECT 1 FROM service_packages WHERE vendor_id = $1 LIMIT 1`, [vendor.vendor_id]);
+              hasPackages = (pkgRes.rows?.length || 0) > 0;
+            } catch {
+            }
+            try {
+              const meta = vendor.metadata;
+              if (meta) {
+                const m = typeof meta === "string" ? JSON.parse(meta || "{}") : meta;
+                const raw2 = m?.facility_photos || m?.photos || [];
+                photos = Array.isArray(raw2) ? raw2.slice(0, 5).filter(Boolean) : [];
+              }
+            } catch {
+            }
             return {
               providerId: vendor.vendor_id,
               providerType: "vendor",
@@ -147237,6 +147312,11 @@ function registerServiceDiscoveryEndpoints(app3) {
               distance: distance ? parseFloat(distance.toFixed(2)) : null,
               isVerified: true,
               // Vendors don't need mobile verification
+              photos: photos.length > 0 ? photos : void 0,
+              priceMin: priceMin > 0 ? priceMin : void 0,
+              priceMax: priceMax > 0 && priceMax !== priceMin ? priceMax : void 0,
+              bestForProblem: problemTitle || void 0,
+              hasPackages: hasPackages || void 0,
               services: servicesResult.rows.map((s) => ({
                 id: s.id,
                 serviceId: s.service_id,
@@ -150584,8 +150664,12 @@ function registerCustomerBookingHistoryEndpoints(app3) {
           // ✅ Include cancellation/refund info
           cancellationReason: b.cancellation_reason,
           rescheduledFromBookingId: b.rescheduled_from_booking_id,
+          // ✅ FIX: Include notes field for diagnostic test names
+          notes: b.notes,
           // Multi-service: list of services and total duration
           selectedServices: parseSelectedServices(b.selected_services),
+          selected_services: b.selected_services,
+          // ✅ FIX: Include raw selected_services for frontend parsing
           totalDurationMinutes: b.total_duration_minutes != null ? Number(b.total_duration_minutes) : void 0
         })),
         stats: {
@@ -163631,6 +163715,86 @@ function registerCustomerPhoneConvenienceEndpoints(app3) {
     } catch (error) {
       console.error("Error deleting payment method:", error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/customer/:phone/recommended-services", async (c) => {
+    try {
+      const { phone } = c.req.param();
+      const limit = parseInt(c.req.query("limit") || "5");
+      const customerId = await resolveCustomerIdFromPhone(phone);
+      if (!customerId) {
+        return c.json({ success: true, services: [] });
+      }
+      const recentBookings = await query(
+        `SELECT DISTINCT s.category
+         FROM bookings b
+         LEFT JOIN services s ON b.service_id = s.id
+         WHERE b.customer_id = $1
+           AND b.status IN ('confirmed', 'completed')
+           AND s.category IS NOT NULL
+         ORDER BY b.created_at DESC
+         LIMIT 10`,
+        [customerId]
+      ).catch(() => ({ rows: [] }));
+      const usedCategories = new Set((recentBookings.rows || []).map((r) => (r.category || "").toLowerCase()).filter(Boolean));
+      const categoryToSuggestions = {
+        vet: [
+          { name: "Grooming", screen: "grooming", category: "grooming" },
+          { name: "Dog Walking", screen: "walker", category: "walker" },
+          { name: "Training", screen: "training", category: "training" }
+        ],
+        grooming: [
+          { name: "Vet Consultation", screen: "vet", category: "vet" },
+          { name: "Dog Walking", screen: "walker", category: "walker" },
+          { name: "Training", screen: "training", category: "training" }
+        ],
+        training: [
+          { name: "Vet Consultation", screen: "vet", category: "vet" },
+          { name: "Grooming", screen: "grooming", category: "grooming" },
+          { name: "Dog Walking", screen: "walker", category: "walker" }
+        ],
+        walker: [
+          { name: "Grooming", screen: "grooming", category: "grooming" },
+          { name: "Vet Consultation", screen: "vet", category: "vet" },
+          { name: "Training", screen: "training", category: "training" }
+        ],
+        boarding: [
+          { name: "Vet Consultation", screen: "vet", category: "vet" },
+          { name: "Grooming", screen: "grooming", category: "grooming" },
+          { name: "Dog Walking", screen: "walker", category: "walker" }
+        ]
+      };
+      const suggested = /* @__PURE__ */ new Map();
+      for (const row of recentBookings.rows || []) {
+        const cat = (row.category || "").toLowerCase();
+        const list = categoryToSuggestions[cat] || categoryToSuggestions["vet"] || [];
+        for (const s of list) {
+          if (!usedCategories.has(s.category) && !suggested.has(s.screen)) {
+            suggested.set(s.screen, s);
+          }
+        }
+      }
+      if (suggested.size === 0) {
+        const popular = [
+          { name: "Vet Consultation", screen: "vet", category: "vet" },
+          { name: "Grooming", screen: "grooming", category: "grooming" },
+          { name: "Dog Walking", screen: "walker", category: "walker" },
+          { name: "Training", screen: "training", category: "training" },
+          { name: "Boarding", screen: "boarding", category: "boarding" }
+        ];
+        popular.slice(0, limit).forEach((s) => suggested.set(s.screen, s));
+      }
+      const services = Array.from(suggested.values()).slice(0, limit).map((s) => ({
+        id: s.screen,
+        name: s.name,
+        screen: s.screen,
+        category: s.category,
+        serviceName: s.name
+      }));
+      return c.json({ success: true, services });
+    } catch (error) {
+      console.error("[recommended-services] Error:", error?.message);
+      return c.json({ success: true, services: [] });
     }
   });
   app3.get("/customer/:phone/packages", async (c) => {
@@ -201415,7 +201579,11 @@ function registerAdminComprehensiveEndpoints(app3) {
           -- Review count
           (SELECT COUNT(*) FROM reviews rv WHERE rv.vendor_id = v.id) as review_count,
           -- Last active
-          GREATEST(v.updated_at, (SELECT MAX(created_at) FROM bookings b WHERE b.vendor_id = v.id)) as last_activity
+          GREATEST(v.updated_at, (SELECT MAX(created_at) FROM bookings b WHERE b.vendor_id = v.id)) as last_activity,
+          -- Discovery health: availability (vendor_availability_v2 or vendor_schedule_slots)
+          (EXISTS (SELECT 1 FROM vendor_availability_v2 va WHERE va.vendor_id = v.id AND va.is_enabled = true) 
+           OR EXISTS (SELECT 1 FROM vendor_schedule_slots vss WHERE vss.vendor_id = v.id AND vss.is_enabled = true)
+          ) as has_availability
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
         LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
@@ -201477,7 +201645,28 @@ function registerAdminComprehensiveEndpoints(app3) {
         lastActivity: v.last_activity,
         createdAt: v.created_at,
         approvedAt: v.approved_at,
-        updatedAt: v.updated_at
+        updatedAt: v.updated_at,
+        discoveryHealth: (() => {
+          const hasPhoto = v.metadata && (() => {
+            try {
+              const m = typeof v.metadata === "string" ? JSON.parse(v.metadata || "{}") : v.metadata;
+              const photos = m?.facility_photos || m?.photos || [];
+              return Array.isArray(photos) ? photos.length > 0 : !!photos;
+            } catch {
+              return false;
+            }
+          })() || !!(v.profile_image && String(v.profile_image).trim());
+          const hasAddress = !!(v.address && String(v.address).trim()) || v.latitude && v.longitude;
+          const hasAvailability = !!v.has_availability;
+          const score = [hasPhoto, hasAddress, hasAvailability].filter(Boolean).length;
+          return {
+            hasPhoto,
+            hasAddress,
+            hasAvailability,
+            score,
+            status: score === 3 ? "green" : score === 2 ? "amber" : "red"
+          };
+        })()
       }));
       if (vendorType && vendorType !== "all") {
         vendors = vendors.filter((v) => v.vendorType === vendorType);
@@ -207821,6 +208010,40 @@ function registerAdditionalPharmacyEndpoints(app3) {
       return c.json({ error: error.message || "Failed to create order" }, 500);
     }
   });
+  app3.get("/customer/pharmacy/medicines", async (c) => {
+    try {
+      const { rows } = await query(
+        `SELECT p.id, p.name, p.description, p.category, p.subcategory, p.price, p.stock,
+                p.images, p.vendor_id, p.created_at,
+                (p.stock IS NULL OR p.stock > 0) AS in_stock,
+                false AS prescription_required
+         FROM products p
+         INNER JOIN vendors v ON v.id = p.vendor_id
+         INNER JOIN roles r ON r.id = v.role_id AND LOWER(r.name) IN ('pharmacy', 'pet_pharmacy')
+         WHERE (p.category = 'medicine' OR p.category = 'pharmacy' OR p.category ILIKE '%medicine%')
+         AND (v.is_active IS NOT FALSE)
+         ORDER BY p.created_at DESC
+         LIMIT 200`
+      );
+      const medicines = (rows || []).map((row) => ({
+        id: row.id,
+        name: row.name,
+        brand: row.subcategory,
+        description: row.description,
+        category: row.category,
+        price: parseFloat(row.price) || 0,
+        stock: row.stock != null ? Number(row.stock) : null,
+        in_stock: row.in_stock !== false,
+        prescription_required: row.prescription_required === true,
+        image: Array.isArray(row.images) ? row.images[0] : row.images,
+        images: row.images
+      }));
+      return c.json({ success: true, medicines, products: medicines });
+    } catch (error) {
+      console.error("Error fetching customer pharmacy medicines:", error);
+      return c.json({ success: true, medicines: [], products: [] });
+    }
+  });
   app3.get("/customer/pharmacy/orders", async (c) => {
     try {
       const phone = c.req.query("phone");
@@ -213945,18 +214168,54 @@ var GetReportsForBookingHandler = class extends BaseHandler {
       return this.error("Booking ID is required", 400);
     }
     try {
-      const { rows: reports } = await query(
-        `SELECT 
-          dr.*,
-          v.business_name as vendor_name,
-          rv.business_name as reviewing_vet_name
+      const columnCheck = await query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'diagnostic_reports' 
+          AND column_name IN ('reviewed_by', 'reviewed_at', 'review_notes')
+      `);
+      const existingColumns = new Set(columnCheck.rows.map((r) => r.column_name));
+      const hasReviewedBy = existingColumns.has("reviewed_by");
+      const hasReviewedAt = existingColumns.has("reviewed_at");
+      const hasReviewNotes = existingColumns.has("review_notes");
+      const allColumnsCheck = await query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'diagnostic_reports'
+        ORDER BY ordinal_position
+      `);
+      const allColumnNames = allColumnsCheck.rows.map((r) => r.column_name);
+      const safeColumnNames = allColumnNames.filter((col) => {
+        if (col === "reviewed_by") return hasReviewedBy;
+        if (col === "reviewed_at") return hasReviewedAt;
+        if (col === "review_notes") return hasReviewNotes;
+        return true;
+      });
+      const selectColumns = safeColumnNames.map((col) => `dr.${col}`).join(", ");
+      let reportsQuery = `
+        SELECT 
+          ${selectColumns},
+          v.business_name as vendor_name
+      `;
+      if (hasReviewedBy) {
+        reportsQuery += `,
+          rv.business_name as reviewing_vet_name`;
+      }
+      reportsQuery += `
         FROM diagnostic_reports dr
         LEFT JOIN vendors v ON v.id = dr.vendor_id
-        LEFT JOIN vendors rv ON rv.id = dr.reviewed_by
+      `;
+      if (hasReviewedBy) {
+        reportsQuery += `
+        LEFT JOIN vendors rv ON rv.id = dr.reviewed_by`;
+      }
+      reportsQuery += `
         WHERE dr.booking_id = $1 OR dr.prescribing_vet_booking_id = $1
-        ORDER BY dr.created_at DESC`,
-        [bookingId]
-      );
+        ORDER BY dr.created_at DESC
+      `;
+      const { rows: reports } = await query(reportsQuery, [bookingId]);
       return this.success({
         success: true,
         reports: reports.map((r) => ({
@@ -213970,10 +214229,10 @@ var GetReportsForBookingHandler = class extends BaseHandler {
           summary: r.summary,
           findings: r.findings,
           status: r.status,
-          reviewedBy: r.reviewed_by,
-          reviewedByName: r.reviewing_vet_name,
-          reviewedAt: r.reviewed_at,
-          reviewNotes: r.review_notes,
+          reviewedBy: hasReviewedBy ? r.reviewed_by || null : null,
+          reviewedByName: hasReviewedBy ? r.reviewing_vet_name || null : null,
+          reviewedAt: hasReviewedAt ? r.reviewed_at || null : null,
+          reviewNotes: hasReviewNotes ? r.review_notes || null : null,
           createdAt: r.created_at
         })),
         count: reports.length
@@ -213991,9 +214250,27 @@ var GetPendingReportsForVetHandler = class extends BaseHandler {
       return this.error("Vet ID is required", 400);
     }
     try {
-      const { rows: reports } = await query(
-        `SELECT 
-          dr.*,
+      const columnCheck = await query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'diagnostic_reports' 
+          AND column_name = 'reviewed_by'
+      `);
+      const hasReviewedBy = columnCheck.rows.length > 0;
+      const allColumnsCheck = await query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+          AND table_name = 'diagnostic_reports'
+        ORDER BY ordinal_position
+      `);
+      const allColumnNames = allColumnsCheck.rows.map((r) => r.column_name);
+      const safeColumnNames = hasReviewedBy ? allColumnNames : allColumnNames.filter((col) => col !== "reviewed_by");
+      const selectColumns = safeColumnNames.map((col) => `dr.${col}`).join(", ");
+      let reportsQuery = `
+        SELECT 
+          ${selectColumns},
           v.business_name as diagnostics_vendor_name,
           c.full_name as customer_name,
           p.name as pet_name,
@@ -214004,10 +214281,12 @@ var GetPendingReportsForVetHandler = class extends BaseHandler {
         LEFT JOIN pets p ON p.id = dr.pet_id
         WHERE dr.prescribing_vet_id = $1 
           AND dr.status IN ('ready', 'requires_action')
-          AND dr.reviewed_by IS NULL
-        ORDER BY dr.created_at DESC`,
-        [vetId]
-      );
+      `;
+      if (hasReviewedBy) {
+        reportsQuery += ` AND dr.reviewed_by IS NULL`;
+      }
+      reportsQuery += ` ORDER BY dr.created_at DESC`;
+      const { rows: reports } = await query(reportsQuery, [vetId]);
       return this.success({
         success: true,
         reports: reports.map((r) => ({

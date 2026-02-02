@@ -10,7 +10,7 @@ import {
   Trash2, Plus, Check, ChevronDown, ArrowRight, Wallet, ShoppingBag,
   Gift, Users, Award
 } from 'lucide-react';
-// Removed Supabase imports - using apiClient with Cognito auth
+// Uses apiClient with Cognito auth
 import { apiClient } from '@/lib/api-client';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';

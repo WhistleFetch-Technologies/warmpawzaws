@@ -667,11 +667,11 @@ export function HomeServiceProviderProfile({
         )}
       </div>
 
-      {/* Fixed Book Now Button */}
+      {/* Fixed Book Now Button – standard orange to match vet dashboard (forensic theme compliance) */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 max-w-md mx-auto">
         <button
           onClick={onSelectService}
-          className={`w-full py-4 rounded-xl text-white font-semibold text-lg bg-gradient-to-r ${config.bgGradient} shadow-lg`}
+          className="w-full py-4 rounded-xl text-white font-semibold text-lg bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] shadow-lg"
         >
           Book {config.displayName}
         </button>

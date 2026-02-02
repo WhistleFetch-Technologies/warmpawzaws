@@ -182,6 +182,13 @@ class WarmpawzStack extends cdk.Stack {
             integration: lambdaIntegration,
             // No authorizer - public route
         });
+        // 1b. Pharmacy order status by orderId (public – track by order ID without auth)
+        this.apiGatewayStack.api.addRoutes({
+            path: '/customer/orders/{orderId}/pharmacy-status',
+            methods: [apigateway.HttpMethod.GET],
+            integration: lambdaIntegration,
+            // No authorizer - public so customer app can poll order status after creating order
+        });
         // 2. Authorized routes (specific paths before catch-all)
         // Admin routes require admin Cognito token
         this.apiGatewayStack.addAuthorizedRoute('/admin/{proxy+}', [

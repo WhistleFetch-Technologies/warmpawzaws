@@ -1,6 +1,6 @@
 /**
  * API Client for Vendor Web App
- * Points to API Gateway instead of Supabase Functions
+ * Uses API Gateway (Lambda backend)
  */
 
 type RuntimeConfig = {

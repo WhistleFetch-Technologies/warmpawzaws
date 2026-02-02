@@ -8,7 +8,7 @@ import { CapabilityDebugOverlay } from './CapabilityDebugOverlay';
 import { CapabilityGate } from './CapabilityGate';
 import { SoloProviderDashboard } from './dashboard/SoloProviderDashboard'; // ✅ INTEGRATION: Solo provider dashboard
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
-// ✅ AWS Serverless: Removed Supabase dependencies - using apiClient with Cognito auth
+// AWS Serverless: apiClient with Cognito auth
 import { getVendorIconTheme, getRoleIconComponent, getRoleColorScheme, renderRoleIcon } from '@/lib/vendor-icon-themes';
 import { getVendorRoleId, normalizeServiceStyle, hasVendorRole } from '@/lib/vendor-utils';
 import { getRoleLabels, getServiceStyleLabel } from '@/lib/role-labels';

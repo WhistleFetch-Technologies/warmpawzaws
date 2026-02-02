@@ -360,7 +360,7 @@ export const CAPABILITY_ROUTES: Record<string, CapabilityRoute> = {
     parentRoute: '/cafe',
   },
 
-  // Resort & Boarding
+  // Resort & Boarding — rooms is for resort/boarding only; do not show under Services for vet/clinic.
   rooms: {
     name: 'rooms',
     display_name: 'Rooms',

@@ -528,6 +528,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const longitude = c.req.query('longitude');
       const serviceStyle = c.req.query('serviceStyle'); // ⚠️ NEW: Filter by service style
       const roleId = c.req.query('roleId'); // ⚠️ NEW: Filter by role
+      const problemTitle = c.req.query('problemTitle'); // Phase 2: Best for [problem] badge
 
       // ⚠️ For at_home and tele: align with admin active vendors source so walkers/trainers/groomers/vets all discover.
       // When category/roleId given: use same criteria as /admin/vendors/active (any published service), then filter by role.
@@ -693,20 +694,44 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             totalReviews = parseInt(reviewsResult.rows[0]?.review_count || '0', 10);
           } catch (reviewErr) { /* Continue */ }
 
-          // ✅ ENRICHED: Consultation price (min price from any published service so walkers/trainers show a price)
+          // ✅ ENRICHED: Consultation price (min/max from any published service) - Phase 2: priceMin, priceMax
           let consultationFee = 0;
           let minPrice = 0;
+          let maxPrice = 0;
           try {
             const priceResult = await query(
-              `SELECT MIN(COALESCE(vs.custom_price, vs.price, 0))::numeric as min_price
+              `SELECT MIN(COALESCE(vs.custom_price, vs.price, 0))::numeric as min_price,
+                      MAX(COALESCE(vs.custom_price, vs.price, 0))::numeric as max_price
                FROM vendor_services vs
                WHERE vs.vendor_id = $1 AND vs.is_enabled = true
                  AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)`,
               [vendor.id]
             );
             minPrice = parseFloat(priceResult.rows[0]?.min_price || '0') || 0;
+            maxPrice = parseFloat(priceResult.rows[0]?.max_price || '0') || 0;
             consultationFee = minPrice;
           } catch (priceErr) { /* Continue */ }
+
+          // Phase 2: Check if vendor has packages
+          let hasPackages = false;
+          try {
+            const pkgResult = await query(
+              `SELECT 1 FROM service_packages WHERE vendor_id = $1 LIMIT 1`,
+              [vendor.id]
+            );
+            hasPackages = (pkgResult.rows?.length || 0) > 0;
+          } catch { /* Continue */ }
+
+          // Phase 2: Photos from vendor metadata (facility_photos)
+          let photos: string[] = [];
+          try {
+            const meta = vendor.metadata;
+            if (meta) {
+              const m = typeof meta === 'string' ? JSON.parse(meta || '{}') : meta;
+              const raw = m?.facility_photos || m?.photos || [];
+              photos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
+            }
+          } catch { /* Continue */ }
           
           allProviders.push({
             id: vendor.id,
@@ -744,6 +769,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             photoUrl: vendor.profile_image || null,
             vendorProfileImage: vendor.profile_image || null,
             specializations: vendor.specializations ? (Array.isArray(vendor.specializations) ? vendor.specializations : JSON.parse(vendor.specializations || '[]')) : [],
+            // Phase 2: Gallery, price range, bestForProblem, hasPackages
+            photos: photos.length > 0 ? photos : undefined,
+            priceMin: minPrice > 0 ? minPrice : undefined,
+            priceMax: maxPrice > 0 && maxPrice !== minPrice ? maxPrice : undefined,
+            bestForProblem: problemTitle || undefined,
+            hasPackages: hasPackages || undefined,
             // ✅ ENRICHED: Amenities for discovery card (from metadata)
             amenities: (() => {
               try {
@@ -1050,6 +1081,27 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           // ✅ ENRICHED: Check verification status
           const isVerified = vendor.is_verified === true || vendor.status === 'approved';
 
+          // Phase 2: priceMin, priceMax from services
+          const servicePrices = (services.rows || []).map((s: any) => parseFloat(s.price || s.custom_price || '0')).filter((p: number) => p > 0);
+          const priceMin = servicePrices.length > 0 ? Math.min(...servicePrices) : 0;
+          const priceMax = servicePrices.length > 0 ? Math.max(...servicePrices) : 0;
+
+          // Phase 2: hasPackages, photos
+          let hasPackages = false;
+          let photos: string[] = [];
+          try {
+            const pkgResult = await query(`SELECT 1 FROM service_packages WHERE vendor_id = $1 LIMIT 1`, [vendor.id]);
+            hasPackages = (pkgResult.rows?.length || 0) > 0;
+          } catch { /* Continue */ }
+          try {
+            const meta = vendor.metadata;
+            if (meta) {
+              const m = typeof meta === 'string' ? JSON.parse(meta || '{}') : meta;
+              const raw = m?.facility_photos || m?.photos || [];
+              photos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
+            }
+          } catch { /* Continue */ }
+
           return {
             id: vendor.id,
             vendorId: vendor.id,
@@ -1100,6 +1152,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             isVerified,
             photoUrl: vendor.profile_image || vendor.logo_url || null,
             vendorProfileImage: vendor.profile_image || vendor.logo_url || null,
+            // Phase 2: Gallery, price range, bestForProblem, hasPackages
+            photos: photos.length > 0 ? photos : undefined,
+            priceMin: priceMin > 0 ? priceMin : undefined,
+            priceMax: priceMax > 0 && priceMax !== priceMin ? priceMax : undefined,
+            bestForProblem: problemTitle || undefined,
+            hasPackages: hasPackages || undefined,
           };
         })
       );
@@ -2929,6 +2987,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const category = c.req.query('category');
       const roleId = c.req.query('roleId'); // ✅ FIX: Support roleId parameter
       const specialization = c.req.query('specialization'); // ✅ FIX: Support specialization parameter
+      const problemTitle = c.req.query('problemTitle'); // Phase 2: "Best for [problem]" badge
       const latitude = c.req.query('latitude');
       const longitude = c.req.query('longitude');
       const rules = await getDiscoveryRules(
@@ -2965,6 +3024,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             v.city,
             v.latitude,
             v.longitude,
+            v.metadata,
             r.name as role_name,
             r.display_name as role_display_name,
             (SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id) as avg_rating,
@@ -3089,6 +3149,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               distance = calculateDistance(customerLat, customerLng, parseFloat(vendor.latitude), parseFloat(vendor.longitude));
             }
 
+            // Phase 2: photos, priceMin, priceMax, hasPackages, bestForProblem
+            const servicePrices = (servicesResult.rows || []).map((s: any) => parseFloat(s.price || '0')).filter((p: number) => p > 0);
+            const priceMin = servicePrices.length > 0 ? Math.min(...servicePrices) : 0;
+            const priceMax = servicePrices.length > 0 ? Math.max(...servicePrices) : 0;
+            let hasPackages = false;
+            let photos: string[] = [];
+            try {
+              const pkgRes = await query(`SELECT 1 FROM service_packages WHERE vendor_id = $1 LIMIT 1`, [vendor.vendor_id]);
+              hasPackages = (pkgRes.rows?.length || 0) > 0;
+            } catch { /* continue */ }
+            try {
+              const meta = (vendor as any).metadata;
+              if (meta) {
+                const m = typeof meta === 'string' ? JSON.parse(meta || '{}') : meta;
+                const raw = m?.facility_photos || m?.photos || [];
+                photos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
+              }
+            } catch { /* continue */ }
             return {
               providerId: vendor.vendor_id,
               providerType: 'vendor',
@@ -3102,7 +3180,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               reviewCount: parseInt(vendor.review_count || '0', 10),
               distance: distance ? parseFloat(distance.toFixed(2)) : null,
               isVerified: true, // Vendors don't need mobile verification
-              services: servicesResult.rows.map(s => ({
+              photos: photos.length > 0 ? photos : undefined,
+              priceMin: priceMin > 0 ? priceMin : undefined,
+              priceMax: priceMax > 0 && priceMax !== priceMin ? priceMax : undefined,
+              bestForProblem: problemTitle || undefined,
+              hasPackages: hasPackages || undefined,
+              services: servicesResult.rows.map((s: any) => ({
                 id: s.id,
                 serviceId: s.service_id,
                 name: s.service_name,

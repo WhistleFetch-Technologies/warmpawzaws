@@ -364,9 +364,9 @@ export function HomeServiceProviderListView({
 
   return (
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
-      {/* Header */}
+      {/* Header – standard orange to match vet dashboard (forensic theme compliance) */}
       <div 
-        className={`bg-gradient-to-r ${config.bgGradient} text-white sticky top-0 z-30`}
+        className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-30"
       >
         <div className="px-4 pt-4 pb-3">
           <div className="flex items-center gap-3 mb-4">

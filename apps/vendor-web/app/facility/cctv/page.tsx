@@ -1,5 +1,5 @@
-import { ComingSoonPage, comingSoonPresets } from '@/components/vendor/ComingSoonPage';
+import { NotAvailablePage, notAvailablePresets } from '@/components/vendor/NotAvailablePage';
 
 export default function CCTVAccessPage() {
-  return <ComingSoonPage {...comingSoonPresets.cctv_access} />;
+  return <NotAvailablePage {...notAvailablePresets.cctv_access} />;
 }

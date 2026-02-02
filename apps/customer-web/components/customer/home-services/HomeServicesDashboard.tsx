@@ -101,12 +101,12 @@ export function HomeServicesDashboard({
     }
   };
 
-  // Loading state (P3 optional)
+  // Loading state (P3 optional) – standard orange to match vet dashboard theme
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 max-w-md mx-auto flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-10 w-10 border-2 border-green-600 border-t-transparent" />
+          <div className="animate-spin rounded-full h-10 w-10 border-2 border-[#FF8C42] border-t-transparent" />
           <p className="text-sm text-gray-500">Loading home services...</p>
         </div>
       </div>
@@ -142,8 +142,8 @@ export function HomeServicesDashboard({
 
   return (
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-4 py-6 pb-8">
+      {/* Header – standard orange to match vet dashboard (forensic theme compliance) */}
+      <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 py-6 pb-8">
         <div className="flex items-center gap-3 mb-4">
           <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full">
             <ArrowLeft className="w-5 h-5" />
