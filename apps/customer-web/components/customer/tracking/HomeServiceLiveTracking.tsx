@@ -117,18 +117,42 @@ export function HomeServiceLiveTracking({
 
   const loadTrackingData = async () => {
     try {
-      const response = await apiClient.get<any>(`/customer/bookings/${bookingId}/tracking`);
+      const response = await apiClient.get<any>(`/tracking/booking/${bookingId}`);
       
       if (response.success && response.tracking) {
-        setTrackingData(prev => ({
-          ...prev,
-          ...response.tracking
-        }));
-        
-        // Stop polling if completed
-        if (response.tracking.status === 'completed' && pollingRef.current) {
-          clearInterval(pollingRef.current);
-        }
+        const t = response.tracking;
+        // Normalize backend shape to UI shape (backend: currentLocation, estimatedEtaMinutes, distanceKm, startedAt; status: started|in_transit|arrived|completed)
+        const statusMap: Record<string, TrackingData['status']> = {
+          started: 'traveling',
+          in_transit: 'traveling',
+          traveling: 'traveling',
+          arrived: 'arrived',
+          in_progress: 'in_progress',
+          completed: 'completed',
+        };
+        setTrackingData(prev => {
+          const normalized = {
+            status: statusMap[t.status] ?? (t.status === 'completed' ? 'completed' : 'pending'),
+            providerLocation: t.currentLocation
+              ? {
+                  latitude: t.currentLocation.latitude,
+                  longitude: t.currentLocation.longitude,
+                  updatedAt: t.currentLocation.timestamp || (t.currentLocation as any).updatedAt || new Date().toISOString(),
+                }
+              : null,
+            eta: t.estimatedEtaMinutes ?? t.eta ?? null,
+            distanceRemaining: t.distanceKm ?? t.distanceRemaining ?? null,
+            sessionStartedAt: t.sessionStartedAt ?? t.startedAt ?? null,
+            routeDistance: t.routeDistance ?? prev.routeDistance ?? 0,
+            routePoints: t.routePoints ?? prev.routePoints,
+            startOtp: t.startOtp ?? prev.startOtp ?? initialData?.startOtp ?? null,
+            endOtp: t.endOtp ?? prev.endOtp ?? initialData?.endOtp ?? null,
+          };
+          if (normalized.status === 'completed' && pollingRef.current) {
+            clearInterval(pollingRef.current);
+          }
+          return { ...prev, ...normalized };
+        });
       }
     } catch (error) {
       console.error('Error loading tracking data:', error);
