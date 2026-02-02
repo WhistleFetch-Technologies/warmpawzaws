@@ -39,28 +39,23 @@ echo -e "${GREEN}✅ Build completed successfully${NC}"
 echo -e "${BLUE}🔧 Injecting runtime-config.js...${NC}"
 cd "$PROJECT_ROOT"
 API_BASE_URL=""
-CDK_OUTPUTS="$PROJECT_ROOT/infrastructure/cdk/cdk-outputs.json"
-if [ -f "$CDK_OUTPUTS" ] && command -v jq &>/dev/null; then
-  API_BASE_URL=$(jq -r '.["WarmpawzStack-dev"].ApiGatewayUrl // empty' "$CDK_OUTPUTS")
+# Priority: config/urls.json apiGatewayDefaultUrl (main API) → AWS query → fallback
+if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
+  API_BASE_URL=$(jq -r '.apiGatewayDefaultUrl // empty' "$PROJECT_ROOT/config/urls.json")
 fi
 if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; then
   if command -v aws &>/dev/null; then
     API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
   fi
   if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
-    if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
-      API_BASE_URL=$(jq -r '.apiGatewayDefaultUrl // empty' "$PROJECT_ROOT/config/urls.json")
-    fi
-    if [ -z "$API_BASE_URL" ]; then
-      echo -e "${YELLOW}⚠️  API Gateway URL not found. Set config/urls.json apiGatewayDefaultUrl or run CDK deploy first.${NC}"
-      exit 1
-    fi
-    echo -e "${YELLOW}⚠️  Using API Gateway URL from config: $API_BASE_URL${NC}"
+    # Hardcoded fallback to main API Gateway
+    API_BASE_URL="https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"
+    echo -e "${YELLOW}⚠️  Using hardcoded fallback API Gateway URL: $API_BASE_URL${NC}"
   else
     echo -e "${GREEN}✅ API Gateway endpoint (from AWS): $API_BASE_URL${NC}"
   fi
 else
-  echo -e "${GREEN}✅ API Gateway endpoint (from cdk-outputs.json): $API_BASE_URL${NC}"
+  echo -e "${GREEN}✅ API Gateway endpoint (from config/urls.json): $API_BASE_URL${NC}"
 fi
 # Ensure no trailing slash
 API_BASE_URL="${API_BASE_URL%/}"

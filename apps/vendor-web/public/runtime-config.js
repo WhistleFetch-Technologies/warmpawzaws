@@ -4,10 +4,11 @@
 
 (function () {
   const envApiBaseUrl = typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_API_BASE_URL : '';
+  const defaultApiBaseUrl = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
   const defaultUatMode = true;
 
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-    apiBaseUrl: envApiBaseUrl || '',
+    apiBaseUrl: envApiBaseUrl || defaultApiBaseUrl,
     uatMode: defaultUatMode
   };
 

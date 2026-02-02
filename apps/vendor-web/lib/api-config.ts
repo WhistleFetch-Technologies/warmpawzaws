@@ -16,10 +16,11 @@ function getRuntimeConfig(): RuntimeConfig {
  */
 export function getApiBaseUrl(): string {
   const cfg = getRuntimeConfig();
+  const defaultApiBaseUrl = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
   const base =
     cfg.apiBaseUrl ||
     (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) ||
-    '';
+    defaultApiBaseUrl;
   return (base && typeof base === 'string' ? base.trim() : '').replace(/\/+$/, '');
 }
 

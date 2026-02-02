@@ -359,11 +359,14 @@ export function VendorServiceManagementComplete({
 
   // ✅ NEW: If package management view is active
   if (showPackages) {
+    // ✅ FIX: Training Solo Vendors cannot create standalone packages - only view/manage existing ones
+    const canCreateStandalonePackages = !(isTrainerWalkerSitter && isSoloProvider);
     return (
       <PackageManagementContainer
         vendorId={vendorId}
         vendorData={vendorData}
         onBack={() => setShowPackages(false)}
+        allowCreate={canCreateStandalonePackages}
       />
     );
   }
@@ -572,6 +575,7 @@ export function VendorServiceManagementComplete({
 
         {/* ✅ NEW: Package Management Section (Capability-based) */}
         {/* ✅ FIX: Solo groomer/vet do NOT get packages; solo trainer/walker/sitter get session packages */}
+        {/* ✅ FIX: Training Solo Vendors can VIEW packages but cannot CREATE standalone packages - they create packages via Custom Service creation/edit only */}
         {(capabilities.custom_packages || capabilities.customPackages || capabilities.packages) && canCreatePackages && !isSoloGroomer && !isSoloVet && (
           <div className="p-4">
             <div className={`bg-gradient-to-r ${isTrainerWalkerSitter && isSoloProvider ? 'from-green-500 to-emerald-600' : 'from-[#FF8C42] to-[#FF6B35]'} rounded-2xl p-6 text-white`}>
@@ -582,7 +586,7 @@ export function VendorServiceManagementComplete({
                   </h3>
                   <p className="text-sm text-white/90 mb-4">
                     {isTrainerWalkerSitter && isSoloProvider 
-                      ? 'Create session packages with duration, number of sessions, and frequency tracking'
+                      ? 'View and manage your session packages. Create new packages via Custom Services.'
                       : 'Create and manage service packages to offer bundled services'
                     }
                   </p>
@@ -594,7 +598,7 @@ export function VendorServiceManagementComplete({
                 onClick={() => setShowPackages(true)}
                 className={`w-full ${isTrainerWalkerSitter && isSoloProvider ? 'bg-white text-green-600 hover:bg-gray-100' : 'bg-white text-[#FF8C42] hover:bg-gray-100'} font-semibold`}
               >
-                {isTrainerWalkerSitter && isSoloProvider ? 'Create Session Package' : 'Manage Packages'}
+                {isTrainerWalkerSitter && isSoloProvider ? 'View Session Packages' : 'Manage Packages'}
               </Button>
               
               <p className="text-xs text-white/80 mt-3 text-center">

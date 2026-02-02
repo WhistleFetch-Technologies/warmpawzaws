@@ -94,7 +94,7 @@ export default function DiagnosticsPage() {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const base = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+        const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
         const res = await fetch(`${base}/public/diagnostics/categories`);
         const data = await res.json();
         if (data?.categories?.length) {

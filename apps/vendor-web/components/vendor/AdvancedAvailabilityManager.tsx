@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { getVendorRoleName } from '@/lib/vendor-utils';
 
 interface AdvancedAvailabilityManagerProps {
   vendorId: string;
@@ -74,7 +75,7 @@ interface Holiday {
 }
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const SERVICE_STYLES = [
+const ALL_SERVICE_STYLES = [
   { id: 'at_center', label: 'At Center', icon: '🏥' },
   { id: 'at_home', label: 'At Home', icon: '🏠' },
   { id: 'tele', label: 'Tele/Video', icon: '📹' },
@@ -95,14 +96,7 @@ const HOLIDAY_TYPES = [
   { id: 'sick', label: 'Sick Leave' },
 ] as const;
 
-const DEFAULT_SLOT: TimeSlot = {
-  startTime: '09:00',
-  endTime: '17:00',
-  serviceStyles: ['at_center'],
-  bufferTime: 15,
-  maxCapacity: 1,
-  isEnabled: true,
-};
+// DEFAULT_SLOT will be created dynamically based on allowed service styles
 
 export function AdvancedAvailabilityManager({ 
   vendorId, 
@@ -118,6 +112,7 @@ export function AdvancedAvailabilityManager({
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [isOnline, setIsOnline] = useState(true);
   const [togglingOnline, setTogglingOnline] = useState(false);
+  const [allowedServiceStyles, setAllowedServiceStyles] = useState<('at_center' | 'at_home' | 'tele')[]>(['at_home', 'at_center', 'tele']);
   
   // UI state
   const [showAddBreak, setShowAddBreak] = useState(false);
@@ -143,23 +138,61 @@ export function AdvancedAvailabilityManager({
   const isSoloProvider = vendorData?.vendorType === 'solo' || 
                          vendorData?.vendor_type === 'solo' ||
                          vendorData?.isSoloProvider === true;
+  
+  // Get vendor role name
+  const roleName = getVendorRoleName(vendorData);
+  
+  // Filter service styles based on role and allowed styles
+  const SERVICE_STYLES = ALL_SERVICE_STYLES.filter(style => allowedServiceStyles.includes(style.id as any));
+  
+  // Get default service style (first allowed style, or 'at_home' for groomer_solo)
+  const getDefaultServiceStyle = useCallback((): ('at_center' | 'at_home' | 'tele')[] => {
+    if (roleName?.toLowerCase() === 'groomer_solo') {
+      return ['at_home'];
+    }
+    return allowedServiceStyles.length > 0 ? [allowedServiceStyles[0]] : ['at_home'];
+  }, [roleName, allowedServiceStyles]);
 
-  // Initialize empty schedule
+  // Load allowed service styles from vendor services endpoint
   useEffect(() => {
-    const emptySchedule: DaySchedule[] = DAYS.map((_, idx) => ({
-      dayOfWeek: idx,
-      slots: [],
-    }));
-    setSchedule(emptySchedule);
+    const loadAllowedServiceStyles = async () => {
+      try {
+        // Try to get from vendorData first
+        if (vendorData?.allowedServiceStyles && Array.isArray(vendorData.allowedServiceStyles)) {
+          setAllowedServiceStyles(vendorData.allowedServiceStyles);
+          return;
+        }
+        
+        // Fetch from vendor services endpoint
+        const servicesRes = await apiClient.get(`/vendor/${vendorId}/services`) as any;
+        if (servicesRes?.success && servicesRes?.allowedServiceStyles) {
+          setAllowedServiceStyles(servicesRes.allowedServiceStyles);
+        } else {
+          // Fallback: Use role-based defaults
+          const roleNameLower = roleName?.toLowerCase() || '';
+          if (roleNameLower === 'groomer_solo') {
+            setAllowedServiceStyles(['at_home']);
+          } else {
+            // Default to all styles for other roles
+            setAllowedServiceStyles(['at_home', 'at_center', 'tele']);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to load allowed service styles:', error);
+        // Fallback based on role
+        const roleNameLower = roleName?.toLowerCase() || '';
+        if (roleNameLower === 'groomer_solo') {
+          setAllowedServiceStyles(['at_home']);
+        } else {
+          setAllowedServiceStyles(['at_home', 'at_center', 'tele']);
+        }
+      }
+    };
     
-    // ✅ DEBUG: Log vendorId to verify it's correct
-    console.log('[AVAILABILITY] Component mounted with vendorId:', vendorId);
-    console.log('[AVAILABILITY] vendorData:', vendorData);
-    
-    loadAvailabilityData();
-  }, [vendorId]);
+    loadAllowedServiceStyles();
+  }, [vendorId, vendorData, roleName]);
 
-  const loadAvailabilityData = async () => {
+  const loadAvailabilityData = useCallback(async () => {
     try {
       setLoading(true);
       
@@ -186,11 +219,16 @@ export function AdvancedAvailabilityManager({
           availRes.availability.slots.forEach((slot: any) => {
             const dayIdx = slot.day_of_week ?? slot.dayOfWeek;
             if (dayIdx >= 0 && dayIdx <= 6) {
+              // Filter service styles to only include allowed ones
+              const slotStyles = slot.service_styles || slot.serviceStyles || [];
+              const filteredStyles = slotStyles.filter((s: string) => allowedServiceStyles.includes(s as any));
+              const defaultStyles = filteredStyles.length > 0 ? filteredStyles : getDefaultServiceStyle();
+              
               loadedSchedule[dayIdx].slots.push({
                 id: slot.id,
                 startTime: slot.time_window_start || slot.startTime || '09:00',
                 endTime: slot.time_window_end || slot.endTime || '17:00',
-                serviceStyles: slot.service_styles || slot.serviceStyles || ['at_center'],
+                serviceStyles: defaultStyles,
                 locationData: slot.location_data || slot.locationData,
                 bufferTime: slot.buffer_time ?? slot.bufferTime ?? 15,
                 maxCapacity: slot.max_capacity ?? slot.maxCapacity ?? 1,
@@ -246,15 +284,40 @@ export function AdvancedAvailabilityManager({
     } finally {
       setLoading(false);
     }
-  };
+  }, [vendorId, allowedServiceStyles, getDefaultServiceStyle]);
+
+  // Initialize empty schedule and load data (depends on allowedServiceStyles)
+  useEffect(() => {
+    const emptySchedule: DaySchedule[] = DAYS.map((_, idx) => ({
+      dayOfWeek: idx,
+      slots: [],
+    }));
+    setSchedule(emptySchedule);
+    
+    // ✅ DEBUG: Log vendorId to verify it's correct
+    console.log('[AVAILABILITY] Component mounted with vendorId:', vendorId);
+    console.log('[AVAILABILITY] vendorData:', vendorData);
+    console.log('[AVAILABILITY] roleName:', roleName);
+    console.log('[AVAILABILITY] allowedServiceStyles:', allowedServiceStyles);
+    
+    // Only load availability data after allowedServiceStyles is determined
+    if (allowedServiceStyles.length > 0) {
+      loadAvailabilityData();
+    }
+  }, [vendorId, allowedServiceStyles, loadAvailabilityData]);
 
   // Add slot to current day
   const addSlot = () => {
     setSchedule(prev => {
       const newSchedule = [...prev];
+      const defaultServiceStyles = getDefaultServiceStyle();
       newSchedule[selectedDay].slots.push({
-        ...DEFAULT_SLOT,
-        serviceStyles: isSoloProvider ? ['at_home'] : ['at_center'],
+        startTime: '09:00',
+        endTime: '17:00',
+        serviceStyles: defaultServiceStyles,
+        bufferTime: 15,
+        maxCapacity: 1,
+        isEnabled: true,
       });
       return newSchedule;
     });
@@ -705,24 +768,28 @@ export function AdvancedAvailabilityManager({
                       />
                     </div>
 
-                    {/* Service Styles */}
+                    {/* Service Styles - Only show allowed styles */}
                     <div className="mb-4">
                       <p className="text-sm text-gray-600 mb-2">Service Styles</p>
                       <div className="flex flex-wrap gap-2">
-                        {SERVICE_STYLES.map(style => (
-                          <button
-                            key={style.id}
-                            onClick={() => toggleServiceStyle(slotIdx, style.id as any)}
-                            className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 transition-colors ${
-                              slot.serviceStyles.includes(style.id as any)
-                                ? 'bg-[#FF8C42] text-white'
-                                : 'bg-white border text-gray-600 hover:border-[#FF8C42]'
-                            }`}
-                          >
-                            <span>{style.icon}</span>
-                            {style.label}
-                          </button>
-                        ))}
+                        {SERVICE_STYLES.length > 0 ? (
+                          SERVICE_STYLES.map(style => (
+                            <button
+                              key={style.id}
+                              onClick={() => toggleServiceStyle(slotIdx, style.id as any)}
+                              className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 transition-colors ${
+                                slot.serviceStyles.includes(style.id as any)
+                                  ? 'bg-[#FF8C42] text-white'
+                                  : 'bg-white border text-gray-600 hover:border-[#FF8C42]'
+                              }`}
+                            >
+                              <span>{style.icon}</span>
+                              {style.label}
+                            </button>
+                          ))
+                        ) : (
+                          <p className="text-sm text-gray-500">No service styles available for this role</p>
+                        )}
                       </div>
                     </div>
 

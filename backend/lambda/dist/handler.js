@@ -158454,7 +158454,7 @@ function formatPricingResponse(pricing) {
     updatedAt: pricing.updated_at
   };
 }
-function validatePriceChange(oldPrice, newPrice, maxChangePercent = 50) {
+function validatePriceChange(oldPrice, newPrice, maxChangePercent = 200) {
   const errors = [];
   if (oldPrice === 0) {
     return { isValid: true, errors: [] };

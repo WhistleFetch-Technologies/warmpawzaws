@@ -66,7 +66,19 @@ const DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Sat
 
 // ✅ Main export with generic name
 export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerProps) {
+  // ✅ FIX: Check if vendor is solo - hide amenities and specialty tabs for solo vendors
+  const isSoloVendor = vendorData?.vendorType === 'solo' || 
+                       vendorData?.vendor_type === 'solo' ||
+                       vendorData?.vendorConfiguration === 'solo';
+  
+  // ✅ FIX: If solo vendor tries to access amenities/specialty tab, redirect to basic
   const [activeTab, setActiveTab] = useState<'basic' | 'availability' | 'amenities' | 'specialization'>('basic');
+  
+  useEffect(() => {
+    if (isSoloVendor && (activeTab === 'amenities' || activeTab === 'specialization')) {
+      setActiveTab('basic');
+    }
+  }, [isSoloVendor, activeTab]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -457,8 +469,11 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
             {[
               { id: 'basic', label: 'Basic', icon: Building2 },
               { id: 'availability', label: 'Availability', icon: Clock },
-              { id: 'amenities', label: 'Amenities', icon: Sparkles },
-              { id: 'specialization', label: 'Specialty', icon: Check }
+              // ✅ FIX: Hide amenities and specialty tabs for solo vendors
+              ...(isSoloVendor ? [] : [
+                { id: 'amenities', label: 'Amenities', icon: Sparkles },
+                { id: 'specialization', label: 'Specialty', icon: Check }
+              ])
             ].map(tab => {
               const Icon = tab.icon;
               return (
@@ -692,8 +707,8 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
           />
         )}
 
-        {/* Amenities Tab */}
-        {activeTab === 'amenities' && (
+        {/* Amenities Tab - Hidden for solo vendors */}
+        {!isSoloVendor && activeTab === 'amenities' && (
           <div className="bg-white rounded-xl border p-6">
             <h2 className="font-bold text-gray-900 mb-4">Amenities & Facilities</h2>
             
@@ -750,8 +765,8 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
           </div>
         )}
 
-        {/* Specialization Tab */}
-        {activeTab === 'specialization' && (
+        {/* Specialization Tab - Hidden for solo vendors */}
+        {!isSoloVendor && activeTab === 'specialization' && (
           <div className="bg-white rounded-xl border p-6">
             <h2 className="font-bold text-gray-900 mb-4">Center Specializations</h2>
             <p className="text-sm text-gray-600 mb-6">

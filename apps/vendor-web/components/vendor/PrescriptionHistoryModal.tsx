@@ -106,7 +106,7 @@ export function PrescriptionHistoryModal({
     if (typeof window !== 'undefined' && (window as any).__WARMPAWZ_RUNTIME_CONFIG__?.apiBaseUrl) {
       return (window as any).__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl;
     }
-    return process.env.NEXT_PUBLIC_API_BASE_URL || '';
+    return process.env.NEXT_PUBLIC_API_BASE_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
   };
 
   const handleUpload = async () => {

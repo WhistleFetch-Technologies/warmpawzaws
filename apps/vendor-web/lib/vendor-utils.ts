@@ -324,9 +324,12 @@ export function isSoloVendor(vendorData: any): boolean {
   if (vendorData.vendorType === 'individual') return true;
   
   // Check role name patterns (some roles are inherently solo)
-  const roleName = getVendorRoleName(vendorData)?.toLowerCase() || '';
-  const roleId = getVendorRoleId(vendorData)?.toLowerCase() || '';
-  const roleString = `${roleName} ${roleId}`;
+  // ✅ CRITICAL: Check role.name first (most common structure from backend)
+  const roleName = vendorData?.role?.name || getVendorRoleName(vendorData) || '';
+  const roleId = getVendorRoleId(vendorData) || '';
+  const roleNameLower = roleName.toLowerCase();
+  const roleIdLower = roleId.toLowerCase();
+  const roleString = `${roleNameLower} ${roleIdLower}`;
   
   const soloRolePatterns = [
     '_solo',

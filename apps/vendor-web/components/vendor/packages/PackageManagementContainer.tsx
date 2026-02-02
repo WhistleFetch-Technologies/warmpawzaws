@@ -5,15 +5,21 @@ import { CreatePackageFlow } from './CreatePackageFlow';
 export function PackageManagementContainer({
   vendorId,
   vendorData,
-  onBack
+  onBack,
+  allowCreate = true
 }: {
   vendorId: string;
   vendorData?: any;
   onBack: () => void;
+  allowCreate?: boolean;
 }) {
   const [currentScreen, setCurrentScreen] = useState<'list' | 'create'>('list');
 
   const handleCreateNew = () => {
+    if (!allowCreate) {
+      // Training Solo Vendors cannot create standalone packages
+      return;
+    }
     setCurrentScreen('create');
   };
 
@@ -41,6 +47,7 @@ export function PackageManagementContainer({
       vendorId={vendorId}
       onCreateNew={handleCreateNew}
       onBack={onBack}
+      allowCreate={allowCreate}
     />
   );
 }

@@ -109,7 +109,7 @@ export async function middleware(request: NextRequest) {
   const apiBaseUrl =
     process.env.NEXT_PUBLIC_API_BASE_URL ||
     (request.headers.get('x-api-base-url') as string) ||
-    'http://localhost:3000';
+    'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
 
   // Get phone from request
   const phone = getPhoneFromRequest(request);
