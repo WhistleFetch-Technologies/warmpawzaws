@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +32,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   const [referralCode, setReferralCode] = useState('');
   const [showReferralInput, setShowReferralInput] = useState(false);
   const [referralApplied, setReferralApplied] = useState(false);
+  const otpInputRef = useRef<HTMLInputElement>(null);
   
   // Update cooldown countdown timer
   useEffect(() => {
@@ -217,6 +218,36 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       
       setLoading(false);
     }
+  };
+
+  // Handler to preserve cursor position when filtering OTP input
+  const handleOtpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const cursorPosition = input.selectionStart || 0;
+    const oldValue = otpCode;
+    const newValue = input.value.replace(/[^0-9]/g, '');
+    
+    // Calculate new cursor position
+    // Count how many non-numeric characters were removed before the cursor
+    let removedBeforeCursor = 0;
+    for (let i = 0; i < Math.min(cursorPosition, input.value.length); i++) {
+      if (!/[0-9]/.test(input.value[i])) {
+        removedBeforeCursor++;
+      }
+    }
+    
+    const newCursorPosition = Math.max(0, cursorPosition - removedBeforeCursor);
+    
+    // Update state
+    setOtpCode(newValue);
+    
+    // Restore cursor position after React updates
+    setTimeout(() => {
+      if (otpInputRef.current) {
+        const finalPosition = Math.min(newCursorPosition, newValue.length);
+        otpInputRef.current.setSelectionRange(finalPosition, finalPosition);
+      }
+    }, 0);
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
@@ -563,13 +594,14 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               </Label>
               <div className="flex items-center border-2 border-gray-200 rounded-2xl overflow-hidden focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 transition-all bg-white">
                 <input
+                  ref={otpInputRef}
                   id="otp"
                   type="text"
                   inputMode="numeric"
                   pattern="[0-9]*"
                   maxLength={6}
                   value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
+                  onChange={handleOtpChange}
                   className="flex-1 py-4 px-4 text-lg text-center tracking-widest outline-none"
                   placeholder="Enter 6-digit code"
                   required
