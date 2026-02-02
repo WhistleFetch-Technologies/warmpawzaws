@@ -650,10 +650,6 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
         return spec?.name || id;
       });
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DoctorManagement.tsx:642',message:'Form data before payload creation',data:{fullName:formData.fullName,fullNameType:typeof formData.fullName,fullNameLength:formData.fullName?.length,fullNameTrimmed:formData.fullName?.trim(),phone:formData.phone},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
-
       const payload: any = {
         name: formData.fullName, // ✅ FIX: Backend expects 'name', not 'fullName'
         email: formData.email || `${formData.phone}@warmpawz.com`,
@@ -670,17 +666,10 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
         services: selectedServices
       };
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DoctorManagement.tsx:652',message:'Payload before API call (POST-FIX)',data:{payloadKeys:Object.keys(payload),hasFullName:'fullName' in payload,hasName:'name' in payload,fullNameValue:payload.fullName,nameValue:payload.name,phone:payload.phone},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
-
       let response: any;
       if (staff) {
         response = await apiClient.put(`/vendor/${clinicId}/staff/${staff.id}`, payload);
       } else {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/892f647a-2ee5-41db-bfad-3ff67af0ff8d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DoctorManagement.tsx:668',message:'About to POST staff',data:{endpoint:`/vendor/${clinicId}/staff`,payloadSize:JSON.stringify(payload).length},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         response = await apiClient.post<any>(`/vendor/${clinicId}/staff`, payload);
       }
 

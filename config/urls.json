@@ -1,0 +1,29 @@
+{
+  "_comment": "Single source of truth for Warmpawz URLs. Do NOT hardcode these in app or Lambda code. Use this file or env only. Deploy scripts and CDK read from here.",
+  "apiGatewayDefaultUrl": "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
+  "apiGatewayCdkUrl": "https://rrg9107m3d.execute-api.ap-south-1.amazonaws.com",
+  "cloudfront": {
+    "admin": "https://dfof7mguaa0a5.cloudfront.net",
+    "vendor": "https://d1s6ykkj381k58.cloudfront.net",
+    "customer": "https://d2aoyjj8ine0wk.cloudfront.net"
+  },
+  "allowedOrigins": [
+    "https://dfof7mguaa0a5.cloudfront.net",
+    "https://d1s6ykkj381k58.cloudfront.net",
+    "https://d2aoyjj8ine0wk.cloudfront.net",
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://localhost:3003",
+    "http://localhost:5173",
+    "https://admin.dev.warmpawz.com",
+    "https://vendor.dev.warmpawz.com",
+    "https://customer.dev.warmpawz.com",
+    "https://admin.warmpawz.com",
+    "https://vendor.warmpawz.com",
+    "https://customer.warmpawz.com",
+    "https://warmpawz.com",
+    "https://www.warmpawz.com"
+  ],
+  "_usage": "CloudFront = app URLs (browser). apiGatewayDefaultUrl = API base for apps (UAT-supporting). apiGatewayCdkUrl = CDK stack API (Cognito-only). allowedOrigins = CORS origins for Lambda."
+}

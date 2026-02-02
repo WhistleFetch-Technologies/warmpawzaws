@@ -206,10 +206,14 @@ if [ -n "$API_URL" ]; then
     echo -e "  API URL:         ${GREEN}$API_URL${NC}"
 fi
 echo ""
-echo "Official CloudFront URLs (do not create new URLs):"
-echo "  • Admin:    https://dfof7mguaa0a5.cloudfront.net"
-echo "  • Vendor:   https://d1s6ykkj381k58.cloudfront.net"
-echo "  • Customer: https://d2aoyjj8ine0wk.cloudfront.net"
+echo "Official CloudFront URLs (from config/urls.json):"
+if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
+  echo "  • Admin:    $(jq -r '.cloudfront.admin // "not set"' "$PROJECT_ROOT/config/urls.json")"
+  echo "  • Vendor:   $(jq -r '.cloudfront.vendor // "not set"' "$PROJECT_ROOT/config/urls.json")"
+  echo "  • Customer: $(jq -r '.cloudfront.customer // "not set"' "$PROJECT_ROOT/config/urls.json")"
+else
+  echo "  • Set config/urls.json (cloudfront.admin, .vendor, .customer) for app URLs"
+fi
 echo ""
 echo -e "${GREEN}Deployment successful! 🎉${NC}"
 echo ""

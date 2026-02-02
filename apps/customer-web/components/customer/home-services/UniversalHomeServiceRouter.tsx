@@ -452,6 +452,7 @@ export function UniversalHomeServiceRouter({
 
   const handlePetSelected = (pet: any) => {
     console.log('✅ [HOME-SERVICE-ROUTER] Pet selected:', pet);
+    try { sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet?.id)); } catch { /* ignore */ }
     setBookingFlow(prev => ({ ...prev, pet }));
     setCurrentStep('select_time');
   };
@@ -468,76 +469,20 @@ export function UniversalHomeServiceRouter({
     setCurrentStep('payment');
   };
 
-  const handlePaymentSuccess = async (paymentData: any) => {
-    console.log('✅ [HOME-SERVICE-ROUTER] Payment successful:', paymentData);
+  const handlePaymentSuccess = (bookingId: string, _orderId?: string, otpCode?: string) => {
+    // UniversalPaymentPage already creates the booking and passes bookingId via onSuccess. Do NOT POST again.
+    console.log('✅ [HOME-SERVICE-ROUTER] Payment successful, bookingId:', bookingId);
 
-    if (!customerId) {
-      toast.error('Customer session not found. Please try again.');
-      return;
-    }
-
-    try {
-      // Build payload for /bookings/create (CreateBookingRequestSchema: bookingDate, bookingTime, customerId, vendorId, serviceId UUID, serviceType enum)
-      const serviceIdRaw = bookingFlow.services[0]?.serviceId || bookingFlow.services[0]?.id;
-      const bookingPayload = {
-        customerId,
-        vendorId: bookingFlow.vendorId,
-        serviceId: serviceIdRaw,
-        staffId: bookingFlow.staffId || undefined,
-        bookingDate: bookingFlow.date,
-        bookingTime: bookingFlow.time,
-        serviceType: 'at_home' as const,
-        petId: bookingFlow.pet?.id || undefined,
-        petName: bookingFlow.pet?.name,
-        customerPhone: phone,
-        address: typeof bookingFlow.address === 'string' ? bookingFlow.address : (bookingFlow.address?.addressLine1 || bookingFlow.address?.fullAddress || bookingFlow.address?.address),
-        amount: paymentData.amount,
-        notes: bookingFlow.notes || undefined,
-        serviceName: bookingFlow.services[0]?.serviceName || bookingFlow.services[0]?.name,
-      };
-
-      console.log('📤 [HOME-SERVICE-ROUTER] Creating booking:', bookingPayload);
-
-      const endpoints = ['/bookings/create', '/customer/bookings/create', '/booking/create', '/customer/booking/create'];
-      let bookingData: any = null;
-      let lastErr: any = null;
-
-      for (const endpoint of endpoints) {
-        try {
-          bookingData = await apiClient.post<{ bookingId?: string; booking?: any; otp?: string; startOTP?: string }>(endpoint, bookingPayload);
-          console.log('✅ [HOME-SERVICE-ROUTER] Booking created via', endpoint, bookingData);
-          break;
-        } catch (e: any) {
-          lastErr = e;
-          if (e?.response?.status === 404 || e?.statusCode === 404) continue;
-          throw e;
-        }
+    setBookingFlow(prev => ({
+      ...prev,
+      payment: { amount: prev.services.reduce((s, svc) => s + (svc.customPrice || svc.price || 0), 0), method: 'upi' },
+      booking: {
+        bookingId,
+        otp: otpCode,
+        startOTP: otpCode,
       }
-
-      if (!bookingData) {
-        throw lastErr || new Error('Failed to create booking');
-      }
-
-      const res = bookingData?.data ?? bookingData;
-      const otp = res.otp || res.booking?.completionOTP;
-      const startOTP = res.startOTP || res.booking?.startOTP;
-
-      setBookingFlow(prev => ({
-        ...prev,
-        payment: paymentData,
-        booking: {
-          bookingId: res.bookingId || res.booking?.id,
-          ...res.booking,
-          otp,
-          startOTP,
-        }
-      }));
-
-      setCurrentStep('confirmation');
-    } catch (error: any) {
-      console.error('❌ [HOME-SERVICE-ROUTER] Booking creation failed:', error);
-      toast.error(error?.response?.data?.error || error?.message || 'Failed to create booking. Please try again.');
-    }
+    }));
+    setCurrentStep('confirmation');
   };
 
   const handleViewBooking = () => {
@@ -624,14 +569,17 @@ export function UniversalHomeServiceRouter({
     );
   }
 
-  // STEP: Pet Selection
+  // STEP: Pet Selection (Phase 1: pre-select last-used pet from sessionStorage)
   if (currentStep === 'select_pet' && bookingFlow.services.length > 0) {
+    let preSelectedPetId: string | undefined;
+    try { preSelectedPetId = sessionStorage.getItem(`warmpawz_last_pet_${phone}`) || undefined; } catch { /* ignore */ }
     return (
       <PetSelector
         phone={phone}
         onBack={handleBack}
         onSelect={handlePetSelected}
         onNavigate={onNavigate}
+        preSelectedPetId={preSelectedPetId}
       />
     );
   }
@@ -712,6 +660,7 @@ export function UniversalHomeServiceRouter({
         transactionId={bookingFlow.payment?.transactionId}
         onViewDetails={handleViewBooking}
         onBackToHome={handleBackToDashboard}
+        onNavigate={onNavigate}
       />
     );
   }

@@ -1,5 +1,5 @@
-import { ComingSoonPage, comingSoonPresets } from '@/components/vendor/ComingSoonPage';
+import { NotAvailablePage, notAvailablePresets } from '@/components/vendor/NotAvailablePage';
 
 export default function FacilityManagementPage() {
-  return <ComingSoonPage {...comingSoonPresets.facility_management} />;
+  return <NotAvailablePage {...notAvailablePresets.facility_management} />;
 }

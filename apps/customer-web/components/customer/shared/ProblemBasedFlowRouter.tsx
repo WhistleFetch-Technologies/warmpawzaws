@@ -60,6 +60,7 @@ interface ServiceStyleConfig {
   bgColor: string;
   available: boolean;
   providerCount?: number;
+  earliestSlot?: string; // Phase 2: "Earliest today 2 PM"
 }
 
 interface ProblemBasedFlowRouterProps {
@@ -221,7 +222,8 @@ function ServiceStyleSelector({
                       <p className="text-sm text-gray-600 leading-snug">{style.description}</p>
                       {style.providerCount !== undefined && style.providerCount > 0 && (
                         <p className="text-xs text-gray-500 mt-1">
-                          {style.providerCount} provider{style.providerCount !== 1 ? 's' : ''} available
+                          {style.providerCount} provider{style.providerCount !== 1 ? 's' : ''}
+                          {style.earliestSlot ? ` • Earliest ${style.earliestSlot}` : ' available'}
                         </p>
                       )}
                     </div>
@@ -362,6 +364,25 @@ export function ProblemBasedFlowRouter({
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
   const [availableStyles, setAvailableStyles] = useState<ServiceStyleConfig[]>([]);
   const [loadingStyles, setLoadingStyles] = useState(true);
+  const [previousProviderIds, setPreviousProviderIds] = useState<string[]>([]);
+
+  // Load previous providers for "Used before" badge
+  useEffect(() => {
+    const load = async () => {
+      if (!phone) return;
+      const categoryToServiceType: Record<string, string> = {
+        vet: 'vet', grooming: 'grooming', training: 'training', walking: 'walking', boarding: 'boarding', behaviorist: 'behaviourist', nutritionist: 'nutrition',
+      };
+      const serviceType = categoryToServiceType[category];
+      if (!serviceType) return;
+      try {
+        const res = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=${serviceType}`);
+        const id = res?.provider?.id || res?.provider?.vendorId;
+        if (id) setPreviousProviderIds([id]);
+      } catch { /* ignore */ }
+    };
+    load();
+  }, [phone, category]);
 
   // Load available service styles for this problem/category
   useEffect(() => {
@@ -437,13 +458,19 @@ export function ProblemBasedFlowRouter({
 
             const providers = response.providers || response.vendors || [];
             const isAvailable = providers.length > 0;
-            
-            console.log(`[ServiceStyle] ${style.style}: ${providers.length} providers found, available: ${isAvailable}`);
-            
+            // Phase 2: earliest slot from first provider's nextAvailableSlot/nextAvailability
+            let earliestSlot: string | undefined;
+            const first = providers[0];
+            if (first) {
+              const slot = first.nextAvailableSlot?.formattedDisplay ?? first.nextAvailableSlot ?? first.nextAvailability;
+              if (typeof slot === 'string' && slot) earliestSlot = slot;
+            }
+            console.log(`[ServiceStyle] ${style.style}: ${providers.length} providers found, available: ${isAvailable}, earliestSlot: ${earliestSlot || 'n/a'}`);
             return {
               ...style,
               available: isAvailable,
               providerCount: providers.length,
+              earliestSlot,
             };
           } catch (error: any) {
             // ✅ FIX: If endpoint fails, mark as unavailable to prevent empty fields
@@ -638,6 +665,9 @@ export function ProblemBasedFlowRouter({
           serviceStyle={selectedStyle as any}
           title={getProviderListTitle()}
           subtitle={`Specialists in ${problemTitle}`}
+          problemId={problemId}
+          problemTitle={problemTitle}
+          previousProviderIds={previousProviderIds}
           onBack={handleBack}
           onNavigate={onNavigate}
           onSelectProvider={handleSelectProvider}

@@ -1,5 +1,5 @@
-import { ComingSoonPage, comingSoonPresets } from '@/components/vendor/ComingSoonPage';
+import { NotAvailablePage, notAvailablePresets } from '@/components/vendor/NotAvailablePage';
 
 export default function VetSummaryPage() {
-  return <ComingSoonPage {...comingSoonPresets.vet_summary} />;
+  return <NotAvailablePage {...notAvailablePresets.vet_summary} />;
 }

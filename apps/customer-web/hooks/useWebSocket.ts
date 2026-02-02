@@ -19,9 +19,8 @@ export function useWebSocket(userId?: string, userType: 'customer' | 'vendor' = 
   useEffect(() => {
     if (!userId) return;
 
-    // Get API base URL from runtime config
-    const apiBaseUrl = getApiBaseUrl() || 
-                       'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    // Get API base URL from runtime config (API Gateway); getApiBaseUrl() has correct fallback
+    const apiBaseUrl = getApiBaseUrl();
 
     // Create or get WebSocket client
     clientRef.current = createWebSocketClient(apiBaseUrl, userId, userType);

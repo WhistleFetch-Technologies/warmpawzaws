@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useRef } from 'react';
 import { VendorAuth } from '@/components/vendor/VendorAuth';
-import { isTokenExpired, clearVendorSession } from '@/lib/session-utils';
+import { isTokenExpired, clearVendorSession, isStaleTempVendorSession } from '@/lib/session-utils';
 
 export default function AuthPage() {
   const [isCheckingSession, setIsCheckingSession] = useState(true);
@@ -38,6 +38,13 @@ export default function AuthPage() {
       return;
     }
 
+    // Stale temp_vendor_ session (e.g. leftover from previous visit) – clear and show login only when no valid token
+    if (isStaleTempVendorSession(storedToken)) {
+      clearVendorSession();
+      setIsCheckingSession(false);
+      return;
+    }
+
     // Valid session exists - redirect based on status
     const storedVendor = localStorage.getItem('vendorData');
     const vendorData = storedVendor ? JSON.parse(storedVendor) : null;
@@ -58,10 +65,11 @@ export default function AuthPage() {
     }
     hasRedirected.current = true;
     
-    // Store session data
+    // Store session data (authToken + vendorAuthToken so api-client finds token on first request after redirect)
     if (session.phone && session.accessToken) {
       localStorage.setItem('vendorPhone', session.phone);
       localStorage.setItem('authToken', session.accessToken);
+      localStorage.setItem('vendorAuthToken', session.accessToken);
       
       if (session.vendorId) {
         localStorage.setItem('vendorId', session.vendorId);
@@ -80,6 +88,12 @@ export default function AuthPage() {
       if (session.onboardingStatus) {
         localStorage.setItem('vendorApplicationStatus', session.onboardingStatus);
       }
+    }
+    
+    // Set session flags immediately before redirect so destination page sees them (avoids redirect back to login)
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('_warmpawz_vendor_just_logged_in', 'true');
+      sessionStorage.setItem('_warmpawz_vendor_has_session', 'true');
     }
     
     // Determine routing

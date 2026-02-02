@@ -21,21 +21,10 @@ export function SearchResultsPage() {
   const limit = 20;
 
 
-  // Get user location
+  // Get user location (silent fallback when permission denied)
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-        },
-        (error) => {
-          console.log('Location access denied:', error);
-        }
-      );
-    }
+    const { getCurrentPositionSafe } = require('@/lib/geolocation-utils');
+    getCurrentPositionSafe((coords: { lat: number; lng: number }) => setUserLocation(coords));
   }, []);
 
   useEffect(() => {

@@ -69,3 +69,15 @@
 
 - **Backend:** Deploy Lambda (e.g. `./scripts/deploy-lambda-direct.sh`) so the comma-separated `serviceStyle` fix and role logic are live.
 - **Vendor-web:** No change required for discovery; optional deploy for other fixes.
+
+---
+
+## 6. Specialization flow (forensic)
+
+- **service_catalog.specialization_ids:** Each catalog service has an array of specialization IDs (e.g. `diagnostics`, `dentistry`, `medicine`). These are shown in Admin Catalog and drive filtering in vendor/customer discovery.
+- **Category → specialization:** When admin updates the **Category** field on a service (PATCH `/admin/service-catalog/:id`), the backend **dynamically infers** `specialization_ids` from the new category and service name (see `backend/lambda/src/utils/infer-specialization-from-category.ts`) so the UI stays in sync without manual re-selection.
+- **Vendor:** `GET /vendor/:vendorId/service-catalog/complete` returns `availableServices[].specializationIds` (and `specialization_ids`). Vendor service discovery uses this.
+- **Customer:** `GET /customer/vendor/:vendorId/services` returns each service with `specializationIds` / `specialization_ids` from `service_catalog` (joined by `vs.service_id = sc.id`).
+- **Booking & appointment:** Get-booking (customer) and vendor appointment detail responses include `service.specializationIds` / `service.specialization_ids` by joining `service_catalog` on `booking.service_id = service_catalog.id` (and legacy `services` table when applicable).
+
+**Validation script:** `node scripts/forensic-specialization-flow.js` (optionally with `ENVIRONMENT=dev` and `API_BASE_URL=...`) runs forensic checks: (1) catalog services have specialization_ids, (2) backend PATCH category infers specialization, (3) vendor complete payload has specialization, (4) customer vendor services payload has specialization, (5) booking and vendor appointment service object has specialization.

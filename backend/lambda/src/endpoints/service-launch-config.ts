@@ -735,10 +735,13 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching customer service launch config:', error);
-      return c.json({ 
-        success: false, 
-        error: error.message || 'Failed to fetch service visibility' 
-      }, 500);
+      // Graceful degradation: return 200 with defaults so customer home loads
+      return c.json({
+        success: true,
+        location: { state: null, stateCode: null, city: null },
+        services: { visible: [], comingSoon: [], hidden: [] },
+        buttons: [],
+      }, 200);
     }
   });
 }

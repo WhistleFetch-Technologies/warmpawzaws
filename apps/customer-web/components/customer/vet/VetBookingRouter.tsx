@@ -31,7 +31,7 @@ interface VetBookingRouterProps {
   onViewBooking?: (bookingId: string) => void;
 }
 
-type BookingStep = 'service' | 'details' | 'address' | 'payment' | 'confirmation';
+type BookingStep = 'service' | 'details' | 'address' | 'summary' | 'payment' | 'confirmation';
 
 interface TimeSlot {
   time: string;
@@ -109,6 +109,7 @@ export function VetBookingRouter({
   const [notes, setNotes] = useState('');
   const [processing, setProcessing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
+  const [selectedPackageForSwitch, setSelectedPackageForSwitch] = useState<any | null>(null); // Phase 1: Package switch
   const [vendorServices, setVendorServices] = useState<any[]>([]);
   // ✅ NEW: Store all selected services for multi-service booking
   const [allSelectedServices, setAllSelectedServices] = useState<any[]>(() => {
@@ -152,6 +153,7 @@ export function VetBookingRouter({
       'service': 'service_selection',
       'details': 'schedule_selection',
       'address': 'address_selection',
+      'summary': 'booking_summary',
       'payment': 'payment_initiated',
       'confirmation': 'booking_confirmed',
     };
@@ -383,37 +385,38 @@ export function VetBookingRouter({
     
     try {
       setLoading(true);
-      // ✅ CRITICAL: Use the correct endpoint that returns service_id (UUID)
-      // Try multiple endpoints to ensure we get the real data
+      const vid = vendorId || doctorId;
+      // Prefer customer endpoint so only published services with vendor price show (CRUD reflects immediately)
       let servicesResponse: any = null;
       const endpoints = [
-        `/vendor/${vendorId || doctorId}/services`,
-        `/vendor/services/${vendorId || doctorId}`,
-        `/customer/clinic/${doctorId}/services`
+        `/customer/vendor/${vid}/services`,
+        `/customer/clinic/${vid}/services`,
+        `/vendor/${vid}/services`,
+        `/vendor/services/${vid}`,
       ];
       
       for (const endpoint of endpoints) {
         try {
           servicesResponse = await apiClient.get(endpoint) as any;
-          // Check if response has services in expected format
-          if (servicesResponse?.services || servicesResponse?.allServices || (Array.isArray(servicesResponse) && servicesResponse.length > 0)) {
+          if (servicesResponse?.services?.length || servicesResponse?.allServices?.length || (Array.isArray(servicesResponse?.services) && servicesResponse.services.length > 0)) {
+            break;
+          }
+          if (servicesResponse?.services && (servicesResponse.services.at_home || servicesResponse.services.at_center || servicesResponse.services.tele)) {
             break;
           }
         } catch (e) {
-          continue; // Try next endpoint
+          continue;
         }
       }
       
       if (servicesResponse) {
-        // Extract services from different response formats
         let services: any[] = [];
         if (servicesResponse.services) {
-          // Handle servicesByStyle format
           if (servicesResponse.services.at_home || servicesResponse.services.at_center || servicesResponse.services.tele) {
             services = [
               ...(servicesResponse.services.at_home?.services || []),
               ...(servicesResponse.services.at_center?.services || []),
-              ...(servicesResponse.services.tele?.services || [])
+              ...(servicesResponse.services.tele?.services || []),
             ];
           } else if (Array.isArray(servicesResponse.services)) {
             services = servicesResponse.services;
@@ -457,13 +460,23 @@ export function VetBookingRouter({
       // Load pets from API with retry logic for intermittent 500/503 errors
       const petsResponse = await fetchWithRetry(`/customer/pets/${phone}`, 3, 1000) as any;
       if (petsResponse.pets && petsResponse.pets.length > 0) {
-        setPets(petsResponse.pets.map((p: any) => ({
+        const mappedPets = petsResponse.pets.map((p: any) => ({
           id: p.id,
           name: p.name,
           species: p.species || p.type,
           breed: p.breed,
           photo: p.photo || p.profilePhoto || p.image,
-        })));
+        }));
+        setPets(mappedPets);
+        // Phase 1: Pre-select last-used pet from sessionStorage
+        try {
+          const lastPetId = sessionStorage.getItem(`warmpawz_last_pet_${phone}`);
+          if (lastPetId) {
+            const found = mappedPets.find((p: Pet) => p.id === lastPetId || String(p.id) === lastPetId);
+            if (found) setSelectedPet(found);
+            else if (mappedPets.length > 0) setSelectedPet(mappedPets[0]);
+          } else if (mappedPets.length === 1) setSelectedPet(mappedPets[0]);
+        } catch { /* ignore */ }
       }
       
       // Address is part of vendor profile - not needed here
@@ -554,6 +567,23 @@ export function VetBookingRouter({
     }
   }, [customerId, doctorId, step]);
 
+  // Phase 1: Summary step with package advice
+  const [recommendedPackages, setRecommendedPackages] = useState<any[]>([]);
+  const [loadingPackages, setLoadingPackages] = useState(false);
+  useEffect(() => {
+    if (step === 'summary' && (doctorId || vendorId)) {
+      const load = async () => {
+        setLoadingPackages(true);
+        try {
+          const res = await apiClient.get(`/vendor/${doctorId || vendorId}/packages`) as any;
+          setRecommendedPackages(res?.packages || []);
+        } catch { setRecommendedPackages([]); }
+        finally { setLoadingPackages(false); }
+      };
+      load();
+    } else { setRecommendedPackages([]); }
+  }, [step, doctorId, vendorId]);
+
   // Handle using a package session
   const handleUsePackageSession = async () => {
     if (!activePackage) return;
@@ -574,15 +604,15 @@ export function VetBookingRouter({
 
   const handleNext = () => {
     const steps: BookingStep[] = selectedServiceType === 'at_home'
-      ? ['service', 'details', 'address', 'payment', 'confirmation']
-      : ['service', 'details', 'payment', 'confirmation'];
+      ? ['service', 'details', 'address', 'summary', 'payment', 'confirmation']
+      : ['service', 'details', 'summary', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
     
     if (currentIdx < steps.length - 1) {
       const nextStep = steps[currentIdx + 1];
       
-      // When advancing to payment, ensure selectedVendorService is set
-      if (nextStep === 'payment' && !selectedVendorService) {
+      // When advancing to payment or summary, ensure selectedVendorService is set
+      if ((nextStep === 'payment' || nextStep === 'summary') && !selectedVendorService) {
         const serviceOption = getSelectedServiceOption();
         if (serviceOption) {
           // ✅ CRITICAL: Find the actual vendor service from API to get real service_id (UUID)
@@ -610,8 +640,8 @@ export function VetBookingRouter({
 
   const handleBack = () => {
     const steps: BookingStep[] = selectedServiceType === 'at_home'
-      ? ['service', 'details', 'address', 'payment', 'confirmation']
-      : ['service', 'details', 'payment', 'confirmation'];
+      ? ['service', 'details', 'address', 'summary', 'payment', 'confirmation']
+      : ['service', 'details', 'summary', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
     
     if (currentIdx > 0) {
@@ -722,16 +752,16 @@ export function VetBookingRouter({
     { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
   ];
 
-  // ✅ FIX: Prepare step indicators for header (include Address when at_home)
+  // Phase 1: Step indicators include Summary
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
     
     const stepLabels = selectedServiceType === 'at_home'
-      ? ['Service', 'Details', 'Address', 'Payment']
-      : ['Service', 'Details', 'Payment'];
+      ? ['Service', 'Details', 'Address', 'Summary', 'Payment']
+      : ['Service', 'Details', 'Summary', 'Payment'];
     const currentStepMap: Record<BookingStep, number> = selectedServiceType === 'at_home'
-      ? { service: 0, details: 1, address: 2, payment: 3, confirmation: 4 }
-      : { service: 0, details: 1, address: 1, payment: 2, confirmation: 3 };
+      ? { service: 0, details: 1, address: 2, summary: 3, payment: 4, confirmation: 5 }
+      : { service: 0, details: 1, address: 1, summary: 2, payment: 3, confirmation: 4 };
     const currentIdx = currentStepMap[step] ?? 0;
     
     return stepLabels.map((label, idx) => ({
@@ -770,7 +800,10 @@ export function VetBookingRouter({
                 {pets.map((pet) => (
                   <button
                     key={pet.id}
-                    onClick={() => setSelectedPet(pet)}
+                    onClick={() => {
+                      setSelectedPet(pet);
+                      try { sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet.id)); } catch { /* ignore */ }
+                    }}
                     className={`flex-shrink-0 px-3 py-2 rounded-lg border-2 transition-all ${
                       selectedPet?.id === pet.id
                         ? 'border-[#FF8C42] bg-orange-50'
@@ -969,7 +1002,10 @@ export function VetBookingRouter({
                 pets.map((pet) => (
                   <button
                     key={pet.id}
-                    onClick={() => setSelectedPet(pet)}
+                    onClick={() => {
+                      setSelectedPet(pet);
+                      try { sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet.id)); } catch { /* ignore */ }
+                    }}
                       className={`w-full p-3 sm:p-4 rounded-xl border-2 transition-all flex items-center gap-3 sm:gap-4 ${
                       selectedPet?.id === pet.id 
                         ? 'border-orange-500 bg-orange-50' 
@@ -1082,8 +1118,72 @@ export function VetBookingRouter({
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
               disabled={!selectedAddress}
             >
-              {selectedAddress ? 'Continue to Payment' : 'Select an Address to Continue'}
+              {selectedAddress ? 'Continue' : 'Select an Address to Continue'}
             </Button>
+          </div>
+        )}
+
+        {/* Phase 1: Summary step with package advice */}
+        {step === 'summary' && (
+          <div className="space-y-4 pb-24">
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900">Booking Summary</h2>
+            <div className="bg-white rounded-xl p-4 space-y-3 shadow-sm border border-gray-200">
+              {allSelectedServices && allSelectedServices.length > 0 ? (
+                <div className="space-y-2 pb-3 border-b">
+                  {allSelectedServices.map((svc: any, idx: number) => (
+                    <div key={idx} className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-orange-100 text-orange-600">
+                        {selectedServiceType === 'tele' ? <Video className="w-5 h-5" /> : selectedServiceType === 'at_home' ? <Home className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
+                      </div>
+                      <div className="flex-1"><p className="font-semibold">{svc.name || svc.serviceName}</p><p className="text-xs text-gray-500">{svc.duration} mins</p></div>
+                      <p className="font-bold text-orange-600">₹{svc.price ?? 0}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 pb-3 border-b">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-orange-100 text-orange-600">
+                    {selectedServiceType === 'tele' ? <Video className="w-5 h-5" /> : selectedServiceType === 'at_home' ? <Home className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
+                  </div>
+                  <div className="flex-1"><p className="font-semibold">{selectedServiceOption?.name || 'Vet Consultation'}</p><p className="text-xs text-gray-500">{selectedServiceOption?.duration ?? 0} mins</p></div>
+                  <p className="font-bold text-orange-600">₹{selectedServiceOption?.price ?? 0}</p>
+                </div>
+              )}
+              <div className="flex items-center gap-2 text-sm"><Calendar className="w-4 h-4 text-gray-400" /><span>{selectedDate && new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} at {selectedTime}</span></div>
+              <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-gray-400" /><span>{selectedPet?.name} ({selectedPet?.breed})</span></div>
+              {selectedServiceType === 'at_home' && selectedAddress && <div className="flex items-center gap-2 text-sm"><MapPin className="w-4 h-4 text-gray-400" /><span>{selectedAddress.street || selectedAddress.address || 'Address'}</span></div>}
+              <div className="pt-2 flex justify-between font-semibold"><span>Total</span><span className="text-orange-600">₹{(selectedPackageForSwitch ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0) : (allSelectedServices?.length ? allSelectedServices.reduce((s: number, x: any) => s + (x.price ?? 0), 0) : (selectedServiceOption?.price ?? 0))).toLocaleString('en-IN')}</span></div>
+              {selectedPackageForSwitch && (
+                <div className="mt-2 p-2 bg-green-50 rounded-lg text-sm text-green-700 flex items-center gap-2">
+                  <Package className="w-4 h-4" />
+                  <span>Package: {selectedPackageForSwitch.package_name ?? selectedPackageForSwitch.name} • {(selectedPackageForSwitch.total_sessions ?? selectedPackageForSwitch.session_count ?? 1)} sessions</span>
+                </div>
+              )}
+            </div>
+            {loadingPackages ? <div className="py-4 text-center text-sm text-gray-500">Loading packages...</div> : recommendedPackages.length > 0 ? (
+              <div className="bg-orange-50 rounded-xl p-4 border border-orange-200">
+                <p className="font-semibold text-gray-900 mb-2 flex items-center gap-2"><Package className="w-4 h-4 text-orange-500" />Get a package instead</p>
+                {recommendedPackages.slice(0, 2).map((pkg: any) => {
+                  const singlePrice = selectedServiceOption?.price ?? 0;
+                  const pkgPrice = pkg.package_price ?? pkg.price ?? 0;
+                  const sessions = pkg.total_sessions ?? pkg.session_count ?? 1;
+                  const perSession = sessions > 0 ? pkgPrice / sessions : pkgPrice;
+                  const savings = singlePrice > 0 && perSession < singlePrice ? Math.round((singlePrice - perSession) * sessions) : 0;
+                  return (
+                    <div key={pkg.id} className="mb-3 last:mb-0 p-3 bg-white rounded-lg border border-orange-100">
+                      <p className="font-medium">{pkg.package_name ?? pkg.name}</p>
+                      <p className="text-sm text-gray-600 mt-1">₹{pkgPrice} • {sessions} sessions</p>
+                      {savings > 0 && <p className="text-xs text-green-600 mt-1">Save ₹{savings} vs single bookings</p>}
+                      <Button variant="outline" size="sm" className="mt-2 border-orange-300 text-orange-600 hover:bg-orange-50" onClick={() => {
+                        setSelectedPackageForSwitch(pkg);
+                        toast.success(`Switched to ${pkg.package_name ?? pkg.name}. Proceed to payment.`);
+                      }}>Switch to Package</Button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+            <Button onClick={handleNext} className="w-full bg-orange-500 hover:bg-orange-600 py-3">Continue to Payment</Button>
           </div>
         )}
             
@@ -1104,7 +1204,7 @@ export function VetBookingRouter({
                     ? 'Select a Pet' 
                     : selectedServiceType === 'at_home' 
                       ? 'Continue to Address' 
-                      : 'Continue to Payment'}
+                      : 'Continue'}
             </Button>
             </div>
           </div>
@@ -1276,9 +1376,11 @@ export function VetBookingRouter({
           
           // Only render if we have a valid UUID
           if (finalServiceId && uuidRegex.test(finalServiceId)) {
-            const totalBaseAmount = allSelectedServices && allSelectedServices.length > 0
-              ? allSelectedServices.reduce((sum, s) => sum + (s.price ?? 0), 0)
-              : (selectedVendorService?.price ?? selectedServiceOption?.price ?? 0);
+            const totalBaseAmount = selectedPackageForSwitch
+              ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0)
+              : (allSelectedServices && allSelectedServices.length > 0
+                ? allSelectedServices.reduce((sum, s) => sum + (s.price ?? 0), 0)
+                : (selectedVendorService?.price ?? selectedServiceOption?.price ?? 0));
             const totalDuration = allSelectedServices && allSelectedServices.length > 0
               ? allSelectedServices.reduce((sum, s) => sum + (s.duration ?? 0), 0)
               : (selectedVendorService?.duration ?? selectedServiceOption?.duration ?? 15);

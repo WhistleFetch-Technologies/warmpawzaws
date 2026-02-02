@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { X, Camera, Upload } from 'lucide-react';
-// Removed Supabase imports - using apiClient instead
+// Uses apiClient (API Gateway)
 import { apiClient } from '@/lib/api-client';
 
 interface Pet {

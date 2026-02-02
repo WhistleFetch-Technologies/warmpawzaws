@@ -64,18 +64,37 @@ test.describe('Pharmacy flow – API contracts', () => {
     }
   });
 
-  test('GET /customer/orders/:orderId/pharmacy-status returns order shape', async ({ request }) => {
-    const orderId = process.env.TEST_PHARMACY_ORDER_ID || '00000000-0000-0000-0000-000000000001';
-    const res = await request.get(`${API_BASE}/customer/orders/${orderId}/pharmacy-status`);
-    expect([200, 404, 500]).toContain(res.status());
-    if (res.ok()) {
-      const data = await res.json();
-      expect(data).toHaveProperty('success', true);
-      const order = data.order || data;
-      expect(order).toHaveProperty('status');
-      expect(order).toHaveProperty('totalAmount');
-      expect(order).toHaveProperty('medicines');
+  test('GET /pharmacy/orders/:orderId/pharmacy-status returns 200 and order shape (public)', async ({ request }) => {
+    // Create order so we have a real orderId (public endpoint returns 404 for unknown id)
+    const createRes = await request.post(`${API_BASE}/pharmacy/orders/create`, {
+      data: {
+        customerPhone: process.env.TEST_CUSTOMER_PHONE || `+9198765${String(Date.now()).slice(-6)}`,
+        prescriptionUrl: 'https://example.com/prescription.jpg',
+        deliveryAddress: {
+          addressLine1: '123 Test St',
+          city: 'Mumbai',
+          state: 'MH',
+          pincode: '400001',
+          latitude: 19.076,
+          longitude: 72.8777,
+        },
+        notes: 'Contract test',
+      },
+    });
+    const createData = await createRes.json();
+    if (createRes.status() !== 200 || !createData.orderId) {
+      test.skip(createRes.status() === 400 ? 'Create 400 – backend may require customerId' : 'Create did not return 200 with orderId');
+      return;
     }
+    const orderId = createData.orderId as string;
+    const res = await request.get(`${API_BASE}/pharmacy/orders/${orderId}/pharmacy-status`);
+    expect(res.status()).toBe(200);
+    const data = await res.json();
+    expect(data).toHaveProperty('success', true);
+    const order = data.order || data;
+    expect(order).toHaveProperty('status');
+    expect(order).toHaveProperty('totalAmount');
+    expect(order).toHaveProperty('medicines');
   });
 
   test('GET /delivery/:orderId/status returns status and optional delivery_otp', async ({ request }) => {

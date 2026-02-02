@@ -40,24 +40,26 @@ export default function HomePage() {
               const customerData = profileResponse.profile;
               const onboardingStatus = customerData.onboarding_status || customerData.onboardingStatus;
               const profileCompleted = customerData.profile_completed || customerData.onboardingComplete;
+              const name = customerData.name || customerData.full_name || '';
+              const hasRealName = !!name && String(name).trim() !== '' && name !== `Customer ${(storedPhone || '').slice(-4)}`;
+              const hasBookings = (customerData.bookings?.length || 0) > 0;
+              const hasProfileId = !!customerData.id;
+              // Existing-user fix: treat as onboarded if backend says COMPLETED, or has profile + name (returning user)
+              const isOnboarded = onboardingStatus === 'COMPLETED' || profileCompleted ||
+                (hasProfileId && hasRealName) || (hasProfileId && hasBookings);
               
               localStorage.setItem('customerData', JSON.stringify(customerData));
               localStorage.setItem('customerId', customerData.id);
-              
-              if (onboardingStatus === 'COMPLETED' || profileCompleted) {
-                localStorage.setItem('customerOnboardingComplete', 'true');
-              } else {
-                localStorage.setItem('customerOnboardingComplete', 'false');
-              }
+              localStorage.setItem('customerOnboardingComplete', isOnboarded ? 'true' : 'false');
               
               setSession({
                 phone: storedPhone,
                 sessionToken: storedToken,
                 verified: true,
                 customer: customerData,
-                hasCompletedOnboarding: onboardingStatus === 'COMPLETED' || profileCompleted,
+                hasCompletedOnboarding: isOnboarded,
                 hasPets: customerData.pets && customerData.pets.length > 0,
-                isNewUser: onboardingStatus === 'INIT' || onboardingStatus === 'PHONE_VERIFIED'
+                isNewUser: !isOnboarded && (onboardingStatus === 'INIT' || onboardingStatus === 'PHONE_VERIFIED')
               });
             } else {
               const storedCustomer = localStorage.getItem('customerData');

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Video, Building2, Home as HomeIcon, Stethoscope, Star, MapPin, Clock, Sparkles, ChevronRight, FlaskConical, Pill, History, TrendingUp, AlertCircle, Activity } from 'lucide-react';
+import { Video, Building2, Home as HomeIcon, Stethoscope, Star, MapPin, Clock, Sparkles, ChevronRight, FlaskConical, Pill, History, TrendingUp, AlertCircle, Activity, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -44,12 +44,39 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   const [userName, setUserName] = useState('User');
   const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
 
+  const [previousVet, setPreviousVet] = useState<any>(null);
+
   useEffect(() => {
     loadPets();
     loadVetData();
     loadDashboardConfig();
     loadUserProfile();
+    loadPreviousVet();
   }, []);
+
+  const loadPreviousVet = async () => {
+    try {
+      const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=vet`).catch(() => null);
+      if (response?.provider) {
+        setPreviousVet({
+          id: response.provider.id,
+          name: response.provider.businessName || response.provider.name,
+          photo: response.provider.photo || null,
+          rating: response.provider.rating || 4.8,
+          lastVisit: response.provider.lastVisit,
+          sessionsCount: response.provider.sessionsCount || 1
+        });
+      } else {
+        const packagesResponse = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=vet`).catch(() => null);
+        if (packagesResponse?.packages?.length > 0) {
+          const pkg = packagesResponse.packages[0];
+          if (pkg.vendorId && pkg.vendorName) {
+            setPreviousVet({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 4.8, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: pkg.sessionsUsed || 1 });
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  };
   
   const loadUserProfile = async () => {
     try {
@@ -420,6 +447,45 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         <div className="mb-6">
           <PromotionBanner service="vet" maxPromotions={3} />
         </div>
+
+        {/* Phase 1: Book again with previous vet */}
+        {previousVet && (
+          <div className="mb-6 space-y-3">
+            <div className="flex items-center gap-2">
+              <RefreshCw className="w-5 h-5 text-orange-500" />
+              <h2 className="text-lg font-bold text-slate-900">Book again</h2>
+            </div>
+            <Card className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200 p-4">
+              <div className="flex items-center gap-4">
+                {previousVet.photo ? (
+                  <img src={previousVet.photo} alt={previousVet.name} className="w-16 h-16 rounded-xl object-cover border-2 border-orange-200" />
+                ) : (
+                  <div className="w-16 h-16 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 font-bold text-xl border-2 border-orange-200">
+                    {previousVet.name?.charAt(0) || 'V'}
+                  </div>
+                )}
+                <div className="flex-1">
+                  <h3 className="font-bold text-slate-900 text-lg">{previousVet.name}</h3>
+                  <div className="flex items-center gap-2 text-sm text-slate-600 mt-1">
+                    <div className="flex items-center gap-1 text-orange-600 font-bold">
+                      <Star className="w-4 h-4 fill-orange-500" />
+                      {previousVet.rating}
+                    </div>
+                    <span>•</span>
+                    <span>Last visit: {previousVet.lastVisit || '3 weeks ago'}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">{previousVet.sessionsCount || 1} visit(s) with you</p>
+                </div>
+                <Button
+                  className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
+                  onClick={() => handleNavigate('vet-booking', { vendorId: previousVet.id })}
+                >
+                  Book Now
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
         
         {/* Legacy Spotlight Banners - Fallback if no promotions */}
         {false && (

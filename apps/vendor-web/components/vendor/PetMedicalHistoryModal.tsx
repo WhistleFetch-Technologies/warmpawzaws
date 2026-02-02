@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { X, FileText, Calendar, User, AlertCircle, Pill, Activity } from 'lucide-react';
-// Using apiClient instead of Supabase
+// Uses apiClient (API Gateway)
 
 interface PetMedicalHistoryModalProps {
   petId: string;

@@ -138,17 +138,22 @@ function formatTime12Hour(time24: string): string {
 // COMPONENT
 // ============================================================================
 
-/** Normalize address from address book (addressLine1, etc.) to profile shape */
+/** Normalize address from address book (camelCase or snake_case from backend) to profile shape */
 function normalizeAddress(raw: any): Address {
   if (!raw) return { id: '', label: 'Address', address: '' };
-  const addressLine = [raw.addressLine1, raw.addressLine2, raw.city, raw.state, raw.pincode].filter(Boolean).join(', ') || raw.address || '';
+  const line1 = raw.addressLine1 ?? raw.address_line1;
+  const line2 = raw.addressLine2 ?? raw.address_line2;
+  const city = raw.city;
+  const stateVal = raw.state;
+  const pincode = raw.pincode;
+  const addressLine = [line1, line2, city, stateVal, pincode].filter(Boolean).join(', ') || raw.address || '';
   return {
     id: raw.id || '',
-    label: raw.label || raw.name || 'Address',
+    label: raw.label ?? raw.address_type ?? raw.name ?? 'Address',
     address: addressLine,
-    city: raw.city,
-    pincode: raw.pincode,
-    isDefault: raw.isDefault,
+    city: city,
+    pincode: pincode,
+    isDefault: raw.isDefault ?? raw.is_default,
   };
 }
 
@@ -951,9 +956,17 @@ export function UniversalProviderProfile({
         isOpen={showAddAddressModal}
         onClose={() => setShowAddAddressModal(false)}
         onSuccess={(savedAddress) => {
-          refreshAddresses();
-          if (savedAddress) setSelectedAddress(normalizeAddress(savedAddress));
           setShowAddAddressModal(false);
+          if (savedAddress) {
+            const normalized = normalizeAddress(savedAddress);
+            setSelectedAddress(normalized);
+            setAddresses((prev) => {
+              const exists = prev.some((a) => a.id && a.id === normalized.id);
+              if (exists) return prev.map((a) => (a.id === normalized.id ? normalized : a));
+              return [...prev, normalized];
+            });
+          }
+          refreshAddresses();
         }}
         customerName={provider?.name ? '' : undefined}
       />

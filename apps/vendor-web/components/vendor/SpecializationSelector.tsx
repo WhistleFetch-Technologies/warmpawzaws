@@ -172,13 +172,13 @@ export function SpecializationSelector({
                 </div>
               )}
 
-              {/* Icon */}
+              {/* Icon: from Categories (iconName/iconColor) so same as customer app */}
               <div className={`w-12 h-12 rounded-lg flex items-center justify-center mb-2 ${
                 isSelected 
                   ? 'bg-gradient-to-br from-[#FF8C42] to-[#FF6B35]' 
                   : 'bg-gray-100'
               }`}>
-                <span className="text-2xl">{spec.icon}</span>
+                <SpecIcon spec={spec} />
               </div>
 
               {/* Name */}

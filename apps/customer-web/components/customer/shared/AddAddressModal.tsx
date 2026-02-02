@@ -247,11 +247,32 @@ export function AddAddressModal({
 
       console.log('✅ [AddAddressModal] Address saved:', response);
 
-      if (response.success || response.address) {
+      if (response.success || response.address || (response.addresses && response.addresses.length > 0)) {
         toast.success('Address saved successfully!');
         
-        // Get the newly created address
-        const newAddress = response.address || response.addresses?.[response.addresses.length - 1];
+        // Prefer addresses[] (camelCase from backend); fallback to address (may be snake_case)
+        const fromList = response.addresses?.length ? response.addresses[response.addresses.length - 1] : null;
+        const fromSingle = response.address;
+        const raw = fromList || fromSingle;
+        const newAddress = raw && typeof raw === 'object'
+          ? {
+              id: raw.id,
+              customerId: raw.customerId ?? raw.customer_id,
+              label: raw.label ?? raw.address_type,
+              name: raw.name ?? raw.full_name,
+              phone: raw.phone,
+              addressLine1: raw.addressLine1 ?? raw.address_line1,
+              addressLine2: raw.addressLine2 ?? raw.address_line2,
+              city: raw.city,
+              state: raw.state,
+              pincode: raw.pincode,
+              landmark: raw.landmark,
+              coordinates: raw.coordinates,
+              isDefault: raw.isDefault ?? raw.is_default,
+              createdAt: raw.createdAt ?? raw.created_at,
+              updatedAt: raw.updatedAt ?? raw.updated_at,
+            }
+          : raw;
         
         onSuccess(newAddress);
         onClose();

@@ -69,9 +69,14 @@ export function EmergencyBookingPage(props: EmergencyBookingPageProps) {
         return;
       }
 
-      // Get emergency service for this vet
-      const servicesResponse = await apiClient.get<any>(`/vendor/${vetId}/services`);
-      const allServices = servicesResponse.services || servicesResponse || [];
+      // Prefer customer endpoint (only published, vendor price)
+      let servicesResponse: any;
+      try {
+        servicesResponse = await apiClient.get<any>(`/customer/vendor/${vetId}/services`);
+      } catch {
+        servicesResponse = await apiClient.get<any>(`/vendor/${vetId}/services`);
+      }
+      const allServices = servicesResponse?.services || servicesResponse || [];
       const emergencyService = allServices.find((s: any) => 
         s.serviceType === 'emergency' || 
         s.name?.toLowerCase().includes('emergency') ||

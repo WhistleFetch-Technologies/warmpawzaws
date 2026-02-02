@@ -528,6 +528,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const longitude = c.req.query('longitude');
       const serviceStyle = c.req.query('serviceStyle'); // ⚠️ NEW: Filter by service style
       const roleId = c.req.query('roleId'); // ⚠️ NEW: Filter by role
+      const problemTitle = c.req.query('problemTitle'); // Phase 2: Best for [problem] badge
 
       // ⚠️ For at_home and tele: align with admin active vendors source so walkers/trainers/groomers/vets all discover.
       // When category/roleId given: use same criteria as /admin/vendors/active (any published service), then filter by role.
@@ -693,20 +694,44 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             totalReviews = parseInt(reviewsResult.rows[0]?.review_count || '0', 10);
           } catch (reviewErr) { /* Continue */ }
 
-          // ✅ ENRICHED: Consultation price (min price from any published service so walkers/trainers show a price)
+          // ✅ ENRICHED: Consultation price (min/max from any published service) - Phase 2: priceMin, priceMax
           let consultationFee = 0;
           let minPrice = 0;
+          let maxPrice = 0;
           try {
             const priceResult = await query(
-              `SELECT MIN(COALESCE(vs.custom_price, vs.price, 0))::numeric as min_price
+              `SELECT MIN(COALESCE(vs.custom_price, vs.price, 0))::numeric as min_price,
+                      MAX(COALESCE(vs.custom_price, vs.price, 0))::numeric as max_price
                FROM vendor_services vs
                WHERE vs.vendor_id = $1 AND vs.is_enabled = true
                  AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)`,
               [vendor.id]
             );
             minPrice = parseFloat(priceResult.rows[0]?.min_price || '0') || 0;
+            maxPrice = parseFloat(priceResult.rows[0]?.max_price || '0') || 0;
             consultationFee = minPrice;
           } catch (priceErr) { /* Continue */ }
+
+          // Phase 2: Check if vendor has packages
+          let hasPackages = false;
+          try {
+            const pkgResult = await query(
+              `SELECT 1 FROM service_packages WHERE vendor_id = $1 LIMIT 1`,
+              [vendor.id]
+            );
+            hasPackages = (pkgResult.rows?.length || 0) > 0;
+          } catch { /* Continue */ }
+
+          // Phase 2: Photos from vendor metadata (facility_photos)
+          let photos: string[] = [];
+          try {
+            const meta = vendor.metadata;
+            if (meta) {
+              const m = typeof meta === 'string' ? JSON.parse(meta || '{}') : meta;
+              const raw = m?.facility_photos || m?.photos || [];
+              photos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
+            }
+          } catch { /* Continue */ }
           
           allProviders.push({
             id: vendor.id,
@@ -744,6 +769,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             photoUrl: vendor.profile_image || null,
             vendorProfileImage: vendor.profile_image || null,
             specializations: vendor.specializations ? (Array.isArray(vendor.specializations) ? vendor.specializations : JSON.parse(vendor.specializations || '[]')) : [],
+            // Phase 2: Gallery, price range, bestForProblem, hasPackages
+            photos: photos.length > 0 ? photos : undefined,
+            priceMin: minPrice > 0 ? minPrice : undefined,
+            priceMax: maxPrice > 0 && maxPrice !== minPrice ? maxPrice : undefined,
+            bestForProblem: problemTitle || undefined,
+            hasPackages: hasPackages || undefined,
             // ✅ ENRICHED: Amenities for discovery card (from metadata)
             amenities: (() => {
               try {
@@ -870,35 +901,35 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ? reviews.rows.reduce((sum: number, r: any) => sum + (r.rating || 0), 0) / reviews.rows.length
             : 0;
 
-          // Check availability (simplified - check if vendor has slots today)
-          // Gracefully handle missing vendor_schedule_slots table
+          // Check availability - vendor_availability_v2 (canonical) with vendor_schedule_slots fallback
           let isAvailableToday = false;
           try {
-            const tableCheck = await query(
-              `SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = 'vendor_schedule_slots'
-              )`
-            );
-            
-            if (tableCheck.rows[0]?.exists) {
-              const today = new Date();
-              const dayOfWeek = today.getDay();
-              const availabilityCheck = await query(
-                `SELECT 1 FROM vendor_schedule_slots 
-                 WHERE vendor_id = $1 
+            const today = new Date();
+            const dayOfWeek = today.getDay();
+            const va2Check = await query(
+              `SELECT 1 FROM vendor_availability_v2 
+               WHERE vendor_id = $1 
                  AND day_of_week = $2 
-                 AND is_enabled = true 
-                 LIMIT 1`,
-                [vendor.id, dayOfWeek]
+                 AND COALESCE(is_enabled, is_available, true) = true 
+               LIMIT 1`,
+              [vendor.id, dayOfWeek]
+            );
+            isAvailableToday = va2Check.rows.length > 0;
+            if (!isAvailableToday) {
+              const tableCheck = await query(
+                `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'vendor_schedule_slots')`
               );
-              isAvailableToday = availabilityCheck.rows.length > 0;
+              if (tableCheck.rows[0]?.exists) {
+                const vssCheck = await query(
+                  `SELECT 1 FROM vendor_schedule_slots WHERE vendor_id = $1 AND day_of_week = $2 AND is_enabled = true LIMIT 1`,
+                  [vendor.id, dayOfWeek]
+                );
+                isAvailableToday = vssCheck.rows.length > 0;
+              }
             }
           } catch (error: any) {
-            // Table doesn't exist or query failed, assume available
-            console.warn('[Discover Services] vendor_schedule_slots check failed:', error.message);
-            isAvailableToday = true; // Default to available
+            console.warn('[Discover Services] availability check failed:', error.message);
+            isAvailableToday = true;
           }
 
           // Calculate distance if coordinates provided
@@ -949,35 +980,40 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             (vendor.role_name || '').includes('_solo');
 
           // ✅ ENRICHED: Get next available slot
+          // Try vendor_availability_slots first (solo/date-specific), then vendor_availability_v2 (recurring weekly)
           let nextAvailableSlot: { date: string; time: string; formattedDisplay: string } | null = null;
           try {
             const today = new Date();
             const todayStr = today.toISOString().split('T')[0];
-            const nextSlotsResult = await query(
-              `SELECT date, start_time, end_time 
-               FROM vendor_availability_slots 
-               WHERE vendor_id = $1 
-                 AND date >= $2
-                 AND is_available = true
-               ORDER BY date ASC, start_time ASC
-               LIMIT 1`,
-              [vendor.id, todayStr]
-            );
-            
+            const dayOfWeek = today.getDay();
+
+            // 1. Try vendor_availability_slots (date-specific, solo providers)
+            let nextSlotsResult: { rows: any[] } = { rows: [] };
+            try {
+              nextSlotsResult = await query(
+                `SELECT date, start_time, end_time 
+                 FROM vendor_availability_slots 
+                 WHERE vendor_id = $1 
+                   AND date >= $2
+                   AND is_available = true
+                 ORDER BY date ASC, start_time ASC
+                 LIMIT 1`,
+                [vendor.id, todayStr]
+              );
+            } catch (_) { /* table may not exist */ }
+
             if (nextSlotsResult.rows.length > 0) {
               const slot = nextSlotsResult.rows[0];
               const slotDate = new Date(slot.date);
               const isToday = slotDate.toISOString().split('T')[0] === todayStr;
               const isTomorrow = slotDate.toISOString().split('T')[0] === 
                 new Date(today.getTime() + 86400000).toISOString().split('T')[0];
-              
               const timeStr = slot.start_time?.substring(0, 5) || '09:00';
               const formattedTime = new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', {
                 hour: 'numeric',
                 minute: '2-digit',
                 hour12: true
               });
-              
               nextAvailableSlot = {
                 date: slot.date,
                 time: timeStr,
@@ -985,6 +1021,42 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                                   isTomorrow ? `Tomorrow ${formattedTime}` :
                                   `${slotDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} ${formattedTime}`
               };
+            } else {
+              // 2. Fallback: vendor_availability_v2 (recurring weekly - used by most vendors)
+              const va2Result = await query(
+                `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
+                 FROM vendor_availability_v2
+                 WHERE vendor_id = $1
+                   AND COALESCE(is_enabled, is_available, true) = true
+                 ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC
+                 LIMIT 7`,
+                [vendor.id]
+              ).catch(() => ({ rows: [] }));
+
+              if (va2Result.rows.length > 0) {
+                const slot = va2Result.rows[0];
+                const targetDay = slot.day_of_week;
+                let daysToAdd = targetDay - dayOfWeek;
+                if (daysToAdd < 0) daysToAdd += 7;
+                const targetDate = new Date(today);
+                targetDate.setDate(targetDate.getDate() + daysToAdd);
+                const timeStr = (slot.start_time || '09:00').toString().substring(0, 5);
+                const formattedTime = new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true
+                });
+                const targetStr = targetDate.toISOString().split('T')[0];
+                const isToday = targetStr === todayStr;
+                const isTomorrow = targetStr === new Date(today.getTime() + 86400000).toISOString().split('T')[0];
+                nextAvailableSlot = {
+                  date: targetStr,
+                  time: timeStr,
+                  formattedDisplay: isToday ? `Today ${formattedTime}` : 
+                                    isTomorrow ? `Tomorrow ${formattedTime}` :
+                                    `${targetDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} ${formattedTime}`
+                };
+              }
             }
           } catch (slotError) {
             // Silently continue if slots not available
@@ -1050,6 +1122,27 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           // ✅ ENRICHED: Check verification status
           const isVerified = vendor.is_verified === true || vendor.status === 'approved';
 
+          // Phase 2: priceMin, priceMax from services
+          const servicePrices = (services.rows || []).map((s: any) => parseFloat(s.price || s.custom_price || '0')).filter((p: number) => p > 0);
+          const priceMin = servicePrices.length > 0 ? Math.min(...servicePrices) : 0;
+          const priceMax = servicePrices.length > 0 ? Math.max(...servicePrices) : 0;
+
+          // Phase 2: hasPackages, photos
+          let hasPackages = false;
+          let photos: string[] = [];
+          try {
+            const pkgResult = await query(`SELECT 1 FROM service_packages WHERE vendor_id = $1 LIMIT 1`, [vendor.id]);
+            hasPackages = (pkgResult.rows?.length || 0) > 0;
+          } catch { /* Continue */ }
+          try {
+            const meta = vendor.metadata;
+            if (meta) {
+              const m = typeof meta === 'string' ? JSON.parse(meta || '{}') : meta;
+              const raw = m?.facility_photos || m?.photos || [];
+              photos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
+            }
+          } catch { /* Continue */ }
+
           return {
             id: vendor.id,
             vendorId: vendor.id,
@@ -1100,6 +1193,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             isVerified,
             photoUrl: vendor.profile_image || vendor.logo_url || null,
             vendorProfileImage: vendor.profile_image || vendor.logo_url || null,
+            // Phase 2: Gallery, price range, bestForProblem, hasPackages
+            photos: photos.length > 0 ? photos : undefined,
+            priceMin: priceMin > 0 ? priceMin : undefined,
+            priceMax: priceMax > 0 && priceMax !== priceMin ? priceMax : undefined,
+            bestForProblem: problemTitle || undefined,
+            hasPackages: hasPackages || undefined,
           };
         })
       );
@@ -1366,11 +1465,98 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             staffBased: true, // ✅ Flag indicating slots are staff-specific
           });
         }
-        // If no staff availability found, fall through to vendor hours
+        // If no staff availability found, fall through to vendor_availability_v2 then operating hours
       }
 
-      // ✅ Original logic for at_center or fallback
-      // Try to get operating hours from multiple sources
+      // ✅ ENFORCE: Check vendor_availability_v2 FIRST (advanced scheduler) before operating_hours
+      const requestedDate = new Date(date);
+      const dayOfWeek = requestedDate.getDay();
+      let va2Slots: any[] = [];
+      try {
+        const va2Result = await query(
+          `SELECT *, time_window_start as start_time, time_window_end as end_time 
+           FROM vendor_availability_v2
+           WHERE vendor_id = $1
+           AND day_of_week = $2
+           AND (COALESCE(service_style, service_type) = $3 
+                OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
+           AND COALESCE(is_enabled, is_available, true) = true
+           ORDER BY COALESCE(time_window_start, start_time)`,
+          [vendorId, dayOfWeek, serviceStyle]
+        );
+        va2Slots = va2Result?.rows || [];
+      } catch (e) {
+        try {
+          const va2ResultAlt = await query(
+            `SELECT *, start_time as time_window_start, end_time as time_window_end 
+             FROM vendor_availability_v2
+             WHERE vendor_id = $1
+             AND day_of_week = $2
+             AND (service_type = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
+             AND COALESCE(is_available, is_enabled, true) = true
+             ORDER BY start_time`,
+            [vendorId, dayOfWeek, serviceStyle]
+          );
+          va2Slots = va2ResultAlt?.rows || [];
+        } catch (_) { /* ignore */ }
+      }
+
+      if (va2Slots.length > 0) {
+        // Generate slots from vendor_availability_v2
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const requestedDateOnly = new Date(requestedDate);
+        requestedDateOnly.setHours(0, 0, 0, 0);
+        const isToday = requestedDateOnly.getTime() === today.getTime();
+        const now = new Date();
+
+        const existingBookingsResult = await query(
+          `SELECT booking_time FROM bookings 
+           WHERE vendor_id = $1 AND booking_date = $2 
+           AND status NOT IN ('cancelled', 'rejected')`,
+          [vendorId, date]
+        ).catch(() => ({ rows: [] }));
+        const bookedTimes = new Set(
+          existingBookingsResult.rows.map((b: any) => {
+            const t = b.booking_time;
+            return typeof t === 'string' ? t.substring(0, 5) : t;
+          })
+        );
+
+        const slots: any[] = [];
+        for (const slot of va2Slots) {
+          const startTime = slot.time_window_start || slot.start_time;
+          const endTime = slot.time_window_end || slot.end_time;
+          if (!startTime || !endTime) continue;
+          const [openHour, openMin] = startTime.split(':').map(Number);
+          const [closeHour, closeMin] = endTime.split(':').map(Number);
+          let currentHour = openHour;
+          let currentMin = openMin;
+          while (currentHour < closeHour || (currentHour === closeHour && currentMin < closeMin)) {
+            const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`;
+            let isPast = false;
+            if (isToday) {
+              const slotDt = new Date(requestedDate);
+              slotDt.setHours(currentHour, currentMin, 0, 0);
+              isPast = slotDt < now;
+            }
+            const isBooked = bookedTimes.has(timeStr);
+            slots.push({ time: timeStr, available: !isPast && !isBooked, booked: isBooked });
+            currentMin += 30;
+            if (currentMin >= 60) { currentMin -= 60; currentHour += 1; }
+          }
+        }
+        return c.json({
+          success: true,
+          slots: slots.sort((a, b) => a.time.localeCompare(b.time)),
+          date,
+          vendorId,
+          serviceStyle,
+          staffBased: false,
+        });
+      }
+
+      // Fallback: operating hours (legacy - only when vendor_availability_v2 has no slots)
       let operatingHours: any = null;
       
       // 1. Try vendor.operating_hours column (if exists)
@@ -1415,9 +1601,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }
       }
 
-      // Get day of week (0 = Sunday, 6 = Saturday)
-      const requestedDate = new Date(date);
-      const dayOfWeek = requestedDate.getDay();
+      // Day of week (0 = Sunday, 6 = Saturday) - requestedDate/dayOfWeek already defined above
       const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
       const dayName = dayNames[dayOfWeek];
 
@@ -1528,8 +1712,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
   /**
    * GET /customer/vendor/:vendorId/services
-   * Get vendor services filtered by category - used by booking routers
-   * ✅ FIX: Added to support booking router service loading
+   * Get vendor services for booking — only published, vendor-set price reflects immediately.
+   * Uses vendor_services as source of truth so CRUD (price, publish/unpublish) reflects on customer web.
    */
   app.get("/customer/vendor/:vendorId/services", async (c) => {
     try {
@@ -1537,56 +1721,80 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const category = c.req.query('category');
       const serviceStyle = c.req.query('serviceStyle');
 
-      // Get vendor to verify it exists
       const vendors = await select('vendors', { id: vendorId });
       if (vendors.length === 0) {
         return c.json({ error: 'Vendor not found', success: false }, 404);
       }
 
-      // Build query for services (services table has category TEXT; service_categories has category_id TEXT, not id UUID for join)
+      // vendor_services.service_id can point to services.id (legacy) OR service_catalog.id (catalog-origin)
       let servicesQuery = `
-        SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled, vs.service_style,
-               sc.name as category_name, sc.category_id as category_slug
-        FROM services s
-        LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
-        LEFT JOIN service_categories sc ON sc.category_id = s.category OR sc.name = s.category
-        WHERE (vs.vendor_id = $1 OR s.vendor_id = $1)
-        AND s.is_active = true
-        AND (vs.is_enabled IS NULL OR vs.is_enabled = true)
+        SELECT
+          vs.id,
+          vs.service_id,
+          vs.service_name,
+          vs.service_style,
+          vs.price,
+          vs.custom_price,
+          vs.duration_minutes,
+          vs.custom_duration,
+          vs.custom_description,
+          vs.category,
+          vs.sub_category,
+          s.name as base_name,
+          s.description as base_description,
+          sc.service_name as catalog_name,
+          sc.display_name as catalog_display_name,
+          sc.description as catalog_description,
+          sc.specialization_ids as catalog_specialization_ids
+        FROM vendor_services vs
+        LEFT JOIN services s ON vs.service_id = s.id
+        LEFT JOIN service_catalog sc ON vs.service_id = sc.id
+        WHERE vs.vendor_id = $1
+          AND vs.is_enabled = true
+          AND vs.publish_status = 'published'
       `;
       const queryParams: any[] = [vendorId];
 
-      // Filter by category if provided (match on category_id or name; services has category TEXT)
       if (category) {
         queryParams.push(category);
-        servicesQuery += ` AND (sc.category_id = $${queryParams.length} OR LOWER(sc.name) LIKE '%' || LOWER($${queryParams.length}) || '%' OR s.category = $${queryParams.length})`;
+        servicesQuery += ` AND (LOWER(vs.category) = LOWER($${queryParams.length}) OR LOWER(vs.category) LIKE '%' || LOWER($${queryParams.length}) || '%')`;
       }
-
-      // Filter by service style if provided
       if (serviceStyle) {
         queryParams.push(serviceStyle);
-        servicesQuery += ` AND (vs.service_style = $${queryParams.length} OR s.service_style = $${queryParams.length})`;
+        servicesQuery += ` AND vs.service_style = $${queryParams.length}`;
       }
 
-      servicesQuery += ` ORDER BY s.name`;
+      servicesQuery += ` ORDER BY vs.category, vs.service_name`;
 
-      const services = await query(servicesQuery, queryParams);
+      const result = await query(servicesQuery, queryParams);
 
-      // Format response
-      const formattedServices = services.rows.map((s: any) => ({
-        id: s.id,
-        name: s.name,
-        description: s.description,
-        base_price: s.base_price,
-        price: s.custom_price || s.base_price,
-        duration: s.custom_duration || s.duration || 30,
-        category: s.category_name || category,
-        categorySlug: s.category_slug,
-        serviceStyle: s.service_style || 'at_home',
-        isEnabled: s.is_enabled !== false,
-        requiresPetProfile: s.requires_pet_profile !== false,
-        requiresAddress: s.requires_address !== false,
-      }));
+      const formattedServices = result.rows.map((row: any) => {
+        const price = row.custom_price != null ? parseFloat(row.custom_price) : (row.price != null ? parseFloat(row.price) : 0);
+        const duration = row.custom_duration ?? row.duration_minutes ?? 30;
+        const name = row.service_name || row.base_name || row.catalog_name || row.catalog_display_name || 'Service';
+        const description = row.custom_description || row.base_description || row.catalog_description || '';
+        const rawSpec = row.catalog_specialization_ids;
+        const specializationIds = Array.isArray(rawSpec) ? rawSpec : (rawSpec != null ? [].concat(rawSpec) : []);
+        return {
+          id: row.id,
+          service_id: row.service_id,
+          name,
+          service_name: name,
+          description,
+          base_price: row.price != null ? parseFloat(row.price) : 0,
+          price,
+          custom_price: row.custom_price != null ? parseFloat(row.custom_price) : undefined,
+          duration,
+          category: row.category,
+          categorySlug: row.category,
+          serviceStyle: row.service_style || 'at_center',
+          specializationIds,
+          specialization_ids: specializationIds,
+          isEnabled: true,
+          requiresPetProfile: false,
+          requiresAddress: false,
+        };
+      });
 
       return c.json({
         success: true,
@@ -1596,8 +1804,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
     } catch (error: any) {
       console.error('Error fetching vendor services:', error);
-      return c.json({ 
-        success: false, 
+      return c.json({
+        success: false,
         error: error.message || 'Failed to fetch services',
         services: []
       }, 500);
@@ -2929,6 +3137,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const category = c.req.query('category');
       const roleId = c.req.query('roleId'); // ✅ FIX: Support roleId parameter
       const specialization = c.req.query('specialization'); // ✅ FIX: Support specialization parameter
+      const problemTitle = c.req.query('problemTitle'); // Phase 2: "Best for [problem]" badge
       const latitude = c.req.query('latitude');
       const longitude = c.req.query('longitude');
       const rules = await getDiscoveryRules(
@@ -2965,6 +3174,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             v.city,
             v.latitude,
             v.longitude,
+            v.metadata,
             r.name as role_name,
             r.display_name as role_display_name,
             (SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id) as avg_rating,
@@ -3089,6 +3299,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               distance = calculateDistance(customerLat, customerLng, parseFloat(vendor.latitude), parseFloat(vendor.longitude));
             }
 
+            // Phase 2: photos, priceMin, priceMax, hasPackages, bestForProblem
+            const servicePrices = (servicesResult.rows || []).map((s: any) => parseFloat(s.price || '0')).filter((p: number) => p > 0);
+            const priceMin = servicePrices.length > 0 ? Math.min(...servicePrices) : 0;
+            const priceMax = servicePrices.length > 0 ? Math.max(...servicePrices) : 0;
+            let hasPackages = false;
+            let photos: string[] = [];
+            try {
+              const pkgRes = await query(`SELECT 1 FROM service_packages WHERE vendor_id = $1 LIMIT 1`, [vendor.vendor_id]);
+              hasPackages = (pkgRes.rows?.length || 0) > 0;
+            } catch { /* continue */ }
+            try {
+              const meta = (vendor as any).metadata;
+              if (meta) {
+                const m = typeof meta === 'string' ? JSON.parse(meta || '{}') : meta;
+                const raw = m?.facility_photos || m?.photos || [];
+                photos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
+              }
+            } catch { /* continue */ }
             return {
               providerId: vendor.vendor_id,
               providerType: 'vendor',
@@ -3102,7 +3330,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               reviewCount: parseInt(vendor.review_count || '0', 10),
               distance: distance ? parseFloat(distance.toFixed(2)) : null,
               isVerified: true, // Vendors don't need mobile verification
-              services: servicesResult.rows.map(s => ({
+              photos: photos.length > 0 ? photos : undefined,
+              priceMin: priceMin > 0 ? priceMin : undefined,
+              priceMax: priceMax > 0 && priceMax !== priceMin ? priceMax : undefined,
+              bestForProblem: problemTitle || undefined,
+              hasPackages: hasPackages || undefined,
+              services: servicesResult.rows.map((s: any) => ({
                 id: s.id,
                 serviceId: s.service_id,
                 name: s.service_name,

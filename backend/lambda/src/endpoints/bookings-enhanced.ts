@@ -852,10 +852,11 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
     // ✅ SECURITY FIX: Get enriched booking data with service, vendor, customer, and pet info
     const bookingResult = await query(
       `SELECT b.*,
-              s.name as service_name,
-              s.category as service_category,
-              s.description as service_description,
-              s.duration_minutes as service_duration,
+              COALESCE(s.name, sc.service_name) as service_name,
+              COALESCE(s.category, sc.category_id::text) as service_category,
+              COALESCE(s.description, sc.description) as service_description,
+              COALESCE(s.duration_minutes, sc.duration_minutes) as service_duration,
+              sc.specialization_ids as service_specialization_ids,
               v.business_name as vendor_name,
               v.owner_name as vendor_owner_name,
               v.phone as vendor_phone,
@@ -879,6 +880,7 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
               p.profile_photo_url as pet_photo_from_table
        FROM bookings b
        LEFT JOIN services s ON b.service_id = s.id
+       LEFT JOIN service_catalog sc ON b.service_id = sc.id
        LEFT JOIN vendors v ON b.vendor_id = v.id
        LEFT JOIN customers c ON b.customer_id = c.id
        LEFT JOIN LATERAL (
@@ -1009,13 +1011,15 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
       scheduledTime: booking.booking_time, // Alias for frontend compatibility
       schedule: booking.booking_time, // Alias for frontend compatibility
       startDate: booking.booking_date, // Alias for frontend compatibility
-      // Service info
+      // Service info (specialization from catalog when available)
       service: booking.service_name ? {
         id: booking.service_id,
         name: booking.service_name,
         category: booking.service_category,
         description: booking.service_description,
         duration: booking.service_duration || booking.duration_minutes,
+        specializationIds: Array.isArray(booking.service_specialization_ids) ? booking.service_specialization_ids : (booking.service_specialization_ids ? [].concat(booking.service_specialization_ids) : []),
+        specialization_ids: Array.isArray(booking.service_specialization_ids) ? booking.service_specialization_ids : (booking.service_specialization_ids ? [].concat(booking.service_specialization_ids) : []),
       } : null,
       // Vendor info
       vendor: booking.vendor_name ? {

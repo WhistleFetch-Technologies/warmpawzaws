@@ -24,6 +24,7 @@ import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 import { getSecret, getSecretJson, putSecret } from '../utils/secrets-manager';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { validateBankAccountStrict } from './razorpay';
 
 export function registerAdminIntegrationEndpoints(app: Hono) {
   /**
@@ -644,51 +645,46 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
   
   /**
    * POST /verify/bank
-   * Verify bank account details
-   * In production, this would integrate with a bank verification API
+   * Strict bank account verification: Name, IFSC Code, and Account Number must all be valid.
+   * Does NOT pass on IFSC-only; full verification requires Razorpay Fund Account Validation.
    */
   app.post("/verify/bank", async (c) => {
     try {
       const body = await c.req.json();
-      const { accountNumber, ifsc, accountHolderName } = body;
+      const accountNumber = body.accountNumber ?? body.account_number;
+      const ifsc = body.ifsc ?? body.ifsc_code;
+      const accountHolderName = body.accountHolderName ?? body.account_holder_name ?? body.beneficiary_name;
 
-      console.log(`[BANK VERIFY] Verifying account: ${accountNumber?.slice(-4)} at IFSC: ${ifsc}`);
+      console.log(`[BANK VERIFY] Verifying account: ${String(accountNumber).slice(-4)} at IFSC: ${ifsc}`);
 
-      if (!accountNumber || !ifsc) {
-        return c.json({ 
-          success: false,
-          error: 'Account number and IFSC code are required' 
-        }, 400);
-      }
+      const result = await validateBankAccountStrict(
+        accountNumber != null ? String(accountNumber) : '',
+        ifsc != null ? String(ifsc) : '',
+        accountHolderName != null ? String(accountHolderName) : ''
+      );
 
-      // Validate IFSC format (11 characters: 4 letters + 0 + 6 alphanumeric)
-      const ifscRegex = /^[A-Z]{4}0[A-Z0-9]{6}$/;
-      if (!ifscRegex.test(ifsc.toUpperCase())) {
-        return c.json({ 
+      if (!result.valid) {
+        return c.json({
           success: false,
           verified: false,
-          error: 'Invalid IFSC code format. Format: ABCD0123456'
+          error: result.error,
+          details: result.details ?? result.message,
         }, 400);
       }
-
-      // TODO: In production, integrate with bank verification API provider like
-      // - Cashfree Bank Verification API
-      // - Razorpay Fund Account Validation
-      // - Decentro Bank Verification API
-      // For now, return a mock successful verification
 
       return c.json({
         success: true,
-        verified: true,
-        accountNumber: `xxxx${accountNumber.slice(-4)}`,
-        ifsc: ifsc.toUpperCase(),
+        verified: result.valid,
+        accountNumber: result.account_number_masked ?? `xxxx${String(accountNumber).slice(-4)}`,
+        ifsc: (ifsc != null ? String(ifsc) : '').toUpperCase(),
         accountHolderName: accountHolderName || 'Account Holder',
-        bankDetails: {
-          bankName: getBankNameFromIFSC(ifsc),
-          branch: 'Branch Name',
-          city: 'City',
-        },
-        message: 'Bank account verified successfully'
+        bankDetails: result.bank_details ? {
+          bankName: result.bank_details.bank,
+          branch: result.bank_details.branch,
+          city: result.bank_details.city,
+          state: result.bank_details.state,
+        } : undefined,
+        message: result.message ?? 'Bank account verification requires Razorpay Fund Account Validation.',
       });
 
     } catch (error: any) {

@@ -1,6 +1,6 @@
 /**
  * API Client for Customer Web App
- * Points to API Gateway instead of Supabase Functions
+ * Uses API Gateway (Lambda backend)
  */
 
 type RuntimeConfig = {
@@ -19,24 +19,17 @@ function getRuntimeConfig(): RuntimeConfig {
   return window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
 }
 
-/** Deployed API URL (Main API Gateway). Override via runtime config or NEXT_PUBLIC_API_BASE_URL. */
-const SERVERLESS_API_URL = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
-
 /**
- * Get the API Base URL from runtime config (deployed) or environment (local dev)
- * In UAT mode, if config points at api.dev.warmpawz.com (CDK API with Cognito), use Serverless API so UAT token is accepted.
+ * Get the API Base URL from runtime config (deployed) or environment (local dev) only.
+ * Do NOT hardcode URLs. Set via runtime-config.js (injected at deploy) or NEXT_PUBLIC_API_BASE_URL.
  */
 export function getApiBaseUrl(): string {
   const cfg = getRuntimeConfig();
   const raw =
     cfg.apiBaseUrl ||
-    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) ||
     '';
-  // When no config or empty, use deployed API
-  if (!raw || (typeof raw === 'string' && raw.trim() === '')) {
-    return SERVERLESS_API_URL;
-  }
-  return raw;
+  return (raw && typeof raw === 'string' ? raw.trim() : '').replace(/\/+$/, '');
 }
 
 // UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)
@@ -50,17 +43,31 @@ export function isUatMode(): boolean {
 const UAT_MODE = isUatMode();
 
 export class ApiClient {
-  private baseUrl: string;
+  private _baseUrl: string;
 
-  constructor(baseUrl: string = getApiBaseUrl()) {
-    this.baseUrl = baseUrl || '';
+  constructor(baseUrl?: string) {
+    // Resolve base URL at construction; will be re-resolved lazily in request() if empty
+    this._baseUrl = (baseUrl ?? getApiBaseUrl()) || '';
     
     // UAT Mode: Log API configuration for debugging
     if (UAT_MODE && typeof window !== 'undefined') {
+      const base = this.getBaseUrl();
       console.log('🔧 [UAT Mode] API Client Initialized');
-      console.log('   Base URL:', this.baseUrl);
+      console.log('   Base URL:', base || '(will resolve from runtime-config)');
       console.log('   Environment:', process.env.NODE_ENV);
     }
+  }
+
+  /** Resolve base URL at request time (supports async runtime-config load) */
+  private getBaseUrl(): string {
+    const resolved = getApiBaseUrl() || this._baseUrl;
+    if (resolved) this._baseUrl = resolved;
+    return resolved;
+  }
+
+  /** Public accessor for base URL (used by invoice/tracking URL builders) */
+  get baseUrl(): string {
+    return this.getBaseUrl();
   }
 
   private getAuthToken(): string | null {
@@ -83,8 +90,11 @@ export class ApiClient {
     retryConfig?: Partial<import('./error-handling').RetryConfig>,
     customTimeoutMs?: number // ✅ FIX: Allow custom timeout for specific endpoints
   ): Promise<T> {
-    if (!this.baseUrl) {
-      throw new Error('API_BASE_URL is not configured (runtime-config.js missing or empty).');
+    const baseUrl = this.getBaseUrl();
+    if (!baseUrl) {
+      throw new Error(
+        'API_BASE_URL is not configured. Set via runtime-config.js (deploy) or NEXT_PUBLIC_API_BASE_URL (local dev).'
+      );
     }
     
     // Import error handling utilities
@@ -96,7 +106,7 @@ export class ApiClient {
     }
     
     // Fix: Normalize URL to avoid double slashes
-    const base = this.baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
+    const base = baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
     const path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
     const url = `${base}${path}`;
     let token = this.getAuthToken();

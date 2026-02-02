@@ -54,6 +54,12 @@ interface Provider {
   nextAvailableSlot?: string;
   services: Service[];
   servicesOffered?: any[];
+  // Phase 2 enrichment
+  bestForProblem?: string;
+  photos?: string[];
+  priceMin?: number;
+  priceMax?: number;
+  hasPackages?: boolean;
 }
 
 interface Problem {
@@ -71,8 +77,10 @@ interface UniversalServiceProviderListProps {
   subtitle?: string;
   specialization?: string; // Filter by problem/specialization ID
   problemId?: string; // Alias for specialization
+  problemTitle?: string; // Phase 2: "Best for [problem]" badge — passed to discover-services/by-style
   problems?: Problem[]; // ✅ NEW: List of problems to show as quick filters
   showProblemFilter?: boolean; // ✅ NEW: Whether to show the problem filter strip
+  previousProviderIds?: string[]; // Phase 2: Vendor IDs for "Used before" badge
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onSelectProvider: (provider: Provider) => void;
@@ -277,10 +285,11 @@ function FilterModal({ isOpen, onClose, filters, onApply, specializations }: Fil
 interface ProviderCardProps {
   provider: Provider;
   serviceStyle: string;
+  isPreviousProvider?: boolean;
   onClick: () => void;
 }
 
-function ProviderCard({ provider, serviceStyle, onClick }: ProviderCardProps) {
+function ProviderCard({ provider, serviceStyle, isPreviousProvider, onClick }: ProviderCardProps) {
   const getServiceStyleIcon = () => {
     switch (serviceStyle) {
       case 'tele': return <Video className="w-4 h-4" />;
@@ -299,10 +308,16 @@ function ProviderCard({ provider, serviceStyle, onClick }: ProviderCardProps) {
     }
   };
 
-  // Get lowest price from services or provider-level price (discover-services returns price/consultationFee)
-  const lowestPrice = provider.services.length > 0
-    ? Math.min(...provider.services.map(s => s.price))
-    : ((provider as any).price ?? (provider as any).consultationFee ?? null);
+  // Get price display: range or single (Phase 2)
+  const getPriceDisplay = () => {
+    if (provider.priceMin != null && provider.priceMax != null && provider.priceMin !== provider.priceMax) {
+      return `₹${provider.priceMin.toLocaleString('en-IN')} – ₹${provider.priceMax.toLocaleString('en-IN')}`;
+    }
+    const lowestPrice = provider.services.length > 0
+      ? Math.min(...provider.services.map(s => s.price))
+      : ((provider as any).price ?? (provider as any).consultationFee ?? null);
+    return lowestPrice ? `₹${lowestPrice.toLocaleString('en-IN')}` : null;
+  };
 
   return (
     <Card 
@@ -310,10 +325,16 @@ function ProviderCard({ provider, serviceStyle, onClick }: ProviderCardProps) {
       onClick={onClick}
     >
       <div className="flex gap-4">
-        {/* Photo */}
+        {/* Photo or Gallery (Phase 2) */}
         <div className="relative flex-shrink-0">
           <div className="w-20 h-20 rounded-xl overflow-hidden bg-gradient-to-br from-orange-100 to-amber-100">
-            {provider.photo ? (
+            {provider.photos && provider.photos.length > 1 ? (
+              <div className="flex h-full">
+                {provider.photos.slice(0, 3).map((url, i) => (
+                  <img key={i} src={url} alt="" className="w-1/3 h-full object-cover" />
+                ))}
+              </div>
+            ) : provider.photo ? (
               <img 
                 src={provider.photo} 
                 alt={provider.name} 
@@ -350,12 +371,29 @@ function ProviderCard({ provider, serviceStyle, onClick }: ProviderCardProps) {
             <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0 ml-2" />
           </div>
 
-          {/* Specialization */}
-          {provider.specialization && (
-            <Badge className="bg-purple-100 text-purple-700 text-xs mb-2">
-              {provider.specialization}
-            </Badge>
-          )}
+          {/* Best for [problem] and Used before (Phase 2) */}
+          <div className="flex flex-wrap gap-1 mb-2">
+            {provider.bestForProblem && (
+              <Badge className="bg-orange-100 text-orange-700 text-xs">
+                Best for {provider.bestForProblem}
+              </Badge>
+            )}
+            {isPreviousProvider && (
+              <Badge className="bg-green-100 text-green-700 text-xs">
+                Used before
+              </Badge>
+            )}
+            {provider.hasPackages && (
+              <Badge className="bg-blue-100 text-blue-700 text-xs">
+                Package available
+              </Badge>
+            )}
+            {provider.specialization && !provider.bestForProblem && (
+              <Badge className="bg-purple-100 text-purple-700 text-xs">
+                {provider.specialization}
+              </Badge>
+            )}
+          </div>
 
           {/* Stats Row */}
           <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">
@@ -392,10 +430,9 @@ function ProviderCard({ provider, serviceStyle, onClick }: ProviderCardProps) {
               {getServiceStyleIcon()}
               <span>{getServiceStyleLabel()}</span>
             </div>
-            {lowestPrice && (
+            {getPriceDisplay() && (
               <div className="text-right">
-                <span className="text-xs text-gray-400">from </span>
-                <span className="font-bold text-orange-600">₹{lowestPrice}</span>
+                <span className="font-bold text-orange-600">{getPriceDisplay()}</span>
               </div>
             )}
           </div>
@@ -477,8 +514,10 @@ export function UniversalServiceProviderList({
   subtitle,
   specialization,
   problemId,
+  problemTitle,
   problems,
   showProblemFilter = true,
+  previousProviderIds = [],
   onBack,
   onNavigate,
   onSelectProvider,
@@ -514,7 +553,7 @@ export function UniversalServiceProviderList({
   useEffect(() => {
     loadProviders();
     loadSponsoredProviders();
-  }, [category, roleId, serviceStyle]);
+  }, [category, roleId, serviceStyle, specializationFilter, problemTitle]);
 
   // Load sponsored providers (ads)
   const loadSponsoredProviders = async () => {
@@ -549,10 +588,13 @@ export function UniversalServiceProviderList({
       const specializationParam = specializationFilter 
         ? `&specialization=${encodeURIComponent(specializationFilter)}` 
         : '';
+      const problemTitleParam = problemTitle 
+        ? `&problemTitle=${encodeURIComponent(problemTitle)}` 
+        : '';
 
       // Fetch providers for this service style and category
       const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}&roleId=${roleId}${locationParams}${specializationParam}`
+        `/customer/services/by-style?style=${serviceStyle}&category=${category}&roleId=${roleId}${locationParams}${specializationParam}${problemTitleParam}`
       ) as any;
 
       if (response.success) {
@@ -563,6 +605,8 @@ export function UniversalServiceProviderList({
           name: cleanProviderName(p.name || p.vendorName || p.businessName || 'Provider'),
           vendorName: p.vendorName ? cleanProviderName(p.vendorName) : undefined,
           businessName: p.businessName ? cleanProviderName(p.businessName) : undefined,
+          providerId: p.providerId || p.vendorId || p.id,
+          vendorId: p.vendorId || p.id,
         }));
         
         // ✅ FIX: If primary endpoint returns 0 providers, also try fallback
@@ -578,7 +622,7 @@ export function UniversalServiceProviderList({
       // Try fallback endpoint (also called when primary returns empty results)
       // ✅ FIX: Remove roleId from discover-services call - category is sufficient and avoids uuid=text error
       const fallbackResponse = await apiClient.get(
-        `/customer/discover-services?category=${category}&serviceStyle=${serviceStyle}${locationParams}${specializationParam}`
+        `/customer/discover-services?category=${category}&serviceStyle=${serviceStyle}${locationParams}${specializationParam}${problemTitleParam}`
       ) as any;
 
       const servicesData = fallbackResponse.vendors || fallbackResponse.services || [];
@@ -596,7 +640,7 @@ export function UniversalServiceProviderList({
           providerMap.set(providerId, {
             providerId,
             providerType: item.providerType || 'vendor',
-            vendorId: item.vendorId,
+            vendorId: item.vendorId || item.id,
             vendorName: item.vendorName ? cleanProviderName(item.vendorName) : undefined,
             businessName: item.businessName ? cleanProviderName(item.businessName) : undefined,
             staffId: item.staffId,
@@ -618,6 +662,11 @@ export function UniversalServiceProviderList({
             isOnline: item.isOnline,
             nextAvailableSlot: item.nextAvailability ?? item.nextAvailableSlot?.formattedDisplay ?? item.nextAvailableSlot,
             services: [],
+            bestForProblem: item.bestForProblem,
+            photos: item.photos,
+            priceMin: item.priceMin,
+            priceMax: item.priceMax,
+            hasPackages: item.hasPackages,
           });
           const prov = providerMap.get(providerId)!;
           if ((item.price != null || item.consultationFee != null) && prov.services.length === 0) {
@@ -990,6 +1039,7 @@ export function UniversalServiceProviderList({
                   key={provider.providerId}
                   provider={provider}
                   serviceStyle={serviceStyle}
+                  isPreviousProvider={previousProviderIds.some(id => id === (provider.vendorId || provider.providerId))}
                   onClick={() => onSelectProvider(provider)}
                 />
               ))}

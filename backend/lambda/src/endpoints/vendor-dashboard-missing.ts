@@ -6,6 +6,7 @@
  * These endpoints were missing and causing 404 errors in the vendor dashboard:
  * - /vendor/notifications/:vendorId - Vendor notifications
  * - /vendor/:vendorId/watchlist - Patient watchlist
+ * - /vendor/:vendorId/staff - Staff for vendor (path used by vendor-web)
  * - /staff/vendor/:vendorId - Staff for vendor (alternate route)
  * - /vendor/:vendorId/patient-monitors - Patient monitoring list
  * - /vendor/:vendorId/bookings/today - Today's bookings
@@ -257,6 +258,44 @@ export function registerVendorDashboardMissingEndpoints(app: Hono) {
         watchlist: [],
         total: 0,
       });
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/staff
+   * Staff for vendor (path used by vendor-web: /vendor/{vendorId}/staff)
+   */
+  app.get("/vendor/:vendorId/staff", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return c.json({ success: true, staff: [], count: 0 });
+      }
+
+      const staff = await query(
+        `SELECT s.id, s.name, s.phone, s.email, s.role, s.experience_years, s.is_active, s.created_at
+         FROM staff s
+         WHERE s.vendor_id = $1 AND (s.is_active = true OR s.is_active IS NULL)
+         ORDER BY s.created_at DESC`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+
+      const list = (staff.rows || []).map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        phone: s.phone,
+        email: s.email,
+        role: s.role,
+        experienceYears: s.experience_years,
+        isActive: s.is_active !== false,
+        photoUrl: (s as any).photo ?? (s as any).photo_url ?? null,
+      }));
+
+      return c.json({ success: true, staff: list, count: list.length });
+    } catch (error: any) {
+      console.error('Error fetching vendor staff (/vendor/:vendorId/staff):', error);
+      return c.json({ success: true, staff: [], count: 0 });
     }
   });
 

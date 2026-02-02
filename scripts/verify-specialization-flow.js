@@ -146,10 +146,10 @@ function verifyFrontendPaths() {
 
   if (fs.existsSync(specPath)) {
     const c = fs.readFileSync(specPath, 'utf-8');
-    if (c.includes('/vendor/problem-grid-specializations/') && c.includes('data.specializations')) {
-      pass('Frontend', 'SpecializationSelector', 'Calls GET /vendor/problem-grid-specializations/:roleId and uses data.specializations');
+    if ((c.includes('/vendor/problem-grid-specializations/') || c.includes('/vendor/specializations/')) && c.includes('data.specializations')) {
+      pass('Frontend', 'SpecializationSelector', 'Calls vendor specializations API and uses data.specializations');
     } else {
-      fail('Frontend', 'SpecializationSelector', 'Should call problem-grid-specializations and use specializations');
+      fail('Frontend', 'SpecializationSelector', 'Should call vendor specializations API and use data.specializations');
     }
   } else {
     skip('Frontend', 'SpecializationSelector', 'File not found');

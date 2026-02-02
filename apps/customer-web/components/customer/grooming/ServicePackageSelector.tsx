@@ -44,29 +44,27 @@ export function ServicePackageSelector({
       console.log('📦 [SERVICE-SELECTOR] Loading services for vendor:', vendorId);
       console.log('📦 [SERVICE-SELECTOR] Service type:', serviceType);
       
-      // Get vendor's services
-      const data = await apiClient.get<any>(`/vendor/${vendorId}/services`);
+      // Prefer customer endpoint (only published, vendor price); fallback to vendor endpoint
+      const styleKey = serviceType === 'home' ? 'at_home' : 'at_center';
+      let data: any;
+      try {
+        data = await apiClient.get<any>(`/customer/vendor/${vendorId}/services?serviceStyle=${styleKey}`);
+      } catch {
+        data = await apiClient.get<any>(`/vendor/${vendorId}/services`);
+      }
       console.log('📦 [SERVICE-SELECTOR] API Response:', data);
       
-      // Handle the nested structure from vendor-service-management API
       let allServices: any[] = [];
-      
-      if (data.success && data.services) {
-        // Extract services based on service type
-        const styleKey = serviceType === 'home' ? 'at_home' : 'at_center';
-        
-        if (data.services[styleKey] && Array.isArray(data.services[styleKey].services)) {
-          allServices = data.services[styleKey].services;
-          console.log(`📦 [SERVICE-SELECTOR] Found ${allServices.length} services for ${styleKey}`);
-        } else {
-          console.warn(`⚠️ [SERVICE-SELECTOR] No services found for ${styleKey}`);
-        }
-      } else if (Array.isArray(data)) {
-        // Fallback: Direct array response
-        allServices = data;
-      } else if (data.services && Array.isArray(data.services)) {
-        // Fallback: Nested services array
+      if (data?.success && data?.services && Array.isArray(data.services)) {
         allServices = data.services;
+        console.log(`📦 [SERVICE-SELECTOR] Found ${allServices.length} services (customer endpoint)`);
+      } else if (data?.services?.[styleKey]?.services) {
+        allServices = data.services[styleKey].services;
+        console.log(`📦 [SERVICE-SELECTOR] Found ${allServices.length} services for ${styleKey}`);
+      } else if (Array.isArray(data?.services)) {
+        allServices = data.services;
+      } else if (Array.isArray(data)) {
+        allServices = data;
       } else {
         console.warn('⚠️ [SERVICE-SELECTOR] Unexpected response format:', data);
       }

@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Home as HomeIcon, Star, MapPin, Calendar, Sparkles, ChevronRight, Camera, Moon, Sun } from 'lucide-react';
+import { Home as HomeIcon, Star, MapPin, Calendar, Sparkles, ChevronRight, Camera, Moon, Sun, RefreshCw, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { PromotionBanner } from './shared/PromotionBanner';
+import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 
 interface BoardingServiceRouterProps {
   phone: string;
@@ -19,10 +20,27 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   const [loading, setLoading] = useState(true);
   const [boardingFacilities, setBoardingFacilities] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
+  const [previousFacility, setPreviousFacility] = useState<any>(null);
 
   useEffect(() => {
     loadBoardingFacilities();
+    loadPreviousFacility();
   }, []);
+
+  const loadPreviousFacility = async () => {
+    try {
+      const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=boarding`).catch(() => null);
+      if (response?.provider) {
+        setPreviousFacility({ id: response.provider.id, name: response.provider.businessName || response.provider.name, photo: response.provider.photo, rating: response.provider.rating || 4.8, lastVisit: response.provider.lastVisit });
+      } else {
+        const pkgRes = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=boarding`).catch(() => null);
+        if (pkgRes?.packages?.length > 0) {
+          const pkg = pkgRes.packages[0];
+          if (pkg.vendorId && pkg.vendorName) setPreviousFacility({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 4.8, lastVisit: pkg.lastUsed || '3 weeks ago' });
+        }
+      }
+    } catch { /* ignore */ }
+  };
 
   const loadBoardingFacilities = async () => {
     try {
@@ -88,38 +106,64 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     );
   }
 
-  return (
-    <>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
-      
-      {/* Stats Bar - Moved below header */}
-      {stats && (
-        <div className="px-4 pt-4 pb-2 bg-white">
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-            <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
-               <div className="text-lg font-bold text-orange-600">{stats.activeFacilities}+</div>
-               <div className="text-xs text-orange-700">Facilities</div>
-            </div>
-            <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
-               <div className="text-lg font-bold text-orange-600">{stats.guests}</div>
-               <div className="text-xs text-orange-700">Happy Pets</div>
-            </div>
-            <div className="bg-orange-50 rounded-xl p-2.5 min-w-[80px] border border-orange-100 text-center">
-               <div className="flex items-center justify-center gap-1 text-lg font-bold text-orange-600">
-                 {stats.rating} <Star className="w-3.5 h-3.5 fill-orange-500" />
-               </div>
-               <div className="text-xs text-orange-700">Rating</div>
-            </div>
-          </div>
-        </div>
-      )}
+  const boardingStats = stats
+    ? [
+        { value: `${stats.activeFacilities}+`, label: 'Facilities' },
+        { value: stats.guests, label: 'Happy Pets' },
+        { value: stats.rating, label: 'Rating', icon: <Star className="w-4 h-4 fill-current" /> },
+      ]
+    : [];
 
-      {/* Main Content */}
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <ServiceDashboardHeader
+        serviceName="Pet Boarding"
+        serviceSubtitle="Safe & comfortable pet stay"
+        serviceIcon={Building2}
+        iconColor="text-white"
+        stats={boardingStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+      />
+      <div className="flex-1 overflow-y-auto bg-white">
       <div className="px-4 pt-4 bg-white">
         <div className="space-y-8">
           
           {/* Promotion Banner */}
           <PromotionBanner service="boarding" maxPromotions={3} />
+
+          {/* Phase 1: Book again with previous facility */}
+          {previousFacility && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-5 h-5 text-orange-500" />
+                <h2 className="text-lg font-bold text-slate-900">Book again</h2>
+              </div>
+              <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4">
+                <div className="flex items-center gap-4">
+                  {previousFacility.photo ? (
+                    <img src={previousFacility.photo} alt={previousFacility.name} className="w-16 h-16 rounded-xl object-cover border-2 border-orange-200" />
+                  ) : (
+                    <div className="w-16 h-16 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 font-bold text-xl border-2 border-orange-200">
+                      {previousFacility.name?.charAt(0) || 'B'}
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <h3 className="font-bold text-slate-900 text-lg">{previousFacility.name}</h3>
+                    <div className="flex items-center gap-2 text-sm text-slate-600 mt-1">
+                      <Star className="w-4 h-4 fill-orange-500" /> {previousFacility.rating}
+                      <span>•</span>
+                      <span>Last stay: {previousFacility.lastVisit || '3 weeks ago'}</span>
+                    </div>
+                  </div>
+                  <Button className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white" onClick={() => handleCheckAvailability(previousFacility.id)}>
+                    Book Now
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Boarding Options */}
           <div>
@@ -203,6 +247,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
           </div>
         </div>
       </div>
-    </>
+      </div>
+    </div>
   );
 }

@@ -38,7 +38,7 @@ export function ServicePricing({ vendorId, serviceId, onBack }: ServicePricingPr
       const response = await apiClient.get<any>(`/vendor/${vendorId}/services`);
       
       if (response.success) {
-        const allServices = response.services || [];
+        const allServices = Array.isArray(response.services) ? response.services : (response.allServices || []);
         setServices(allServices);
         
         // Initialize prices state

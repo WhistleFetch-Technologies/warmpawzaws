@@ -42,8 +42,6 @@ const roleMappings: Record<string, string[]> = {
   'pet_pharmacy': ['pharmacy', 'pet_pharmacy'],
   'pet_ambulance': ['ambulance', 'pet_ambulance'],
   'ambulance': ['ambulance', 'pet_ambulance'],
-  'nutritionist': ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
-  'nutritionist_center': ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
   'pharmacy': ['pharmacy', 'pet_pharmacy'],
   'insurance': ['insurance', 'pet_insurance'],
   'center': ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'center'],
@@ -210,6 +208,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
         'groomer_center': ['at_center', 'at_home'],
         'pet_walker': ['at_home'], // Walkers only do home visits
         'walker': ['at_home'],
+        'dog_walker': ['at_home'],
         'pet_trainer': ['at_home', 'at_center', 'tele'], // Trainers: center, home, online
         'trainer': ['at_home', 'at_center', 'tele'],
         'trainer_center': ['at_home', 'at_center', 'tele'], // Training center: both center and home
@@ -261,11 +260,11 @@ export function registerVendorServicesEndpoints(app: Hono) {
           if (roles.length > 0) {
             role = roles[0];
             roleConfig = role.config || {};
-            // Support both array and object with .selected (e.g. { selected: ['at_center', 'at_home'] })
+            // Support array or object with .selected / .solo (walker has { selected: ['at_home'], solo: ['at_home'] })
             const serviceStylesConfig = roleConfig?.serviceStyles || roleConfig?.service_styles;
             const rawStyles = Array.isArray(serviceStylesConfig)
               ? serviceStylesConfig
-              : (serviceStylesConfig?.selected || []);
+              : (serviceStylesConfig?.selected ?? serviceStylesConfig?.solo ?? []);
             
             // Map role config styles to database styles
             // Role config uses: at_clinic, video_consultation, home_visit
@@ -290,7 +289,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
             
             // ✅ SOLO PROVIDER ROLES: These roles cannot have at_center even if role config says so
             // (they physically can't operate from a center - e.g., pet sitters, dog walkers)
-            const SOLO_ONLY_ROLES = ['pet_sitter', 'sitter', 'pet_walker', 'walker', 'pet_taxi'];
+            const SOLO_ONLY_ROLES = ['pet_sitter', 'sitter', 'pet_walker', 'walker', 'dog_walker', 'pet_taxi'];
             const isSoloOnlyRole = SOLO_ONLY_ROLES.includes(roleName);
             
             // ✅ CENTER-CAPABLE ROLES: These roles CAN operate from a center even as solo
@@ -334,6 +333,10 @@ export function registerVendorServicesEndpoints(app: Hono) {
               const permissions = await select('role_permissions', { role_id: vendor.role_id });
               capabilities = permissions.map(p => p.permission_name);
             }
+          } else {
+            // Role ID set but role not found – default to at_home for discovery
+            console.warn(`[Vendor Services] No role found for role_id ${vendor.role_id}, defaulting to at_home`);
+            allowedServiceStyles = ['at_home'];
           }
         } catch (roleError: any) {
           console.warn(`[Vendor Services] Failed to load role ${vendor.role_id}:`, roleError.message);
@@ -344,6 +347,12 @@ export function registerVendorServicesEndpoints(app: Hono) {
         // ✅ FIX: No role_id - use conservative default
         console.warn(`[Vendor Services] Vendor ${vendorId} has no role_id, defaulting to at_home only`);
         allowedServiceStyles = ['at_home'];
+      }
+
+      // ✅ Never leave allowedServiceStyles empty (fixes walker/services discovery)
+      if (!allowedServiceStyles || allowedServiceStyles.length === 0) {
+        allowedServiceStyles = ['at_home'];
+        console.log(`[Vendor Services] Fallback: allowedServiceStyles set to ['at_home']`);
       }
       
       // ✅ DYNAMIC SERVICE STYLES: Vendor table solo check (secondary source)
@@ -426,7 +435,8 @@ export function registerVendorServicesEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        services: servicesByStyle,
+        services: flattenedServices,
+        servicesByStyle,
         allServices: flattenedServices,
         totalEnabled: flattenedServices.length,
         // ✅ Include role and capabilities directly (no separate API call needed)
@@ -580,11 +590,11 @@ export function registerVendorServicesEndpoints(app: Hono) {
               }, 400);
             }
 
-            // Support both array and object with .selected (e.g. { selected: ['at_center', 'at_home'] })
+            // Support array or object with .selected / .solo (walker has { selected: ['at_home'], solo: ['at_home'] })
             const serviceStylesConfigPost = roleConfig?.serviceStyles || roleConfig?.service_styles;
             const rawStyles = Array.isArray(serviceStylesConfigPost)
               ? serviceStylesConfigPost
-              : (serviceStylesConfigPost?.selected || []);
+              : (serviceStylesConfigPost?.selected ?? serviceStylesConfigPost?.solo ?? []);
             
             // Map role config styles to database styles
             const styleMapping: Record<string, string> = {
@@ -598,7 +608,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
             };
             
             // ✅ SOLO-ONLY ROLES: These cannot have at_center even with role config
-            const SOLO_ONLY_ROLES = ['pet_sitter', 'sitter', 'pet_walker', 'walker', 'pet_taxi'];
+            const SOLO_ONLY_ROLES = ['pet_sitter', 'sitter', 'pet_walker', 'walker', 'dog_walker', 'pet_taxi'];
             const isSoloOnlyRole = SOLO_ONLY_ROLES.includes(roleName);
             
             if (Array.isArray(rawStyles) && rawStyles.length > 0) {
@@ -611,18 +621,22 @@ export function registerVendorServicesEndpoints(app: Hono) {
                 console.log(`[Vendor Services POST] Solo-only role - filtered at_center: ${allowedServiceStyles.join(', ')}`);
               }
             } else {
-              // ✅ FIX: Derive from role name if config is empty (must match role-seeding.ts)
+              // ✅ FIX: Derive from role name if config is empty (must match GET handler and role-seeding.ts)
               const ROLE_SERVICE_STYLES: Record<string, string[]> = {
                 'pet_groomer': ['at_center', 'at_home'],
                 'groomer': ['at_center', 'at_home'],
+                'groomer_solo': ['at_home'],
+                'groomer_center': ['at_center', 'at_home'],
                 'pet_walker': ['at_home'],
                 'walker': ['at_home'],
+                'dog_walker': ['at_home'],
                 'pet_trainer': ['at_home', 'at_center', 'tele'],
                 'trainer': ['at_home', 'at_center', 'tele'],
                 'trainer_center': ['at_home', 'at_center', 'tele'],
                 'training_center': ['at_home', 'at_center', 'tele'],
                 'trainer_solo': ['at_home', 'tele'],
                 'pet_sitter': ['at_home'],
+                'sitter': ['at_home'],
                 'pet_taxi': ['at_home'],
                 'pet_boarding': ['at_center'],
                 'pet_resort': ['at_center'],
@@ -631,14 +645,34 @@ export function registerVendorServicesEndpoints(app: Hono) {
                 'vet': ['at_center', 'tele', 'at_home'],
                 'vet_solo': ['at_home', 'tele'],
                 'veterinary_clinic': ['at_center', 'tele', 'at_home'],
+                'vet_clinic': ['at_center', 'tele', 'at_home'],
                 'nutritionist': ['at_center', 'tele', 'at_home'],
                 'pet_nutritionist': ['at_center', 'tele', 'at_home'],
+                'nutritionist_center': ['at_center', 'at_home', 'tele'],
                 'pet_behaviorist': ['at_home', 'at_center', 'tele'],
                 'diagnostics': ['at_home', 'at_center'],
                 'diagnostic_center': ['at_home', 'at_center'],
                 'diagnostics_center': ['at_home', 'at_center'],
                 'pet_pharmacy': ['delivery', 'pickup'],
+                'pharmacy': ['delivery', 'pickup'],
                 'pet_products_store': ['delivery', 'pickup'],
+                'pet_ambulance': ['at_home'],
+                'ambulance': ['at_home'],
+                'pet_photographer': ['at_center', 'at_home'],
+                'photographer': ['at_center', 'at_home'],
+                'pet_sunset_services': ['at_center', 'at_home'],
+                'sunset': ['at_center', 'at_home'],
+                'event_organizer': ['at_center'],
+                'insurance': ['at_center'],
+                'pet_breeder': ['at_center', 'at_home'],
+                'breeder': ['at_center', 'at_home'],
+                'relocation': ['at_home'],
+                'pet_relocation': ['at_home'],
+                'resort': ['at_center'],
+                'holiday': ['at_center'],
+                'adoption_center': ['at_center'],
+                'pet_shelter': ['at_center'],
+                'seller': ['at_center', 'delivery', 'pickup'],
               };
               allowedServiceStyles = ROLE_SERVICE_STYLES[roleName] || ['at_home'];
               console.log(`[Vendor Services POST] Derived from role name ${roleName}: ${allowedServiceStyles.join(', ')}`);
@@ -649,6 +683,10 @@ export function registerVendorServicesEndpoints(app: Hono) {
                 console.log(`[Vendor Services POST] Solo provider - filtered at_center: ${allowedServiceStyles.join(', ')}`);
               }
             }
+          } else {
+            // Role ID set but role not found (e.g. deleted) – allow at_home so walker/solo discovery works
+            console.warn(`[Vendor Services] No role found for role_id ${vendor.role_id}, defaulting to at_home`);
+            allowedServiceStyles = ['at_home'];
           }
         } catch (roleError: any) {
           console.warn(`[Vendor Services] Failed to load role ${vendor.role_id}:`, roleError.message);
@@ -657,6 +695,12 @@ export function registerVendorServicesEndpoints(app: Hono) {
       } else {
         console.warn(`[Vendor Services] Vendor has no role_id, defaulting to at_home only`);
         allowedServiceStyles = ['at_home'];
+      }
+
+      // ✅ Never leave allowedServiceStyles empty (fixes "Allowed styles: " for walkers)
+      if (!allowedServiceStyles || allowedServiceStyles.length === 0) {
+        allowedServiceStyles = ['at_home'];
+        console.log(`[Vendor Services] Fallback: allowedServiceStyles set to ['at_home']`);
       }
       
       // ✅ DYNAMIC SERVICE STYLES: Vendor table solo check (secondary source)
@@ -872,7 +916,10 @@ export function registerVendorServicesEndpoints(app: Hono) {
           const roles = await select('roles', { id: vendorForValidation[0].role_id });
           if (roles.length > 0) {
             const roleConfig = roles[0].config || {};
-            const rawStyles = roleConfig?.serviceStyles || roleConfig?.service_styles || [];
+            const serviceStylesConfig = roleConfig?.serviceStyles || roleConfig?.service_styles;
+            const rawStyles = Array.isArray(serviceStylesConfig)
+              ? serviceStylesConfig
+              : (serviceStylesConfig?.selected ?? serviceStylesConfig?.solo ?? []);
             
             // Map role config styles to database styles
             // Role config may use: at_clinic, video_consultation, home_visit, online (admin UI / role-seeding)
@@ -886,9 +933,17 @@ export function registerVendorServicesEndpoints(app: Hono) {
               'home_visit': 'at_home',
               'at_home': 'at_home',
             };
-            const allowedServiceStyles = rawStyles.length > 0 
+            let allowedServiceStyles = Array.isArray(rawStyles) && rawStyles.length > 0
               ? rawStyles.map((s: string) => styleMapping[s] || s)
-              : ['at_home', 'at_center', 'tele']; // Default if no config
+              : (() => {
+                  const roleName = (roles[0].name || '').toLowerCase().replace(/\s+/g, '_');
+                  const ROLE_STYLES: Record<string, string[]> = {
+                    'pet_walker': ['at_home'], 'walker': ['at_home'], 'dog_walker': ['at_home'],
+                    'pet_sitter': ['at_home'], 'sitter': ['at_home'], 'pet_taxi': ['at_home'],
+                    'pet_pharmacy': ['delivery', 'pickup'], 'pet_products_store': ['delivery', 'pickup'],
+                  };
+                  return ROLE_STYLES[roleName] || ['at_home', 'at_center', 'tele'];
+                })();
             
             // Validate serviceStyle against allowed styles
             if (!allowedServiceStyles.includes(serviceStyle)) {
@@ -1413,26 +1468,30 @@ export function registerVendorServicesEndpoints(app: Hono) {
           const roles = await select('roles', { id: vendor.role_id });
           if (roles.length > 0) {
             const roleConfig = roles[0].config || {};
-            const rawStyles = roleConfig?.serviceStyles || roleConfig?.service_styles || [];
-            
-            // Map role config styles to DB styles; "online" (admin/role-seeding) = tele
-            const styleMapping: Record<string, string> = {
-              'at_clinic': 'at_center',
-              'at_center': 'at_center',
-              'video_consultation': 'tele',
-              'tele': 'tele',
-              'online': 'tele',
-              'home_visit': 'at_home',
-              'at_home': 'at_home',
+            const serviceStylesConfigCat = roleConfig?.serviceStyles || roleConfig?.service_styles;
+            const rawStylesCat = Array.isArray(serviceStylesConfigCat)
+              ? serviceStylesConfigCat
+              : (serviceStylesConfigCat?.selected ?? serviceStylesConfigCat?.solo ?? []);
+            const styleMappingCat: Record<string, string> = {
+              'at_clinic': 'at_center', 'at_center': 'at_center', 'video_consultation': 'tele',
+              'tele': 'tele', 'online': 'tele', 'home_visit': 'at_home', 'at_home': 'at_home',
             };
-            const allowedServiceStyles = rawStyles.length > 0 
-              ? rawStyles.map((s: string) => styleMapping[s] || s)
-              : ['at_home', 'at_center', 'tele'];
+            let allowedServiceStylesCat = Array.isArray(rawStylesCat) && rawStylesCat.length > 0
+              ? rawStylesCat.map((s: string) => styleMappingCat[s] || s)
+              : (() => {
+                  const rn = (roles[0].name || '').toLowerCase().replace(/\s+/g, '_');
+                  const RS: Record<string, string[]> = {
+                    'pet_walker': ['at_home'], 'walker': ['at_home'], 'dog_walker': ['at_home'],
+                    'pet_sitter': ['at_home'], 'sitter': ['at_home'], 'pet_taxi': ['at_home'],
+                    'pet_pharmacy': ['delivery', 'pickup'], 'pet_products_store': ['delivery', 'pickup'],
+                  };
+                  return RS[rn] || ['at_home', 'at_center', 'tele'];
+                })();
             
-            if (!allowedServiceStyles.includes(effectiveServiceStyle)) {
+            if (!allowedServiceStylesCat.includes(effectiveServiceStyle)) {
               return c.json({ 
-                error: `Service style '${effectiveServiceStyle}' is not allowed for this role. Allowed styles: ${allowedServiceStyles.join(', ')}`,
-                allowedStyles: allowedServiceStyles
+                error: `Service style '${effectiveServiceStyle}' is not allowed for this role. Allowed styles: ${allowedServiceStylesCat.join(', ')}`,
+                allowedStyles: allowedServiceStylesCat
               }, 403);
             }
             

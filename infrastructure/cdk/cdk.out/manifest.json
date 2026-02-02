@@ -23,7 +23,7 @@
         "validateOnSynth": false,
         "assumeRoleArn": "arn:${AWS::Partition}:iam::057442119249:role/cdk-hnb659fds-deploy-role-057442119249-ap-south-1",
         "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::057442119249:role/cdk-hnb659fds-cfn-exec-role-057442119249-ap-south-1",
-        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-057442119249-ap-south-1/a21f564b441360b719a9953ba28f81a1c0e295e0d767841880380296be0777ba.json",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-057442119249-ap-south-1/d73792909dbcd810b0bed49f2101deef7aa0fc4635fc3a95bd3067985ac9aee1.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
         "additionalDependencies": [
@@ -514,94 +514,16 @@
             "data": "ApiGatewayStackWarmpawzApiGEThealth6CB40255"
           }
         ],
-        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--admin--{proxy+}/LambdaIntegration-Permission": [
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--customer--orders--{orderId}--pharmacy-status/LambdaIntegration-Permission": [
           {
             "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiGETadminproxyLambdaIntegrationPermissionF73ADD43"
+            "data": "ApiGatewayStackWarmpawzApiGETcustomerordersorderIdpharmacystatusLambdaIntegrationPermissionC5869D53"
           }
         ],
-        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--admin--{proxy+}/Resource": [
+        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--customer--orders--{orderId}--pharmacy-status/Resource": [
           {
             "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiGETadminproxyA5ADC0DB"
-          }
-        ],
-        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/AdminAuthorizer/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiAdminAuthorizerBE526AEF"
-          }
-        ],
-        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/POST--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPOSTadminproxyLambdaIntegrationPermission2247AB4A"
-          }
-        ],
-        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/POST--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPOSTadminproxy45A60CCA"
-          }
-        ],
-        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PUT--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPUTadminproxyLambdaIntegrationPermission939778CD"
-          }
-        ],
-        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PUT--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPUTadminproxy09883AC8"
-          }
-        ],
-        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PATCH--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPATCHadminproxyLambdaIntegrationPermission1059C3A6"
-          }
-        ],
-        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/PATCH--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPATCHadminproxy7180DF95"
-          }
-        ],
-        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/DELETE--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiDELETEadminproxyLambdaIntegrationPermission353D12FF"
-          }
-        ],
-        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/DELETE--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiDELETEadminproxy8E72583C"
-          }
-        ],
-        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/OPTIONS--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiOPTIONSadminproxyLambdaIntegrationPermissionFE5BD212"
-          }
-        ],
-        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/OPTIONS--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiOPTIONSadminproxy6E0C4F68"
-          }
-        ],
-        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/HEAD--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiHEADadminproxyLambdaIntegrationPermissionFBC5494C"
-          }
-        ],
-        "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/HEAD--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiHEADadminproxy244A680C"
+            "data": "ApiGatewayStackWarmpawzApiGETcustomerordersorderIdpharmacystatus75ED9ABA"
           }
         ],
         "/WarmpawzStack-dev/ApiGatewayStack/WarmpawzApi/GET--customer--{proxy+}/LambdaIntegration-Permission": [
@@ -988,12 +910,6 @@
             "data": "VendorAuthorizerId"
           }
         ],
-        "/WarmpawzStack-dev/AdminAuthorizerId": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "AdminAuthorizerId"
-          }
-        ],
         "/WarmpawzStack-dev/ApiGatewayUrl": [
           {
             "type": "aws:cdk:logicalId",
@@ -1139,7 +1055,7 @@
         "validateOnSynth": false,
         "assumeRoleArn": "arn:${AWS::Partition}:iam::057442119249:role/cdk-hnb659fds-deploy-role-057442119249-ap-south-1",
         "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::057442119249:role/cdk-hnb659fds-cfn-exec-role-057442119249-ap-south-1",
-        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-057442119249-ap-south-1/6c3c28a2fa9f4272ded741481582d1bad0bd9e6a6711b73c6f53434db3acf2a2.json",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-057442119249-ap-south-1/f55ff3e5d1967acd67fe1f339646679f8b77c86476f210e88f027899b3f8690e.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
         "additionalDependencies": [
@@ -1630,94 +1546,16 @@
             "data": "ApiGatewayStackWarmpawzApiGEThealth6CB40255"
           }
         ],
-        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/GET--admin--{proxy+}/LambdaIntegration-Permission": [
+        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/GET--customer--orders--{orderId}--pharmacy-status/LambdaIntegration-Permission": [
           {
             "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiGETadminproxyLambdaIntegrationPermissionF73ADD43"
+            "data": "ApiGatewayStackWarmpawzApiGETcustomerordersorderIdpharmacystatusLambdaIntegrationPermissionC5869D53"
           }
         ],
-        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/GET--admin--{proxy+}/Resource": [
+        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/GET--customer--orders--{orderId}--pharmacy-status/Resource": [
           {
             "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiGETadminproxyA5ADC0DB"
-          }
-        ],
-        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/AdminAuthorizer/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiAdminAuthorizerBE526AEF"
-          }
-        ],
-        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/POST--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPOSTadminproxyLambdaIntegrationPermission2247AB4A"
-          }
-        ],
-        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/POST--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPOSTadminproxy45A60CCA"
-          }
-        ],
-        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/PUT--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPUTadminproxyLambdaIntegrationPermission939778CD"
-          }
-        ],
-        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/PUT--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPUTadminproxy09883AC8"
-          }
-        ],
-        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/PATCH--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPATCHadminproxyLambdaIntegrationPermission1059C3A6"
-          }
-        ],
-        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/PATCH--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPATCHadminproxy7180DF95"
-          }
-        ],
-        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/DELETE--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiDELETEadminproxyLambdaIntegrationPermission353D12FF"
-          }
-        ],
-        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/DELETE--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiDELETEadminproxy8E72583C"
-          }
-        ],
-        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/OPTIONS--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiOPTIONSadminproxyLambdaIntegrationPermissionFE5BD212"
-          }
-        ],
-        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/OPTIONS--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiOPTIONSadminproxy6E0C4F68"
-          }
-        ],
-        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/HEAD--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiHEADadminproxyLambdaIntegrationPermissionFBC5494C"
-          }
-        ],
-        "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/HEAD--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiHEADadminproxy244A680C"
+            "data": "ApiGatewayStackWarmpawzApiGETcustomerordersorderIdpharmacystatus75ED9ABA"
           }
         ],
         "/WarmpawzStack-staging/ApiGatewayStack/WarmpawzApi/GET--customer--{proxy+}/LambdaIntegration-Permission": [
@@ -2104,12 +1942,6 @@
             "data": "VendorAuthorizerId"
           }
         ],
-        "/WarmpawzStack-staging/AdminAuthorizerId": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "AdminAuthorizerId"
-          }
-        ],
         "/WarmpawzStack-staging/ApiGatewayUrl": [
           {
             "type": "aws:cdk:logicalId",
@@ -2255,7 +2087,7 @@
         "validateOnSynth": false,
         "assumeRoleArn": "arn:${AWS::Partition}:iam::057442119249:role/cdk-hnb659fds-deploy-role-057442119249-ap-south-1",
         "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::057442119249:role/cdk-hnb659fds-cfn-exec-role-057442119249-ap-south-1",
-        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-057442119249-ap-south-1/dfff2ed6f6dc351648db3aac700c7802bed23e58858e69169609c96bbeb701cb.json",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-057442119249-ap-south-1/65df0bcce06c73e1b428db223413abbacea7b9d3c91e7e8b8da394dc0c785e36.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
         "additionalDependencies": [
@@ -2746,94 +2578,16 @@
             "data": "ApiGatewayStackWarmpawzApiGEThealth6CB40255"
           }
         ],
-        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--admin--{proxy+}/LambdaIntegration-Permission": [
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--customer--orders--{orderId}--pharmacy-status/LambdaIntegration-Permission": [
           {
             "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiGETadminproxyLambdaIntegrationPermissionF73ADD43"
+            "data": "ApiGatewayStackWarmpawzApiGETcustomerordersorderIdpharmacystatusLambdaIntegrationPermissionC5869D53"
           }
         ],
-        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--admin--{proxy+}/Resource": [
+        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--customer--orders--{orderId}--pharmacy-status/Resource": [
           {
             "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiGETadminproxyA5ADC0DB"
-          }
-        ],
-        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/AdminAuthorizer/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiAdminAuthorizerBE526AEF"
-          }
-        ],
-        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/POST--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPOSTadminproxyLambdaIntegrationPermission2247AB4A"
-          }
-        ],
-        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/POST--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPOSTadminproxy45A60CCA"
-          }
-        ],
-        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PUT--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPUTadminproxyLambdaIntegrationPermission939778CD"
-          }
-        ],
-        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PUT--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPUTadminproxy09883AC8"
-          }
-        ],
-        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PATCH--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPATCHadminproxyLambdaIntegrationPermission1059C3A6"
-          }
-        ],
-        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/PATCH--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiPATCHadminproxy7180DF95"
-          }
-        ],
-        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiDELETEadminproxyLambdaIntegrationPermission353D12FF"
-          }
-        ],
-        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/DELETE--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiDELETEadminproxy8E72583C"
-          }
-        ],
-        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/OPTIONS--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiOPTIONSadminproxyLambdaIntegrationPermissionFE5BD212"
-          }
-        ],
-        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/OPTIONS--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiOPTIONSadminproxy6E0C4F68"
-          }
-        ],
-        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/HEAD--admin--{proxy+}/LambdaIntegration-Permission": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiHEADadminproxyLambdaIntegrationPermissionFBC5494C"
-          }
-        ],
-        "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/HEAD--admin--{proxy+}/Resource": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "ApiGatewayStackWarmpawzApiHEADadminproxy244A680C"
+            "data": "ApiGatewayStackWarmpawzApiGETcustomerordersorderIdpharmacystatus75ED9ABA"
           }
         ],
         "/WarmpawzStack-prod/ApiGatewayStack/WarmpawzApi/GET--customer--{proxy+}/LambdaIntegration-Permission": [
@@ -3218,12 +2972,6 @@
           {
             "type": "aws:cdk:logicalId",
             "data": "VendorAuthorizerId"
-          }
-        ],
-        "/WarmpawzStack-prod/AdminAuthorizerId": [
-          {
-            "type": "aws:cdk:logicalId",
-            "data": "AdminAuthorizerId"
           }
         ],
         "/WarmpawzStack-prod/ApiGatewayUrl": [

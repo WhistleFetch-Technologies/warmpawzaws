@@ -405,8 +405,14 @@ export async function update(
   // Build SET clause
   for (const [key, value] of Object.entries(data)) {
     if (value !== undefined) {
+      // ✅ Arrays (TEXT[], etc.): pass as-is; node-pg serializes to PG array
+      if (Array.isArray(value)) {
+        setClause.push(`${key} = $${paramIndex}`);
+        params.push(value);
+        paramIndex++;
+        continue;
+      }
       // ✅ FIX: Handle JSONB columns (metadata, operating_hours, etc.) by casting to JSONB
-      // Check if this is likely a JSONB column based on common patterns
       const isJsonbColumn = key === 'metadata' || 
                            key === 'operating_hours' || 
                            key === 'config' || 
@@ -414,7 +420,6 @@ export async function update(
                            (typeof value === 'object' && value !== null && !(value instanceof Date));
       
       if (isJsonbColumn && typeof value === 'object' && value !== null) {
-        // Cast to JSONB for PostgreSQL
         setClause.push(`${key} = $${paramIndex}::jsonb`);
         params.push(JSON.stringify(value));
       } else {

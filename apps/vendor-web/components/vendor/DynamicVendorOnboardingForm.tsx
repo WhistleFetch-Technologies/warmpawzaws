@@ -10,7 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Upload, MapPin, AlertCircle, CheckCircle2, ArrowLeft, X, User, Check } from 'lucide-react';
-// Using apiClient instead of Supabase
+// Uses apiClient (API Gateway)
 import { toast } from 'sonner';
 // KYC verification components
 import { AadhaarOTPVerification, PANVerification, GSTVerification, DeclarationField } from './kyc';

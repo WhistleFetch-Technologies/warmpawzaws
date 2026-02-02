@@ -1,6 +1,6 @@
 /**
  * API Client for Vendor Web App
- * Points to API Gateway instead of Supabase Functions
+ * Uses API Gateway (Lambda backend)
  */
 
 type RuntimeConfig = {
@@ -56,13 +56,20 @@ export class ApiClient {
   private getAuthToken(): string | null {
     if (typeof window !== 'undefined') {
       // Try Cognito token first (preferred for AWS Serverless)
-      const { getCognitoIdToken } = require('./cognito-auth');
-      const cognitoToken = getCognitoIdToken();
-      if (cognitoToken) {
-        return cognitoToken;
+      try {
+        const { getCognitoIdToken } = require('./cognito-auth');
+        const cognitoToken = getCognitoIdToken();
+        if (cognitoToken) return cognitoToken;
+      } catch {
+        // Cognito not used
       }
-      // Fallback to legacy token
-      return localStorage.getItem('vendorAuthToken');
+      // Vendor OTP flow stores in authToken; session-manager may use vendorSessionToken
+      return (
+        localStorage.getItem('vendorAuthToken') ||
+        localStorage.getItem('authToken') ||
+        localStorage.getItem('vendorSessionToken') ||
+        null
+      );
     }
     return null;
   }
@@ -131,12 +138,22 @@ export class ApiClient {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
       
-      // Handle 401 by clearing token and redirecting to auth
+      // Handle 401: clear full vendor session so /auth shows login (prevents redirect loop)
+      // Skip clear/redirect when vendor just logged in (OTP) so dashboard can load; first 401 may be from role/profile fetch race
       if (response.status === 401) {
         if (typeof window !== 'undefined') {
-          localStorage.removeItem('vendorAuthToken');
-          localStorage.removeItem('vendorId');
-          window.location.href = '/auth';
+          const justLoggedIn = sessionStorage.getItem('_warmpawz_vendor_just_logged_in') === 'true';
+          if (justLoggedIn) {
+            sessionStorage.removeItem('_warmpawz_vendor_just_logged_in');
+            if (UAT_MODE) {
+              console.warn('[API Client] 401 after login – skipping clear/redirect so dashboard can load');
+            }
+            // Fall through to throw error; caller (e.g. useVendorCapabilities) will use fallback
+          } else {
+            const { clearVendorSession } = require('./session-utils');
+            clearVendorSession();
+            window.location.href = '/auth';
+          }
         }
       }
       

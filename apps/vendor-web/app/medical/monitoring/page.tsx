@@ -1,5 +1,5 @@
-import { ComingSoonPage, comingSoonPresets } from '@/components/vendor/ComingSoonPage';
+import { NotAvailablePage, notAvailablePresets } from '@/components/vendor/NotAvailablePage';
 
 export default function PatientMonitoringPage() {
-  return <ComingSoonPage {...comingSoonPresets.patient_monitoring} />;
+  return <NotAvailablePage {...notAvailablePresets.patient_monitoring} />;
 }

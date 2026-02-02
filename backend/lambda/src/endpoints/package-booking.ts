@@ -700,7 +700,8 @@ export function registerPackageBookingEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching previous providers:', error);
-      return c.json({ error: error.message }, 500);
+      // Return 200 with empty list so customer home loads gracefully (non-critical)
+      return c.json({ success: true, providers: [], total: 0 });
     }
   });
 

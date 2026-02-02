@@ -56,6 +56,12 @@ interface UniversalVendorCardProps {
     isVerified?: boolean;
     isFavorite?: boolean;
     photoUrl?: string; // Alias for vendorProfileImage
+    // Phase 2: Gallery, price range, Best for problem, package badge
+    photos?: string[]; // 3-5 photos for gallery
+    priceMin?: number;
+    priceMax?: number;
+    bestForProblem?: string; // e.g. "Vaccination", "Full Grooming"
+    hasPackages?: boolean;
   };
   icon?: string;
   colorClass?: string;
@@ -83,6 +89,15 @@ export function UniversalVendorCard({
     if (!price) return 'Contact for price';
     const numPrice = typeof price === 'string' ? parseFloat(price) : price;
     return `₹${numPrice.toLocaleString('en-IN')}`;
+  };
+
+  // Phase 2: Price range when priceMin/priceMax available
+  const getPriceDisplay = () => {
+    if (vendor.priceMin != null && vendor.priceMax != null && vendor.priceMin !== vendor.priceMax) {
+      return `₹${vendor.priceMin.toLocaleString('en-IN')} – ₹${vendor.priceMax.toLocaleString('en-IN')}`;
+    }
+    if (vendor.price != null) return formatPrice(vendor.price);
+    return null;
   };
 
   const getServiceStyleBadge = (style?: string) => {
@@ -189,20 +204,27 @@ export function UniversalVendorCard({
       )}
       
       <div className="flex gap-4">
-        {/* Icon/Image - Enhanced with fallback */}
-        <div className={`w-20 h-20 bg-gradient-to-br ${colorClass} rounded-xl flex items-center justify-center text-3xl flex-shrink-0 relative overflow-hidden`}>
-          {profileImage ? (
-            <img 
-              src={profileImage} 
-              alt={vendor.vendorName}
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                // Fallback to icon on image load error
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
-            />
+        {/* Phase 2: Gallery (3-5 photos) or single image */}
+        <div className={`w-20 h-20 flex-shrink-0 relative overflow-hidden rounded-xl ${vendor.photos && vendor.photos.length > 1 ? '' : `bg-gradient-to-br ${colorClass}`}`}>
+          {vendor.photos && vendor.photos.length > 1 ? (
+            <div className="flex gap-1 w-full h-full">
+              {vendor.photos.slice(0, 3).map((url, i) => (
+                <img key={i} src={url} alt="" className="w-1/3 h-full object-cover flex-1" onError={(e) => (e.target as HTMLImageElement).style.display = 'none'} />
+              ))}
+            </div>
           ) : (
-            icon
+            <div className={`w-full h-full bg-gradient-to-br ${colorClass} flex items-center justify-center text-3xl`}>
+              {profileImage || (vendor.photos?.[0]) ? (
+                <img 
+                  src={profileImage || vendor.photos?.[0]} 
+                  alt={vendor.vendorName}
+                  className="w-full h-full object-cover"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+              ) : (
+                icon
+              )}
+            </div>
           )}
           {/* Favorite heart overlay */}
           {onToggleFavorite && (
@@ -222,6 +244,12 @@ export function UniversalVendorCard({
 
         {/* Content */}
         <div className="flex-1 min-w-0">
+          {/* Phase 2: Best for [problem] badge */}
+          {showEnrichedData && vendor.bestForProblem && (
+            <span className="inline-block text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full mb-1.5">
+              Best for {vendor.bestForProblem}
+            </span>
+          )}
           {/* Vendor Name with Experience */}
           <div className="flex items-center gap-2">
             <h3 className="font-bold text-gray-900 truncate">{vendor.vendorName}</h3>
@@ -307,11 +335,14 @@ export function UniversalVendorCard({
             </div>
           )}
 
-          {/* Price Row */}
-          <div className="flex items-center justify-between mt-2">
+          {/* Price Row - Phase 2: price range + package badge */}
+          <div className="flex items-center justify-between mt-2 flex-wrap gap-1">
             <span className="text-lg font-bold text-blue-600">
-              {formatPrice(vendor.price)}
+              {getPriceDisplay() || formatPrice(vendor.price)}
             </span>
+            {vendor.hasPackages && (
+              <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">Package available</span>
+            )}
             {/* Languages if available */}
             {showEnrichedData && vendor.languages && vendor.languages.length > 0 && (
               <span className="text-xs text-gray-500">

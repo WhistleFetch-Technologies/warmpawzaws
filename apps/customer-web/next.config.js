@@ -1,4 +1,15 @@
 const path = require('path');
+const fs = require('fs');
+
+// Fallback API base URL for local dev (when NEXT_PUBLIC_API_BASE_URL not set)
+let defaultApiUrl = '';
+try {
+  const urlsPath = path.join(__dirname, '../../config/urls.json');
+  if (fs.existsSync(urlsPath)) {
+    const urls = JSON.parse(fs.readFileSync(urlsPath, 'utf8'));
+    defaultApiUrl = urls.apiGatewayDefaultUrl || '';
+  }
+} catch (_) {}
 
 /**
  * Next.js config – Customer Web
@@ -8,6 +19,10 @@ const path = require('path');
  */
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: {
+    // Local dev: use config/urls.json apiGatewayDefaultUrl when NEXT_PUBLIC_API_BASE_URL not set
+    NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || defaultApiUrl,
+  },
   output: 'export',
   distDir: 'dist',
   reactStrictMode: true,

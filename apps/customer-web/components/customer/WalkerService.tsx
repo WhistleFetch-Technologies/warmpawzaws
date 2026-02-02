@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Dog, Star, MapPin, Clock, Search, Navigation, Radio, Eye, Play, Package, Footprints, Plus, Bike } from 'lucide-react';
+import { Dog, Star, MapPin, Clock, Search, Navigation, Radio, Eye, Play, Package, Footprints, Plus, Bike, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -35,12 +35,29 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
   const [activeWalks, setActiveWalks] = useState<ActiveWalk[]>([]);
   const [activePackages, setActivePackages] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
+  const [previousWalker, setPreviousWalker] = useState<any>(null);
 
   useEffect(() => {
     loadWalkers();
     loadActiveWalks();
     loadActivePackages();
+    loadPreviousWalker();
   }, []);
+
+  const loadPreviousWalker = async () => {
+    try {
+      const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=walking`).catch(() => null);
+      if (response?.provider) {
+        setPreviousWalker({ id: response.provider.id, name: response.provider.businessName || response.provider.name, photo: response.provider.photo, rating: response.provider.rating || 4.8, lastVisit: response.provider.lastVisit, sessionsCount: response.provider.sessionsCount || 1 });
+      } else {
+        const pkgRes = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=walking`).catch(() => null);
+        if (pkgRes?.packages?.length > 0) {
+          const pkg = pkgRes.packages[0];
+          if (pkg.vendorId && pkg.vendorName) setPreviousWalker({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 4.8, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: pkg.sessionsUsed || 1 });
+        }
+      }
+    } catch { /* ignore */ }
+  };
 
   const loadActiveWalks = async () => {
     try {
@@ -165,6 +182,42 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
       </div>
 
       <div className="max-w-md mx-auto p-4 space-y-6">
+        {/* Phase 1: Book again with previous walker */}
+        {previousWalker && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <RefreshCw className="w-5 h-5 text-orange-500" />
+              <h2 className="text-lg font-bold text-slate-900">Book again</h2>
+            </div>
+            <Card className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200 p-4">
+              <div className="flex items-center gap-4">
+                {previousWalker.photo ? (
+                  <img src={previousWalker.photo} alt={previousWalker.name} className="w-16 h-16 rounded-xl object-cover border-2 border-orange-200" />
+                ) : (
+                  <div className="w-16 h-16 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 font-bold text-xl border-2 border-orange-200">
+                    {previousWalker.name?.charAt(0) || 'W'}
+                  </div>
+                )}
+                <div className="flex-1">
+                  <h3 className="font-bold text-slate-900 text-lg">{previousWalker.name}</h3>
+                  <div className="flex items-center gap-2 text-sm text-slate-600 mt-1">
+                    <div className="flex items-center gap-1 text-orange-600 font-bold">
+                      <Star className="w-4 h-4 fill-orange-500" />
+                      {previousWalker.rating}
+                    </div>
+                    <span>•</span>
+                    <span>Last walk: {previousWalker.lastVisit || '3 weeks ago'}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">{previousWalker.sessionsCount || 1} walk(s) with you</p>
+                </div>
+                <Button className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white" onClick={() => handleWalkerSelect(previousWalker)}>
+                  Book Now
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
+
         {/* Active Walk in Progress - GPS Tracking */}
         {activeWalks.filter(w => w.status === 'in_progress').length > 0 && (
           <Card className="bg-gradient-to-br from-[#FF8C42] to-[#FF6B35] text-white p-4 relative overflow-hidden">

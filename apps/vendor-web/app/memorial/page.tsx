@@ -1,5 +1,5 @@
-import { ComingSoonPage, comingSoonPresets } from '@/components/vendor/ComingSoonPage';
+import { NotAvailablePage, notAvailablePresets } from '@/components/vendor/NotAvailablePage';
 
 export default function MemorialPage() {
-  return <ComingSoonPage {...comingSoonPresets.memorial} />;
+  return <NotAvailablePage {...notAvailablePresets.memorial} />;
 }

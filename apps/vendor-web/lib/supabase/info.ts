@@ -12,9 +12,7 @@ function getRuntimeConfig(): { apiBaseUrl?: string } {
 export const projectId =
   process.env.NEXT_PUBLIC_SUPABASE_PROJECT_ID ||
   process.env.NEXT_PUBLIC_API_PROJECT_ID ||
-  '';
-
-export const publicAnonKey =
+  '';export const publicAnonKey =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   process.env.NEXT_PUBLIC_API_ANON_KEY ||
   '';

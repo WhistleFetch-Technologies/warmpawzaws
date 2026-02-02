@@ -159,8 +159,13 @@ export function ResortBoardingBookingEnhanced(props: ResortBoardingBookingEnhanc
         return;
       }
 
-      const servicesResponse = await apiClient.get<any>(`/vendor/${vendorId}/services`);
-      const allServices = servicesResponse.services || servicesResponse || [];
+      let servicesResponse: any;
+      try {
+        servicesResponse = await apiClient.get<any>(`/customer/vendor/${vendorId}/services`);
+      } catch {
+        servicesResponse = await apiClient.get<any>(`/vendor/${vendorId}/services`);
+      }
+      const allServices = servicesResponse?.services || servicesResponse || [];
       const boardingService = allServices.find((s: any) => 
         s.serviceType === 'boarding' || 
         s.name?.toLowerCase().includes('boarding') ||

@@ -32,7 +32,8 @@ export function VendorServicesPage({ vendorId }: VendorServicesPageProps) {
       setLoading(true);
       const response = await apiClient.get<any>(`/vendor/${vendorId}/services`);
       if (response.success) {
-        setServices(response.services || []);
+        const list = Array.isArray(response.services) ? response.services : (response.allServices || []);
+        setServices(list);
       }
     } catch (err) {
       console.error('Error loading services:', err);

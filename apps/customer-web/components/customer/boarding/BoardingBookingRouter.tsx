@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
+import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 
 interface BoardingBookingRouterProps {
   phone: string;
@@ -379,13 +380,16 @@ export function BoardingBookingRouter({
         setBookingIdempotencyKey(idempotencyKey);
       }
 
+      // CreateBookingRequestSchema expects serviceType: at_vendor|at_home|online|at_center|tele|hybrid|product
+      const bookingServiceType = (selectedServiceType === 'overnight' || selectedServiceType === 'daycare') ? 'at_center' : selectedServiceType;
+
       const bookingData: any = {
         customerId: customerId,
         vendorId: vendorId,
         serviceId: serviceIdValue,
         bookingDate: checkInDate,
         bookingTime: checkInTime,
-        serviceType: selectedServiceType,
+        serviceType: bookingServiceType,
         petId: selectedPet?.id,
         notes: notes || undefined,
         idempotencyKey,
@@ -519,11 +523,36 @@ export function BoardingBookingRouter({
     );
   }
 
-  return (
-    <div className="min-h-screen bg-white max-w-md mx-auto">
-      <div className="px-4 py-6">
-        {step !== 'confirmation' && renderStepIndicator()}
+  const boardingStats = [
+    { value: selectedServiceOption?.name || 'Boarding', label: 'Type', icon: <Building2 className="w-4 h-4" /> },
+    { value: checkInDate ? `${checkInDate} → ${checkOutDate || '-'}` : '—', label: 'Dates' },
+    { value: selectedPet?.name || '—', label: 'Pet', icon: <Dog className="w-4 h-4" /> }
+  ];
+  const stepLabels = rooms.length > 0
+    ? ['Service', 'Dates', 'Pet', 'Room', 'Payment']
+    : ['Service', 'Dates', 'Pet', 'Payment'];
+  const stepIdx = ['service', 'datetime', 'pet', 'room', 'payment'].indexOf(step);
+  const stepIndicators = stepLabels.map((label, idx) => ({
+    label,
+    isCompleted: idx < stepIdx,
+    isCurrent: idx === stepIdx,
+  }));
 
+  return (
+    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+      <ServiceDashboardHeader
+        serviceName="Pet Boarding"
+        serviceSubtitle={selectedServiceOption?.name || 'Select boarding type'}
+        serviceIcon={Building2}
+        iconColor="text-white"
+        stats={boardingStats}
+        steps={stepIndicators}
+        onBack={handleBack}
+        showBackButton={true}
+        headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+      />
+      <div className="flex-1 overflow-y-auto bg-gray-50">
+        <div className="max-w-md mx-auto px-4 py-4">
         {/* Service Selection */}
         {step === 'service' && (
           <div className="space-y-4">
@@ -829,6 +858,7 @@ export function BoardingBookingRouter({
             setShowAddPetModal(false);
           }}
         />
+        </div>
       </div>
     </div>
   );

@@ -41,6 +41,8 @@ interface BookingConfirmationPageProps {
   onViewDetails: () => void;
   onBackToHome: () => void;
   onShare?: () => void;
+  // Phase 3: Upsell - Add another service
+  onNavigate?: (screen: string, data?: any) => void;
 }
 
 export function BookingConfirmationPage({
@@ -62,7 +64,18 @@ export function BookingConfirmationPage({
   onViewDetails,
   onBackToHome,
   onShare,
+  onNavigate,
 }: BookingConfirmationPageProps) {
+  // Phase 3: Contextual add-on suggestions based on service type
+  const addOnSuggestions = type === 'booking' && onNavigate ? (
+    (serviceName || '').toLowerCase().includes('vet') || (serviceStyle === 'tele' && serviceName?.includes('Consult'))
+      ? [{ label: 'Book Grooming', screen: 'grooming' }, { label: 'Book a Walk', screen: 'walker' }]
+      : (serviceName || '').toLowerCase().includes('groom')
+        ? [{ label: 'Book Vet', screen: 'vet' }, { label: 'Book a Walk', screen: 'walker' }]
+        : (serviceName || '').toLowerCase().includes('walk')
+          ? [{ label: 'Book Grooming', screen: 'grooming' }, { label: 'Book Vet', screen: 'vet' }]
+          : [{ label: 'Book Grooming', screen: 'grooming' }, { label: 'Book Vet', screen: 'vet' }]
+  ) : [];
   const [copied, setCopied] = useState(false);
   const [bookingDetails, setBookingDetails] = useState<any>(null);
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
@@ -465,6 +478,34 @@ export function BookingConfirmationPage({
             </div>
           )}
         </Card>
+
+        {/* Phase 3: Add another service upsell */}
+        {addOnSuggestions.length > 0 && (
+          <Card className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-2xl p-5 shadow-sm border border-orange-200">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
+                <Gift className="w-5 h-5 text-orange-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-gray-900">Add another service?</h3>
+                <p className="text-sm text-gray-600">Customers often add these</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {addOnSuggestions.map((s) => (
+                <Button
+                  key={s.screen}
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 border-orange-200 text-orange-700 hover:bg-orange-50"
+                  onClick={() => onNavigate?.(s.screen)}
+                >
+                  {s.label}
+                </Button>
+              ))}
+            </div>
+          </Card>
+        )}
 
         {/* Package Upsell (for bookings) */}
         {type === 'booking' && (

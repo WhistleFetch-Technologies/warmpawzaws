@@ -1,4 +1,4 @@
-// File: D:\WFTPL\warmpawzApp\warmpawzaws\apps\customer-web\app\shop\page.tsx
+// File: /Users/ketan/Documents/warmpawzecodev/apps/customer-web/app/shop/page.tsx
 import * as entry from '../../../../app/shop/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

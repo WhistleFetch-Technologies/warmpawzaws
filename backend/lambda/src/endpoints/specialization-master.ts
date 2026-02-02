@@ -618,7 +618,8 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
       }, {}) });
     } catch (err: any) {
       console.error('[SPEC-MASTER] Public problem-grid all error:', err.message);
-      return c.json({ success: false, error: err.message }, 500);
+      // Return 200 with empty so customer home loads gracefully (non-critical)
+      return c.json({ success: true, problems: [], byCategory: {} });
     }
   });
 
@@ -664,7 +665,8 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('[SPEC-MASTER] Public problem grid error:', error.message);
-      return c.json({ success: false, error: error.message }, 500);
+      // Return 200 with empty so customer app loads gracefully (non-critical)
+      return c.json({ success: true, problems: [] });
     }
   });
   

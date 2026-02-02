@@ -22,6 +22,7 @@ interface Service {
   serviceType?: string;
   duration?: number;
   applicableRoles?: string[];
+  specializationIds?: string[];
 }
 
 export function ServiceCatalogTab() {
@@ -92,6 +93,7 @@ export function ServiceCatalogTab() {
         serviceType: s.service_style || s.serviceType,
         duration: s.duration_minutes || s.duration,
         applicableRoles: s.applicable_roles || [],
+        specializationIds: s.specialization_ids || s.specializationIds || [],
       }));
       
       console.log('🔍 [ServiceCatalogTab] Mapped services:', mappedServices.length);

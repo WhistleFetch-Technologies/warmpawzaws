@@ -537,6 +537,10 @@ export function registerAppointmentReminderEndpoints(app: Hono) {
       };
       const context = { requestId: randomUUID(), functionName: 'appointment-reminders', functionVersion: '$LATEST' };
       const result = await getUpcomingHandler.execute(event, context);
+      // Graceful degradation: return 200 with empty on 4xx/5xx so customer home loads
+      if (result.statusCode >= 400) {
+        return c.json({ success: true, reminders: [] }, 200);
+      }
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error: any) {
       console.error('[reminders/upcoming] Error:', error);

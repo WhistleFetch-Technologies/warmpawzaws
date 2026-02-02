@@ -14,6 +14,7 @@ import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
 import { EnhancedSearchBar } from './EnhancedSearchBar';
 import { ProblemGridNavigation } from './ProblemGridNavigation';
+import { ForYouSection } from './ForYouSection';
 import { ServicesByProblem } from './ServicesByProblem';
 import { TrendingProblems } from './TrendingProblems';
 import { WalletIcon } from './WalletIcon';
@@ -1499,6 +1500,14 @@ export function CustomerHomeComplete({
             }}
           />
         </div>
+
+        {/* Phase 3: For you section - Book again + Deals */}
+        <ForYouSection
+          phone={phone}
+          hotDeals={displayHotDeals}
+          banners={dynamicBanners}
+          onNavigate={onNavigate}
+        />
 
         {/* ✅ Trending Problems Section - Compact */}
         <div className="px-4 mb-3">

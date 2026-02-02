@@ -2426,7 +2426,11 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
           -- Review count
           (SELECT COUNT(*) FROM reviews rv WHERE rv.vendor_id = v.id) as review_count,
           -- Last active
-          GREATEST(v.updated_at, (SELECT MAX(created_at) FROM bookings b WHERE b.vendor_id = v.id)) as last_activity
+          GREATEST(v.updated_at, (SELECT MAX(created_at) FROM bookings b WHERE b.vendor_id = v.id)) as last_activity,
+          -- Discovery health: availability (vendor_availability_v2 or vendor_schedule_slots)
+          (EXISTS (SELECT 1 FROM vendor_availability_v2 va WHERE va.vendor_id = v.id AND va.is_enabled = true) 
+           OR EXISTS (SELECT 1 FROM vendor_schedule_slots vss WHERE vss.vendor_id = v.id AND vss.is_enabled = true)
+          ) as has_availability
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
         LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
@@ -2493,7 +2497,26 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         lastActivity: v.last_activity,
         createdAt: v.created_at,
         approvedAt: v.approved_at,
-        updatedAt: v.updated_at
+        updatedAt: v.updated_at,
+        discoveryHealth: (() => {
+          const hasPhoto = (v.metadata && (() => {
+            try {
+              const m = typeof v.metadata === 'string' ? JSON.parse(v.metadata || '{}') : v.metadata;
+              const photos = m?.facility_photos || m?.photos || [];
+              return Array.isArray(photos) ? photos.length > 0 : !!photos;
+            } catch { return false; }
+          })()) || !!(v.profile_image && String(v.profile_image).trim());
+          const hasAddress = !!(v.address && String(v.address).trim()) || (v.latitude && v.longitude);
+          const hasAvailability = !!v.has_availability;
+          const score = [hasPhoto, hasAddress, hasAvailability].filter(Boolean).length;
+          return {
+            hasPhoto,
+            hasAddress,
+            hasAvailability,
+            score,
+            status: score === 3 ? 'green' : score === 2 ? 'amber' : 'red',
+          };
+        })()
       }));
 
       // Apply vendor type filter (derived field)

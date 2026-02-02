@@ -17,6 +17,8 @@ import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
+import * as path from 'path';
+import * as fs from 'fs';
 import { AuroraStack } from './aurora-stack';
 import { S3Stack } from './s3-stack';
 import { CognitoStack } from './cognito-stack';
@@ -129,8 +131,18 @@ export class LambdaStack extends Construct {
         DYNAMODB_REPORTS_TABLE: props.dynamoDbStack.reportsTable.tableName,
         DYNAMODB_CHAT_MESSAGES_TABLE: props.dynamoDbStack.chatMessagesTable.tableName,
         DYNAMODB_AI_CONVERSATIONS_TABLE: props.dynamoDbStack.aiConversationsTable.tableName,
-        // CORS
-        ALLOW_ORIGIN: environment === 'prod' ? 'https://warmpawz.com' : '*',
+        // CORS: from config/urls.json (no hardcoded URLs in Lambda code)
+        ALLOWED_ORIGINS: (() => {
+          try {
+            const configPath = path.join(__dirname, '../../..', 'config', 'urls.json');
+            const raw = fs.readFileSync(configPath, 'utf8');
+            const urls = JSON.parse(raw);
+            const list = urls?.allowedOrigins || [];
+            return Array.isArray(list) ? list.join(',') : '';
+          } catch {
+            return process.env.ALLOWED_ORIGINS || '';
+          }
+        })(),
       },
       description: 'Main Warmpawz API Lambda function - handles all API requests',
     });

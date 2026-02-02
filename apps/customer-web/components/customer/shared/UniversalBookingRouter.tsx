@@ -7,7 +7,6 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { getRoleConfig, RoleId } from './roleConfig';
-import { StaffSelectionStep } from './StaffSelectionStep';
 import { ServiceDashboardHeader, StepInfo } from './ServiceDashboardHeader';
 
 interface UniversalBookingRouterProps {
@@ -30,7 +29,7 @@ interface UniversalBookingRouterProps {
   onViewBooking?: (bookingId: string) => void;
 }
 
-type BookingStep = 'service' | 'staff' | 'details' | 'payment' | 'confirmation';
+type BookingStep = 'service' | 'staff' | 'details' | 'summary' | 'payment' | 'confirmation';
 
 interface TimeSlot {
   time: string;
@@ -94,6 +93,7 @@ export function UniversalBookingRouter({
   const [notes, setNotes] = useState('');
   const [processing, setProcessing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
+  const [selectedPackageForSwitch, setSelectedPackageForSwitch] = useState<any | null>(null); // Phase 1: Package switch
   const [vendorServices, setVendorServices] = useState<any[]>([]);
   // ✅ NEW: Staff selection for center bookings
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
@@ -169,6 +169,9 @@ export function UniversalBookingRouter({
   const [usePackageSession, setUsePackageSession] = useState(false);
   const [showPackageOffer, setShowPackageOffer] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
+  // Phase 1: Summary step with package advice
+  const [recommendedPackages, setRecommendedPackages] = useState<any[]>([]);
+  const [loadingPackages, setLoadingPackages] = useState(false);
   
   // Add Pet/Address modal states
   const [showAddPetModal, setShowAddPetModal] = useState(false);
@@ -389,37 +392,38 @@ export function UniversalBookingRouter({
     
     try {
       setLoading(true);
-      // ✅ CRITICAL: Use the correct endpoint that returns service_id (UUID)
-      // Try multiple endpoints to ensure we get the real data
+      const vid = vendorId || doctorId;
+      // Prefer customer endpoint so only published services with vendor price show (CRUD reflects immediately)
       let servicesResponse: any = null;
       const endpoints = [
-        `/vendor/${vendorId || doctorId}/services`,
-        `/vendor/services/${vendorId || doctorId}`,
-        `/customer/clinic/${doctorId}/services`
+        `/customer/vendor/${vid}/services`,
+        `/customer/clinic/${vid}/services`,
+        `/vendor/${vid}/services`,
+        `/vendor/services/${vid}`,
       ];
       
       for (const endpoint of endpoints) {
         try {
           servicesResponse = await apiClient.get(endpoint) as any;
-          // Check if response has services in expected format
-          if (servicesResponse?.services || servicesResponse?.allServices || (Array.isArray(servicesResponse) && servicesResponse.length > 0)) {
+          if (servicesResponse?.services?.length || servicesResponse?.allServices?.length || (Array.isArray(servicesResponse?.services) && servicesResponse.services.length > 0)) {
+            break;
+          }
+          if (servicesResponse?.services && (servicesResponse.services.at_home || servicesResponse.services.at_center || servicesResponse.services.tele)) {
             break;
           }
         } catch (e) {
-          continue; // Try next endpoint
+          continue;
         }
       }
       
       if (servicesResponse) {
-        // Extract services from different response formats
         let services: any[] = [];
         if (servicesResponse.services) {
-          // Handle servicesByStyle format
           if (servicesResponse.services.at_home || servicesResponse.services.at_center || servicesResponse.services.tele) {
             services = [
               ...(servicesResponse.services.at_home?.services || []),
               ...(servicesResponse.services.at_center?.services || []),
-              ...(servicesResponse.services.tele?.services || [])
+              ...(servicesResponse.services.tele?.services || []),
             ];
           } else if (Array.isArray(servicesResponse.services)) {
             services = servicesResponse.services;
@@ -453,13 +457,23 @@ export function UniversalBookingRouter({
       if (petsResult.status === 'fulfilled') {
         const petsResponse = petsResult.value as any;
         if (petsResponse.pets && petsResponse.pets.length > 0) {
-          setPets(petsResponse.pets.map((p: any) => ({
+          const mappedPets = petsResponse.pets.map((p: any) => ({
             id: p.id,
             name: p.name,
             species: p.species || p.type,
             breed: p.breed,
             photo: p.photo || p.profilePhoto || p.image,
-          })));
+          }));
+          setPets(mappedPets);
+          // Phase 1: Pre-select last-used pet from sessionStorage
+          try {
+            const lastPetId = sessionStorage.getItem(`warmpawz_last_pet_${phone}`);
+            if (lastPetId) {
+              const found = mappedPets.find((p: Pet) => p.id === lastPetId || String(p.id) === lastPetId);
+              if (found) setSelectedPet(found);
+              else setSelectedPet(mappedPets[0]);
+            } else if (mappedPets.length === 1) setSelectedPet(mappedPets[0]);
+          } catch { /* ignore */ }
         }
       } else {
         console.error('Error loading pets:', petsResult.reason);
@@ -533,6 +547,27 @@ export function UniversalBookingRouter({
     }
   }, [customerId, doctorId, step]);
 
+  // Phase 1: Fetch vendor packages for Summary step (package advice)
+  useEffect(() => {
+    if (step === 'summary' && (doctorId || vendorId)) {
+      const loadVendorPackages = async () => {
+        setLoadingPackages(true);
+        try {
+          const res = await apiClient.get(`/vendor/${doctorId || vendorId}/packages`) as any;
+          const pkgList = res?.packages || [];
+          setRecommendedPackages(pkgList);
+        } catch {
+          setRecommendedPackages([]);
+        } finally {
+          setLoadingPackages(false);
+        }
+      };
+      loadVendorPackages();
+    } else {
+      setRecommendedPackages([]);
+    }
+  }, [step, doctorId, vendorId]);
+
   // Handle using a package session
   const handleUsePackageSession = async () => {
     if (!activePackage) return;
@@ -552,19 +587,19 @@ export function UniversalBookingRouter({
   };
 
   const handleNext = () => {
-    // ✅ NEW: Dynamic steps based on service type - include staff step for center bookings
+    // ✅ Phase 1: Include summary step before payment; skip staff (stub) for center bookings
     const isCenterBooking = selectedServiceType === 'at_center' || serviceStyle === 'at_center';
     const steps: BookingStep[] = isCenterBooking 
-      ? ['service', 'staff', 'details', 'payment', 'confirmation']
-      : ['service', 'details', 'payment', 'confirmation'];
+      ? ['service', 'details', 'summary', 'payment', 'confirmation']
+      : ['service', 'details', 'summary', 'payment', 'confirmation'];
     
     const currentIdx = steps.indexOf(step);
     
     if (currentIdx < steps.length - 1) {
       let nextStep = steps[currentIdx + 1];
       
-      // ✅ NEW: If moving from service to staff, ensure we have a service selected
-      if (step === 'service' && nextStep === 'staff' && !selectedVendorService) {
+      // When moving from service to details, ensure we have a service selected
+      if (step === 'service' && nextStep === 'details' && !selectedVendorService) {
         const serviceOption = getSelectedServiceOption();
         if (serviceOption) {
           const actualVendorService = vendorServices.find(s => {
@@ -585,8 +620,8 @@ export function UniversalBookingRouter({
         }
       }
       
-      // When advancing to payment, ensure selectedVendorService is set
-      if (nextStep === 'payment' && !selectedVendorService) {
+      // When advancing to payment or summary, ensure selectedVendorService is set
+      if ((nextStep === 'payment' || nextStep === 'summary') && !selectedVendorService) {
         const serviceOption = getSelectedServiceOption();
         if (serviceOption) {
           // ✅ CRITICAL: Find the actual vendor service from API to get real service_id (UUID)
@@ -613,11 +648,8 @@ export function UniversalBookingRouter({
   };
 
   const handleBack = () => {
-    // ✅ NEW: Dynamic steps based on service type
-    const isCenterBooking = selectedServiceType === 'at_center' || serviceStyle === 'at_center';
-    const steps: BookingStep[] = isCenterBooking 
-      ? ['service', 'staff', 'details', 'payment', 'confirmation']
-      : ['service', 'details', 'payment', 'confirmation'];
+    // Phase 1: Include summary step
+    const steps: BookingStep[] = ['service', 'details', 'summary', 'payment', 'confirmation'];
     
     const currentIdx = steps.indexOf(step);
     
@@ -761,6 +793,9 @@ export function UniversalBookingRouter({
       }
       return { title: 'Clinic Visit', subtitle: 'Book your appointment', icon: Building2 };
     }
+    if (step === 'summary') {
+      return { title: 'Booking Summary', subtitle: 'Review & optionally switch to package', icon: Package };
+    }
     if (step === 'confirmation') {
       return { title: 'Booking Confirmed', subtitle: 'Your appointment is scheduled', icon: CheckCircle2 };
     }
@@ -777,20 +812,18 @@ export function UniversalBookingRouter({
     { value: '*4.8', label: 'Rating' }
   ];
 
-  // ✅ FIX: Prepare step indicators for header
+  // Phase 1: Step indicators include summary (staff skipped)
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (showPaymentPage || step === 'confirmation') return undefined;
     
-    // UniversalBookingRouter uses: 'service' | 'staff' | 'details' | 'payment' | 'confirmation'
-    const stepLabels = step === 'staff' 
-      ? ['Service', 'Staff', 'Details', 'Payment']
-      : ['Service', 'Details', 'Payment'];
+    const stepLabels = ['Service', 'Details', 'Summary', 'Payment'];
     const currentStepMap: Record<BookingStep, number> = {
       service: 0,
       staff: 1,
-      details: step === 'staff' ? 2 : 1,
-      payment: step === 'staff' ? 3 : 2,
-      confirmation: step === 'staff' ? 4 : 3
+      details: 1,
+      summary: 2,
+      payment: 3,
+      confirmation: 4
     };
     const currentIdx = currentStepMap[step];
     
@@ -850,9 +883,11 @@ export function UniversalBookingRouter({
                 petId={selectedPet.id}
                 petName={selectedPet.name}
                 petBreed={selectedPet.breed}
-                baseAmount={allSelectedServices && allSelectedServices.length > 0 
-                  ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
-                  : (selectedVendorService.price || selectedServiceOption?.price || 0)}
+                baseAmount={selectedPackageForSwitch
+                  ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0)
+                  : (allSelectedServices && allSelectedServices.length > 0 
+                    ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
+                    : (selectedVendorService.price || selectedServiceOption?.price || 0))}
                 duration={selectedVendorService.duration || selectedServiceOption?.duration || 15}
                 selectedServices={allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : undefined}
                 customerPhone={phone}
@@ -963,29 +998,7 @@ export function UniversalBookingRouter({
           </div>
         )}
 
-        {/* Staff Selection Step - Only for center bookings */}
-        {step === 'staff' && (selectedServiceType === 'at_center' || serviceStyle === 'at_center') && (
-          <StaffSelectionStep
-            vendorId={doctorId || vendorId || clinicId || ''}
-            serviceId={selectedVendorService?.serviceId || selectedVendorService?.service_id}
-            serviceStyle="at_center"
-            selectedDate={selectedDate}
-            selectedTime={selectedTime}
-            onSelect={(staffId, staff) => {
-              setSelectedStaffId(staffId);
-              setSelectedStaff(staff);
-              // Auto-advance to details after selection
-              setTimeout(() => setStep('details'), 100);
-            }}
-            onBack={handleBack}
-            onSkip={() => {
-              // Allow skipping staff selection - proceed to details
-              setSelectedStaffId(null);
-              setSelectedStaff(null);
-              setStep('details');
-            }}
-          />
-        )}
+        {/* Phase 1: Staff step skipped (treat as single staff until StaffSelectionStep implemented) */}
 
         {/* Combined Details Selection: Schedule, Pet, and Address */}
         {step === 'details' && (
@@ -1072,7 +1085,10 @@ export function UniversalBookingRouter({
                 pets.map((pet) => (
                   <button
                     key={pet.id}
-                    onClick={() => setSelectedPet(pet)}
+                    onClick={() => {
+                      setSelectedPet(pet);
+                      try { sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet.id)); } catch { /* ignore */ }
+                    }}
                       className={`w-full p-3 sm:p-4 rounded-xl border-2 transition-all flex items-center gap-3 sm:gap-4 ${
                       selectedPet?.id === pet.id 
                         ? 'border-orange-500 bg-orange-50' 
@@ -1113,6 +1129,90 @@ export function UniversalBookingRouter({
               </div>
             )}
             
+        {/* Phase 1: Summary step with package advice */}
+        {step === 'summary' && (
+          <div className="space-y-4 pb-24">
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900">Booking Summary</h2>
+            <div className="bg-white rounded-xl p-4 space-y-3 shadow-sm border border-gray-200">
+              {(allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : selectedServices && selectedServices.length > 0 ? selectedServices : [selectedServiceOption]).map((s: any, idx: number) => {
+                const svc = s?.id ? s : { name: selectedServiceOption?.name, price: selectedServiceOption?.price, duration: selectedServiceOption?.duration };
+                return (
+                  <div key={idx} className="flex items-center gap-3 pb-3 border-b border-gray-100">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-orange-100 text-orange-600">
+                      {selectedServiceType === 'tele' ? <Video className="w-5 h-5" /> : selectedServiceType === 'at_home' ? <Home className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-900">{svc.name || s?.name || s?.serviceName}</p>
+                      {svc.duration && <p className="text-xs text-gray-500">{svc.duration} mins</p>}
+                    </div>
+                    <p className="font-bold text-orange-600">₹{svc.price ?? s?.price ?? 0}</p>
+                  </div>
+                );
+              })}
+              <div className="flex items-center gap-2 text-sm">
+                <Calendar className="w-4 h-4 text-gray-400" />
+                <span>{selectedDate && new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} at {selectedTime}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <User className="w-4 h-4 text-gray-400" />
+                <span>{selectedPet?.name} ({selectedPet?.breed})</span>
+              </div>
+              <div className="pt-2 flex justify-between items-center font-semibold">
+                <span>Total</span>
+                <span className="text-orange-600">₹{selectedPackageForSwitch
+                  ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0)
+                  : (() => {
+                    const services = allSelectedServices?.length ? allSelectedServices : selectedServices?.length ? selectedServices : [selectedServiceOption];
+                    return services.reduce((sum: number, s: any) => sum + (s?.price ?? selectedServiceOption?.price ?? 0), 0);
+                  })()}</span>
+              </div>
+              {selectedPackageForSwitch && (
+                <div className="mt-2 p-2 bg-green-50 rounded-lg text-sm text-green-700 flex items-center gap-2">
+                  <Package className="w-4 h-4" />
+                  <span>Package: {selectedPackageForSwitch.package_name ?? selectedPackageForSwitch.name} • {(selectedPackageForSwitch.total_sessions ?? selectedPackageForSwitch.session_count ?? 1)} sessions</span>
+                </div>
+              )}
+            </div>
+
+            {loadingPackages ? (
+              <div className="flex items-center justify-center py-4 text-gray-500 text-sm">Loading packages...</div>
+            ) : recommendedPackages.length > 0 ? (
+              <div className="bg-orange-50 rounded-xl p-4 border border-orange-200">
+                <p className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                  <Package className="w-4 h-4 text-orange-500" />
+                  Get a package instead
+                </p>
+                {recommendedPackages.slice(0, 2).map((pkg: any) => {
+                  const singlePrice = selectedServiceOption?.price ?? 0;
+                  const pkgPrice = pkg.package_price ?? pkg.price ?? 0;
+                  const sessions = pkg.total_sessions ?? pkg.session_count ?? 1;
+                  const perSession = sessions > 0 ? pkgPrice / sessions : pkgPrice;
+                  const savings = singlePrice > 0 && perSession < singlePrice ? Math.round((singlePrice - perSession) * sessions) : 0;
+                  return (
+                    <div key={pkg.id} className="mb-3 last:mb-0 p-3 bg-white rounded-lg border border-orange-100">
+                      <p className="font-medium text-gray-900">{pkg.package_name ?? pkg.name}</p>
+                      <p className="text-sm text-gray-600 mt-1">₹{pkgPrice} • {sessions} sessions</p>
+                      {savings > 0 && <p className="text-xs text-green-600 mt-1">Save ₹{savings} vs single bookings</p>}
+                      <Button variant="outline" size="sm" className="mt-2 border-orange-300 text-orange-600 hover:bg-orange-50" onClick={() => {
+                        setSelectedPackageForSwitch(pkg);
+                        toast.success(`Switched to ${pkg.package_name ?? pkg.name}. Proceed to payment.`);
+                      }}>
+                        Switch to Package
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col gap-2">
+              <Button onClick={handleNext} className="w-full bg-orange-500 hover:bg-orange-600 py-3">
+                Continue to Payment
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Fixed Continue Button - Above Footer */}
         {step === 'details' && (
           <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-30">
@@ -1128,7 +1228,7 @@ export function UniversalBookingRouter({
                   ? 'Select Date & Time' 
                   : !selectedPet 
                     ? 'Select a Pet' 
-                    : 'Continue to Payment'}
+                    : 'Continue'}
             </Button>
             </div>
           </div>

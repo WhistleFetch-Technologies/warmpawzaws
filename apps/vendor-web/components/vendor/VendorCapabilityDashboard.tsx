@@ -1098,7 +1098,8 @@ function PricingSection({ vendorId }: { vendorId: string }) {
   const loadServicesCount = async () => {
     try {
       const response = await apiClient.get<any>(`/vendor/${vendorId}/services`).catch(() => ({ services: [] }));
-      setServicesCount(response.services?.length || 0);
+      const list = Array.isArray(response.services) ? response.services : (response.allServices || []);
+      setServicesCount(list.length);
     } catch (err) {
       console.error('Error loading services count:', err);
     } finally {
@@ -1413,7 +1414,8 @@ function MealPlansSection({ vendorId }: { vendorId: string }) {
       } else {
         // Alternative: count services with meal plan type
         const servicesRes = await apiClient.get<any>(`/vendor/${vendorId}/services`).catch(() => ({ services: [] }));
-        const mealPlanServices = (servicesRes.services || []).filter((s: any) => 
+        const list = Array.isArray(servicesRes.services) ? servicesRes.services : (servicesRes.allServices || []);
+        const mealPlanServices = list.filter((s: any) =>
           s.service_type?.toLowerCase().includes('meal') ||
           s.service_type?.toLowerCase().includes('diet') ||
           s.category?.toLowerCase().includes('nutrition')
@@ -2078,7 +2080,8 @@ function PackagesSection({ vendorId }: { vendorId: string }) {
         setCount(response.count || response.packages?.length || 0);
       } else {
         const servicesRes = await apiClient.get<any>(`/vendor/${vendorId}/services`).catch(() => ({ services: [] }));
-        const packageServices = (servicesRes.services || []).filter((s: any) => 
+        const list = Array.isArray(servicesRes.services) ? servicesRes.services : (servicesRes.allServices || []);
+        const packageServices = list.filter((s: any) =>
           s.is_package === true || s.service_type?.toLowerCase().includes('package')
         );
         setCount(packageServices.length);
@@ -2657,7 +2660,8 @@ function MenuSection({ vendorId }: { vendorId: string }) {
         setCount(response.count || response.items?.length || response.menu?.length || 0);
       } else {
         const servicesRes = await apiClient.get<any>(`/vendor/${vendorId}/services`).catch(() => ({ services: [] }));
-        const menuServices = (servicesRes.services || []).filter((s: any) => 
+        const list = Array.isArray(servicesRes.services) ? servicesRes.services : (servicesRes.allServices || []);
+        const menuServices = list.filter((s: any) =>
           s.category?.toLowerCase().includes('cafe') || s.service_category?.toLowerCase().includes('menu')
         );
         setCount(menuServices.length);

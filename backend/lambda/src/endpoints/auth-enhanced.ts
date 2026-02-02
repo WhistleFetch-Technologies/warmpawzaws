@@ -623,16 +623,16 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
       
       if (isUATMode) {
         // UAT MODE: Generate proper JWT tokens (not just strings)
-        // Token expiry set to 60 seconds for UAT testing
+        // Token expiry set to 24h so post-OTP redirect and first API calls succeed (was 60s → caused 401 and redirect back to login)
         console.log(`[AUTH] UAT Mode: Generating JWT tokens for ${phone} (role: ${role})`);
         const { generateUATJWTToken } = await import('../utils/jwt-generator');
         cognitoTokens = await generateUATJWTToken({
           userId,
           phone,
           role: role as 'customer' | 'vendor' | 'admin',
-          expiresIn: 60, // 60 seconds for UAT mode testing
+          expiresIn: 24 * 60 * 60, // 24 hours so session persists after OTP redirect
         });
-        console.log('[AUTH] UAT Mode: Generated JWT tokens with 60s expiry');
+        console.log('[AUTH] UAT Mode: Generated JWT tokens with 24h expiry');
       } else {
         // PRODUCTION MODE: Use full Cognito authentication
         try {

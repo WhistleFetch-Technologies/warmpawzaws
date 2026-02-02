@@ -1829,6 +1829,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             status,
             publish_status,
             display_order,
+            COALESCE(specialization_ids, ARRAY[]::text[]) as specialization_ids,
             created_at::text as created_at,
             updated_at::text as updated_at
           FROM service_catalog
@@ -1847,6 +1848,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         display_name: String(s.display_name || s.service_name || s.name || ''),
         category_id: String(s.category_id || ''),
         status: String(s.status || 'active'),
+        specialization_ids: s.specialization_ids || [],
+        specializationIds: s.specialization_ids || [],
       }));
 
       return c.json({ success: true, services: safeServices });
@@ -1859,7 +1862,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/catalog/services', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status, applicableRoles, categoryName, subCategoryName } = body;
+      const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status, applicableRoles, categoryName, subCategoryName, specializationIds, specialization_ids } = body;
+      const specializationIdsArr = Array.isArray(specializationIds) ? specializationIds : (Array.isArray(specialization_ids) ? specialization_ids : []);
 
       if (!name || !price) {
         return c.json({ success: false, error: 'Service name and price are required' }, 400);
@@ -1911,6 +1915,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         status: status || 'active',
         publish_status: 'published',
         display_order: 0,
+        specialization_ids: specializationIdsArr,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
@@ -1944,6 +1949,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.duration !== undefined) updateData.duration_minutes = parseInt(body.duration, 10);
       if (body.status !== undefined) updateData.status = body.status;
       if (body.display_order !== undefined) updateData.display_order = parseInt(body.display_order, 10);
+      if (body.specialization_ids !== undefined) updateData.specialization_ids = body.specialization_ids;
+      if (body.specializationIds !== undefined) updateData.specialization_ids = body.specializationIds;
 
       // Try service_catalog first
       try {

@@ -1131,16 +1131,31 @@ export function registerSettlementEndpoints(app: Hono) {
   });
 
   /**
-   * Helper function to create payout
+   * Helper function to create payout. Uses only verified bank accounts:
+   * prefers vendor_bank_accounts (is_verified = true), then vendor_bank_details.
    */
   async function createPayout(settlementId: string, vendorId: string, amount: number) {
-    const bankDetails = await select('vendor_bank_details', { vendor_id: vendorId });
+    let bankDetails: any[] = [];
+    try {
+      const hasTable = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as ex`);
+      if (hasTable.rows[0]?.ex) {
+        const acc = await query(
+          `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 AND is_verified = true ORDER BY is_primary DESC LIMIT 1`,
+          [vendorId]
+        );
+        bankDetails = acc.rows;
+      }
+    } catch (_) {}
+    if (bankDetails.length === 0) {
+      bankDetails = await select('vendor_bank_details', { vendor_id: vendorId });
+    }
     if (bankDetails.length === 0) {
       console.warn(`Vendor ${vendorId} has no bank details, skipping payout`);
       return;
     }
     const bank = bankDetails[0];
-    if (!bank.is_verified && bank.is_verified !== true) {
+    const isVerified = bank.is_verified === true || bank.isVerified === true;
+    if (!isVerified) {
       console.warn(`Vendor ${vendorId} bank not verified, skipping auto payout`);
       return;
     }

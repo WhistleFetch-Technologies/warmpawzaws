@@ -70,20 +70,25 @@ function SearchContent() {
       // Update search context with vendor selection
       updateSearchContextSelection(vendorId, undefined);
       
-      // Load vendor services
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/services`);
-      if (response.services) {
-        setVendorServices(response.services);
-        // Also save search context
+      // Prefer customer endpoint (only published, vendor price)
+      let response: any;
+      try {
+        response = await apiClient.get<any>(`/customer/vendor/${vendorId}/services`);
+      } catch {
+        response = await apiClient.get<any>(`/vendor/${vendorId}/services`);
+      }
+      const serviceList = Array.isArray(response?.services) ? response.services : (response?.services?.at_home?.services || response?.services?.at_center?.services || response?.services?.tele?.services || []);
+      if (serviceList.length) {
+        setVendorServices(Array.isArray(response?.services) ? response.services : serviceList);
         saveSearchContext({
           query: query || '',
           category: category || undefined,
           selectedVendorId: vendorId,
           timestamp: Date.now(),
-          results: response.services.map((s: any) => ({
-            id: s.id,
+          results: serviceList.map((s: any) => ({
+            id: s.id || s.service_id,
             type: 'service' as const,
-            name: s.service_name,
+            name: s.name || s.service_name,
             category: s.category,
           })),
         });

@@ -64,10 +64,11 @@ echo -e "${GREEN}✓ AWS CLI configured${NC}"
 echo "  Account: $AWS_ACCOUNT"
 echo "  Region: $AWS_REGION"
 
-# Check CDK
+# Check CDK (use npx from CDK dir if not in PATH)
+CDK_CMD="cdk"
 if ! command -v cdk &> /dev/null; then
-    echo -e "${YELLOW}Installing AWS CDK CLI...${NC}"
-    npm install -g aws-cdk
+    echo -e "${YELLOW}Using npx cdk from infrastructure/cdk...${NC}"
+    CDK_CMD="npx cdk"
 fi
 
 echo -e "${GREEN}✓ AWS CDK available${NC}"
@@ -102,7 +103,7 @@ npm install
 echo "Checking CDK bootstrap status..."
 if ! aws cloudformation describe-stacks --stack-name CDKToolkit &> /dev/null; then
     echo -e "${YELLOW}Bootstrapping CDK...${NC}"
-    cdk bootstrap aws://$AWS_ACCOUNT/$AWS_REGION
+    $CDK_CMD bootstrap aws://$AWS_ACCOUNT/$AWS_REGION
 fi
 
 # Synthesize and deploy
@@ -110,7 +111,7 @@ STACK_NAME="WarmpawzStack-$ENVIRONMENT"
 
 echo ""
 echo -e "${BLUE}Synthesizing CloudFormation template...${NC}"
-cdk synth $STACK_NAME
+$CDK_CMD synth $STACK_NAME
 
 echo ""
 if [ "$ENVIRONMENT" == "prod" ]; then
@@ -124,7 +125,7 @@ if [ "$ENVIRONMENT" == "prod" ]; then
 fi
 
 echo -e "${GREEN}Deploying $STACK_NAME...${NC}"
-cdk deploy $STACK_NAME --require-approval never
+$CDK_CMD deploy $STACK_NAME --require-approval never
 
 # ============================================================================
 # POST-DEPLOYMENT

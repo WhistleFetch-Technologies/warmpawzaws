@@ -45,17 +45,10 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
 
 
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lon: position.coords.longitude
-          });
-        },
-        (error) => console.log('Location access denied or unavailable')
-      );
-    }
+    const { getCurrentPositionSafe } = require('@/lib/geolocation-utils');
+    getCurrentPositionSafe((coords: { lat: number; lng: number }) =>
+      setUserLocation({ lat: coords.lat, lon: coords.lng })
+    );
   }, []);
 
   useEffect(() => {

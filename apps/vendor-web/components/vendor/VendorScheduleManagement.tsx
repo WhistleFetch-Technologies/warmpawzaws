@@ -18,7 +18,7 @@ import {
   MapPin,
   Settings
 } from 'lucide-react';
-// Using apiClient instead of Supabase
+// Uses apiClient (API Gateway)
 
 interface VendorScheduleManagementProps {
   vendorId: string;

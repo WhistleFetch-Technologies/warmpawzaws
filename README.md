@@ -55,7 +55,10 @@ See `docs/OFFICIAL_CLOUDFRONT_URLS.md` for CORS and deploy script references.
 
 All documentation is in the `docs/` directory:
 - `docs/archive/` - Historical status reports and audit logs
+- **`docs/IMPLEMENTATION_FLOW.md`** - Deployment architecture, DB migrations, and deployment scripts (start here for deploy/migrate)
 
-## Deployment
+## Deployment & DB migrations
 
-See `scripts/` directory for deployment scripts.
+- **Architecture:** AWS Serverless (RDS, Cognito, S3, Lambda, CloudFront).
+- **DB migrations:** Use **Node scripts in `scripts/`** (e.g. `run-migration-rds-node.js`). See `docs/IMPLEMENTATION_FLOW.md`.
+- **Deployment:** Use **scripts in `scripts/`** (e.g. `deploy-all.sh`, `deploy-admin-web.sh`). See `docs/IMPLEMENTATION_FLOW.md`.

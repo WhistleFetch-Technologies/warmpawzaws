@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, AlertCircle, Navigation, Loader2, MessageSquare, FileText, RefreshCw, History, Pill, Video, Stethoscope, Printer, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-// Removed Supabase imports - using apiClient instead
+// Uses apiClient (API Gateway)
 import { toast } from 'sonner';
 import { authenticatedFetch } from '@/lib/session-manager'; // ✅ SECURITY FIX
 import { MedicalHistoryModal } from './MedicalHistoryModal';

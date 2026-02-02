@@ -85,18 +85,8 @@ export function IntegratedServicesComplete({
   const [filterType, setFilterType] = useState<'all' | 'clinic' | 'independent'>('all');
 
   useEffect(() => {
-    // Get user location
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-        },
-        (error) => console.log('Location access denied:', error)
-      );
-    }
+    const { getCurrentPositionSafe } = require('@/lib/geolocation-utils');
+    getCurrentPositionSafe((coords: { lat: number; lng: number }) => setUserLocation(coords));
   }, []);
 
   useEffect(() => {

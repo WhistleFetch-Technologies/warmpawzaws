@@ -730,7 +730,7 @@ export function registerProblemGridEndpoints(app: Hono) {
         return c.json({ error: 'problemId or problemGridId is required' }, 400);
       }
 
-      // Get problem mappings
+      // Get problem mappings (legacy); when empty, treat problemId as specialization_id from Categories
       const mappingsResult = await query(
         `SELECT DISTINCT sub_category_id, role_id
          FROM problem_grid_mappings
@@ -738,23 +738,18 @@ export function registerProblemGridEndpoints(app: Hono) {
         [problemId]
       );
 
-      if (mappingsResult.rows.length === 0) {
-        return c.json({
-          success: true,
-          vendors: [],
-          total: 0,
-        });
-      }
+      const subCategoryIds = mappingsResult.rows.length > 0
+        ? mappingsResult.rows.map((r: any) => r.sub_category_id)
+        : [problemId]; // When no mapping, problemId is specialization_id from specialization_master
+      let roleIds = mappingsResult.rows.length > 0
+        ? [...new Set(mappingsResult.rows.map((r: any) => r.role_id))]
+        : []; // When no mapping, no role filter unless roleId query provided
 
-      const subCategoryIds = mappingsResult.rows.map((r: any) => r.sub_category_id);
-      let roleIds = [...new Set(mappingsResult.rows.map((r: any) => r.role_id))];
-      
-      // Filter by roleId if provided (takes precedence)
       if (roleId) {
         roleIds = [roleId];
       }
 
-      // Get vendors with matching specializations or roles
+      // Get vendors with matching specializations (vendor_specializations.specialization = problemId or sub_category_id)
       let vendorsQuery = `
         SELECT DISTINCT
           v.*,
@@ -774,14 +769,14 @@ export function registerProblemGridEndpoints(app: Hono) {
       const params: any[] = [];
       let paramIndex = 1;
 
-      // Match by role
+      // Match by role (when from mappings or when roleId query provided)
       if (roleIds.length > 0) {
         vendorsQuery += ` AND (r.id::text = ANY($${paramIndex}::text[]) OR r.name = ANY($${paramIndex + 1}::text[]))`;
         params.push(roleIds, roleIds);
         paramIndex += 2;
       }
 
-      // Match by specialization
+      // Match by specialization: vendor_specializations.specialization = problemId or sub_category_id
       if (subCategoryIds.length > 0) {
         vendorsQuery += ` AND v.id IN (
           SELECT vendor_id 
@@ -936,63 +931,45 @@ export function registerProblemGridEndpoints(app: Hono) {
             });
           }
 
-          // Get schedule/availability data
+          // Get schedule/availability data - use vendor_availability_v2 (canonical table)
           let nextAvailableSlot = null;
           let isAvailableToday = false;
           try {
-            const scheduleCheck = await query(
-              `SELECT EXISTS (
-                SELECT FROM information_schema.tables 
-                WHERE table_schema = 'public' 
-                AND table_name = 'vendor_schedule_slots'
-              )`
+            const today = new Date();
+            const dayOfWeek = today.getDay();
+            const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+            // Check vendor_availability_v2 (primary - used by most vendors)
+            const va2TodayCheck = await query(
+              `SELECT 1 FROM vendor_availability_v2 
+               WHERE vendor_id = $1 
+                 AND day_of_week = $2 
+                 AND COALESCE(is_enabled, is_available, true) = true 
+               LIMIT 1`,
+              [vendor.id, dayOfWeek]
             );
-            
-            if (scheduleCheck.rows[0]?.exists) {
-              const today = new Date();
-              const dayOfWeek = today.getDay();
-              const tomorrow = new Date(today);
-              tomorrow.setDate(tomorrow.getDate() + 1);
-              
-              // Check if vendor has slots today
-              const todaySlots = await query(
-                `SELECT start_time, end_time 
-                 FROM vendor_schedule_slots 
-                 WHERE vendor_id = $1 
-                   AND day_of_week = $2 
-                   AND is_enabled = true 
-                   AND start_time > NOW()::time
-                 ORDER BY start_time ASC
-                 LIMIT 1`,
-                [vendor.id, dayOfWeek]
-              );
-              
-              isAvailableToday = todaySlots.rows.length > 0;
-              
-              // Get next available slot
-              const nextSlot = await query(
-                `SELECT start_time, end_time, day_of_week
-                 FROM vendor_schedule_slots 
-                 WHERE vendor_id = $1 
-                   AND is_enabled = true 
-                   AND (day_of_week > $2 OR (day_of_week = $2 AND start_time > NOW()::time))
-                 ORDER BY day_of_week ASC, start_time ASC
-                 LIMIT 1`,
-                [vendor.id, dayOfWeek]
-              );
-              
-              if (nextSlot.rows.length > 0) {
-                const slot = nextSlot.rows[0];
-                const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-                nextAvailableSlot = {
-                  date: days[slot.day_of_week] || 'Soon',
-                  time: slot.start_time || 'Available'
-                };
-              }
+            isAvailableToday = va2TodayCheck.rows.length > 0;
+
+            // Get next available slot from vendor_availability_v2
+            const nextSlotResult = await query(
+              `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
+               FROM vendor_availability_v2
+               WHERE vendor_id = $1
+                 AND COALESCE(is_enabled, is_available, true) = true
+               ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC
+               LIMIT 1`,
+              [vendor.id]
+            );
+
+            if (nextSlotResult.rows.length > 0) {
+              const slot = nextSlotResult.rows[0];
+              nextAvailableSlot = {
+                date: days[slot.day_of_week] ?? 'Soon',
+                time: (slot.start_time || '09:00').toString().substring(0, 5)
+              };
             }
           } catch (scheduleError: any) {
             console.warn('Schedule check failed:', scheduleError.message);
-            // Default to available if schedule check fails
             isAvailableToday = true;
           }
 

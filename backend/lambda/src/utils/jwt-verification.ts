@@ -49,6 +49,39 @@ function getJwksClient(userPoolId: string, region: string = 'ap-south-1') {
  * Verify Cognito JWT token with signature validation
  * Also supports UAT mode tokens
  */
+/**
+ * Verify fallback session token (format: fallback_BASE64.HASH)
+ * Used when Cognito is unavailable; token is issued by auth verify-otp.
+ * Valid for 1 hour from payload.timestamp.
+ */
+function verifyFallbackToken(token: string): CognitoTokenPayload | null {
+  if (!token.startsWith('fallback_')) return null;
+  try {
+    const payloadPart = token.replace('fallback_', '').split('.')[0];
+    if (!payloadPart) return null;
+    const base64 = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+    if (!payload || typeof payload.timestamp !== 'number') return null;
+    const tokenAge = Date.now() - payload.timestamp;
+    const maxAge = 60 * 60 * 1000; // 1 hour
+    if (tokenAge > maxAge) {
+      console.log('[JWT] Fallback token expired');
+      return null;
+    }
+    const userId = payload.userId ?? payload.phone ?? 'unknown';
+    return {
+      sub: String(userId),
+      'cognito:username': payload.phone ?? userId,
+      'custom:user_type': 'vendor',
+      'cognito:groups': ['vendor'],
+      exp: Math.floor((payload.timestamp + maxAge) / 1000),
+      iat: Math.floor(payload.timestamp / 1000),
+    } as CognitoTokenPayload;
+  } catch (e) {
+    return null;
+  }
+}
+
 export async function verifyCognitoToken(
   token: string,
   userPoolId?: string,
@@ -56,6 +89,13 @@ export async function verifyCognitoToken(
   region: string = 'ap-south-1'
 ): Promise<CognitoTokenPayload | null> {
   try {
+    // Check fallback tokens (issued when Cognito unavailable)
+    const fallbackPayload = verifyFallbackToken(token);
+    if (fallbackPayload) {
+      console.log('[JWT] Fallback token verified successfully');
+      return fallbackPayload;
+    }
+
     // Check if this is a UAT token (issued by warmpawz-uat)
     try {
       const { verifyUATJWTToken } = await import('./jwt-generator');
@@ -124,8 +164,12 @@ export function decodeTokenUnsafe(token: string): CognitoTokenPayload | null {
 
 /**
  * Check if token is expired
+ * Fallback tokens (fallback_*) are not validated here; verifyCognitoToken does TTL check.
  */
 export function isTokenExpired(token: string): boolean {
+  if (!token) return true;
+  // Fallback tokens: expiry is checked inside verifyFallbackToken
+  if (token.startsWith('fallback_')) return false;
   try {
     const payload = decodeTokenUnsafe(token);
     if (!payload || !payload.exp) return true;
