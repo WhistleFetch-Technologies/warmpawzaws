@@ -323,11 +323,13 @@ class ListVendorsHandler extends BaseHandler {
         paramIdx++;
       }
 
-      // Is Active filter
+      // Is Active filter (treat NULL is_active as active when requesting active, to match stats and schema default)
       if (isActive !== undefined && isActive !== 'all') {
-        whereConditions.push(`v.is_active = $${paramIdx}`);
-        params.push(isActive === 'true');
-        paramIdx++;
+        if (isActive === 'true') {
+          whereConditions.push(`COALESCE(v.is_active, true) = true`);
+        } else {
+          whereConditions.push(`COALESCE(v.is_active, true) = false`);
+        }
       }
 
       const whereClause = whereConditions.join(' AND ');

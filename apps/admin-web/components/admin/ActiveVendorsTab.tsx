@@ -78,22 +78,49 @@ export function ActiveVendorsTab() {
   const loadActiveVendors = useCallback(async () => {
     try {
       setLoading(true);
-      
-      // ✅ Build query params for server-side filtering
-      const params = new URLSearchParams();
-      if (debouncedSearch) params.append('search', debouncedSearch);
-      if (categoryFilter !== 'all') params.append('category', categoryFilter);
-      if (performanceFilter !== 'all') params.append('performance', performanceFilter);
-      if (vendorTypeFilter !== 'all') params.append('vendorType', vendorTypeFilter);
-      if (cityFilter !== 'all') params.append('city', cityFilter);
-      if (tierFilter !== 'all') params.append('tier', tierFilter);
-      
-      const queryString = params.toString();
-      const url = `/admin/vendors/active${queryString ? `?${queryString}` : ''}`;
-      
-      console.log('[ActiveVendorsTab] Loading with filters:', url);
-      const data = await apiClient.get<any>(url);
-      console.log('[ActiveVendorsTab] Loaded:', data.filtered || data.vendors?.length, 'vendors');
+      // ✅ Prefer /admin/vendors/active first (same criteria as stats: approved + active, no "has published service" requirement)
+      const activeParams = new URLSearchParams({ limit: '500' });
+      if (debouncedSearch) activeParams.append('search', debouncedSearch);
+      if (categoryFilter !== 'all') activeParams.append('category', categoryFilter);
+      if (performanceFilter !== 'all') activeParams.append('performance', performanceFilter);
+      if (vendorTypeFilter !== 'all') activeParams.append('vendorType', vendorTypeFilter);
+      if (cityFilter !== 'all') activeParams.append('city', cityFilter);
+      if (tierFilter !== 'all') activeParams.append('tier', tierFilter);
+      const activeUrl = `/admin/vendors/active?${activeParams.toString()}`;
+      const listParams = new URLSearchParams({ status: 'approved', isActive: 'true', limit: '500' });
+      if (debouncedSearch) listParams.append('search', debouncedSearch);
+      if (categoryFilter !== 'all') listParams.append('category', categoryFilter);
+      if (cityFilter !== 'all') listParams.append('city', cityFilter);
+      if (tierFilter !== 'all') listParams.append('tier', tierFilter);
+      if (vendorTypeFilter !== 'all') listParams.append('vendorType', vendorTypeFilter);
+      const listUrl = `/admin/vendors?${listParams.toString()}`;
+      let data: any = { vendors: [], total: 0 };
+      try {
+        const activeData = await apiClient.get<any>(activeUrl);
+        const ar = (activeData as any)?.data ?? (activeData as any)?.body ?? activeData;
+        const aParsed = typeof ar === 'string' ? (() => { try { return JSON.parse(ar); } catch { return {}; } })() : ar;
+        data = {
+          vendors: aParsed.vendors ?? activeData.vendors ?? [],
+          total: aParsed.total ?? activeData.total ?? (aParsed.vendors ?? activeData.vendors ?? []).length,
+        };
+        if ((data.vendors?.length ?? 0) === 0 && (data.total ?? 0) === 0) {
+          throw new Error('Active endpoint returned empty');
+        }
+      } catch (e) {
+        console.warn('[ActiveVendorsTab] /admin/vendors/active failed or empty, trying /admin/vendors:', e);
+        try {
+          const listData = await apiClient.get<any>(listUrl);
+          const raw = (listData as any)?.data ?? (listData as any)?.body ?? listData;
+          const parsed = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : raw;
+          data = {
+            vendors: parsed.vendors ?? listData.vendors ?? [],
+            total: parsed.total ?? listData.total ?? (parsed.vendors ?? listData.vendors ?? []).length,
+          };
+        } catch (e2) {
+          console.error('[ActiveVendorsTab] Both endpoints failed:', e2);
+        }
+      }
+      console.log('[ActiveVendorsTab] Loaded:', data.vendors?.length ?? 0, 'vendors, total:', data.total);
       
       // Extract unique cities for the city filter
       const uniqueCities = [...new Set((data.vendors || [])
