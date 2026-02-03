@@ -20,7 +20,7 @@
 
 import { test, expect } from '@playwright/test';
 
-const API_BASE = process.env.API_BASE_URL || process.env.API_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+const API_BASE = process.env.API_BASE_URL || process.env.API_URL || '';
 
 // Payload shapes from implementation (PharmacyOrderFlow createOrder).
 // Backend resolves customer_id from customerPhone (get-or-create) when customerId not provided.

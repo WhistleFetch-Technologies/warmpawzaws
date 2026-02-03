@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { getAmenitiesForVendorType } from '@/lib/master-amenities';
+import { isSoloVendor, isCenterRole, getVendorRoleName } from '@/lib/vendor-utils';
 import { SpecializationSelector } from './SpecializationSelector';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { AdvancedAvailabilityManager } from './AdvancedAvailabilityManager';
@@ -66,19 +67,21 @@ const DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Sat
 
 // ✅ Main export with generic name
 export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerProps) {
-  // ✅ FIX: Check if vendor is solo - hide amenities and specialty tabs for solo vendors
-  const isSoloVendor = vendorData?.vendorType === 'solo' || 
-                       vendorData?.vendor_type === 'solo' ||
-                       vendorData?.vendorConfiguration === 'solo';
-  
-  // ✅ FIX: If solo vendor tries to access amenities/specialty tab, redirect to basic
+  // ✅ FIX: Show Amenities and Specialty tabs for center roles even when vendorData says solo.
+  // Use centralized isSoloVendor and override with isCenterRole so center profiles always get the tabs.
+  const soloByData = isSoloVendor(vendorData);
+  const roleNameOrId = roleId || getVendorRoleName(vendorData) || '';
+  const isCenterRoleType = isCenterRole(roleNameOrId);
+  const showAmenitiesAndSpecialtyTabs = !soloByData || isCenterRoleType;
+
+  // ✅ FIX: If tabs are hidden and user had amenities/specialty selected, redirect to basic
   const [activeTab, setActiveTab] = useState<'basic' | 'availability' | 'amenities' | 'specialization'>('basic');
-  
+
   useEffect(() => {
-    if (isSoloVendor && (activeTab === 'amenities' || activeTab === 'specialization')) {
+    if (!showAmenitiesAndSpecialtyTabs && (activeTab === 'amenities' || activeTab === 'specialization')) {
       setActiveTab('basic');
     }
-  }, [isSoloVendor, activeTab]);
+  }, [showAmenitiesAndSpecialtyTabs, activeTab]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -469,11 +472,11 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
             {[
               { id: 'basic', label: 'Basic', icon: Building2 },
               { id: 'availability', label: 'Availability', icon: Clock },
-              // ✅ FIX: Hide amenities and specialty tabs for solo vendors
-              ...(isSoloVendor ? [] : [
+              // ✅ FIX: Show Amenities and Specialty for center roles; hide only for non-center solo
+              ...(showAmenitiesAndSpecialtyTabs ? [
                 { id: 'amenities', label: 'Amenities', icon: Sparkles },
                 { id: 'specialization', label: 'Specialty', icon: Check }
-              ])
+              ] : [])
             ].map(tab => {
               const Icon = tab.icon;
               return (
@@ -707,8 +710,8 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
           />
         )}
 
-        {/* Amenities Tab - Hidden for solo vendors */}
-        {!isSoloVendor && activeTab === 'amenities' && (
+        {/* Amenities Tab - Shown for center roles and non-solo vendors */}
+        {showAmenitiesAndSpecialtyTabs && activeTab === 'amenities' && (
           <div className="bg-white rounded-xl border p-6">
             <h2 className="font-bold text-gray-900 mb-4">Amenities & Facilities</h2>
             
@@ -765,8 +768,8 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
           </div>
         )}
 
-        {/* Specialization Tab - Hidden for solo vendors */}
-        {!isSoloVendor && activeTab === 'specialization' && (
+        {/* Specialization Tab - Shown for center roles and non-solo vendors */}
+        {showAmenitiesAndSpecialtyTabs && activeTab === 'specialization' && (
           <div className="bg-white rounded-xl border p-6">
             <h2 className="font-bold text-gray-900 mb-4">Center Specializations</h2>
             <p className="text-sm text-gray-600 mb-6">

@@ -183,15 +183,12 @@ import platformPoliciesApp from '../endpoints/platform-policies';
 // Create Hono app
 const app = new Hono();
 
-// CORS: allowed origins from env (set by CDK), with CloudFront fallback when env empty
-const CLOUDFRONT_FALLBACK_ORIGINS = [
-  'https://dfof7mguaa0a5.cloudfront.net', // Admin
-  'https://d1s6ykkj381k58.cloudfront.net', // Vendor
-  'https://d2aoyjj8ine0wk.cloudfront.net', // Customer
-];
+// CORS: allowed origins from env only (set by CDK/deploy from config/urls.json or ALLOWED_ORIGINS). No hardcoded URLs.
 const getAllowedOriginsList = (): string[] => {
   const fromEnv = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
-  return fromEnv.length > 0 ? fromEnv : CLOUDFRONT_FALLBACK_ORIGINS;
+  if (fromEnv.length > 0) return fromEnv;
+  // Local dev only when ALLOWED_ORIGINS not set
+  return ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:3003', 'http://localhost:5173'];
 };
 
 const getDefaultCorsOrigin = (): string => {

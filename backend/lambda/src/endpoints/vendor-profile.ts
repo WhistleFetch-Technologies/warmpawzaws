@@ -555,6 +555,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
                 business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
                 owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
                 role_id: identity.selected_role_id,
+                vendor_type: (identity as any).vendor_type || payload.vendorType || payload.vendor_type || 'business',
                 category: 'general',
                 address: payload.address || 'Not specified',
                 city: payload.city || 'Not specified',
@@ -598,14 +599,18 @@ export function registerVendorProfileEndpoints(app: Hono) {
             role = roles[0];
             roleConfig = role.config || {};
             customerService = role.customer_service || roleConfig?.customer_service || null;
-            vendorConfiguration = roleConfig?.vendorConfiguration || null;
+            // ✅ FORENSIC: Use vendor's actual type (from onboarding) for filtering so vendor gets exactly role permissions filtered by their type
+            const vendorType = (vendor as any).vendor_type;
+            vendorConfiguration = (vendorType === 'solo' || vendorType === 'business')
+              ? vendorType
+              : (roleConfig?.vendorConfiguration || null);
             selectedServiceStyles = roleConfig?.serviceStyles?.selected || [];
             
-            // Get base capabilities from DB
+            // Get base capabilities from DB (single source of truth: role_permissions = admin role config)
             const permissions = await select('role_permissions', { role_id: vendor.role_id });
             const baseCapabilities = permissions.map(p => p.permission_name);
             
-            // ✅ TWO-STAGE CAPABILITY FILTERING
+            // ✅ TWO-STAGE CAPABILITY FILTERING (solo/business + service styles from role config)
             if (vendorConfiguration) {
               const { stage2_service_styles: effectiveCapabilities } = getEffectiveCapabilities({
                 vendorConfiguration,
@@ -1009,6 +1014,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
                 business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
                 owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
                 role_id: identity.selected_role_id,
+                vendor_type: (identity as any).vendor_type || payload.vendorType || payload.vendor_type || 'business',
                 category: 'general',
                 address: payload.address || 'Not specified',
                 city: payload.city || 'Not specified',
@@ -1108,6 +1114,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
                 business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
                 owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
                 role_id: identity.selected_role_id,
+                vendor_type: (identity as any).vendor_type || payload.vendorType || payload.vendor_type || 'business',
                 category: 'general',
                 address: payload.address || 'Not specified',
                 city: payload.city || 'Not specified',

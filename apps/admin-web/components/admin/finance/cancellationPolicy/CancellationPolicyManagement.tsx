@@ -103,14 +103,53 @@ export function CancellationPolicyManagement() {
     loadPolicies();
   }, []);
 
+  /** Normalize API row (snake_case, flat) to UI shape (camelCase, with arrays) */
+  const normalizePolicy = (row: any): CancellationPolicy => {
+    const arr = (v: unknown) => (Array.isArray(v) ? v : []);
+    return {
+      id: row.id ?? '',
+      name: row.name ?? row.policy_name ?? '',
+      description: row.description ?? '',
+      policyType: (row.policyType ?? row.policy_type ?? 'standard') as CancellationPolicy['policyType'],
+      vendorTypes: arr(row.vendorTypes ?? row.vendor_types),
+      serviceTypes: arr(row.serviceTypes ?? row.service_types),
+      gracePeriodHours: row.gracePeriodHours ?? row.hours_before_booking ?? 2,
+      cancellationWindows: arr(row.cancellationWindows ?? row.cancellation_windows).length
+        ? arr(row.cancellationWindows ?? row.cancellation_windows)
+        : [
+            { hoursBefore: 48, refundPercentage: 100, cancellationFee: 0, penaltyPercentage: 0 },
+            { hoursBefore: 24, refundPercentage: 75, cancellationFee: 0, penaltyPercentage: 0 },
+            { hoursBefore: 12, refundPercentage: 50, cancellationFee: 0, penaltyPercentage: 0 },
+            { hoursBefore: 0, refundPercentage: 0, cancellationFee: 0, penaltyPercentage: 0 },
+          ],
+      vendorCancellationPenalty: row.vendorCancellationPenalty ?? row.vendor_cancellation_penalty ?? {
+        enabled: true,
+        penaltyPercentage: 10,
+        compensationPercentage: 50,
+      },
+      noShowPolicy: row.noShowPolicy ?? row.no_show_policy ?? {
+        enabled: true,
+        refundPercentage: 0,
+        penaltyAmount: 0,
+      },
+      isActive: row.isActive ?? row.is_active ?? true,
+      priority: row.priority ?? 0,
+      createdAt: row.createdAt ?? row.created_at,
+      updatedAt: row.updatedAt ?? row.updated_at,
+    };
+  };
+
   const loadPolicies = async () => {
     setLoading(true);
     try {
       const data = await apiClient.get<any>('/admin/finance/cancellation-policies');
-      setPolicies((data as any).data?.policies || (data as any).policies || []);
+      const raw = (data as any)?.data?.policies ?? (data as any)?.policies;
+      const list = Array.isArray(raw) ? raw : [];
+      setPolicies(list.map((row: any) => normalizePolicy(row ?? {})));
     } catch (error) {
       console.error('Error loading cancellation policies:', error);
       toast.error('Failed to load cancellation policies');
+      setPolicies([]);
     } finally {
       setLoading(false);
     }
@@ -155,12 +194,15 @@ export function CancellationPolicyManagement() {
     }
   };
 
-  const filteredPolicies = (policies || []).filter((policy) => {
+  const policiesList = Array.isArray(policies) ? policies : [];
+  const filteredPolicies = policiesList.filter((policy) => {
     if (!policy) return false;
+    const name = policy.name ?? (policy as any).policy_name ?? '';
+    const description = policy.description ?? '';
     if (searchQuery) {
       const matchesSearch =
-        (policy.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (policy.description || '').toLowerCase().includes(searchQuery.toLowerCase());
+        name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        description.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
     }
     if (filterType !== 'all' && (policy.policyType || 'standard') !== filterType) return false;
@@ -287,20 +329,20 @@ export function CancellationPolicyManagement() {
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
-                      <CardTitle>{policy.name}</CardTitle>
-                      <Badge variant={policy.isActive ? 'default' : 'outline'}>
-                        {policy.isActive ? 'Active' : 'Inactive'}
+                      <CardTitle>{policy.name || (policy as any).policy_name || 'Unnamed'}</CardTitle>
+                      <Badge variant={(policy.isActive ?? (policy as any).is_active) ? 'default' : 'outline'}>
+                        {(policy.isActive ?? (policy as any).is_active) ? 'Active' : 'Inactive'}
                       </Badge>
                       <Badge variant="outline">{(policy.policyType || 'standard').replace('_', ' ')}</Badge>
                     </div>
-                    <p className="text-sm text-gray-600">{policy.description}</p>
+                    <p className="text-sm text-gray-600">{policy.description ?? ''}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        setEditingPolicy(policy);
+                        setEditingPolicy(normalizePolicy(policy));
                         setShowModal(true);
                       }}
                     >
@@ -321,19 +363,19 @@ export function CancellationPolicyManagement() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div>
                     <span className="text-gray-500">Grace Period:</span>
-                    <span className="ml-2 font-medium">{policy.gracePeriodHours}h</span>
+                    <span className="ml-2 font-medium">{policy.gracePeriodHours ?? (policy as any).hours_before_booking ?? 0}h</span>
                   </div>
                   <div>
                     <span className="text-gray-500">Cancellation Windows:</span>
-                    <span className="ml-2 font-medium">{policy.cancellationWindows.length}</span>
+                    <span className="ml-2 font-medium">{(policy.cancellationWindows || []).length}</span>
                   </div>
                   <div>
                     <span className="text-gray-500">Vendor Types:</span>
-                    <span className="ml-2 font-medium">{policy.vendorTypes.length}</span>
+                    <span className="ml-2 font-medium">{(policy.vendorTypes || []).length}</span>
                   </div>
                   <div>
                     <span className="text-gray-500">Priority:</span>
-                    <span className="ml-2 font-medium">{policy.priority}</span>
+                    <span className="ml-2 font-medium">{policy.priority ?? 0}</span>
                   </div>
                 </div>
               </CardContent>
@@ -415,17 +457,17 @@ export function CancellationPolicyManagement() {
                   {VENDOR_TYPES.map((type) => (
                     <div key={type.id} className="flex items-center gap-2">
                       <Checkbox
-                        checked={editingPolicy.vendorTypes.includes(type.id)}
+                        checked={(editingPolicy.vendorTypes ?? []).includes(type.id)}
                         onCheckedChange={(checked) => {
                           if (checked) {
                             setEditingPolicy({
                               ...editingPolicy,
-                              vendorTypes: [...editingPolicy.vendorTypes, type.id],
+                              vendorTypes: [...(editingPolicy.vendorTypes ?? []), type.id],
                             });
                           } else {
                             setEditingPolicy({
                               ...editingPolicy,
-                              vendorTypes: editingPolicy.vendorTypes.filter((t) => t !== type.id),
+                              vendorTypes: (editingPolicy.vendorTypes ?? []).filter((t) => t !== type.id),
                             });
                           }
                         }}
@@ -444,17 +486,17 @@ export function CancellationPolicyManagement() {
                   {SERVICE_TYPES.map((type) => (
                     <div key={type.id} className="flex items-center gap-2">
                       <Checkbox
-                        checked={editingPolicy.serviceTypes.includes(type.id)}
+                        checked={(editingPolicy.serviceTypes ?? []).includes(type.id)}
                         onCheckedChange={(checked) => {
                           if (checked) {
                             setEditingPolicy({
                               ...editingPolicy,
-                              serviceTypes: [...editingPolicy.serviceTypes, type.id],
+                              serviceTypes: [...(editingPolicy.serviceTypes ?? []), type.id],
                             });
                           } else {
                             setEditingPolicy({
                               ...editingPolicy,
-                              serviceTypes: editingPolicy.serviceTypes.filter(
+                              serviceTypes: (editingPolicy.serviceTypes ?? []).filter(
                                 (t) => t !== type.id
                               ),
                             });

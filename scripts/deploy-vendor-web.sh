@@ -48,9 +48,15 @@ if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "null" ]; then
     API_BASE_URL=$(aws apigatewayv2 get-apis --region ap-south-1 --query "Items[?Name=='warmpawz-dev-api'].ApiEndpoint" --output text 2>/dev/null | head -1)
   fi
   if [ -z "$API_BASE_URL" ] || [ "$API_BASE_URL" = "None" ]; then
-    # Hardcoded fallback to main API Gateway
-    API_BASE_URL="https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"
-    echo -e "${YELLOW}⚠️  Using hardcoded fallback API Gateway URL: $API_BASE_URL${NC}"
+    # Fallback: read from config/urls.json (no hardcoded URL in script)
+    if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
+      API_BASE_URL=$(jq -r '.apiGatewayDefaultUrl // empty' "$PROJECT_ROOT/config/urls.json")
+    fi
+    if [ -z "$API_BASE_URL" ]; then
+      echo -e "${YELLOW}❌ Set API_BASE_URL or ensure config/urls.json has apiGatewayDefaultUrl${NC}"
+      exit 1
+    fi
+    echo -e "${YELLOW}⚠️  Using API URL from config/urls.json: $API_BASE_URL${NC}"
   else
     echo -e "${GREEN}✅ API Gateway endpoint (from AWS): $API_BASE_URL${NC}"
   fi

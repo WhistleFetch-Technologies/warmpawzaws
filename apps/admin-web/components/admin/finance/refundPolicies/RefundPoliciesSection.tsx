@@ -2,24 +2,26 @@
 
 import { useState, useEffect } from 'react';
 import { Button, Input, Label, Checkbox } from '@warmpawz/ui';
-import { Plus, Edit, Trash2, Check, X, RefreshCw, Save } from 'lucide-react';
+import { Plus, Edit, Trash2, Save, X } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
-const VENDOR_TYPES = [
+/** Fallback vendor types when API roles are not available; includes Tele. */
+const FALLBACK_VENDOR_TYPES = [
+  { id: 'veterinarian', name: 'Veterinarian', icon: '⚕️' },
+  { id: 'tele', name: 'Tele / Video Consultation', icon: '📹' },
+  { id: 'grooming', name: 'Grooming', icon: '✂️' },
   { id: 'dog-walking', name: 'Dog Walking', icon: '🐕' },
+  { id: 'trainer', name: 'Trainer', icon: '🎓' },
+  { id: 'nutritionist', name: 'Nutritionist', icon: '🥗' },
+  { id: 'resorts', name: 'Resorts', icon: '🏖️' },
+  { id: 'pet-products-seller', name: 'Food, Medicine & Pet Products Sellers', icon: '🛒' },
   { id: 'breeder', name: 'Breeder', icon: '🐾' },
   { id: 'adoption', name: 'Adoption', icon: '❤️' },
-  { id: 'grooming', name: 'Grooming', icon: '✂️' },
-  { id: 'veterinarian', name: 'Veterinarian', icon: '⚕️' },
   { id: 'pet-cafe', name: 'Pet Cafe', icon: '☕' },
-  { id: 'trainer', name: 'Trainer', icon: '🎓' },
-  { id: 'resorts', name: 'Resorts', icon: '🏖️' },
-  { id: 'rehome', name: 'Rehome', icon: '🏡' },
-  { id: 'nutritionist', name: 'Nutritionist', icon: '🥗' },
   { id: 'sunset-services', name: 'Sunset Services', icon: '🌅' },
+  { id: 'rehome', name: 'Rehome', icon: '🏡' },
   { id: 'healthcare-provider', name: 'Healthcare Service Provider', icon: '🏥' },
-  { id: 'pet-products-seller', name: 'Food, Medicine & Pet Products Sellers', icon: '🛒' },
 ];
 
 interface RefundTier {
@@ -34,6 +36,30 @@ interface RefundTier {
   createdAt?: string;
 }
 
+/** Map DB service_location to frontend: home->at_home, clinic->at_center, both->both */
+const serviceLocationFromDb = (v: string): RefundTier['serviceLocation'] => {
+  if (v === 'home') return 'at_home';
+  if (v === 'clinic') return 'at_center';
+  return 'both';
+};
+
+/** Normalize API tier row (snake_case) to UI RefundTier (camelCase). */
+function normalizeTier(row: any): RefundTier {
+  const arr = (v: unknown) => (Array.isArray(v) ? v : []);
+  const rawLoc = row.service_location ?? row.serviceLocation ?? 'both';
+  return {
+    id: row.id ?? '',
+    name: row.name ?? row.policy_name ?? '',
+    vendorTypes: arr(row.vendor_types ?? row.vendorTypes),
+    serviceLocation: serviceLocationFromDb(String(rawLoc)),
+    hoursBeforeService: Number(row.hours_before_service ?? row.hoursBeforeService ?? 24) || 24,
+    refundPercentage: Number(row.refund_percentage ?? row.refundPercentage ?? 75) || 75,
+    cancellationFee: Number(row.cancellation_fee ?? row.cancellationFee ?? 0) || 0,
+    isActive: row.is_active ?? row.isActive !== false,
+    createdAt: row.created_at ?? row.createdAt,
+  };
+}
+
 export function RefundPoliciesSection() {
   const [tiers, setTiers] = useState<RefundTier[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,16 +67,60 @@ export function RefundPoliciesSection() {
   const [editingTier, setEditingTier] = useState<RefundTier | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [vendorTypeOptions, setVendorTypeOptions] = useState<{ id: string; name: string; icon: string }[]>(FALLBACK_VENDOR_TYPES);
 
   useEffect(() => {
     loadData();
   }, []);
 
+  useEffect(() => {
+    loadRolesForVendorTypes();
+  }, []);
+
+  const loadRolesForVendorTypes = async () => {
+    const roleToIcon: Record<string, string> = {
+      veterinarian: '⚕️', grooming: '✂️', trainer: '🎓', walker: '🐕', nutritionist: '🥗',
+      resorts: '🏖️', adoption: '❤️', breeder: '🐾', pet_cafe: '☕', tele: '📹',
+    };
+    const mapRolesToOptions = (roles: any[]): { id: string; name: string; icon: string }[] => {
+      const options = roles
+        .filter((r: any) => r.is_active !== false)
+        .map((r: any) => ({
+          id: (r.code ?? r.id ?? r.name ?? '').toString().toLowerCase().replace(/\s+/g, '-'),
+          name: r.display_name ?? r.name ?? r.code ?? '',
+          icon: roleToIcon[(r.code ?? r.name ?? '').toString().toLowerCase()] ?? '📌',
+        }))
+        .filter((o: { id: string }) => o.id);
+      const hasTele = options.some((o: { id: string }) => o.id === 'tele' || o.id === 'video_consultation');
+      if (!hasTele) {
+        options.push({ id: 'tele', name: 'Tele / Video Consultation', icon: '📹' });
+      }
+      return options;
+    };
+    try {
+      let data = await apiClient.get<any>('/config/roles').catch(() => null);
+      let roles = (data as any)?.roles ?? (data as any)?.data?.roles ?? [];
+      if (!Array.isArray(roles) || roles.length === 0) {
+        data = await apiClient.get<any>('/admin/roles').catch(() => null);
+        roles = (data as any)?.roles ?? (data as any)?.data?.roles ?? [];
+      }
+      if (Array.isArray(roles) && roles.length > 0) {
+        const options = mapRolesToOptions(roles);
+        setVendorTypeOptions(options.length > 0 ? options : FALLBACK_VENDOR_TYPES);
+      } else {
+        setVendorTypeOptions(FALLBACK_VENDOR_TYPES);
+      }
+    } catch {
+      setVendorTypeOptions(FALLBACK_VENDOR_TYPES);
+    }
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
       const data = await apiClient.get<any>('/admin/vendor-settings-rules');
-      setTiers((data as any).data?.refundTiers || (data as any).refundTiers || []);
+      const raw = (data as any).data?.refundTiers ?? (data as any).refundTiers ?? [];
+      setTiers(Array.isArray(raw) ? raw.map(normalizeTier) : []);
     } catch (error) {
       console.error('Error loading refund tiers:', error);
       toast.error('Failed to load refund tiers');
@@ -209,7 +279,7 @@ export function RefundPoliciesSection() {
                     variant="ghost"
                     size="sm"
                     onClick={() => {
-                      setEditingTier(tier);
+                      setEditingTier(normalizeTier(tier));
                       setIsCreatingNew(false);
                       setShowModal(true);
                     }}
@@ -263,7 +333,7 @@ export function RefundPoliciesSection() {
               <div className="space-y-2">
                 <Label>Vendor Types *</Label>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3 border p-4 rounded-lg max-h-60 overflow-y-auto">
-                  {VENDOR_TYPES.map((type) => (
+                  {vendorTypeOptions.map((type) => (
                     <div key={type.id} className="flex items-center gap-2">
                       <Checkbox
                         checked={editingTier.vendorTypes.includes(type.id)}
@@ -299,13 +369,15 @@ export function RefundPoliciesSection() {
                   <Label>Hours Before Service</Label>
                   <Input
                     type="number"
-                    value={editingTier.hoursBeforeService}
-                    onChange={(e) =>
+                    min={0}
+                    value={Number.isFinite(editingTier.hoursBeforeService) ? editingTier.hoursBeforeService : ''}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
                       setEditingTier({
                         ...editingTier,
-                        hoursBeforeService: parseInt(e.target.value),
-                      })
-                    }
+                        hoursBeforeService: Number.isFinite(v) ? v : 24,
+                      });
+                    }}
                   />
                 </div>
               </div>
@@ -315,28 +387,31 @@ export function RefundPoliciesSection() {
                   <Label>Refund Percentage (%)</Label>
                   <Input
                     type="number"
-                    min="0"
-                    max="100"
-                    value={editingTier.refundPercentage}
-                    onChange={(e) =>
+                    min={0}
+                    max={100}
+                    value={Number.isFinite(editingTier.refundPercentage) ? editingTier.refundPercentage : ''}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
                       setEditingTier({
                         ...editingTier,
-                        refundPercentage: parseFloat(e.target.value),
-                      })
-                    }
+                        refundPercentage: Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 75,
+                      });
+                    }}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Cancellation Fee (₹)</Label>
                   <Input
                     type="number"
-                    value={editingTier.cancellationFee}
-                    onChange={(e) =>
+                    min={0}
+                    value={Number.isFinite(editingTier.cancellationFee) ? editingTier.cancellationFee : ''}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
                       setEditingTier({
                         ...editingTier,
-                        cancellationFee: parseFloat(e.target.value),
-                      })
-                    }
+                        cancellationFee: Number.isFinite(v) ? Math.max(0, v) : 0,
+                      });
+                    }}
                   />
                 </div>
               </div>

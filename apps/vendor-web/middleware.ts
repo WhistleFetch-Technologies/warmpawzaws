@@ -105,11 +105,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Get API base URL from environment or config
+  // Get API base URL from environment or config. No hardcoded URL.
   const apiBaseUrl =
     process.env.NEXT_PUBLIC_API_BASE_URL ||
     (request.headers.get('x-api-base-url') as string) ||
-    'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    '';
 
   // Get phone from request
   const phone = getPhoneFromRequest(request);

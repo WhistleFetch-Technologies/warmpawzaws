@@ -347,6 +347,22 @@ export function isSoloVendor(vendorData: any): boolean {
 }
 
 /**
+ * Check if a role name/ID indicates a center (clinic, salon, facility) rather than solo.
+ * Used to show Amenities and Specialization tabs for center profiles even when
+ * vendorType/vendorConfiguration is incorrectly or missing (e.g. returned as 'solo').
+ *
+ * @param roleNameOrId - Role name (e.g. 'veterinary_clinic') or role ID string
+ * @returns true if the role is a center type
+ */
+export function isCenterRole(roleNameOrId: string | null | undefined): boolean {
+  if (!roleNameOrId || typeof roleNameOrId !== 'string') return false;
+  const n = roleNameOrId.toLowerCase().trim();
+  if (!n) return false;
+  // Roles that have a physical center: *_center, *_clinic (e.g. veterinary_clinic, groomer_center)
+  return n.includes('_center') || n.includes('_clinic');
+}
+
+/**
  * Get the allowed service styles for a vendor based on their configuration
  * Solo vendors cannot have at_center style
  * 

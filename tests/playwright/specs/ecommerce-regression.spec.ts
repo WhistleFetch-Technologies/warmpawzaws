@@ -18,8 +18,8 @@ import { test, expect, APIRequestContext } from '@playwright/test';
 
 // Constants
 const API_BASE = process.env.API_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
-const CUSTOMER_URL = process.env.CUSTOMER_URL || 'https://d2aoyjj8ine0wk.cloudfront.net';
-const VENDOR_URL = process.env.VENDOR_URL || 'https://d1s6ykkj381k58.cloudfront.net';
+const CUSTOMER_URL = process.env.CUSTOMER_URL || '';
+const VENDOR_URL = process.env.VENDOR_URL || '';
 
 // Test data
 const TEST_IDS = {

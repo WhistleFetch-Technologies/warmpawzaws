@@ -14,7 +14,7 @@
 // ============================================================================
 
 export const TEST_CONFIG = {
-  apiBaseUrl: process.env.TEST_API_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
+  apiBaseUrl: process.env.TEST_API_URL || process.env.API_URL || process.env.API_BASE_URL || '',
   timeout: 30000,
   retryAttempts: 3,
   retryDelay: 1000,

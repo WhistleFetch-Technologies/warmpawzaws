@@ -19,7 +19,7 @@
 
 import { test, expect } from '@playwright/test';
 
-const API_BASE = process.env.API_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+const API_BASE = process.env.API_URL || process.env.API_BASE_URL || '';
 
 // ============================================================================
 // TAX AND FEE RULES

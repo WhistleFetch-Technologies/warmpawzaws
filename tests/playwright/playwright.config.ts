@@ -35,8 +35,9 @@ export default defineConfig({
     ['junit', { outputFile: 'test-results/junit.xml' }],
   ],
   
+  // URLs from env only. Set ADMIN_URL, VENDOR_URL, CUSTOMER_URL, API_URL, BASE_URL (see config/urls.json).
   use: {
-    baseURL: process.env.BASE_URL || 'https://dfof7mguaa0a5.cloudfront.net',
+    baseURL: process.env.BASE_URL || process.env.ADMIN_URL || '',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
@@ -59,7 +60,7 @@ export default defineConfig({
       testMatch: /vendor-onboarding\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: process.env.VENDOR_URL || 'https://d1s6ykkj381k58.cloudfront.net',
+        baseURL: process.env.VENDOR_URL || '',
       },
     },
     {
@@ -67,7 +68,7 @@ export default defineConfig({
       testMatch: /vendor\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: process.env.VENDOR_URL || 'https://d1s6ykkj381k58.cloudfront.net',
+        baseURL: process.env.VENDOR_URL || '',
       },
     },
     
@@ -79,7 +80,7 @@ export default defineConfig({
       testMatch: /customer-booking\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: process.env.CUSTOMER_URL || 'https://d2aoyjj8ine0wk.cloudfront.net',
+        baseURL: process.env.CUSTOMER_URL || '',
       },
     },
     {
@@ -87,7 +88,7 @@ export default defineConfig({
       testMatch: /customer\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: process.env.CUSTOMER_URL || 'https://d2aoyjj8ine0wk.cloudfront.net',
+        baseURL: process.env.CUSTOMER_URL || '',
       },
     },
     
@@ -99,7 +100,7 @@ export default defineConfig({
       testMatch: /home-delivery\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: process.env.CUSTOMER_URL || 'https://d2aoyjj8ine0wk.cloudfront.net',
+        baseURL: process.env.CUSTOMER_URL || '',
       },
     },
     
@@ -111,7 +112,7 @@ export default defineConfig({
       testMatch: /problem-grid\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: process.env.CUSTOMER_URL || 'https://d2aoyjj8ine0wk.cloudfront.net',
+        baseURL: process.env.CUSTOMER_URL || '',
       },
     },
     
@@ -123,7 +124,7 @@ export default defineConfig({
       testMatch: /admin\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: process.env.ADMIN_URL || 'https://dfof7mguaa0a5.cloudfront.net',
+        baseURL: process.env.ADMIN_URL || '',
       },
     },
     
@@ -134,7 +135,7 @@ export default defineConfig({
       name: 'api',
       testMatch: /api\.spec\.ts/,
       use: {
-        baseURL: process.env.API_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
+        baseURL: process.env.API_URL || process.env.API_BASE_URL || '',
       },
     },
     
@@ -146,7 +147,7 @@ export default defineConfig({
       testMatch: /ecommerce\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: process.env.CUSTOMER_URL || 'https://d2aoyjj8ine0wk.cloudfront.net',
+        baseURL: process.env.CUSTOMER_URL || '',
       },
     },
     
@@ -158,7 +159,7 @@ export default defineConfig({
       testMatch: /ecommerce-regression\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: process.env.CUSTOMER_URL || 'https://d2aoyjj8ine0wk.cloudfront.net',
+        baseURL: process.env.CUSTOMER_URL || '',
       },
     },
     
@@ -170,7 +171,7 @@ export default defineConfig({
       testMatch: /ecommerce-synthetic-e2e\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        baseURL: process.env.CUSTOMER_URL || 'https://d2aoyjj8ine0wk.cloudfront.net',
+        baseURL: process.env.CUSTOMER_URL || '',
       },
       // Increase timeout for synthetic tests that create real data
       timeout: 120000,
@@ -183,35 +184,35 @@ export default defineConfig({
       name: 'schema-validation',
       testMatch: /contract-tests\/schema-validation\.spec\.ts/,
       use: {
-        baseURL: process.env.API_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
+        baseURL: process.env.API_URL || process.env.API_BASE_URL || '',
       },
     },
     {
       name: 'parameter-tracing',
       testMatch: /contract-tests\/parameter-tracing\.spec\.ts/,
       use: {
-        baseURL: process.env.API_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
+        baseURL: process.env.API_URL || process.env.API_BASE_URL || '',
       },
     },
     {
       name: 'business-flow-integration',
       testMatch: /contract-tests\/business-flow-integration\.spec\.ts/,
       use: {
-        baseURL: process.env.API_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
+        baseURL: process.env.API_URL || process.env.API_BASE_URL || '',
       },
     },
     {
       name: 'payment-rules-validation',
       testMatch: /contract-tests\/payment-rules-validation\.spec\.ts/,
       use: {
-        baseURL: process.env.API_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
+        baseURL: process.env.API_URL || process.env.API_BASE_URL || '',
       },
     },
     {
       name: 'contract-tests',
       testMatch: /contract-tests\/.*\.spec\.ts/,
       use: {
-        baseURL: process.env.API_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
+        baseURL: process.env.API_URL || process.env.API_BASE_URL || '',
       },
     },
     

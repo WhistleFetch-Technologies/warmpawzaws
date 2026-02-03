@@ -43582,9 +43582,9 @@ var require_error2 = __commonJS({
   "node_modules/@grpc/grpc-js/build/src/error.js"(exports2) {
     "use strict";
     Object.defineProperty(exports2, "__esModule", { value: true });
-    exports2.getErrorMessage = getErrorMessage3;
+    exports2.getErrorMessage = getErrorMessage2;
     exports2.getErrorCode = getErrorCode;
-    function getErrorMessage3(error) {
+    function getErrorMessage2(error) {
       if (error instanceof Error) {
         return error.message;
       } else {
@@ -138079,7 +138079,8 @@ var VendorDashboardHandler = class extends BaseHandler {
           role = roles[0];
           roleConfig = role.config || {};
           customerService = role.customer_service || roleConfig?.customer_service || null;
-          vendorConfiguration = roleConfig?.vendorConfiguration || null;
+          const vendorType = vendor.vendor_type;
+          vendorConfiguration = vendorType === "solo" || vendorType === "business" ? vendorType : roleConfig?.vendorConfiguration || null;
           selectedServiceStyles = roleConfig?.serviceStyles?.selected || [];
           const roleIds = [vendor.role_id];
           const allPermissions = await query(
@@ -175504,6 +175505,7 @@ function registerVendorProfileEndpoints(app3) {
                 business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
                 owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
                 role_id: identity.selected_role_id,
+                vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
                 category: "general",
                 address: payload.address || "Not specified",
                 city: payload.city || "Not specified",
@@ -175542,7 +175544,8 @@ function registerVendorProfileEndpoints(app3) {
             role = roles[0];
             roleConfig = role.config || {};
             customerService = role.customer_service || roleConfig?.customer_service || null;
-            vendorConfiguration = roleConfig?.vendorConfiguration || null;
+            const vendorType = vendor.vendor_type;
+            vendorConfiguration = vendorType === "solo" || vendorType === "business" ? vendorType : roleConfig?.vendorConfiguration || null;
             selectedServiceStyles = roleConfig?.serviceStyles?.selected || [];
             const permissions = await select("role_permissions", { role_id: vendor.role_id });
             const baseCapabilities = permissions.map((p) => p.permission_name);
@@ -175847,6 +175850,7 @@ function registerVendorProfileEndpoints(app3) {
                 business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
                 owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
                 role_id: identity.selected_role_id,
+                vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
                 category: "general",
                 address: payload.address || "Not specified",
                 city: payload.city || "Not specified",
@@ -175925,6 +175929,7 @@ function registerVendorProfileEndpoints(app3) {
                 business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
                 owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
                 role_id: identity.selected_role_id,
+                vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
                 category: "general",
                 address: payload.address || "Not specified",
                 city: payload.city || "Not specified",
@@ -186414,8 +186419,13 @@ function registerAdminAdvancedEndpoints(app3) {
   app3.get("/admin/finance/cancellation-policies", async (c) => {
     try {
       const policies = await query("SELECT * FROM cancellation_policies ORDER BY created_at DESC");
-      return c.json({ success: true, policies: policies.rows });
+      return c.json({ success: true, policies: policies.rows ?? [] });
     } catch (error) {
+      const msg = String(getErrorMessage(error));
+      if (/relation\s+["']?cancellation_policies["']?\s+does not exist/i.test(msg)) {
+        console.warn("[admin/finance/cancellation-policies] Table missing:", msg);
+        return c.json({ success: true, policies: [] });
+      }
       console.error("Error fetching cancellation policies:", error);
       const errorResponse = createSafeErrorResponse(error, "Failed to fetch cancellation policies", 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
@@ -187577,8 +187587,213 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/payments/tiers", async (c) => {
     try {
-      const tiers = await query("SELECT * FROM payment_tiers ORDER BY created_at DESC");
-      return c.json({ success: true, tiers: tiers.rows });
+      const result = await query(`
+        SELECT id, tier_name, display_name, description, commission_rate, payout_period_days,
+               monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles, created_at, updated_at
+        FROM vendor_tiers
+        ORDER BY tier_level ASC NULLS LAST, created_at DESC
+      `);
+      const rows = (result.rows || []).map((row) => ({
+        id: row.id,
+        name: row.tier_name,
+        displayName: row.display_name,
+        description: row.description ?? "",
+        commissionRate: Number(row.commission_rate) ?? 0,
+        payoutPeriodDays: Number(row.payout_period_days) ?? 7,
+        monthlyCost: Number(row.monthly_cost) ?? 0,
+        yearlyCost: Number(row.yearly_cost) ?? 0,
+        isDefault: Boolean(row.is_default),
+        isActive: row.is_active !== false,
+        features: Array.isArray(row.features) ? row.features : row.features ? [row.features] : [],
+        roles: Array.isArray(row.applicable_roles) ? row.applicable_roles : []
+      }));
+      return c.json({ success: true, tiers: rows });
+    } catch (error) {
+      const msg = String(getErrorMessage(error));
+      if (/relation\s+["']?(?:vendor_tiers|payment_tiers)["']?\s+does not exist/i.test(msg)) {
+        console.warn("[admin/payments/tiers] Table missing:", msg);
+        return c.json({ success: true, tiers: [] });
+      }
+      const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+  app3.post("/admin/payments/tiers", async (c) => {
+    try {
+      const body = await c.req.json();
+      const name = String(body.name ?? body.tier_name ?? "").trim();
+      const displayName = String(body.displayName ?? body.display_name ?? name).trim();
+      if (!name) {
+        return c.json({ success: false, error: "Tier name is required" }, 400);
+      }
+      const description = String(body.description ?? "").trim();
+      const commissionRate = Number(body.commissionRate ?? body.commission_rate ?? 15);
+      const payoutPeriodDays = Math.max(0, Math.floor(Number(body.payoutPeriodDays ?? body.payout_period_days ?? 7)));
+      const monthlyCost = Number(body.monthlyCost ?? body.monthly_cost ?? 0);
+      const yearlyCost = Number(body.yearlyCost ?? body.yearly_cost ?? 0);
+      const isDefault = Boolean(body.isDefault ?? body.is_default);
+      const isActive = body.isActive !== false && body.is_active !== false;
+      const features = Array.isArray(body.features) ? body.features : [];
+      const roles = Array.isArray(body.roles) ? body.roles : [];
+      const roleUuids = roles.filter((r) => typeof r === "string" && /^[0-9a-f-]{36}$/i.test(r));
+      const levelResult = await query("SELECT COALESCE(MAX(tier_level), 0) + 1 AS next_level FROM vendor_tiers");
+      const nextLevel = Number(levelResult.rows?.[0]?.next_level) || 1;
+      const insertResult = await query(
+        `INSERT INTO vendor_tiers (
+          tier_name, tier_level, display_name, description, commission_rate, payout_period_days,
+          monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days,
+                  monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles, created_at`,
+        [
+          name,
+          nextLevel,
+          displayName,
+          description || null,
+          commissionRate,
+          payoutPeriodDays,
+          monthlyCost,
+          yearlyCost,
+          isDefault,
+          isActive,
+          JSON.stringify(features),
+          roleUuids.length ? roleUuids : []
+        ]
+      );
+      const row = insertResult.rows?.[0];
+      if (!row) {
+        return c.json({ success: false, error: "Failed to create tier" }, 500);
+      }
+      const tier = {
+        id: row.id,
+        name: row.tier_name,
+        displayName: row.display_name,
+        description: row.description ?? "",
+        commissionRate: Number(row.commission_rate) ?? 0,
+        payoutPeriodDays: Number(row.payout_period_days) ?? 7,
+        monthlyCost: Number(row.monthly_cost) ?? 0,
+        yearlyCost: Number(row.yearly_cost) ?? 0,
+        isDefault: Boolean(row.is_default),
+        isActive: row.is_active !== false,
+        features: Array.isArray(row.features) ? row.features : [],
+        roles: Array.isArray(row.applicable_roles) ? row.applicable_roles : []
+      };
+      return c.json({ success: true, tier });
+    } catch (error) {
+      const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+  app3.put("/admin/payments/tiers/:id", async (c) => {
+    try {
+      const id = c.req.param("id");
+      if (!id || !isValidUUID(id)) {
+        return c.json({ success: false, error: "Valid tier id is required" }, 400);
+      }
+      const body = await c.req.json();
+      const name = body.name != null ? String(body.name).trim() : void 0;
+      const displayName = body.displayName != null ? String(body.displayName).trim() : body.display_name != null ? String(body.display_name).trim() : void 0;
+      const description = body.description != null ? String(body.description).trim() : void 0;
+      const commissionRate = body.commissionRate != null ? Number(body.commissionRate) : body.commission_rate != null ? Number(body.commission_rate) : void 0;
+      const payoutPeriodDays = body.payoutPeriodDays != null ? Math.max(0, Math.floor(Number(body.payoutPeriodDays))) : body.payout_period_days != null ? Math.max(0, Math.floor(Number(body.payout_period_days))) : void 0;
+      const monthlyCost = body.monthlyCost != null ? Number(body.monthlyCost) : body.monthly_cost != null ? Number(body.monthly_cost) : void 0;
+      const yearlyCost = body.yearlyCost != null ? Number(body.yearlyCost) : body.yearly_cost != null ? Number(body.yearly_cost) : void 0;
+      const isDefault = body.isDefault !== void 0 ? Boolean(body.isDefault) : body.is_default !== void 0 ? Boolean(body.is_default) : void 0;
+      const isActive = body.isActive !== void 0 ? Boolean(body.isActive) : body.is_active !== void 0 ? Boolean(body.is_active) : void 0;
+      const features = body.features !== void 0 ? Array.isArray(body.features) ? body.features : [] : void 0;
+      const roles = Array.isArray(body.roles) ? body.roles : [];
+      const roleUuids = roles.filter((r) => typeof r === "string" && /^[0-9a-f-]{36}$/i.test(r));
+      const updates = [];
+      const values = [];
+      let idx = 1;
+      if (name !== void 0) {
+        updates.push(`tier_name = $${idx++}`);
+        values.push(name);
+      }
+      if (displayName !== void 0) {
+        updates.push(`display_name = $${idx++}`);
+        values.push(displayName);
+      }
+      if (description !== void 0) {
+        updates.push(`description = $${idx++}`);
+        values.push(description);
+      }
+      if (commissionRate !== void 0) {
+        updates.push(`commission_rate = $${idx++}`);
+        values.push(commissionRate);
+      }
+      if (payoutPeriodDays !== void 0) {
+        updates.push(`payout_period_days = $${idx++}`);
+        values.push(payoutPeriodDays);
+      }
+      if (monthlyCost !== void 0) {
+        updates.push(`monthly_cost = $${idx++}`);
+        values.push(monthlyCost);
+      }
+      if (yearlyCost !== void 0) {
+        updates.push(`yearly_cost = $${idx++}`);
+        values.push(yearlyCost);
+      }
+      if (isDefault !== void 0) {
+        updates.push(`is_default = $${idx++}`);
+        values.push(isDefault);
+      }
+      if (isActive !== void 0) {
+        updates.push(`is_active = $${idx++}`);
+        values.push(isActive);
+      }
+      if (features !== void 0) {
+        updates.push(`features = $${idx++}`);
+        values.push(JSON.stringify(features));
+      }
+      if (body.roles !== void 0) {
+        updates.push(`applicable_roles = $${idx++}`);
+        values.push(roleUuids);
+      }
+      if (updates.length === 0) {
+        return c.json({ success: false, error: "No fields to update" }, 400);
+      }
+      updates.push(`updated_at = NOW()`);
+      values.push(id);
+      const updateResult = await query(
+        `UPDATE vendor_tiers SET ${updates.join(", ")} WHERE id = $${idx}::uuid RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles`,
+        values
+      );
+      const row = updateResult.rows?.[0];
+      if (!row) {
+        return c.json({ success: false, error: "Tier not found" }, 404);
+      }
+      const tier = {
+        id: row.id,
+        name: row.tier_name,
+        displayName: row.display_name,
+        description: row.description ?? "",
+        commissionRate: Number(row.commission_rate) ?? 0,
+        payoutPeriodDays: Number(row.payout_period_days) ?? 7,
+        monthlyCost: Number(row.monthly_cost) ?? 0,
+        yearlyCost: Number(row.yearly_cost) ?? 0,
+        isDefault: Boolean(row.is_default),
+        isActive: row.is_active !== false,
+        features: Array.isArray(row.features) ? row.features : [],
+        roles: Array.isArray(row.applicable_roles) ? row.applicable_roles : []
+      };
+      return c.json({ success: true, tier });
+    } catch (error) {
+      const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+  app3.delete("/admin/payments/tiers/:id", async (c) => {
+    try {
+      const id = c.req.param("id");
+      if (!id || !isValidUUID(id)) {
+        return c.json({ success: false, error: "Valid tier id is required" }, 400);
+      }
+      const result = await query("DELETE FROM vendor_tiers WHERE id = $1::uuid RETURNING id", [id]);
+      if (!result.rows?.length) {
+        return c.json({ success: false, error: "Tier not found" }, 404);
+      }
+      return c.json({ success: true, message: "Tier deleted" });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
@@ -187586,7 +187801,44 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.post("/admin/payments/tiers/seed-defaults", async (c) => {
     try {
-      return c.json({ success: true, message: "Default tiers seeded" });
+      const countResult = await query("SELECT COUNT(*) AS cnt FROM vendor_tiers");
+      const count = Number(countResult.rows?.[0]?.cnt) || 0;
+      if (count > 0) {
+        return c.json({ success: true, message: "Tiers already exist", tiers: [] });
+      }
+      await query(`
+        INSERT INTO vendor_tiers (tier_name, tier_level, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, is_free_tier)
+        VALUES
+          ('Free Tier', 1, 'Free Tier', 'This tier is free of cost', 20, 7, 0, 0, true, true, true),
+          ('Professional', 2, 'Professional', 'Professional tier', 15, 7, 999, 9990, false, true, false),
+          ('Growth', 3, 'Growth', 'Growth tier', 12, 7, 2499, 24990, false, true, false)
+        ON CONFLICT (tier_name) DO UPDATE SET
+          display_name = EXCLUDED.display_name,
+          commission_rate = EXCLUDED.commission_rate,
+          payout_period_days = EXCLUDED.payout_period_days,
+          monthly_cost = EXCLUDED.monthly_cost,
+          yearly_cost = EXCLUDED.yearly_cost,
+          updated_at = NOW()
+      `);
+      const listResult = await query(`
+        SELECT id, tier_name, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles
+        FROM vendor_tiers ORDER BY tier_level ASC
+      `);
+      const tiers = (listResult.rows || []).map((row) => ({
+        id: row.id,
+        name: row.tier_name,
+        displayName: row.display_name,
+        description: row.description ?? "",
+        commissionRate: Number(row.commission_rate) ?? 0,
+        payoutPeriodDays: Number(row.payout_period_days) ?? 7,
+        monthlyCost: Number(row.monthly_cost) ?? 0,
+        yearlyCost: Number(row.yearly_cost) ?? 0,
+        isDefault: Boolean(row.is_default),
+        isActive: row.is_active !== false,
+        features: Array.isArray(row.features) ? row.features : [],
+        roles: Array.isArray(row.applicable_roles) ? row.applicable_roles : []
+      }));
+      return c.json({ success: true, message: "Default tiers seeded", tiers });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
@@ -201950,7 +202202,7 @@ function registerAdminComprehensiveEndpoints(app3) {
       const limit = parseInt(c.req.query("limit") || "200", 10);
       const offset = parseInt(c.req.query("offset") || "0", 10);
       console.log("[AdminVendorsActive] Filters:", { search, category, role, vendorType, city, performance: performance2, tier });
-      let whereConditions = [`v.status = 'approved'`, `v.is_active = true`];
+      let whereConditions = [`v.status IN ('approved', 'active')`, `COALESCE(v.is_active, true) = true`];
       const params = [];
       let paramIdx = 1;
       if (search) {
@@ -202028,7 +202280,7 @@ function registerAdminComprehensiveEndpoints(app3) {
             ELSE 'business'
           END as vendor_type,
           vi.onboarding_status,
-          -- Services count
+          -- Services count (can be 0)
           (SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true AND vs.publish_status = 'published') as active_services_count,
           -- Completed bookings count
           (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as completed_bookings_count,
@@ -202048,13 +202300,6 @@ function registerAdminComprehensiveEndpoints(app3) {
         LEFT JOIN roles r ON r.id = v.role_id
         LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
         WHERE ${whereClause}
-          -- \u2705 Vendors with services configured are considered "active"
-          AND EXISTS (
-            SELECT 1 FROM vendor_services vs 
-            WHERE vs.vendor_id = v.id 
-              AND vs.is_enabled = true 
-              AND vs.publish_status = 'published'
-          )
         ORDER BY v.updated_at DESC
         LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
       `, [...params, limit, offset]);
@@ -202064,12 +202309,6 @@ function registerAdminComprehensiveEndpoints(app3) {
         LEFT JOIN roles r ON r.id = v.role_id
         LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
         WHERE ${whereClause}
-          AND EXISTS (
-            SELECT 1 FROM vendor_services vs 
-            WHERE vs.vendor_id = v.id 
-              AND vs.is_enabled = true 
-              AND vs.publish_status = 'published'
-          )
       `, params);
       const totalCount = parseInt(countResult.rows[0]?.total) || 0;
       let vendors = (vendorsResult.rows || []).map((v) => ({
@@ -202481,14 +202720,32 @@ function registerAdminComprehensiveEndpoints(app3) {
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
+  const mapRefundTierBodyToDb = (body) => {
+    const vendorTypes = Array.isArray(body.vendorTypes) ? body.vendorTypes : body.vendor_types ? Array.isArray(body.vendor_types) ? body.vendor_types : [] : [];
+    const serviceLocationMap = { at_home: "home", at_center: "clinic", both: "both" };
+    const rawLoc = body.serviceLocation ?? body.service_location ?? "both";
+    const service_location = serviceLocationMap[String(rawLoc)] ?? (rawLoc === "home" || rawLoc === "clinic" ? rawLoc : "both");
+    const hoursBeforeService = Number(body.hoursBeforeService ?? body.hours_before_service ?? 24);
+    const refundPercentage = Number(body.refundPercentage ?? body.refund_percentage ?? 75);
+    const cancellationFee = Number(body.cancellationFee ?? body.cancellation_fee ?? 0);
+    return {
+      name: body.name ?? "",
+      vendor_types: vendorTypes,
+      service_location,
+      hours_before_service: Number.isFinite(hoursBeforeService) ? hoursBeforeService : 24,
+      refund_percentage: Number.isFinite(refundPercentage) ? Math.min(100, Math.max(0, refundPercentage)) : 75,
+      cancellation_fee: Number.isFinite(cancellationFee) ? Math.max(0, cancellationFee) : 0,
+      is_active: body.isActive !== false && body.is_active !== false,
+      tier_level: Number(body.tierLevel ?? body.tier_level ?? 0) || 0
+    };
+  };
   app3.post("/admin/vendor-settings/refund-tiers", async (c) => {
     try {
-      const body = await c.req.json();
-      const tier = await insert("vendor_refund_tiers", {
-        ...body,
-        created_at: (/* @__PURE__ */ new Date()).toISOString(),
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
+      const body = await c.req.json().catch(() => ({}));
+      const row = mapRefundTierBodyToDb(body);
+      row.created_at = (/* @__PURE__ */ new Date()).toISOString();
+      row.updated_at = (/* @__PURE__ */ new Date()).toISOString();
+      const tier = await insert("vendor_refund_tiers", row);
       return c.json({ success: true, tier: tier[0] });
     } catch (error) {
       console.error("Error creating refund tier:", error);
@@ -202498,11 +202755,10 @@ function registerAdminComprehensiveEndpoints(app3) {
   app3.put("/admin/vendor-settings/refund-tiers/:id", async (c) => {
     try {
       const id = c.req.param("id");
-      const body = await c.req.json();
-      const updated = await update("vendor_refund_tiers", { id }, {
-        ...body,
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
+      const body = await c.req.json().catch(() => ({}));
+      const row = mapRefundTierBodyToDb(body);
+      row.updated_at = (/* @__PURE__ */ new Date()).toISOString();
+      const updated = await update("vendor_refund_tiers", { id }, row);
       return c.json({ success: true, tier: updated[0] });
     } catch (error) {
       console.error("Error updating refund tier:", error);
@@ -222360,30 +222616,127 @@ function registerSpecializationMasterEndpoints(app3) {
       return c.json({ success: false, error: error.message }, 500);
     }
   });
+  function getRoleNamesForCatalog(roleName) {
+    const normalized = (roleName || "").toLowerCase().replace(/\s+/g, "_");
+    const map = {
+      veterinarian: ["vet", "veterinarian", "vet_clinic", "vet_solo"],
+      vet_solo: ["vet", "veterinarian", "vet_clinic", "vet_solo", "solo_vet"],
+      veterinary_clinic: ["vet_clinic", "veterinary_clinic", "vet", "veterinarian"],
+      vet_clinic: ["vet_clinic", "veterinary_clinic", "vet", "veterinarian", "vet_solo"],
+      diagnostics_center: ["diagnostics_center", "vet_clinic", "veterinarian"],
+      nutritionist: ["nutritionist", "pet_nutritionist"],
+      nutritionist_center: ["nutritionist", "pet_nutritionist", "nutritionist_center"],
+      pet_pharmacy: ["pharmacy", "pet_pharmacy"],
+      pet_ambulance: ["ambulance", "pet_ambulance"],
+      ambulance: ["ambulance", "pet_ambulance"],
+      pharmacy: ["pharmacy", "pet_pharmacy"],
+      insurance: ["insurance", "pet_insurance"],
+      center: ["vet_clinic", "veterinarian", "veterinary_clinic", "center"],
+      testing_center: ["vet_clinic", "veterinarian", "veterinary_clinic", "testing_center", "center"],
+      clinic: ["vet_clinic", "veterinarian", "veterinary_clinic", "clinic"],
+      pet_groomer: ["groomer", "pet_groomer", "groomer_center", "groomer_solo", "pet_spa"],
+      groomer_center: ["groomer", "pet_groomer", "groomer_center", "groomer_solo", "pet_spa"],
+      groomer_solo: ["groomer", "pet_groomer", "groomer_center", "groomer_solo", "pet_spa"],
+      pet_walker: ["walker", "pet_walker", "dog_walker"],
+      walker: ["walker", "pet_walker", "dog_walker"],
+      pet_trainer: ["trainer", "pet_trainer", "trainer_center", "trainer_solo"],
+      trainer_center: ["trainer", "pet_trainer", "trainer_center", "trainer_solo"],
+      trainer_solo: ["trainer", "pet_trainer", "trainer_center", "trainer_solo"],
+      pet_behaviorist: ["behaviorist", "pet_behaviorist", "trainer_solo", "trainer_center"],
+      pet_sitter: ["sitter", "pet_sitter"],
+      sitter: ["sitter", "pet_sitter"],
+      pet_taxi: ["transport", "pet_transport", "pet_taxi", "relocation"],
+      relocation: ["pet_transport", "relocation", "pet_relocation"],
+      pet_boarding: ["boarding", "pet_boarder", "pet_hotel", "pet_boarding", "pet_daycare"],
+      boarding: ["boarding", "pet_boarder", "pet_daycare", "pet_sitter"],
+      pet_resort: ["resort", "pet_resort"],
+      resort: ["resort", "pet_resort"],
+      pet_cafe: ["cafe", "pet_cafe"],
+      cafe: ["cafe", "pet_cafe"],
+      pet_photographer: ["photographer", "pet_photographer"],
+      photographer: ["photographer", "pet_photographer"],
+      pet_sunset_services: ["sunset", "pet_sunset_services", "sunset_services"],
+      sunset: ["sunset", "pet_sunset_services"],
+      holiday: ["holiday"],
+      pet_products_store: ["store", "pet_store", "retailer", "seller", "pet_products_store"],
+      seller: ["store", "pet_store", "seller", "pet_products_store"],
+      pet_breeder: ["breeder", "pet_breeder"],
+      breeder: ["breeder", "pet_breeder"],
+      pet_shelter: ["shelter", "pet_shelter", "adoption_center", "pet_adoption_center"],
+      adoption_center: ["adoption_center", "pet_shelter", "pet_adoption_center"]
+    };
+    const variants = map[normalized];
+    return variants && variants.length > 0 ? [.../* @__PURE__ */ new Set([normalized, ...variants])] : [normalized];
+  }
   app3.get("/vendor/specializations/:roleId", async (c) => {
     try {
       const roleId = c.req.param("roleId");
       let actualRoleId = roleId;
       if (roleId.includes("-")) {
         const roleResult = await query(
-          "SELECT name FROM roles WHERE id::text = $1",
+          "SELECT name FROM roles WHERE id::text = $1 AND is_active = true",
           [roleId]
         );
         if (roleResult.rows.length > 0) {
-          actualRoleId = roleResult.rows[0].name;
+          actualRoleId = (roleResult.rows[0].name || actualRoleId).toString().toLowerCase().replace(/\s+/g, "_");
+        }
+      } else {
+        actualRoleId = actualRoleId.toLowerCase().replace(/\s+/g, "_");
+      }
+      const roleNames = getRoleNamesForCatalog(actualRoleId);
+      let rows = [];
+      try {
+        const hasSpecIdsCol = await query(
+          `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'service_catalog' AND column_name = 'specialization_ids'`
+        ).then((r) => r.rows && r.rows.length > 0);
+        if (hasSpecIdsCol) {
+          const catalogSpecs = await query(
+            `SELECT DISTINCT unnest(specialization_ids) AS spec_id
+             FROM service_catalog
+             WHERE status = 'active'
+               AND applicable_roles && $1::text[]
+               AND specialization_ids IS NOT NULL
+               AND array_length(specialization_ids, 1) > 0`,
+            [roleNames]
+          );
+          const specIds = (catalogSpecs.rows || []).map((r) => r.spec_id).filter(Boolean);
+          if (specIds.length > 0) {
+            const placeholders = specIds.map((_, i) => `$${i + 1}`).join(", ");
+            const smResult = await query(
+              `SELECT sm.*
+               FROM specialization_master sm
+               WHERE sm.is_active = true
+                 AND sm.specialization_id IN (${placeholders})
+               ORDER BY sm.display_order, sm.name`,
+              specIds
+            );
+            rows = smResult.rows || [];
+            if (rows.length > 0) {
+              console.log("[SPEC-MASTER] Vendor specializations from catalog-by-role:", rows.length, "role:", actualRoleId);
+            }
+          }
+        }
+      } catch (catalogErr) {
+        console.warn("[SPEC-MASTER] Catalog-by-role path failed, using fallback:", catalogErr.message);
+      }
+      if (rows.length === 0) {
+        const result = await query(
+          `SELECT sm.*
+           FROM specialization_master sm
+           WHERE sm.is_active = true
+             AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
+             AND (sm.applicable_roles && $1::text[] OR $2 = ANY(sm.applicable_roles))
+           ORDER BY sm.display_order, sm.name`,
+          [roleNames, actualRoleId]
+        );
+        rows = result.rows || [];
+        if (rows.length > 0) {
+          console.log("[SPEC-MASTER] Vendor specializations from applicable_roles fallback:", rows.length, "role:", actualRoleId);
         }
       }
-      const result = await query(`
-        SELECT sm.*
-        FROM specialization_master sm
-        WHERE sm.is_active = true 
-          AND sm.show_in_vendor_profile = true
-          AND $1 = ANY(sm.applicable_roles)
-        ORDER BY sm.display_order, sm.name
-      `, [actualRoleId]);
       return c.json({
         success: true,
-        specializations: result.rows.map((row) => ({
+        specializations: rows.map((row) => ({
           id: row.specialization_id,
           name: row.name,
           displayName: row.display_name || row.name,
@@ -222814,17 +223167,10 @@ var platform_policies_default = app;
 
 // src/handler/index.ts
 var app2 = new Hono2();
-var CLOUDFRONT_FALLBACK_ORIGINS = [
-  "https://dfof7mguaa0a5.cloudfront.net",
-  // Admin
-  "https://d1s6ykkj381k58.cloudfront.net",
-  // Vendor
-  "https://d2aoyjj8ine0wk.cloudfront.net"
-  // Customer
-];
 var getAllowedOriginsList = () => {
   const fromEnv = (process.env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
-  return fromEnv.length > 0 ? fromEnv : CLOUDFRONT_FALLBACK_ORIGINS;
+  if (fromEnv.length > 0) return fromEnv;
+  return ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003", "http://localhost:5173"];
 };
 var getDefaultCorsOrigin = () => {
   const list = getAllowedOriginsList();

@@ -1,5 +1,6 @@
 {
-  "_comment": "Single source of truth for Warmpawz URLs. Do NOT hardcode these in app or Lambda code. Use this file or env only. Deploy scripts and CDK read from here.",
+  "_comment": "Reference only. Do NOT hardcode in app or Lambda code. Use env: API_URL, ADMIN_URL, VENDOR_URL, CUSTOMER_URL, ALLOWED_ORIGINS. Deploy/CI should set these from here.",
+  "_official": "Admin: dfof7mguaa0a5.cloudfront.net, Vendor: d1s6ykkj381k58.cloudfront.net, Customer: d2aoyjj8ine0wk.cloudfront.net",
   "apiGatewayDefaultUrl": "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
   "apiGatewayCdkUrl": "https://rrg9107m3d.execute-api.ap-south-1.amazonaws.com",
   "cloudfront": {

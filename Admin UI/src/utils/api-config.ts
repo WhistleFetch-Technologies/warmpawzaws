@@ -4,19 +4,18 @@
  * Set NEXT_PUBLIC_API_BASE_URL or runtime config to your API Gateway URL.
  */
 
-const DEFAULT_API_BASE = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
-
 function getEnv(): Record<string, string> {
   if (typeof process !== 'undefined' && process.env) return process.env as Record<string, string>;
   return {};
 }
 
+/** API base from env or runtime config only. No hardcoded URL. */
 export function getApiBaseUrl(): string {
   const base =
     getEnv().NEXT_PUBLIC_API_BASE_URL ||
     (typeof window !== 'undefined' && (window as any).__WARMPAWZ_RUNTIME_CONFIG__?.apiBaseUrl) ||
     '';
-  return (base || DEFAULT_API_BASE).replace(/\/+$/, '');
+  return (base || '').replace(/\/+$/, '');
 }
 
 /** Auth headers for API requests (Cognito or legacy token). */

@@ -1,21 +1,24 @@
 # URL Configuration – Single Source of Truth
 
-See also: **Service catalog seeding** – `scripts/seed-service-catalog-comprehensive.js` seeds the full vet catalog (consultation, preventive, medical, surgical, dental, emergency, dermatology, reproductive, pediatric/geriatric, euthanasia, documentation, in-clinic, lab/diagnostics) plus trainer, groomer, walker, and behaviorist services with India metro pricing. Run: `ENVIRONMENT=dev node scripts/seed-service-catalog-comprehensive.js`.
+See also: **Service catalog seeding** – `scripts/seed-service-catalog-comprehensive.js` seeds the full vet catalog. Run: `ENVIRONMENT=dev node scripts/seed-service-catalog-comprehensive.js`.
 
 ---
 
-## Rule: No hardcoded API/CloudFront URLs in app code
+## Rule: No hardcoded API/CloudFront URLs in app or Lambda code
+
+**Always use runtime and environment variables.** Official URLs are in `config/urls.json` for reference only; deploy and CI must set env vars from there.
+
+- **Official CloudFront URLs** (reference only; set via env in tests/deploy):
+  - **Admin**: `https://dfof7mguaa0a5.cloudfront.net` → set `ADMIN_URL`
+  - **Vendor**: `https://d1s6ykkj381k58.cloudfront.net` → set `VENDOR_URL`
+  - **Customer**: `https://d2aoyjj8ine0wk.cloudfront.net` → set `CUSTOMER_URL`
 
 - **API base URL** for frontend apps must come from:
-  1. **Deployed**: `runtime-config.js` (injected at deploy with API Gateway URL)
-  2. **Local dev**: `NEXT_PUBLIC_API_BASE_URL` / `VITE_API_BASE_URL` / env
-  3. **Fallback**: Only one place – see `config/urls.json` and deploy script fallback
+  1. **Deployed**: `runtime-config.js` (injected at deploy; value from env or `config/urls.json` in deploy script)
+  2. **Local dev**: `NEXT_PUBLIC_API_BASE_URL` (no hardcoded fallback in app code)
+  3. **Backend CORS**: `ALLOWED_ORIGINS` env (comma-separated); if unset, only localhost is allowed
 
-- **CloudFront URLs** are for:
-  - Serving the SPA (admin/vendor/customer apps)
-  - CORS allowed origins in the backend (Lambda)
-  - Deploy scripts (S3 bucket, CloudFront distribution)
-  - **Not** for use as `apiBaseUrl` in frontends (API calls must go to API Gateway)
+- **CloudFront URLs** are for serving the SPAs and CORS; **not** for use as `apiBaseUrl` (API calls go to API Gateway).
 
 ## Single source: `config/urls.json`
 

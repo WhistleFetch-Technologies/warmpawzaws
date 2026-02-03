@@ -9,7 +9,7 @@
 
 import { chromium } from 'playwright';
 
-const VENDOR_DASHBOARD_URL = 'https://d1s6ykkj381k58.cloudfront.net';
+const VENDOR_DASHBOARD_URL = process.env.VENDOR_URL || process.env.BASE_URL || '';
 
 async function interactiveConfirmation() {
   console.log('🚀 Interactive Service Catalog Confirmation Test');

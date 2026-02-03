@@ -6,15 +6,12 @@
 
 const env = typeof import.meta !== 'undefined' && import.meta?.env ? import.meta.env : ({} as Record<string, string>);
 
-const DEFAULT_API_BASE = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
-
 /**
- * API base URL (no trailing slash). Lambda via API Gateway.
+ * API base URL (no trailing slash). From env only (VITE_API_BASE_URL). No hardcoded URL.
  */
 export function getApiBaseUrl(): string {
   const fromEnv = env.VITE_API_BASE_URL || (typeof process !== 'undefined' && process.env?.VITE_API_BASE_URL);
-  if (fromEnv) return String(fromEnv).replace(/\/+$/, '');
-  return DEFAULT_API_BASE.replace(/\/+$/, '');
+  return (fromEnv ? String(fromEnv) : '').replace(/\/+$/, '');
 }
 
 /** Full URL for config/roles (choose your role). */

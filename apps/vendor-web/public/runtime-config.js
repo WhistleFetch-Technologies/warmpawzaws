@@ -1,14 +1,13 @@
 // Runtime Configuration for Warmpawz Vendor Portal
-// apiBaseUrl: Injected at deploy from config/urls.json or CDK outputs (see scripts/deploy-vendor-web.sh). No hardcoded URLs in repo.
-// For local dev set NEXT_PUBLIC_API_BASE_URL in .env.local. App URLs: config/urls.json .cloudfront (admin / vendor / customer)
+// apiBaseUrl: MUST be set at build/deploy via NEXT_PUBLIC_API_BASE_URL or __API_BASE_URL__ inject. No hardcoded URLs.
+// Official Vendor app URL: set VENDOR_URL / see config/urls.json cloudfront.vendor
 
 (function () {
-  const envApiBaseUrl = typeof process !== 'undefined' ? process.env?.NEXT_PUBLIC_API_BASE_URL : '';
-  const defaultApiBaseUrl = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
   const defaultUatMode = true;
+  const apiBaseUrl = (typeof __API_BASE_URL__ !== 'undefined' ? __API_BASE_URL__ : '') || (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_API_BASE_URL) || '';
 
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-    apiBaseUrl: envApiBaseUrl || defaultApiBaseUrl,
+    apiBaseUrl: apiBaseUrl,
     uatMode: defaultUatMode
   };
 

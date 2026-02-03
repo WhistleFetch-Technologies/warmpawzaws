@@ -109,10 +109,14 @@ class VendorDashboardHandler extends BaseHandler {
           role = roles[0];
           roleConfig = role.config || {};
           customerService = role.customer_service || roleConfig?.customer_service || null;
-          vendorConfiguration = roleConfig?.vendorConfiguration || null;
+          // ✅ FORENSIC: Use vendor's actual type (from onboarding) for filtering so vendor gets exactly role permissions filtered by their type
+          const vendorType = (vendor as any).vendor_type;
+          vendorConfiguration = (vendorType === 'solo' || vendorType === 'business')
+            ? vendorType
+            : (roleConfig?.vendorConfiguration || null);
           selectedServiceStyles = roleConfig?.serviceStyles?.selected || [];
           
-          // Get base capabilities from DB (batch query for efficiency)
+          // Get base capabilities from DB (single source of truth: role_permissions = admin role config)
           const roleIds = [vendor.role_id];
           const allPermissions = await query(
             `SELECT role_id, permission_name 
@@ -131,7 +135,7 @@ class VendorDashboardHandler extends BaseHandler {
           
           const baseCapabilities = allPermissions.rows.map((p: any) => p.permission_name);
           
-          // ✅ TWO-STAGE CAPABILITY FILTERING
+          // ✅ TWO-STAGE CAPABILITY FILTERING (solo/business + service styles from role config)
           if (vendorConfiguration) {
             const { stage2_service_styles: effectiveCapabilities } = getEffectiveCapabilities({
               vendorConfiguration,

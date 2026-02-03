@@ -2323,8 +2323,8 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
 
       console.log('[AdminVendorsActive] Filters:', { search, category, role, vendorType, city, performance, tier });
 
-      // Build dynamic WHERE clause
-      let whereConditions = [`v.status = 'approved'`, `v.is_active = true`];
+      // Build dynamic WHERE clause (active = approved or active status, and is_active true)
+      let whereConditions = [`v.status IN ('approved', 'active')`, `COALESCE(v.is_active, true) = true`];
       const params: any[] = [];
       let paramIdx = 1;
 
@@ -2378,7 +2378,8 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
 
       const whereClause = whereConditions.join(' AND ');
 
-      // ✅ DIRECT QUERY: Get active vendors with enriched data and filters
+      // ✅ DIRECT QUERY: Get active vendors (approved + is_active). No requirement for published services
+      // so approved vendors appear even before they publish; active_services_count shows 0 when none.
       const vendorsResult = await query(`
         SELECT 
           v.id,
@@ -2415,7 +2416,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
             ELSE 'business'
           END as vendor_type,
           vi.onboarding_status,
-          -- Services count
+          -- Services count (can be 0)
           (SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true AND vs.publish_status = 'published') as active_services_count,
           -- Completed bookings count
           (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as completed_bookings_count,
@@ -2435,30 +2436,17 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         LEFT JOIN roles r ON r.id = v.role_id
         LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
         WHERE ${whereClause}
-          -- ✅ Vendors with services configured are considered "active"
-          AND EXISTS (
-            SELECT 1 FROM vendor_services vs 
-            WHERE vs.vendor_id = v.id 
-              AND vs.is_enabled = true 
-              AND vs.publish_status = 'published'
-          )
         ORDER BY v.updated_at DESC
         LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
       `, [...params, limit, offset]);
 
-      // Get total count for pagination
+      // Get total count for pagination (same WHERE, no EXISTS)
       const countResult = await query(`
         SELECT COUNT(DISTINCT v.id) as total
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
         LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
         WHERE ${whereClause}
-          AND EXISTS (
-            SELECT 1 FROM vendor_services vs 
-            WHERE vs.vendor_id = v.id 
-              AND vs.is_enabled = true 
-              AND vs.publish_status = 'published'
-          )
       `, params);
 
       const totalCount = parseInt(countResult.rows[0]?.total) || 0;
@@ -2932,14 +2920,34 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
+  /** Map frontend refund tier body (camelCase) to DB columns (snake_case). DB: service_location IN ('home','clinic','both'). */
+  const mapRefundTierBodyToDb = (body: any): Record<string, unknown> => {
+    const vendorTypes = Array.isArray(body.vendorTypes) ? body.vendorTypes : (body.vendor_types ? (Array.isArray(body.vendor_types) ? body.vendor_types : []) : []);
+    const serviceLocationMap: Record<string, string> = { at_home: 'home', at_center: 'clinic', both: 'both' };
+    const rawLoc = body.serviceLocation ?? body.service_location ?? 'both';
+    const service_location = serviceLocationMap[String(rawLoc)] ?? (rawLoc === 'home' || rawLoc === 'clinic' ? rawLoc : 'both');
+    const hoursBeforeService = Number(body.hoursBeforeService ?? body.hours_before_service ?? 24);
+    const refundPercentage = Number(body.refundPercentage ?? body.refund_percentage ?? 75);
+    const cancellationFee = Number(body.cancellationFee ?? body.cancellation_fee ?? 0);
+    return {
+      name: body.name ?? '',
+      vendor_types: vendorTypes,
+      service_location,
+      hours_before_service: Number.isFinite(hoursBeforeService) ? hoursBeforeService : 24,
+      refund_percentage: Number.isFinite(refundPercentage) ? Math.min(100, Math.max(0, refundPercentage)) : 75,
+      cancellation_fee: Number.isFinite(cancellationFee) ? Math.max(0, cancellationFee) : 0,
+      is_active: body.isActive !== false && body.is_active !== false,
+      tier_level: Number(body.tierLevel ?? body.tier_level ?? 0) || 0,
+    };
+  };
+
   app.post('/admin/vendor-settings/refund-tiers', async (c) => {
     try {
-      const body = await c.req.json();
-      const tier = await insert('vendor_refund_tiers', {
-        ...body,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
+      const body = await c.req.json().catch(() => ({}));
+      const row = mapRefundTierBodyToDb(body);
+      (row as any).created_at = new Date().toISOString();
+      (row as any).updated_at = new Date().toISOString();
+      const tier = await insert('vendor_refund_tiers', row);
       return c.json({ success: true, tier: tier[0] });
     } catch (error: any) {
       console.error('Error creating refund tier:', error);
@@ -2950,11 +2958,10 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
   app.put('/admin/vendor-settings/refund-tiers/:id', async (c) => {
     try {
       const id = c.req.param('id');
-      const body = await c.req.json();
-      const updated = await update('vendor_refund_tiers', { id }, {
-        ...body,
-        updated_at: new Date().toISOString(),
-      });
+      const body = await c.req.json().catch(() => ({}));
+      const row = mapRefundTierBodyToDb(body);
+      (row as any).updated_at = new Date().toISOString();
+      const updated = await update('vendor_refund_tiers', { id }, row);
       return c.json({ success: true, tier: updated[0] });
     } catch (error: any) {
       console.error('Error updating refund tier:', error);

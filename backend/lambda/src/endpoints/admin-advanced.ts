@@ -2691,8 +2691,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.get('/admin/finance/cancellation-policies', async (c) => {
     try {
       const policies = await query('SELECT * FROM cancellation_policies ORDER BY created_at DESC');
-      return c.json({ success: true, policies: policies.rows });
+      return c.json({ success: true, policies: policies.rows ?? [] });
     } catch (error: unknown) {
+      const msg = String(getErrorMessage(error));
+      if (/relation\s+["']?cancellation_policies["']?\s+does not exist/i.test(msg)) {
+        console.warn('[admin/finance/cancellation-policies] Table missing:', msg);
+        return c.json({ success: true, policies: [] });
+      }
       console.error('Error fetching cancellation policies:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to fetch cancellation policies', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -4040,10 +4045,190 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  // Payment tiers (vendor_tiers table) - CRUD for admin finance tier configuration
   app.get('/admin/payments/tiers', async (c) => {
     try {
-      const tiers = await query('SELECT * FROM payment_tiers ORDER BY created_at DESC');
-      return c.json({ success: true, tiers: tiers.rows });
+      const result = await query(`
+        SELECT id, tier_name, display_name, description, commission_rate, payout_period_days,
+               monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles, created_at, updated_at
+        FROM vendor_tiers
+        ORDER BY tier_level ASC NULLS LAST, created_at DESC
+      `);
+      const rows = (result.rows || []).map((row: Record<string, unknown>) => ({
+        id: row.id,
+        name: row.tier_name,
+        displayName: row.display_name,
+        description: row.description ?? '',
+        commissionRate: Number(row.commission_rate) ?? 0,
+        payoutPeriodDays: Number(row.payout_period_days) ?? 7,
+        monthlyCost: Number(row.monthly_cost) ?? 0,
+        yearlyCost: Number(row.yearly_cost) ?? 0,
+        isDefault: Boolean(row.is_default),
+        isActive: row.is_active !== false,
+        features: Array.isArray(row.features) ? row.features : (row.features ? [row.features] : []),
+        roles: Array.isArray(row.applicable_roles) ? (row.applicable_roles as string[]) : [],
+      }));
+      return c.json({ success: true, tiers: rows });
+    } catch (error: unknown) {
+      const msg = String(getErrorMessage(error));
+      // Table missing: return empty tiers so UI loads; run migration 008 to create vendor_tiers
+      if (/relation\s+["']?(?:vendor_tiers|payment_tiers)["']?\s+does not exist/i.test(msg)) {
+        console.warn('[admin/payments/tiers] Table missing:', msg);
+        return c.json({ success: true, tiers: [] });
+      }
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.post('/admin/payments/tiers', async (c) => {
+    try {
+      const body = (await c.req.json()) as Record<string, unknown>;
+      const name = String(body.name ?? body.tier_name ?? '').trim();
+      const displayName = String(body.displayName ?? body.display_name ?? name).trim();
+      if (!name) {
+        return c.json({ success: false, error: 'Tier name is required' }, 400);
+      }
+      const description = String(body.description ?? '').trim();
+      const commissionRate = Number(body.commissionRate ?? body.commission_rate ?? 15);
+      const payoutPeriodDays = Math.max(0, Math.floor(Number(body.payoutPeriodDays ?? body.payout_period_days ?? 7)));
+      const monthlyCost = Number(body.monthlyCost ?? body.monthly_cost ?? 0);
+      const yearlyCost = Number(body.yearlyCost ?? body.yearly_cost ?? 0);
+      const isDefault = Boolean(body.isDefault ?? body.is_default);
+      const isActive = body.isActive !== false && body.is_active !== false;
+      const features = Array.isArray(body.features) ? body.features : [];
+      const roles = Array.isArray(body.roles) ? body.roles : [];
+      const roleUuids = roles.filter((r): r is string => typeof r === 'string' && /^[0-9a-f-]{36}$/i.test(r));
+
+      const levelResult = await query('SELECT COALESCE(MAX(tier_level), 0) + 1 AS next_level FROM vendor_tiers');
+      const nextLevel = Number((levelResult.rows?.[0] as Record<string, unknown>)?.next_level) || 1;
+
+      const insertResult = await query(
+        `INSERT INTO vendor_tiers (
+          tier_name, tier_level, display_name, description, commission_rate, payout_period_days,
+          monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days,
+                  monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles, created_at`,
+        [
+          name,
+          nextLevel,
+          displayName,
+          description || null,
+          commissionRate,
+          payoutPeriodDays,
+          monthlyCost,
+          yearlyCost,
+          isDefault,
+          isActive,
+          JSON.stringify(features),
+          roleUuids.length ? roleUuids : [],
+        ]
+      );
+      const row = insertResult.rows?.[0] as Record<string, unknown> | undefined;
+      if (!row) {
+        return c.json({ success: false, error: 'Failed to create tier' }, 500);
+      }
+      const tier = {
+        id: row.id,
+        name: row.tier_name,
+        displayName: row.display_name,
+        description: row.description ?? '',
+        commissionRate: Number(row.commission_rate) ?? 0,
+        payoutPeriodDays: Number(row.payout_period_days) ?? 7,
+        monthlyCost: Number(row.monthly_cost) ?? 0,
+        yearlyCost: Number(row.yearly_cost) ?? 0,
+        isDefault: Boolean(row.is_default),
+        isActive: row.is_active !== false,
+        features: Array.isArray(row.features) ? row.features : [],
+        roles: Array.isArray(row.applicable_roles) ? (row.applicable_roles as string[]) : [],
+      };
+      return c.json({ success: true, tier });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.put('/admin/payments/tiers/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      if (!id || !isValidUUID(id)) {
+        return c.json({ success: false, error: 'Valid tier id is required' }, 400);
+      }
+      const body = (await c.req.json()) as Record<string, unknown>;
+      const name = body.name != null ? String(body.name).trim() : undefined;
+      const displayName = body.displayName != null ? String(body.displayName).trim() : body.display_name != null ? String(body.display_name).trim() : undefined;
+      const description = body.description != null ? String(body.description).trim() : undefined;
+      const commissionRate = body.commissionRate != null ? Number(body.commissionRate) : body.commission_rate != null ? Number(body.commission_rate) : undefined;
+      const payoutPeriodDays = body.payoutPeriodDays != null ? Math.max(0, Math.floor(Number(body.payoutPeriodDays))) : body.payout_period_days != null ? Math.max(0, Math.floor(Number(body.payout_period_days))) : undefined;
+      const monthlyCost = body.monthlyCost != null ? Number(body.monthlyCost) : body.monthly_cost != null ? Number(body.monthly_cost) : undefined;
+      const yearlyCost = body.yearlyCost != null ? Number(body.yearlyCost) : body.yearly_cost != null ? Number(body.yearly_cost) : undefined;
+      const isDefault = body.isDefault !== undefined ? Boolean(body.isDefault) : body.is_default !== undefined ? Boolean(body.is_default) : undefined;
+      const isActive = body.isActive !== undefined ? Boolean(body.isActive) : body.is_active !== undefined ? Boolean(body.is_active) : undefined;
+      const features = body.features !== undefined ? (Array.isArray(body.features) ? body.features : []) : undefined;
+      const roles = Array.isArray(body.roles) ? body.roles : [];
+      const roleUuids = roles.filter((r): r is string => typeof r === 'string' && /^[0-9a-f-]{36}$/i.test(r));
+
+      const updates: string[] = [];
+      const values: unknown[] = [];
+      let idx = 1;
+      if (name !== undefined) { updates.push(`tier_name = $${idx++}`); values.push(name); }
+      if (displayName !== undefined) { updates.push(`display_name = $${idx++}`); values.push(displayName); }
+      if (description !== undefined) { updates.push(`description = $${idx++}`); values.push(description); }
+      if (commissionRate !== undefined) { updates.push(`commission_rate = $${idx++}`); values.push(commissionRate); }
+      if (payoutPeriodDays !== undefined) { updates.push(`payout_period_days = $${idx++}`); values.push(payoutPeriodDays); }
+      if (monthlyCost !== undefined) { updates.push(`monthly_cost = $${idx++}`); values.push(monthlyCost); }
+      if (yearlyCost !== undefined) { updates.push(`yearly_cost = $${idx++}`); values.push(yearlyCost); }
+      if (isDefault !== undefined) { updates.push(`is_default = $${idx++}`); values.push(isDefault); }
+      if (isActive !== undefined) { updates.push(`is_active = $${idx++}`); values.push(isActive); }
+      if (features !== undefined) { updates.push(`features = $${idx++}`); values.push(JSON.stringify(features)); }
+      if (body.roles !== undefined) { updates.push(`applicable_roles = $${idx++}`); values.push(roleUuids); }
+      if (updates.length === 0) {
+        return c.json({ success: false, error: 'No fields to update' }, 400);
+      }
+      updates.push(`updated_at = NOW()`);
+      values.push(id);
+      const updateResult = await query(
+        `UPDATE vendor_tiers SET ${updates.join(', ')} WHERE id = $${idx}::uuid RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles`,
+        values
+      );
+      const row = updateResult.rows?.[0] as Record<string, unknown> | undefined;
+      if (!row) {
+        return c.json({ success: false, error: 'Tier not found' }, 404);
+      }
+      const tier = {
+        id: row.id,
+        name: row.tier_name,
+        displayName: row.display_name,
+        description: row.description ?? '',
+        commissionRate: Number(row.commission_rate) ?? 0,
+        payoutPeriodDays: Number(row.payout_period_days) ?? 7,
+        monthlyCost: Number(row.monthly_cost) ?? 0,
+        yearlyCost: Number(row.yearly_cost) ?? 0,
+        isDefault: Boolean(row.is_default),
+        isActive: row.is_active !== false,
+        features: Array.isArray(row.features) ? row.features : [],
+        roles: Array.isArray(row.applicable_roles) ? (row.applicable_roles as string[]) : [],
+      };
+      return c.json({ success: true, tier });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.delete('/admin/payments/tiers/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      if (!id || !isValidUUID(id)) {
+        return c.json({ success: false, error: 'Valid tier id is required' }, 400);
+      }
+      const result = await query('DELETE FROM vendor_tiers WHERE id = $1::uuid RETURNING id', [id]);
+      if (!result.rows?.length) {
+        return c.json({ success: false, error: 'Tier not found' }, 404);
+      }
+      return c.json({ success: true, message: 'Tier deleted' });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -4052,7 +4237,44 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.post('/admin/payments/tiers/seed-defaults', async (c) => {
     try {
-      return c.json({ success: true, message: 'Default tiers seeded' });
+      const countResult = await query('SELECT COUNT(*) AS cnt FROM vendor_tiers');
+      const count = Number((countResult.rows?.[0] as Record<string, unknown>)?.cnt) || 0;
+      if (count > 0) {
+        return c.json({ success: true, message: 'Tiers already exist', tiers: [] });
+      }
+      await query(`
+        INSERT INTO vendor_tiers (tier_name, tier_level, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, is_free_tier)
+        VALUES
+          ('Free Tier', 1, 'Free Tier', 'This tier is free of cost', 20, 7, 0, 0, true, true, true),
+          ('Professional', 2, 'Professional', 'Professional tier', 15, 7, 999, 9990, false, true, false),
+          ('Growth', 3, 'Growth', 'Growth tier', 12, 7, 2499, 24990, false, true, false)
+        ON CONFLICT (tier_name) DO UPDATE SET
+          display_name = EXCLUDED.display_name,
+          commission_rate = EXCLUDED.commission_rate,
+          payout_period_days = EXCLUDED.payout_period_days,
+          monthly_cost = EXCLUDED.monthly_cost,
+          yearly_cost = EXCLUDED.yearly_cost,
+          updated_at = NOW()
+      `);
+      const listResult = await query(`
+        SELECT id, tier_name, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles
+        FROM vendor_tiers ORDER BY tier_level ASC
+      `);
+      const tiers = (listResult.rows || []).map((row: Record<string, unknown>) => ({
+        id: row.id,
+        name: row.tier_name,
+        displayName: row.display_name,
+        description: row.description ?? '',
+        commissionRate: Number(row.commission_rate) ?? 0,
+        payoutPeriodDays: Number(row.payout_period_days) ?? 7,
+        monthlyCost: Number(row.monthly_cost) ?? 0,
+        yearlyCost: Number(row.yearly_cost) ?? 0,
+        isDefault: Boolean(row.is_default),
+        isActive: row.is_active !== false,
+        features: Array.isArray(row.features) ? row.features : [],
+        roles: Array.isArray(row.applicable_roles) ? (row.applicable_roles as string[]) : [],
+      }));
+      return c.json({ success: true, message: 'Default tiers seeded', tiers });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);

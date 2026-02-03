@@ -741,8 +741,67 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
   // ========================================================================
   
   /**
+   * Role names for service_catalog.applicable_roles overlap (align with service-catalog.ts roleMappings).
+   * Used to find services mapped to this role, then load specializations from those services' category.
+   */
+  function getRoleNamesForCatalog(roleName: string): string[] {
+    const normalized = (roleName || '').toLowerCase().replace(/\s+/g, '_');
+    const map: Record<string, string[]> = {
+      veterinarian: ['vet', 'veterinarian', 'vet_clinic', 'vet_solo'],
+      vet_solo: ['vet', 'veterinarian', 'vet_clinic', 'vet_solo', 'solo_vet'],
+      veterinary_clinic: ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian'],
+      vet_clinic: ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian', 'vet_solo'],
+      diagnostics_center: ['diagnostics_center', 'vet_clinic', 'veterinarian'],
+      nutritionist: ['nutritionist', 'pet_nutritionist'],
+      nutritionist_center: ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
+      pet_pharmacy: ['pharmacy', 'pet_pharmacy'],
+      pet_ambulance: ['ambulance', 'pet_ambulance'],
+      ambulance: ['ambulance', 'pet_ambulance'],
+      pharmacy: ['pharmacy', 'pet_pharmacy'],
+      insurance: ['insurance', 'pet_insurance'],
+      center: ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'center'],
+      testing_center: ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'testing_center', 'center'],
+      clinic: ['vet_clinic', 'veterinarian', 'veterinary_clinic', 'clinic'],
+      pet_groomer: ['groomer', 'pet_groomer', 'groomer_center', 'groomer_solo', 'pet_spa'],
+      groomer_center: ['groomer', 'pet_groomer', 'groomer_center', 'groomer_solo', 'pet_spa'],
+      groomer_solo: ['groomer', 'pet_groomer', 'groomer_center', 'groomer_solo', 'pet_spa'],
+      pet_walker: ['walker', 'pet_walker', 'dog_walker'],
+      walker: ['walker', 'pet_walker', 'dog_walker'],
+      pet_trainer: ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
+      trainer_center: ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
+      trainer_solo: ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
+      pet_behaviorist: ['behaviorist', 'pet_behaviorist', 'trainer_solo', 'trainer_center'],
+      pet_sitter: ['sitter', 'pet_sitter'],
+      sitter: ['sitter', 'pet_sitter'],
+      pet_taxi: ['transport', 'pet_transport', 'pet_taxi', 'relocation'],
+      relocation: ['pet_transport', 'relocation', 'pet_relocation'],
+      pet_boarding: ['boarding', 'pet_boarder', 'pet_hotel', 'pet_boarding', 'pet_daycare'],
+      boarding: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_sitter'],
+      pet_resort: ['resort', 'pet_resort'],
+      resort: ['resort', 'pet_resort'],
+      pet_cafe: ['cafe', 'pet_cafe'],
+      cafe: ['cafe', 'pet_cafe'],
+      pet_photographer: ['photographer', 'pet_photographer'],
+      photographer: ['photographer', 'pet_photographer'],
+      pet_sunset_services: ['sunset', 'pet_sunset_services', 'sunset_services'],
+      sunset: ['sunset', 'pet_sunset_services'],
+      holiday: ['holiday'],
+      pet_products_store: ['store', 'pet_store', 'retailer', 'seller', 'pet_products_store'],
+      seller: ['store', 'pet_store', 'seller', 'pet_products_store'],
+      pet_breeder: ['breeder', 'pet_breeder'],
+      breeder: ['breeder', 'pet_breeder'],
+      pet_shelter: ['shelter', 'pet_shelter', 'adoption_center', 'pet_adoption_center'],
+      adoption_center: ['adoption_center', 'pet_shelter', 'pet_adoption_center'],
+    };
+    const variants = map[normalized];
+    return variants && variants.length > 0 ? [...new Set([normalized, ...variants])] : [normalized];
+  }
+
+  /**
    * GET /vendor/specializations/:roleId
-   * Get specialization options for vendor profile configuration
+   * Get specialization options for vendor profile configuration.
+   * Loads dynamically: role → services mapped to role (service_catalog) → specializations from those services (category).
+   * Fallback: specialization_master where applicable_roles contains role and show_in_vendor_profile = true.
    */
   app.get('/vendor/specializations/:roleId', async (c) => {
     try {
@@ -752,26 +811,75 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
       let actualRoleId = roleId;
       if (roleId.includes('-')) {
         const roleResult = await query(
-          'SELECT name FROM roles WHERE id::text = $1',
+          'SELECT name FROM roles WHERE id::text = $1 AND is_active = true',
           [roleId]
         );
         if (roleResult.rows.length > 0) {
-          actualRoleId = roleResult.rows[0].name;
+          actualRoleId = (roleResult.rows[0].name || actualRoleId).toString().toLowerCase().replace(/\s+/g, '_');
+        }
+      } else {
+        actualRoleId = actualRoleId.toLowerCase().replace(/\s+/g, '_');
+      }
+
+      const roleNames = getRoleNamesForCatalog(actualRoleId);
+      let rows: any[] = [];
+
+      // 1) Dynamic path: get specialization_ids from service_catalog for this role, then resolve from specialization_master
+      try {
+        const hasSpecIdsCol = await query(
+          `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'service_catalog' AND column_name = 'specialization_ids'`
+        ).then((r: any) => r.rows && r.rows.length > 0);
+        if (hasSpecIdsCol) {
+          const catalogSpecs = await query(
+            `SELECT DISTINCT unnest(specialization_ids) AS spec_id
+             FROM service_catalog
+             WHERE status = 'active'
+               AND applicable_roles && $1::text[]
+               AND specialization_ids IS NOT NULL
+               AND array_length(specialization_ids, 1) > 0`,
+            [roleNames]
+          );
+          const specIds = (catalogSpecs.rows || []).map((r: any) => r.spec_id).filter(Boolean);
+          if (specIds.length > 0) {
+            const placeholders = specIds.map((_, i) => `$${i + 1}`).join(', ');
+            const smResult = await query(
+              `SELECT sm.*
+               FROM specialization_master sm
+               WHERE sm.is_active = true
+                 AND sm.specialization_id IN (${placeholders})
+               ORDER BY sm.display_order, sm.name`,
+              specIds
+            );
+            rows = smResult.rows || [];
+            if (rows.length > 0) {
+              console.log('[SPEC-MASTER] Vendor specializations from catalog-by-role:', rows.length, 'role:', actualRoleId);
+            }
+          }
+        }
+      } catch (catalogErr: any) {
+        console.warn('[SPEC-MASTER] Catalog-by-role path failed, using fallback:', catalogErr.message);
+      }
+
+      // 2) Fallback: specialization_master where applicable_roles contains role and show_in_vendor_profile = true
+      if (rows.length === 0) {
+        const result = await query(
+          `SELECT sm.*
+           FROM specialization_master sm
+           WHERE sm.is_active = true
+             AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
+             AND (sm.applicable_roles && $1::text[] OR $2 = ANY(sm.applicable_roles))
+           ORDER BY sm.display_order, sm.name`,
+          [roleNames, actualRoleId]
+        );
+        rows = result.rows || [];
+        if (rows.length > 0) {
+          console.log('[SPEC-MASTER] Vendor specializations from applicable_roles fallback:', rows.length, 'role:', actualRoleId);
         }
       }
       
-      const result = await query(`
-        SELECT sm.*
-        FROM specialization_master sm
-        WHERE sm.is_active = true 
-          AND sm.show_in_vendor_profile = true
-          AND $1 = ANY(sm.applicable_roles)
-        ORDER BY sm.display_order, sm.name
-      `, [actualRoleId]);
-      
       return c.json({
         success: true,
-        specializations: result.rows.map((row: any) => ({
+        specializations: rows.map((row: any) => ({
           id: row.specialization_id,
           name: row.name,
           displayName: row.display_name || row.name,

@@ -9,11 +9,15 @@ echo "🔍 TESTING FRONTEND APPLICATIONS - FINDING REAL ISSUES"
 echo "======================================================="
 echo ""
 
-# URLs
-ADMIN_URL="https://dfof7mguaa0a5.cloudfront.net"
-VENDOR_URL="https://d1s6ykkj381k58.cloudfront.net"
-CUSTOMER_URL="https://d2aoyjj8ine0wk.cloudfront.net"
-API_URL="https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"
+# URLs from env only (see config/urls.json for reference). Set ADMIN_URL, VENDOR_URL, CUSTOMER_URL, API_URL.
+ADMIN_URL="${ADMIN_URL:-}"
+VENDOR_URL="${VENDOR_URL:-}"
+CUSTOMER_URL="${CUSTOMER_URL:-}"
+API_URL="${API_URL:-${API_BASE_URL:-}}"
+if [ -z "$ADMIN_URL" ] || [ -z "$VENDOR_URL" ] || [ -z "$CUSTOMER_URL" ]; then
+  echo "❌ Set ADMIN_URL, VENDOR_URL, CUSTOMER_URL (and optionally API_URL). See config/urls.json for official CloudFront URLs."
+  exit 1
+fi
 
 echo "📍 Testing URLs:"
 echo "  Admin: $ADMIN_URL"
