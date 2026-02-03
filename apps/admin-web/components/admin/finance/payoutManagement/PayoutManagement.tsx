@@ -20,6 +20,7 @@ import {
 import { Card, Badge, Button, Input } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 
 interface Payout {
   id: string;
@@ -175,11 +176,14 @@ export function PayoutManagement() {
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-black text-xl font-semibold">Payout Management</h2>
-          <p className="text-gray-500 text-sm mt-1">
-            Manage vendor payouts and transactions
-          </p>
+        <div className="flex items-center gap-2">
+          <div>
+            <h2 className="text-black text-xl font-semibold">Payout Management</h2>
+            <p className="text-gray-500 text-sm mt-1">
+              Manage vendor payouts and transactions
+            </p>
+          </div>
+          <PolicyHelpButton docKey="finance-payout-management" />
         </div>
         <div className="flex items-center gap-3">
           <Button onClick={exportPayouts} variant="outline" className="gap-2">

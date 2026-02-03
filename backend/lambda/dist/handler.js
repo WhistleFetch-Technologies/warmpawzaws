@@ -107690,6 +107690,13 @@ async function update(table, filters, data) {
   let paramIndex = 1;
   for (const [key, value] of Object.entries(data)) {
     if (value !== void 0) {
+      const jsonbArrayColumns = /* @__PURE__ */ new Set(["specializations"]);
+      if (jsonbArrayColumns.has(key) && Array.isArray(value)) {
+        setClause.push(`${key} = $${paramIndex}::jsonb`);
+        params.push(JSON.stringify(value));
+        paramIndex++;
+        continue;
+      }
       if (Array.isArray(value)) {
         setClause.push(`${key} = $${paramIndex}`);
         params.push(value);
@@ -121737,6 +121744,55 @@ function registerAdminEndpoints(app3) {
     const result = await rejectHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
+  app3.post("/admin/vendors/:vendorId/request-clarification", async (c) => {
+    const authResult = await requireAdminAuth(c);
+    if (!authResult.authorized) {
+      return c.json({ error: authResult.error }, 401);
+    }
+    const vendorId = c.req.param("vendorId");
+    const body = await c.req.json().catch(() => ({}));
+    const notes = (body.notes ?? body.message ?? body.comment ?? body.comments ?? "").trim();
+    if (!notes) {
+      return c.json({ success: false, error: "Message or notes are required for request clarification" }, 400);
+    }
+    try {
+      let applicationId = null;
+      const byVendor = await query(
+        `SELECT voa.id FROM vendor_onboarding_applications voa
+         JOIN vendor_identity vi ON vi.id = voa.vendor_identity_id
+         WHERE vi.vendor_id = $1 OR vi.phone = (SELECT phone FROM vendors WHERE id = $1 LIMIT 1)
+         ORDER BY voa.created_at DESC LIMIT 1`,
+        [vendorId]
+      );
+      applicationId = byVendor?.rows?.[0]?.id ?? null;
+      if (!applicationId) {
+        const byAppId = await query(
+          `SELECT id FROM vendor_onboarding_applications WHERE id = $1 LIMIT 1`,
+          [vendorId]
+        );
+        applicationId = byAppId?.rows?.[0]?.id ?? null;
+      }
+      if (!applicationId) {
+        return c.json({ success: false, error: "Application not found for this vendor" }, 404);
+      }
+      await query(
+        `UPDATE vendor_onboarding_applications SET status = 'CLARIFICATION_REQUIRED', admin_comments = $2, is_locked = false, locked_at = NULL, updated_at = NOW() WHERE id = $1`,
+        [applicationId, notes]
+      );
+      try {
+        await query(
+          `UPDATE vendor_identity SET onboarding_status = 'CLARIFICATION_REQUIRED', updated_at = NOW() WHERE application_id = $1 OR id = $1`,
+          [applicationId]
+        );
+      } catch (e) {
+        console.warn("Optional vendor_identity update failed:", e.message);
+      }
+      return c.json({ success: true, message: "Clarification requested", applicationId });
+    } catch (error) {
+      console.error("Error requesting clarification (vendors/:id):", error);
+      return c.json({ success: false, error: error.message || "Failed to request clarification" }, 500);
+    }
+  });
   app3.get("/admin/vendors", async (c) => {
     const authResult = await requireAdminAuth(c);
     if (!authResult.authorized) {
@@ -121970,11 +122026,41 @@ function registerAdminEndpoints(app3) {
       return c.json({ error: authResult.error }, 401);
     }
     const applicationId = c.req.param("applicationId");
-    const event = createApiGatewayEvent7(c.req);
-    event.pathParameters = { vendorId: applicationId };
-    const context = createLambdaContext8();
-    const result = await rejectHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const body = await c.req.json().catch(() => ({}));
+    const notes = (body.notes ?? body.message ?? body.comments ?? "").trim();
+    if (!notes) {
+      return c.json({ success: false, error: "Message or notes are required for request clarification" }, 400);
+    }
+    try {
+      const apps = await select("vendor_onboarding_applications", { id: applicationId });
+      if (!apps.length) {
+        return c.json({ success: false, error: "Application not found" }, 404);
+      }
+      const app4 = apps[0];
+      await query(
+        `UPDATE vendor_onboarding_applications 
+         SET status = 'CLARIFICATION_REQUIRED', admin_comments = $2, is_locked = false, locked_at = NULL, updated_at = NOW() 
+         WHERE id = $1`,
+        [applicationId, notes]
+      );
+      try {
+        await query(
+          `UPDATE vendor_identity SET onboarding_status = 'CLARIFICATION_REQUIRED', updated_at = NOW() 
+           WHERE application_id = $1 OR id = $1`,
+          [applicationId]
+        );
+      } catch (e) {
+        console.warn("Optional vendor_identity update failed:", e.message);
+      }
+      return c.json({
+        success: true,
+        message: "Clarification requested",
+        applicationId
+      });
+    } catch (error) {
+      console.error("Error requesting clarification:", error);
+      return c.json({ success: false, error: error.message || "Failed to request clarification" }, 500);
+    }
   });
   app3.get("/admin/customers", async (c) => {
     try {
@@ -128388,15 +128474,20 @@ var SelectRoleHandlerEnhanced = class extends BaseHandlerEnhanced {
         return this.error("Vendor identity not found", 404, "NOT_FOUND", void 0, requestId);
       }
       const identity = identities[0];
-      const roles = await select("roles", { id: role_id, is_active: true });
+      let roles = await select("roles", { id: role_id, is_active: true });
+      if (roles.length === 0) {
+        roles = await select("roles", { name: role_id, is_active: true });
+      }
       if (roles.length === 0) {
         return this.error("Role not found or inactive", 404, "NOT_FOUND", void 0, requestId);
       }
+      const selectedRole = roles[0];
+      const resolvedRoleId = selectedRole.id;
       await update(
         "vendor_identity",
         { id: identity.id },
         {
-          selected_role_id: role_id,
+          selected_role_id: resolvedRoleId,
           updated_at: (/* @__PURE__ */ new Date()).toISOString()
         }
       );
@@ -131153,8 +131244,7 @@ var GetBookingHistoryHandlerEnhanced = class extends BaseHandlerEnhanced {
         FROM prescriptions p
         LEFT JOIN vendors v ON v.id = p.vendor_id
         LEFT JOIN staff s ON s.id = p.staff_id
-        WHERE p.booking_id = $1 
-          AND p.is_active = true
+        WHERE p.booking_id = $1
         ORDER BY p.created_at ASC`,
         [bookingId]
       );
@@ -135954,6 +136044,8 @@ var CANONICAL_ACTIVE_ROLE_NAMES = [
   "groomer_center",
   "trainer_solo",
   "trainer_center",
+  "behaviorist_solo",
+  "behaviorist_center",
   "boarding",
   "walker",
   "sitter",
@@ -135981,6 +136073,8 @@ var CANONICAL_TO_LEGACY_DEF = {
   groomer_center: "pet_groomer",
   trainer_solo: "pet_trainer",
   trainer_center: "pet_trainer",
+  behaviorist_solo: "pet_behaviorist",
+  behaviorist_center: "pet_behaviorist",
   boarding: "pet_boarding",
   walker: "pet_walker",
   sitter: "pet_sitter",
@@ -136008,6 +136102,8 @@ var CANONICAL_ROLE_DISPLAY_NAMES = {
   groomer_center: "Pet Grooming Salon",
   trainer_solo: "Pet Trainer (Solo)",
   trainer_center: "Pet Training Center",
+  behaviorist_solo: "Behaviorist (Solo)",
+  behaviorist_center: "Behaviorist Center",
   boarding: "Pet Boarding / Kennel",
   walker: "Pet Walker",
   sitter: "Pet Sitter",
@@ -136790,6 +136886,11 @@ async function seedServiceCatalog(roleId, serviceStyles) {
           try {
             const roleMappings3 = {
               "pet_trainer": ["pet_trainer", "trainer"],
+              "trainer_solo": ["trainer_solo", "pet_trainer", "trainer"],
+              "trainer_center": ["trainer_center", "pet_trainer", "trainer"],
+              "pet_behaviorist": ["pet_behaviorist", "behaviorist"],
+              "behaviorist_solo": ["behaviorist_solo", "pet_behaviorist", "behaviorist"],
+              "behaviorist_center": ["behaviorist_center", "pet_behaviorist", "behaviorist"],
               "pet_walker": ["pet_walker", "walker", "dog_walker"],
               "walker": ["walker", "pet_walker", "dog_walker"],
               "pet_groomer": ["pet_groomer", "groomer"],
@@ -136828,6 +136929,11 @@ async function seedServiceCatalog(roleId, serviceStyles) {
               try {
                 const roleMappings3 = {
                   "pet_trainer": ["pet_trainer", "trainer"],
+                  "trainer_solo": ["trainer_solo", "pet_trainer", "trainer"],
+                  "trainer_center": ["trainer_center", "pet_trainer", "trainer"],
+                  "pet_behaviorist": ["pet_behaviorist", "behaviorist"],
+                  "behaviorist_solo": ["behaviorist_solo", "pet_behaviorist", "behaviorist"],
+                  "behaviorist_center": ["behaviorist_center", "pet_behaviorist", "behaviorist"],
                   "pet_walker": ["pet_walker", "walker", "dog_walker"],
                   "walker": ["walker", "pet_walker", "dog_walker"],
                   "pet_groomer": ["pet_groomer", "groomer"],
@@ -136914,6 +137020,8 @@ function registerRoleSeedingEndpoints(app3) {
                 });
               }
             }
+            await seedOnboardingForm(roleId).catch((err) => console.warn(`Seed onboarding form for ${roleId}:`, err?.message));
+            await seedServiceCatalog(roleId, def.serviceStyles || []).catch((err) => console.warn(`Seed service catalog for ${roleId}:`, err?.message));
             stats.created++;
             continue;
           }
@@ -139027,7 +139135,16 @@ function registerGpsTrackingEndpoints(app3) {
       if (!phone) {
         return c.json({ error: "phone is required" }, 400);
       }
-      const customers = await select("customers", { phone: decodeURIComponent(phone) });
+      const rawPhone = decodeURIComponent(String(phone)).trim();
+      const digitsOnly = rawPhone.replace(/\D/g, "");
+      let customers = [];
+      for (const p of [rawPhone, digitsOnly, digitsOnly.length <= 10 ? `+91${digitsOnly}` : `+${digitsOnly}`, digitsOnly]) {
+        const rows = await select("customers", { phone: p });
+        if (rows.length > 0) {
+          customers = rows;
+          break;
+        }
+      }
       if (customers.length === 0) {
         return c.json({
           success: true,
@@ -145961,6 +146078,7 @@ function registerServiceDiscoveryEndpoints(app3) {
       const serviceStyle = c.req.query("serviceStyle") || "at_home";
       const staffId = c.req.query("staffId");
       const serviceId = c.req.query("serviceId");
+      const totalDuration = Math.max(15, parseInt(c.req.query("totalDuration") || "30", 10) || 30);
       if (!date) {
         return c.json({ error: "date parameter is required" }, 400);
       }
@@ -145969,6 +146087,66 @@ function registerServiceDiscoveryEndpoints(app3) {
         return c.json({ error: "Vendor not found" }, 404);
       }
       const vendor = vendors[0];
+      const requestedDate = new Date(date);
+      const dayOfWeek = requestedDate.getDay();
+      const today = /* @__PURE__ */ new Date();
+      today.setHours(0, 0, 0, 0);
+      const requestedDateOnly = new Date(requestedDate);
+      requestedDateOnly.setHours(0, 0, 0, 0);
+      const isToday = requestedDateOnly.getTime() === today.getTime();
+      const now = /* @__PURE__ */ new Date();
+      let minNoticeMinutes = 30;
+      try {
+        const policies = await query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`).catch(() => ({ rows: [] }));
+        const bufferPolicy = policies.rows.find((p) => p.policy_type === "buffer_time");
+        if (bufferPolicy?.policy_config) {
+          const cfg = bufferPolicy.policy_config;
+          minNoticeMinutes = cfg.minBufferTime ?? cfg.minNoticeMinutes ?? 30;
+        }
+      } catch (_) {
+      }
+      const minBookingTime = new Date(now.getTime() + minNoticeMinutes * 60 * 1e3);
+      let isHoliday = false;
+      try {
+        const holEnhanced = await query(
+          `SELECT 1 FROM vendor_holidays_enhanced 
+           WHERE vendor_id = $1 AND is_active = true
+             AND ($2::date >= start_date AND $2::date <= end_date)
+           LIMIT 1`,
+          [vendorId, date]
+        ).catch(() => ({ rows: [] }));
+        if (holEnhanced.rows.length > 0) {
+          isHoliday = true;
+        }
+      } catch {
+      }
+      if (!isHoliday) {
+        try {
+          const holLegacy = await query(
+            `SELECT 1 FROM vendor_holidays WHERE vendor_id = $1 AND date = $2 LIMIT 1`,
+            [vendorId, date]
+          ).catch(() => ({ rows: [] }));
+          if (holLegacy.rows.length > 0) isHoliday = true;
+        } catch {
+        }
+      }
+      if (!isHoliday && vendor.metadata && vendor.metadata.vacation_mode?.isActive) {
+        const vm = vendor.metadata.vacation_mode;
+        const start = new Date(vm.startDate);
+        const end = new Date(vm.endDate);
+        if (requestedDate >= start && requestedDate <= end) isHoliday = true;
+      }
+      if (isHoliday) {
+        return c.json({
+          success: true,
+          slots: [],
+          date,
+          vendorId,
+          serviceStyle,
+          staffBased: false,
+          message: "Vendor is on holiday or vacation on this date"
+        });
+      }
       if (serviceStyle === "at_home" || serviceStyle === "tele") {
         let staffQuery = `
           SELECT DISTINCT 
@@ -146012,7 +146190,7 @@ function registerServiceDiscoveryEndpoints(app3) {
           return { rows: [] };
         });
         if (staffSlotsResult.rows.length > 0) {
-          const existingBookingsResult2 = await query(
+          const existingBookingsResult = await query(
             `SELECT booking_time, staff_id FROM bookings 
              WHERE vendor_id = $1 
              AND booking_date = $2 
@@ -146020,7 +146198,7 @@ function registerServiceDiscoveryEndpoints(app3) {
             [vendorId, date]
           ).catch(() => ({ rows: [] }));
           const bookedByStaff = {};
-          for (const booking of existingBookingsResult2.rows) {
+          for (const booking of existingBookingsResult.rows) {
             const sid = booking.staff_id || "general";
             if (!bookedByStaff[sid]) {
               bookedByStaff[sid] = /* @__PURE__ */ new Set();
@@ -146028,8 +146206,8 @@ function registerServiceDiscoveryEndpoints(app3) {
             const time = typeof booking.booking_time === "string" ? booking.booking_time.substring(0, 5) : booking.booking_time;
             bookedByStaff[sid].add(time);
           }
-          const slots2 = [];
-          const now = /* @__PURE__ */ new Date();
+          const slots = [];
+          const now2 = /* @__PURE__ */ new Date();
           const requestedDate2 = new Date(date);
           const today2 = /* @__PURE__ */ new Date();
           today2.setHours(0, 0, 0, 0);
@@ -146048,10 +146226,10 @@ function registerServiceDiscoveryEndpoints(app3) {
               if (isToday2) {
                 const slotDateTime = new Date(requestedDate2);
                 slotDateTime.setHours(currentHour, currentMin, 0, 0);
-                isPast = slotDateTime < now;
+                isPast = slotDateTime < minBookingTime;
               }
               const isBooked = staffBookedTimes.has(timeStr);
-              slots2.push({
+              slots.push({
                 time: timeStr,
                 available: !isPast && !isBooked,
                 booked: isBooked,
@@ -146068,7 +146246,7 @@ function registerServiceDiscoveryEndpoints(app3) {
               }
             }
           }
-          const uniqueSlots = slots2.reduce((acc, slot) => {
+          const uniqueSlots = slots.reduce((acc, slot) => {
             const existing = acc.find((s) => s.time === slot.time && s.staffId === slot.staffId);
             if (!existing) {
               acc.push(slot);
@@ -146086,18 +146264,17 @@ function registerServiceDiscoveryEndpoints(app3) {
           });
         }
       }
-      const requestedDate = new Date(date);
-      const dayOfWeek = requestedDate.getDay();
       let va2Slots = [];
       try {
         const va2Result = await query(
-          `SELECT *, time_window_start as start_time, time_window_end as end_time 
+          `SELECT id, time_window_start, time_window_end, start_time, end_time,
+                  COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
+                  buffer_time, buffer_time_minutes, max_capacity, service_style, service_styles
            FROM vendor_availability_v2
            WHERE vendor_id = $1
-           AND day_of_week = $2
-           AND (COALESCE(service_style, service_type) = $3 
-                OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
-           AND COALESCE(is_enabled, is_available, true) = true
+             AND day_of_week = $2
+             AND (COALESCE(service_style, service_type) = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
+             AND COALESCE(is_enabled, is_available, true) = true
            ORDER BY COALESCE(time_window_start, start_time)`,
           [vendorId, dayOfWeek, serviceStyle]
         );
@@ -146105,12 +146282,13 @@ function registerServiceDiscoveryEndpoints(app3) {
       } catch (e) {
         try {
           const va2ResultAlt = await query(
-            `SELECT *, start_time as time_window_start, end_time as time_window_end 
+            `SELECT id, start_time as time_window_start, end_time as time_window_end,
+                    time_window_start as start_time, time_window_end as end_time,
+                    slot_duration_minutes, buffer_time, buffer_time_minutes, max_capacity, service_style, service_styles
              FROM vendor_availability_v2
-             WHERE vendor_id = $1
-             AND day_of_week = $2
-             AND (service_type = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
-             AND COALESCE(is_available, is_enabled, true) = true
+             WHERE vendor_id = $1 AND day_of_week = $2
+               AND (service_type = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
+               AND COALESCE(is_available, is_enabled, true) = true
              ORDER BY start_time`,
             [vendorId, dayOfWeek, serviceStyle]
           );
@@ -146118,178 +146296,116 @@ function registerServiceDiscoveryEndpoints(app3) {
         } catch (_) {
         }
       }
-      if (va2Slots.length > 0) {
-        const today2 = /* @__PURE__ */ new Date();
-        today2.setHours(0, 0, 0, 0);
-        const requestedDateOnly2 = new Date(requestedDate);
-        requestedDateOnly2.setHours(0, 0, 0, 0);
-        const isToday2 = requestedDateOnly2.getTime() === today2.getTime();
-        const now = /* @__PURE__ */ new Date();
-        const existingBookingsResult2 = await query(
-          `SELECT booking_time FROM bookings 
-           WHERE vendor_id = $1 AND booking_date = $2 
-           AND status NOT IN ('cancelled', 'rejected')`,
+      let breaks = [];
+      try {
+        const breakRows = await query(
+          `SELECT start_time, end_time FROM vendor_breaks
+           WHERE vendor_id = $1 AND is_active = true
+             AND ((is_recurring = true AND day_of_week = $2) OR break_date = $3::date)`,
+          [vendorId, dayOfWeek, date]
+        ).catch(() => ({ rows: [] }));
+        breaks = breakRows.rows.map((r) => ({
+          startTime: typeof r.start_time === "string" ? r.start_time.substring(0, 5) : r.start_time,
+          endTime: typeof r.end_time === "string" ? r.end_time.substring(0, 5) : r.end_time
+        }));
+      } catch (_) {
+      }
+      const timeToMinutes2 = (t) => {
+        const s = typeof t === "string" ? t.substring(0, 5) : String(t);
+        const [h, m] = s.split(":").map(Number);
+        return (h || 0) * 60 + (m || 0);
+      };
+      let existingBookings = [];
+      try {
+        const bookResult = await query(
+          `SELECT booking_time, COALESCE(duration_minutes, 30) as duration_minutes
+           FROM bookings
+           WHERE vendor_id = $1 AND booking_date = $2
+             AND status NOT IN ('cancelled', 'rejected', 'no_show')`,
           [vendorId, date]
         ).catch(() => ({ rows: [] }));
-        const bookedTimes2 = new Set(
-          existingBookingsResult2.rows.map((b) => {
-            const t = b.booking_time;
-            return typeof t === "string" ? t.substring(0, 5) : t;
-          })
-        );
-        const slots2 = [];
-        for (const slot of va2Slots) {
-          const startTime = slot.time_window_start || slot.start_time;
-          const endTime = slot.time_window_end || slot.end_time;
+        existingBookings = bookResult.rows.map((b) => ({
+          booking_time: typeof b.booking_time === "string" ? b.booking_time.substring(0, 5) : b.booking_time,
+          duration_minutes: Number(b.duration_minutes) || 30
+        }));
+      } catch (_) {
+      }
+      if (va2Slots.length > 0) {
+        const slots = [];
+        for (const row of va2Slots) {
+          const startTime = row.time_window_start || row.start_time;
+          const endTime = row.time_window_end || row.end_time;
           if (!startTime || !endTime) continue;
-          const [openHour, openMin] = startTime.split(":").map(Number);
-          const [closeHour, closeMin] = endTime.split(":").map(Number);
-          let currentHour = openHour;
-          let currentMin = openMin;
-          while (currentHour < closeHour || currentHour === closeHour && currentMin < closeMin) {
-            const timeStr = `${String(currentHour).padStart(2, "0")}:${String(currentMin).padStart(2, "0")}`;
-            let isPast = false;
-            if (isToday2) {
-              const slotDt = new Date(requestedDate);
-              slotDt.setHours(currentHour, currentMin, 0, 0);
-              isPast = slotDt < now;
+          const slotDuration = Number(row.slot_duration_minutes) || 30;
+          const bufferMinutes = Number(row.buffer_time ?? row.buffer_time_minutes) || minNoticeMinutes;
+          const maxCapacity = row.max_capacity != null && row.max_capacity !== "" ? parseInt(String(row.max_capacity), 10) : null;
+          const winStart = timeToMinutes2(startTime);
+          const winEnd = timeToMinutes2(endTime);
+          let currentMinutes = winStart;
+          while (currentMinutes + slotDuration <= winEnd) {
+            const timeStr = `${String(Math.floor(currentMinutes / 60)).padStart(2, "0")}:${String(currentMinutes % 60).padStart(2, "0")}`;
+            if (isToday) {
+              const slotDateTime = new Date(requestedDate);
+              slotDateTime.setHours(Math.floor(currentMinutes / 60), currentMinutes % 60, 0, 0);
+              if (slotDateTime < minBookingTime) {
+                currentMinutes += slotDuration;
+                continue;
+              }
             }
-            const isBooked = bookedTimes2.has(timeStr);
-            slots2.push({ time: timeStr, available: !isPast && !isBooked, booked: isBooked });
-            currentMin += 30;
-            if (currentMin >= 60) {
-              currentMin -= 60;
-              currentHour += 1;
+            const slotEndMin = currentMinutes + totalDuration;
+            const inBreak = breaks.some((brk) => {
+              const bStart = timeToMinutes2(brk.startTime);
+              const bEnd = timeToMinutes2(brk.endTime);
+              return currentMinutes < bEnd && slotEndMin > bStart;
+            });
+            if (inBreak) {
+              currentMinutes += slotDuration;
+              continue;
             }
+            const slotEndWithBuffer = currentMinutes + totalDuration + bufferMinutes;
+            const overlapsBooking = existingBookings.some((b) => {
+              const bStart = timeToMinutes2(b.booking_time);
+              const bEnd = bStart + b.duration_minutes + bufferMinutes;
+              return currentMinutes < bEnd && slotEndWithBuffer > bStart;
+            });
+            if (overlapsBooking) {
+              currentMinutes += slotDuration;
+              continue;
+            }
+            let available = true;
+            if (maxCapacity != null && maxCapacity > 0) {
+              const norm = (t) => typeof t === "string" ? t.substring(0, 5) : String(t);
+              const sameStartCount = existingBookings.filter(
+                (b) => norm(b.booking_time) === timeStr
+              ).length;
+              available = sameStartCount < maxCapacity;
+            }
+            slots.push({
+              time: timeStr,
+              available,
+              booked: !available
+            });
+            currentMinutes += slotDuration;
           }
         }
+        const sortedSlots = slots.sort((a, b) => a.time.localeCompare(b.time));
         return c.json({
           success: true,
-          slots: slots2.sort((a, b) => a.time.localeCompare(b.time)),
+          slots: sortedSlots,
           date,
           vendorId,
           serviceStyle,
           staffBased: false
         });
       }
-      let operatingHours = null;
-      if (vendor.operating_hours) {
-        try {
-          operatingHours = typeof vendor.operating_hours === "string" ? JSON.parse(vendor.operating_hours) : vendor.operating_hours;
-        } catch (e) {
-          console.warn("[SLOTS] Failed to parse vendor.operating_hours:", e);
-        }
-      }
-      if (!operatingHours && vendor.metadata) {
-        try {
-          const metadata = typeof vendor.metadata === "string" ? JSON.parse(vendor.metadata) : vendor.metadata;
-          operatingHours = metadata?.operatingHours || metadata?.operating_hours;
-        } catch (e) {
-          console.warn("[SLOTS] Failed to parse metadata:", e);
-        }
-      }
-      if (!operatingHours) {
-        try {
-          const facilities = await query(
-            `SELECT operating_hours FROM vendor_facilities WHERE vendor_id = $1 LIMIT 1`,
-            [vendorId]
-          );
-          if (facilities.rows.length > 0 && facilities.rows[0].operating_hours) {
-            const facilityHours = facilities.rows[0].operating_hours;
-            operatingHours = typeof facilityHours === "string" ? JSON.parse(facilityHours) : facilityHours;
-            console.log("[SLOTS] Loaded operating hours from vendor_facilities");
-          }
-        } catch (e) {
-          console.warn("[SLOTS] Failed to load from vendor_facilities:", e);
-        }
-      }
-      const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-      const dayName = dayNames[dayOfWeek];
-      const today = /* @__PURE__ */ new Date();
-      today.setHours(0, 0, 0, 0);
-      const requestedDateOnly = new Date(requestedDate);
-      requestedDateOnly.setHours(0, 0, 0, 0);
-      const isToday = requestedDateOnly.getTime() === today.getTime();
-      const existingBookingsResult = await query(
-        `SELECT booking_time FROM bookings 
-         WHERE vendor_id = $1 
-         AND booking_date = $2 
-         AND status NOT IN ('cancelled', 'rejected')`,
-        [vendorId, date]
-      ).catch(() => ({ rows: [] }));
-      const bookedTimes = new Set(
-        existingBookingsResult.rows.map((b) => {
-          const time = b.booking_time;
-          if (typeof time === "string") {
-            return time.substring(0, 5);
-          }
-          return time;
-        })
-      );
-      console.log(`[SLOTS] Found ${bookedTimes.size} booked slots for ${date}:`, Array.from(bookedTimes));
-      const slots = [];
-      if (operatingHours && operatingHours[dayName]) {
-        const daySchedule = operatingHours[dayName];
-        if (daySchedule.isOpen && daySchedule.open && daySchedule.close) {
-          const [openHour, openMin] = daySchedule.open.split(":").map(Number);
-          const [closeHour, closeMin] = daySchedule.close.split(":").map(Number);
-          let currentHour = openHour;
-          let currentMin = openMin;
-          while (currentHour < closeHour || currentHour === closeHour && currentMin < closeMin) {
-            const timeStr = `${String(currentHour).padStart(2, "0")}:${String(currentMin).padStart(2, "0")}`;
-            let isPast = false;
-            if (isToday) {
-              const now = /* @__PURE__ */ new Date();
-              const slotDateTime = new Date(requestedDate);
-              slotDateTime.setHours(currentHour, currentMin, 0, 0);
-              isPast = slotDateTime < now;
-            }
-            const isBooked = bookedTimes.has(timeStr);
-            slots.push({
-              time: timeStr,
-              available: !isPast && !isBooked,
-              booked: isBooked
-            });
-            currentMin += 30;
-            if (currentMin >= 60) {
-              currentMin -= 60;
-              currentHour += 1;
-            }
-          }
-        }
-      } else {
-        const defaultSlots = [
-          "09:00",
-          "09:30",
-          "10:00",
-          "10:30",
-          "11:00",
-          "11:30",
-          "14:00",
-          "14:30",
-          "15:00",
-          "15:30",
-          "16:00",
-          "16:30",
-          "17:00",
-          "17:30"
-        ];
-        slots.push(...defaultSlots.map((time) => {
-          const isBooked = bookedTimes.has(time);
-          return {
-            time,
-            available: !isBooked,
-            booked: isBooked
-          };
-        }));
-      }
       return c.json({
         success: true,
-        slots,
+        slots: [],
         date,
         vendorId,
         serviceStyle,
-        staffBased: false
+        staffBased: false,
+        message: "No advanced availability set for this day and service type. Vendor can set schedule in Advanced Availability."
       });
     } catch (error) {
       console.error("Error fetching available slots:", error);
@@ -146683,31 +146799,28 @@ function registerServiceDiscoveryEndpoints(app3) {
   });
   app3.get("/customer/vendors/discover-by-problem", async (c) => {
     try {
-      const problem = c.req.query("problem");
+      const problem = c.req.query("problem") || c.req.query("problemId");
       const roleId = c.req.query("roleId");
       const latitude = c.req.query("latitude");
       const longitude = c.req.query("longitude");
       if (!problem) {
-        return c.json({ error: "problem is required" }, 400);
+        return c.json({ error: "problem or problemId is required" }, 400);
       }
+      const problemPattern = `%${problem}%`;
       let queryText = `
         SELECT DISTINCT v.*, r.name as role_name, r.display_name as role_display_name
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
+          AND (
+            (v.specializations IS NOT NULL AND v.specializations::text ILIKE $2) OR
+            (v.metadata IS NOT NULL AND v.metadata->'specializations' IS NOT NULL AND v.metadata->'specializations'::text ILIKE $2) OR
+            EXISTS (SELECT 1 FROM vendor_specializations vs WHERE vs.vendor_id = v.id AND (vs.specialization = $1 OR vs.specialization ILIKE $2)) OR
+            EXISTS (SELECT 1 FROM vendor_services s WHERE s.vendor_id = v.id AND s.is_enabled = true AND (s.service_name ILIKE $2 OR (s.custom_description IS NOT NULL AND s.custom_description::text ILIKE $2)))
+          )
       `;
-      const params = [];
-      let paramIdx = 1;
-      queryText += ` AND (
-        v.specializations::text ILIKE $${paramIdx} OR
-        EXISTS (
-          SELECT 1 FROM services s
-          WHERE s.vendor_id = v.id
-          AND (s.name ILIKE $${paramIdx} OR s.description ILIKE $${paramIdx})
-        )
-      )`;
-      params.push(`%${problem}%`);
-      paramIdx++;
+      const params = [problem, problemPattern];
+      let paramIdx = 3;
       if (roleId) {
         queryText += ` AND (LOWER(r.name) = LOWER($${paramIdx}) OR LOWER(r.display_name) = LOWER($${paramIdx}))`;
         params.push(roleId);
@@ -146995,8 +147108,10 @@ function registerServiceDiscoveryEndpoints(app3) {
         metadataChanged = true;
       }
       if (facilityData.specializations !== void 0) {
-        updatedMetadata.specializations = facilityData.specializations;
+        const specArr2 = Array.isArray(facilityData.specializations) ? facilityData.specializations : typeof facilityData.specializations === "string" ? [facilityData.specializations] : [];
+        updatedMetadata.specializations = specArr2;
         metadataChanged = true;
+        updateData.specializations = specArr2;
       }
       if (facilityData.photos !== void 0 || facilityData.facility_photos !== void 0) {
         const photosInput = facilityData.photos || facilityData.facility_photos || [];
@@ -147060,6 +147175,20 @@ function registerServiceDiscoveryEndpoints(app3) {
       if (updated.length === 0) {
         return c.json({ error: "Failed to update facility" }, 500);
       }
+      const specArr = facilityData.specializations !== void 0 ? Array.isArray(facilityData.specializations) ? facilityData.specializations : typeof facilityData.specializations === "string" ? [facilityData.specializations] : [] : null;
+      if (specArr !== null) {
+        try {
+          await query("DELETE FROM vendor_specializations WHERE vendor_id = $1", [vendorId]);
+          for (const spec of specArr) {
+            const s = typeof spec === "string" ? spec.trim() : spec?.id ?? spec?.specializationId ?? String(spec);
+            if (s) {
+              await insert("vendor_specializations", { vendor_id: vendorId, specialization: s });
+            }
+          }
+        } catch (syncErr) {
+          console.warn("[FACILITY] vendor_specializations sync failed (non-fatal):", syncErr?.message);
+        }
+      }
       return c.json({
         success: true,
         message: "Facility updated successfully",
@@ -147072,7 +147201,8 @@ function registerServiceDiscoveryEndpoints(app3) {
           longitude: updated[0].longitude,
           operating_hours: updated[0].operating_hours,
           amenities: updated[0].metadata?.amenities || [],
-          photos: updated[0].metadata?.facility_photos || []
+          photos: updated[0].metadata?.facility_photos || [],
+          specializations: updated[0].metadata?.specializations ?? (updated[0].specializations ?? [])
         }
       });
     } catch (error) {
@@ -151569,11 +151699,18 @@ function registerPrescriptionEndpoints(app3) {
         createdBy,
         createdByRole
       } = prescriptionData;
-      if ((!customerId || !isValidUUID(customerId)) && bookingId && isValidUUID(bookingId)) {
+      if (bookingId && isValidUUID(bookingId)) {
         const bookings = await select("bookings", { id: bookingId });
-        if (bookings.length > 0 && bookings[0].customer_id) {
-          prescriptionData.customerId = bookings[0].customer_id;
-          console.log(`[Prescription] Resolved customerId from booking ${bookingId}: ${prescriptionData.customerId}`);
+        if (bookings.length > 0) {
+          const b = bookings[0];
+          if ((!customerId || !isValidUUID(customerId)) && b.customer_id) {
+            prescriptionData.customerId = b.customer_id;
+            console.log(`[Prescription] Resolved customerId from booking ${bookingId}: ${prescriptionData.customerId}`);
+          }
+          if ((!petId || !isValidUUID(petId)) && b.pet_id) {
+            prescriptionData.petId = b.pet_id;
+            console.log(`[Prescription] Resolved petId from booking ${bookingId}: ${prescriptionData.petId}`);
+          }
         }
       }
       let hasPrescriptionCapability = await checkVendorCapability(vendorId, "prescription_create") || await checkVendorCapability(vendorId, "prescriptions");
@@ -151700,8 +151837,8 @@ function registerPrescriptionEndpoints(app3) {
           console.log("[Prescription] Using prescription_date:", prescriptionDate, "Type:", typeof prescriptionDate);
           const queryParams = [
             bookingId,
-            customerId,
-            petId || null,
+            prescriptionData.customerId || customerId,
+            prescriptionData.petId || petId || null,
             vendorId,
             staffId || null,
             medsJson,
@@ -151782,8 +151919,8 @@ function registerPrescriptionEndpoints(app3) {
                 RETURNING *`,
                 [
                   bookingId,
-                  customerId,
-                  petId || null,
+                  prescriptionData.customerId || customerId,
+                  prescriptionData.petId || petId || null,
                   vendorId,
                   staffId || null,
                   medsJson,
@@ -151811,6 +151948,23 @@ function registerPrescriptionEndpoints(app3) {
           } else {
             throw insertErr;
           }
+        }
+      }
+      if (savedStatus === "published" && bookingId && insertedPrescriptions.length > 0) {
+        try {
+          const firstId = insertedPrescriptions[0].id;
+          await insert("chat_messages", {
+            booking_id: bookingId,
+            sender_phone: vendorId || "system",
+            sender_type: "vendor",
+            message: "Prescription added. View in appointment History or download PDF (A4 style with medicines, instructions, follow-up).",
+            message_type: "prescription",
+            file_id: firstId,
+            file_name: "Prescription",
+            is_read: false
+          });
+        } catch (chatErr) {
+          console.warn("[Prescription] Share-in-chat failed (non-blocking):", chatErr?.message);
         }
       }
       return c.json({
@@ -151857,6 +152011,23 @@ function registerPrescriptionEndpoints(app3) {
       }
       await update("prescriptions", { id: prescriptionId }, updateFields);
       const updated = await select("prescriptions", { id: prescriptionId });
+      const bookingId = existing.booking_id;
+      if (updateFields.status === "published" && bookingId) {
+        try {
+          await insert("chat_messages", {
+            booking_id: bookingId,
+            sender_phone: existing.vendor_id || "system",
+            sender_type: "vendor",
+            message: "Prescription published. View in appointment History or download PDF (A4 style with medicines, instructions, follow-up).",
+            message_type: "prescription",
+            file_id: prescriptionId,
+            file_name: "Prescription",
+            is_read: false
+          });
+        } catch (chatErr) {
+          console.warn("[Prescription] Share-in-chat on publish failed (non-blocking):", chatErr?.message);
+        }
+      }
       return c.json({
         success: true,
         prescription: updated[0],
@@ -152340,7 +152511,7 @@ function registerMedicalRecordsEndpoints(app3) {
       if (!customerRows || customerRows.length === 0) {
         return c.json({ success: true, records: [], total: 0, message: "No customer found" });
       }
-      const petIds = customerRows.map((r) => r.pet_id).filter(Boolean);
+      const petIds = [...new Set(customerRows.map((r) => r.pet_id).filter(Boolean))];
       if (petIds.length === 0) {
         return c.json({ success: true, records: [], total: 0, message: "No pets found" });
       }
@@ -152365,25 +152536,61 @@ function registerMedicalRecordsEndpoints(app3) {
       queryText += ` ORDER BY mr.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
       const result = await query(queryText, params);
-      const records = result || [];
+      const mrRows = result?.rows || result || [];
+      const recordsFromMr = mrRows.map((r) => ({
+        id: r.id,
+        pet_id: r.pet_id,
+        pet_name: r.pet_name,
+        record_type: r.record_type,
+        title: r.title || r.record_type,
+        description: r.description || r.notes,
+        veterinarian_name: r.veterinarian_name,
+        clinic_name: r.vendor_name,
+        date: r.record_date || r.created_at,
+        attachments: r.attachments || [],
+        notes: r.notes,
+        document_url: r.document_url || null,
+        booking_id: r.booking_id || null,
+        source: "medical_records"
+      }));
+      let prescriptionRecords = [];
+      try {
+        const prescResult = await query(
+          `SELECT p.id, p.booking_id, p.pet_id, p.medications, p.instructions, p.diagnosis, p.prescription_date, p.follow_up_date, p.created_at,
+                  v.business_name as vendor_name, v.owner_name as veterinarian_name
+           FROM prescriptions p
+           LEFT JOIN vendors v ON v.id = p.vendor_id
+           WHERE p.pet_id = ANY($1::uuid[])
+           ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`,
+          [petIds, limit, offset]
+        );
+        const prescRows = prescResult?.rows || [];
+        prescriptionRecords = prescRows.map((p) => ({
+          id: p.id,
+          pet_id: p.pet_id,
+          pet_name: customerRows.find((r) => r.pet_id === p.pet_id)?.pet_name || null,
+          record_type: "prescription",
+          title: "Prescription",
+          description: p.diagnosis ? `Diagnosis: ${p.diagnosis}` : p.instructions || "Consultation summary",
+          veterinarian_name: p.veterinarian_name,
+          clinic_name: p.vendor_name,
+          date: p.prescription_date || p.created_at,
+          attachments: [],
+          notes: p.instructions || null,
+          document_url: null,
+          booking_id: p.booking_id || null,
+          source: "prescriptions"
+        }));
+      } catch (prescErr) {
+        console.warn("[MEDICAL-RECORDS] Prescriptions fetch failed (non-blocking):", prescErr?.message);
+      }
+      const allRecords = [...recordsFromMr, ...prescriptionRecords].sort(
+        (a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
+      ).slice(0, limit);
       return c.json({
         success: true,
-        records: records.map((r) => ({
-          id: r.id,
-          pet_id: r.pet_id,
-          pet_name: r.pet_name,
-          record_type: r.record_type,
-          title: r.title || r.record_type,
-          description: r.description || r.notes,
-          veterinarian_name: r.veterinarian_name,
-          clinic_name: r.vendor_name,
-          date: r.record_date || r.created_at,
-          attachments: r.attachments || [],
-          notes: r.notes,
-          document_url: r.document_url || null,
-          booking_id: r.booking_id || null
-        })),
-        total: records.length
+        records: allRecords,
+        total: allRecords.length
       });
     } catch (error) {
       console.error("\u274C [MEDICAL-RECORDS] Error fetching by phone:", error);
@@ -156505,7 +156712,9 @@ var roleMappings = {
   "pet_trainer": ["trainer", "pet_trainer", "trainer_center", "trainer_solo"],
   "trainer_center": ["trainer", "pet_trainer", "trainer_center", "trainer_solo"],
   "trainer_solo": ["trainer", "pet_trainer", "trainer_center", "trainer_solo"],
-  "pet_behaviorist": ["behaviorist", "pet_behaviorist", "trainer_solo", "trainer_center"],
+  "pet_behaviorist": ["behaviorist", "pet_behaviorist", "behaviorist_solo", "behaviorist_center"],
+  "behaviorist_solo": ["behaviorist_solo", "pet_behaviorist", "behaviorist"],
+  "behaviorist_center": ["behaviorist_center", "pet_behaviorist", "behaviorist"],
   "pet_sitter": ["sitter", "pet_sitter"],
   "sitter": ["sitter", "pet_sitter"],
   "pet_taxi": ["transport", "pet_transport", "pet_taxi", "relocation"],
@@ -156663,7 +156872,10 @@ function registerVendorServicesEndpoints(app3) {
         // Nutritionists have tele
         "pet_nutritionist": ["at_center", "tele", "at_home"],
         "pet_behaviorist": ["at_home", "at_center", "tele"],
-        // Behaviorists have tele
+        "behaviorist_solo": ["at_home", "tele"],
+        // Solo: home + tele only
+        "behaviorist_center": ["at_home", "at_center", "tele"],
+        // Center: all styles
         "diagnostics": ["at_home", "at_center"],
         "diagnostic_center": ["at_home", "at_center"],
         // Diagnostics center: center + home (e.g. lab, sample collection)
@@ -156990,6 +157202,8 @@ function registerVendorServicesEndpoints(app3) {
                 "pet_nutritionist": ["at_center", "tele", "at_home"],
                 "nutritionist_center": ["at_center", "at_home", "tele"],
                 "pet_behaviorist": ["at_home", "at_center", "tele"],
+                "behaviorist_solo": ["at_home", "tele"],
+                "behaviorist_center": ["at_home", "at_center", "tele"],
                 "diagnostics": ["at_home", "at_center"],
                 "diagnostic_center": ["at_home", "at_center"],
                 "diagnostics_center": ["at_home", "at_center"],
@@ -157096,7 +157310,8 @@ function registerVendorServicesEndpoints(app3) {
                WHERE sc.status = 'active'
                AND (sc.publish_status = 'published' OR sc.publish_status IS NULL)
                AND sc.service_style = $1
-               AND (sc.applicable_roles && $2::text[] OR sc.applicable_roles IS NULL OR array_length(sc.applicable_roles, 1) IS NULL)
+               AND array_length(sc.applicable_roles, 1) > 0
+               AND sc.applicable_roles && $2::text[]
                ORDER BY sc.category_name ASC, sc.service_name ASC
                LIMIT 100`,
               [serviceStyle, uniqueRoles]
@@ -157630,10 +157845,18 @@ function registerVendorServicesEndpoints(app3) {
         subCategoryName,
         serviceStyle,
         price,
-        duration
+        duration,
+        isPackage,
+        packageDetails,
+        specializationIds,
+        specialization_ids
       } = serviceData;
+      const effectiveSpecIds = Array.isArray(specializationIds) ? specializationIds : Array.isArray(specialization_ids) ? specialization_ids : [];
       const effectiveCategory = category || categoryName || null;
       const effectiveSubCategory = subCategory || subCategoryName || null;
+      const packagePrice = packageDetails && typeof packageDetails === "object" ? Number(packageDetails.price ?? packageDetails.packagePrice ?? 0) : 0;
+      const isPackageService = Boolean(isPackage);
+      const effectivePriceNum = isPackageService ? Number.isFinite(packagePrice) ? packagePrice : 0 : price != null ? Number(price) : NaN;
       let effectiveServiceStyle;
       if (serviceStyle && ["at_home", "at_center", "tele"].includes(serviceStyle)) {
         effectiveServiceStyle = serviceStyle;
@@ -157688,13 +157911,15 @@ function registerVendorServicesEndpoints(app3) {
         return c.json({ error: "category (or categoryName) is required" }, 400);
       }
       const hasServiceName = serviceName != null && String(serviceName).trim() !== "";
-      const priceNum = price != null ? Number(price) : NaN;
-      const hasValidPrice = !Number.isNaN(priceNum) && priceNum >= 0;
+      const hasValidPrice = !Number.isNaN(effectivePriceNum) && effectivePriceNum >= 0;
       if (!hasServiceName) {
         return c.json({ error: "serviceName is required" }, 400);
       }
       if (!hasValidPrice) {
-        return c.json({ error: "price is required and must be a non-negative number" }, 400);
+        return c.json(
+          { error: isPackageService ? "Package price (packageDetails.price or packageDetails.packagePrice) must be a non-negative number" : "price is required and must be a non-negative number" },
+          400
+        );
       }
       const nameTrimmed = String(serviceName).trim();
       const duplicateCheck = await query(
@@ -157713,29 +157938,42 @@ function registerVendorServicesEndpoints(app3) {
         name: serviceName,
         description: description || null,
         category: effectiveCategory,
-        price: priceNum,
+        price: effectivePriceNum,
         duration_minutes: duration || 30,
         is_active: true
       });
       const requestedPublishStatus = serviceData.publishStatus || "pending_approval";
       const effectivePublishStatus = requestedPublishStatus === "published" ? "pending_approval" : requestedPublishStatus;
       const isEnabled = effectivePublishStatus === "published";
-      const vendorService = await insert("vendor_services", {
+      const metadata = {};
+      if (isPackageService && packageDetails && typeof packageDetails === "object") {
+        metadata.isPackage = true;
+        metadata.packageDetails = packageDetails;
+      }
+      if (effectiveSpecIds.length > 0) {
+        metadata.specialization_ids = effectiveSpecIds;
+      }
+      const metadataToStore = Object.keys(metadata).length > 0 ? metadata : void 0;
+      const vendorServicePayload = {
         vendor_id: vendorId,
         service_id: baseService[0].id,
         service_name: serviceName,
         category: effectiveCategory,
         sub_category: effectiveSubCategory || null,
         service_style: effectiveServiceStyle,
-        price: priceNum,
-        custom_price: price,
+        price: effectivePriceNum,
+        custom_price: effectivePriceNum,
         duration_minutes: duration || 30,
         custom_duration: duration || 30,
         is_enabled: isEnabled,
         publish_status: effectivePublishStatus,
         is_custom_service: true,
         submitted_for_approval_at: effectivePublishStatus === "pending_approval" ? (/* @__PURE__ */ new Date()).toISOString() : null
-      });
+      };
+      if (metadataToStore) {
+        vendorServicePayload.metadata = metadataToStore;
+      }
+      const vendorService = await insert("vendor_services", vendorServicePayload);
       return c.json({
         success: true,
         service: vendorService[0],
@@ -159722,7 +159960,9 @@ var roleMappings2 = {
   "pet_trainer": ["trainer", "pet_trainer", "trainer_center", "trainer_solo"],
   "trainer_center": ["trainer", "pet_trainer", "trainer_center", "trainer_solo"],
   "trainer_solo": ["trainer", "pet_trainer", "trainer_center", "trainer_solo"],
-  "pet_behaviorist": ["behaviorist", "pet_behaviorist", "trainer_solo", "trainer_center"],
+  "pet_behaviorist": ["behaviorist", "pet_behaviorist", "behaviorist_solo", "behaviorist_center"],
+  "behaviorist_solo": ["behaviorist_solo", "pet_behaviorist", "behaviorist"],
+  "behaviorist_center": ["behaviorist_center", "pet_behaviorist", "behaviorist"],
   "pet_sitter": ["sitter", "pet_sitter"],
   "sitter": ["sitter", "pet_sitter"],
   "pet_taxi": ["transport", "pet_transport", "pet_taxi", "relocation"],
@@ -170771,7 +171011,7 @@ function registerAddressEndpoints(app3) {
          ORDER BY is_default DESC, created_at DESC`,
         [customer[0].id]
       ).catch(() => ({ rows: [] }));
-      let list = addresses.rows.map((addr) => ({
+      const mapAddr = (addr) => ({
         id: addr.id,
         customerId: addr.customer_id,
         label: addr.address_type,
@@ -170784,10 +171024,16 @@ function registerAddressEndpoints(app3) {
         pincode: addr.pincode,
         landmark: addr.landmark,
         coordinates: addr.coordinates || null,
+        flatNo: addr.flat_no ?? void 0,
+        houseNo: addr.house_no ?? void 0,
+        floor: addr.floor ?? void 0,
+        streetName: addr.street_name ?? void 0,
+        apartmentName: addr.apartment_name ?? void 0,
         isDefault: addr.is_default,
         createdAt: addr.created_at,
         updatedAt: addr.updated_at
-      }));
+      });
+      let list = addresses.rows.map(mapAddr);
       const cust = customer[0];
       if (list.length === 0 && (cust?.address || cust?.pincode)) {
         list = [{
@@ -170893,6 +171139,11 @@ function registerAddressEndpoints(app3) {
           pincode: body.pincode,
           landmark: body.landmark || null,
           coordinates: body.coordinates || null,
+          flatNo: body.flatNo ?? body.flat_no ?? null,
+          houseNo: body.houseNo ?? body.house_no ?? null,
+          floor: body.floor ?? null,
+          streetName: body.streetName ?? body.street_name ?? null,
+          apartmentName: body.apartmentName ?? body.apartment_name ?? null,
           isDefault: body.isDefault !== void 0 ? body.isDefault : false
         };
       }
@@ -170951,6 +171202,11 @@ function registerAddressEndpoints(app3) {
           pincode: addressData.pincode,
           landmark: addressData.landmark || null,
           coordinates: addressData.coordinates ? typeof addressData.coordinates === "string" ? addressData.coordinates : JSON.stringify(addressData.coordinates) : null,
+          flat_no: addressData.flatNo || null,
+          house_no: addressData.houseNo || null,
+          floor: addressData.floor || null,
+          street_name: addressData.streetName || null,
+          apartment_name: addressData.apartmentName || null,
           is_default: shouldBeDefault
         });
       } catch (insertError) {
@@ -170991,6 +171247,11 @@ function registerAddressEndpoints(app3) {
         pincode: addr.pincode,
         landmark: addr.landmark,
         coordinates: addr.coordinates || null,
+        flatNo: addr.flat_no ?? void 0,
+        houseNo: addr.house_no ?? void 0,
+        floor: addr.floor ?? void 0,
+        streetName: addr.street_name ?? void 0,
+        apartmentName: addr.apartment_name ?? void 0,
         isDefault: addr.is_default,
         createdAt: addr.created_at,
         updatedAt: addr.updated_at
@@ -171022,25 +171283,31 @@ function registerAddressEndpoints(app3) {
          ORDER BY is_default DESC, created_at DESC`,
         [customer[0].id]
       ).catch(() => ({ rows: [] }));
+      const mapAddrById = (addr) => ({
+        id: addr.id,
+        customerId: addr.customer_id,
+        label: addr.address_type,
+        name: addr.full_name,
+        phone: addr.phone,
+        addressLine1: addr.address_line1,
+        addressLine2: addr.address_line2,
+        city: addr.city,
+        state: addr.state,
+        pincode: addr.pincode,
+        landmark: addr.landmark,
+        coordinates: addr.coordinates || null,
+        flatNo: addr.flat_no ?? void 0,
+        houseNo: addr.house_no ?? void 0,
+        floor: addr.floor ?? void 0,
+        streetName: addr.street_name ?? void 0,
+        apartmentName: addr.apartment_name ?? void 0,
+        isDefault: addr.is_default,
+        createdAt: addr.created_at,
+        updatedAt: addr.updated_at
+      });
       return c.json({
         success: true,
-        addresses: addresses.rows.map((addr) => ({
-          id: addr.id,
-          customerId: addr.customer_id,
-          label: addr.address_type,
-          name: addr.full_name,
-          phone: addr.phone,
-          addressLine1: addr.address_line1,
-          addressLine2: addr.address_line2,
-          city: addr.city,
-          state: addr.state,
-          pincode: addr.pincode,
-          landmark: addr.landmark,
-          coordinates: addr.coordinates || null,
-          isDefault: addr.is_default,
-          createdAt: addr.created_at,
-          updatedAt: addr.updated_at
-        }))
+        addresses: addresses.rows.map(mapAddrById)
       });
     } catch (error) {
       console.error("Error fetching addresses:", error);
@@ -171050,6 +171317,7 @@ function registerAddressEndpoints(app3) {
   app3.post("/customer/:customerId/addresses", async (c) => {
     try {
       const { customerId } = c.req.param();
+      const body = await c.req.json();
       const {
         label,
         name,
@@ -171062,7 +171330,12 @@ function registerAddressEndpoints(app3) {
         landmark,
         coordinates,
         isDefault = false
-      } = await c.req.json();
+      } = body;
+      const flatNo = body.flatNo ?? body.flat_no ?? null;
+      const houseNo = body.houseNo ?? body.house_no ?? null;
+      const floor = body.floor ?? null;
+      const streetName = body.streetName ?? body.street_name ?? null;
+      const apartmentName = body.apartmentName ?? body.apartment_name ?? null;
       if (!name || !phone || !addressLine1 || !city || !state || !pincode) {
         return c.json({ error: "name, phone, addressLine1, city, state, and pincode are required" }, 400);
       }
@@ -171097,6 +171370,11 @@ function registerAddressEndpoints(app3) {
         pincode,
         landmark: landmark || null,
         coordinates: coordinates || null,
+        flat_no: flatNo,
+        house_no: houseNo,
+        floor,
+        street_name: streetName,
+        apartment_name: apartmentName,
         is_default: shouldBeDefault
       });
       const allAddresses = await query(
@@ -171131,22 +171409,28 @@ function registerAddressEndpoints(app3) {
         ).catch(() => {
         });
       }
+      const updatePayload = {
+        address_type: updates.label || updates.address_type,
+        full_name: updates.name || updates.full_name,
+        phone: updates.phone,
+        address_line1: updates.addressLine1 || updates.address_line1,
+        address_line2: updates.addressLine2 || updates.address_line2,
+        city: updates.city,
+        state: updates.state,
+        pincode: updates.pincode,
+        landmark: updates.landmark,
+        coordinates: updates.coordinates,
+        is_default: updates.isDefault !== void 0 ? updates.isDefault : updates.is_default
+      };
+      if (updates.flatNo !== void 0 || updates.flat_no !== void 0) updatePayload.flat_no = updates.flatNo ?? updates.flat_no;
+      if (updates.houseNo !== void 0 || updates.house_no !== void 0) updatePayload.house_no = updates.houseNo ?? updates.house_no;
+      if (updates.floor !== void 0) updatePayload.floor = updates.floor;
+      if (updates.streetName !== void 0 || updates.street_name !== void 0) updatePayload.street_name = updates.streetName ?? updates.street_name;
+      if (updates.apartmentName !== void 0 || updates.apartment_name !== void 0) updatePayload.apartment_name = updates.apartmentName ?? updates.apartment_name;
       const updated = await update(
         "customer_addresses",
         { id: addressId, customer_id: customer[0].id },
-        {
-          address_type: updates.label || updates.address_type,
-          full_name: updates.name || updates.full_name,
-          phone: updates.phone,
-          address_line1: updates.addressLine1 || updates.address_line1,
-          address_line2: updates.addressLine2 || updates.address_line2,
-          city: updates.city,
-          state: updates.state,
-          pincode: updates.pincode,
-          landmark: updates.landmark,
-          coordinates: updates.coordinates,
-          is_default: updates.isDefault !== void 0 ? updates.isDefault : updates.is_default
-        }
+        updatePayload
       );
       if (updated.length === 0) {
         return c.json({ error: "Address not found" }, 404);
@@ -178109,6 +178393,13 @@ function registerVendorBookingsEndpoints(app3) {
           specializationIds: catalogService.length > 0 && Array.isArray(catalogService[0].specialization_ids) ? catalogService[0].specialization_ids : catalogService[0]?.specialization_ids ? [].concat(catalogService[0].specialization_ids) : [],
           specialization_ids: catalogService.length > 0 && Array.isArray(catalogService[0].specialization_ids) ? catalogService[0].specialization_ids : catalogService[0]?.specialization_ids ? [].concat(catalogService[0].specialization_ids) : []
         } : null,
+        // ✅ Home service: customer/delivery location for GPS tracking (vendor = start, customer = destination)
+        address_id: booking.address_id || null,
+        delivery_latitude: booking.delivery_latitude != null ? String(booking.delivery_latitude) : null,
+        delivery_longitude: booking.delivery_longitude != null ? String(booking.delivery_longitude) : null,
+        latitude: booking.latitude != null ? String(booking.latitude) : null,
+        longitude: booking.longitude != null ? String(booking.longitude) : null,
+        location: booking.delivery_address || (customer.length > 0 ? customer[0].address : null) || "Home Visit",
         // Vendor details
         vendorName: vendor.length > 0 ? vendor[0].business_name || vendor[0].full_name : null,
         vendorPhone: vendor.length > 0 ? vendor[0].phone : null,
@@ -184132,6 +184423,30 @@ function createSafeErrorResponse(error, defaultMessage = "Internal server error"
 
 // src/endpoints/admin-advanced.ts
 var COLORS = ["#FF8C42", "#10B981", "#3B82F6", "#F59E0B", "#EF4444", "#8B5CF6"];
+async function validateApplicableRolesAgainstActiveRoles(applicableRoles) {
+  if (!Array.isArray(applicableRoles) || applicableRoles.length === 0) {
+    return { valid: true };
+  }
+  const activeRoles = await select("roles", { is_active: true }, { limit: 200 });
+  const allowed = /* @__PURE__ */ new Set();
+  for (const r of activeRoles) {
+    const id = String(r.id || "").trim();
+    const name = String(r.name || "").trim();
+    if (id) allowed.add(id.toLowerCase());
+    if (name) allowed.add(name.toLowerCase().replace(/\s+/g, "_"));
+  }
+  const invalid = [];
+  for (const raw2 of applicableRoles) {
+    const s = String(raw2 || "").trim();
+    if (!s) continue;
+    const key = s.toLowerCase().replace(/\s+/g, "_");
+    if (!allowed.has(key) && !allowed.has(s.toLowerCase())) {
+      invalid.push(s);
+    }
+  }
+  if (invalid.length > 0) return { valid: false, invalid };
+  return { valid: true };
+}
 async function upsertAdminSetting(key, value, serviceType = "all") {
   try {
     const existing = await query(
@@ -185729,7 +186044,15 @@ function registerAdminAdvancedEndpoints(app3) {
       }
       const serviceId = code || `svc_admin_${serviceStyle}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
       const roles = applicableRoles || [];
-      if (roles.length === 0) {
+      if (roles.length > 0) {
+        const validation = await validateApplicableRolesAgainstActiveRoles(roles);
+        if (!validation.valid) {
+          return c.json({
+            success: false,
+            error: `applicable_roles must be active role ids/names from DB. Invalid: ${validation.invalid.join(", ")}`
+          }, 400);
+        }
+      } else {
         console.warn(`\u26A0\uFE0F Service ${serviceId} created without applicable_roles. Service won't be visible to vendors. Please assign roles via admin UI.`);
       }
       const newService = await insert("service_catalog", {
@@ -185781,6 +186104,19 @@ function registerAdminAdvancedEndpoints(app3) {
       if (body.display_order !== void 0) updateData.display_order = parseInt(body.display_order, 10);
       if (body.specialization_ids !== void 0) updateData.specialization_ids = body.specialization_ids;
       if (body.specializationIds !== void 0) updateData.specialization_ids = body.specializationIds;
+      if (body.applicable_roles !== void 0) updateData.applicable_roles = Array.isArray(body.applicable_roles) ? body.applicable_roles : [];
+      if (body.applicableRoles !== void 0) updateData.applicable_roles = Array.isArray(body.applicableRoles) ? body.applicableRoles : [];
+      if (body.service_style !== void 0) updateData.service_style = body.service_style;
+      if (body.serviceStyle !== void 0) updateData.service_style = body.serviceStyle;
+      if (updateData.applicable_roles && updateData.applicable_roles.length > 0) {
+        const validation = await validateApplicableRolesAgainstActiveRoles(updateData.applicable_roles);
+        if (!validation.valid) {
+          return c.json({
+            success: false,
+            error: `applicable_roles must be active role ids/names from DB. Invalid: ${validation.invalid.join(", ")}`
+          }, 400);
+        }
+      }
       try {
         const updated = await update("service_catalog", { id }, updateData);
         return c.json({
@@ -186451,11 +186787,19 @@ function registerAdminAdvancedEndpoints(app3) {
         return c.json({ success: false, error: "Policy name is required" }, 400);
       }
       const cancellationFee = cancellationWindows?.[0]?.penaltyPercentage || 0;
+      const policyTypeVal = policyType === "vendor_specific" || policyType === "service_specific" ? policyType : "standard";
+      const vendorTypesArr = Array.isArray(vendorTypes) ? vendorTypes : body.vendor_types && Array.isArray(body.vendor_types) ? body.vendor_types : [];
+      const serviceTypesArr = Array.isArray(serviceTypes) ? serviceTypes : body.service_types && Array.isArray(body.service_types) ? body.service_types : [];
+      const priorityVal = Number.isFinite(Number(priority)) ? Number(priority) : 0;
       const newPolicy = await insert("cancellation_policies", {
         policy_name: name,
         description: description || "",
-        hours_before_booking: gracePeriodHours || 2,
+        policy_type: policyTypeVal,
+        vendor_types: vendorTypesArr,
+        service_types: serviceTypesArr,
+        hours_before_booking: gracePeriodHours ?? 2,
         cancellation_fee_percentage: cancellationFee,
+        priority: priorityVal,
         is_active: isActive !== false,
         created_at: (/* @__PURE__ */ new Date()).toISOString(),
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
@@ -186479,7 +186823,13 @@ function registerAdminAdvancedEndpoints(app3) {
       };
       if (body.name !== void 0) updateData.policy_name = body.name;
       if (body.description !== void 0) updateData.description = body.description;
+      if (body.policyType !== void 0) {
+        updateData.policy_type = body.policyType === "vendor_specific" || body.policyType === "service_specific" ? body.policyType : "standard";
+      }
+      if (body.vendorTypes !== void 0) updateData.vendor_types = Array.isArray(body.vendorTypes) ? body.vendorTypes : body.vendor_types && Array.isArray(body.vendor_types) ? body.vendor_types : [];
+      if (body.serviceTypes !== void 0) updateData.service_types = Array.isArray(body.serviceTypes) ? body.serviceTypes : body.service_types && Array.isArray(body.service_types) ? body.service_types : [];
       if (body.gracePeriodHours !== void 0) updateData.hours_before_booking = body.gracePeriodHours;
+      if (body.priority !== void 0 && Number.isFinite(Number(body.priority))) updateData.priority = Number(body.priority);
       if (body.isActive !== void 0) updateData.is_active = body.isActive;
       if (body.cancellationWindows?.[0]?.penaltyPercentage !== void 0) {
         updateData.cancellation_fee_percentage = body.cancellationWindows[0].penaltyPercentage;
@@ -202675,11 +203025,15 @@ function registerAdminComprehensiveEndpoints(app3) {
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
+  const paymentRuleServiceLocationMap = { at_home: "home", at_center: "clinic", both: "both", tele: "tele", all: "all" };
+  const mapPaymentRuleServiceLocation = (raw2) => paymentRuleServiceLocationMap[String(raw2)] ?? (["home", "clinic", "both", "tele", "all"].includes(String(raw2)) ? String(raw2) : "all");
   app3.post("/admin/vendor-settings/payment-rules", async (c) => {
     try {
       const body = await c.req.json();
+      const service_location = mapPaymentRuleServiceLocation(body.serviceLocation ?? body.service_location ?? "all");
       const rule = await insert("vendor_payment_rules", {
         ...body,
+        service_location,
         created_at: (/* @__PURE__ */ new Date()).toISOString(),
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
@@ -202693,8 +203047,10 @@ function registerAdminComprehensiveEndpoints(app3) {
     try {
       const id = c.req.param("id");
       const body = await c.req.json();
+      const service_location = mapPaymentRuleServiceLocation(body.serviceLocation ?? body.service_location ?? "all");
       const updated = await update("vendor_payment_rules", { id }, {
         ...body,
+        service_location,
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       return c.json({ success: true, rule: updated[0] });
@@ -202722,9 +203078,9 @@ function registerAdminComprehensiveEndpoints(app3) {
   });
   const mapRefundTierBodyToDb = (body) => {
     const vendorTypes = Array.isArray(body.vendorTypes) ? body.vendorTypes : body.vendor_types ? Array.isArray(body.vendor_types) ? body.vendor_types : [] : [];
-    const serviceLocationMap = { at_home: "home", at_center: "clinic", both: "both" };
-    const rawLoc = body.serviceLocation ?? body.service_location ?? "both";
-    const service_location = serviceLocationMap[String(rawLoc)] ?? (rawLoc === "home" || rawLoc === "clinic" ? rawLoc : "both");
+    const serviceLocationMap = { at_home: "home", at_center: "clinic", both: "both", tele: "tele", all: "all" };
+    const rawLoc = body.serviceLocation ?? body.service_location ?? "all";
+    const service_location = serviceLocationMap[String(rawLoc)] ?? (["home", "clinic", "both", "tele", "all"].includes(String(rawLoc)) ? String(rawLoc) : "all");
     const hoursBeforeService = Number(body.hoursBeforeService ?? body.hours_before_service ?? 24);
     const refundPercentage = Number(body.refundPercentage ?? body.refund_percentage ?? 75);
     const cancellationFee = Number(body.cancellationFee ?? body.cancellation_fee ?? 0);
@@ -203335,6 +203691,9 @@ function registerProblemGridEndpoints(app3) {
         "pet_behavior": "behaviourist",
         "behaviourist_solo": "behaviourist",
         "behaviourist_center": "behaviourist",
+        "pet_behaviorist": "trainer",
+        "behaviorist_solo": "trainer",
+        "behaviorist_center": "trainer",
         // Boarding variations → boarding
         "boarding": "boarding",
         "pet_boarding": "boarding",
@@ -203564,7 +203923,19 @@ function registerProblemGridEndpoints(app3) {
         }
       }
       const subCategoryIds = mappingsResult.rows.map((r) => r.sub_category_id);
-      const roleIds = [...new Set(mappingsResult.rows.map((r) => r.role_id))];
+      let roleIds = [...new Set(mappingsResult.rows.map((r) => r.role_id))];
+      const problemRoleToVendorRoleNames = {
+        trainer: ["trainer", "trainer_solo", "trainer_center", "behaviorist_solo", "behaviorist_center"],
+        behaviourist: ["behaviourist", "behaviorist_solo", "behaviorist_center"],
+        behaviorist: ["behaviorist_solo", "behaviorist_center"]
+      };
+      let expandedRoleIds = [...roleIds];
+      for (const rid of roleIds) {
+        if (problemRoleToVendorRoleNames[rid]) {
+          expandedRoleIds = expandedRoleIds.concat(problemRoleToVendorRoleNames[rid]);
+        }
+      }
+      roleIds = [...new Set(expandedRoleIds)];
       let servicesQuery = `
         SELECT
           vs.id as service_id,
@@ -222100,7 +222471,9 @@ function getRoleDisplayName(roleId) {
     "pet_boarding": "Pet Boarding",
     "nutritionist": "Pet Nutritionist",
     "nutritionist_center": "Nutritionist Center",
-    "pet_behaviorist": "Pet Behaviorist"
+    "pet_behaviorist": "Pet Behaviorist",
+    "behaviorist_solo": "Behaviorist (Solo)",
+    "behaviorist_center": "Behaviorist Center"
   };
   return roleNames[roleId] || roleId;
 }
@@ -222616,6 +222989,40 @@ function registerSpecializationMasterEndpoints(app3) {
       return c.json({ success: false, error: error.message }, 500);
     }
   });
+  function getCategoriesForRole(roleName) {
+    const normalized = (roleName || "").toLowerCase().replace(/\s+/g, "_");
+    const roleToCategories = {
+      veterinarian: ["veterinary"],
+      vet_solo: ["veterinary"],
+      veterinary_clinic: ["veterinary"],
+      vet_clinic: ["veterinary"],
+      diagnostics_center: ["diagnostic", "veterinary"],
+      pet_groomer: ["grooming"],
+      groomer_center: ["grooming"],
+      groomer_solo: ["grooming"],
+      pet_trainer: ["training"],
+      trainer_center: ["training"],
+      trainer_solo: ["training"],
+      pet_behaviorist: ["training", "behavioral"],
+      behaviorist_solo: ["training", "behavioral"],
+      behaviorist_center: ["training", "behavioral"],
+      pet_walker: ["walking"],
+      walker: ["walking"],
+      pet_sitter: ["boarding"],
+      sitter: ["boarding"],
+      pet_boarding: ["boarding"],
+      boarding: ["boarding"],
+      nutritionist: ["nutrition"],
+      nutritionist_center: ["nutrition"],
+      pet_pharmacy: ["pharmacy"],
+      pharmacy: ["pharmacy"],
+      pet_ambulance: ["emergency"],
+      ambulance: ["emergency"],
+      pet_photographer: ["specialty"],
+      photographer: ["specialty"]
+    };
+    return roleToCategories[normalized] || [];
+  }
   function getRoleNamesForCatalog(roleName) {
     const normalized = (roleName || "").toLowerCase().replace(/\s+/g, "_");
     const map = {
@@ -222642,7 +223049,9 @@ function registerSpecializationMasterEndpoints(app3) {
       pet_trainer: ["trainer", "pet_trainer", "trainer_center", "trainer_solo"],
       trainer_center: ["trainer", "pet_trainer", "trainer_center", "trainer_solo"],
       trainer_solo: ["trainer", "pet_trainer", "trainer_center", "trainer_solo"],
-      pet_behaviorist: ["behaviorist", "pet_behaviorist", "trainer_solo", "trainer_center"],
+      pet_behaviorist: ["behaviorist", "pet_behaviorist", "behaviorist_solo", "behaviorist_center"],
+      behaviorist_solo: ["behaviorist_solo", "pet_behaviorist", "behaviorist"],
+      behaviorist_center: ["behaviorist_center", "pet_behaviorist", "behaviorist"],
       pet_sitter: ["sitter", "pet_sitter"],
       sitter: ["sitter", "pet_sitter"],
       pet_taxi: ["transport", "pet_transport", "pet_taxi", "relocation"],
@@ -222685,53 +223094,65 @@ function registerSpecializationMasterEndpoints(app3) {
       }
       const roleNames = getRoleNamesForCatalog(actualRoleId);
       let rows = [];
+      let categoriesFromServices = [];
       try {
-        const hasSpecIdsCol = await query(
-          `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'service_catalog' AND column_name = 'specialization_ids'`
-        ).then((r) => r.rows && r.rows.length > 0);
-        if (hasSpecIdsCol) {
-          const catalogSpecs = await query(
-            `SELECT DISTINCT unnest(specialization_ids) AS spec_id
-             FROM service_catalog
-             WHERE status = 'active'
-               AND applicable_roles && $1::text[]
-               AND specialization_ids IS NOT NULL
-               AND array_length(specialization_ids, 1) > 0`,
-            [roleNames]
-          );
-          const specIds = (catalogSpecs.rows || []).map((r) => r.spec_id).filter(Boolean);
-          if (specIds.length > 0) {
-            const placeholders = specIds.map((_, i) => `$${i + 1}`).join(", ");
-            const smResult = await query(
-              `SELECT sm.*
-               FROM specialization_master sm
-               WHERE sm.is_active = true
-                 AND sm.specialization_id IN (${placeholders})
-               ORDER BY sm.display_order, sm.name`,
-              specIds
-            );
-            rows = smResult.rows || [];
-            if (rows.length > 0) {
-              console.log("[SPEC-MASTER] Vendor specializations from catalog-by-role:", rows.length, "role:", actualRoleId);
-            }
-          }
-        }
-      } catch (catalogErr) {
-        console.warn("[SPEC-MASTER] Catalog-by-role path failed, using fallback:", catalogErr.message);
+        const catResult = await query(
+          `SELECT DISTINCT category_id
+           FROM service_catalog
+           WHERE status = 'active'
+             AND (publish_status = 'published' OR publish_status IS NULL)
+             AND applicable_roles && $1::text[]
+             AND array_length(applicable_roles, 1) > 0
+             AND category_id IS NOT NULL AND category_id != ''`,
+          [roleNames]
+        );
+        categoriesFromServices = (catResult.rows || []).map((r) => r.category_id).filter(Boolean);
+      } catch (e) {
+        console.warn("[SPEC-MASTER] Could not get categories from service_catalog:", e.message);
       }
-      if (rows.length === 0) {
-        const result = await query(
+      if (categoriesFromServices.length > 0) {
+        const smResult = await query(
           `SELECT sm.*
            FROM specialization_master sm
            WHERE sm.is_active = true
              AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
-             AND (sm.applicable_roles && $1::text[] OR $2 = ANY(sm.applicable_roles))
+             AND sm.category_id = ANY($1::text[])
            ORDER BY sm.display_order, sm.name`,
-          [roleNames, actualRoleId]
+          [categoriesFromServices]
         );
-        rows = result.rows || [];
+        rows = smResult.rows || [];
         if (rows.length > 0) {
-          console.log("[SPEC-MASTER] Vendor specializations from applicable_roles fallback:", rows.length, "role:", actualRoleId);
+          console.log("[SPEC-MASTER] Vendor specializations from role\u2192services\u2192categories (360):", rows.length, "role:", actualRoleId, "categories:", categoriesFromServices);
+        }
+      }
+      if (rows.length === 0) {
+        const categoriesForRole = getCategoriesForRole(actualRoleId);
+        if (categoriesForRole.length > 0) {
+          const result = await query(
+            `SELECT sm.*
+             FROM specialization_master sm
+             WHERE sm.is_active = true
+               AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
+               AND sm.category_id = ANY($1::text[])
+             ORDER BY sm.display_order, sm.name`,
+            [categoriesForRole]
+          );
+          rows = result.rows || [];
+        }
+        if (rows.length === 0) {
+          const result = await query(
+            `SELECT sm.*
+             FROM specialization_master sm
+             WHERE sm.is_active = true
+               AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
+               AND (sm.applicable_roles && $1::text[] OR $2 = ANY(sm.applicable_roles))
+             ORDER BY sm.display_order, sm.name`,
+            [roleNames, actualRoleId]
+          );
+          rows = result.rows || [];
+        }
+        if (rows.length > 0) {
+          console.log("[SPEC-MASTER] Vendor specializations from fallback (role\u2192category or applicable_roles):", rows.length, "role:", actualRoleId);
         }
       }
       return c.json({

@@ -405,6 +405,14 @@ export async function update(
   // Build SET clause
   for (const [key, value] of Object.entries(data)) {
     if (value !== undefined) {
+      // ✅ JSONB columns that store arrays (e.g. vendors.specializations) must be sent as JSON string + ::jsonb
+      const jsonbArrayColumns = new Set(['specializations']);
+      if (jsonbArrayColumns.has(key) && Array.isArray(value)) {
+        setClause.push(`${key} = $${paramIndex}::jsonb`);
+        params.push(JSON.stringify(value));
+        paramIndex++;
+        continue;
+      }
       // ✅ Arrays (TEXT[], etc.): pass as-is; node-pg serializes to PG array
       if (Array.isArray(value)) {
         setClause.push(`${key} = $${paramIndex}`);

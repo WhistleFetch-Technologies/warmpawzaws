@@ -75,6 +75,8 @@ function getRoleDisplayName(roleId: string): string {
     'nutritionist': 'Pet Nutritionist',
     'nutritionist_center': 'Nutritionist Center',
     'pet_behaviorist': 'Pet Behaviorist',
+    'behaviorist_solo': 'Behaviorist (Solo)',
+    'behaviorist_center': 'Behaviorist Center',
   };
   return roleNames[roleId] || roleId;
 }
@@ -741,6 +743,45 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
   // ========================================================================
   
   /**
+   * Role → category_id(s) for filtering vendor specializations by Catalog category.
+   * Master for specializations is defined per Category in Admin Catalog; vendor profile must show only that role's category.
+   */
+  function getCategoriesForRole(roleName: string): string[] {
+    const normalized = (roleName || '').toLowerCase().replace(/\s+/g, '_');
+    const roleToCategories: Record<string, string[]> = {
+      veterinarian: ['veterinary'],
+      vet_solo: ['veterinary'],
+      veterinary_clinic: ['veterinary'],
+      vet_clinic: ['veterinary'],
+      diagnostics_center: ['diagnostic', 'veterinary'],
+      pet_groomer: ['grooming'],
+      groomer_center: ['grooming'],
+      groomer_solo: ['grooming'],
+      pet_trainer: ['training'],
+      trainer_center: ['training'],
+      trainer_solo: ['training'],
+      pet_behaviorist: ['training', 'behavioral'],
+      behaviorist_solo: ['training', 'behavioral'],
+      behaviorist_center: ['training', 'behavioral'],
+      pet_walker: ['walking'],
+      walker: ['walking'],
+      pet_sitter: ['boarding'],
+      sitter: ['boarding'],
+      pet_boarding: ['boarding'],
+      boarding: ['boarding'],
+      nutritionist: ['nutrition'],
+      nutritionist_center: ['nutrition'],
+      pet_pharmacy: ['pharmacy'],
+      pharmacy: ['pharmacy'],
+      pet_ambulance: ['emergency'],
+      ambulance: ['emergency'],
+      pet_photographer: ['specialty'],
+      photographer: ['specialty'],
+    };
+    return roleToCategories[normalized] || [];
+  }
+
+  /**
    * Role names for service_catalog.applicable_roles overlap (align with service-catalog.ts roleMappings).
    * Used to find services mapped to this role, then load specializations from those services' category.
    */
@@ -770,7 +811,9 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
       pet_trainer: ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
       trainer_center: ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
       trainer_solo: ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
-      pet_behaviorist: ['behaviorist', 'pet_behaviorist', 'trainer_solo', 'trainer_center'],
+      pet_behaviorist: ['behaviorist', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center'],
+      behaviorist_solo: ['behaviorist_solo', 'pet_behaviorist', 'behaviorist'],
+      behaviorist_center: ['behaviorist_center', 'pet_behaviorist', 'behaviorist'],
       pet_sitter: ['sitter', 'pet_sitter'],
       sitter: ['sitter', 'pet_sitter'],
       pet_taxi: ['transport', 'pet_transport', 'pet_taxi', 'relocation'],
@@ -799,15 +842,15 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
 
   /**
    * GET /vendor/specializations/:roleId
-   * Get specialization options for vendor profile configuration.
-   * Loads dynamically: role → services mapped to role (service_catalog) → specializations from those services (category).
-   * Fallback: specialization_master where applicable_roles contains role and show_in_vendor_profile = true.
+   * 360° dynamic: Role → services (service_catalog) → categories (service masters) → specializations.
+   * Vendor has role ID; role has services (service_catalog.applicable_roles). Categories are service masters
+   * with specializations per category. Same categories drive service catalog and "What's your pet needs?" discovery.
    */
   app.get('/vendor/specializations/:roleId', async (c) => {
     try {
       const roleId = c.req.param('roleId');
       
-      // Handle UUID role IDs by looking up role name
+      // Resolve role name (UUID → name from roles table)
       let actualRoleId = roleId;
       if (roleId.includes('-')) {
         const roleResult = await query(
@@ -824,56 +867,71 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
       const roleNames = getRoleNamesForCatalog(actualRoleId);
       let rows: any[] = [];
 
-      // 1) Dynamic path: get specialization_ids from service_catalog for this role, then resolve from specialization_master
+      // 1) DYNAMIC: Get categories from services attached to this role (service_catalog = same as Catalog in admin)
+      //    Role → services (where applicable_roles contains role) → distinct category_id = "service masters"
+      let categoriesFromServices: string[] = [];
       try {
-        const hasSpecIdsCol = await query(
-          `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'service_catalog' AND column_name = 'specialization_ids'`
-        ).then((r: any) => r.rows && r.rows.length > 0);
-        if (hasSpecIdsCol) {
-          const catalogSpecs = await query(
-            `SELECT DISTINCT unnest(specialization_ids) AS spec_id
-             FROM service_catalog
-             WHERE status = 'active'
-               AND applicable_roles && $1::text[]
-               AND specialization_ids IS NOT NULL
-               AND array_length(specialization_ids, 1) > 0`,
-            [roleNames]
-          );
-          const specIds = (catalogSpecs.rows || []).map((r: any) => r.spec_id).filter(Boolean);
-          if (specIds.length > 0) {
-            const placeholders = specIds.map((_, i) => `$${i + 1}`).join(', ');
-            const smResult = await query(
-              `SELECT sm.*
-               FROM specialization_master sm
-               WHERE sm.is_active = true
-                 AND sm.specialization_id IN (${placeholders})
-               ORDER BY sm.display_order, sm.name`,
-              specIds
-            );
-            rows = smResult.rows || [];
-            if (rows.length > 0) {
-              console.log('[SPEC-MASTER] Vendor specializations from catalog-by-role:', rows.length, 'role:', actualRoleId);
-            }
-          }
-        }
-      } catch (catalogErr: any) {
-        console.warn('[SPEC-MASTER] Catalog-by-role path failed, using fallback:', catalogErr.message);
+        const catResult = await query(
+          `SELECT DISTINCT category_id
+           FROM service_catalog
+           WHERE status = 'active'
+             AND (publish_status = 'published' OR publish_status IS NULL)
+             AND applicable_roles && $1::text[]
+             AND array_length(applicable_roles, 1) > 0
+             AND category_id IS NOT NULL AND category_id != ''`,
+          [roleNames]
+        );
+        categoriesFromServices = (catResult.rows || []).map((r: any) => r.category_id).filter(Boolean);
+      } catch (e: any) {
+        console.warn('[SPEC-MASTER] Could not get categories from service_catalog:', e.message);
       }
 
-      // 2) Fallback: specialization_master where applicable_roles contains role and show_in_vendor_profile = true
-      if (rows.length === 0) {
-        const result = await query(
+      // 2) Get specializations for those categories from specialization_master (category has specializations for every service)
+      if (categoriesFromServices.length > 0) {
+        const smResult = await query(
           `SELECT sm.*
            FROM specialization_master sm
            WHERE sm.is_active = true
              AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
-             AND (sm.applicable_roles && $1::text[] OR $2 = ANY(sm.applicable_roles))
+             AND sm.category_id = ANY($1::text[])
            ORDER BY sm.display_order, sm.name`,
-          [roleNames, actualRoleId]
+          [categoriesFromServices]
         );
-        rows = result.rows || [];
+        rows = smResult.rows || [];
         if (rows.length > 0) {
-          console.log('[SPEC-MASTER] Vendor specializations from applicable_roles fallback:', rows.length, 'role:', actualRoleId);
+          console.log('[SPEC-MASTER] Vendor specializations from role→services→categories (360):', rows.length, 'role:', actualRoleId, 'categories:', categoriesFromServices);
+        }
+      }
+
+      // 3) Fallback: no services for role yet, or no categories – use role→category mapping then specialization_master
+      if (rows.length === 0) {
+        const categoriesForRole = getCategoriesForRole(actualRoleId);
+        if (categoriesForRole.length > 0) {
+          const result = await query(
+            `SELECT sm.*
+             FROM specialization_master sm
+             WHERE sm.is_active = true
+               AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
+               AND sm.category_id = ANY($1::text[])
+             ORDER BY sm.display_order, sm.name`,
+            [categoriesForRole]
+          );
+          rows = result.rows || [];
+        }
+        if (rows.length === 0) {
+          const result = await query(
+            `SELECT sm.*
+             FROM specialization_master sm
+             WHERE sm.is_active = true
+               AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
+               AND (sm.applicable_roles && $1::text[] OR $2 = ANY(sm.applicable_roles))
+             ORDER BY sm.display_order, sm.name`,
+            [roleNames, actualRoleId]
+          );
+          rows = result.rows || [];
+        }
+        if (rows.length > 0) {
+          console.log('[SPEC-MASTER] Vendor specializations from fallback (role→category or applicable_roles):', rows.length, 'role:', actualRoleId);
         }
       }
       

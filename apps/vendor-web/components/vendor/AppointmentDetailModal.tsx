@@ -143,13 +143,14 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       const data = await apiClient.get(`/vendor/bookings/${bookingId}/details`) as any;
       const rawBooking = data.booking;
       
-      // ✅ CRITICAL FIX: Also load booking history (includes prescriptions)
+      // ✅ CRITICAL FIX: Also load booking history (includes prescriptions + medical records for History tab)
       let historyData: any = null;
       try {
         historyData = await apiClient.get(`/bookings/${bookingId}/history`) as any;
       } catch (error) {
         console.warn('Could not load booking history:', error);
       }
+      const historyList = historyData?.data?.history ?? historyData?.history ?? [];
       
       // Map backend response to frontend Booking interface
       const mappedBooking: Booking = {
@@ -173,9 +174,9 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         // Service info
         serviceName: rawBooking.serviceName || 'Service',
         serviceType: rawBooking.serviceStyle || rawBooking.serviceType || 'at_center',
-        // ✅ FIX: Build location from vendor address or service style
-        location: rawBooking.location || rawBooking.vendorAddress || rawBooking.customerAddress || 
-          (rawBooking.serviceStyle === 'at_home' ? 'Home Visit' : 'At Clinic'),
+        // ✅ FIX: Build location from delivery/customer address or vendor (for GPS: home = customer address)
+        location: rawBooking.location || rawBooking.customerAddress || rawBooking.vendorAddress || 
+          (rawBooking.serviceStyle === 'at_home' || rawBooking.serviceType === 'at_home' ? 'Home Visit' : 'At Clinic'),
         status: rawBooking.status || 'pending',
         // Timestamps
         createdAt: rawBooking.createdAt,
@@ -196,6 +197,12 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         staffId: rawBooking.staffId || rawBooking.staff_id,
         // For lab/diagnostics: allow upload report
         serviceCategory: rawBooking.serviceCategory,
+        // ✅ Home service GPS: customer/delivery coordinates for tracking destination
+        latitude: rawBooking.latitude,
+        longitude: rawBooking.longitude,
+        delivery_latitude: rawBooking.delivery_latitude,
+        delivery_longitude: rawBooking.delivery_longitude,
+        address_id: rawBooking.address_id,
       };
       
       setBooking(mappedBooking);
@@ -210,7 +217,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       }));
       
       // Get activities from history (includes prescriptions)
-      const activitiesFromHistory = (historyData?.history || []).map((h: any) => ({
+      const activitiesFromHistory = (historyList || []).map((h: any) => ({
         id: h.id || `history_${h.type}_${h.timestamp}`,
         type: h.type === 'prescription' ? 'prescription' : h.type || 'status_change',
         description: h.description || (h.type === 'prescription' ? `Prescription created${h.prescription_data?.diagnosis ? ` - Diagnosis: ${h.prescription_data.diagnosis}` : ''}` : ''),
@@ -247,7 +254,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         }
       });
       // Merge prescriptions from history (so History tab shows them and Prescriptions tab is complete)
-      const fromHistory = (historyData?.history || [])
+      const fromHistory = (historyList || [])
         .filter((h: any) => h.type === 'prescription' && h.prescription_data)
         .map((h: any) => {
           const d = h.prescription_data;
@@ -307,11 +314,11 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     return isLabOrDiagnostics && canUploadReports;
   })();
 
-  // Service style: tele = video call; at_home/home = start travel
+  // Service style: tele = video call; at_home/home = start travel (use both serviceType and serviceStyle from API)
   const rawStyle = (booking?.serviceType || booking?.serviceStyle || booking?.service_style || '').toString().toLowerCase();
-  const isTeleStyle = ['tele', 'tele_consultation', 'video', 'online', 'instant_tele'].includes(rawStyle) ||
+  const isTeleStyle = ['tele', 'tele_consultation', 'video', 'online', 'instant_tele', 'video_consultation'].includes(rawStyle) ||
     (rawStyle && (rawStyle.includes('tele') || rawStyle.includes('video')));
-  const isHomeStyle = ['at_home', 'home'].includes(rawStyle);
+  const isHomeStyle = ['at_home', 'home', 'home_visit'].includes(rawStyle);
 
   // Helper to format booking time
   const formatBookingTime = (time: string | null | undefined): string => {
@@ -1128,15 +1135,32 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     <p className="text-xl font-bold text-green-600">₹{booking.price}</p>
                   </div>
                 </div>
+
+                {/* Create Prescription (Vet Summary) - post appointment: visible in details view for vet/nutritionist */}
+                {isVetOrNutritionist && booking.status !== 'cancelled' && (
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                    <p className="text-sm text-purple-700 font-medium mb-2">Consultation Summary (Prescription)</p>
+                    <p className="text-xs text-purple-600 mb-3">Add diagnosis, medicines, and notes. Saved to history for future vets and pet medical records.</p>
+                    <button
+                      onClick={() => setShowVetSummaryModal(true)}
+                      className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl font-medium flex items-center justify-center gap-2 hover:from-purple-700 hover:to-purple-800 transition-all shadow-md"
+                    >
+                      <Stethoscope className="w-5 h-5" />
+                      Add Consultation Summary (Prescription)
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
             {activeTab === 'history' && (
               <div className="p-4 space-y-3">
+                {/* Medical records / prescriptions appear here from loadAppointmentDetails (historyData.history + activities) */}
                 {activities.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <History className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                    <p>No activity yet</p>
+                    <p>No activity or medical records yet</p>
+                    <p className="text-xs text-gray-400 mt-1">Prescriptions and status changes will appear here</p>
                   </div>
                 ) : (
                   activities.map((activity) => {
@@ -1351,11 +1375,11 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   Video Call
                 </button>
               )}
-              {/* Home style: Start Travel, Mark Arrived, etc. (all providers) */}
+              {/* Home style: Start Travel, Mark Arrived, etc. (all providers) - mounted near Chat */}
               {isHomeStyle && booking.status !== 'completed' && booking.status !== 'cancelled' && (
                 <>
-                  {/* Phase 1: Start Travel (If confirmed) */}
-                  {booking.status === 'confirmed' && (
+                  {/* Phase 1: Start Travel (confirmed or pending = appointment received) */}
+                  {(booking.status === 'confirmed' || booking.status === 'pending') && (
                     <button
                       onClick={handleStartTravel}
                       disabled={processing}
@@ -1378,8 +1402,13 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     </button>
                   )}
 
-                  {/* Phase 3: Start Session (If Arrived & Walker/Trainer) */}
-                  {booking.status === 'arrived' && (vendorData?.roleId === 'pet_walker' || vendorData?.roleId === 'pet_trainer') && (
+                  {/* Phase 3: Start Session (If Arrived & Walker/Trainer/Behaviorist) */}
+                  {booking.status === 'arrived' && (() => {
+                    const roleId = String(vendorData?.roleId ?? vendorData?.role ?? vendorData?.roleName ?? '');
+                    return ['pet_walker', 'pet_trainer', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center'].some(
+                      r => roleId.toLowerCase() === r.toLowerCase()
+                    );
+                  })() && (
                     <button
                       onClick={() => {
                         setOtpAction('start');
@@ -1393,7 +1422,13 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   )}
 
                   {/* Phase 4: Complete (If In Progress or Arrived for non-session roles) */}
-                  {((booking.status === 'in_progress' && booking.arrived) || (booking.status === 'arrived' && vendorData?.roleId !== 'pet_walker' && vendorData?.roleId !== 'pet_trainer')) && (
+                  {((booking.status === 'in_progress' && booking.arrived) || (booking.status === 'arrived' && (() => {
+                    const roleId = String(vendorData?.roleId ?? vendorData?.role ?? vendorData?.roleName ?? '');
+                    const isSessionRole = ['pet_walker', 'pet_trainer', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center'].some(
+                      r => roleId.toLowerCase() === r.toLowerCase()
+                    );
+                    return !isSessionRole;
+                  })())) && (
                     <button
                       onClick={() => {
                         setOtpAction('complete');
@@ -1738,9 +1773,10 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         </div>
       )}
 
-      {/* A4 Prescription Document Modal (vet, patient, address, license, medicines, summary, advice, follow-up) */}
+      {/* A4 Prescription Document Modal (vet, patient, address, license, medicines, summary, advice, follow-up) - PDF style for history review */}
       {showA4Document && selectedPrescriptionForA4 && booking && (
         <PrescriptionDocument
+          showActions={true}
           prescription={transformPrescriptionData({
             ...selectedPrescriptionForA4,
             pet_name: booking.petName,

@@ -1,16 +1,9 @@
-// Runtime Configuration for Warmpawz Customer Portal
-// apiBaseUrl: injected at deploy; fallback for CloudFront (avoids ERR_CONNECTION_REFUSED)
-
-(function () {
-  const defaultApiBaseUrl = '';
-  const fallbackApiUrl = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
-  const defaultUatMode = true;
-
+// Runtime Configuration for Warmpawz customer-web
+// Injected at deployment - API base is API Gateway (backend), not CloudFront
+(function() {
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-    apiBaseUrl: defaultApiBaseUrl || fallbackApiUrl,
-    uatMode: defaultUatMode
+    apiBaseUrl: "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
+    uatMode: true
   };
-
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
-

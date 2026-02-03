@@ -2,26 +2,54 @@
 
 /**
  * SPECIALIZATION SELECTOR FOR CENTER PROFILES
- * 
- * Loads specializations from specialization_master (Catalog > Categories) so admin-created
- * specializations appear. Falls back to problem_grid_mappings if needed.
- * Uses exact same labels as customer-facing problem grid for perfect matching.
+ * Loads specializations from specialization_master (Catalog > Categories).
+ * All imports at top; no interleaved imports or * namespace to avoid TDZ.
  */
 
-import { useState, useEffect } from 'react';
-import * as LucideIcons from 'lucide-react';
+import { useState, useEffect, type ComponentType } from 'react';
+import {
+  Check,
+  Loader2,
+  AlertCircle,
+  Stethoscope,
+  Heart,
+  Dog,
+  Scissors,
+  Pill,
+  Apple,
+  Camera,
+  Shield,
+  Truck,
+  Home,
+  Video,
+} from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { Check, Loader2, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
+
+const SPEC_ICON_MAP: Record<string, ComponentType<{ className?: string }>> = {
+  Stethoscope,
+  Heart,
+  Dog,
+  Scissors,
+  Pill,
+  Apple,
+  Camera,
+  Shield,
+  Truck,
+  Home,
+  Video,
+};
 
 function SpecIcon({ spec }: { spec: { iconName?: string; iconColor?: string; icon?: string } }) {
-  if (spec.iconName && (LucideIcons as any)[spec.iconName]) {
-    const Icon = (LucideIcons as any)[spec.iconName];
-    return <Icon className={`w-6 h-6 ${spec.iconColor || 'text-gray-600'}`} />;
+  const IconComponent = spec.iconName ? SPEC_ICON_MAP[spec.iconName] : null;
+  if (IconComponent) {
+    return <IconComponent className={`w-6 h-6 ${spec.iconColor || 'text-gray-600'}`} />;
   }
-  return <span className="text-2xl">{spec.icon || '•'}</span>;
+  if (spec.icon && typeof spec.icon === 'string') {
+    return <span className="text-2xl">{spec.icon}</span>;
+  }
+  return <span className="text-2xl">•</span>;
 }
-import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
-import { toast } from 'sonner';
 
 interface SpecializationSelectorProps {
   roleId?: string;
@@ -37,16 +65,6 @@ export function SpecializationSelector({
   const [specializations, setSpecializations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (roleId) {
-      loadSpecializations();
-    } else {
-      // ✅ FIX B2: If roleId is not provided, stop loading and show error
-      setLoading(false);
-      setError('Role ID is required to load specializations');
-    }
-  }, [roleId]);
 
   const loadSpecializations = async () => {
     if (!roleId) {
@@ -85,6 +103,15 @@ export function SpecializationSelector({
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (roleId) {
+      loadSpecializations();
+    } else {
+      setLoading(false);
+      setError('Role ID is required to load specializations');
+    }
+  }, [roleId]);
 
   const toggleSpec = (specId: string) => {
     if (selected.includes(specId)) {

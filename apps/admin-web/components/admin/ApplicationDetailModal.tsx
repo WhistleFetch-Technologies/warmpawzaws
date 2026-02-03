@@ -335,29 +335,14 @@ export function ApplicationDetailModal({
   const handleRequestClarification = async () => {
     try {
       setClarifying(true);
-      // Try onboarding review endpoint first (proper state machine)
-      try {
-        const adminId = getAdminId() || 'admin'; // Fallback to 'admin' if not available
-        await apiClient.post(`/admin/vendor/onboarding/${appId}/review`, {
-          action: 'REQUEST_CLARIFICATION',
-          admin_id: adminId,
-          comments: clarificationNotes || 'Please provide additional information'
-        });
-        alert('Clarification request sent');
-        onRequestClarification();
-        onClose();
-        return;
-      } catch (onboardingError: any) {
-        // Fallback to compatibility endpoint
-        console.warn('Onboarding review endpoint failed, trying compatibility endpoint:', onboardingError);
-        await apiClient.post(`/admin/vendor/application/${appId}/request-clarification`, {
-          reviewerName: 'Admin',
-          notes: clarificationNotes || 'Please provide additional information'
-        });
-        alert('Clarification request sent');
-        onRequestClarification();
-        onClose();
-      }
+      // Request clarification uses notes/message only (rejection_reason is for reject only)
+      await apiClient.post(`/admin/vendor/application/${appId}/request-clarification`, {
+        notes: clarificationNotes || 'Please provide additional information',
+        message: clarificationNotes || 'Please provide additional information',
+      });
+      alert('Clarification request sent');
+      onRequestClarification();
+      onClose();
     } catch (error: any) {
       console.error('Error requesting clarification:', error);
       alert(error.message || 'Failed to send clarification request');

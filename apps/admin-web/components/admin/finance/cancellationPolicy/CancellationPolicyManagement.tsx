@@ -33,8 +33,10 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 
-const VENDOR_TYPES = [
+/** Fallback vendor types when API roles are not available; includes Tele. */
+const FALLBACK_VENDOR_TYPES = [
   { id: 'veterinarian', name: 'Veterinarian', icon: '⚕️' },
   { id: 'veterinary_clinic', name: 'Veterinary Clinic', icon: '🏥' },
   { id: 'pet_groomer', name: 'Pet Groomer', icon: '✂️' },
@@ -48,6 +50,9 @@ const VENDOR_TYPES = [
   { id: 'pet_cafe', name: 'Pet Cafe', icon: '☕' },
   { id: 'nutritionist', name: 'Nutritionist', icon: '🥗' },
   { id: 'pet_behaviorist', name: 'Pet Behaviorist', icon: '🧠' },
+  { id: 'tele', name: 'Tele / Video Consultation', icon: '📹' },
+  { id: 'adoption', name: 'Adoption', icon: '❤️' },
+  { id: 'breeder', name: 'Breeder', icon: '🐾' },
 ];
 
 const SERVICE_TYPES = [
@@ -88,6 +93,12 @@ interface CancellationPolicy {
   updatedAt?: string;
 }
 
+const POLICY_TYPE_HELP = {
+  standard: 'Applies to all vendors and services. Use for platform-wide default rules (e.g. 24h full refund).',
+  vendor_specific: 'Applies only to selected Vendor Types (e.g. Veterinarian, Groomer). When a customer cancels, the policy that matches the vendor’s role is used.',
+  service_specific: 'Applies only to selected Service Types (e.g. At Home, Video Consultation). When a customer cancels, the policy that matches how the service is delivered is used.',
+} as const;
+
 export function CancellationPolicyManagement() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -98,10 +109,54 @@ export function CancellationPolicyManagement() {
   const [filterType, setFilterType] = useState<
     'all' | 'standard' | 'vendor_specific' | 'service_specific'
   >('all');
+  const [vendorTypeOptions, setVendorTypeOptions] = useState<{ id: string; name: string; icon: string }[]>(FALLBACK_VENDOR_TYPES);
 
   useEffect(() => {
     loadPolicies();
   }, []);
+
+  useEffect(() => {
+    loadRolesForVendorTypes();
+  }, []);
+
+  const loadRolesForVendorTypes = async () => {
+    const roleToIcon: Record<string, string> = {
+      veterinarian: '⚕️', veterinary_clinic: '🏥', grooming: '✂️', groomer: '✂️', trainer: '🎓', walker: '🐕',
+      boarding: '🏖️', resort: '🏨', sitter: '🏡', pharmacy: '💊', nutritionist: '🥗', pet_cafe: '☕',
+      tele: '📹', adoption: '❤️', breeder: '🐾', behaviorist: '🧠',
+    };
+    const mapRolesToOptions = (roles: any[]): { id: string; name: string; icon: string }[] => {
+      const options = roles
+        .filter((r: any) => r.is_active !== false)
+        .map((r: any) => ({
+          id: (r.code ?? r.id ?? r.name ?? '').toString().toLowerCase().replace(/\s+/g, '_'),
+          name: r.display_name ?? r.name ?? r.code ?? '',
+          icon: roleToIcon[(r.code ?? r.name ?? '').toString().toLowerCase()] ?? '📌',
+        }))
+        .filter((o: { id: string }) => o.id);
+      const hasTele = options.some((o: { id: string }) => o.id === 'tele' || o.id === 'video_consultation');
+      if (!hasTele) {
+        options.push({ id: 'tele', name: 'Tele / Video Consultation', icon: '📹' });
+      }
+      return options;
+    };
+    try {
+      let data = await apiClient.get<any>('/config/roles').catch(() => null);
+      let roles = (data as any)?.roles ?? (data as any)?.data?.roles ?? [];
+      if (!Array.isArray(roles) || roles.length === 0) {
+        data = await apiClient.get<any>('/admin/roles').catch(() => null);
+        roles = (data as any)?.roles ?? (data as any)?.data?.roles ?? [];
+      }
+      if (Array.isArray(roles) && roles.length > 0) {
+        const options = mapRolesToOptions(roles);
+        setVendorTypeOptions(options.length > 0 ? options : FALLBACK_VENDOR_TYPES);
+      } else {
+        setVendorTypeOptions(FALLBACK_VENDOR_TYPES);
+      }
+    } catch {
+      setVendorTypeOptions(FALLBACK_VENDOR_TYPES);
+    }
+  };
 
   /** Normalize API row (snake_case, flat) to UI shape (camelCase, with arrays) */
   const normalizePolicy = (row: any): CancellationPolicy => {
@@ -113,7 +168,7 @@ export function CancellationPolicyManagement() {
       policyType: (row.policyType ?? row.policy_type ?? 'standard') as CancellationPolicy['policyType'],
       vendorTypes: arr(row.vendorTypes ?? row.vendor_types),
       serviceTypes: arr(row.serviceTypes ?? row.service_types),
-      gracePeriodHours: row.gracePeriodHours ?? row.hours_before_booking ?? 2,
+      gracePeriodHours: Number(row.gracePeriodHours ?? row.hours_before_booking ?? 2) || 2,
       cancellationWindows: arr(row.cancellationWindows ?? row.cancellation_windows).length
         ? arr(row.cancellationWindows ?? row.cancellation_windows)
         : [
@@ -213,9 +268,12 @@ export function CancellationPolicyManagement() {
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-black text-xl font-semibold">Cancellation Policy</h2>
-          <p className="text-gray-500 text-sm mt-1">Manage cancellation rules and policies</p>
+        <div className="flex items-center gap-2">
+          <div>
+            <h2 className="text-black text-xl font-semibold">Cancellation Policy</h2>
+            <p className="text-gray-500 text-sm mt-1">Manage cancellation rules and policies</p>
+          </div>
+          <PolicyHelpButton docKey="finance-cancellation-policy" />
         </div>
         <Button
           onClick={() => {
@@ -435,26 +493,31 @@ export function CancellationPolicyManagement() {
                     <option value="vendor_specific">Vendor Specific</option>
                     <option value="service_specific">Service Specific</option>
                   </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {POLICY_TYPE_HELP[editingPolicy.policyType]}
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label>Grace Period (hours)</Label>
                   <Input
                     type="number"
-                    value={editingPolicy.gracePeriodHours}
-                    onChange={(e) =>
+                    min={0}
+                    value={Number.isFinite(editingPolicy.gracePeriodHours) ? editingPolicy.gracePeriodHours : ''}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
                       setEditingPolicy({
                         ...editingPolicy,
-                        gracePeriodHours: parseInt(e.target.value),
-                      })
-                    }
+                        gracePeriodHours: Number.isFinite(v) ? Math.max(0, v) : 2,
+                      });
+                    }}
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label>Vendor Types</Label>
+                <Label>Vendor Types {editingPolicy.policyType === 'vendor_specific' ? '(select which roles this policy applies to)' : '(optional; used when Policy Type is Vendor Specific)'}</Label>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3 border p-4 rounded-lg max-h-60 overflow-y-auto">
-                  {VENDOR_TYPES.map((type) => (
+                  {vendorTypeOptions.map((type) => (
                     <div key={type.id} className="flex items-center gap-2">
                       <Checkbox
                         checked={(editingPolicy.vendorTypes ?? []).includes(type.id)}
@@ -481,7 +544,7 @@ export function CancellationPolicyManagement() {
               </div>
 
               <div className="space-y-2">
-                <Label>Service Types</Label>
+                <Label>Service Types {editingPolicy.policyType === 'service_specific' ? '(select which delivery types this policy applies to)' : '(optional; used when Policy Type is Service Specific)'}</Label>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3 border p-4 rounded-lg">
                   {SERVICE_TYPES.map((type) => (
                     <div key={type.id} className="flex items-center gap-2">

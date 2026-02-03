@@ -306,18 +306,23 @@ class SelectRoleHandlerEnhanced extends BaseHandlerEnhanced {
 
       const identity = identities[0];
 
-      // Validate role exists and is active
-      const roles = await select('roles', { id: role_id, is_active: true });
+      // Validate role exists and is active (support both UUID id and canonical name)
+      let roles = await select('roles', { id: role_id, is_active: true });
+      if (roles.length === 0) {
+        roles = await select('roles', { name: role_id, is_active: true });
+      }
       if (roles.length === 0) {
         return this.error('Role not found or inactive', 404, 'NOT_FOUND', undefined, requestId);
       }
+      const selectedRole = roles[0];
+      const resolvedRoleId = selectedRole.id;
 
-      // Update identity with selected role
+      // Update identity with selected role (store DB id so downstream uses consistent id)
       await update(
         'vendor_identity',
         { id: identity.id },
         {
-          selected_role_id: role_id,
+          selected_role_id: resolvedRoleId,
           updated_at: new Date().toISOString(),
         }
       );

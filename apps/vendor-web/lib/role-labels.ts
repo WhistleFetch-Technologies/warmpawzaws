@@ -334,6 +334,16 @@ export const ROLE_LABELS: Record<string, RoleLabels> = {
     atHomeLabel: 'Home Training',
     teleLabel: 'Online Training',
   },
+
+  pet_behaviorist: {
+    ...ROLE_LABELS.pet_trainer,
+  },
+  behaviorist_solo: {
+    ...ROLE_LABELS.pet_trainer,
+  },
+  behaviorist_center: {
+    ...ROLE_LABELS.pet_trainer,
+  },
   
   // =====================
   // WALKING & SITTING ROLES

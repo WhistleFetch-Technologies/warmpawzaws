@@ -1141,8 +1141,7 @@ class GetBookingHistoryHandlerEnhanced extends BaseHandlerEnhanced {
         FROM prescriptions p
         LEFT JOIN vendors v ON v.id = p.vendor_id
         LEFT JOIN staff s ON s.id = p.staff_id
-        WHERE p.booking_id = $1 
-          AND p.is_active = true
+        WHERE p.booking_id = $1
         ORDER BY p.created_at ASC`,
         [bookingId]
       );

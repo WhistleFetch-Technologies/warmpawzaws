@@ -69,7 +69,7 @@ const ROLE_CATEGORIES = {
     icon: GraduationCap,
     color: 'indigo',
     description: 'Training, behavior modification & education',
-    roles: ['pet_trainer', 'training_solo', 'pet_behaviorist', 'trainer_center', 'trainer_solo'],
+    roles: ['pet_trainer', 'training_solo', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center', 'trainer_center', 'trainer_solo'],
   },
   petcare: {
     name: 'Pet Care Services',
@@ -128,7 +128,11 @@ const ROLE_ICONS: Record<string, any> = {
   // Training
   'pet_trainer': GraduationCap,
   'training_solo': GraduationCap,
+  'trainer_solo': GraduationCap,
+  'trainer_center': GraduationCap,
   'pet_behaviorist': Brain,
+  'behaviorist_solo': Brain,
+  'behaviorist_center': Brain,
   // Pet Care
   'pet_walker': Dog,
   'walker_solo': Dog,
@@ -222,6 +226,34 @@ function getFallbackRoles(): Role[] {
       capabilities: ['catalog', 'inventory', 'orders'],
       order: 3,
       isActive: true
+    },
+    {
+      id: 'behaviorist_solo',
+      name: 'behaviorist_solo',
+      display_name: 'Behaviorist (Solo)',
+      description: 'Pet behavior modification and training services',
+      icon: 'training',
+      features: ['Programs', 'Progress', 'Home & Center', 'Online'],
+      vendorTypes: ['service_provider'],
+      serviceStyles: ['at_home', 'at_center', 'online'],
+      pricingControl: { canControlPrice: true, canControlDuration: true },
+      capabilities: ['bookings', 'progress_tracking', 'chat', 'staff', 'schedule', 'custom_services', 'packages'],
+      order: 10,
+      isActive: true
+    },
+    {
+      id: 'behaviorist_center',
+      name: 'behaviorist_center',
+      display_name: 'Behaviorist Center',
+      description: 'Behavior center with multiple behaviorists',
+      icon: 'training',
+      features: ['Programs', 'Progress', 'Home & Center', 'Online'],
+      vendorTypes: ['service_provider'],
+      serviceStyles: ['at_home', 'at_center', 'online'],
+      pricingControl: { canControlPrice: true, canControlDuration: true },
+      capabilities: ['bookings', 'progress_tracking', 'chat', 'staff', 'schedule', 'custom_services', 'packages'],
+      order: 11,
+      isActive: true
     }
   ];
 }
@@ -253,6 +285,8 @@ const ROLE_ENHANCED_INFO: Record<string, { tagline: string; services: string[] }
   'grooming_salon': { tagline: 'Full-service grooming salon', services: ['Spa treatments', 'Breed-specific cuts', 'Walk-in welcome'] },
   'pet_trainer': { tagline: 'Obedience & behavior training', services: ['Basic obedience', 'Puppy training', 'Group classes'] },
   'pet_behaviorist': { tagline: 'Behavior modification specialist', services: ['Aggression therapy', 'Anxiety treatment', 'Video sessions'] },
+  'behaviorist_solo': { tagline: 'Behavior modification specialist', services: ['Aggression therapy', 'Anxiety treatment', 'Video sessions'] },
+  'behaviorist_center': { tagline: 'Behavior center with multiple behaviorists', services: ['Aggression therapy', 'Anxiety treatment', 'Group programs'] },
   'pet_walker': { tagline: 'Daily walks & exercise', services: ['Solo walks', 'Group walks', 'GPS tracking', 'Photo updates'] },
   'pet_sitter': { tagline: 'In-home pet care & sitting', services: ['Day care', 'Overnight stays', 'Feeding & medication'] },
   'pet_boarding': { tagline: 'Safe boarding & daycare', services: ['Overnight boarding', 'Day care', 'CCTV monitoring'] },
@@ -315,7 +349,10 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
         category: r.category ?? r.config?.category,
       }));
       const activeRoles = normalized.filter((r: Role) => r.isActive !== false);
-      const uniqueRoles = Array.from(new Map(activeRoles.map((r: Role) => [r.id, r])).values());
+      // Dedupe by stable key: prefer role name (behaviorist_solo, trainer_solo) so API roles with UUID id still show once
+      const uniqueRoles = Array.from(
+        new Map(activeRoles.map((r: Role) => [(r.name || r.id || '').toString(), r])).values()
+      );
       let finalRoles = uniqueRoles as Role[];
       // If API returned empty (e.g. roles table issue), show fallback so UI is never blank
       if (finalRoles.length === 0) {
@@ -361,7 +398,8 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
 
     roles.forEach(role => {
       const roleCategory = (role as Role & { category?: string }).category;
-      const roleIdOrName = role.id || role.name;
+      // Prefer name for category matching so API roles with UUID id but canonical name (e.g. behaviorist_solo) group correctly
+      const roleIdOrName = role.name || role.id;
 
       // 1) Use API category when it's one of our display categories
       if (roleCategory && DISPLAY_CATEGORY_KEYS.includes(roleCategory as typeof DISPLAY_CATEGORY_KEYS[number]) && groups[roleCategory]) {
@@ -369,7 +407,7 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
         return;
       }
 
-      // 2) Fallback: match by role id/name against ROLE_CATEGORIES
+      // 2) Fallback: match by role name/id against ROLE_CATEGORIES
       let assigned = false;
       for (const [key, category] of Object.entries(ROLE_CATEGORIES)) {
         if (category.roles.includes(roleIdOrName)) {
@@ -397,7 +435,7 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
       const matchingRoles = categoryRoles.filter(role => {
         const displayName = (role.display_name || role.name).toLowerCase();
         const description = (role.description || '').toLowerCase();
-        const enhancedInfo = ROLE_ENHANCED_INFO[role.id];
+        const enhancedInfo = ROLE_ENHANCED_INFO[role.name || role.id];
         const tagline = enhancedInfo?.tagline?.toLowerCase() || '';
         const services = enhancedInfo?.services?.join(' ').toLowerCase() || '';
         
@@ -448,8 +486,8 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
     return colors[color] || colors.gray;
   };
 
-  const getRoleIcon = (roleId: string) => {
-    return ROLE_ICONS[roleId] || Package;
+  const getRoleIcon = (roleIdOrName: string) => {
+    return ROLE_ICONS[roleIdOrName] || Package;
   };
 
   const totalResults = Object.values(filteredGroups).reduce((sum, roles) => sum + roles.length, 0);
@@ -574,14 +612,15 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
                   {isExpanded && (
                     <div className="divide-y divide-gray-100">
                       {categoryRoles.map((role) => {
-                        const RoleIcon = getRoleIcon(role.id);
-                        const enhancedInfo = ROLE_ENHANCED_INFO[role.id];
+                        const roleKey = role.name || role.id;
+                        const RoleIcon = getRoleIcon(roleKey);
+                        const enhancedInfo = ROLE_ENHANCED_INFO[roleKey];
                         const serviceStyles = role.selectedServiceStyles || role.serviceStyles || [];
                         const vendorConfig = role.vendorConfiguration;
 
                         return (
                           <button
-                            key={role.id}
+                            key={role.id || roleKey}
                             onClick={() => onRoleSelect(role.id)}
                             className="w-full p-3.5 bg-white hover:bg-gray-50 transition-colors text-left group"
                           >

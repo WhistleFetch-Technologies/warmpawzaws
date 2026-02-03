@@ -93,7 +93,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
         return c.json({ success: true, records: [], total: 0, message: 'No customer found' });
       }
       
-      const petIds = customerRows.map((r: any) => r.pet_id).filter(Boolean);
+      const petIds = [...new Set(customerRows.map((r: any) => r.pet_id).filter(Boolean))] as string[];
       
       if (petIds.length === 0) {
         return c.json({ success: true, records: [], total: 0, message: 'No pets found' });
@@ -124,26 +124,65 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       params.push(limit, offset);
 
       const result = await query(queryText, params);
-      const records = (result as any) || [];
+      const mrRows = (result as any)?.rows || (result as any) || [];
+      const recordsFromMr = mrRows.map((r: any) => ({
+        id: r.id,
+        pet_id: r.pet_id,
+        pet_name: r.pet_name,
+        record_type: r.record_type,
+        title: r.title || r.record_type,
+        description: r.description || r.notes,
+        veterinarian_name: r.veterinarian_name,
+        clinic_name: r.vendor_name,
+        date: r.record_date || r.created_at,
+        attachments: r.attachments || [],
+        notes: r.notes,
+        document_url: r.document_url || null,
+        booking_id: r.booking_id || null,
+        source: 'medical_records',
+      }));
+
+      // ✅ Include prescriptions for same pets (vendor history = customer pet profile medical records)
+      let prescriptionRecords: any[] = [];
+      try {
+        const prescResult = await query(
+          `SELECT p.id, p.booking_id, p.pet_id, p.medications, p.instructions, p.diagnosis, p.prescription_date, p.follow_up_date, p.created_at,
+                  v.business_name as vendor_name, v.owner_name as veterinarian_name
+           FROM prescriptions p
+           LEFT JOIN vendors v ON v.id = p.vendor_id
+           WHERE p.pet_id = ANY($1::uuid[])
+           ORDER BY p.created_at DESC LIMIT $2 OFFSET $3`,
+          [petIds, limit, offset]
+        );
+        const prescRows = (prescResult as any)?.rows || [];
+        prescriptionRecords = prescRows.map((p: any) => ({
+          id: p.id,
+          pet_id: p.pet_id,
+          pet_name: customerRows.find((r: any) => r.pet_id === p.pet_id)?.pet_name || null,
+          record_type: 'prescription',
+          title: 'Prescription',
+          description: p.diagnosis ? `Diagnosis: ${p.diagnosis}` : (p.instructions || 'Consultation summary'),
+          veterinarian_name: p.veterinarian_name,
+          clinic_name: p.vendor_name,
+          date: p.prescription_date || p.created_at,
+          attachments: [],
+          notes: p.instructions || null,
+          document_url: null,
+          booking_id: p.booking_id || null,
+          source: 'prescriptions',
+        }));
+      } catch (prescErr: any) {
+        console.warn('[MEDICAL-RECORDS] Prescriptions fetch failed (non-blocking):', prescErr?.message);
+      }
+
+      const allRecords = [...recordsFromMr, ...prescriptionRecords].sort(
+        (a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
+      ).slice(0, limit);
 
       return c.json({
         success: true,
-        records: records.map((r: any) => ({
-          id: r.id,
-          pet_id: r.pet_id,
-          pet_name: r.pet_name,
-          record_type: r.record_type,
-          title: r.title || r.record_type,
-          description: r.description || r.notes,
-          veterinarian_name: r.veterinarian_name,
-          clinic_name: r.vendor_name,
-          date: r.record_date || r.created_at,
-          attachments: r.attachments || [],
-          notes: r.notes,
-          document_url: r.document_url || null,
-          booking_id: r.booking_id || null,
-        })),
-        total: records.length,
+        records: allRecords,
+        total: allRecords.length,
       });
 
     } catch (error: any) {

@@ -39,6 +39,7 @@ import { toast } from 'sonner';
 import { PaymentRulesSection } from '../paymentPolicies/PaymentRulesSection';
 import { RefundPoliciesSection } from '../refundPolicies/RefundPoliciesSection';
 import { SettlementScheduleSettings } from '../scheduleSettings/SettlementScheduleSettings';
+import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 
 interface RefundRule {
   hours: number;
@@ -218,11 +219,14 @@ export function AdminPaymentSettings() {
   return (
     <div className="space-y-6 w-full max-w-full">
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-900">Payment & Refund Settings</h2>
-          <p className="text-sm text-slate-500">
-            Configure gateways, payment rules, and refund policies
-          </p>
+        <div className="flex items-center gap-2">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">Payment & Refund Settings</h2>
+            <p className="text-sm text-slate-500">
+              Configure gateways, payment rules, and refund policies
+            </p>
+          </div>
+          <PolicyHelpButton docKey="finance-payment-gateway" />
         </div>
       </div>
 

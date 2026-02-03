@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 
 interface HSNCode {
   id: string;
@@ -168,9 +169,12 @@ export function GSTConfigurationManagement() {
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-black text-xl font-semibold">GST Configuration</h2>
-          <p className="text-gray-500 text-sm mt-1">Manage GST rates and HSN codes</p>
+        <div className="flex items-center gap-2">
+          <div>
+            <h2 className="text-black text-xl font-semibold">GST Configuration</h2>
+            <p className="text-gray-500 text-sm mt-1">Manage GST rates and HSN codes</p>
+          </div>
+          <PolicyHelpButton docKey="finance-gst-configuration" />
         </div>
         <div className="flex items-center gap-2">
           <Button onClick={loadData} variant="outline" size="sm">

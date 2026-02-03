@@ -246,7 +246,7 @@ export function PhotographyBookingRouter({
       
       // Load customer addresses from API
       try {
-        const addressResponse = await apiClient.get(`/customer/${phone}/addresses`) as any;
+        const addressResponse = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
         if (addressResponse.addresses && addressResponse.addresses.length > 0) {
           setAddresses(addressResponse.addresses);
         }
@@ -296,7 +296,7 @@ export function PhotographyBookingRouter({
   // Refresh addresses after adding new one
   const refreshAddresses = async () => {
     try {
-      const addressResponse = await apiClient.get(`/customer/${phone}/addresses`) as any;
+      const addressResponse = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
       if (addressResponse.addresses && addressResponse.addresses.length > 0) {
         setAddresses(addressResponse.addresses);
         // Auto-select newly added address
@@ -1406,7 +1406,7 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
     setLoading(true);
     try {
       // Get existing addresses
-      const getAddressData = await apiClient.get(`/customer/${phone}/addresses`) as any;
+      const getAddressData = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
       let existingAddresses = [];
       if (Array.isArray(getAddressData)) {
         existingAddresses = getAddressData;

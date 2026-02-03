@@ -145,6 +145,7 @@ export const ROLE_NAME_MAPPING: Record<string, string> = {
   // UI name -> DB name
   'groomer': 'pet_groomer',
   'trainer': 'pet_trainer',
+  'behaviorist': 'pet_behaviorist',
   'nutritionist': 'pet_nutritionist',
   'walker': 'pet_walker',
   'shelter': 'pet_adoption_center',
@@ -152,6 +153,7 @@ export const ROLE_NAME_MAPPING: Record<string, string> = {
   // DB name -> UI name (reverse mapping)
   'pet_groomer': 'groomer',
   'pet_trainer': 'trainer',
+  'pet_behaviorist': 'behaviorist',
   'pet_nutritionist': 'nutritionist',
   'pet_walker': 'walker',
   'pet_adoption_center': 'shelter',
@@ -274,6 +276,42 @@ export const ROLE_CONFIGS: Record<string, Partial<RoleConfig>> = {
     displayName: 'Pet Trainer',
     icon: '🎯',
     color: 'orange',
+    category: 'training',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+      { id: 'training_programs', label: 'Programs', icon: '📚', priority: 4 },
+      { id: 'progress_tracking', label: 'Progress', icon: '📈', priority: 5 },
+      { id: 'staff', label: 'Staff Management', icon: '👥', priority: 7, requiresCapability: 'staff_create' },
+    ],
+    primaryActions: ['view_sessions', 'log_progress', 'create_program'],
+    quickStats: ['active_programs', 'sessions_today', 'graduation_rate', 'monthly_revenue'],
+  },
+
+  // Behaviorist: same as Trainer (training & behavior modification)
+  behaviorist: {
+    displayName: 'Behaviorist',
+    icon: '🧠',
+    color: 'indigo',
+    category: 'training',
+    dashboardSections: [
+      ...COMMON_SECTIONS.map(s => ({ 
+        ...s, 
+        requiresCapability: s.id === 'bookings' ? 'booking_create' : s.id === 'services' ? 'service_pricing' : undefined 
+      })),
+      { id: 'training_programs', label: 'Programs', icon: '📚', priority: 4 },
+      { id: 'progress_tracking', label: 'Progress', icon: '📈', priority: 5 },
+      { id: 'staff', label: 'Staff Management', icon: '👥', priority: 7, requiresCapability: 'staff_create' },
+    ],
+    primaryActions: ['view_sessions', 'log_progress', 'create_program'],
+    quickStats: ['active_programs', 'sessions_today', 'graduation_rate', 'monthly_revenue'],
+  },
+  pet_behaviorist: {
+    displayName: 'Behaviorist',
+    icon: '🧠',
+    color: 'indigo',
     category: 'training',
     dashboardSections: [
       ...COMMON_SECTIONS.map(s => ({ 

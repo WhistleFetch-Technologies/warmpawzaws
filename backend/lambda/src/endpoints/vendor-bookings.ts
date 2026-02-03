@@ -709,6 +709,14 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           specialization_ids: catalogService.length > 0 && Array.isArray(catalogService[0].specialization_ids) ? catalogService[0].specialization_ids : (catalogService[0]?.specialization_ids ? [].concat(catalogService[0].specialization_ids) : []),
         } : null,
         
+        // ✅ Home service: customer/delivery location for GPS tracking (vendor = start, customer = destination)
+        address_id: (booking as any).address_id || null,
+        delivery_latitude: (booking as any).delivery_latitude != null ? String((booking as any).delivery_latitude) : null,
+        delivery_longitude: (booking as any).delivery_longitude != null ? String((booking as any).delivery_longitude) : null,
+        latitude: (booking as any).latitude != null ? String((booking as any).latitude) : null,
+        longitude: (booking as any).longitude != null ? String((booking as any).longitude) : null,
+        location: (booking as any).delivery_address || (customer.length > 0 ? customer[0].address : null) || 'Home Visit',
+
         // Vendor details
         vendorName: vendor.length > 0 ? vendor[0].business_name || vendor[0].full_name : null,
         vendorPhone: vendor.length > 0 ? vendor[0].phone : null,

@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
+import { PolicyHelpButton } from "@/components/PolicyHelpButton";
 
 interface DeliveryRule {
 	id: string;
@@ -148,11 +149,14 @@ export function DeliveryRulesManager() {
 	return (
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
-				<div>
-					<h2 className="text-2xl font-bold">Delivery Rules</h2>
-					<p className="text-gray-500">
-						Configure automatic partner selection based on order conditions
-					</p>
+				<div className="flex items-center gap-2">
+					<div>
+						<h2 className="text-2xl font-bold">Delivery Rules</h2>
+						<p className="text-gray-500">
+							Configure automatic partner selection based on order conditions
+						</p>
+					</div>
+					<PolicyHelpButton docKey="logistics-delivery-rules" />
 				</div>
 				<Button
 					onClick={() => {

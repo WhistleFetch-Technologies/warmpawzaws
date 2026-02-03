@@ -63,7 +63,7 @@ export function AddVetSummaryModal({ appointmentId, petName, vendorId, staffId: 
     });
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (saveAsDraft = false) => {
     if (!summary.diagnosis) {
       toast.error('Please enter diagnosis');
       return;
@@ -75,6 +75,7 @@ export function AddVetSummaryModal({ appointmentId, petName, vendorId, staffId: 
 
     try {
       setSaving(true);
+      const status = saveAsDraft ? 'draft' : 'published';
       await apiClient.post(`/prescriptions`, {
         bookingId: appointmentId,
         vendorId: resolvedVendorId.trim(),
@@ -93,8 +94,9 @@ export function AddVetSummaryModal({ appointmentId, petName, vendorId, staffId: 
         },
         symptoms: summary.symptoms,
         followUpDays: summary.followUpDays ? parseInt(summary.followUpDays) : null,
+        status,
       });
-      toast.success('Consultation summary saved!');
+      toast.success(saveAsDraft ? 'Saved as draft. You can publish later from History.' : 'Consultation summary published! Shared in chat.');
       onSuccess();
     } catch (error) {
       toast.error('Failed to save summary');
@@ -260,18 +262,27 @@ export function AddVetSummaryModal({ appointmentId, petName, vendorId, staffId: 
           </div>
         </div>
 
-        {/* Footer */}
+        {/* Footer: Draft (CRUD) and Publish */}
         <div className="p-4 border-t border-gray-200 flex gap-3">
           <Button variant="outline" onClick={onClose} className="flex-1">
             Cancel
           </Button>
           <Button 
-            onClick={handleSubmit} 
+            variant="outline"
+            onClick={() => handleSubmit(true)} 
+            disabled={saving}
+            className="flex-1"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <FileText className="w-4 h-4 mr-2" />}
+            Save as Draft
+          </Button>
+          <Button 
+            onClick={() => handleSubmit(false)} 
             disabled={saving}
             className="flex-1 bg-blue-600 hover:bg-blue-700"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-            Save Summary
+            Publish
           </Button>
         </div>
       </div>

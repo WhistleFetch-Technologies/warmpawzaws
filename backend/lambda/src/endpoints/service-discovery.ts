@@ -1292,34 +1292,98 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
   /**
    * GET /customer/vendor/:vendorId/available-slots
-   * Get available time slots for a vendor based on their operating hours
-   * ✅ FIX: Must be registered BEFORE /customer/vendor/:vendorId to avoid route conflict
-   * ✅ FIX B6: Returns slots based on vendor timings instead of static slots
-   * ✅ FIX GAP 3.3: For at_home/tele services, includes staff-specific availability
+   * Get available time slots for a vendor based on ADVANCED AVAILABILITY only (vendor_availability_v2).
+   * No basic/operating-hours fallback - service booking uses only advanced schedule.
+   * Enforces: (1) past booking window + admin buffer, (2) holidays & breaks, (3) service style per slot,
+   * (4) buffer between bookings, (5) max capacity per slot when defined.
    */
   app.get("/customer/vendor/:vendorId/available-slots", async (c) => {
     try {
       const { vendorId } = c.req.param();
       const date = c.req.query('date');
       const serviceStyle = c.req.query('serviceStyle') || 'at_home';
-      const staffId = c.req.query('staffId'); // Optional: specific staff filter
-      const serviceId = c.req.query('serviceId'); // Optional: specific service filter
+      const staffId = c.req.query('staffId');
+      const serviceId = c.req.query('serviceId');
+      const totalDuration = Math.max(15, parseInt(c.req.query('totalDuration') || '30', 10) || 30);
 
       if (!date) {
         return c.json({ error: 'date parameter is required' }, 400);
       }
 
-      // Get vendor with operating hours
       const vendors = await select('vendors', { id: vendorId });
       if (vendors.length === 0) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
       const vendor = vendors[0];
+      const requestedDate = new Date(date);
+      const dayOfWeek = requestedDate.getDay();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const requestedDateOnly = new Date(requestedDate);
+      requestedDateOnly.setHours(0, 0, 0, 0);
+      const isToday = requestedDateOnly.getTime() === today.getTime();
+      const now = new Date();
+
+      // Scheduling policy: min notice (past booking window) - used for both staff and va2 paths
+      let minNoticeMinutes = 30;
+      try {
+        const policies = await query(`SELECT policy_type, policy_config FROM scheduling_policies WHERE is_active = true`).catch(() => ({ rows: [] }));
+        const bufferPolicy = policies.rows.find((p: any) => p.policy_type === 'buffer_time');
+        if (bufferPolicy?.policy_config) {
+          const cfg = bufferPolicy.policy_config as any;
+          minNoticeMinutes = cfg.minBufferTime ?? cfg.minNoticeMinutes ?? 30;
+        }
+      } catch (_) { /* ignore */ }
+      const minBookingTime = new Date(now.getTime() + minNoticeMinutes * 60 * 1000);
+
+      // ---------- 1) Holiday check: no slots if vendor has holiday on this date ----------
+      let isHoliday = false;
+      try {
+        const holEnhanced = await query(
+          `SELECT 1 FROM vendor_holidays_enhanced 
+           WHERE vendor_id = $1 AND is_active = true
+             AND ($2::date >= start_date AND $2::date <= end_date)
+           LIMIT 1`,
+          [vendorId, date]
+        ).catch(() => ({ rows: [] }));
+        if (holEnhanced.rows.length > 0) {
+          isHoliday = true;
+        }
+      } catch {
+        // ignore
+      }
+      if (!isHoliday) {
+        try {
+          const holLegacy = await query(
+            `SELECT 1 FROM vendor_holidays WHERE vendor_id = $1 AND date = $2 LIMIT 1`,
+            [vendorId, date]
+          ).catch(() => ({ rows: [] }));
+          if (holLegacy.rows.length > 0) isHoliday = true;
+        } catch {
+          // ignore
+        }
+      }
+      if (!isHoliday && vendor.metadata && (vendor.metadata as any).vacation_mode?.isActive) {
+        const vm = (vendor.metadata as any).vacation_mode;
+        const start = new Date(vm.startDate);
+        const end = new Date(vm.endDate);
+        if (requestedDate >= start && requestedDate <= end) isHoliday = true;
+      }
+      if (isHoliday) {
+        return c.json({
+          success: true,
+          slots: [],
+          date,
+          vendorId,
+          serviceStyle,
+          staffBased: false,
+          message: 'Vendor is on holiday or vacation on this date',
+        });
+      }
       
-      // ✅ FIX GAP 3.3: For at_home and tele services, check staff availability instead
+      // Staff-based availability (at_home/tele): still uses staff_availability_slots; past-window enforced below
       if (serviceStyle === 'at_home' || serviceStyle === 'tele') {
-        // Get staff-specific availability for this service style
         let staffQuery = `
           SELECT DISTINCT 
             sas.id as slot_id,
@@ -1415,15 +1479,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             while (currentHour < endHour || (currentHour === endHour && currentMin < endMin)) {
               const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`;
               
-              // ✅ FIX: Only check if slot is in the past if it's TODAY
-              // For future dates, don't mark slots as unavailable due to time
+              // ✅ ENFORCE: Past booking window (scheduling policy min notice)
               let isPast = false;
               if (isToday) {
                 const slotDateTime = new Date(requestedDate);
                 slotDateTime.setHours(currentHour, currentMin, 0, 0);
-                isPast = slotDateTime < now;
+                isPast = slotDateTime < minBookingTime;
               }
-              // For future dates, isPast remains false
 
               // Check if booked for this staff
               const isBooked = staffBookedTimes.has(timeStr);
@@ -1468,19 +1530,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         // If no staff availability found, fall through to vendor_availability_v2 then operating hours
       }
 
-      // ✅ ENFORCE: Check vendor_availability_v2 FIRST (advanced scheduler) before operating_hours
-      const requestedDate = new Date(date);
-      const dayOfWeek = requestedDate.getDay();
+      // ---------- 2) Advanced availability only: vendor_availability_v2 (no basic fallback) ----------
       let va2Slots: any[] = [];
       try {
         const va2Result = await query(
-          `SELECT *, time_window_start as start_time, time_window_end as end_time 
+          `SELECT id, time_window_start, time_window_end, start_time, end_time,
+                  COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
+                  buffer_time, buffer_time_minutes, max_capacity, service_style, service_styles
            FROM vendor_availability_v2
            WHERE vendor_id = $1
-           AND day_of_week = $2
-           AND (COALESCE(service_style, service_type) = $3 
-                OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
-           AND COALESCE(is_enabled, is_available, true) = true
+             AND day_of_week = $2
+             AND (COALESCE(service_style, service_type) = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
+             AND COALESCE(is_enabled, is_available, true) = true
            ORDER BY COALESCE(time_window_start, start_time)`,
           [vendorId, dayOfWeek, serviceStyle]
         );
@@ -1488,12 +1549,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       } catch (e) {
         try {
           const va2ResultAlt = await query(
-            `SELECT *, start_time as time_window_start, end_time as time_window_end 
+            `SELECT id, start_time as time_window_start, end_time as time_window_end,
+                    time_window_start as start_time, time_window_end as end_time,
+                    slot_duration_minutes, buffer_time, buffer_time_minutes, max_capacity, service_style, service_styles
              FROM vendor_availability_v2
-             WHERE vendor_id = $1
-             AND day_of_week = $2
-             AND (service_type = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
-             AND COALESCE(is_available, is_enabled, true) = true
+             WHERE vendor_id = $1 AND day_of_week = $2
+               AND (service_type = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
+               AND COALESCE(is_available, is_enabled, true) = true
              ORDER BY start_time`,
             [vendorId, dayOfWeek, serviceStyle]
           );
@@ -1501,54 +1563,117 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         } catch (_) { /* ignore */ }
       }
 
-      if (va2Slots.length > 0) {
-        // Generate slots from vendor_availability_v2
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const requestedDateOnly = new Date(requestedDate);
-        requestedDateOnly.setHours(0, 0, 0, 0);
-        const isToday = requestedDateOnly.getTime() === today.getTime();
-        const now = new Date();
+      // Breaks for this day
+      let breaks: { startTime: string; endTime: string }[] = [];
+      try {
+        const breakRows = await query(
+          `SELECT start_time, end_time FROM vendor_breaks
+           WHERE vendor_id = $1 AND is_active = true
+             AND ((is_recurring = true AND day_of_week = $2) OR break_date = $3::date)`,
+          [vendorId, dayOfWeek, date]
+        ).catch(() => ({ rows: [] }));
+        breaks = breakRows.rows.map((r: any) => ({
+          startTime: typeof r.start_time === 'string' ? r.start_time.substring(0, 5) : r.start_time,
+          endTime: typeof r.end_time === 'string' ? r.end_time.substring(0, 5) : r.end_time,
+        }));
+      } catch (_) { /* ignore */ }
 
-        const existingBookingsResult = await query(
-          `SELECT booking_time FROM bookings 
-           WHERE vendor_id = $1 AND booking_date = $2 
-           AND status NOT IN ('cancelled', 'rejected')`,
+      const timeToMinutes = (t: string): number => {
+        const s = typeof t === 'string' ? t.substring(0, 5) : String(t);
+        const [h, m] = s.split(':').map(Number);
+        return (h || 0) * 60 + (m || 0);
+      };
+
+      // Existing bookings with duration (for buffer overlap and capacity)
+      let existingBookings: { booking_time: string; duration_minutes: number }[] = [];
+      try {
+        const bookResult = await query(
+          `SELECT booking_time, COALESCE(duration_minutes, 30) as duration_minutes
+           FROM bookings
+           WHERE vendor_id = $1 AND booking_date = $2
+             AND status NOT IN ('cancelled', 'rejected', 'no_show')`,
           [vendorId, date]
         ).catch(() => ({ rows: [] }));
-        const bookedTimes = new Set(
-          existingBookingsResult.rows.map((b: any) => {
-            const t = b.booking_time;
-            return typeof t === 'string' ? t.substring(0, 5) : t;
-          })
-        );
+        existingBookings = bookResult.rows.map((b: any) => ({
+          booking_time: typeof b.booking_time === 'string' ? b.booking_time.substring(0, 5) : b.booking_time,
+          duration_minutes: Number(b.duration_minutes) || 30,
+        }));
+      } catch (_) { /* ignore */ }
 
+      if (va2Slots.length > 0) {
         const slots: any[] = [];
-        for (const slot of va2Slots) {
-          const startTime = slot.time_window_start || slot.start_time;
-          const endTime = slot.time_window_end || slot.end_time;
+        for (const row of va2Slots) {
+          const startTime = row.time_window_start || row.start_time;
+          const endTime = row.time_window_end || row.end_time;
           if (!startTime || !endTime) continue;
-          const [openHour, openMin] = startTime.split(':').map(Number);
-          const [closeHour, closeMin] = endTime.split(':').map(Number);
-          let currentHour = openHour;
-          let currentMin = openMin;
-          while (currentHour < closeHour || (currentHour === closeHour && currentMin < closeMin)) {
-            const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`;
-            let isPast = false;
+          const slotDuration = Number(row.slot_duration_minutes) || 30;
+          const bufferMinutes = Number(row.buffer_time ?? row.buffer_time_minutes) || minNoticeMinutes;
+          const maxCapacity = row.max_capacity != null && row.max_capacity !== '' ? parseInt(String(row.max_capacity), 10) : null;
+
+          const winStart = timeToMinutes(startTime);
+          const winEnd = timeToMinutes(endTime);
+          let currentMinutes = winStart;
+
+          while (currentMinutes + slotDuration <= winEnd) {
+            const timeStr = `${String(Math.floor(currentMinutes / 60)).padStart(2, '0')}:${String(currentMinutes % 60).padStart(2, '0')}`;
+
+            // 1) Past booking window
             if (isToday) {
-              const slotDt = new Date(requestedDate);
-              slotDt.setHours(currentHour, currentMin, 0, 0);
-              isPast = slotDt < now;
+              const slotDateTime = new Date(requestedDate);
+              slotDateTime.setHours(Math.floor(currentMinutes / 60), currentMinutes % 60, 0, 0);
+              if (slotDateTime < minBookingTime) {
+                currentMinutes += slotDuration;
+                continue;
+              }
             }
-            const isBooked = bookedTimes.has(timeStr);
-            slots.push({ time: timeStr, available: !isPast && !isBooked, booked: isBooked });
-            currentMin += 30;
-            if (currentMin >= 60) { currentMin -= 60; currentHour += 1; }
+
+            // 2) Break overlap
+            const slotEndMin = currentMinutes + totalDuration;
+            const inBreak = breaks.some((brk: { startTime: string; endTime: string }) => {
+              const bStart = timeToMinutes(brk.startTime);
+              const bEnd = timeToMinutes(brk.endTime);
+              return currentMinutes < bEnd && slotEndMin > bStart;
+            });
+            if (inBreak) {
+              currentMinutes += slotDuration;
+              continue;
+            }
+
+            // 3) Buffer overlap with existing bookings (slot start + totalDuration + buffer vs booking start + duration + buffer)
+            const slotEndWithBuffer = currentMinutes + totalDuration + bufferMinutes;
+            const overlapsBooking = existingBookings.some((b: { booking_time: string; duration_minutes: number }) => {
+              const bStart = timeToMinutes(b.booking_time);
+              const bEnd = bStart + b.duration_minutes + bufferMinutes;
+              return currentMinutes < bEnd && slotEndWithBuffer > bStart;
+            });
+            if (overlapsBooking) {
+              currentMinutes += slotDuration;
+              continue;
+            }
+
+            // 5) Max capacity (only when defined): count bookings at this start time; if not defined, do not enforce
+            let available = true;
+            if (maxCapacity != null && maxCapacity > 0) {
+              const norm = (t: string) => (typeof t === 'string' ? t.substring(0, 5) : String(t));
+              const sameStartCount = existingBookings.filter(
+                (b: { booking_time: string }) => norm(b.booking_time) === timeStr
+              ).length;
+              available = sameStartCount < maxCapacity;
+            }
+
+            slots.push({
+              time: timeStr,
+              available,
+              booked: !available,
+            });
+            currentMinutes += slotDuration;
           }
         }
+
+        const sortedSlots = slots.sort((a, b) => a.time.localeCompare(b.time));
         return c.json({
           success: true,
-          slots: slots.sort((a, b) => a.time.localeCompare(b.time)),
+          slots: sortedSlots,
           date,
           vendorId,
           serviceStyle,
@@ -1556,153 +1681,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         });
       }
 
-      // Fallback: operating hours (legacy - only when vendor_availability_v2 has no slots)
-      let operatingHours: any = null;
-      
-      // 1. Try vendor.operating_hours column (if exists)
-      if (vendor.operating_hours) {
-        try {
-          operatingHours = typeof vendor.operating_hours === 'string' 
-            ? JSON.parse(vendor.operating_hours) 
-            : vendor.operating_hours;
-        } catch (e) {
-          console.warn('[SLOTS] Failed to parse vendor.operating_hours:', e);
-        }
-      }
-
-      // 2. Try metadata.operatingHours (fallback)
-      if (!operatingHours && vendor.metadata) {
-        try {
-          const metadata = typeof vendor.metadata === 'string' 
-            ? JSON.parse(vendor.metadata) 
-            : vendor.metadata;
-          operatingHours = metadata?.operatingHours || metadata?.operating_hours;
-        } catch (e) {
-          console.warn('[SLOTS] Failed to parse metadata:', e);
-        }
-      }
-      
-      // 3. Try vendor_facilities table (primary source for center profile)
-      if (!operatingHours) {
-        try {
-          const facilities = await query(
-            `SELECT operating_hours FROM vendor_facilities WHERE vendor_id = $1 LIMIT 1`,
-            [vendorId]
-          );
-          if (facilities.rows.length > 0 && facilities.rows[0].operating_hours) {
-            const facilityHours = facilities.rows[0].operating_hours;
-            operatingHours = typeof facilityHours === 'string' 
-              ? JSON.parse(facilityHours) 
-              : facilityHours;
-            console.log('[SLOTS] Loaded operating hours from vendor_facilities');
-          }
-        } catch (e) {
-          console.warn('[SLOTS] Failed to load from vendor_facilities:', e);
-        }
-      }
-
-      // Day of week (0 = Sunday, 6 = Saturday) - requestedDate/dayOfWeek already defined above
-      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-      const dayName = dayNames[dayOfWeek];
-
-      // ✅ FIX: Only check if slot is in the past if the date is TODAY
-      // For future dates, all slots should be available (unless booked)
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const requestedDateOnly = new Date(requestedDate);
-      requestedDateOnly.setHours(0, 0, 0, 0);
-      const isToday = requestedDateOnly.getTime() === today.getTime();
-
-      // Get existing bookings for this date to mark booked slots as unavailable
-      const existingBookingsResult = await query(
-        `SELECT booking_time FROM bookings 
-         WHERE vendor_id = $1 
-         AND booking_date = $2 
-         AND status NOT IN ('cancelled', 'rejected')`,
-        [vendorId, date]
-      ).catch(() => ({ rows: [] }));
-      
-      const bookedTimes = new Set(
-        existingBookingsResult.rows.map((b: any) => {
-          // Handle different time formats (HH:MM:SS or HH:MM)
-          const time = b.booking_time;
-          if (typeof time === 'string') {
-            return time.substring(0, 5); // Get HH:MM
-          }
-          return time;
-        })
-      );
-      
-      console.log(`[SLOTS] Found ${bookedTimes.size} booked slots for ${date}:`, Array.from(bookedTimes));
-
-      // Generate slots based on operating hours
-      const slots: any[] = [];
-      
-      if (operatingHours && operatingHours[dayName]) {
-        const daySchedule = operatingHours[dayName];
-        
-        if (daySchedule.isOpen && daySchedule.open && daySchedule.close) {
-          // Generate 30-minute slots between open and close
-          const [openHour, openMin] = daySchedule.open.split(':').map(Number);
-          const [closeHour, closeMin] = daySchedule.close.split(':').map(Number);
-          
-          let currentHour = openHour;
-          let currentMin = openMin;
-          
-          while (currentHour < closeHour || (currentHour === closeHour && currentMin < closeMin)) {
-            const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`;
-            
-            // ✅ FIX: Only check if slot is in the past if it's TODAY
-            // For future dates, don't mark slots as unavailable due to time
-            let isPast = false;
-            if (isToday) {
-              const now = new Date();
-              const slotDateTime = new Date(requestedDate);
-              slotDateTime.setHours(currentHour, currentMin, 0, 0);
-              isPast = slotDateTime < now;
-            }
-            // For future dates, isPast remains false
-            
-            // Check if slot is already booked
-            const isBooked = bookedTimes.has(timeStr);
-            
-            slots.push({
-              time: timeStr,
-              available: !isPast && !isBooked,
-              booked: isBooked,
-            });
-            
-            // Increment by 30 minutes
-            currentMin += 30;
-            if (currentMin >= 60) {
-              currentMin -= 60;
-              currentHour += 1;
-            }
-          }
-        }
-      } else {
-        // Fallback: If no operating hours, return default slots (9 AM - 6 PM)
-        const defaultSlots = [
-          '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-          '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
-        ];
-        slots.push(...defaultSlots.map(time => {
-          const isBooked = bookedTimes.has(time);
-          return {
-            time,
-            available: !isBooked,
-            booked: isBooked,
-          };
-        }));
-      }
-
+      // No advanced availability: return empty (service booking uses only advanced availability)
       return c.json({
         success: true,
-        slots,
+        slots: [],
         date,
         vendorId,
         serviceStyle,
         staffBased: false,
+        message: 'No advanced availability set for this day and service type. Vendor can set schedule in Advanced Availability.',
       });
     } catch (error: any) {
       console.error('Error fetching available slots:', error);
@@ -2194,37 +2181,32 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
    */
   app.get("/customer/vendors/discover-by-problem", async (c) => {
     try {
-      const problem = c.req.query('problem');
+      const problem = c.req.query('problem') || c.req.query('problemId');
       const roleId = c.req.query('roleId');
       const latitude = c.req.query('latitude');
       const longitude = c.req.query('longitude');
 
       if (!problem) {
-        return c.json({ error: 'problem is required' }, 400);
+        return c.json({ error: 'problem or problemId is required' }, 400);
       }
 
-      // Get vendors that handle this problem
+      // Get vendors that handle this problem (specialization_id): check vendors.specializations, metadata.specializations, vendor_specializations, or service name/description
+      const problemPattern = `%${problem}%`;
       let queryText = `
         SELECT DISTINCT v.*, r.name as role_name, r.display_name as role_display_name
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
+          AND (
+            (v.specializations IS NOT NULL AND v.specializations::text ILIKE $2) OR
+            (v.metadata IS NOT NULL AND v.metadata->'specializations' IS NOT NULL AND v.metadata->'specializations'::text ILIKE $2) OR
+            EXISTS (SELECT 1 FROM vendor_specializations vs WHERE vs.vendor_id = v.id AND (vs.specialization = $1 OR vs.specialization ILIKE $2)) OR
+            EXISTS (SELECT 1 FROM vendor_services s WHERE s.vendor_id = v.id AND s.is_enabled = true AND (s.service_name ILIKE $2 OR (s.custom_description IS NOT NULL AND s.custom_description::text ILIKE $2)))
+          )
       `;
 
-      const params: any[] = [];
-      let paramIdx = 1;
-
-      // Filter by problem (check specializations, services, or problem_grid)
-      queryText += ` AND (
-        v.specializations::text ILIKE $${paramIdx} OR
-        EXISTS (
-          SELECT 1 FROM services s
-          WHERE s.vendor_id = v.id
-          AND (s.name ILIKE $${paramIdx} OR s.description ILIKE $${paramIdx})
-        )
-      )`;
-      params.push(`%${problem}%`);
-      paramIdx++;
+      const params: any[] = [problem, problemPattern];
+      let paramIdx = 3;
 
       if (roleId) {
         // ✅ FIX: Use only role name comparison (case-insensitive), not id::text
@@ -2592,10 +2574,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         metadataChanged = true;
       }
       
-      // Specializations (stored in metadata)
+      // Specializations (stored in metadata + vendors.specializations column + vendor_specializations table for 360° discovery)
       if (facilityData.specializations !== undefined) {
-        updatedMetadata.specializations = facilityData.specializations;
+        const specArr = Array.isArray(facilityData.specializations)
+          ? facilityData.specializations
+          : (typeof facilityData.specializations === 'string' ? [facilityData.specializations] : []);
+        updatedMetadata.specializations = specArr;
         metadataChanged = true;
+        // Sync to vendors.specializations column so /customer/vendors/discover-by-problem works
+        updateData.specializations = specArr;
+        // vendor_specializations table will be synced below after vendor update
       }
       
       // Facility photos (stored in metadata)
@@ -2692,6 +2680,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         return c.json({ error: 'Failed to update facility' }, 500);
       }
 
+      // 360°: Sync specializations to vendor_specializations table so /customer/services/by-problem and /customer/vendors/by-problem discover correctly
+      const specArr = facilityData.specializations !== undefined
+        ? (Array.isArray(facilityData.specializations) ? facilityData.specializations : (typeof facilityData.specializations === 'string' ? [facilityData.specializations] : []))
+        : null;
+      if (specArr !== null) {
+        try {
+          await query('DELETE FROM vendor_specializations WHERE vendor_id = $1', [vendorId]);
+          for (const spec of specArr) {
+            const s = typeof spec === 'string' ? spec.trim() : (spec?.id ?? spec?.specializationId ?? String(spec));
+            if (s) {
+              await insert('vendor_specializations', { vendor_id: vendorId, specialization: s });
+            }
+          }
+        } catch (syncErr: any) {
+          console.warn('[FACILITY] vendor_specializations sync failed (non-fatal):', syncErr?.message);
+        }
+      }
+
       return c.json({
         success: true,
         message: 'Facility updated successfully',
@@ -2705,6 +2711,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           operating_hours: updated[0].operating_hours,
           amenities: (updated[0].metadata as any)?.amenities || [],
           photos: (updated[0].metadata as any)?.facility_photos || [],
+          specializations: (updated[0].metadata as any)?.specializations ?? (updated[0].specializations ?? []),
         },
       });
     } catch (error: any) {

@@ -82,9 +82,13 @@ Service style = **where** the service is delivered. Used for discovery (at clini
         ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  VENDOR: Profile & onboarding                                            │
-│  vendor_specializations (vendor picks from specialization_master        │
-│  by role → GET /vendor/specializations/:roleId)                          │
-│  Vendors enable catalog services → vendor_services                       │
+│  GET /vendor/specializations/:roleId — 360° dynamic:                     │
+│    Role → services (service_catalog.applicable_roles) →                   │
+│    distinct category_id (service masters) →                               │
+│    specializations from specialization_master (category_id).              │
+│  Same categories as service catalog; seamlessly aligns with              │
+│  "What's your pet needs?" (problem grid). Fallback: role→category map.    │
+│  Vendors enable catalog services → vendor_services                         │
 └─────────────────────────────────────────────────────────────────────────┘
         │
         ▼
@@ -122,7 +126,8 @@ This links catalog services back to the same specializations used on vendor prof
 | Categories | `service_categories` (e.g. migration 048). |
 | Specializations | `specialization_master`; admin CRUD + seed (e.g. seed-specialization-master.js). |
 | Service ↔ specializations | `service_catalog.specialization_ids`; admin Service Catalog create/edit. |
-| Vendor ↔ specializations | `vendor_specializations`; vendor profile / onboarding. |
+| Vendor ↔ specializations | `vendors.specializations` (JSONB), `vendors.metadata.specializations`, `vendor_specializations` table; vendor profile (PUT /vendor/facility) syncs to all three for 360° discovery. |
+| Custom service/package ↔ specializations | `vendor_services.metadata.specialization_ids`; vendor dashboard custom service/package creation supports multi-select (optional). |
 
 ---
 
@@ -157,4 +162,14 @@ Use the existing 048 seed and seed-complete-service-catalog.js as the base; **mo
 
 ---
 
-**Last updated:** 2026-02-02
+---
+
+## 9. 360° Verification Summary (Feb 2026)
+
+1. **Service catalog** loads specializations dynamically from Categories: Admin uses `GET /admin/specializations?categoryId=...` when category is set; service create/edit accepts `specialization_ids` / `specializationIds`.
+2. **Role and specialization mapping**: All services have `applicable_roles` and `specialization_ids` (DB/API); admin validates roles against DB.
+3. **Vendor profile specializations**: `GET /vendor/specializations/:roleId` returns specializations dynamically (role → service_catalog → categories → specialization_master). Save via `PUT /vendor/facility/:vendorId` with `specializations` array; backend syncs to `vendors.specializations`, `metadata.specializations`, and `vendor_specializations` table so discovery and problem-grid stay aligned.
+4. **Discovery**: "What's your pet needs?" uses `GET /public/problem-grid` (specializations from specialization_master). Customer selects problem → `GET /customer/services/by-problem?problemId=...` and `GET /customer/vendors/by-problem?problemId=...` (problem-grid.ts) match via `vendor_specializations` and service catalog. `GET /customer/vendors/discover-by-problem?problem=...` (service-discovery.ts) matches vendors by `vendors.specializations`, `metadata.specializations`, `vendor_specializations`, and vendor_services name/description.
+5. **Custom service and package**: Vendor dashboard (VendorCustomServiceCreation and VendorCustomServiceCreationEnhanced) includes optional multi-select SpecializationSelector; POST /vendor/:vendorId/services/custom accepts `specializationIds` and stores in `vendor_services.metadata.specialization_ids`.
+
+**Last updated:** 2026-02-03

@@ -27,6 +27,35 @@ import { isValidUUID } from '../types/entities';
 // Color constants for charts
 const COLORS = ['#FF8C42', '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
 
+/**
+ * Validate that applicable_roles only contains identifiers that exist as active roles in DB (by id or name).
+ * Returns { valid: true } or { valid: false, invalid: string[] }.
+ */
+async function validateApplicableRolesAgainstActiveRoles(applicableRoles: string[]): Promise<{ valid: true } | { valid: false; invalid: string[] }> {
+  if (!Array.isArray(applicableRoles) || applicableRoles.length === 0) {
+    return { valid: true };
+  }
+  const activeRoles = await select('roles', { is_active: true }, { limit: 200 });
+  const allowed = new Set<string>();
+  for (const r of activeRoles) {
+    const id = String(r.id || '').trim();
+    const name = String(r.name || '').trim();
+    if (id) allowed.add(id.toLowerCase());
+    if (name) allowed.add(name.toLowerCase().replace(/\s+/g, '_'));
+  }
+  const invalid: string[] = [];
+  for (const raw of applicableRoles) {
+    const s = String(raw || '').trim();
+    if (!s) continue;
+    const key = s.toLowerCase().replace(/\s+/g, '_');
+    if (!allowed.has(key) && !allowed.has(s.toLowerCase())) {
+      invalid.push(s);
+    }
+  }
+  if (invalid.length > 0) return { valid: false, invalid };
+  return { valid: true };
+}
+
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
@@ -1891,10 +1920,17 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       // Generate service_id if not provided
       const serviceId = code || `svc_admin_${serviceStyle}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 
-      // ✅ FIXED: Set applicable_roles to default based on category or require role selection
-      // For now, set to empty array but log warning that roles should be assigned
+      // ✅ FIXED: Set applicable_roles; validate against active roles from DB (not frontend-only)
       const roles = applicableRoles || [];
-      if (roles.length === 0) {
+      if (roles.length > 0) {
+        const validation = await validateApplicableRolesAgainstActiveRoles(roles);
+        if (!validation.valid) {
+          return c.json({
+            success: false,
+            error: `applicable_roles must be active role ids/names from DB. Invalid: ${validation.invalid.join(', ')}`,
+          }, 400);
+        }
+      } else {
         console.warn(`⚠️ Service ${serviceId} created without applicable_roles. Service won't be visible to vendors. Please assign roles via admin UI.`);
       }
 
@@ -1951,6 +1987,20 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.display_order !== undefined) updateData.display_order = parseInt(body.display_order, 10);
       if (body.specialization_ids !== undefined) updateData.specialization_ids = body.specialization_ids;
       if (body.specializationIds !== undefined) updateData.specialization_ids = body.specializationIds;
+      if (body.applicable_roles !== undefined) updateData.applicable_roles = Array.isArray(body.applicable_roles) ? body.applicable_roles : [];
+      if (body.applicableRoles !== undefined) updateData.applicable_roles = Array.isArray(body.applicableRoles) ? body.applicableRoles : [];
+      if (body.service_style !== undefined) updateData.service_style = body.service_style;
+      if (body.serviceStyle !== undefined) updateData.service_style = body.serviceStyle;
+
+      if (updateData.applicable_roles && updateData.applicable_roles.length > 0) {
+        const validation = await validateApplicableRolesAgainstActiveRoles(updateData.applicable_roles);
+        if (!validation.valid) {
+          return c.json({
+            success: false,
+            error: `applicable_roles must be active role ids/names from DB. Invalid: ${validation.invalid.join(', ')}`,
+          }, 400);
+        }
+      }
 
       // Try service_catalog first
       try {
@@ -2727,12 +2777,20 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       // Calculate cancellation fee from first window
       const cancellationFee = cancellationWindows?.[0]?.penaltyPercentage || 0;
+      const policyTypeVal = policyType === 'vendor_specific' || policyType === 'service_specific' ? policyType : 'standard';
+      const vendorTypesArr = Array.isArray(vendorTypes) ? vendorTypes : (body.vendor_types && Array.isArray(body.vendor_types) ? body.vendor_types : []);
+      const serviceTypesArr = Array.isArray(serviceTypes) ? serviceTypes : (body.service_types && Array.isArray(body.service_types) ? body.service_types : []);
+      const priorityVal = Number.isFinite(Number(priority)) ? Number(priority) : 0;
 
       const newPolicy = await insert('cancellation_policies', {
         policy_name: name,
         description: description || '',
-        hours_before_booking: gracePeriodHours || 2,
+        policy_type: policyTypeVal,
+        vendor_types: vendorTypesArr,
+        service_types: serviceTypesArr,
+        hours_before_booking: gracePeriodHours ?? 2,
         cancellation_fee_percentage: cancellationFee,
+        priority: priorityVal,
         is_active: isActive !== false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -2759,7 +2817,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       };
       if (body.name !== undefined) updateData.policy_name = body.name;
       if (body.description !== undefined) updateData.description = body.description;
+      if (body.policyType !== undefined) {
+        updateData.policy_type = body.policyType === 'vendor_specific' || body.policyType === 'service_specific' ? body.policyType : 'standard';
+      }
+      if (body.vendorTypes !== undefined) updateData.vendor_types = Array.isArray(body.vendorTypes) ? body.vendorTypes : (body.vendor_types && Array.isArray(body.vendor_types) ? body.vendor_types : []);
+      if (body.serviceTypes !== undefined) updateData.service_types = Array.isArray(body.serviceTypes) ? body.serviceTypes : (body.service_types && Array.isArray(body.service_types) ? body.service_types : []);
       if (body.gracePeriodHours !== undefined) updateData.hours_before_booking = body.gracePeriodHours;
+      if (body.priority !== undefined && Number.isFinite(Number(body.priority))) updateData.priority = Number(body.priority);
       if (body.isActive !== undefined) updateData.is_active = body.isActive;
       if (body.cancellationWindows?.[0]?.penaltyPercentage !== undefined) {
         updateData.cancellation_fee_percentage = body.cancellationWindows[0].penaltyPercentage;

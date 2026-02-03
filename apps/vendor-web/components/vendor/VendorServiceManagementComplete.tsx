@@ -74,7 +74,7 @@ export function VendorServiceManagementComplete({
   const supportsHomeService = !isCafe && !isResort && !isBoarding && !isRetail && !isPharmacy; // Cafe, Resort, Boarding, Retail, Pharmacy don't do home services
   
   // ✅ NEW: Check if trainer/walker/sitter who can create session packages even as solo (NOT groomer/vet)
-  const isTrainerWalkerSitter = hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter']);
+  const isTrainerWalkerSitter = hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter']);
   // Solo groomer and solo vet: custom services YES, custom packages NO
   const isSoloGroomer = isSoloProvider && hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']);
   const isSoloVet = isSoloProvider && hasVendorRole(vendorData, ['veterinarian', 'vet', 'vet_solo']);

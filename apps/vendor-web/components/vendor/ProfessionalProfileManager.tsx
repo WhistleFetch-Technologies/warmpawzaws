@@ -574,13 +574,13 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
               <EnhancedAddressAutocomplete
                 value={profile.address || ''}
                 onChange={(address: string, components?: AddressComponents) => {
-                  // Single state update: address + city, state, pincode from search (like customer profile)
+                  // Single state update: address + city, state, pincode from search (pincode from postal_code)
                   setProfile(prev => ({
                     ...prev,
                     address,
                     ...(components?.city != null && { city: components.city ?? prev.city }),
                     ...(components?.state != null && { state: components.state ?? prev.state }),
-                    ...(components?.pincode != null && { pincode: components.pincode ?? prev.pincode }),
+                    ...(components && 'pincode' in components && { pincode: components.pincode ?? prev.pincode ?? '' }),
                   }));
                   setHasChanges(true);
                 }}

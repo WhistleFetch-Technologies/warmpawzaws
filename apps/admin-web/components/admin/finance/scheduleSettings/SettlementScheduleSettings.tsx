@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 
 interface SettlementSchedule {
   enabled: boolean;
@@ -113,6 +114,11 @@ export function SettlementScheduleSettings() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <h2 className="text-black text-xl font-semibold">Schedule Settings</h2>
+        <PolicyHelpButton docKey="finance-schedule-settings" />
+      </div>
       {/* Status Card */}
       <Card>
         <CardHeader>

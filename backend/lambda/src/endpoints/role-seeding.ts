@@ -68,9 +68,10 @@ const BASE_CAPABILITIES = [
   'bank_verification', // Verification - Bank account verification
 ];
 
-// Only these 25 canonical roles are active; inactive roles are removed from catalog/DB
+// Only these 27 canonical roles are active; inactive roles are removed from catalog/DB (added behaviorist_solo, behaviorist_center)
 const CANONICAL_ACTIVE_ROLE_NAMES: string[] = [
   'vet_solo', 'vet_clinic', 'groomer_solo', 'groomer_center', 'trainer_solo', 'trainer_center',
+  'behaviorist_solo', 'behaviorist_center',
   'boarding', 'walker', 'sitter', 'adoption_center', 'cafe', 'photographer', 'pharmacy', 'seller',
   'ambulance', 'insurance', 'nutritionist', 'nutritionist_center', 'relocation', 'resort', 'holiday',
   'sunset', 'breeder', 'diagnostics_center', 'event_organizer',
@@ -84,6 +85,8 @@ const CANONICAL_TO_LEGACY_DEF: Record<string, string> = {
   groomer_center: 'pet_groomer',
   trainer_solo: 'pet_trainer',
   trainer_center: 'pet_trainer',
+  behaviorist_solo: 'pet_behaviorist',
+  behaviorist_center: 'pet_behaviorist',
   boarding: 'pet_boarding',
   walker: 'pet_walker',
   sitter: 'pet_sitter',
@@ -113,6 +116,8 @@ const CANONICAL_ROLE_DISPLAY_NAMES: Record<string, string> = {
   groomer_center: 'Pet Grooming Salon',
   trainer_solo: 'Pet Trainer (Solo)',
   trainer_center: 'Pet Training Center',
+  behaviorist_solo: 'Behaviorist (Solo)',
+  behaviorist_center: 'Behaviorist Center',
   boarding: 'Pet Boarding / Kennel',
   walker: 'Pet Walker',
   sitter: 'Pet Sitter',
@@ -937,6 +942,11 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
             // ✅ FIX: Include role mappings in applicable_roles for better matching (align with service-catalog roleMappings)
             const roleMappings: Record<string, string[]> = {
               'pet_trainer': ['pet_trainer', 'trainer'],
+              'trainer_solo': ['trainer_solo', 'pet_trainer', 'trainer'],
+              'trainer_center': ['trainer_center', 'pet_trainer', 'trainer'],
+              'pet_behaviorist': ['pet_behaviorist', 'behaviorist'],
+              'behaviorist_solo': ['behaviorist_solo', 'pet_behaviorist', 'behaviorist'],
+              'behaviorist_center': ['behaviorist_center', 'pet_behaviorist', 'behaviorist'],
               'pet_walker': ['pet_walker', 'walker', 'dog_walker'],
               'walker': ['walker', 'pet_walker', 'dog_walker'],
               'pet_groomer': ['pet_groomer', 'groomer'],
@@ -984,6 +994,11 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
                 // ✅ FIX: Include role mappings in applicable_roles (same as above)
                 const roleMappings: Record<string, string[]> = {
                   'pet_trainer': ['pet_trainer', 'trainer'],
+                  'trainer_solo': ['trainer_solo', 'pet_trainer', 'trainer'],
+                  'trainer_center': ['trainer_center', 'pet_trainer', 'trainer'],
+                  'pet_behaviorist': ['pet_behaviorist', 'behaviorist'],
+                  'behaviorist_solo': ['behaviorist_solo', 'pet_behaviorist', 'behaviorist'],
+                  'behaviorist_center': ['behaviorist_center', 'pet_behaviorist', 'behaviorist'],
                   'pet_walker': ['pet_walker', 'walker', 'dog_walker'],
                   'walker': ['walker', 'pet_walker', 'dog_walker'],
                   'pet_groomer': ['pet_groomer', 'groomer'],
@@ -1085,6 +1100,9 @@ export function registerRoleSeedingEndpoints(app: Hono) {
                 await insert('role_permissions', { role_id: newRole[0].id, permission_name: capName, resource: '*', action: '*' }).catch(() => {});
               }
             }
+            // Seed onboarding form and service catalog for new role (same as resurrect path)
+            await seedOnboardingForm(roleId).catch((err) => console.warn(`Seed onboarding form for ${roleId}:`, err?.message));
+            await seedServiceCatalog(roleId, def.serviceStyles || []).catch((err) => console.warn(`Seed service catalog for ${roleId}:`, err?.message));
             stats.created++;
             continue;
           }

@@ -52,12 +52,19 @@ export function registerPrescriptionEndpoints(app: Hono) {
         createdByRole,
       } = prescriptionData;
 
-      // Resolve customerId from booking when missing or not a valid UUID (e.g. AddVetSummaryModal sends only bookingId)
-      if ((!customerId || !isValidUUID(customerId)) && bookingId && isValidUUID(bookingId)) {
+      // Resolve customerId and petId from booking when missing (e.g. AddVetSummaryModal sends only bookingId)
+      if (bookingId && isValidUUID(bookingId)) {
         const bookings = await select('bookings', { id: bookingId });
-        if (bookings.length > 0 && (bookings[0] as any).customer_id) {
-          prescriptionData.customerId = (bookings[0] as any).customer_id;
-          console.log(`[Prescription] Resolved customerId from booking ${bookingId}: ${prescriptionData.customerId}`);
+        if (bookings.length > 0) {
+          const b = bookings[0] as any;
+          if ((!customerId || !isValidUUID(customerId)) && b.customer_id) {
+            prescriptionData.customerId = b.customer_id;
+            console.log(`[Prescription] Resolved customerId from booking ${bookingId}: ${prescriptionData.customerId}`);
+          }
+          if ((!petId || !isValidUUID(petId)) && b.pet_id) {
+            prescriptionData.petId = b.pet_id;
+            console.log(`[Prescription] Resolved petId from booking ${bookingId}: ${prescriptionData.petId}`);
+          }
         }
       }
 
@@ -223,12 +230,11 @@ export function registerPrescriptionEndpoints(app: Hono) {
           
           console.log('[Prescription] Using prescription_date:', prescriptionDate, 'Type:', typeof prescriptionDate);
           
-          // ✅ CRITICAL: Build parameters array with explicit date check
-          // Ensure prescriptionDate is explicitly set and never null in the array
+          // ✅ CRITICAL: Build parameters array with explicit date check (use resolved customerId/petId from booking)
           const queryParams: any[] = [
             bookingId,
-            customerId,
-            petId || null,
+            prescriptionData.customerId || customerId,
+            prescriptionData.petId || petId || null,
             vendorId,
             staffId || null,
               medsJson,
@@ -319,8 +325,8 @@ export function registerPrescriptionEndpoints(app: Hono) {
                 RETURNING *`,
                 [
                   bookingId,
-                  customerId,
-                  petId || null,
+                  prescriptionData.customerId || customerId,
+                  prescriptionData.petId || petId || null,
                   vendorId,
                   staffId || null,
                   medsJson,
@@ -348,6 +354,25 @@ export function registerPrescriptionEndpoints(app: Hono) {
           } else {
             throw insertErr;
           }
+        }
+      }
+
+      // When published, share in booking chat so customer sees "Prescription added" with View PDF
+      if (savedStatus === 'published' && bookingId && insertedPrescriptions.length > 0) {
+        try {
+          const firstId = insertedPrescriptions[0].id;
+          await insert('chat_messages', {
+            booking_id: bookingId,
+            sender_phone: vendorId || 'system',
+            sender_type: 'vendor',
+            message: 'Prescription added. View in appointment History or download PDF (A4 style with medicines, instructions, follow-up).',
+            message_type: 'prescription',
+            file_id: firstId,
+            file_name: 'Prescription',
+            is_read: false,
+          } as any);
+        } catch (chatErr: any) {
+          console.warn('[Prescription] Share-in-chat failed (non-blocking):', chatErr?.message);
         }
       }
 
@@ -413,6 +438,25 @@ export function registerPrescriptionEndpoints(app: Hono) {
       await update('prescriptions', { id: prescriptionId }, updateFields);
 
       const updated = await select('prescriptions', { id: prescriptionId });
+      const bookingId = (existing as any).booking_id;
+
+      // When publishing, share in booking chat so customer sees prescription in chat
+      if (updateFields.status === 'published' && bookingId) {
+        try {
+          await insert('chat_messages', {
+            booking_id: bookingId,
+            sender_phone: (existing as any).vendor_id || 'system',
+            sender_type: 'vendor',
+            message: 'Prescription published. View in appointment History or download PDF (A4 style with medicines, instructions, follow-up).',
+            message_type: 'prescription',
+            file_id: prescriptionId,
+            file_name: 'Prescription',
+            is_read: false,
+          } as any);
+        } catch (chatErr: any) {
+          console.warn('[Prescription] Share-in-chat on publish failed (non-blocking):', chatErr?.message);
+        }
+      }
 
       return c.json({
         success: true,

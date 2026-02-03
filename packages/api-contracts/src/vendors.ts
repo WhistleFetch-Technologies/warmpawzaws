@@ -40,7 +40,7 @@ export const AdminReviewApplicationRequestSchema = z.object({
   action: z.enum(['APPROVE', 'REQUEST_CLARIFICATION', 'REJECT'], {
     errorMap: () => ({ message: 'Action must be APPROVE, REQUEST_CLARIFICATION, or REJECT' }),
   }),
-  admin_id: z.string().uuid('Invalid admin ID format'),
+  admin_id: z.string().min(1, 'Admin ID is required'), // Allow non-UUID (e.g. "admin") for compatibility
   comments: z.string().max(2000, 'Comments too long').optional(),
   rejection_reason: z.string().max(500, 'Rejection reason too long').optional(),
 });

@@ -95,7 +95,7 @@ export function CreatePackageFlow({
                        false;
   
   // ✅ Check if this is a trainer/walker/sitter/groomer who CAN create session packages as solo (solo trainer, solo groomer)
-  const isTrainerWalkerSitter = vendorData ? hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter', 'pet_groomer', 'groomer', 'groomer_solo']) : false;
+  const isTrainerWalkerSitter = vendorData ? hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter', 'pet_groomer', 'groomer', 'groomer_solo']) : false;
   
   // ✅ Solo trainers/walkers/sitters CAN create session packages
   // Business accounts with package capability CAN create all packages

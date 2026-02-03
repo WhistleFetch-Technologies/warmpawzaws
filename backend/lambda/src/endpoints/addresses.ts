@@ -47,7 +47,7 @@ export function registerAddressEndpoints(app: Hono) {
         [customer[0].id]
       ).catch(() => ({ rows: [] }));
 
-      let list = addresses.rows.map((addr: any) => ({
+      const mapAddr = (addr: any) => ({
         id: addr.id,
         customerId: addr.customer_id,
         label: addr.address_type,
@@ -60,10 +60,16 @@ export function registerAddressEndpoints(app: Hono) {
         pincode: addr.pincode,
         landmark: addr.landmark,
         coordinates: addr.coordinates || null,
+        flatNo: addr.flat_no ?? undefined,
+        houseNo: addr.house_no ?? undefined,
+        floor: addr.floor ?? undefined,
+        streetName: addr.street_name ?? undefined,
+        apartmentName: addr.apartment_name ?? undefined,
         isDefault: addr.is_default,
         createdAt: addr.created_at,
         updatedAt: addr.updated_at,
-      }));
+      });
+      let list = addresses.rows.map(mapAddr);
 
       // When no saved addresses exist, use profile address/pincode so checkout doesn't block
       const cust = customer[0] as any;
@@ -198,6 +204,11 @@ export function registerAddressEndpoints(app: Hono) {
           pincode: body.pincode,
           landmark: body.landmark || null,
           coordinates: body.coordinates || null,
+          flatNo: body.flatNo ?? body.flat_no ?? null,
+          houseNo: body.houseNo ?? body.house_no ?? null,
+          floor: body.floor ?? null,
+          streetName: body.streetName ?? body.street_name ?? null,
+          apartmentName: body.apartmentName ?? body.apartment_name ?? null,
           isDefault: body.isDefault !== undefined ? body.isDefault : false,
         };
       }
@@ -273,6 +284,11 @@ export function registerAddressEndpoints(app: Hono) {
           pincode: addressData.pincode,
           landmark: addressData.landmark || null,
           coordinates: addressData.coordinates ? (typeof addressData.coordinates === 'string' ? addressData.coordinates : JSON.stringify(addressData.coordinates)) : null,
+          flat_no: addressData.flatNo || null,
+          house_no: addressData.houseNo || null,
+          floor: addressData.floor || null,
+          street_name: addressData.streetName || null,
+          apartment_name: addressData.apartmentName || null,
           is_default: shouldBeDefault,
         });
       } catch (insertError: any) {
@@ -316,6 +332,11 @@ export function registerAddressEndpoints(app: Hono) {
         pincode: addr.pincode,
         landmark: addr.landmark,
         coordinates: addr.coordinates || null,
+        flatNo: addr.flat_no ?? undefined,
+        houseNo: addr.house_no ?? undefined,
+        floor: addr.floor ?? undefined,
+        streetName: addr.street_name ?? undefined,
+        apartmentName: addr.apartment_name ?? undefined,
         isDefault: addr.is_default,
         createdAt: addr.created_at,
         updatedAt: addr.updated_at,
@@ -357,25 +378,31 @@ export function registerAddressEndpoints(app: Hono) {
         [customer[0].id]
       ).catch(() => ({ rows: [] }));
 
+      const mapAddrById = (addr: any) => ({
+        id: addr.id,
+        customerId: addr.customer_id,
+        label: addr.address_type,
+        name: addr.full_name,
+        phone: addr.phone,
+        addressLine1: addr.address_line1,
+        addressLine2: addr.address_line2,
+        city: addr.city,
+        state: addr.state,
+        pincode: addr.pincode,
+        landmark: addr.landmark,
+        coordinates: addr.coordinates || null,
+        flatNo: addr.flat_no ?? undefined,
+        houseNo: addr.house_no ?? undefined,
+        floor: addr.floor ?? undefined,
+        streetName: addr.street_name ?? undefined,
+        apartmentName: addr.apartment_name ?? undefined,
+        isDefault: addr.is_default,
+        createdAt: addr.created_at,
+        updatedAt: addr.updated_at,
+      });
       return c.json({
         success: true,
-        addresses: addresses.rows.map((addr: any) => ({
-          id: addr.id,
-          customerId: addr.customer_id,
-          label: addr.address_type,
-          name: addr.full_name,
-          phone: addr.phone,
-          addressLine1: addr.address_line1,
-          addressLine2: addr.address_line2,
-          city: addr.city,
-          state: addr.state,
-          pincode: addr.pincode,
-          landmark: addr.landmark,
-          coordinates: addr.coordinates || null,
-          isDefault: addr.is_default,
-          createdAt: addr.created_at,
-          updatedAt: addr.updated_at,
-        })),
+        addresses: addresses.rows.map(mapAddrById),
       });
     } catch (error: any) {
       console.error('Error fetching addresses:', error);
@@ -390,6 +417,7 @@ export function registerAddressEndpoints(app: Hono) {
   app.post("/customer/:customerId/addresses", async (c) => {
     try {
       const { customerId } = c.req.param();
+      const body = await c.req.json();
       const {
         label,
         name,
@@ -402,7 +430,12 @@ export function registerAddressEndpoints(app: Hono) {
         landmark,
         coordinates,
         isDefault = false,
-      } = await c.req.json();
+      } = body;
+      const flatNo = body.flatNo ?? body.flat_no ?? null;
+      const houseNo = body.houseNo ?? body.house_no ?? null;
+      const floor = body.floor ?? null;
+      const streetName = body.streetName ?? body.street_name ?? null;
+      const apartmentName = body.apartmentName ?? body.apartment_name ?? null;
 
       if (!name || !phone || !addressLine1 || !city || !state || !pincode) {
         return c.json({ error: 'name, phone, addressLine1, city, state, and pincode are required' }, 400);
@@ -446,6 +479,11 @@ export function registerAddressEndpoints(app: Hono) {
         pincode: pincode,
         landmark: landmark || null,
         coordinates: coordinates || null,
+        flat_no: flatNo,
+        house_no: houseNo,
+        floor: floor,
+        street_name: streetName,
+        apartment_name: apartmentName,
         is_default: shouldBeDefault,
       });
 
@@ -492,21 +530,27 @@ export function registerAddressEndpoints(app: Hono) {
         ).catch(() => {});
       }
 
+      const updatePayload: Record<string, any> = {
+        address_type: updates.label || updates.address_type,
+        full_name: updates.name || updates.full_name,
+        phone: updates.phone,
+        address_line1: updates.addressLine1 || updates.address_line1,
+        address_line2: updates.addressLine2 || updates.address_line2,
+        city: updates.city,
+        state: updates.state,
+        pincode: updates.pincode,
+        landmark: updates.landmark,
+        coordinates: updates.coordinates,
+        is_default: updates.isDefault !== undefined ? updates.isDefault : updates.is_default,
+      };
+      if (updates.flatNo !== undefined || updates.flat_no !== undefined) updatePayload.flat_no = updates.flatNo ?? updates.flat_no;
+      if (updates.houseNo !== undefined || updates.house_no !== undefined) updatePayload.house_no = updates.houseNo ?? updates.house_no;
+      if (updates.floor !== undefined) updatePayload.floor = updates.floor;
+      if (updates.streetName !== undefined || updates.street_name !== undefined) updatePayload.street_name = updates.streetName ?? updates.street_name;
+      if (updates.apartmentName !== undefined || updates.apartment_name !== undefined) updatePayload.apartment_name = updates.apartmentName ?? updates.apartment_name;
       const updated = await update('customer_addresses',
         { id: addressId, customer_id: customer[0].id },
-        {
-          address_type: updates.label || updates.address_type,
-          full_name: updates.name || updates.full_name,
-          phone: updates.phone,
-          address_line1: updates.addressLine1 || updates.address_line1,
-          address_line2: updates.addressLine2 || updates.address_line2,
-          city: updates.city,
-          state: updates.state,
-          pincode: updates.pincode,
-          landmark: updates.landmark,
-          coordinates: updates.coordinates,
-          is_default: updates.isDefault !== undefined ? updates.isDefault : updates.is_default,
-        }
+        updatePayload
       );
 
       if (updated.length === 0) {

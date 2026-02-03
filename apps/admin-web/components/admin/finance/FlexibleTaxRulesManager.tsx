@@ -23,6 +23,7 @@ import { Switch } from '@warmpawz/ui';
 import { Badge } from '@warmpawz/ui';
 import { useFlexibleTaxRules } from '../../../hooks/useFlexibleTaxRules';
 import { TaxRule, TaxType, TaxCalculationMethod, TransactionType } from '../../../types/tax-system';
+import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 // Note: Toast notifications - using alert for now, can be replaced with toast library
 
 export function FlexibleTaxRulesManager() {
@@ -161,11 +162,14 @@ export function FlexibleTaxRulesManager() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900">Flexible Tax Rules</h3>
-          <p className="text-sm text-gray-600 mt-1">
-            Manage tax rules with flexible conditions, exemptions, and compound taxes
-          </p>
+        <div className="flex items-center gap-2">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Flexible Tax Rules</h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Manage tax rules with flexible conditions, exemptions, and compound taxes
+            </p>
+          </div>
+          <PolicyHelpButton docKey="finance-flexible-tax-system" />
         </div>
         <Button onClick={() => handleOpenModal()} className="bg-orange-500 hover:bg-orange-600">
           <Plus className="w-4 h-4 mr-2" />

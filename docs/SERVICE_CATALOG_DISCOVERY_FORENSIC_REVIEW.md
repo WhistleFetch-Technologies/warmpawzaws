@@ -54,6 +54,7 @@
 - **Script:** `scripts/verify-service-catalog-discovery-e2e.js`
 - **Checks:** Health; catalog by role (vet_solo, vet_clinic, groomer_center, groomer_solo, trainer_center, trainer_solo, walker, pharmacy) with `serviceStyle=at_home`; catalog for `vet_solo` with `serviceStyle=at_home,tele`; GET vendor services structure.
 - **Run:** `API_ENDPOINT=<base> node scripts/verify-service-catalog-discovery-e2e.js`
+- **Mandatory fields (per-service):** Run `scripts/validation/verify-service-catalog-mandatory-fields.sql` against RDS to list any active/published services missing `applicable_roles` (non-empty), `service_style` (at_center/at_home/tele/all), or `specialization_ids` (array; may be empty).
 
 ---
 
@@ -62,6 +63,8 @@
 - Catalog is filtered by **applicable_roles && acceptableRoles** (backend).
 - **acceptableRoles** = role.name + roleMappings[role.name] + normalized name (e.g. vet_solo → vet, veterinarian, vet_clinic, vet_solo, solo_vet).
 - So: **only services whose `applicable_roles` overlap the vendor’s role (and mappings) are returned**; enable/publish applies only to those services and vendor’s own added list.
+- **Strict discovery:** Vendor dashboard “available catalog” uses **strict** matching: only rows with `array_length(applicable_roles, 1) > 0` and `applicable_roles && acceptableRoles` and matching `service_style` are returned (no “show to all” for NULL/empty applicable_roles).
+- **Roles from DB:** Admin create/update of service catalog validates `applicable_roles` against **active roles from DB** (`roles` where `is_active = true`); invalid role identifiers are rejected with 400. Role options in admin UI come from `GET /admin/roles` (active only).
 
 ---
 

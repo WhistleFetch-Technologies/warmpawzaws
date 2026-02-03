@@ -22,7 +22,7 @@ export function RequestInfoModal({ isOpen, vendorName, onSubmit, onCancel }: Req
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onCancel}>
+    <Dialog open={isOpen} onOpenChange={(open: boolean) => { if (!open) onCancel(); }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
@@ -47,9 +47,9 @@ export function RequestInfoModal({ isOpen, vendorName, onSubmit, onCancel }: Req
             />
           </div>
           
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-0">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <p className="text-sm text-blue-800">
-              The vendor will receive this message via email and in-app notification.
+              The vendor will receive this message via SMS and in-app notification. They can then log in to see what to provide and go back to the onboarding form.
             </p>
           </div>
         </div>

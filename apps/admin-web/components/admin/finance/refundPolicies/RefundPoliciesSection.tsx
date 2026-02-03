@@ -5,11 +5,11 @@ import { Button, Input, Label, Checkbox } from '@warmpawz/ui';
 import { Plus, Edit, Trash2, Save, X } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 
-/** Fallback vendor types when API roles are not available; includes Tele. */
+/** Fallback vendor types when API roles are not available. Tele/Video is in Service Location, not here. */
 const FALLBACK_VENDOR_TYPES = [
   { id: 'veterinarian', name: 'Veterinarian', icon: '⚕️' },
-  { id: 'tele', name: 'Tele / Video Consultation', icon: '📹' },
   { id: 'grooming', name: 'Grooming', icon: '✂️' },
   { id: 'dog-walking', name: 'Dog Walking', icon: '🐕' },
   { id: 'trainer', name: 'Trainer', icon: '🎓' },
@@ -24,11 +24,21 @@ const FALLBACK_VENDOR_TYPES = [
   { id: 'healthcare-provider', name: 'Healthcare Service Provider', icon: '🏥' },
 ];
 
+/** Service location options: Tele/Video Consultation is a location, not a vendor type. "All" = all locations. */
+const SERVICE_LOCATION_OPTIONS = [
+  { value: 'at_home' as const, label: 'At Home' },
+  { value: 'at_center' as const, label: 'At Center' },
+  { value: 'tele' as const, label: 'Tele / Video Consultation' },
+  { value: 'all' as const, label: 'All' },
+];
+
+type ServiceLocationValue = 'at_home' | 'at_center' | 'tele' | 'all';
+
 interface RefundTier {
   id: string;
   name: string;
   vendorTypes: string[];
-  serviceLocation: 'at_home' | 'at_center' | 'both';
+  serviceLocation: ServiceLocationValue;
   hoursBeforeService: number;
   refundPercentage: number;
   cancellationFee: number;
@@ -36,11 +46,12 @@ interface RefundTier {
   createdAt?: string;
 }
 
-/** Map DB service_location to frontend: home->at_home, clinic->at_center, both->both */
-const serviceLocationFromDb = (v: string): RefundTier['serviceLocation'] => {
+/** Map DB service_location to frontend: home->at_home, clinic->at_center, tele->tele, both|all->all */
+const serviceLocationFromDb = (v: string): ServiceLocationValue => {
   if (v === 'home') return 'at_home';
   if (v === 'clinic') return 'at_center';
-  return 'both';
+  if (v === 'tele') return 'tele';
+  return 'all'; // both (legacy) or all
 };
 
 /** Normalize API tier row (snake_case) to UI RefundTier (camelCase). */
@@ -90,11 +101,8 @@ export function RefundPoliciesSection() {
           name: r.display_name ?? r.name ?? r.code ?? '',
           icon: roleToIcon[(r.code ?? r.name ?? '').toString().toLowerCase()] ?? '📌',
         }))
-        .filter((o: { id: string }) => o.id);
-      const hasTele = options.some((o: { id: string }) => o.id === 'tele' || o.id === 'video_consultation');
-      if (!hasTele) {
-        options.push({ id: 'tele', name: 'Tele / Video Consultation', icon: '📹' });
-      }
+        .filter((o: { id: string }) => o.id)
+        .filter((o: { id: string }) => o.id !== 'tele' && o.id !== 'video_consultation'); // Tele is in Service Location, not vendor types
       return options;
     };
     try {
@@ -134,7 +142,7 @@ export function RefundPoliciesSection() {
       id: '',
       name: '',
       vendorTypes: [],
-      serviceLocation: 'both',
+      serviceLocation: 'all',
       hoursBeforeService: 24,
       refundPercentage: 75,
       cancellationFee: 0,
@@ -212,9 +220,12 @@ export function RefundPoliciesSection() {
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-black text-xl font-semibold">Refund Policies</h2>
-          <p className="text-gray-500 text-sm mt-1">Configure refund rules and policies</p>
+        <div className="flex items-center gap-2">
+          <div>
+            <h2 className="text-black text-xl font-semibold">Refund Policies</h2>
+            <p className="text-gray-500 text-sm mt-1">Configure refund rules and policies</p>
+          </div>
+          <PolicyHelpButton docKey="finance-refund-policies" />
         </div>
         <Button onClick={handleCreateTier} className="bg-[#FF8C42] text-white hover:bg-[#E67A32]">
           <Plus className="w-4 h-4 mr-2" />
@@ -271,6 +282,12 @@ export function RefundPoliciesSection() {
                     <div>
                       <span className="text-gray-500">Vendor Types:</span>
                       <span className="ml-2 font-medium">{tier.vendorTypes.length}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Service Location:</span>
+                      <span className="ml-2 font-medium">
+                        {SERVICE_LOCATION_OPTIONS.find((o) => o.value === tier.serviceLocation)?.label ?? tier.serviceLocation}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -355,15 +372,18 @@ export function RefundPoliciesSection() {
                     onChange={(e) =>
                       setEditingTier({
                         ...editingTier,
-                        serviceLocation: e.target.value as any,
+                        serviceLocation: e.target.value as ServiceLocationValue,
                       })
                     }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
                   >
-                    <option value="at_home">At Home</option>
-                    <option value="at_center">At Center</option>
-                    <option value="both">Both</option>
+                    {SERVICE_LOCATION_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
+                  <p className="text-xs text-gray-500">Policy applies to selected vendor types and this service style.</p>
                 </div>
                 <div className="space-y-2">
                   <Label>Hours Before Service</Label>

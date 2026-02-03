@@ -464,15 +464,13 @@ export function HomeServiceRouter({
         setPets(petsResponse.pets);
       }
 
-      // Load addresses
-      const addressResponse = await apiClient.get<any>(`/customer/${phone}/addresses`);
-      if (addressResponse.addresses) {
-        setAddresses(addressResponse.addresses);
-        // Auto-select default address
-        const defaultAddr = addressResponse.addresses.find((a: any) => a.isDefault);
-        if (defaultAddr) {
-          setSelectedAddress(defaultAddr);
-        }
+      // Load addresses — normalize and pre-select default or first
+      const addressResponse = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(phone)}`);
+      if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
+        const list = addressResponse.addresses;
+        setAddresses(list);
+        const defaultAddr = list.find((a: any) => a.isDefault ?? a.is_default);
+        setSelectedAddress(defaultAddr || list[0] || null);
       }
 
       // Get customer ID
@@ -1617,15 +1615,22 @@ export function HomeServiceRouter({
           phone={phone}
           isOpen={showAddAddressModal}
           onClose={() => setShowAddAddressModal(false)}
-          onSuccess={(newAddress) => {
+          onSuccess={async (newAddress) => {
             console.log('✅ [HomeServiceRouter] New address added:', newAddress);
-            // Refresh addresses list
-            loadCustomerData();
-            // Select the new address
+            setShowAddAddressModal(false);
+            // Select the new address immediately so the proceed button enables
             if (newAddress) {
               setSelectedAddress(newAddress);
             }
-            setShowAddAddressModal(false);
+            // Refresh addresses list (may overwrite selectedAddress with default; re-apply selection after)
+            try {
+              await loadCustomerData();
+              if (newAddress) {
+                setSelectedAddress(newAddress);
+              }
+            } catch (_) {
+              // List refresh failed; selection already set above, button stays enabled
+            }
           }}
         />
       )}

@@ -1363,6 +1363,44 @@ class AdminReviewApplicationHandler extends BaseHandler {
         // Don't fail the whole operation for notification failure
       }
 
+      // ✅ SMS is the standard notification for all vendor onboarding activities
+      const vendorPhone = identity.phone || identity.phone_number;
+      let notificationTitle = '';
+      let notificationMessage = '';
+      if (action === 'APPROVE') {
+        notificationTitle = 'Application Approved';
+        notificationMessage = 'Your WARMPAWS provider application has been approved. You can now access your dashboard.';
+      } else if (action === 'REQUEST_CLARIFICATION') {
+        notificationTitle = 'More Information Required';
+        notificationMessage = `We need additional information: ${(comments || '').slice(0, 120)}${(comments || '').length > 120 ? '...' : ''}. Please log in and update your application.`;
+      } else if (action === 'REJECT') {
+        notificationTitle = 'Application Rejected';
+        notificationMessage = `Your application was not approved. Reason: ${(rejection_reason || '').slice(0, 100)}${(rejection_reason || '').length > 100 ? '...' : ''}. Log in to see details or resubmit.`;
+      }
+
+      try {
+        await insert('notifications', {
+          recipient_id: identity.id,
+          recipient_type: 'vendor',
+          notification_type: action === 'APPROVE' ? 'vendor_approved' : action === 'REQUEST_CLARIFICATION' ? 'vendor_clarification_requested' : 'vendor_rejected',
+          title: notificationTitle,
+          message: notificationMessage,
+          channels: { email: false, sms: true, inApp: true, push: false },
+          is_read: false,
+        });
+      } catch (insertErr: any) {
+        console.warn('Failed to insert onboarding notification:', insertErr?.message);
+      }
+
+      if (vendorPhone && notificationMessage) {
+        try {
+          const { sendSMS } = await import('../lib/services/sms-service');
+          await sendSMS(vendorPhone, `${notificationTitle}. ${notificationMessage}`);
+        } catch (smsErr: any) {
+          console.warn('Failed to send onboarding SMS:', smsErr?.message);
+        }
+      }
+
       return this.success({
         message: `Application ${action.toLowerCase()}d successfully`,
         status: newStatus,
@@ -1784,6 +1822,8 @@ export function registerVendorOnboardingEndpoints(app: Hono) {
       }
       
       const app = application[0];
+      const isReEditable = ['REJECTED', 'CLARIFICATION_REQUIRED'].includes(String(app.status));
+      const payload = app.application_payload || app.form_data || null;
       return c.json({
         success: true,
         application: {
@@ -1793,6 +1833,7 @@ export function registerVendorOnboardingEndpoints(app: Hono) {
           fullName: app.form_data?.fullName || app.form_data?.ownerName || 'Vendor',
           reviewedAt: app.reviewed_at,
           clarificationNotes: app.clarification_notes || app.admin_comments,
+          ...(isReEditable && payload ? { form_data: payload, application_payload: payload } : {}),
         },
         canProceedToSetup: app.status === 'approved' || app.status === 'APPROVED',
       });

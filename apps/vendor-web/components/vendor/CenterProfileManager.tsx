@@ -69,8 +69,9 @@ const DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Sat
 export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerProps) {
   // ✅ FIX: Show Amenities and Specialty tabs for center roles even when vendorData says solo.
   // Use centralized isSoloVendor and override with isCenterRole so center profiles always get the tabs.
+  // ⚠️ Do NOT use roleId state here - it is declared later; use vendorData only to avoid "Cannot access before initialization".
   const soloByData = isSoloVendor(vendorData);
-  const roleNameOrId = roleId || getVendorRoleName(vendorData) || '';
+  const roleNameOrId = vendorData?.roleName || vendorData?.roleId || getVendorRoleName(vendorData) || '';
   const isCenterRoleType = isCenterRole(roleNameOrId);
   const showAmenitiesAndSpecialtyTabs = !soloByData || isCenterRoleType;
 

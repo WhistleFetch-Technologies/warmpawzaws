@@ -617,6 +617,57 @@ export function registerAdminEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
+  // Request clarification by vendorId (e.g. useVendors, AdminApp). Uses message/notes/comment only – NEVER rejection_reason.
+  app.post('/admin/vendors/:vendorId/request-clarification', async (c) => {
+    const authResult = await requireAdminAuth(c);
+    if (!authResult.authorized) {
+      return c.json({ error: authResult.error }, 401);
+    }
+    const vendorId = c.req.param('vendorId');
+    const body = await c.req.json().catch(() => ({}));
+    const notes = (body.notes ?? body.message ?? body.comment ?? body.comments ?? '').trim();
+    if (!notes) {
+      return c.json({ success: false, error: 'Message or notes are required for request clarification' }, 400);
+    }
+    try {
+      let applicationId: string | null = null;
+      const byVendor = await query(
+        `SELECT voa.id FROM vendor_onboarding_applications voa
+         JOIN vendor_identity vi ON vi.id = voa.vendor_identity_id
+         WHERE vi.vendor_id = $1 OR vi.phone = (SELECT phone FROM vendors WHERE id = $1 LIMIT 1)
+         ORDER BY voa.created_at DESC LIMIT 1`,
+        [vendorId]
+      );
+      applicationId = byVendor?.rows?.[0]?.id ?? null;
+      if (!applicationId) {
+        const byAppId = await query(
+          `SELECT id FROM vendor_onboarding_applications WHERE id = $1 LIMIT 1`,
+          [vendorId]
+        );
+        applicationId = byAppId?.rows?.[0]?.id ?? null;
+      }
+      if (!applicationId) {
+        return c.json({ success: false, error: 'Application not found for this vendor' }, 404);
+      }
+      await query(
+        `UPDATE vendor_onboarding_applications SET status = 'CLARIFICATION_REQUIRED', admin_comments = $2, is_locked = false, locked_at = NULL, updated_at = NOW() WHERE id = $1`,
+        [applicationId, notes]
+      );
+      try {
+        await query(
+          `UPDATE vendor_identity SET onboarding_status = 'CLARIFICATION_REQUIRED', updated_at = NOW() WHERE application_id = $1 OR id = $1`,
+          [applicationId]
+        );
+      } catch (e) {
+        console.warn('Optional vendor_identity update failed:', (e as Error).message);
+      }
+      return c.json({ success: true, message: 'Clarification requested', applicationId });
+    } catch (error: any) {
+      console.error('Error requesting clarification (vendors/:id):', error);
+      return c.json({ success: false, error: error.message || 'Failed to request clarification' }, 500);
+    }
+  });
+
   app.get('/admin/vendors', async (c) => {
     // ✅ SECURITY FIX: Require admin authentication
     const authResult = await requireAdminAuth(c);
@@ -899,20 +950,51 @@ export function registerAdminEndpoints(app: Hono) {
   });
 
   // Frontend compatibility: /admin/vendor/application/:applicationId/request-clarification
+  // Request clarification uses message/notes only. rejection_reason is ONLY for reject – never required here.
   app.post('/admin/vendor/application/:applicationId/request-clarification', async (c) => {
-    // ✅ SECURITY FIX: Require admin authentication
     const authResult = await requireAdminAuth(c);
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
-    
-    // This endpoint can use the reject handler with a clarification reason
+
     const applicationId = c.req.param('applicationId');
-    const event = createApiGatewayEvent(c.req);
-    event.pathParameters = { vendorId: applicationId };
-    const context = createLambdaContext();
-    const result = await rejectHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const body = await c.req.json().catch(() => ({}));
+    // Only notes/message/comments – do not use or require rejection_reason
+    const notes = (body.notes ?? body.message ?? body.comments ?? '').trim();
+    if (!notes) {
+      return c.json({ success: false, error: 'Message or notes are required for request clarification' }, 400);
+    }
+
+    try {
+      const apps = await select('vendor_onboarding_applications', { id: applicationId });
+      if (!apps.length) {
+        return c.json({ success: false, error: 'Application not found' }, 404);
+      }
+      const app = apps[0];
+      await query(
+        `UPDATE vendor_onboarding_applications 
+         SET status = 'CLARIFICATION_REQUIRED', admin_comments = $2, is_locked = false, locked_at = NULL, updated_at = NOW() 
+         WHERE id = $1`,
+        [applicationId, notes]
+      );
+      try {
+        await query(
+          `UPDATE vendor_identity SET onboarding_status = 'CLARIFICATION_REQUIRED', updated_at = NOW() 
+           WHERE application_id = $1 OR id = $1`,
+          [applicationId]
+        );
+      } catch (e) {
+        console.warn('Optional vendor_identity update failed:', (e as Error).message);
+      }
+      return c.json({
+        success: true,
+        message: 'Clarification requested',
+        applicationId,
+      });
+    } catch (error: any) {
+      console.error('Error requesting clarification:', error);
+      return c.json({ success: false, error: error.message || 'Failed to request clarification' }, 500);
+    }
   });
 
   // ============================================================================

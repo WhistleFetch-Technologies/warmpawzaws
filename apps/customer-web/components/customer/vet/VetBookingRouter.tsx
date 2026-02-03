@@ -523,7 +523,7 @@ export function VetBookingRouter({
   const refreshAddresses = async () => {
     if (selectedServiceType !== 'at_home') return;
     try {
-      const addressResponse = await apiClient.get(`/customer/${phone}/addresses`) as any;
+      const addressResponse = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
       if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
         setAddresses(addressResponse.addresses);
         const defaultAddr = addressResponse.addresses.find((a: any) => a.isDefault);

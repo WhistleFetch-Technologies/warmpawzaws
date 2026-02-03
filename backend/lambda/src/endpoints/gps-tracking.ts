@@ -681,8 +681,17 @@ export function registerGpsTrackingEndpoints(app: Hono) {
         return c.json({ error: 'phone is required' }, 400);
       }
 
-      // First get customer ID from phone
-      const customers = await select('customers', { phone: decodeURIComponent(phone) });
+      // Resolve customer ID from phone (try multiple formats so customer web finds sessions)
+      const rawPhone = decodeURIComponent(String(phone)).trim();
+      const digitsOnly = rawPhone.replace(/\D/g, '');
+      let customers: any[] = [];
+      for (const p of [rawPhone, digitsOnly, digitsOnly.length <= 10 ? `+91${digitsOnly}` : `+${digitsOnly}`, digitsOnly]) {
+        const rows = await select('customers', { phone: p });
+        if (rows.length > 0) {
+          customers = rows;
+          break;
+        }
+      }
       if (customers.length === 0) {
         return c.json({
           success: true,
@@ -692,7 +701,7 @@ export function registerGpsTrackingEndpoints(app: Hono) {
         });
       }
 
-      const customerId = customers[0].id;
+      const customerId = (customers[0] as any).id;
 
       const queryText = `
         SELECT 

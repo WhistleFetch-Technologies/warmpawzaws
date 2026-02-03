@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { toast } from "sonner";
+import { PolicyHelpButton } from "@/components/PolicyHelpButton";
 
 type DeliveryType = "last_mile" | "intercity" | "pan_india" | "hyperlocal";
 
@@ -159,9 +160,12 @@ export function LogisticsSettings() {
 	return (
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
-				<div>
-					<h2 className="text-2xl font-bold">Logistics Partners</h2>
-					<p className="text-gray-500">Manage delivery partners and configurations</p>
+				<div className="flex items-center gap-2">
+					<div>
+						<h2 className="text-2xl font-bold">Logistics Partners</h2>
+						<p className="text-gray-500">Manage delivery partners and configurations</p>
+					</div>
+					<PolicyHelpButton docKey="logistics-partners" />
 				</div>
 				<Button
 					onClick={() => {

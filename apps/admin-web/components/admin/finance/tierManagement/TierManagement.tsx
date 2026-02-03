@@ -22,6 +22,7 @@ import {
 import { Plus, Edit2, Trash2, Layers, RefreshCw } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 
 interface Tier {
   id: string;
@@ -210,9 +211,12 @@ export function TierManagement() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-900">Tier Configuration</h2>
-          <p className="text-sm text-slate-500">Manage vendor commission tiers and payout rules</p>
+        <div className="flex items-center gap-2">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">Tier Configuration</h2>
+            <p className="text-sm text-slate-500">Manage vendor commission tiers and payout rules</p>
+          </div>
+          <PolicyHelpButton docKey="finance-tier-system" />
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={handleSeedDefaults} disabled={loading}>

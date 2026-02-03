@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
@@ -56,20 +56,34 @@ import {
 } from 'lucide-react';
 import { Badge } from '../../../ui/badge';
 import { VendorNotificationModal } from '../../VendorNotificationModal';
-import { CommunicationHub } from '../../../communication/CommunicationHub';
-import { AppointmentDetailModal } from '../../AppointmentDetailModal';
-import { VendorAnalytics } from '../../VendorAnalytics';
-import { VendorSettingsScreen } from '../../VendorSettingsScreen';
-import { ChatWidget } from '../../../customer/ChatWidget';
-import { PharmacyOrderAlerts } from '../../pharmacy/PharmacyOrderAlerts';
-import { PendingReportsPanel } from '../../appointments/PendingReportsPanel';
 import { Dashboardstats, DashboardWarnings, NotificationItem, ScheduleItem, VendorDashboardProps, WatchlistItem } from '../types';
 import { formatBookingTime } from '../helpers';
-import { SoloProviderDashboard } from '../Soloprovider/SoloProviderDashboard';
 
-
-
-
+// Lazy-load heavy/cyclic components to avoid TDZ when dashboard chunk loads
+const SoloProviderDashboard = lazy(() =>
+  import('../Soloprovider/SoloProviderDashboard').then((m) => ({ default: m.SoloProviderDashboard }))
+);
+const CommunicationHub = lazy(() =>
+  import('../../../communication/CommunicationHub').then((m) => ({ default: m.CommunicationHub }))
+);
+const AppointmentDetailModal = lazy(() =>
+  import('../../AppointmentDetailModal').then((m) => ({ default: m.AppointmentDetailModal }))
+);
+const VendorAnalytics = lazy(() =>
+  import('../../VendorAnalytics').then((m) => ({ default: m.VendorAnalytics }))
+);
+const VendorSettingsScreen = lazy(() =>
+  import('../../VendorSettingsScreen').then((m) => ({ default: m.VendorSettingsScreen }))
+);
+const ChatWidget = lazy(() =>
+  import('../../../customer/ChatWidget').then((m) => ({ default: m.ChatWidget }))
+);
+const PharmacyOrderAlerts = lazy(() =>
+  import('../../pharmacy/PharmacyOrderAlerts').then((m) => ({ default: m.PharmacyOrderAlerts }))
+);
+const PendingReportsPanel = lazy(() =>
+  import('../../appointments/PendingReportsPanel').then((m) => ({ default: m.PendingReportsPanel }))
+);
 
 export function VendorDashboard({
   vendorId,
@@ -198,10 +212,16 @@ export function VendorDashboard({
     };
 
     return (
-      <SoloProviderDashboard
-        session={soloSession}
-        vendorData={vendorData}
-      />
+      <Suspense fallback={
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500" />
+        </div>
+      }>
+        <SoloProviderDashboard
+          session={soloSession}
+          vendorData={vendorData}
+        />
+      </Suspense>
     );
   }
 
@@ -557,20 +577,24 @@ export function VendorDashboard({
         {/* ✅ PHARMACY: Incoming Order Alerts for Pharmacy Vendors */}
         {isPharmacy && vendorId && (
           <div className="border-b border-gray-200">
-            <PharmacyOrderAlerts
-              pharmacyId={vendorId}
-              pharmacyName={vendor?.businessName || vendor?.business_name || 'Pharmacy'}
-            />
+            <Suspense fallback={null}>
+              <PharmacyOrderAlerts
+                pharmacyId={vendorId}
+                pharmacyName={vendor?.businessName || vendor?.business_name || 'Pharmacy'}
+              />
+            </Suspense>
           </div>
         )}
 
         {/* ✅ VET: Pending Lab Reports for Review (shared by customers) */}
         {isVet && vendorId && (
           <div className="border-b border-gray-200">
-            <PendingReportsPanel
-              vetId={vendorId}
-              onReportReviewed={() => fetchDashboardData(true)}
-            />
+            <Suspense fallback={null}>
+              <PendingReportsPanel
+                vetId={vendorId}
+                onReportReviewed={() => fetchDashboardData(true)}
+              />
+            </Suspense>
           </div>
         )}
 
@@ -829,7 +853,7 @@ export function VendorDashboard({
                 {/* Package Management - Hidden for Pharmacy AND Solo Providers (EXCEPT trainers/walkers/sitters) */}
                 {/* ✅ FIX: Solo trainers/walkers/sitters CAN create session packages */}
                 {(() => {
-                  const isTrainerWalkerSitter = hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter', 'pet_groomer', 'groomer', 'groomer_solo']);
+                  const isTrainerWalkerSitter = hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter', 'pet_groomer', 'groomer', 'groomer_solo']);
                   const canShowPackages = !isPharmacy && onNavigateToPackages && capabilities.package_management && (!isSoloProvider || isTrainerWalkerSitter);
                   return canShowPackages && (
                     <button
@@ -1465,32 +1489,36 @@ export function VendorDashboard({
 
       {/* Communication Hub (Unified Chat/Video) */}
       {communicationMode && selectedAppointment && (
-        <CommunicationHub
-          mode={communicationMode}
-          bookingId={selectedAppointment.bookingId}
-          userId={vendorData?.phone || vendorData?.mobile || '+91'}
-          userName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
-          otherUserName={selectedAppointment.customerName}
-          userType="vendor"
-          onClose={() => {
-            setCommunicationMode(null);
-            setSelectedAppointment(null);
-            fetchDashboardData(true); // Reload to clear unread badges
-          }}
-        />
+        <Suspense fallback={null}>
+          <CommunicationHub
+            mode={communicationMode}
+            bookingId={selectedAppointment.bookingId}
+            userId={vendorData?.phone || vendorData?.mobile || '+91'}
+            userName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
+            otherUserName={selectedAppointment.customerName}
+            userType="vendor"
+            onClose={() => {
+              setCommunicationMode(null);
+              setSelectedAppointment(null);
+              fetchDashboardData(true); // Reload to clear unread badges
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Appointment Detail Modal */}
       {appointmentDetailModalOpen && selectedAppointment && (
-        <AppointmentDetailModal
-          bookingId={selectedAppointment.bookingId}
-          vendorData={vendorData}
-          onClose={() => {
-            setAppointmentDetailModalOpen(false);
-            setSelectedAppointment(null);
-          }}
-          onRefresh={() => fetchDashboardData(true)}
-        />
+        <Suspense fallback={null}>
+          <AppointmentDetailModal
+            bookingId={selectedAppointment.bookingId}
+            vendorData={vendorData}
+            onClose={() => {
+              setAppointmentDetailModalOpen(false);
+              setSelectedAppointment(null);
+            }}
+            onRefresh={() => fetchDashboardData(true)}
+          />
+        </Suspense>
       )}
 
       {/* ✅ NEW: OTP Modal for Completing Appointments */}
@@ -1567,29 +1595,35 @@ export function VendorDashboard({
       {/* Vendor Analytics */}
       {activeBottomTab === 'reporting' && (
         <div className="fixed inset-0 bg-gray-50 z-20 overflow-y-auto pb-24">
-          <VendorAnalytics
-            vendorId={vendorId}
-            vendorData={vendorData}
-            onBack={() => setActiveBottomTab('home')}
-          />
+          <Suspense fallback={<div className="p-8 text-center text-gray-500">Loading analytics...</div>}>
+            <VendorAnalytics
+              vendorId={vendorId}
+              vendorData={vendorData}
+              onBack={() => setActiveBottomTab('home')}
+            />
+          </Suspense>
         </div>
       )}
 
       {/* Vendor Settings */}
       {activeBottomTab === 'settings' && (
-        <VendorSettingsScreen
-          vendorId={vendorId}
-          vendorData={vendor || vendorData}
-          onBack={() => setActiveBottomTab('home')}
-        />
+        <Suspense fallback={<div className="p-8 text-center text-gray-500">Loading settings...</div>}>
+          <VendorSettingsScreen
+            vendorId={vendorId}
+            vendorData={vendor || vendorData}
+            onBack={() => setActiveBottomTab('home')}
+          />
+        </Suspense>
       )}
 
       {/* AI Support Chat Widget for Vendors */}
-      <ChatWidget
-        userId={vendorId}
-        userName={vendor?.fullName || vendor?.businessName || 'Vendor'}
-        userType="vendor"
-      />
+      <Suspense fallback={null}>
+        <ChatWidget
+          userId={vendorId}
+          userName={vendor?.fullName || vendor?.businessName || 'Vendor'}
+          userType="vendor"
+        />
+      </Suspense>
 
       {/* Capability Debug Overlay (Dev Only) */}
       <CapabilityDebugOverlay

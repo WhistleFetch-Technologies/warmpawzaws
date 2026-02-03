@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { VendorRoleSelection } from './VendorRoleSelection';
 import { DynamicVendorOnboardingForm } from './DynamicVendorOnboardingForm';
@@ -77,6 +77,7 @@ export function VendorApp({ initialSession }: VendorAppProps) {
   const [applicationData, setApplicationData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState<boolean>(initial.isLoading);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [resubmitInitialData, setResubmitInitialData] = useState<any>(null);
 
   const hasCheckedStatus = useRef(false);
   const isCheckingStatus = useRef(false);
@@ -260,25 +261,10 @@ export function VendorApp({ initialSession }: VendorAppProps) {
               // Merge profile data with identity data
               Object.assign(identity, { vendor_id: vendorId });
             } else {
-              // ✅ FIX: Profile returned null vendor - try to fetch vendor by phone directly from vendors list
-              console.log('⚠️ [VendorApp] Profile returned null vendor, fetching vendor by phone...');
-              try {
-                const vendorsResponse = await apiClient.get<any>('/admin/vendors');
-                const vendorsData = vendorsResponse?.data?.vendors || vendorsResponse?.vendors || [];
-                const matchingVendor = vendorsData.find((v: any) => 
-                  v.phone === identity.phone || 
-                  v.phone === `+91${identity.phone}` || 
-                  v.phone?.replace(/\D/g, '').endsWith(identity.phone?.replace(/\D/g, ''))
-                );
-                if (matchingVendor) {
-                  vendorId = matchingVendor.id;
-                  vendorRecordExists = true;
-                  console.log('✅ [VendorApp] Found vendor by phone lookup:', vendorId);
-                  Object.assign(identity, { vendor_id: vendorId });
-                }
-              } catch (vendorLookupError) {
-                console.warn('⚠️ [VendorApp] Could not fetch vendors list:', vendorLookupError);
-              }
+              // Profile returned null vendor - use identity.id (vendors must not call /admin/vendors; 403)
+              console.log('⚠️ [VendorApp] Profile returned null vendor, using identity ID:', identity.id);
+              vendorId = identity.id;
+              vendorRecordExists = false;
             }
           } catch (profileError: any) {
             console.warn('⚠️ [VendorApp] Could not fetch vendor profile, using identity ID:', profileError.message);
@@ -565,11 +551,30 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     localStorage.setItem('vendorApplicationStatus', 'pending');
   };
 
-  const handleCorrectAndResubmit = () => {
-    // Preserve selected role so dynamic form loads for same role (clarification resubmit)
-    const roleId = vendorData?.roleId || vendorData?.role_id;
-    if (roleId) setSelectedRole(roleId);
+  const handleCorrectAndResubmit = async () => {
+    const roleId = vendorData?.roleId || vendorData?.role_id || (typeof window !== 'undefined' ? localStorage.getItem('vendorRole') : null);
+    if (!roleId) {
+      console.error('[VendorApp] No roleId for clarification resubmit');
+      alert('Could not determine your role. Please refresh the page.');
+      return;
+    }
+    const applicationId = vendorData?.application_id || vendorData?.application?.id || applicationData?.id || vendorData?.id || session.vendorId;
+    try {
+      if (applicationId) {
+        const data = await apiClient.get<any>(`/vendor/application/status/${applicationId}`);
+        const app = data?.application;
+        const payload = app?.form_data ?? app?.application_payload ?? app ?? null;
+        setResubmitInitialData(payload && typeof payload === 'object' ? payload : null);
+      } else {
+        setResubmitInitialData(vendorData?.application?.application_payload || null);
+      }
+    } catch (e) {
+      console.warn('[VendorApp] Could not fetch application for pre-fill, using cached:', e);
+      setResubmitInitialData(vendorData?.application?.application_payload || null);
+    }
+    setSelectedRole(roleId);
     setShowOnboarding(true);
+    setStatus('new');
   };
 
   const handleStartFresh = () => {
@@ -633,6 +638,16 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         allowResubmit={applicationData?.allowResubmit !== false}
         onResubmit={handleStartFresh}
         onCorrectAndResubmit={handleCorrectAndResubmit}
+        onGoBack={() => {
+          setStatus('new');
+          setSelectedRole(null);
+          setShowOnboarding(false);
+          setVendorData(null);
+          setApplicationData(null);
+          localStorage.removeItem('vendorData');
+          localStorage.removeItem('vendorApplicationStatus');
+          localStorage.removeItem('vendorRole');
+        }}
       />
     );
   }
@@ -663,16 +678,27 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     );
   }
 
-  // Active Vendor - Show VendorLandingPage (full portal)
+  // Active Vendor - Show VendorLandingPage (full portal), lazy-loaded to avoid TDZ in dashboard chunk
   if (status === 'active') {
     return (
-      <VendorLandingPage 
-        vendorId={vendorData?.id || session.vendorId || ''}
-        phone={session.phone}
-        initialVendorData={vendorData}
-        vendorType={vendorData?.vendorType}
-        serviceStyle={vendorData?.serviceStyle}
-      />
+      <Suspense
+        fallback={
+          <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4" />
+              <p className="text-gray-600">Loading...</p>
+            </div>
+          </div>
+        }
+      >
+        <VendorLandingPage
+          vendorId={vendorData?.id || session.vendorId || ''}
+          phone={session.phone}
+          initialVendorData={vendorData}
+          vendorType={vendorData?.vendorType}
+          serviceStyle={vendorData?.serviceStyle}
+        />
+      </Suspense>
     );
   }
 
@@ -682,8 +708,8 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     // Store role for onboarding flow to read
     localStorage.setItem('vendorSelectedRole', selectedRole);
     
-    // Get initial data if vendor is re-editing (clarification requested)
-    const initialFormData = vendorData?.application?.application_payload || null;
+    // Pre-fill from resubmit (Go back to onboarding form) or from cached application
+    const initialFormData = resubmitInitialData ?? vendorData?.application?.application_payload ?? null;
     
     return (
       <DynamicVendorOnboardingForm 
@@ -771,6 +797,7 @@ export function VendorApp({ initialSession }: VendorAppProps) {
             const response = await apiClient.post<any>('/vendor/onboarding/submit-application', payload);
             
             if (response.success || response.applicationId) {
+              setResubmitInitialData(null);
               handleOnboardingComplete({
                 ...submissionData,
                 applicationId: response.applicationId,
@@ -807,6 +834,7 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         onBack={() => {
           setShowOnboarding(false);
           setSelectedRole(null);
+          setResubmitInitialData(null);
         }}
       />
     );

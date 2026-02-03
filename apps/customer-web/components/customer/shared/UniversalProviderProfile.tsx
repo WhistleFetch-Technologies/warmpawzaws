@@ -223,13 +223,19 @@ export function UniversalProviderProfile({
   const refreshAddresses = async () => {
     if (serviceStyle !== 'at_home') return;
     try {
-      const addressResponse = await apiClient.get(`/customer/${phone}/addresses`) as any;
+      const addressResponse = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
       if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
         const normalized = addressResponse.addresses.map((a: any) => normalizeAddress(a));
         setAddresses(normalized);
-        if (normalized.length > 0 && !selectedAddress) {
-          const defaultAddr = addressResponse.addresses.find((a: any) => a.isDefault);
-          setSelectedAddress(normalizeAddress(defaultAddr || addressResponse.addresses[0]));
+        if (normalized.length > 0) {
+          setSelectedAddress((prev) => {
+            if (prev?.id) {
+              const stillInList = normalized.find((a: Address) => a.id === prev!.id);
+              return stillInList ?? normalizeAddress(addressResponse.addresses.find((a: any) => a.isDefault ?? a.is_default) || addressResponse.addresses[0]);
+            }
+            const defaultRaw = addressResponse.addresses.find((a: any) => a.isDefault ?? a.is_default);
+            return normalizeAddress(defaultRaw || addressResponse.addresses[0]);
+          });
         }
       }
     } catch (e) {
@@ -249,19 +255,16 @@ export function UniversalProviderProfile({
         }
       }
 
-      // Load addresses (for at_home service style)
+      // Load addresses (for at_home service style) — use ?phone= and normalize so list/selected have .address and .label
       if (serviceStyle === 'at_home') {
         try {
-          const addressResponse = await apiClient.get(`/customer/${phone}/addresses`) as any;
-          if (addressResponse?.addresses) {
-            setAddresses(addressResponse.addresses);
-            // Auto-select default address
-            const defaultAddr = addressResponse.addresses.find((a: Address) => a.isDefault);
-            if (defaultAddr) {
-              setSelectedAddress(defaultAddr);
-            } else if (addressResponse.addresses.length > 0) {
-              setSelectedAddress(addressResponse.addresses[0]);
-            }
+          const addressResponse = await apiClient.get(`/customer/addresses?phone=${encodeURIComponent(phone)}`) as any;
+          if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
+            const normalized = addressResponse.addresses.map((a: any) => normalizeAddress(a));
+            setAddresses(normalized);
+            const defaultRaw = addressResponse.addresses.find((a: any) => a.isDefault ?? a.is_default);
+            const toSelect = defaultRaw || addressResponse.addresses[0];
+            if (toSelect) setSelectedAddress(normalizeAddress(toSelect));
           }
         } catch (e) {
           console.log('No addresses found');

@@ -29,7 +29,7 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
 
   const loadAddresses = async () => {
     try {
-      const data = await apiClient.get<{ addresses?: any[] }>(`/customer/${phone}/addresses`);
+      const data = await apiClient.get<{ addresses?: any[] }>(`/customer/addresses?phone=${encodeURIComponent(phone)}`);
       const addressList = data.addresses || [];
       setAddresses(addressList);
       

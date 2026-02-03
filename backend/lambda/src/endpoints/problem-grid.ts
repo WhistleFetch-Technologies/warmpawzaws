@@ -308,6 +308,9 @@ export function registerProblemGridEndpoints(app: Hono) {
         'pet_behavior': 'behaviourist',
         'behaviourist_solo': 'behaviourist',
         'behaviourist_center': 'behaviourist',
+        'pet_behaviorist': 'trainer',
+        'behaviorist_solo': 'trainer',
+        'behaviorist_center': 'trainer',
         
         // Boarding variations → boarding
         'boarding': 'boarding',
@@ -590,7 +593,21 @@ export function registerProblemGridEndpoints(app: Hono) {
       }
 
       const subCategoryIds = mappingsResult.rows.map((r: any) => r.sub_category_id);
-      const roleIds = [...new Set(mappingsResult.rows.map((r: any) => r.role_id))];
+      let roleIds = [...new Set(mappingsResult.rows.map((r: any) => r.role_id))];
+
+      // Expand problem_grid role_id to actual roles.name values so trainer problems also match behaviorist vendors
+      const problemRoleToVendorRoleNames: Record<string, string[]> = {
+        trainer: ['trainer', 'trainer_solo', 'trainer_center', 'behaviorist_solo', 'behaviorist_center'],
+        behaviourist: ['behaviourist', 'behaviorist_solo', 'behaviorist_center'],
+        behaviorist: ['behaviorist_solo', 'behaviorist_center'],
+      };
+      let expandedRoleIds = [...roleIds];
+      for (const rid of roleIds) {
+        if (problemRoleToVendorRoleNames[rid]) {
+          expandedRoleIds = expandedRoleIds.concat(problemRoleToVendorRoleNames[rid]);
+        }
+      }
+      roleIds = [...new Set(expandedRoleIds)];
 
       // Get vendors with matching specializations or roles
       // Use rev for reviews (is_published works when is_approved column is missing); join roles for role name filter (problem_grid_mappings.role_id is role name TEXT, vendors.role_id is UUID)

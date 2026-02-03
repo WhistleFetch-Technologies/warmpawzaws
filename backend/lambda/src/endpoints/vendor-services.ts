@@ -55,7 +55,9 @@ const roleMappings: Record<string, string[]> = {
   'pet_trainer': ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
   'trainer_center': ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
   'trainer_solo': ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
-  'pet_behaviorist': ['behaviorist', 'pet_behaviorist', 'trainer_solo', 'trainer_center'],
+  'pet_behaviorist': ['behaviorist', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center'],
+  'behaviorist_solo': ['behaviorist_solo', 'pet_behaviorist', 'behaviorist'],
+  'behaviorist_center': ['behaviorist_center', 'pet_behaviorist', 'behaviorist'],
   'pet_sitter': ['sitter', 'pet_sitter'],
   'sitter': ['sitter', 'pet_sitter'],
   'pet_taxi': ['transport', 'pet_transport', 'pet_taxi', 'relocation'],
@@ -227,7 +229,9 @@ export function registerVendorServicesEndpoints(app: Hono) {
         'vet_clinic': ['at_center', 'tele', 'at_home'],
         'nutritionist': ['at_center', 'tele', 'at_home'], // Nutritionists have tele
         'pet_nutritionist': ['at_center', 'tele', 'at_home'],
-        'pet_behaviorist': ['at_home', 'at_center', 'tele'], // Behaviorists have tele
+        'pet_behaviorist': ['at_home', 'at_center', 'tele'],
+        'behaviorist_solo': ['at_home', 'tele'], // Solo: home + tele only
+        'behaviorist_center': ['at_home', 'at_center', 'tele'], // Center: all styles
         'diagnostics': ['at_home', 'at_center'],
         'diagnostic_center': ['at_home', 'at_center'], // Diagnostics center: center + home (e.g. lab, sample collection)
         'diagnostics_center': ['at_home', 'at_center'],
@@ -650,6 +654,8 @@ export function registerVendorServicesEndpoints(app: Hono) {
                 'pet_nutritionist': ['at_center', 'tele', 'at_home'],
                 'nutritionist_center': ['at_center', 'at_home', 'tele'],
                 'pet_behaviorist': ['at_home', 'at_center', 'tele'],
+                'behaviorist_solo': ['at_home', 'tele'],
+                'behaviorist_center': ['at_home', 'at_center', 'tele'],
                 'diagnostics': ['at_home', 'at_center'],
                 'diagnostic_center': ['at_home', 'at_center'],
                 'diagnostics_center': ['at_home', 'at_center'],
@@ -772,14 +778,16 @@ export function registerVendorServicesEndpoints(app: Hono) {
             ].filter(Boolean);
             const uniqueRoles = [...new Set(acceptableRoles)];
 
-            // Query service_catalog for available services matching this style and role
+            // Query service_catalog for available services: STRICT - only services that have
+            // applicable_roles set and overlapping with vendor role; service_style must match.
             const catalogQuery = await query(
               `SELECT sc.* 
                FROM service_catalog sc
                WHERE sc.status = 'active'
                AND (sc.publish_status = 'published' OR sc.publish_status IS NULL)
                AND sc.service_style = $1
-               AND (sc.applicable_roles && $2::text[] OR sc.applicable_roles IS NULL OR array_length(sc.applicable_roles, 1) IS NULL)
+               AND array_length(sc.applicable_roles, 1) > 0
+               AND sc.applicable_roles && $2::text[]
                ORDER BY sc.category_name ASC, sc.service_name ASC
                LIMIT 100`,
               [serviceStyle, uniqueRoles]
@@ -1446,10 +1454,25 @@ export function registerVendorServicesEndpoints(app: Hono) {
         serviceStyle,
         price,
         duration,
+        isPackage,
+        packageDetails,
+        specializationIds,
+        specialization_ids,
       } = serviceData;
+      const effectiveSpecIds = Array.isArray(specializationIds) ? specializationIds : (Array.isArray(specialization_ids) ? specialization_ids : []);
 
       const effectiveCategory = category || categoryName || null;
       const effectiveSubCategory = subCategory || subCategoryName || null;
+
+      // For packages, effective price comes from packageDetails.price or packageDetails.packagePrice
+      const packagePrice =
+        packageDetails && typeof packageDetails === 'object'
+          ? Number(packageDetails.price ?? packageDetails.packagePrice ?? 0)
+          : 0;
+      const isPackageService = Boolean(isPackage);
+      const effectivePriceNum = isPackageService
+        ? (Number.isFinite(packagePrice) ? packagePrice : 0)
+        : (price != null ? Number(price) : NaN);
 
       // Determine serviceStyle from vendor if not provided
       let effectiveServiceStyle: string;
@@ -1507,14 +1530,15 @@ export function registerVendorServicesEndpoints(app: Hono) {
       }
 
       const hasServiceName = serviceName != null && String(serviceName).trim() !== '';
-      const priceNum = price != null ? Number(price) : NaN;
-      const hasValidPrice = !Number.isNaN(priceNum) && priceNum >= 0;
-      // Allow price 0 for packages (pricing in packageDetails)
+      const hasValidPrice = !Number.isNaN(effectivePriceNum) && effectivePriceNum >= 0;
       if (!hasServiceName) {
         return c.json({ error: 'serviceName is required' }, 400);
       }
       if (!hasValidPrice) {
-        return c.json({ error: 'price is required and must be a non-negative number' }, 400);
+        return c.json(
+          { error: isPackageService ? 'Package price (packageDetails.price or packageDetails.packagePrice) must be a non-negative number' : 'price is required and must be a non-negative number' },
+          400
+        );
       }
 
       // ✅ Duplicate name check: same vendor cannot have two custom services with the same name (case-insensitive)
@@ -1532,12 +1556,12 @@ export function registerVendorServicesEndpoints(app: Hono) {
         );
       }
 
-      // Create base service first (use validated priceNum)
+      // Create base service first (use effective price: package price when isPackage, else top-level price)
       const baseService = await insert('services', {
         name: serviceName,
         description: description || null,
         category: effectiveCategory,
-        price: priceNum,
+        price: effectivePriceNum,
         duration_minutes: duration || 30,
         is_active: true,
       });
@@ -1546,23 +1570,38 @@ export function registerVendorServicesEndpoints(app: Hono) {
       const effectivePublishStatus = requestedPublishStatus === 'published' ? 'pending_approval' : requestedPublishStatus;
       const isEnabled = effectivePublishStatus === 'published';
 
-      // Create vendor service link (use validated priceNum)
-      const vendorService = await insert('vendor_services', {
+      // Build metadata for packages and/or specializations (360°: custom service linked to specializations for discovery)
+      const metadata: Record<string, unknown> = {};
+      if (isPackageService && packageDetails && typeof packageDetails === 'object') {
+        metadata.isPackage = true;
+        metadata.packageDetails = packageDetails;
+      }
+      if (effectiveSpecIds.length > 0) {
+        metadata.specialization_ids = effectiveSpecIds;
+      }
+      const metadataToStore = Object.keys(metadata).length > 0 ? metadata : undefined;
+
+      // Create vendor service link (use effective price; store package metadata when isPackage)
+      const vendorServicePayload: Record<string, unknown> = {
         vendor_id: vendorId,
         service_id: baseService[0].id,
         service_name: serviceName,
         category: effectiveCategory,
         sub_category: effectiveSubCategory || null,
         service_style: effectiveServiceStyle,
-        price: priceNum,
-        custom_price: price,
+        price: effectivePriceNum,
+        custom_price: effectivePriceNum,
         duration_minutes: duration || 30,
         custom_duration: duration || 30,
         is_enabled: isEnabled,
         publish_status: effectivePublishStatus,
         is_custom_service: true,
         submitted_for_approval_at: effectivePublishStatus === 'pending_approval' ? new Date().toISOString() : null,
-      });
+      };
+      if (metadataToStore) {
+        vendorServicePayload.metadata = metadataToStore;
+      }
+      const vendorService = await insert('vendor_services', vendorServicePayload);
 
       return c.json({
         success: true,

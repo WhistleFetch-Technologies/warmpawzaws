@@ -4,7 +4,7 @@
  * Vendor Landing Page - Main Entry Point for Vendor Portal
  * Handles all vendor lifecycle states from onboarding to active operations
  */
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
@@ -29,7 +29,10 @@ import { VendorApprovedSetup } from './VendorApprovedSetup';
 // import { VendorAvailabilitySetup } from './VendorAvailabilitySetup';
 import { VendorSetupCompleted } from './VendorSetupCompleted';
 import { VendorApplicationRejected } from './VendorApplicationRejected';
-import { VendorDashboard } from './dashboard/BussinesProvider/VendorDashboard'; // ✅ FIX: Use actual Figma UI component, not the placeholder VendorDashboardScreen
+// Lazy-load VendorDashboard so heavy chunk loads only when active vendor view is shown
+const VendorDashboard = React.lazy(() =>
+  import('./dashboard/BussinesProvider/VendorDashboard').then((m) => ({ default: m.VendorDashboard }))
+);
 // ✅ REMOVED: VendorScheduleManagement - Using AdvancedAvailabilityManager as standard
 // import { VendorScheduleManagement } from './VendorScheduleManagement';
 import { VendorServiceManagementComplete } from './VendorServiceManagementComplete';
@@ -798,33 +801,35 @@ export function VendorLandingPage({
     setStatus('new');
   };
 
-  // ✅ NEW: Handler for correcting and resubmitting after rejection or clarification
+  // ✅ Handler for "Go back to onboarding form" – load existing application and show form for correction/clarification
+  const applicationIdForStatus = vendorData?.applicationId || applicationData?.id || vendorId;
   const handleCorrectAndResubmit = async (mode: 'correction' | 'clarification') => {
+    if (!applicationIdForStatus) {
+      toast.error('Application ID not found. Please refresh and try again.');
+      return;
+    }
     try {
       console.log(`📝 Starting re-onboarding in ${mode} mode...`);
       setLoading(true);
-      
-      // Load existing application data
-      const data = await apiClient.get(`/make-server-3dd53475/vendor/application`) as any;
-      
-      if (data && data.success) {
-        // data already available
-        console.log('✅ Loaded existing application data:', data.application);
-        
-        setExistingApplicationData(data.application);
+
+      const data = await apiClient.get(`/vendor/application/status/${applicationIdForStatus}`) as any;
+
+      if (data?.application) {
+        const app = data.application;
+        const payload = app.form_data ?? app.application_payload ?? app ?? {};
+        setExistingApplicationData(typeof payload === 'object' && payload !== null ? payload : {});
         setReEditMode(mode);
         setIsReEditing(true);
         setLoading(false);
-        
         toast.success('Application loaded. Please update the required information.');
       } else {
         console.error('❌ Failed to load application:', data?.error);
-        toast.error('Failed to load application data. Please try again.');
+        toast.error(data?.error || 'Failed to load application data. Please try again.');
         setLoading(false);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading application:', error);
-      toast.error('An error occurred. Please try again.');
+      toast.error(error?.message || 'An error occurred. Please try again.');
       setLoading(false);
     }
   };
@@ -859,12 +864,10 @@ export function VendorLandingPage({
     );
   }
 
-  // ✅ NEW: Show re-onboarding screen if in edit mode
-  if (isReEditing && existingApplicationData && vendorData) {
+  // ✅ Show re-onboarding screen when user clicked "Go back to onboarding form" (correction or clarification)
+  if (isReEditing && existingApplicationData !== null) {
+    const roleIdForForm = vendorData?.roleId ?? (applicationData as any)?.roleId ?? (existingApplicationData as any)?.roleId ?? (existingApplicationData as any)?.selected_role_id;
     console.log('📝 Rendering re-onboarding screen with mode:', reEditMode);
-    
-    // For re-submissions, use the regular VendorOnboarding flow
-    // The vendor will need to go through service selection and form again
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="w-full max-w-[430px] mx-auto p-4 bg-blue-50 border-b-2 border-blue-200">
@@ -882,12 +885,11 @@ export function VendorLandingPage({
             </div>
           </div>
         </div>
-        
         <EnhancedVendorOnboarding
           phone={phone}
-          roleId={vendorData?.roleId} // ✅ Pass roleId for re-submissions
+          roleId={roleIdForForm}
           onComplete={handleResubmitComplete}
-          initialData={existingApplicationData} // ✅ Pass existing data for pre-filling
+          initialData={existingApplicationData}
         />
       </div>
     );
@@ -999,6 +1001,14 @@ export function VendorLandingPage({
           allowResubmit={applicationData?.allowResubmit !== false}
           onResubmit={handleResubmit}
           onCorrectAndResubmit={() => handleCorrectAndResubmit('correction')}
+          onGoBack={() => {
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem('vendorData');
+              localStorage.removeItem('vendorApplicationStatus');
+              localStorage.removeItem('vendorRole');
+              window.location.href = '/';
+            }
+          }}
         />
       );
 
@@ -1031,7 +1041,7 @@ export function VendorLandingPage({
           <VendorServiceManagementComplete
             vendorId={vendorId}
             vendorData={vendorData}
-            onBack={() => setShowServiceManagement(false)}
+            onBack={() => router.push('/dashboard')}
           />
         );
       }
@@ -1587,94 +1597,73 @@ export function VendorLandingPage({
         );
       }
       
-      // ✅ FIX: Use VendorDashboard (actual Figma UI) instead of VendorDashboardScreen (placeholder)
-      // VendorDashboard is the comprehensive 1200+ line component with all capabilities
+      // ✅ Full VendorDashboard (Figma UI) – all options, appointment models, navigation
       console.log('🎯 Rendering VendorDashboard (Figma UI) for vendor:', vendorId);
       
       return (
         <>
-          <VendorDashboard
-            vendorId={vendorId}
-            vendorData={vendorData}
-            onNavigateToConsultation={() => setShowConsultation(true)}
-            onNavigateToServiceManagement={() => {
-              // ✅ FIX: All vendors (pharmacy, cafe, insurance, holidays, resort, ambulance, etc.) get Service Management
-              setShowServiceManagement(true);
-            }}
-            onNavigateToBookingManagement={() => setShowBookingManagement(true)}
-            onNavigateToTeleConsultation={() => setShowTeleConsultation(true)}
-            // ✅ STANDARDIZED: Both schedule management and advanced availability now use AdvancedAvailabilityManager
-            onNavigateToScheduleManagement={() => setShowAdvancedAvailability(true)} // Redirects to Advanced Availability
-            onNavigateToAdvancedAvailability={() => setShowAdvancedAvailability(true)}
-            onNavigateToProfile={() => setShowProfile(true)}
-            onNavigateToFacilityManagement={() => setShowFacilityManagement(true)}
-            onNavigateToBusinessHub={() => setShowBusinessHub(true)}
-            onNavigateToSupport={() => setShowSupportDashboard(true)}
-            onNavigateToLiveTracking={() => setShowLiveTracking(true)}
-            onNavigateToSpecializedServices={() => setShowSpecializedServices(true)}
-            onNavigateToGallery={() => setShowGallery(true)}
-            onNavigateToPortfolio={() => setShowPortfolio(true)}
-            onNavigateToCCTV={() => setShowCCTV(true)}
-            onNavigateToControlledSubstances={() => setShowControlledSubstances(true)}
-            onNavigateToPrescription={() => setShowPrescription(true)}
-            onNavigateToPrescriptionList={() => setShowPrescriptionList(true)} // ✅ NEW
-            onNavigateToDiagnostics={() => {
-              // ✅ FIX: Use proper role detection helper
-              // Quick check: Direct role.name check first (fastest path)
-              const roleName = vendorData?.role?.name || vendorData?.roleName || vendorData?.role_name;
-              const isDiagnosticsCenterDirect = roleName && (
-                roleName.toLowerCase().includes('diagnostics_center') ||
-                roleName.toLowerCase().includes('diagnostic_center') ||
-                roleName.toLowerCase() === 'diagnostics'
-              );
-              
-              // Also use the helper function for comprehensive check
-              const vendorDataWithCapabilities = {
-                ...vendorData,
-                capabilities: capabilities || []
-              };
-              const isDiagnosticsCenterHelper = isDiagnosticsCenter(vendorDataWithCapabilities);
-              
-              const shouldShowOrders = isDiagnosticsCenterDirect || isDiagnosticsCenterHelper;
-              
-              console.log('🔍 [VendorLandingPage] onNavigateToDiagnostics:', {
-                roleName,
-                isDiagnosticsCenterDirect,
-                isDiagnosticsCenterHelper,
-                shouldShowOrders,
-                vendorData: vendorData ? { id: vendorData.id, role: vendorData.role } : null
-              });
-              
-              if (shouldShowOrders) {
-                console.log('✅ [VendorLandingPage] Detected diagnostics center - showing orders dashboard');
-                setShowDiagnosticsOrders(true);
-              } else {
-                console.log('⚠️ [VendorLandingPage] Not diagnostics center - showing test catalog');
-                setShowDiagnostics(true);
-              }
-            }}
-            onNavigateToPricing={() => setShowPricing(true)} // ✅ NEW
-            onNavigateToProgressTracking={() => setShowProgressTracking(true)}
-            onNavigateToPackages={() => setShowPackages(true)}
-            onNavigateToCustomServices={() => setShowCustomServices(true)}
-            onNavigateToAdoptionSystem={() => setShowAdoptionSystem(true)}
-            onNavigateToMemorialServices={() => setShowMemorialServices(true)}
-            onNavigateToExpiryManagement={() => setShowExpiryManagement(true)}
-            onNavigateToDonationManagement={() => setShowDonationManagement(true)}
-            onNavigateToEventManagement={() => setShowEventManagement(true)}
-            onNavigateToPatientMonitoring={() => setShowPatientMonitoring(true)}
-            onNavigateToCafeMenuManagement={() => setShowCafeMenuManagement(true)}
-            onNavigateToCafeTables={() => router.push('/cafe/tables')}
-            onNavigateToPrescriptionVerification={() => setShowPrescriptionVerification(true)}
-            onNavigateToDeliveryManagement={() => setShowDeliveryManagement(true)}
-            onNavigateToDietCharts={() => router.push('/nutrition/dashboard')}
-            onNavigateToCounseling={() => setShowCounseling(true)}
-            onNavigateToDistancePricing={() => setShowDistancePricing(true)}
-            onNavigateToPolicyManagement={() => setShowPolicyManagement(true)}
-            onNavigateToServicePromotions={() => setShowServicePromotions(true)}
-          />
+          <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4" />
+              <p className="text-gray-600 mt-4">Loading dashboard...</p>
+            </div>
+          }>
+            <VendorDashboard
+              vendorId={vendorId}
+              vendorData={vendorData}
+              onNavigateToConsultation={() => setShowConsultation(true)}
+              onNavigateToServiceManagement={() => setShowServiceManagement(true)}
+              onNavigateToBookingManagement={() => setShowBookingManagement(true)}
+              onNavigateToTeleConsultation={() => setShowTeleConsultation(true)}
+              onNavigateToScheduleManagement={() => setShowAdvancedAvailability(true)}
+              onNavigateToAdvancedAvailability={() => setShowAdvancedAvailability(true)}
+              onNavigateToProfile={() => setShowProfile(true)}
+              onNavigateToFacilityManagement={() => setShowFacilityManagement(true)}
+              onNavigateToBusinessHub={() => setShowBusinessHub(true)}
+              onNavigateToSupport={() => setShowSupportDashboard(true)}
+              onNavigateToLiveTracking={() => setShowLiveTracking(true)}
+              onNavigateToSpecializedServices={() => setShowSpecializedServices(true)}
+              onNavigateToGallery={() => setShowGallery(true)}
+              onNavigateToPortfolio={() => setShowPortfolio(true)}
+              onNavigateToCCTV={() => setShowCCTV(true)}
+              onNavigateToControlledSubstances={() => setShowControlledSubstances(true)}
+              onNavigateToPrescription={() => setShowPrescription(true)}
+              onNavigateToPrescriptionList={() => setShowPrescriptionList(true)}
+              onNavigateToDiagnostics={() => {
+                const roleName = vendorData?.role?.name || vendorData?.roleName || vendorData?.role_name;
+                const isDiagnosticsCenterDirect = roleName && (
+                  roleName.toLowerCase().includes('diagnostics_center') ||
+                  roleName.toLowerCase().includes('diagnostic_center') ||
+                  roleName.toLowerCase() === 'diagnostics'
+                );
+                const vendorDataWithCapabilities = { ...vendorData, capabilities: capabilities || [] };
+                const isDiagnosticsCenterHelper = isDiagnosticsCenter(vendorDataWithCapabilities);
+                const shouldShowOrders = isDiagnosticsCenterDirect || isDiagnosticsCenterHelper;
+                if (shouldShowOrders) setShowDiagnosticsOrders(true);
+                else setShowDiagnostics(true);
+              }}
+              onNavigateToPricing={() => setShowPricing(true)}
+              onNavigateToProgressTracking={() => setShowProgressTracking(true)}
+              onNavigateToPackages={() => setShowPackages(true)}
+              onNavigateToCustomServices={() => setShowCustomServices(true)}
+              onNavigateToAdoptionSystem={() => setShowAdoptionSystem(true)}
+              onNavigateToMemorialServices={() => setShowMemorialServices(true)}
+              onNavigateToExpiryManagement={() => setShowExpiryManagement(true)}
+              onNavigateToDonationManagement={() => setShowDonationManagement(true)}
+              onNavigateToEventManagement={() => setShowEventManagement(true)}
+              onNavigateToPatientMonitoring={() => setShowPatientMonitoring(true)}
+              onNavigateToCafeMenuManagement={() => setShowCafeMenuManagement(true)}
+              onNavigateToCafeTables={() => router.push('/cafe/tables')}
+              onNavigateToPrescriptionVerification={() => setShowPrescriptionVerification(true)}
+              onNavigateToDeliveryManagement={() => setShowDeliveryManagement(true)}
+              onNavigateToDietCharts={() => router.push('/nutrition/dashboard')}
+              onNavigateToCounseling={() => setShowCounseling(true)}
+              onNavigateToDistancePricing={() => setShowDistancePricing(true)}
+              onNavigateToPolicyManagement={() => setShowPolicyManagement(true)}
+              onNavigateToServicePromotions={() => setShowServicePromotions(true)}
+            />
+          </Suspense>
           
-          {/* ✅ Custom Services as modal overlay so it doesn't redirect away */}
           {showCustomServices && (
             <Dialog open={true} onOpenChange={(open) => !open && setShowCustomServices(false)}>
               <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0">
@@ -1683,14 +1672,11 @@ export function VendorLandingPage({
                   vendorData={vendorData}
                   serviceStyle={vendorData?.serviceStyle === 'both' ? 'both' : 'at_center'}
                   onClose={() => setShowCustomServices(false)}
-                  onServiceCreated={() => {
-                    setShowCustomServices(false);
-                  }}
+                  onServiceCreated={() => setShowCustomServices(false)}
                 />
               </DialogContent>
             </Dialog>
           )}
-          {/* Rule 4: Large on-screen notification for new appointment/order (loud) */}
           {newBookingAlert && (
             <VendorNewBookingOrderAlert
               notification={newBookingAlert}
@@ -1702,7 +1688,6 @@ export function VendorLandingPage({
               playSound={true}
             />
           )}
-          {/* ✅ P2P VIDEO CALL: WhatsApp-like incoming call notification */}
           {incomingCall && (
             <TeleCallNotification
               callType="incoming"
@@ -1712,15 +1697,10 @@ export function VendorLandingPage({
               serviceName={incomingCall.serviceName}
               petName={incomingCall.petName}
               onAccept={(bookingId, meetingId) => {
-                // Open video call page in same window so vendor stays in app (no login popup)
                 router.push(`/video/${bookingId}${meetingId ? `?meetingId=${meetingId}` : ''}`);
                 setIncomingCall(null);
               }}
-              onReject={() => {
-                // Dismiss the notification
-                setIncomingCall(null);
-                toast.info('Call declined');
-              }}
+              onReject={() => { setIncomingCall(null); toast.info('Call declined'); }}
               onDismiss={() => setIncomingCall(null)}
             />
           )}

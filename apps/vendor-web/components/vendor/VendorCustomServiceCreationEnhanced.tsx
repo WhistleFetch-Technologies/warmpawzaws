@@ -20,7 +20,7 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { 
   Plus, Save, X, AlertCircle, Clock, DollarSign, Package, FileText,
@@ -44,6 +44,10 @@ import { getServiceStyleLabelForRole } from '@/lib/service-style-labels';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+
+const SpecializationSelector = lazy(() =>
+  import('@/components/vendor/SpecializationSelector').then((m) => ({ default: m.SpecializationSelector }))
+);
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -286,6 +290,9 @@ export function VendorCustomServiceCreationEnhanced({
   const [availableMicroCategories, setAvailableMicroCategories] = useState<MicroCategory[]>([]);
   const [selectedMicroCategory, setSelectedMicroCategory] = useState<MicroCategory | null>(null);
   const [catalogCategories, setCatalogCategories] = useState<any[]>([]);
+  
+  // Specializations (optional – for discovery / "What's your pet's need?")
+  const [selectedSpecializationIds, setSelectedSpecializationIds] = useState<string[]>([]);
   
   // Available vendor services for combo packages
   const [vendorServices, setVendorServices] = useState<any[]>([]);
@@ -605,7 +612,8 @@ export function VendorCustomServiceCreationEnhanced({
         whatIncluded: whatIncluded.filter(i => i.trim() !== ''),
         whatNotIncluded: whatNotIncluded.filter(i => i.trim() !== ''),
         petTypes: petTypes.length > 0 ? petTypes : ['dog', 'cat'],
-        publishStatus: 'draft'
+        publishStatus: 'draft',
+        specializationIds: selectedSpecializationIds.length > 0 ? selectedSpecializationIds : undefined,
       };
       
       const data = await apiClient.post(`/vendor/${vendorId}/services/custom`, customService) as any;
@@ -755,6 +763,7 @@ export function VendorCustomServiceCreationEnhanced({
     setWhatNotIncluded(['']);
     setPetTypes([]);
     setSelectedMicroCategory(null);
+    setSelectedSpecializationIds([]);
     if (effectiveStyles.length > 0) {
       setSelectedServiceStyle(effectiveStyles[0]);
     }
@@ -887,7 +896,9 @@ export function VendorCustomServiceCreationEnhanced({
                 <div className="flex items-center gap-2 text-gray-600">
                   <DollarSign className="w-4 h-4 text-[#FF8C42]" />
                   <span>
-                    {service.isPackage ? 'Package' : `₹${service.price}`}
+                    {service.isPackage
+                      ? `Package · ₹${service.price ?? service.packageDetails?.price ?? service.packageDetails?.packagePrice ?? 0}`
+                      : `₹${service.price}`}
                   </span>
                 </div>
               </div>
@@ -899,7 +910,7 @@ export function VendorCustomServiceCreationEnhanced({
                   {service.packageType === 'session' && service.packageDetails.pricingBySize && (
                     <>
                       <div className="text-gray-700">
-                        <div>Price: ₹{service.packageDetails.price || service.packageDetails.pricingBySize?.small || 0}</div>
+                        <div>Price: ₹{service.packageDetails.price ?? service.packageDetails.packagePrice ?? service.packageDetails.pricingBySize?.small ?? service.price ?? 0}</div>
                       </div>
                       <p className="text-xs text-gray-600 mt-2">
                         {service.packageDetails.totalSessions} sessions over {service.packageDetails.packageDuration} days
@@ -1110,6 +1121,21 @@ export function VendorCustomServiceCreationEnhanced({
                   />
                 </div>
               )}
+            </div>
+
+            {/* 360°: Specializations (optional) – multi-select; links to "What's your pet needs?" discovery */}
+            <div className="space-y-2">
+              <Label>Specializations (Optional)</Label>
+              <p className="text-xs text-gray-500 mb-1">
+                Select the specializations this service or package covers so customers can find it when they choose a need.
+              </p>
+              <Suspense fallback={<div className="py-4 text-sm text-gray-500">Loading specializations...</div>}>
+                <SpecializationSelector
+                  roleId={getVendorRoleId(vendorData) || ''}
+                  selected={selectedSpecializationIds}
+                  onChange={setSelectedSpecializationIds}
+                />
+              </Suspense>
             </div>
 
             {/* Is Package Toggle */}

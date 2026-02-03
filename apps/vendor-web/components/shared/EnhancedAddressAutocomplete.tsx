@@ -144,33 +144,11 @@ export function EnhancedAddressAutocomplete({
 
       autocompleteRef.current = autocomplete;
 
-      // Handle place selection
-      autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        
-        if (!place.geometry || !place.geometry.location) {
-          console.warn('No location data available for selected place');
-          return;
-        }
-
-        // Parse address components
-        const lat = place.geometry.location.lat();
-        const lng = place.geometry.location.lng();
-        const components: AddressComponents = {
-          coordinates: {
-            lat,
-            lng,
-          },
-          formattedAddress: place.formatted_address,
-          // ✅ Also expose lat/lng directly for backward compatibility
-          lat,
-          lng,
-        };
-
-        // Extract address components
-        place.address_components?.forEach((component: any) => {
+      // Helper: parse address_components into AddressComponents (including pincode)
+      const parseAddressComponents = (addressComponents: any[] | undefined, base: Partial<AddressComponents>): AddressComponents => {
+        const components: AddressComponents = { ...base };
+        addressComponents?.forEach((component: any) => {
           const types = component.types;
-
           if (types.includes('street_number')) {
             components.street = (components.street || '') + component.long_name + ' ';
           } else if (types.includes('route')) {
@@ -187,12 +165,65 @@ export function EnhancedAddressAutocomplete({
             components.landmark = component.long_name;
           }
         });
+        return components as AddressComponents;
+      };
 
-        // ✅ Add placeId to components
-        components.placeId = place.place_id;
-        
-        // Call onChange with formatted address and components
-        onChange(place.formatted_address, components);
+      // Handle place selection
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        if (!place.place_id) {
+          console.warn('No place_id for selected place');
+          return;
+        }
+        const lat = place.geometry?.location?.lat?.() ?? 0;
+        const lng = place.geometry?.location?.lng?.() ?? 0;
+        const formattedAddress = place.formatted_address ?? '';
+
+        const baseComponents: Partial<AddressComponents> = {
+          coordinates: { lat, lng },
+          formattedAddress,
+          lat,
+          lng,
+          placeId: place.place_id,
+        };
+
+        // getPlace() often omits address_components; fetch full details by place_id when missing or when pincode not found
+        const hasPincode = (comps: any[] | undefined) =>
+          comps?.some((c: any) => c.types?.includes('postal_code'));
+        if (place.address_components?.length && hasPincode(place.address_components)) {
+          const components = parseAddressComponents(place.address_components, baseComponents);
+          onChange(formattedAddress, components);
+          return;
+        }
+
+        // Fetch place details to get address_components (including postal_code) when getPlace() omits them
+        const placesService = new win.google.maps.places.PlacesService(document.createElement('div'));
+        placesService.getDetails(
+          {
+            placeId: place.place_id,
+            fields: ['address_components', 'formatted_address', 'geometry'],
+          },
+          (details: any, status: string) => {
+            if (status !== win.google.maps.places.PlacesServiceStatus.OK || !details) {
+              const fallback = parseAddressComponents(place.address_components, baseComponents);
+              onChange(formattedAddress, fallback);
+              return;
+            }
+            const detailLat = details.geometry?.location?.lat?.() ?? lat;
+            const detailLng = details.geometry?.location?.lng?.() ?? lng;
+            const fullBase: Partial<AddressComponents> = {
+              ...baseComponents,
+              coordinates: { lat: detailLat, lng: detailLng },
+              lat: detailLat,
+              lng: detailLng,
+            };
+            const components = parseAddressComponents(
+              details.address_components ?? place.address_components,
+              fullBase
+            );
+            onChange(details.formatted_address ?? formattedAddress, components);
+          }
+        );
       });
 
       return () => {

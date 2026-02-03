@@ -46,11 +46,13 @@ import {
   DollarSign,
   Briefcase,
   ClipboardList,
-  Badge
+  Badge,
+  Navigation,
+  Map,
+  Radio,
 } from 'lucide-react';
 
 import { toast } from 'sonner';
-import { Navigation, Map, Radio } from 'lucide-react';
 import { AppointmentCard } from '@/components/shared/AppointmentCard';
 import { VendorNotificationModal } from '../../VendorNotificationModal';
 import { AppointmentDetailModal } from '../../AppointmentDetailModal';
@@ -148,7 +150,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const hasPackagesCapability = capabilities.package_management || capabilities.packages || false;
 
   // ✅ Check if trainer/walker/sitter/groomer who can create session packages (solo trainer, solo groomer)
-  const isTrainerWalkerSitter = hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter', 'pet_groomer', 'groomer', 'groomer_solo']);
+  const isTrainerWalkerSitter = hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter', 'pet_groomer', 'groomer', 'groomer_solo']);
   const isPharmacy = hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy']);
 
   // ✅ Solo trainers/walkers/sitters CAN create session packages even without explicit package capability

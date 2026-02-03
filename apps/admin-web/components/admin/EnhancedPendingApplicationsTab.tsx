@@ -5,6 +5,7 @@ import { Search, Eye, RefreshCw, Check, X, FileText, User, Building2 } from 'luc
 import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { getAdminId } from '@/lib/cognito-auth';
+import { toast } from 'sonner';
 import { CustomDropdown } from './CustomDropdown';
 import { ApplicationDetailModal } from './ApplicationDetailModal';
 import { RejectVendorModal } from './RejectVendorModal';
@@ -192,7 +193,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
           rejection_reason: reason,
           comments: notes
         });
-        alert('Vendor rejected');
+        toast.success('Vendor rejected. They can see the reason and re-submit or choose another role.');
         setShowRejectModal(false);
         setRejectingApplication(null);
         await loadVendors();
@@ -206,14 +207,14 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
           notes,
           allowResubmit: true
         });
-        alert('Vendor rejected');
+        toast.success('Vendor rejected. They can see the reason and re-submit or choose another role.');
         setShowRejectModal(false);
         setRejectingApplication(null);
         await loadVendors();
       }
     } catch (error: any) {
       console.error('Error rejecting vendor:', error);
-      alert(error.message || 'Failed to reject vendor');
+      toast.error(error.message || 'Failed to reject vendor');
     }
   };
 
@@ -225,34 +226,28 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
   const handleRequestInfoConfirm = async (message: string) => {
     if (!selectedApplication) return;
 
+    const trimmed = (message || '').trim();
+    if (!trimmed) {
+      alert('Please enter a message to send to the vendor.');
+      return;
+    }
+
+    const appId = selectedApplication.id || selectedApplication.vendorId;
+    if (!appId) {
+      alert('Application ID not found');
+      return;
+    }
+
     try {
-      const appId = selectedApplication.id || selectedApplication.vendorId;
-      
-      // Try onboarding review endpoint first (proper state machine)
-      try {
-        const adminId = getAdminId() || 'admin'; // Fallback to 'admin' if not available
-        await apiClient.post(`/admin/vendor/onboarding/${appId}/review`, {
-          action: 'REQUEST_CLARIFICATION',
-          admin_id: adminId,
-          comments: message
-        });
-        alert('Information request sent');
-        setShowRequestInfoModal(false);
-        setSelectedApplication(null);
-        await loadVendors();
-        return;
-      } catch (onboardingError: any) {
-        // Fallback to compatibility endpoint
-        console.warn('Onboarding review endpoint failed, trying compatibility endpoint:', onboardingError);
-        await apiClient.post(`/admin/vendor/application/${appId}/request-clarification`, {
-          reviewerName: 'Admin',
-          notes: message
-        });
-        alert('Information request sent');
-        setShowRequestInfoModal(false);
-        setSelectedApplication(null);
-        await loadVendors();
-      }
+      // Call request-clarification directly (notes/message only – rejection_reason is for reject only)
+      await apiClient.post(`/admin/vendor/application/${appId}/request-clarification`, {
+        notes: trimmed,
+        message: trimmed,
+      });
+      alert('Information request sent');
+      setShowRequestInfoModal(false);
+      setSelectedApplication(null);
+      await loadVendors();
     } catch (error: any) {
       console.error('Error requesting info:', error);
       alert(error.message || 'Failed to send request');

@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { AlertCircle, ArrowLeft, ArrowRight, FileText } from 'lucide-react';
 
@@ -8,6 +7,7 @@ interface VendorClarificationRequestedProps {
   applicationId: string;
   clarificationNotes: string;
   reviewerName?: string;
+  pendingItems?: string[];
   onCorrectAndResubmit: () => void;
   onBack?: () => void;
 }
@@ -16,9 +16,16 @@ export function VendorClarificationRequested({
   applicationId,
   clarificationNotes,
   reviewerName = 'Admin',
+  pendingItems,
   onCorrectAndResubmit,
   onBack
 }: VendorClarificationRequestedProps) {
+  const displayPendingItems = pendingItems?.length
+    ? pendingItems
+    : clarificationNotes
+      ? [clarificationNotes]
+      : [];
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white w-full max-w-[430px] mx-auto flex flex-col px-6 py-8">
       {onBack && (
@@ -35,68 +42,78 @@ export function VendorClarificationRequested({
         </div>
         
         <h1 className="text-2xl font-bold text-gray-900 mb-2">
-          Clarification Required
+          More Information Required
         </h1>
         <p className="text-gray-600 text-sm">
           Application ID: <span className="font-semibold">{applicationId}</span>
         </p>
       </div>
 
-      {/* Admin Comments */}
+      {/* What is pending to upload or correct */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-orange-200 mb-6">
         <div className="flex items-start gap-3 mb-4">
           <FileText className="w-5 h-5 text-[#FF8C42] mt-1 flex-shrink-0" />
-          <div>
-            <h3 className="font-semibold text-gray-900 mb-1">Admin Feedback</h3>
-            <p className="text-sm text-gray-600">From: {reviewerName}</p>
+          <div className="flex-1">
+            <h3 className="font-semibold text-gray-900 mb-1">What to provide or correct</h3>
+            <p className="text-sm text-gray-600 mb-2">From: {reviewerName}</p>
+            <div className="bg-orange-50 rounded-xl p-4 border border-orange-200">
+              {displayPendingItems.length > 0 ? (
+                <ul className="space-y-2 text-sm text-gray-800">
+                  {displayPendingItems.map((item, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className="text-[#FF8C42] font-bold flex-shrink-0">•</span>
+                      <span className="whitespace-pre-wrap">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-gray-800 text-sm whitespace-pre-wrap leading-relaxed">
+                  Please update your application with the requested information.
+                </p>
+              )}
+            </div>
           </div>
-        </div>
-        
-        <div className="bg-orange-50 rounded-xl p-4 border border-orange-200">
-          <p className="text-gray-800 text-sm whitespace-pre-wrap leading-relaxed">
-            {clarificationNotes}
-          </p>
         </div>
       </div>
 
-      {/* Information Box */}
+      {/* What to do next */}
       <div className="bg-blue-50 rounded-2xl p-5 border border-blue-200 mb-6">
         <h3 className="font-semibold text-blue-900 mb-3">What to do next?</h3>
         <ul className="space-y-2 text-sm text-blue-800">
           <li className="flex items-start gap-2">
             <span className="text-blue-600 font-bold">1.</span>
-            <span>Review the admin's feedback carefully</span>
+            <span>Go back to your onboarding form</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-blue-600 font-bold">2.</span>
-            <span>Go back to your application form</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-blue-600 font-bold">3.</span>
             <span>Make the requested changes or upload missing documents</span>
           </li>
           <li className="flex items-start gap-2">
-            <span className="text-blue-600 font-bold">4.</span>
+            <span className="text-blue-600 font-bold">3.</span>
             <span>Resubmit your application for review</span>
           </li>
         </ul>
+        <p className="text-xs text-blue-700 mt-3">
+          Or follow the instructions offline. When you have provided the information, the admin will approve and you will receive an SMS notification.
+        </p>
       </div>
 
       {/* Support Info */}
-      <div className="text-center mb-8 text-sm text-gray-600">
+      <div className="text-center mb-6 text-sm text-gray-600">
         <p>Need help? Contact support at</p>
         <a href="mailto:support@warmpawz.com" className="text-[#FF8C42] font-semibold">
           support@warmpawz.com
         </a>
       </div>
 
-      {/* Action Button */}
+      {/* Action Button – loads existing application and shows onboarding form for corrections */}
       <div className="mt-auto">
         <Button
-          onClick={onCorrectAndResubmit}
+          type="button"
+          onClick={() => onCorrectAndResubmit()}
           className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white py-6 rounded-xl text-lg font-semibold shadow-lg"
         >
-          Correct & Resubmit Application
+          Go back to onboarding form
           <ArrowRight className="w-5 h-5 ml-2" />
         </Button>
         

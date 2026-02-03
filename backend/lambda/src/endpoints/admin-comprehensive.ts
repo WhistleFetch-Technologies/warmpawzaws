@@ -2871,11 +2871,17 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
+  const paymentRuleServiceLocationMap: Record<string, string> = { at_home: 'home', at_center: 'clinic', both: 'both', tele: 'tele', all: 'all' };
+  const mapPaymentRuleServiceLocation = (raw: string) =>
+    paymentRuleServiceLocationMap[String(raw)] ?? (['home', 'clinic', 'both', 'tele', 'all'].includes(String(raw)) ? String(raw) : 'all');
+
   app.post('/admin/vendor-settings/payment-rules', async (c) => {
     try {
       const body = await c.req.json();
+      const service_location = mapPaymentRuleServiceLocation(body.serviceLocation ?? body.service_location ?? 'all');
       const rule = await insert('vendor_payment_rules', {
         ...body,
+        service_location,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
@@ -2890,8 +2896,10 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     try {
       const id = c.req.param('id');
       const body = await c.req.json();
+      const service_location = mapPaymentRuleServiceLocation(body.serviceLocation ?? body.service_location ?? 'all');
       const updated = await update('vendor_payment_rules', { id }, {
         ...body,
+        service_location,
         updated_at: new Date().toISOString(),
       });
       return c.json({ success: true, rule: updated[0] });
@@ -2920,12 +2928,12 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
-  /** Map frontend refund tier body (camelCase) to DB columns (snake_case). DB: service_location IN ('home','clinic','both'). */
+  /** Map frontend refund tier body (camelCase) to DB columns (snake_case). DB: service_location IN ('home','clinic','both','tele','all'). Tele = Tele/Video Consultation; All = all locations. */
   const mapRefundTierBodyToDb = (body: any): Record<string, unknown> => {
     const vendorTypes = Array.isArray(body.vendorTypes) ? body.vendorTypes : (body.vendor_types ? (Array.isArray(body.vendor_types) ? body.vendor_types : []) : []);
-    const serviceLocationMap: Record<string, string> = { at_home: 'home', at_center: 'clinic', both: 'both' };
-    const rawLoc = body.serviceLocation ?? body.service_location ?? 'both';
-    const service_location = serviceLocationMap[String(rawLoc)] ?? (rawLoc === 'home' || rawLoc === 'clinic' ? rawLoc : 'both');
+    const serviceLocationMap: Record<string, string> = { at_home: 'home', at_center: 'clinic', both: 'both', tele: 'tele', all: 'all' };
+    const rawLoc = body.serviceLocation ?? body.service_location ?? 'all';
+    const service_location = serviceLocationMap[String(rawLoc)] ?? (['home', 'clinic', 'both', 'tele', 'all'].includes(String(rawLoc)) ? String(rawLoc) : 'all');
     const hoursBeforeService = Number(body.hoursBeforeService ?? body.hours_before_service ?? 24);
     const refundPercentage = Number(body.refundPercentage ?? body.refund_percentage ?? 75);
     const cancellationFee = Number(body.cancellationFee ?? body.cancellation_fee ?? 0);

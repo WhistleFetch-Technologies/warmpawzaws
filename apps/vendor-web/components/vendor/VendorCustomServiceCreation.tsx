@@ -32,6 +32,7 @@ import {
   MicroCategory 
 } from '@/lib/service-micro-categories';
 import { getVendorRoleId } from '@/lib/vendor-utils';
+import { SpecializationSelector } from '@/components/vendor/SpecializationSelector';
 import {
   Dialog,
   DialogContent,
@@ -141,6 +142,9 @@ export function VendorCustomServiceCreation({
   const [availableMicroCategories, setAvailableMicroCategories] = useState<MicroCategory[]>([]);
   const [selectedMicroCategory, setSelectedMicroCategory] = useState<MicroCategory | null>(null);
   const [catalogCategories, setCatalogCategories] = useState<any[]>([]); // ✅ NEW: Categories from admin catalog
+
+  // ✅ 360°: Specializations for this custom service (multi-select; drives "What's your pet needs?" discovery)
+  const [selectedSpecializationIds, setSelectedSpecializationIds] = useState<string[]>([]);
 
   // ✅ NEW: Load categories from admin catalog (441 services)
   useEffect(() => {
@@ -380,7 +384,8 @@ export function VendorCustomServiceCreation({
         whatIncluded: whatIncluded.filter(i => i.trim() !== ''),
         whatNotIncluded: whatNotIncluded.filter(i => i.trim() !== ''),
         petTypes: petTypes.length > 0 ? petTypes : ['dog', 'cat'], // Default
-        publishStatus: 'draft' // Start as draft
+        publishStatus: 'draft', // Start as draft
+        specializationIds: selectedSpecializationIds.length > 0 ? selectedSpecializationIds : undefined,
       };
       
       console.log('📤 Sending custom service:', customService);
@@ -533,6 +538,7 @@ export function VendorCustomServiceCreation({
     setWhatNotIncluded(['']);
     setPetTypes([]);
     setSelectedMicroCategory(null);
+    setSelectedSpecializationIds([]);
     // ✅ Reset to first available style
     if (effectiveStyles.length > 0) {
       setSelectedServiceStyle(effectiveStyles[0]);
@@ -928,6 +934,19 @@ export function VendorCustomServiceCreation({
                 value={subCategoryName}
                 onChange={(e) => setSubCategoryName(e.target.value)}
                 placeholder="e.g., Luxury Grooming"
+              />
+            </div>
+
+            {/* ✅ 360°: Specializations (optional) – multi-select; links to "What's your pet needs?" discovery */}
+            <div className="space-y-2">
+              <Label>Specializations (Optional)</Label>
+              <p className="text-xs text-gray-500 mb-1">
+                Select the specializations this service covers so customers can find it when they choose a need.
+              </p>
+              <SpecializationSelector
+                roleId={getVendorRoleId(vendorData) || ''}
+                selected={selectedSpecializationIds}
+                onChange={setSelectedSpecializationIds}
               />
             </div>
 

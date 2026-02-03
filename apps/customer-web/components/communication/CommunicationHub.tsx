@@ -597,25 +597,30 @@ export function CommunicationHub({
                             {/* Message text */}
                             <p className="whitespace-pre-wrap break-words">{message.message}</p>
                             
-                            {/* Prescription action button */}
-                            {message.message_type === 'prescription' && message.file_id && (
-                              <button
-                                onClick={() => {
-                                  // Open prescription modal
-                                  if (onBookFollowUp) {
-                                    // Use follow-up callback to trigger prescription view
-                                    // This will be handled by parent component
-                                    window.dispatchEvent(new CustomEvent('viewPrescription', { 
-                                      detail: { prescriptionId: message.file_id, bookingId } 
-                                    }));
-                                  }
-                                }}
-                                className="mt-3 w-full py-2 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors"
-                              >
-                                <FileText className="w-4 h-4" />
-                                View Full Prescription
-                              </button>
-                            )}
+                            {/* Prescription action button - file_id or parse message JSON */}
+                            {message.message_type === 'prescription' && (() => {
+                              const prescriptionId = message.file_id || (() => {
+                                try {
+                                  const data = typeof message.message === 'string' ? JSON.parse(message.message) : message.message;
+                                  return data?.prescriptionId || data?.prescription_id;
+                                } catch { return null; }
+                              })();
+                              return prescriptionId ? (
+                                <button
+                                  onClick={() => {
+                                    if (onBookFollowUp) {
+                                      window.dispatchEvent(new CustomEvent('viewPrescription', { 
+                                        detail: { prescriptionId, bookingId } 
+                                      }));
+                                    }
+                                  }}
+                                  className="mt-3 w-full py-2 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                                >
+                                  <FileText className="w-4 h-4" />
+                                  View Full Prescription (PDF A4)
+                                </button>
+                              ) : null;
+                            })()}
                           </div>
                           
                           {/* Time and read status */}

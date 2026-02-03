@@ -434,7 +434,7 @@ export function UniversalPaymentPage({
 
   const loadAddresses = async () => {
     try {
-      const data = await apiClient.get<any>(`/customer/${customerPhone}/addresses`);
+      const data = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(customerPhone)}`);
       const addressList = data.addresses || [];
       setAddresses(addressList);
       

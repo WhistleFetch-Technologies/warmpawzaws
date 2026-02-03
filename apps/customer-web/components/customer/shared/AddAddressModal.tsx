@@ -22,6 +22,11 @@ interface AddressFormData {
   latitude: number | null;
   longitude: number | null;
   isDefault: boolean;
+  flatNo: string;
+  houseNo: string;
+  floor: string;
+  streetName: string;
+  apartmentName: string;
 }
 
 interface AddAddressModalProps {
@@ -55,6 +60,11 @@ export function AddAddressModal({
     latitude: null,
     longitude: null,
     isDefault: false,
+    flatNo: '',
+    houseNo: '',
+    floor: '',
+    streetName: '',
+    apartmentName: '',
   });
   
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -75,6 +85,11 @@ export function AddAddressModal({
         latitude: null,
         longitude: null,
         isDefault: false,
+        flatNo: '',
+        houseNo: '',
+        floor: '',
+        streetName: '',
+        apartmentName: '',
       });
       setErrors({});
     }
@@ -239,6 +254,11 @@ export function AddAddressModal({
           ? JSON.stringify({ lat: formData.latitude, lng: formData.longitude })
           : null,
         isDefault: formData.isDefault,
+        flatNo: formData.flatNo || undefined,
+        houseNo: formData.houseNo || undefined,
+        floor: formData.floor || undefined,
+        streetName: formData.streetName || undefined,
+        apartmentName: formData.apartmentName || undefined,
       };
 
       console.log('📍 [AddAddressModal] Saving address:', addressData);
@@ -250,10 +270,10 @@ export function AddAddressModal({
       if (response.success || response.address || (response.addresses && response.addresses.length > 0)) {
         toast.success('Address saved successfully!');
         
-        // Prefer addresses[] (camelCase from backend); fallback to address (may be snake_case)
-        const fromList = response.addresses?.length ? response.addresses[response.addresses.length - 1] : null;
+        // Prefer response.address (created address with id); fallback to last in addresses
         const fromSingle = response.address;
-        const raw = fromList || fromSingle;
+        const fromList = response.addresses?.length ? response.addresses[response.addresses.length - 1] : null;
+        const raw = fromSingle || fromList;
         const newAddress = raw && typeof raw === 'object'
           ? {
               id: raw.id,
@@ -268,6 +288,11 @@ export function AddAddressModal({
               pincode: raw.pincode,
               landmark: raw.landmark,
               coordinates: raw.coordinates,
+              flatNo: raw.flatNo ?? raw.flat_no,
+              houseNo: raw.houseNo ?? raw.house_no,
+              floor: raw.floor,
+              streetName: raw.streetName ?? raw.street_name,
+              apartmentName: raw.apartmentName ?? raw.apartment_name,
               isDefault: raw.isDefault ?? raw.is_default,
               createdAt: raw.createdAt ?? raw.created_at,
               updatedAt: raw.updatedAt ?? raw.updated_at,
@@ -381,7 +406,7 @@ export function AddAddressModal({
                 onChange={(address: string, components?: AddressComponents) => {
                   setFormData(prev => ({ ...prev, addressLine1: address }));
                   
-                  // Auto-populate city, state, pincode from Google Maps
+                  // Auto-populate city, state, pincode, street from Google Maps
                   if (components) {
                     const updates: Partial<AddressFormData> = {};
                     
@@ -394,8 +419,9 @@ export function AddAddressModal({
                     if (components.pincode && !formData.pincode) {
                       updates.pincode = components.pincode;
                     }
-                    if (components.street && !formData.addressLine2) {
-                      updates.addressLine2 = components.street;
+                    if (components.street) {
+                      updates.streetName = components.street.trim();
+                      if (!formData.addressLine2) updates.addressLine2 = components.street.trim();
                     }
                     if (components.landmark && !formData.landmark) {
                       updates.landmark = components.landmark;
@@ -434,6 +460,62 @@ export function AddAddressModal({
                 value={formData.addressLine2}
                 onChange={(e) => setFormData(prev => ({ ...prev, addressLine2: e.target.value }))}
                 placeholder="Apartment, floor, building name"
+                className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+              />
+            </div>
+
+            {/* Optional: Flat, House, Floor, Street, Apartment */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Flat / Unit no.</label>
+                <input
+                  type="text"
+                  value={formData.flatNo}
+                  onChange={(e) => setFormData(prev => ({ ...prev, flatNo: e.target.value }))}
+                  placeholder="e.g. 401"
+                  className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">House / Building no.</label>
+                <input
+                  type="text"
+                  value={formData.houseNo}
+                  onChange={(e) => setFormData(prev => ({ ...prev, houseNo: e.target.value }))}
+                  placeholder="e.g. 12"
+                  className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Floor</label>
+                <input
+                  type="text"
+                  value={formData.floor}
+                  onChange={(e) => setFormData(prev => ({ ...prev, floor: e.target.value }))}
+                  placeholder="e.g. 4th"
+                  className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Street name</label>
+                <input
+                  type="text"
+                  value={formData.streetName}
+                  onChange={(e) => setFormData(prev => ({ ...prev, streetName: e.target.value }))}
+                  placeholder="Street name"
+                  className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">Apartment / Building / Society name</label>
+              <input
+                type="text"
+                value={formData.apartmentName}
+                onChange={(e) => setFormData(prev => ({ ...prev, apartmentName: e.target.value }))}
+                placeholder="e.g. Green Valley Apartments"
                 className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none text-sm"
               />
             </div>
