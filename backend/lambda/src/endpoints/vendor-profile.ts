@@ -295,8 +295,9 @@ export function registerVendorProfileEndpoints(app: Hono) {
       );
       
       // Update vendor with new photo URL
+      // ✅ FIX: Use profile_photo_url instead of logo_url (column name matches schema)
       await update('vendors', { id: vendorId }, {
-        logo_url: signedUrl,
+        profile_photo_url: signedUrl,
         updated_at: new Date().toISOString(),
       });
       
@@ -379,7 +380,8 @@ export function registerVendorProfileEndpoints(app: Hono) {
       const safeColumns = [
         'business_name', 'owner_name', 'phone', 'email', 'address', 'city', 'state', 'pincode',
         'description', 'profile_photo_url', 'latitude', 'longitude', 'is_active', 'status',
-        'setup_completed', 'services_setup_completed', 'availability_setup_completed', 'metadata'
+        'setup_completed', 'services_setup_completed', 'availability_setup_completed', 'metadata',
+        'experience_years', 'qualifications', 'service_area', 'specializations' // ✅ Added for solo provider profile
       ];
 
       const updateData: any = {};
@@ -627,6 +629,11 @@ export function registerVendorProfileEndpoints(app: Hono) {
         success: true,
         vendor: {
           ...vendor,
+          // ✅ Explicitly include profile fields (even if null) for solo providers
+          qualifications: vendor.qualifications || null,
+          service_area: vendor.service_area || null,
+          description: vendor.description || null,
+          experience_years: vendor.experience_years ?? null,
           // Include role info directly in response
           role: role ? {
             id: role.id,

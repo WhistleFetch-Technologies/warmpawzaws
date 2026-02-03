@@ -548,8 +548,8 @@ export function VendorCustomServiceCreationEnhanced({
     if (isPackage) {
       if (packageType === 'session') {
         // Session package validation
-        if (smallPrice <= 0 || mediumPrice <= 0 || largePrice <= 0 || extraLargePrice <= 0) {
-          toast.error('All package prices must be greater than 0');
+        if (packagePrice <= 0) {
+          toast.error('Package price must be greater than 0');
           return false;
         }
         if (packageDuration <= 0) {
@@ -634,12 +634,7 @@ export function VendorCustomServiceCreationEnhanced({
         sessionDuration,
         packageDuration,
         totalSessions: sessionsPerDay * packageDuration,
-        pricingBySize: {
-          small: smallPrice,
-          medium: mediumPrice,
-          large: largePrice,
-          extraLarge: extraLargePrice
-        }
+        price: packagePrice
       };
     }
     
@@ -903,11 +898,8 @@ export function VendorCustomServiceCreationEnhanced({
                   <p className="font-semibold text-gray-900 mb-2">Package Details:</p>
                   {service.packageType === 'session' && service.packageDetails.pricingBySize && (
                     <>
-                      <div className="grid grid-cols-2 gap-2 text-gray-700">
-                        <div>Small: ₹{service.packageDetails.pricingBySize.small}</div>
-                        <div>Medium: ₹{service.packageDetails.pricingBySize.medium}</div>
-                        <div>Large: ₹{service.packageDetails.pricingBySize.large}</div>
-                        <div>X-Large: ₹{service.packageDetails.pricingBySize.extraLarge}</div>
+                      <div className="text-gray-700">
+                        <div>Price: ₹{service.packageDetails.price || service.packageDetails.pricingBySize?.small || 0}</div>
                       </div>
                       <p className="text-xs text-gray-600 mt-2">
                         {service.packageDetails.totalSessions} sessions over {service.packageDetails.packageDuration} days
@@ -1267,37 +1259,14 @@ export function VendorCustomServiceCreationEnhanced({
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Package Pricing by Pet Size *</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      placeholder="Small (₹)"
-                      type="number"
-                      value={smallPrice || ''}
-                      onChange={(e) => setSmallPrice(parseInt(e.target.value) || 0)}
-                      min="0"
-                    />
-                    <Input
-                      placeholder="Medium (₹)"
-                      type="number"
-                      value={mediumPrice || ''}
-                      onChange={(e) => setMediumPrice(parseInt(e.target.value) || 0)}
-                      min="0"
-                    />
-                    <Input
-                      placeholder="Large (₹)"
-                      type="number"
-                      value={largePrice || ''}
-                      onChange={(e) => setLargePrice(parseInt(e.target.value) || 0)}
-                      min="0"
-                    />
-                    <Input
-                      placeholder="Extra Large (₹)"
-                      type="number"
-                      value={extraLargePrice || ''}
-                      onChange={(e) => setExtraLargePrice(parseInt(e.target.value) || 0)}
-                      min="0"
-                    />
-                  </div>
+                  <Label>Package Price (₹) *</Label>
+                  <Input
+                    placeholder="Enter package price"
+                    type="number"
+                    value={packagePrice || ''}
+                    onChange={(e) => setPackagePrice(parseInt(e.target.value) || 0)}
+                    min="0"
+                  />
                 </div>
               </>
             )}

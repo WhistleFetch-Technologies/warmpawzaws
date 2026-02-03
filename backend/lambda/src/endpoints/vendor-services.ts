@@ -2001,10 +2001,11 @@ export function registerVendorServicesEndpoints(app: Hono) {
         return c.json({ error: 'Vendor does not have services capability' }, 403);
       }
       
-      // Get the service
+      // ✅ FIX: serviceId is the primary key 'id' of vendor_services table, not 'service_id'
+      // Query by id (primary key) instead of service_id
       const services = await select('vendor_services', { 
-        vendor_id: vendorId, 
-        service_id: serviceId 
+        id: serviceId,
+        vendor_id: vendorId 
       });
       
       if (services.length === 0) {
@@ -2012,6 +2013,11 @@ export function registerVendorServicesEndpoints(app: Hono) {
       }
       
       const service = services[0];
+      
+      // Verify it's a custom service
+      if (!service.is_custom_service) {
+        return c.json({ error: 'This endpoint is only for custom services' }, 400);
+      }
       
       // Only draft services can be submitted for approval
       if (service.publish_status !== 'draft') {
@@ -2023,7 +2029,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
       // Update to pending_approval
       await update(
         'vendor_services',
-        { vendor_id: vendorId, service_id: serviceId },
+        { id: serviceId, vendor_id: vendorId },
         {
           publish_status: 'pending_approval',
           submitted_for_approval_at: new Date().toISOString(),

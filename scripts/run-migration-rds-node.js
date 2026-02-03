@@ -32,30 +32,22 @@ async function runMigration() {
   const clusterId = `warmpawz-${ENVIRONMENT}-cluster`;
 
   console.log('📊 Getting RDS cluster information...');
-  const endpoint = execSync(
-    `aws rds describe-db-clusters --db-cluster-identifier ${clusterId} --region ${REGION} --query 'DBClusters[0].Endpoint' --output text`,
+  // ✅ FIX: Use --output json and parse to avoid PowerShell escaping issues
+  const clusterInfo = JSON.parse(execSync(
+    `aws rds describe-db-clusters --db-cluster-identifier ${clusterId} --region ${REGION} --output json`,
     { encoding: 'utf8' }
-  ).trim();
-
-  if (!endpoint || endpoint === 'None' || endpoint === 'null') {
+  ));
+  
+  if (!clusterInfo.DBClusters || clusterInfo.DBClusters.length === 0) {
     console.error(`❌ ERROR: RDS cluster not found: ${clusterId}`);
     process.exit(1);
   }
-
-  const port = execSync(
-    `aws rds describe-db-clusters --db-cluster-identifier ${clusterId} --region ${REGION} --query 'DBClusters[0].Port' --output text`,
-    { encoding: 'utf8' }
-  ).trim() || '5432';
-
-  const dbName = execSync(
-    `aws rds describe-db-clusters --db-cluster-identifier ${clusterId} --region ${REGION} --query 'DBClusters[0].DatabaseName' --output text`,
-    { encoding: 'utf8' }
-  ).trim() || 'warmpawz';
-
-  const username = execSync(
-    `aws rds describe-db-clusters --db-cluster-identifier ${clusterId} --region ${REGION} --query 'DBClusters[0].MasterUsername' --output text`,
-    { encoding: 'utf8' }
-  ).trim() || 'warmpawz_admin';
+  
+  const cluster = clusterInfo.DBClusters[0];
+  const endpoint = cluster.Endpoint;
+  const port = cluster.Port || '5432';
+  const dbName = cluster.DatabaseName || 'warmpawz';
+  const username = cluster.MasterUsername || 'warmpawz_admin';
 
   console.log('✅ RDS Cluster found:');
   console.log(`   Endpoint: ${endpoint}`);

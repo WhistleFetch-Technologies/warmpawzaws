@@ -264,7 +264,7 @@
           "S3Bucket": {
             "Ref": "ServerlessDeploymentBucket"
           },
-          "S3Key": "serverless/warmpawz-api/dev/1769969411645-2026-02-01T18:10:11.645Z/warmpawz-api.zip"
+          "S3Key": "serverless/warmpawz-api/dev/1770119981305-2026-02-03T11:59:41.305Z/warmpawz-api.zip"
         },
         "Handler": "dist/handler.handler",
         "Runtime": "nodejs18.x",
@@ -313,14 +313,14 @@
         "ApiLogGroup"
       ]
     },
-    "ApiLambdaVersionx87bUtAI4uE6nMBNwtsZR5sYIevccV8jtteHMSD2EyI": {
+    "ApiLambdaVersionrnNlw8wQcMqhj2jRXP2DARouMI4hJc3VPqHyqgXTVE": {
       "Type": "AWS::Lambda::Version",
       "DeletionPolicy": "Retain",
       "Properties": {
         "FunctionName": {
           "Ref": "ApiLambdaFunction"
         },
-        "CodeSha256": "gJ0cNX8wOuL5Xn4QtRvqZ0NfiBGDXV4ZIYs5tjnfH6w=",
+        "CodeSha256": "1XVmoU/9xMrpWiG+m1rqk+0m1x3JrHHgYp/qJvAS0/M=",
         "Description": "Warmpawz API Gateway Handler"
       }
     },
@@ -425,7 +425,7 @@
     "ApiLambdaFunctionQualifiedArn": {
       "Description": "Current Lambda function version",
       "Value": {
-        "Ref": "ApiLambdaVersionx87bUtAI4uE6nMBNwtsZR5sYIevccV8jtteHMSD2EyI"
+        "Ref": "ApiLambdaVersionrnNlw8wQcMqhj2jRXP2DARouMI4hJc3VPqHyqgXTVE"
       },
       "Export": {
         "Name": "sls-warmpawz-api-dev-ApiLambdaFunctionQualifiedArn"

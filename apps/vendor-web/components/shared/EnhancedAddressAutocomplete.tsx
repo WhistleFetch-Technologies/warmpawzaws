@@ -16,6 +16,10 @@ export interface AddressComponents {
     lng: number;
   };
   formattedAddress?: string;
+  // ✅ Direct lat/lng for backward compatibility
+  lat?: number;
+  lng?: number;
+  placeId?: string;
 }
 
 interface EnhancedAddressAutocompleteProps {
@@ -150,12 +154,17 @@ export function EnhancedAddressAutocomplete({
         }
 
         // Parse address components
+        const lat = place.geometry.location.lat();
+        const lng = place.geometry.location.lng();
         const components: AddressComponents = {
           coordinates: {
-            lat: place.geometry.location.lat(),
-            lng: place.geometry.location.lng(),
+            lat,
+            lng,
           },
           formattedAddress: place.formatted_address,
+          // ✅ Also expose lat/lng directly for backward compatibility
+          lat,
+          lng,
         };
 
         // Extract address components
@@ -179,6 +188,9 @@ export function EnhancedAddressAutocomplete({
           }
         });
 
+        // ✅ Add placeId to components
+        components.placeId = place.place_id;
+        
         // Call onChange with formatted address and components
         onChange(place.formatted_address, components);
       });

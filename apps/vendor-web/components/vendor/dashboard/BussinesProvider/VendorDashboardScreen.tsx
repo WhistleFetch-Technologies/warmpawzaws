@@ -9,32 +9,8 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { Dashboardstats, ScheduleItem, VendorDashboardScreenProps } from '../types';
 
-interface VendorDashboardScreenProps {
-  vendorId: string;
-  vendorData: any;
-  onNavigate: (screen: string, data?: any) => void;
-}
-
-interface DashboardStats {
-  appointments: number;
-  consultations: number;
-  earnings: number;
-  pendingEarnings: number;
-  completedServices: number;
-  rating: number;
-  totalReviews: number;
-}
-
-interface ScheduleItem {
-  id: string;
-  bookingId: string;
-  time: string;
-  customerName: string;
-  serviceName: string;
-  status: string;
-  price: number;
-}
 
 export function VendorDashboardScreen({
   vendorId,
@@ -43,7 +19,7 @@ export function VendorDashboardScreen({
 }: VendorDashboardScreenProps) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [stats, setStats] = useState<DashboardStats>({
+  const [stats, setStats] = useState<Dashboardstats>({
     appointments: 0,
     consultations: 0,
     earnings: 0,
@@ -53,7 +29,7 @@ export function VendorDashboardScreen({
     totalReviews: 0,
   });
   const [todaySchedule, setTodaySchedule] = useState<ScheduleItem[]>([]);
-  const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('week'); // ✅ Default to week to show upcoming bookings
+  const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('week');
 
   useEffect(() => {
     loadDashboardData();
@@ -63,23 +39,20 @@ export function VendorDashboardScreen({
     try {
       setLoading(true);
 
-      // ✅ AWS Lambda: Using vendor dashboard endpoint with Cognito auth
-      console.log(`[VendorDashboardScreen] Loading dashboard data for vendor: ${vendorId}`);
-      
+
       // ✅ FIX: Try both endpoint formats in case of routing differences
       let dashboardResponse: any;
       try {
         dashboardResponse = await apiClient.get<{
           success?: boolean;
           data?: {
-            stats?: DashboardStats;
-            bookings?: any[]; // Changed to any[] since we transform it
+            stats?: Dashboardstats;
+            bookings?: any[]; 
             vendor?: any;
           };
         }>(`/vendor/dashboard/${vendorId}?timeframe=${activeTab}`);
       } catch (err: any) {
-        // If endpoint with vendorId fails, try the profile-based endpoint
-        console.warn(`[VendorDashboardScreen] Endpoint with vendorId failed, trying profile endpoint:`, err.message);
+
         try {
           const profileResponse = await apiClient.get<any>('/vendor/profile');
           // ✅ FIX: Check response structure (could be response.data or response directly)
@@ -136,7 +109,7 @@ export function VendorDashboardScreen({
 
       // ✅ FIX: Handle both response structures (with data wrapper or direct)
       const responseData = dashboardResponse?.data || dashboardResponse;
-      
+
       if (dashboardResponse.success && responseData) {
         const data = responseData;
 
@@ -155,13 +128,13 @@ export function VendorDashboardScreen({
         if (data.bookings && Array.isArray(data.bookings)) {
           // ✅ Filter to only show today's or upcoming bookings based on activeTab
           const today = new Date().toISOString().split('T')[0];
-          const filteredBookings = activeTab === 'today' 
+          const filteredBookings = activeTab === 'today'
             ? data.bookings.filter((b: any) => {
-                const bookingDate = b.booking_date?.split('T')[0] || '';
-                return bookingDate === today;
-              })
+              const bookingDate = b.booking_date?.split('T')[0] || '';
+              return bookingDate === today;
+            })
             : data.bookings;
-          
+
           const transformedBookings: ScheduleItem[] = filteredBookings.slice(0, 5).map((booking: any) => {
             // Extract time from booking_date and booking_time, or use scheduled_time
             let time = 'N/A';
@@ -178,7 +151,7 @@ export function VendorDashboardScreen({
             } else if (booking.booking_date) {
               time = booking.booking_date.split('T')[1]?.substring(0, 5) || 'N/A';
             }
-            
+
             return {
               id: booking.id || booking.booking_id || String(Math.random()),
               bookingId: booking.booking_id || booking.id || String(Math.random()),
@@ -234,9 +207,9 @@ export function VendorDashboardScreen({
   const vendorCapabilities = vendorData?.capabilities || [];
   const hasCapability = (cap: string) => {
     if (!vendorCapabilities || vendorCapabilities.length === 0) return false;
-    return vendorCapabilities.includes(cap) || 
-           vendorCapabilities.includes(cap.replace(/_/g, '')) ||
-           vendorCapabilities.includes(cap + '_management');
+    return vendorCapabilities.includes(cap) ||
+      vendorCapabilities.includes(cap.replace(/_/g, '')) ||
+      vendorCapabilities.includes(cap + '_management');
   };
 
   // Define all possible buttons with their required capabilities
@@ -301,14 +274,13 @@ export function VendorDashboardScreen({
           {(['today', 'week', 'month'] as const).map((tab) => (
             <button
               key={tab}
-              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === tab
+              className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${activeTab === tab
                   ? 'bg-orange-500 text-white'
                   : 'text-gray-600 hover:bg-gray-50'
-              }`}
+                }`}
               onClick={() => setActiveTab(tab)}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </button>
           ))}
         </div>
@@ -354,10 +326,10 @@ export function VendorDashboardScreen({
                 className="text-orange-500 text-sm font-medium"
               >
                 See All
-            </button>
-          </div>
+              </button>
+            </div>
 
-          {todaySchedule.length > 0 ? (
+            {todaySchedule.length > 0 ? (
               <div className="divide-y divide-gray-200">
                 {todaySchedule.map((item) => (
                   <button
@@ -386,8 +358,8 @@ export function VendorDashboardScreen({
               <div className="p-8 text-center">
                 <div className="text-4xl mb-2">📅</div>
                 <p className="text-gray-500">No appointments scheduled for today</p>
-            </div>
-          )}
+              </div>
+            )}
           </div>
         </div>
 

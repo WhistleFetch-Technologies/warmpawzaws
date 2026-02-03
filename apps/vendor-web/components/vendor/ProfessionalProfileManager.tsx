@@ -97,6 +97,24 @@ interface ProfessionalProfileManagerProps {
   onBack?: () => void;
 }
 
+// ✅ FIX: Move parseSpecializations outside component to avoid "Cannot access before initialization" error
+// This function is used in useState initializer, so it must be defined before the component
+function parseSpecializations(specs: any): string[] {
+  if (!specs) return [];
+  if (Array.isArray(specs)) return specs;
+  if (typeof specs === 'string') {
+    // Try to parse as JSON array first
+    try {
+      const parsed = JSON.parse(specs);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // Split by comma if not JSON
+      return specs.split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+  }
+  return [];
+}
+
 export function ProfessionalProfileManager({ vendorId, profile: initialProfile, onBack }: ProfessionalProfileManagerProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -118,33 +136,16 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     state: initialProfile?.state || '',
     pincode: (initialProfile?.pincode && initialProfile?.pincode !== '000000') ? initialProfile.pincode : '',
     description: initialProfile?.description || '',
-    photo_url: initialProfile?.logo_url || initialProfile?.photo_url || '',
+    photo_url: initialProfile?.profile_photo_url || initialProfile?.logo_url || initialProfile?.photo_url || '',
     qualifications: initialProfile?.qualifications || '',
     specializations: parseSpecializations(initialProfile?.specializations),
-    experience_years: initialProfile?.experience_years || initialProfile?.experienceYears || 0,
+    experience_years: initialProfile?.experience_years ?? initialProfile?.experienceYears ?? 0, // ✅ Use nullish coalescing to preserve 0
     service_area: initialProfile?.service_area || initialProfile?.serviceArea || '',
     operating_hours: initialProfile?.operating_hours || initialProfile?.operatingHours || '',
     availability: initialProfile?.availability || initialProfile?.availabilitySchedule || undefined,
     role_name: vendorRoleName,
   });
   const [hasChanges, setHasChanges] = useState(false);
-
-  // Parse specializations from string or array
-  function parseSpecializations(specs: any): string[] {
-    if (!specs) return [];
-    if (Array.isArray(specs)) return specs;
-    if (typeof specs === 'string') {
-      // Try to parse as JSON array first
-      try {
-        const parsed = JSON.parse(specs);
-        if (Array.isArray(parsed)) return parsed;
-      } catch {
-        // Split by comma if not JSON
-        return specs.split(',').map((s: string) => s.trim()).filter(Boolean);
-      }
-    }
-    return [];
-  }
 
   // Get available specializations based on vendor role
   const getAvailableSpecializations = () => {
@@ -188,10 +189,10 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           state: response.vendor.state || '',
           pincode: (response.vendor.pincode && response.vendor.pincode !== '000000') ? response.vendor.pincode : '',
           description: response.vendor.description || '',
-          photo_url: response.vendor.photo_url || response.vendor.logo_url || '',
+          photo_url: response.vendor.profile_photo_url || response.vendor.photo_url || response.vendor.logo_url || '',
           qualifications: response.vendor.qualifications || '',
           specializations: parseSpecializations(response.vendor.specializations),
-          experience_years: response.vendor.experience_years || response.vendor.experienceYears || 0,
+          experience_years: response.vendor.experience_years ?? response.vendor.experienceYears ?? 0, // ✅ Use nullish coalescing to preserve 0
           service_area: response.vendor.service_area || response.vendor.serviceArea || '',
           operating_hours: response.vendor.operating_hours || response.vendor.operatingHours || '',
           role_name: response.vendor.role_name || response.vendor.roleName || vendorRoleName,
@@ -465,7 +466,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
               <Input
                 id="experience_years"
                 type="number"
-                value={profile.experience_years || 0}
+                value={profile.experience_years ?? 0}
                 onChange={(e) => handleInputChange('experience_years', parseInt(e.target.value) || 0)}
                 className="mt-1"
                 min="0"

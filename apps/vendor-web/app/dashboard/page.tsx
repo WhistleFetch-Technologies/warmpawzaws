@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { VendorDashboardScreen } from '@/components/vendor/dashboard/VendorDashboardScreen';
+import { VendorDashboardScreen } from '@/components/vendor/dashboard/BussinesProvider/VendorDashboardScreen';
 import { isTokenExpired, clearVendorSession } from '@/lib/session-utils';
 
 export default function DashboardPage() {

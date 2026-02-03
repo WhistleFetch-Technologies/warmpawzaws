@@ -106,6 +106,20 @@ export function VendorBookingManagement({
   vendorName
 }: VendorBookingManagementProps) {
   const router = useRouter();
+  
+  // ✅ FIX: Check if vendor is solo groomer (groomer_solo) - they only do at_home, no tele
+  const isSoloGroomer = hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']) && 
+                        (vendorData?.vendorConfiguration === 'solo' || 
+                         vendorData?.vendorType === 'solo' || 
+                         vendorData?.vendor_type === 'solo' ||
+                         isSoloVendor(vendorData));
+  
+  // Get allowed service styles - solo groomers only have at_home
+  const allowedServiceStyles = vendorData?.allowedServiceStyles || 
+                               vendorData?.serviceStyles?.selected || 
+                               vendorData?.serviceStyles?.solo || 
+                               [];
+  const hasTeleService = !isSoloGroomer && allowedServiceStyles.includes('tele');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [activeFilter, setActiveFilter] = useState<'today' | 'week' | 'month'>('today');
   const [activeView, setActiveView] = useState<'consultations' | 'locations'>('consultations');
@@ -333,14 +347,40 @@ export function VendorBookingManagement({
         setBookings(mappedBookings);
         console.log(`✅ Loaded ${mappedBookings.length} bookings for vendor ${vendorId}`);
         
-        // Calculate instant consultation stats from actual bookings
-        const callCount = mappedBookings.filter((b: Booking) => b.communicationType === 'call').length;
-        const onlineCount = mappedBookings.filter((b: Booking) => b.communicationType === 'video' || b.serviceType === 'tele').length;
-        // Note: 'phone' is tracked via 'call' type since both are voice-based consultations
+        // ✅ FIX: Calculate instant consultation stats from filtered bookings (respects activeFilter: today/week/month)
+        // Stats should match what's shown on the dashboard for the selected period
+        // Check both serviceType and service_type (from raw booking data) to identify tele consultations
+        const teleBookings = mappedBookings.filter((b: Booking) => {
+          const serviceType = (b.serviceType || (b as any).service_type || '').toString().toLowerCase();
+          return serviceType === 'tele' || 
+                 serviceType === 'teleconsultation' || 
+                 serviceType.includes('tele') ||
+                 b.communicationType === 'video';
+        });
+        
+        // Separate phone calls from video consultations
+        const phoneCalls = teleBookings.filter((b: Booking) => 
+          b.communicationType === 'call' || 
+          (b.serviceType === 'tele' && b.communicationType !== 'video') // Tele without video = phone
+        );
+        
+        const videoCalls = teleBookings.filter((b: Booking) => 
+          b.communicationType === 'video' || 
+          ((b as any).service_type && (b as any).service_type.toString().toLowerCase() === 'teleconsultation')
+        );
+        
+        // Calculate stats for the selected period (today/week/month)
         setStats({
-          calls: callCount + onlineCount, // Total tele consultations
-          online: onlineCount,
-          phone: callCount, // Phone consultations = call type bookings
+          calls: teleBookings.length, // Total tele consultations (phone + video)
+          online: videoCalls.length, // Video/online consultations
+          phone: phoneCalls.length, // Phone consultations
+        });
+        
+        console.log(`📊 [VENDOR-UI] Stats for ${activeFilter}:`, {
+          totalTele: teleBookings.length,
+          video: videoCalls.length,
+          phone: phoneCalls.length,
+          totalBookings: mappedBookings.length
         });
         
         // ✅ FIX: Load operating hours and regenerate time slots based on real data
@@ -356,11 +396,23 @@ export function VendorBookingManagement({
         console.error('Failed to load bookings:', bookingsData);
         setBookings([]);
         setTimeSlots([]);
+        // ✅ FIX: Reset stats to 0 when no bookings are found for the selected period
+        setStats({
+          calls: 0,
+          online: 0,
+          phone: 0,
+        });
       }
     } catch (error) {
       console.error('Error loading bookings:', error);
       setBookings([]);
       setTimeSlots([]);
+      // ✅ FIX: Reset stats to 0 on error
+      setStats({
+        calls: 0,
+        online: 0,
+        phone: 0,
+      });
     } finally {
       setLoading(false);
     }
@@ -844,59 +896,63 @@ export function VendorBookingManagement({
         {/* BOOKINGS TAB CONTENT */}
         {activeTab === 'bookings' && (
           <>
-            {/* View Toggle */}
-            <div className="p-4 bg-white border-b border-gray-100">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setActiveView('consultations')}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    activeView === 'consultations'
-                      ? 'bg-gray-900 text-white'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  All Consultations
-                </button>
-                <button
-                  onClick={() => setActiveView('locations')}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    activeView === 'locations'
-                      ? 'bg-gray-900 text-white'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  All Locations
-                </button>
+            {/* View Toggle - Hide for solo groomers (no tele consultations) */}
+            {hasTeleService && (
+              <div className="p-4 bg-white border-b border-gray-100">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setActiveView('consultations')}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      activeView === 'consultations'
+                        ? 'bg-gray-900 text-white'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    All Consultations
+                  </button>
+                  <button
+                    onClick={() => setActiveView('locations')}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      activeView === 'locations'
+                        ? 'bg-gray-900 text-white'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    All Locations
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Instant Consultations Stats */}
-            <div className="p-4 bg-white border-b border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Instant Consultations</h3>
-              <div className="flex items-center justify-between">
-                <div className="text-center flex-1">
-                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-1 flex items-center justify-center">
-                    <Phone className="w-6 h-6 text-gray-600" />
+            {/* Instant Consultations Stats - Hide for solo groomers (no tele services) */}
+            {hasTeleService && (
+              <div className="p-4 bg-white border-b border-gray-100">
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">Instant Consultations</h3>
+                <div className="flex items-center justify-between">
+                  <div className="text-center flex-1">
+                    <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-1 flex items-center justify-center">
+                      <Phone className="w-6 h-6 text-gray-600" />
+                    </div>
+                    <div className="font-semibold text-gray-900">{stats.calls}</div>
+                    <div className="text-xs text-gray-500">Calls</div>
                   </div>
-                  <div className="font-semibold text-gray-900">{stats.calls}</div>
-                  <div className="text-xs text-gray-500">Calls</div>
-                </div>
-                <div className="text-center flex-1">
-                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-1 flex items-center justify-center">
-                    <Video className="w-6 h-6 text-gray-600" />
+                  <div className="text-center flex-1">
+                    <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-1 flex items-center justify-center">
+                      <Video className="w-6 h-6 text-gray-600" />
+                    </div>
+                    <div className="font-semibold text-gray-900">{stats.online}</div>
+                    <div className="text-xs text-gray-500">Online</div>
                   </div>
-                  <div className="font-semibold text-gray-900">{stats.online}</div>
-                  <div className="text-xs text-gray-500">Online</div>
-                </div>
-                <div className="text-center flex-1">
-                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-1 flex items-center justify-center">
-                    <Phone className="w-6 h-6 text-gray-600" />
+                  <div className="text-center flex-1">
+                    <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-1 flex items-center justify-center">
+                      <Phone className="w-6 h-6 text-gray-600" />
+                    </div>
+                    <div className="font-semibold text-gray-900">{stats.phone}</div>
+                    <div className="text-xs text-gray-500">Phone</div>
                   </div>
-                  <div className="font-semibold text-gray-900">{stats.phone}</div>
-                  <div className="text-xs text-gray-500">Phone</div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Today's Appointments */}
             <div className="p-4 bg-white">

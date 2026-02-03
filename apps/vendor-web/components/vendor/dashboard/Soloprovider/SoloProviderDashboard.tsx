@@ -15,25 +15,24 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
-import { useVendorCapabilities } from '../hooks/useVendorCapabilities';
 import { getRoleIcon, getRoleColorScheme } from '@/lib/vendor-icon-themes';
 import { hasVendorRole } from '@/lib/vendor-utils';
 import CapabilityHelper from '@/lib/capability-helper';
-import { 
-  Calendar, 
-  Clock, 
-  Star, 
-  MessageSquare, 
-  Phone, 
-  Video, 
-  ChevronRight, 
-  Plus, 
-  Activity, 
-  Package, 
-  Home, 
-  Settings, 
-  BarChart3, 
-  Bell, 
+import {
+  Calendar,
+  Clock,
+  Star,
+  MessageSquare,
+  Phone,
+  Video,
+  ChevronRight,
+  Plus,
+  Activity,
+  Package,
+  Home,
+  Settings,
+  BarChart3,
+  Bell,
   RefreshCw,
   Monitor,
   User,
@@ -46,75 +45,25 @@ import {
   X,
   DollarSign,
   Briefcase,
-  ClipboardList
+  ClipboardList,
+  Badge
 } from 'lucide-react';
-import { Badge } from '../../ui/badge';
-import { VendorAnalytics } from '../VendorAnalytics';
-import { VendorSettingsScreen } from '../VendorSettingsScreen';
-import { VendorNotificationModal } from '../VendorNotificationModal';
-import { CommunicationHub } from '../../communication/CommunicationHub';
-import { AppointmentDetailModal } from '../AppointmentDetailModal';
-import { AIChatBot } from '../../customer/AIChatBot';
-import { CapabilityDebugOverlay } from '../CapabilityDebugOverlay';
-import { DashboardStats } from '../../shared/DashboardStats';
-import { AppointmentCard } from '../../shared/AppointmentCard';
+
 import { toast } from 'sonner';
 import { Navigation, Map, Radio } from 'lucide-react';
+import { AppointmentCard } from '@/components/shared/AppointmentCard';
+import { VendorNotificationModal } from '../../VendorNotificationModal';
+import { AppointmentDetailModal } from '../../AppointmentDetailModal';
+import { CommunicationHub } from '@/components/communication/CommunicationHub';
+import { VendorAnalytics } from '../../VendorAnalytics';
+import { VendorSettingsScreen } from '../../VendorSettingsScreen';
+import { AIChatBot } from '@/components/customer/AIChatBot';
+import { CapabilityDebugOverlay } from '../../CapabilityDebugOverlay';
+import { useVendorCapabilities } from '@/hooks/useVendorCapabilities';
+import { formatBookingTime } from '../helpers';
+import { Dashboardstats, ScheduleItem, SoloProviderDashboardProps } from '../types';
+import { DashboardStats } from '@/components/shared/DashboardStats';
 
-interface SoloProviderDashboardProps {
-  session: {
-    vendorId: string;
-    centerId: string;
-    staffId: string;
-    isSoloProvider: boolean;
-    ownerName: string;
-    businessName?: string;
-    roleName: string;
-    defaultMode?: 'CENTER' | 'STAFF';
-  };
-  vendorData: any;
-}
-
-interface DashboardStats {
-  appointments: number;
-  consultations: number;
-  earnings: number;
-  pendingEarnings: number;
-  completedServices: number;
-  rating: number;
-  totalReviews: number;
-}
-
-interface ScheduleItem {
-  id: string;
-  bookingId: string;
-  time: string;
-  duration: number;
-  petName: string;
-  petBreed?: string;
-  customerName: string;
-  customerPhone: string;
-  serviceName: string;
-  serviceType: string;
-  status: string;
-  price: number;
-  address: string;
-  specialInstructions?: string;
-  hasUnreadMessages?: boolean;
-  unreadMessageCount?: number;
-  chatEnabled?: boolean;
-  isFollowUp?: boolean;
-}
-
-// Helper to format booking time
-function formatBookingTime(time: string): string {
-  if (!time) return 'N/A';
-  const [hours, minutes] = time.split(':');
-  const hour = parseInt(hours, 10);
-  const ampm = hour >= 12 ? 'PM' : 'AM';
-  const hour12 = hour % 12 || 12;
-  return `${hour12}:${minutes} ${ampm}`;
-}
 
 export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashboardProps) {
   const router = useRouter();
@@ -122,8 +71,8 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'bookings' | 'reporting' | 'settings'>('home');
   // Solo providers don't have at_center - only at_home and tele
   const [appointmentTypeFilter, setAppointmentTypeFilter] = useState<'all' | 'home' | 'tele'>('all');
-  
-  const [stats, setStats] = useState<DashboardStats>({
+
+  const [stats, setStats] = useState<Dashboardstats>({
     appointments: 0,
     consultations: 0,
     earnings: 0,
@@ -137,32 +86,32 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [vendor, setVendor] = useState(vendorData);
-  
+
   // Modals
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
   const [communicationMode, setCommunicationMode] = useState<'chat' | 'video' | null>(null);
   const [appointmentDetailModalOpen, setAppointmentDetailModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
-  
+
   // OTP modal for completing appointments
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otp, setOtp] = useState('');
   const [otpError, setOtpError] = useState<string | null>(null);
   const [processingOtp, setProcessingOtp] = useState(false);
   const [otpAction, setOtpAction] = useState<'start' | 'complete'>('complete');
-  
+
   // GPS tracking state
   const [isTracking, setIsTracking] = useState<{ [key: string]: boolean }>({});
   const [trackingLocation, setTrackingLocation] = useState<{ [key: string]: { lat: number; lng: number; updated: string } }>({});
-  
+
   // Dashboard warnings state
   const [warnings, setWarnings] = useState({
     profileIncomplete: false,
     bankNotVerified: true,
     servicesNotConfigured: true,
   });
-  
+
   // Handle logout – clear all vendor session data so login prompt and dashboard load correctly
   const handleLogout = async () => {
     if (confirm('Are you sure you want to logout?')) {
@@ -175,30 +124,40 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
       window.location.replace('/auth');
     }
   };
-  
+
   // Load capabilities from role
   // ✅ CRITICAL FIX: Check both roleId formats (camelCase and snake_case)
   const effectiveRoleId = vendorData?.roleId || vendorData?.role_id || vendorData?.selected_role_id;
   const { capabilities, loading: capsLoading, roleName, initialLoadComplete } = useVendorCapabilities(effectiveRoleId);
-  
+
   // Service styles allowed for solo provider (no at_center)
-  const allowedServiceStyles = vendorData?.allowedServiceStyles || vendorData?.serviceStyles || ['at_home', 'tele'];
+  // ✅ FIX: Solo groomers only have at_home, no tele
+  const isSoloGroomer = hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']);
+  const isWalker = hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
+  let allowedServiceStyles = isSoloGroomer 
+    ? ['at_home'] // Solo groomers only do home visits
+    : (vendorData?.allowedServiceStyles || vendorData?.serviceStyles?.selected || vendorData?.serviceStyles?.solo || ['at_home', 'tele']);
   
+  // ✅ CRITICAL: Walkers only provide at_home services, remove tele
+  if (isWalker) {
+    allowedServiceStyles = allowedServiceStyles.filter((style: string) => style !== 'tele');
+  }
+
   // Check if custom_services capability is enabled
   const hasCustomServices = capabilities.custom_services || capabilities.customServices || false;
   const hasPackagesCapability = capabilities.package_management || capabilities.packages || false;
-  
+
   // ✅ Check if trainer/walker/sitter/groomer who can create session packages (solo trainer, solo groomer)
   const isTrainerWalkerSitter = hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter', 'pet_groomer', 'groomer', 'groomer_solo']);
   const isPharmacy = hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy']);
-  
+
   // ✅ Solo trainers/walkers/sitters CAN create session packages even without explicit package capability
   const hasPackages = hasPackagesCapability || isTrainerWalkerSitter;
-  
+
   // Get role theme
   const roleIcon = getRoleIcon(vendorData?.roleId);
   const colorScheme = getRoleColorScheme(vendorData?.roleId);
-  
+
   const vendorId = session.vendorId;
 
   // Fetch dashboard data
@@ -211,7 +170,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
 
       // Fetch dashboard stats
       const dashboardRes = await apiClient.get<any>(`/vendor/dashboard/${vendorId}?timeframe=${activeTab}`).catch(() => ({ success: false }));
-      
+
       if (dashboardRes && dashboardRes.success) {
         setStats(dashboardRes.stats || dashboardRes.data?.stats || {
           appointments: 0,
@@ -223,7 +182,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           totalReviews: 0,
         });
         setVendor(dashboardRes.vendor || dashboardRes.data?.vendor || vendorData);
-        
+
         // Transform bookings
         const bookings = dashboardRes.bookings || dashboardRes.data?.bookings || [];
         if (bookings.length > 0) {
@@ -250,7 +209,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           setTodaySchedule(transformedBookings);
         }
       }
-      
+
       // Fetch services (catalog/custom) for solo provider - include pharmacy, cafe, insurance, etc.
       const hasServiceManagement = CapabilityHelper.hasBooking(capabilities) || CapabilityHelper.hasCapability(capabilities, 'services') || hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy', 'pet_cafe', 'cafe', 'pet_insurance', 'insurance', 'pet_holidays', 'holidays', 'pet_resort', 'resort', 'pet_ambulance', 'ambulance']);
       if (hasCustomServices || hasServiceManagement) {
@@ -263,19 +222,19 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           setServices(customServices);
         }
       }
-      
+
       // Fetch notifications
       const notificationsRes = await apiClient.get<any>(`/vendor/${vendorId}/notifications?limit=5`).catch(() => ({ success: false, notifications: [] }));
       if (notificationsRes && notificationsRes.success) {
         setNotifications(notificationsRes.notifications || []);
       }
-      
+
       // Check profile, bank and services status for warnings
       const [bankRes, profileRes] = await Promise.all([
         apiClient.get<any>(`/vendor/${vendorId}/bank-details`).catch(() => ({ success: false })),
         apiClient.get<any>(`/vendor/${vendorId}/profile`).catch(() => ({ success: false })),
       ]);
-      
+
       // Check bank verification
       if (bankRes && bankRes.success && bankRes.bankDetails) {
         setWarnings(prev => ({
@@ -283,7 +242,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           bankNotVerified: !bankRes.bankDetails.bank_verified && !bankRes.bankDetails.is_verified,
         }));
       }
-      
+
       // Check profile completion
       if (profileRes && profileRes.success) {
         const profile = profileRes.vendor || profileRes;
@@ -297,7 +256,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           profileIncomplete: !isProfileComplete,
         }));
       }
-      
+
       // Check services
       setWarnings(prev => ({
         ...prev,
@@ -319,7 +278,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vendorId, activeTab]);
-  
+
   // ✅ FIX: Refresh when capabilities are loaded for capability-specific data
   useEffect(() => {
     if (vendorId && initialLoadComplete && !capsLoading) {
@@ -425,7 +384,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const stopLocationTracking = async (bookingId: string) => {
     try {
       await apiClient.post<any>('/location/stop-sharing', { bookingId });
-      
+
       // Clear interval
       const interval = (window as any)[`tracking_${bookingId}`];
       if (interval) {
@@ -438,7 +397,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         delete newState[bookingId];
         return newState;
       });
-      
+
       setTrackingLocation(prev => {
         const newState = { ...prev };
         delete newState[bookingId];
@@ -479,7 +438,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         otp,
         action: otpAction
       });
-      
+
       if (otpAction === 'start') {
         // Start GPS tracking for at_home services
         const serviceType = selectedAppointment.serviceType?.toLowerCase();
@@ -496,7 +455,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           await stopLocationTracking(selectedAppointment.bookingId);
         }
       }
-      
+
       setShowOtpModal(false);
       setOtp('');
       setOtpError(null);
@@ -538,8 +497,10 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
     );
   }
 
+  // ✅ FIX: Prioritize vendorData.address (prop) over vendor.address (API response)
+  // This ensures consistency with VendorBookingManagement which uses vendorData.address
   const displayAddress = (() => {
-    const a = vendor?.address ?? vendorData?.address;
+    const a = vendorData?.address ?? vendor?.address;
     if (!a) return '';
     if (typeof a === 'string') return a;
     return [a.line1, a.line2, a.city, a.state].filter(Boolean).join(', ') || '';
@@ -572,12 +533,12 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               <button onClick={() => fetchDashboardData(true)} disabled={refreshing}>
                 <RefreshCw className={`w-5 h-5 text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
               </button>
-              
+
               {capabilities.chat && (
                 <MessageSquare className="w-5 h-5 text-gray-400" />
               )}
 
-              <button 
+              <button
                 className="relative"
                 onClick={() => setNotificationModalOpen(true)}
               >
@@ -586,9 +547,9 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                   <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                 )}
               </button>
-              
+
               {/* Logout Button */}
-              <button 
+              <button
                 onClick={handleLogout}
                 className="p-1.5 rounded-lg hover:bg-red-50 transition-colors"
                 title="Logout"
@@ -625,8 +586,8 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                 <span className="text-gray-700">
                   Service Types: <span className="font-semibold text-orange-600">
                     {allowedServiceStyles.includes('at_home') && 'Home Visit'}
-                    {allowedServiceStyles.includes('at_home') && allowedServiceStyles.includes('tele') && ', '}
-                    {allowedServiceStyles.includes('tele') && 'Tele-consultation'}
+                    {allowedServiceStyles.includes('at_home') && allowedServiceStyles.includes('tele') && !isWalker && ', '}
+                    {!isSoloGroomer && !isWalker && allowedServiceStyles.includes('tele') && 'Tele-consultation'}
                   </span>
                 </span>
               </div>
@@ -645,7 +606,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               <User className="w-6 h-6 mb-2" />
               <span className="font-semibold text-sm">My Profile</span>
             </button>
-            
+
             {/* ✅ PHARMA: Pharmacy solo vendors get Orders — NOT Manage Services */}
             {isPharmacy && (
               <button
@@ -657,62 +618,25 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               </button>
             )}
             {/* Manage Services - For non-pharmacy solo vendors */}
+            {/* ✅ FIX: Route to /services (not /services/manage) to show VendorServiceManagementComplete UI */}
             {!isPharmacy && (capabilities.booking || CapabilityHelper.hasCapability(capabilities, 'services') || hasVendorRole(vendorData, ['pet_cafe', 'cafe', 'pet_insurance', 'insurance', 'pet_holidays', 'holidays', 'pet_resort', 'resort', 'pet_ambulance', 'ambulance'])) && (
               <button
-                onClick={() => router.push('/services/manage')}
+                onClick={() => router.push('/services')}
                 className="flex-1 min-w-[140px] bg-white border-2 border-indigo-500 text-indigo-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-indigo-500 hover:text-white transition-colors group text-center"
               >
                 <Package className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Manage Services</span>
               </button>
             )}
-            
-            {/* Schedule Management - for non-pharmacy (all service providers) */}
-            {!isPharmacy && (
-              <button
-                onClick={() => router.push('/solo/schedule')}
-                className="flex-1 min-w-[140px] bg-white border-2 border-green-500 text-green-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-green-500 hover:text-white transition-colors group text-center"
-              >
-                <Calendar className="w-6 h-6 mb-2" />
-                <span className="font-semibold text-sm">Schedule</span>
-              </button>
-            )}
-            
-            {/* Custom Services - hidden for pharmacy */}
-            {!isPharmacy && hasCustomServices && (
-              <button
-                onClick={() => router.push('/services')}
-                className="flex-1 min-w-[140px] bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
-              >
-                <Activity className="w-6 h-6 mb-2" />
-                <span className="font-semibold text-sm">Custom Services</span>
-              </button>
-            )}
-            
-            {/* Session Packages - hidden for pharmacy */}
-            {!isPharmacy && hasPackages && (
-              <button
-                onClick={() => router.push('/packages')}
-                className={`flex-1 min-w-[140px] bg-white border-2 ${isTrainerWalkerSitter ? 'border-green-500 text-green-600 hover:bg-green-500' : 'border-purple-500 text-purple-600 hover:bg-purple-500'} rounded-xl p-4 flex flex-col items-center justify-center hover:text-white transition-colors group text-center`}
-              >
-                <Gift className="w-6 h-6 mb-2" />
-                <span className="font-semibold text-sm">
-                  {isTrainerWalkerSitter ? 'Session Packages' : 'Packages'}
-                </span>
-                {isTrainerWalkerSitter && (
-                  <span className="text-xs mt-1 opacity-70 group-hover:opacity-100">Track sessions & usage</span>
-                )}
-              </button>
-            )}
           </div>
-          
+
           {/* Info Banner - Pharmacy: Orders + proforma only; others: Solo Provider */}
           <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
             <p className="text-sm text-blue-800">
               {isPharmacy ? (
                 <><strong>Pharmacy:</strong> Receive prescription orders, confirm availability, and send proforma invoice. Customer approves and pays; then track delivery.</>
               ) : (
-                <><strong>Solo Provider Mode:</strong> You provide services directly to customers via home visits or tele-consultation. Use "Manage Services" to enable and publish services from the platform catalog.{hasCustomServices && ' You can also create custom services using the "Custom Services" option.'}</>
+                <><strong>Solo Provider Mode:</strong> You provide services directly to customers via {isSoloGroomer || isWalker ? 'home visits' : 'home visits or tele-consultation'}. Use "Manage Services" to enable and publish services from the platform catalog.</>
               )}
             </p>
           </div>
@@ -732,7 +656,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                   <span className="text-xs font-medium text-gray-900">Progress</span>
                 </button>
               )}
-              
+
               {capabilities.distance_pricing && (
                 <button
                   onClick={() => router.push('/settings')}
@@ -742,7 +666,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                   <span className="text-xs font-medium text-gray-900">Distance Pricing</span>
                 </button>
               )}
-              
+
               {capabilities.counseling && (
                 <button
                   onClick={() => router.push('/counseling')}
@@ -756,9 +680,9 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           </div>
         )}
 
-        {/* Stats Dashboard */}
+        {/* Stats Dashboard - Time Period Tabs Only (No Earnings Display) */}
         <div className="p-4 border-b border-gray-100">
-          <div className="flex gap-2 mb-3">
+          <div className="flex gap-2 mb-3 justify-center">
             <button
               onClick={() => setActiveTab('today')}
               className={`px-4 py-1.5 rounded-full text-sm ${activeTab === 'today' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
@@ -772,25 +696,6 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               className={`px-4 py-1.5 rounded-full text-sm ${activeTab === 'month' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}
             >Month</button>
           </div>
-
-          {/* Use shared DashboardStats component */}
-          <DashboardStats
-            stats={{
-              appointments: stats.appointments,
-              consultations: stats.consultations,
-              earnings: stats.earnings,
-              completedServices: stats.completedServices,
-              rating: stats.rating,
-              totalReviews: stats.totalReviews,
-            }}
-            onStatClick={(statType) => {
-              if (statType === 'appointments' || statType === 'consultations') {
-                router.push('/bookings');
-              } else if (statType === 'earnings') {
-                setActiveBottomTab('reporting');
-              }
-            }}
-          />
         </div>
 
         {/* Today's Schedule - Open appointments on landing page (always for non-pharmacy) */}
@@ -799,35 +704,32 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
             <h2 className="font-semibold text-gray-900 text-center mb-3">
               {activeTab === 'today' ? "Today's" : activeTab === 'week' ? 'This Week' : "This Month's"} Schedule
             </h2>
-            
+
             {/* Service Style Tabs - Only allowed styles */}
             <div className="flex gap-2 mb-3 overflow-x-auto pb-2">
-              <button 
-                onClick={() => setAppointmentTypeFilter('all')} 
-                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                  appointmentTypeFilter === 'all' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'
-                }`}
+              <button
+                onClick={() => setAppointmentTypeFilter('all')}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'all' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'
+                  }`}
               >
                 All Types
               </button>
-              
+
               {allowedServiceStyles.includes('at_home') && (
-                <button 
-                  onClick={() => setAppointmentTypeFilter('home')} 
-                  className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                    appointmentTypeFilter === 'home' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600'
-                  }`}
+                <button
+                  onClick={() => setAppointmentTypeFilter('home')}
+                  className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'home' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600'
+                    }`}
                 >
                   <Home className="w-3.5 h-3.5" /> Home Visit
                 </button>
               )}
-              
-              {allowedServiceStyles.includes('tele') && (
-                <button 
-                  onClick={() => setAppointmentTypeFilter('tele')} 
-                  className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                    appointmentTypeFilter === 'tele' ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-600'
-                  }`}
+
+              {allowedServiceStyles.includes('tele') && !isWalker && (
+                <button
+                  onClick={() => setAppointmentTypeFilter('tele')}
+                  className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'tele' ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-600'
+                    }`}
                 >
                   <Monitor className="w-3.5 h-3.5" /> Tele
                 </button>
@@ -843,7 +745,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                 <p className="text-sm text-gray-500 mb-4 max-w-[250px] mx-auto">
                   Complete your profile and add services to start getting bookings!
                 </p>
-                <button 
+                <button
                   onClick={() => router.push('/profile')}
                   className="px-4 py-2 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-lg text-sm font-medium transition-colors"
                 >
@@ -871,7 +773,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                       // Get customer location from appointment data
                       const customerLat = (appointment as any).customerLat || (appointment as any).customer_lat;
                       const customerLng = (appointment as any).customerLng || (appointment as any).customer_lng;
-                      
+
                       return (
                         <AppointmentCard
                           key={appointment.id}
@@ -952,54 +854,23 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           </div>
         )}
 
-        {/* Your Services (Custom Services Only) — not for pharmacy */}
-        {hasCustomServices && !isPharmacy && (
-          <div className="p-4 border-b border-gray-100">
-            <h2 className="font-semibold text-gray-900 text-center mb-3">Your Services</h2>
-            <div className="flex items-center justify-center mb-2">
-              <button className="text-sm text-[#FF8C42]" onClick={() => router.push('/services')}>Manage Services →</button>
-            </div>
-            <div className="flex gap-2 overflow-x-auto pb-2 justify-center">
-              <button 
-                onClick={() => router.push('/services')}
-                className="flex-shrink-0 w-16 h-16 bg-purple-100 rounded-xl flex flex-col items-center justify-center hover:bg-purple-200 transition-colors"
-              >
-                <Plus className="w-6 h-6 text-purple-600 mb-1" />
-                <span className="text-xs">Add</span>
-              </button>
-              {Array.isArray(services) && services.slice(0, 4).map((service) => (
-                <div key={service.id || service.serviceId} className="flex-shrink-0 w-16 h-16 bg-blue-100 rounded-xl flex flex-col items-center justify-center">
-                  <Activity className="w-6 h-6 text-blue-600 mb-1" />
-                  <span className="text-xs truncate w-full text-center px-1">{service.name || service.service_name}</span>
-                </div>
-              ))}
-            </div>
-            {services.length === 0 && (
-              <p className="text-xs text-gray-500 text-center mt-2">
-                Create custom services to offer to your customers
-              </p>
-            )}
-          </div>
-        )}
-
         {/* Bottom padding for fixed nav */}
         <div className="pb-24"></div>
 
         {/* Bottom Navigation */}
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10">
           <div className="max-w-[430px] mx-auto flex items-center justify-around py-3">
-            <button 
+            <button
               onClick={() => setActiveBottomTab('home')}
-              className={`flex flex-col items-center gap-1 ${
-                activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
-              }`}
+              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
+                }`}
             >
               <div className="w-6 h-6">🏠</div>
               <span className="text-xs">Home</span>
             </button>
-            
+
             {isPharmacy ? (
-              <button 
+              <button
                 onClick={() => router.push('/pharmacy/orders')}
                 className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#FF8C42]"
               >
@@ -1007,35 +878,32 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                 <span className="text-xs">Orders</span>
               </button>
             ) : (
-              <button 
+              <button
                 onClick={() => {
                   router.push('/bookings');
                   setActiveBottomTab('bookings');
                 }}
-                className={`flex flex-col items-center gap-1 ${
-                  activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
-                }`}
+                className={`flex flex-col items-center gap-1 ${activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
+                  }`}
               >
                 <Calendar className="w-6 h-6" />
                 <span className="text-xs">Bookings</span>
               </button>
             )}
 
-            <button 
+            <button
               onClick={() => setActiveBottomTab('reporting')}
-              className={`flex flex-col items-center gap-1 ${
-                activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
-              }`}
+              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
+                }`}
             >
               <BarChart3 className="w-6 h-6" />
               <span className="text-xs">Reporting</span>
             </button>
-            
-            <button 
+
+            <button
               onClick={() => setActiveBottomTab('settings')}
-              className={`flex flex-col items-center gap-1 ${
-                activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
-              }`}
+              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
+                }`}
             >
               <Settings className="w-6 h-6" />
               <span className="text-xs">Settings</span>
@@ -1045,7 +913,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
       </div>
 
       {/* Modals */}
-      <VendorNotificationModal 
+      <VendorNotificationModal
         vendorId={vendorId}
         open={notificationModalOpen}
         onClose={() => setNotificationModalOpen(false)}
@@ -1138,11 +1006,10 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               <button
                 onClick={handleOtpAction}
                 disabled={otp.length !== 4 || processingOtp}
-                className={`flex-1 px-4 py-2 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
-                  otpAction === 'start' 
-                    ? 'bg-blue-500 hover:bg-blue-600' 
-                    : 'bg-green-500 hover:bg-green-600'
-                }`}
+                className={`flex-1 px-4 py-2 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${otpAction === 'start'
+                  ? 'bg-blue-500 hover:bg-blue-600'
+                  : 'bg-green-500 hover:bg-green-600'
+                  }`}
               >
                 {processingOtp ? (
                   <>
@@ -1182,9 +1049,9 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
       )}
 
       {/* AI Support Bot */}
-      <AIChatBot 
+      <AIChatBot
         customerId={vendorId}
-        customerName={vendor?.fullName || vendor?.businessName || 'Provider'} 
+        customerName={vendor?.fullName || vendor?.businessName || 'Provider'}
       />
 
       {/* Debug Overlay */}

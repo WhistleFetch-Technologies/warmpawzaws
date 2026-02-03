@@ -2,13 +2,14 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { VendorBookingManagementScreen } from '@/components/vendor/bookings/VendorBookingManagementScreen';
+import { VendorBookingManagement } from '@/components/vendor/VendorBookingManagement';
 import { isTokenExpired, clearVendorSession } from '@/lib/session-utils';
 
 export default function BookingsPage() {
   const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
+  const [vendorData, setVendorData] = useState<any>(null);
 
   // Auth protection
   useEffect(() => {
@@ -21,14 +22,19 @@ export default function BookingsPage() {
       return;
     }
     
+    // Get vendor data from localStorage
+    const storedVendorData = localStorage.getItem('vendorData');
+    if (storedVendorData) {
+      try {
+        setVendorData(JSON.parse(storedVendorData));
+      } catch (e) {
+        console.error('Error parsing vendor data:', e);
+      }
+    }
+    
     setIsAuthenticated(true);
     setIsChecking(false);
   }, []);
-
-  const handleSelectBooking = (bookingId: string) => {
-    console.log(`[BookingsPage] Navigating to booking detail: ${bookingId}`);
-    router.push(`/bookings/${bookingId}`);
-  };
 
   const handleBack = () => {
     router.back();
@@ -47,13 +53,17 @@ export default function BookingsPage() {
   }
 
   // Get vendor data from localStorage
-  const vendorId = localStorage.getItem('vendorId') || '';
+  const vendorId = typeof window !== 'undefined' ? localStorage.getItem('vendorId') || '' : '';
+  const effectiveVendorData = vendorData || (typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('vendorData') || '{}') : {});
 
   return (
-    <VendorBookingManagementScreen
+    <VendorBookingManagement
       vendorId={vendorId}
-      onSelectBooking={handleSelectBooking}
+      vendorData={effectiveVendorData}
       onBack={handleBack}
+      chatEnabled={true}
+      vendorPhone={effectiveVendorData?.phone || effectiveVendorData?.mobile}
+      vendorName={effectiveVendorData?.fullName || effectiveVendorData?.businessName || effectiveVendorData?.business_name}
     />
   );
 }

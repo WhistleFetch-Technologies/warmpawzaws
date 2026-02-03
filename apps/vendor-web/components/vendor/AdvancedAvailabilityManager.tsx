@@ -157,35 +157,80 @@ export function AdvancedAvailabilityManager({
   useEffect(() => {
     const loadAllowedServiceStyles = async () => {
       try {
-        // Try to get from vendorData first
-        if (vendorData?.allowedServiceStyles && Array.isArray(vendorData.allowedServiceStyles)) {
-          setAllowedServiceStyles(vendorData.allowedServiceStyles);
-          return;
-        }
+        let styles: string[] = [];
         
-        // Fetch from vendor services endpoint
-        const servicesRes = await apiClient.get(`/vendor/${vendorId}/services`) as any;
-        if (servicesRes?.success && servicesRes?.allowedServiceStyles) {
-          setAllowedServiceStyles(servicesRes.allowedServiceStyles);
-        } else {
-          // Fallback: Use role-based defaults
-          const roleNameLower = roleName?.toLowerCase() || '';
-          if (roleNameLower === 'groomer_solo') {
-            setAllowedServiceStyles(['at_home']);
+        // ✅ Priority 1: Check vendorData.serviceStyles.selected (what vendor has actually configured)
+        // This is the most important - shows only what the vendor has selected/enabled
+        if (vendorData?.serviceStyles?.selected && Array.isArray(vendorData.serviceStyles.selected) && vendorData.serviceStyles.selected.length > 0) {
+          // Map role config style names to database style names
+          const styleMap: Record<string, string> = {
+            'at_home': 'at_home',
+            'home_visit': 'at_home',
+            'tele': 'tele',
+            'video_consultation': 'tele',
+            'at_center': 'at_center',
+            'at_clinic': 'at_center',
+          };
+          styles = vendorData.serviceStyles.selected
+            .map((s: string) => styleMap[s.toLowerCase()] || s)
+            .filter((s: string) => ['at_home', 'at_center', 'tele'].includes(s));
+          console.log('[AVAILABILITY] Using serviceStyles.selected from vendorData:', styles);
+        }
+        // ✅ Priority 2: Check vendorData.allowedServiceStyles (direct array)
+        else if (vendorData?.allowedServiceStyles && Array.isArray(vendorData.allowedServiceStyles)) {
+          styles = vendorData.allowedServiceStyles;
+          console.log('[AVAILABILITY] Using allowedServiceStyles from vendorData:', styles);
+        }
+        // ✅ Priority 3: Fetch from vendor services endpoint
+        else {
+          const servicesRes = await apiClient.get(`/vendor/${vendorId}/services`) as any;
+          if (servicesRes?.success && servicesRes?.allowedServiceStyles) {
+            styles = servicesRes.allowedServiceStyles;
+            console.log('[AVAILABILITY] Using allowedServiceStyles from services endpoint:', styles);
           } else {
-            // Default to all styles for other roles
-            setAllowedServiceStyles(['at_home', 'at_center', 'tele']);
+            // Fallback: Use role-based defaults
+            const roleNameLower = roleName?.toLowerCase() || '';
+            if (roleNameLower === 'groomer_solo') {
+              styles = ['at_home'];
+            } else {
+              // Default to all styles for other roles
+              styles = ['at_home', 'at_center', 'tele'];
+            }
           }
         }
+        
+        // ✅ CRITICAL: Filter out 'tele' for walker roles (walkers don't provide tele services)
+        const roleNameLower = roleName?.toLowerCase() || '';
+        const isWalker = roleNameLower.includes('walker') || roleNameLower.includes('dog_walker') || roleNameLower === 'pet_walker';
+        if (isWalker) {
+          styles = styles.filter(s => s !== 'tele');
+          console.log('[AVAILABILITY] Filtered out tele for walker role. Final styles:', styles);
+        }
+        
+        // ✅ CRITICAL: Filter out 'tele' for groomer_solo (groomers don't provide tele services)
+        if (roleNameLower === 'groomer_solo' || roleNameLower === 'pet_groomer') {
+          styles = styles.filter(s => s !== 'tele');
+          console.log('[AVAILABILITY] Filtered out tele for groomer role. Final styles:', styles);
+        }
+        
+        // Ensure we have at least one style
+        if (styles.length === 0) {
+          styles = ['at_home'];
+          console.log('[AVAILABILITY] No styles found, defaulting to at_home');
+        }
+        
+        setAllowedServiceStyles(styles as any);
       } catch (error) {
         console.warn('Failed to load allowed service styles:', error);
         // Fallback based on role
         const roleNameLower = roleName?.toLowerCase() || '';
-        if (roleNameLower === 'groomer_solo') {
-          setAllowedServiceStyles(['at_home']);
+        let fallbackStyles: string[] = [];
+        if (roleNameLower === 'groomer_solo' || roleNameLower.includes('walker')) {
+          fallbackStyles = ['at_home'];
         } else {
-          setAllowedServiceStyles(['at_home', 'at_center', 'tele']);
+          fallbackStyles = ['at_home', 'at_center', 'tele'];
         }
+        setAllowedServiceStyles(fallbackStyles as any);
       }
     };
     
@@ -311,10 +356,17 @@ export function AdvancedAvailabilityManager({
     setSchedule(prev => {
       const newSchedule = [...prev];
       const defaultServiceStyles = getDefaultServiceStyle();
+      // ✅ Initialize locationData for solo providers (needed for at_home/tele services)
+      const initialLocationData = isSoloProvider && vendorData?.address ? {
+        address: vendorData.address || '',
+        lat: vendorData.latitude,
+        lng: vendorData.longitude,
+      } : undefined;
       newSchedule[selectedDay].slots.push({
         startTime: '09:00',
         endTime: '17:00',
         serviceStyles: defaultServiceStyles,
+        locationData: initialLocationData,
         bufferTime: 15,
         maxCapacity: 1,
         isEnabled: true,
@@ -793,8 +845,10 @@ export function AdvancedAvailabilityManager({
                       </div>
                     </div>
 
-                    {/* Location for Solo (at_home only) */}
-                    {isSoloProvider && slot.serviceStyles.includes('at_home') && (
+                    {/* Location for Solo (at_home only) - Hidden for walker solo */}
+                    {isSoloProvider && 
+                     slot.serviceStyles.includes('at_home') && 
+                     !roleName?.toLowerCase().includes('walker') && (
                       <div className="mb-4">
                         <p className="text-sm text-gray-600 mb-2 flex items-center gap-1">
                           <MapPin className="w-4 h-4" />
@@ -806,13 +860,14 @@ export function AdvancedAvailabilityManager({
                             updateSlot(slotIdx, {
                               locationData: {
                                 address,
-                                lat: components?.lat,
-                                lng: components?.lng,
+                                lat: components?.lat ?? components?.coordinates?.lat,
+                                lng: components?.lng ?? components?.coordinates?.lng,
                                 placeId: components?.placeId,
                               },
                             });
                           }}
                           placeholder="Search for your service location..."
+                          className="w-full"
                         />
                       </div>
                     )}

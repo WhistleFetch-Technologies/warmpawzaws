@@ -29,7 +29,7 @@ import { VendorApprovedSetup } from './VendorApprovedSetup';
 // import { VendorAvailabilitySetup } from './VendorAvailabilitySetup';
 import { VendorSetupCompleted } from './VendorSetupCompleted';
 import { VendorApplicationRejected } from './VendorApplicationRejected';
-import { VendorDashboard } from './VendorDashboard'; // ✅ FIX: Use actual Figma UI component, not the placeholder VendorDashboardScreen
+import { VendorDashboard } from './dashboard/BussinesProvider/VendorDashboard'; // ✅ FIX: Use actual Figma UI component, not the placeholder VendorDashboardScreen
 // ✅ REMOVED: VendorScheduleManagement - Using AdvancedAvailabilityManager as standard
 // import { VendorScheduleManagement } from './VendorScheduleManagement';
 import { VendorServiceManagementComplete } from './VendorServiceManagementComplete';

@@ -53,6 +53,13 @@ export function PhotoUpload({
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ✅ Update preview when photoUrl prop changes (e.g., after loading profile)
+  React.useEffect(() => {
+    if (photoUrl) {
+      setPreview(photoUrl);
+    }
+  }, [photoUrl]);
+
   const handleFileSelect = async (file: File) => {
     setError(null);
 

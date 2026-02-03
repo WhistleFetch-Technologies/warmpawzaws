@@ -56,21 +56,39 @@ Write-Host "✅ Build completed successfully" -ForegroundColor Green
 Write-Host "🔧 Injecting runtime-config.js..." -ForegroundColor Blue
 Set-Location $PROJECT_ROOT
 
-# Get API Gateway endpoint (HTTP API v2)
+# Get API Gateway endpoint - Priority: config/urls.json apiGatewayDefaultUrl → AWS query → fallback
 $API_ENDPOINT = ""
-try {
-    $apis = aws apigatewayv2 get-apis --region $REGION --output json | ConvertFrom-Json
-    $api = $apis.Items | Where-Object { $_.Name -eq "warmpawz-dev-api" } | Select-Object -First 1
-    if ($api -and $api.ApiEndpoint) {
-        $API_ENDPOINT = $api.ApiEndpoint
-        Write-Host "✅ API Gateway endpoint: $API_ENDPOINT" -ForegroundColor Green
+$urlsConfigPath = Join-Path $PROJECT_ROOT "config" "urls.json"
+
+# Priority 1: Read from config/urls.json
+if (Test-Path $urlsConfigPath) {
+    try {
+        $urlsConfig = Get-Content $urlsConfigPath | ConvertFrom-Json
+        if ($urlsConfig.apiGatewayDefaultUrl) {
+            $API_ENDPOINT = $urlsConfig.apiGatewayDefaultUrl
+            Write-Host "✅ API Gateway endpoint (from config): $API_ENDPOINT" -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "⚠️  Could not read config/urls.json" -ForegroundColor Yellow
     }
-} catch {
-    Write-Host "⚠️  Could not fetch API Gateway endpoint from AWS" -ForegroundColor Yellow
 }
 
+# Priority 2: Query AWS if not found in config
 if (-not $API_ENDPOINT) {
-    # Fallback to known API Gateway endpoint
+    try {
+        $apis = aws apigatewayv2 get-apis --region $REGION --output json | ConvertFrom-Json
+        $api = $apis.Items | Where-Object { $_.Name -eq "warmpawz-dev-api" } | Select-Object -First 1
+        if ($api -and $api.ApiEndpoint) {
+            $API_ENDPOINT = $api.ApiEndpoint
+            Write-Host "✅ API Gateway endpoint (from AWS): $API_ENDPOINT" -ForegroundColor Green
+        }
+    } catch {
+        Write-Host "⚠️  Could not fetch API Gateway endpoint from AWS" -ForegroundColor Yellow
+    }
+}
+
+# Priority 3: Fallback to known API Gateway endpoint
+if (-not $API_ENDPOINT) {
     $API_ENDPOINT = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"
     Write-Host "⚠️  Using fallback API endpoint: $API_ENDPOINT" -ForegroundColor Yellow
 }

@@ -122459,9 +122459,11 @@ var init_admin = __esm({
             paramIdx++;
           }
           if (isActive !== void 0 && isActive !== "all") {
-            whereConditions.push(`v.is_active = $${paramIdx}`);
-            params.push(isActive === "true");
-            paramIdx++;
+            if (isActive === "true") {
+              whereConditions.push(`COALESCE(v.is_active, true) = true`);
+            } else {
+              whereConditions.push(`COALESCE(v.is_active, true) = false`);
+            }
           }
           const whereClause = whereConditions.join(" AND ");
           const vendorsResult = await query(`
@@ -158059,13 +158061,16 @@ function registerVendorServicesEndpoints(app3) {
         return c.json({ error: "Vendor does not have services capability" }, 403);
       }
       const services = await select("vendor_services", {
-        vendor_id: vendorId,
-        service_id: serviceId
+        id: serviceId,
+        vendor_id: vendorId
       });
       if (services.length === 0) {
         return c.json({ error: "Service not found" }, 404);
       }
       const service = services[0];
+      if (!service.is_custom_service) {
+        return c.json({ error: "This endpoint is only for custom services" }, 400);
+      }
       if (service.publish_status !== "draft") {
         return c.json({
           error: `Cannot publish service with status '${service.publish_status}'. Only draft services can be submitted for approval.`
@@ -158073,7 +158078,7 @@ function registerVendorServicesEndpoints(app3) {
       }
       await update(
         "vendor_services",
-        { vendor_id: vendorId, service_id: serviceId },
+        { id: serviceId, vendor_id: vendorId },
         {
           publish_status: "pending_approval",
           submitted_for_approval_at: (/* @__PURE__ */ new Date()).toISOString()
@@ -158454,7 +158459,7 @@ function formatPricingResponse(pricing) {
     updatedAt: pricing.updated_at
   };
 }
-function validatePriceChange(oldPrice, newPrice, maxChangePercent = 200) {
+function validatePriceChange(oldPrice, newPrice, maxChangePercent = 50) {
   const errors = [];
   if (oldPrice === 0) {
     return { isValid: true, errors: [] };
@@ -175285,7 +175290,7 @@ function registerVendorProfileEndpoints(app3) {
         // 7 days (max for presigned URLs)
       );
       await update("vendors", { id: vendorId }, {
-        logo_url: signedUrl,
+        profile_photo_url: signedUrl,
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       console.log(`\u2705 [PROFILE-PHOTO] Photo uploaded successfully for vendor ${vendorId}`);
@@ -175361,7 +175366,12 @@ function registerVendorProfileEndpoints(app3) {
         "setup_completed",
         "services_setup_completed",
         "availability_setup_completed",
-        "metadata"
+        "metadata",
+        "experience_years",
+        "qualifications",
+        "service_area",
+        "specializations"
+        // ✅ Added for solo provider profile
       ];
       const updateData = {};
       for (const [key, value] of Object.entries(updates)) {
@@ -175556,6 +175566,11 @@ function registerVendorProfileEndpoints(app3) {
         success: true,
         vendor: {
           ...vendor,
+          // ✅ Explicitly include profile fields (even if null) for solo providers
+          qualifications: vendor.qualifications || null,
+          service_area: vendor.service_area || null,
+          description: vendor.description || null,
+          experience_years: vendor.experience_years ?? null,
           // Include role info directly in response
           role: role ? {
             id: role.id,
