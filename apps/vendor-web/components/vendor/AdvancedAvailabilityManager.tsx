@@ -25,7 +25,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
-import { getVendorRoleName } from '@/lib/vendor-utils';
+import { getVendorRoleName, isSoloVendor } from '@/lib/vendor-utils';
 
 interface AdvancedAvailabilityManagerProps {
   vendorId: string;
@@ -199,6 +199,13 @@ export function AdvancedAvailabilityManager({
           }
         }
         
+        // ✅ CRITICAL: Filter out 'at_center' for ALL solo vendors (vet_solo, groomer_solo, etc.)
+        // Solo vendors don't have a physical center/clinic location
+        if (isSoloVendor(vendorData)) {
+          styles = styles.filter(s => s !== 'at_center');
+          console.log('[AVAILABILITY] Filtered out at_center for solo vendor. Final styles:', styles);
+        }
+        
         // ✅ CRITICAL: Filter out 'tele' for walker roles (walkers don't provide tele services)
         const roleNameLower = roleName?.toLowerCase() || '';
         const isWalker = roleNameLower.includes('walker') || roleNameLower.includes('dog_walker') || roleNameLower === 'pet_walker';
@@ -266,7 +273,13 @@ export function AdvancedAvailabilityManager({
             if (dayIdx >= 0 && dayIdx <= 6) {
               // Filter service styles to only include allowed ones
               const slotStyles = slot.service_styles || slot.serviceStyles || [];
-              const filteredStyles = slotStyles.filter((s: string) => allowedServiceStyles.includes(s as any));
+              let filteredStyles = slotStyles.filter((s: string) => allowedServiceStyles.includes(s as any));
+              
+              // ✅ FIX: Remove at_center from existing slots if vendor is solo
+              if (isSoloVendor(vendorData)) {
+                filteredStyles = filteredStyles.filter((s: string) => s !== 'at_center');
+              }
+              
               const defaultStyles = filteredStyles.length > 0 ? filteredStyles : getDefaultServiceStyle();
               
               loadedSchedule[dayIdx].slots.push({
@@ -397,20 +410,63 @@ export function AdvancedAvailabilityManager({
   };
 
   // Toggle service style for slot
+  // ✅ FIX: Allow multiple service styles to be selected (at_home + tele for vet_solo, etc.)
   const toggleServiceStyle = (slotIdx: number, style: 'at_center' | 'at_home' | 'tele') => {
+    console.log('[TOGGLE] Toggling service style:', { slotIdx, style, selectedDay });
+    
     setSchedule(prev => {
-      const newSchedule = [...prev];
-      const slot = newSchedule[selectedDay].slots[slotIdx];
-      const styles = slot.serviceStyles.includes(style)
-        ? slot.serviceStyles.filter(s => s !== style)
-        : [...slot.serviceStyles, style];
-      
-      if (styles.length === 0) {
-        toast.error('At least one service style must be selected');
+      // ✅ FIX: Prevent selecting at_center for solo vendors
+      if (style === 'at_center' && isSoloVendor(vendorData)) {
+        toast.error('Solo providers cannot offer services at a center/clinic');
         return prev;
       }
       
-      slot.serviceStyles = styles;
+      // ✅ FIX: Create a deep copy to avoid mutation issues
+      const newSchedule = prev.map((day, dayIdx) => {
+        if (dayIdx === selectedDay) {
+          // For the selected day, update the specific slot
+          return {
+            ...day,
+            slots: day.slots.map((slot, idx) => {
+              if (idx === slotIdx) {
+                // Get current styles
+                const currentStyles = [...slot.serviceStyles];
+                
+                // Toggle the style: if already selected, remove it; otherwise add it
+                const newStyles = currentStyles.includes(style)
+                  ? currentStyles.filter(s => s !== style)
+                  : [...currentStyles, style];
+                
+                // Ensure at least one style is selected
+                if (newStyles.length === 0) {
+                  toast.error('At least one service style must be selected');
+                  return slot; // Return unchanged slot
+                }
+                
+                // ✅ FIX: Filter out any at_center styles that might have been in existing slots
+                const filteredStyles = isSoloVendor(vendorData)
+                  ? newStyles.filter(s => s !== 'at_center')
+                  : newStyles;
+                
+                console.log('[TOGGLE] Updating slot styles:', { 
+                  current: currentStyles, 
+                  new: newStyles, 
+                  filtered: filteredStyles 
+                });
+                
+                // Create a new slot object with updated serviceStyles
+                return {
+                  ...slot,
+                  serviceStyles: filteredStyles
+                };
+              }
+              return slot;
+            })
+          };
+        }
+        return day;
+      });
+      
       return newSchedule;
     });
   };
@@ -792,7 +848,7 @@ export function AdvancedAvailabilityManager({
             ) : (
               <div className="space-y-4">
                 {currentDaySlots.map((slot, slotIdx) => (
-                  <div key={slotIdx} className="border rounded-lg p-4 bg-gray-50">
+                  <div key={slot.id || `slot-${selectedDay}-${slotIdx}`} className="border rounded-lg p-4 bg-gray-50">
                     <div className="flex items-start justify-between mb-3">
                       <span className="text-sm font-medium text-gray-500">Slot {slotIdx + 1}</span>
                       <button
@@ -827,8 +883,13 @@ export function AdvancedAvailabilityManager({
                         {SERVICE_STYLES.length > 0 ? (
                           SERVICE_STYLES.map(style => (
                             <button
-                              key={style.id}
-                              onClick={() => toggleServiceStyle(slotIdx, style.id as any)}
+                              key={`${slotIdx}-${style.id}`}
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                toggleServiceStyle(slotIdx, style.id as any);
+                              }}
                               className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 transition-colors ${
                                 slot.serviceStyles.includes(style.id as any)
                                   ? 'bg-[#FF8C42] text-white'

@@ -1133,8 +1133,8 @@ class SubmitApplicationHandler extends BaseHandler {
         if (apps.length > 0) {
           const app = apps[0];
           
-          // Can only edit if DRAFT or CLARIFICATION_REQUIRED
-          if (app.status !== 'DRAFT' && app.status !== 'CLARIFICATION_REQUIRED') {
+          // ✅ FIX: Allow editing if DRAFT, CLARIFICATION_REQUIRED, or REJECTED (vendor can resubmit after rejection)
+          if (app.status !== 'DRAFT' && app.status !== 'CLARIFICATION_REQUIRED' && app.status !== 'REJECTED') {
             return this.error('Application is locked and cannot be edited', 403);
           }
 
@@ -1297,6 +1297,7 @@ class AdminReviewApplicationHandler extends BaseHandler {
         newStatus = 'REJECTED';
         newOnboardingStatus = 'REJECTED';
         
+        // ✅ FIX: Unlock application when rejected so vendor can resubmit
         await update(
           'vendor_onboarding_applications',
           { id: applicationId },
@@ -1306,6 +1307,8 @@ class AdminReviewApplicationHandler extends BaseHandler {
             reviewed_at: new Date().toISOString(),
             rejection_reason,
             admin_comments: comments || null,
+            is_locked: false,
+            locked_at: null,
             updated_at: new Date().toISOString(),
           }
         );

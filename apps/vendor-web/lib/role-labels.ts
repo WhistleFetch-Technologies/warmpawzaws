@@ -65,6 +65,33 @@ export interface RoleLabels {
 // ROLE LABEL CONFIGURATIONS
 // ============================================================================
 
+// ✅ FIX: Extract trainer labels to constant to avoid TDZ error when behaviorist roles reference it
+const TRAINER_LABELS: RoleLabels = {
+  booking: 'Session',
+  bookings: 'Sessions',
+  bookingVerb: 'Schedule',
+  customer: 'Pet Parent',
+  customers: 'Pet Parents',
+  pet: 'Trainee',
+  pets: 'Trainees',
+  service: 'Training',
+  services: 'Training Programs',
+  session: 'Training Session',
+  sessions: 'Training Sessions',
+  startAction: 'Start Session',
+  completeAction: 'Complete Session',
+  slot: 'Session Slot',
+  slots: 'Session Slots',
+  todayLabel: "Today's Sessions",
+  upcomingLabel: 'Upcoming Sessions',
+  todayStat: 'Sessions Today',
+  completedStat: 'Sessions Completed',
+  pendingStat: 'Pending Sessions',
+  atCenterLabel: 'At Training Center',
+  atHomeLabel: 'Home Training',
+  teleLabel: 'Online Training',
+};
+
 export const ROLE_LABELS: Record<string, RoleLabels> = {
   // =====================
   // HEALTHCARE ROLES
@@ -309,41 +336,13 @@ export const ROLE_LABELS: Record<string, RoleLabels> = {
     teleLabel: 'Online Training',
   },
   
-  pet_trainer: {
-    booking: 'Session',
-    bookings: 'Sessions',
-    bookingVerb: 'Schedule',
-    customer: 'Pet Parent',
-    customers: 'Pet Parents',
-    pet: 'Trainee',
-    pets: 'Trainees',
-    service: 'Training',
-    services: 'Training Programs',
-    session: 'Training Session',
-    sessions: 'Training Sessions',
-    startAction: 'Start Session',
-    completeAction: 'Complete Session',
-    slot: 'Session Slot',
-    slots: 'Session Slots',
-    todayLabel: "Today's Sessions",
-    upcomingLabel: 'Upcoming Sessions',
-    todayStat: 'Sessions Today',
-    completedStat: 'Sessions Completed',
-    pendingStat: 'Pending Sessions',
-    atCenterLabel: 'At Training Center',
-    atHomeLabel: 'Home Training',
-    teleLabel: 'Online Training',
-  },
+  // ✅ FIX: Extract trainer labels to constant to avoid TDZ error when behaviorist roles reference it
+  pet_trainer: TRAINER_LABELS,
 
-  pet_behaviorist: {
-    ...ROLE_LABELS.pet_trainer,
-  },
-  behaviorist_solo: {
-    ...ROLE_LABELS.pet_trainer,
-  },
-  behaviorist_center: {
-    ...ROLE_LABELS.pet_trainer,
-  },
+  // ✅ FIX: Use TRAINER_LABELS constant instead of ROLE_LABELS.pet_trainer to avoid TDZ error
+  pet_behaviorist: TRAINER_LABELS,
+  behaviorist_solo: TRAINER_LABELS,
+  behaviorist_center: TRAINER_LABELS,
   
   // =====================
   // WALKING & SITTING ROLES

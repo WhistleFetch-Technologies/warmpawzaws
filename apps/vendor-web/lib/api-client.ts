@@ -20,9 +20,9 @@ function getRuntimeConfig(): RuntimeConfig {
 }
 
 function getApiBaseUrl(): string {
-  // Priority: runtime-config.js (deploy-time) → build-time env (local dev). No hardcoded URL.
+  // Priority: runtime-config.js (deploy-time) → build-time env (local dev) → API Gateway fallback
   const cfg = getRuntimeConfig();
-  return cfg.apiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || '';
+  return cfg.apiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
 }
 
 // UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)

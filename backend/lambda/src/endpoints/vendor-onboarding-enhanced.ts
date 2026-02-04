@@ -698,6 +698,33 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
           metadata: {},
         });
         identities = newIdentity;
+        
+        // ✅ FIX: Check if there's an existing application for this phone that needs to be linked
+        const existingApps = await query(
+          `SELECT voa.* FROM vendor_onboarding_applications voa
+           JOIN vendor_identity vi ON voa.vendor_identity_id = vi.id
+           WHERE vi.phone = $1 AND voa.status IN ('REJECTED', 'DRAFT', 'CLARIFICATION_REQUIRED')
+           ORDER BY voa.submitted_at DESC
+           LIMIT 1`,
+          [phone]
+        );
+        
+        if (existingApps.rows && existingApps.rows.length > 0) {
+          const existingApp = existingApps.rows[0];
+          console.log(`📦 [SUBMIT] Found existing application ${existingApp.id} for phone ${phone}, linking to new identity`);
+          // Update application to point to new identity
+          await update(
+            'vendor_onboarding_applications',
+            { id: existingApp.id },
+            { vendor_identity_id: newIdentity[0].id }
+          );
+          // Update identity to point to application
+          await update(
+            'vendor_identity',
+            { id: newIdentity[0].id },
+            { application_id: existingApp.id }
+          );
+        }
       }
 
       let identity = identities[0];
@@ -781,12 +808,36 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
         if (apps.length > 0) {
           const app = apps[0];
           
-          // Can only edit if DRAFT or CLARIFICATION_REQUIRED
-          if (app.status !== 'DRAFT' && app.status !== 'CLARIFICATION_REQUIRED') {
+          // ✅ FIX: Allow editing if DRAFT, CLARIFICATION_REQUIRED, or REJECTED (vendor can resubmit after rejection)
+          if (app.status !== 'DRAFT' && app.status !== 'CLARIFICATION_REQUIRED' && app.status !== 'REJECTED') {
             return this.error(
               'Application is locked and cannot be edited',
               403,
               'FORBIDDEN',
+              undefined,
+              requestId
+            );
+          }
+
+          // ✅ FIX: Validate and sanitize JSONB data before saving
+          let sanitizedPayload = application_payload;
+          let sanitizedDocuments = uploaded_documents || app.uploaded_documents || [];
+          
+          // Ensure uploaded_documents is an array
+          if (!Array.isArray(sanitizedDocuments)) {
+            console.warn('⚠️ [SUBMIT] uploaded_documents is not an array, converting:', sanitizedDocuments);
+            sanitizedDocuments = [];
+          }
+          
+          // Validate application_payload can be serialized
+          try {
+            JSON.stringify(sanitizedPayload);
+          } catch (error) {
+            console.error('❌ [SUBMIT] Invalid application_payload (circular reference or invalid value):', error);
+            return this.error(
+              'Invalid application data: contains circular references or non-serializable values',
+              400,
+              'VALIDATION_ERROR',
               undefined,
               requestId
             );
@@ -797,8 +848,9 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
             'vendor_onboarding_applications',
             { id: applicationId },
             {
-              application_payload,
-              uploaded_documents: uploaded_documents || app.uploaded_documents || [],
+              vendor_identity_id: identity.id, // ✅ FIX: Update to point to current identity
+              application_payload: sanitizedPayload,
+              uploaded_documents: sanitizedDocuments,
               form_version: formVersion,
               status: 'SUBMITTED',
               submitted_at: new Date().toISOString(),
@@ -807,15 +859,45 @@ class SubmitApplicationHandlerEnhanced extends BaseHandlerEnhanced {
               updated_at: new Date().toISOString(),
             }
           );
+          
+          // ✅ FIX: Ensure vendor_identity.application_id is also updated
+          await update(
+            'vendor_identity',
+            { id: identity.id },
+            { application_id: applicationId }
+          );
         }
       } else {
+        // ✅ FIX: Validate and sanitize JSONB data before saving
+        let sanitizedDocuments = uploaded_documents || [];
+        
+        // Ensure uploaded_documents is an array
+        if (!Array.isArray(sanitizedDocuments)) {
+          console.warn('⚠️ [SUBMIT] uploaded_documents is not an array, converting:', sanitizedDocuments);
+          sanitizedDocuments = [];
+        }
+        
+        // Validate application_payload can be serialized
+        try {
+          JSON.stringify(application_payload);
+        } catch (error) {
+          console.error('❌ [SUBMIT] Invalid application_payload (circular reference or invalid value):', error);
+          return this.error(
+            'Invalid application data: contains circular references or non-serializable values',
+            400,
+            'VALIDATION_ERROR',
+            undefined,
+            requestId
+          );
+        }
+
         // Create new application
         const newApp = await insert('vendor_onboarding_applications', {
           vendor_identity_id: identity.id,
           role_id: effectiveRoleId,
           vendor_type: effectiveVendorType,
           application_payload,
-          uploaded_documents: uploaded_documents || [],
+          uploaded_documents: sanitizedDocuments,
           form_version: formVersion,
           status: 'SUBMITTED',
           submitted_at: new Date().toISOString(),
@@ -1015,6 +1097,7 @@ class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
         newStatus = 'REJECTED';
         newOnboardingStatus = 'REJECTED';
         
+        // ✅ FIX: Unlock application when rejected so vendor can resubmit
         await update(
           'vendor_onboarding_applications',
           { id: applicationId },
@@ -1024,6 +1107,8 @@ class AdminReviewApplicationHandlerEnhanced extends BaseHandlerEnhanced {
             reviewed_at: new Date().toISOString(),
             rejection_reason,
             admin_comments: comments || null,
+            is_locked: false,
+            locked_at: null,
             updated_at: new Date().toISOString(),
           }
         );

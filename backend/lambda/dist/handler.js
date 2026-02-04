@@ -107688,14 +107688,41 @@ async function update(table, filters, data) {
   const setClause = [];
   const params = [];
   let paramIndex = 1;
+  const jsonbColumns = /* @__PURE__ */ new Set([
+    "application_payload",
+    "uploaded_documents",
+    "metadata",
+    "operating_hours",
+    "config",
+    "settings",
+    "form_data",
+    "additional_info",
+    "pricing",
+    "services_config",
+    "notification_preferences",
+    "search_vector_data",
+    "channels",
+    // notifications.channels is JSONB
+    "data",
+    // notifications.data is JSONB (booking_id, meeting_id, etc.)
+    "specializations"
+    // vendors.specializations is JSONB array
+  ]);
+  const isJsonbColumn = (key) => {
+    return jsonbColumns.has(key) || key.endsWith("_config") || key.endsWith("_metadata") || key.endsWith("_payload") || key.endsWith("_data") || key.endsWith("_settings");
+  };
   for (const [key, value] of Object.entries(data)) {
     if (value !== void 0) {
-      const jsonbArrayColumns = /* @__PURE__ */ new Set(["specializations"]);
-      if (jsonbArrayColumns.has(key) && Array.isArray(value)) {
-        setClause.push(`${key} = $${paramIndex}::jsonb`);
-        params.push(JSON.stringify(value));
-        paramIndex++;
-        continue;
+      if (isJsonbColumn(key) && value !== null && typeof value === "object") {
+        try {
+          setClause.push(`${key} = $${paramIndex}::jsonb`);
+          params.push(JSON.stringify(value));
+          paramIndex++;
+          continue;
+        } catch (error) {
+          console.error(`\u274C [DB] Failed to serialize JSONB column ${key}:`, error);
+          throw new Error(`Invalid JSON value for column ${key}: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
       if (Array.isArray(value)) {
         setClause.push(`${key} = $${paramIndex}`);
@@ -107703,14 +107730,8 @@ async function update(table, filters, data) {
         paramIndex++;
         continue;
       }
-      const isJsonbColumn = key === "metadata" || key === "operating_hours" || key === "config" || key.endsWith("_config") || typeof value === "object" && value !== null && !(value instanceof Date);
-      if (isJsonbColumn && typeof value === "object" && value !== null) {
-        setClause.push(`${key} = $${paramIndex}::jsonb`);
-        params.push(JSON.stringify(value));
-      } else {
-        setClause.push(`${key} = $${paramIndex}`);
-        params.push(value);
-      }
+      setClause.push(`${key} = $${paramIndex}`);
+      params.push(value);
       paramIndex++;
     }
   }
@@ -128825,6 +128846,28 @@ var SubmitApplicationHandlerEnhanced = class extends BaseHandlerEnhanced {
           metadata: {}
         });
         identities = newIdentity;
+        const existingApps = await query(
+          `SELECT voa.* FROM vendor_onboarding_applications voa
+           JOIN vendor_identity vi ON voa.vendor_identity_id = vi.id
+           WHERE vi.phone = $1 AND voa.status IN ('REJECTED', 'DRAFT', 'CLARIFICATION_REQUIRED')
+           ORDER BY voa.submitted_at DESC
+           LIMIT 1`,
+          [phone]
+        );
+        if (existingApps.rows && existingApps.rows.length > 0) {
+          const existingApp = existingApps.rows[0];
+          console.log(`\u{1F4E6} [SUBMIT] Found existing application ${existingApp.id} for phone ${phone}, linking to new identity`);
+          await update(
+            "vendor_onboarding_applications",
+            { id: existingApp.id },
+            { vendor_identity_id: newIdentity[0].id }
+          );
+          await update(
+            "vendor_identity",
+            { id: newIdentity[0].id },
+            { application_id: existingApp.id }
+          );
+        }
       }
       let identity = identities[0];
       const payloadRoleId = application_payload?.roleId || application_payload?.role_id || body.roleId || body.role_id;
@@ -128878,7 +128921,7 @@ var SubmitApplicationHandlerEnhanced = class extends BaseHandlerEnhanced {
         });
         if (apps.length > 0) {
           const app3 = apps[0];
-          if (app3.status !== "DRAFT" && app3.status !== "CLARIFICATION_REQUIRED") {
+          if (app3.status !== "DRAFT" && app3.status !== "CLARIFICATION_REQUIRED" && app3.status !== "REJECTED") {
             return this.error(
               "Application is locked and cannot be edited",
               403,
@@ -128887,12 +128930,32 @@ var SubmitApplicationHandlerEnhanced = class extends BaseHandlerEnhanced {
               requestId
             );
           }
+          let sanitizedPayload = application_payload;
+          let sanitizedDocuments = uploaded_documents || app3.uploaded_documents || [];
+          if (!Array.isArray(sanitizedDocuments)) {
+            console.warn("\u26A0\uFE0F [SUBMIT] uploaded_documents is not an array, converting:", sanitizedDocuments);
+            sanitizedDocuments = [];
+          }
+          try {
+            JSON.stringify(sanitizedPayload);
+          } catch (error) {
+            console.error("\u274C [SUBMIT] Invalid application_payload (circular reference or invalid value):", error);
+            return this.error(
+              "Invalid application data: contains circular references or non-serializable values",
+              400,
+              "VALIDATION_ERROR",
+              void 0,
+              requestId
+            );
+          }
           await update(
             "vendor_onboarding_applications",
             { id: applicationId },
             {
-              application_payload,
-              uploaded_documents: uploaded_documents || app3.uploaded_documents || [],
+              vendor_identity_id: identity.id,
+              // ✅ FIX: Update to point to current identity
+              application_payload: sanitizedPayload,
+              uploaded_documents: sanitizedDocuments,
               form_version: formVersion,
               status: "SUBMITTED",
               submitted_at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -128901,14 +128964,36 @@ var SubmitApplicationHandlerEnhanced = class extends BaseHandlerEnhanced {
               updated_at: (/* @__PURE__ */ new Date()).toISOString()
             }
           );
+          await update(
+            "vendor_identity",
+            { id: identity.id },
+            { application_id: applicationId }
+          );
         }
       } else {
+        let sanitizedDocuments = uploaded_documents || [];
+        if (!Array.isArray(sanitizedDocuments)) {
+          console.warn("\u26A0\uFE0F [SUBMIT] uploaded_documents is not an array, converting:", sanitizedDocuments);
+          sanitizedDocuments = [];
+        }
+        try {
+          JSON.stringify(application_payload);
+        } catch (error) {
+          console.error("\u274C [SUBMIT] Invalid application_payload (circular reference or invalid value):", error);
+          return this.error(
+            "Invalid application data: contains circular references or non-serializable values",
+            400,
+            "VALIDATION_ERROR",
+            void 0,
+            requestId
+          );
+        }
         const newApp = await insert("vendor_onboarding_applications", {
           vendor_identity_id: identity.id,
           role_id: effectiveRoleId,
           vendor_type: effectiveVendorType,
           application_payload,
-          uploaded_documents: uploaded_documents || [],
+          uploaded_documents: sanitizedDocuments,
           form_version: formVersion,
           status: "SUBMITTED",
           submitted_at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -129080,6 +129165,8 @@ var AdminReviewApplicationHandlerEnhanced = class extends BaseHandlerEnhanced {
             reviewed_at: (/* @__PURE__ */ new Date()).toISOString(),
             rejection_reason,
             admin_comments: comments || null,
+            is_locked: false,
+            locked_at: null,
             updated_at: (/* @__PURE__ */ new Date()).toISOString()
           }
         );
@@ -146087,8 +146174,10 @@ function registerServiceDiscoveryEndpoints(app3) {
         return c.json({ error: "Vendor not found" }, 404);
       }
       const vendor = vendors[0];
-      const requestedDate = new Date(date);
+      const [year2, month, day2] = date.split("-").map(Number);
+      const requestedDate = new Date(year2, month - 1, day2);
       const dayOfWeek = requestedDate.getDay();
+      console.log(`[SLOTS] Date parsing: input=${date}, parsed=${requestedDate.toISOString()}, dayOfWeek=${dayOfWeek} (0=Sun, 1=Mon, 2=Tue, etc.)`);
       const today = /* @__PURE__ */ new Date();
       today.setHours(0, 0, 0, 0);
       const requestedDateOnly = new Date(requestedDate);
@@ -146181,9 +146270,6 @@ function registerServiceDiscoveryEndpoints(app3) {
           params.push(serviceId);
           paramIndex++;
         }
-        staffQuery += ` AND (srv.service_style = $${paramIndex} OR srv.service_style IS NULL)`;
-        params.push(serviceStyle);
-        paramIndex++;
         staffQuery += ` ORDER BY sas.start_time, s.name`;
         const staffSlotsResult = await query(staffQuery, params).catch((err) => {
           console.warn("[SLOTS] Staff availability query failed, falling back to vendor hours:", err.message);
@@ -146266,34 +146352,45 @@ function registerServiceDiscoveryEndpoints(app3) {
       }
       let va2Slots = [];
       try {
+        console.log(`[SLOTS] Querying vendor_availability_v2: vendorId=${vendorId}, dayOfWeek=${dayOfWeek}, serviceStyle=${serviceStyle}`);
         const va2Result = await query(
           `SELECT id, time_window_start, time_window_end, start_time, end_time,
-                  COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
-                  buffer_time, buffer_time_minutes, max_capacity, service_style, service_styles
+                  30 as slot_duration_minutes,
+                  15 as buffer_time_minutes, 
+                  max_capacity, service_styles
            FROM vendor_availability_v2
            WHERE vendor_id = $1
              AND day_of_week = $2
-             AND (COALESCE(service_style, service_type) = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
-             AND COALESCE(is_enabled, is_available, true) = true
+             AND $3 = ANY(COALESCE(service_styles, ARRAY[]::text[]))
+             AND COALESCE(is_available, true) = true
            ORDER BY COALESCE(time_window_start, start_time)`,
           [vendorId, dayOfWeek, serviceStyle]
         );
         va2Slots = va2Result?.rows || [];
+        console.log(`[SLOTS] Found ${va2Slots.length} availability records for day_of_week=${dayOfWeek}, serviceStyle=${serviceStyle}`);
+        if (va2Slots.length > 0) {
+          console.log(`[SLOTS] First record:`, JSON.stringify(va2Slots[0]));
+        }
       } catch (e) {
+        console.error(`[SLOTS] Query error:`, e);
         try {
           const va2ResultAlt = await query(
             `SELECT id, start_time as time_window_start, end_time as time_window_end,
                     time_window_start as start_time, time_window_end as end_time,
-                    slot_duration_minutes, buffer_time, buffer_time_minutes, max_capacity, service_style, service_styles
+                    30 as slot_duration_minutes,
+                    15 as buffer_time_minutes,
+                    max_capacity, service_styles
              FROM vendor_availability_v2
              WHERE vendor_id = $1 AND day_of_week = $2
-               AND (service_type = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
-               AND COALESCE(is_available, is_enabled, true) = true
+               AND $3 = ANY(COALESCE(service_styles, ARRAY[]::text[]))
+               AND COALESCE(is_available, true) = true
              ORDER BY start_time`,
             [vendorId, dayOfWeek, serviceStyle]
           );
           va2Slots = va2ResultAlt?.rows || [];
-        } catch (_) {
+          console.log(`[SLOTS] Fallback query found ${va2Slots.length} records`);
+        } catch (err) {
+          console.error(`[SLOTS] Fallback query also failed:`, err);
         }
       }
       let breaks = [];
@@ -150815,6 +150912,159 @@ function registerVendorScheduleEndpoints(app3) {
       if (!Array.isArray(slots)) {
         return c.json({ error: "slots array is required" }, 400);
       }
+      let actualVendorId = vendorId;
+      console.log(`[AVAILABILITY] \u{1F50D} Looking up vendor with ID: ${vendorId}`);
+      let vendorFound = false;
+      let existingVendor = await select("vendors", { id: vendorId });
+      if (existingVendor.length > 0) {
+        vendorFound = true;
+        actualVendorId = vendorId;
+        console.log(`[AVAILABILITY] \u2705 Vendor found in vendors table: ${actualVendorId}`);
+      }
+      let identity = null;
+      if (!vendorFound) {
+        const identitiesById = await select("vendor_identity", { id: vendorId });
+        if (identitiesById.length > 0) {
+          identity = identitiesById[0];
+          console.log(`[AVAILABILITY] \u2705 Found vendor_identity by id: ${identity.id}, vendor_id: ${identity.vendor_id}`);
+          if (identity.vendor_id) {
+            const vendorByVendorId = await select("vendors", { id: identity.vendor_id });
+            if (vendorByVendorId.length > 0) {
+              actualVendorId = identity.vendor_id;
+              vendorFound = true;
+              console.log(`[AVAILABILITY] \u2705 Vendor found via identity.vendor_id: ${actualVendorId}`);
+            }
+          }
+          if (!vendorFound && identity.phone) {
+            const vendorByPhone = await select("vendors", { phone: identity.phone });
+            if (vendorByPhone.length > 0) {
+              actualVendorId = vendorByPhone[0].id;
+              vendorFound = true;
+              console.log(`[AVAILABILITY] \u2705 Vendor found by phone: ${actualVendorId}`);
+            }
+          }
+        }
+      }
+      if (!vendorFound && !identity) {
+        const identitiesByVendorId = await query(
+          `SELECT * FROM vendor_identity WHERE vendor_id = $1 LIMIT 1`,
+          [vendorId]
+        );
+        if (identitiesByVendorId.rows && identitiesByVendorId.rows.length > 0) {
+          identity = identitiesByVendorId.rows[0];
+          console.log(`[AVAILABILITY] \u2705 Found vendor_identity by vendor_id field: ${identity.id}`);
+          const vendorCheck = await select("vendors", { id: vendorId });
+          if (vendorCheck.length > 0) {
+            actualVendorId = vendorId;
+            vendorFound = true;
+            console.log(`[AVAILABILITY] \u2705 Vendor exists with ID: ${actualVendorId}`);
+          }
+        }
+      }
+      if (!vendorFound && !identity) {
+        console.log(`[AVAILABILITY] \u{1F50D} Vendor not found, trying JWT phone lookup...`);
+        try {
+          const authHeader = c.req.header("Authorization");
+          if (authHeader) {
+            const token = authHeader.replace(/^Bearer\s+/i, "");
+            if (token) {
+              const parts = token.split(".");
+              if (parts.length === 3) {
+                const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf-8"));
+                const phone = payload.phone || payload.phone_number || payload["cognito:username"];
+                if (phone) {
+                  console.log(`[AVAILABILITY] \u{1F50D} Trying to find vendor_identity by phone from JWT: ${phone}`);
+                  const identitiesByPhone = await select("vendor_identity", { phone });
+                  if (identitiesByPhone.length > 0) {
+                    identity = identitiesByPhone[0];
+                    console.log(`[AVAILABILITY] \u2705 Found vendor_identity by phone: ${identity.id}`);
+                    if (identity.vendor_id) {
+                      const vendorCheck = await select("vendors", { id: identity.vendor_id });
+                      if (vendorCheck.length > 0) {
+                        actualVendorId = identity.vendor_id;
+                        vendorFound = true;
+                        console.log(`[AVAILABILITY] \u2705 Vendor found via identity.vendor_id: ${actualVendorId}`);
+                      }
+                    }
+                    if (!vendorFound && identity.phone) {
+                      const vendorByPhone = await select("vendors", { phone: identity.phone });
+                      if (vendorByPhone.length > 0) {
+                        actualVendorId = vendorByPhone[0].id;
+                        vendorFound = true;
+                        console.log(`[AVAILABILITY] \u2705 Vendor found by phone: ${actualVendorId}`);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (jwtError) {
+          console.warn("[AVAILABILITY] Could not extract phone from JWT:", jwtError);
+        }
+      }
+      if (!vendorFound && identity) {
+        if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
+          const vendorByPhone = await select("vendors", { phone: identity.phone });
+          if (vendorByPhone.length > 0) {
+            actualVendorId = vendorByPhone[0].id;
+            vendorFound = true;
+            console.log(`[AVAILABILITY] \u2705 Found existing vendor by phone: ${actualVendorId}`);
+          } else {
+            const identityId = identity.id;
+            const applications = await select("vendor_onboarding_applications", { vendor_identity_id: identityId });
+            const application = applications.length > 0 ? applications[0] : null;
+            const payload = application?.application_payload || {};
+            const newVendorId = identity.vendor_id || identityId;
+            console.log(`[AVAILABILITY] \u{1F528} Auto-creating vendor record for approved vendor ${identityId}, using vendor ID: ${newVendorId}`);
+            try {
+              const newVendor = await insert("vendors", {
+                id: newVendorId,
+                phone: identity.phone,
+                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
+                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+                owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
+                role_id: identity.selected_role_id,
+                category: "general",
+                address: payload.address || "Not specified",
+                city: payload.city || "Not specified",
+                state: payload.state || "Not specified",
+                pincode: payload.pin || payload.pincode || "",
+                status: "active",
+                is_active: true,
+                created_at: (/* @__PURE__ */ new Date()).toISOString(),
+                updated_at: (/* @__PURE__ */ new Date()).toISOString()
+              });
+              console.log(`[AVAILABILITY] \u2705 Created vendor record for ${newVendorId}`);
+              actualVendorId = newVendorId;
+              vendorFound = true;
+            } catch (createError) {
+              console.error(`[AVAILABILITY] \u274C Failed to create vendor record:`, createError);
+              return c.json({
+                error: "Failed to create vendor record",
+                details: `Vendor exists in vendor_identity but could not be created in vendors table: ${createError.message}`
+              }, 500);
+            }
+          }
+        } else {
+          return c.json({
+            error: "Vendor not approved or activated",
+            details: `Vendor onboarding status is ${identity.onboarding_status}. Please complete approval first.`
+          }, 403);
+        }
+      }
+      if (!vendorFound) {
+        const finalCheck = await select("vendors", { id: actualVendorId });
+        if (finalCheck.length === 0) {
+          console.error(`[AVAILABILITY] \u274C Vendor ${vendorId} not found after all checks`);
+          return c.json({
+            error: "Vendor not found",
+            details: `Vendor with ID ${vendorId} does not exist in vendor_identity or vendors table. If you are logged in, please ensure your vendor account is properly set up.`
+          }, 404);
+        }
+        vendorFound = true;
+      }
+      const finalVendorId = actualVendorId;
       try {
         await query(`ALTER TABLE vendor_availability_v2 ADD COLUMN IF NOT EXISTS service_styles TEXT[] DEFAULT '{}'`).catch(() => {
         });
@@ -150827,7 +151077,7 @@ function registerVendorScheduleEndpoints(app3) {
       }
       await query(
         "DELETE FROM vendor_availability_v2 WHERE vendor_id = $1",
-        [vendorId]
+        [finalVendorId]
       ).catch((err) => {
         console.warn("[AVAILABILITY] Delete error (may be OK):", err.message);
       });
@@ -150836,9 +151086,52 @@ function registerVendorScheduleEndpoints(app3) {
       for (const slot of slots) {
         const serviceStyles = slot.serviceStyles || slot.service_styles || ["at_center"];
         const locationData = slot.locationData || slot.location_data || null;
-        const startTime = slot.timeWindowStart || slot.time_window_start || slot.startTime;
-        const endTime = slot.timeWindowEnd || slot.time_window_end || slot.endTime;
+        let startTime = slot.timeWindowStart || slot.time_window_start || slot.startTime;
+        let endTime = slot.timeWindowEnd || slot.time_window_end || slot.endTime;
+        if (!startTime || !endTime) {
+          insertErrors.push(`Slot day ${slot.dayOfWeek ?? slot.day_of_week}: Missing start_time or end_time`);
+          continue;
+        }
+        const normalizeTime = (time) => {
+          if (!time) throw new Error("Time value is required");
+          const timeStr = String(time).trim();
+          let normalized = timeStr.toUpperCase().trim();
+          const isPM = normalized.includes("PM");
+          const isAM = normalized.includes("AM");
+          normalized = normalized.replace(/\s*(AM|PM)\s*/i, "").trim();
+          const parts = normalized.split(":").map((p) => p.trim());
+          if (parts.length < 2) {
+            throw new Error(`Invalid time format: ${timeStr}. Expected HH:MM or HH:MM:SS`);
+          }
+          let hours = parseInt(parts[0], 10);
+          const minutes = parseInt(parts[1], 10) || 0;
+          const seconds = parts[2] ? parseInt(parts[2], 10) : 0;
+          if (isNaN(hours) || isNaN(minutes) || isNaN(seconds)) {
+            throw new Error(`Invalid time format: ${timeStr}. Non-numeric values found`);
+          }
+          if (isPM && hours !== 12) {
+            hours += 12;
+          } else if (isAM && hours === 12) {
+            hours = 0;
+          }
+          if (hours < 0 || hours > 23) {
+            throw new Error(`Invalid hours: ${hours}. Must be 0-23`);
+          }
+          if (minutes < 0 || minutes > 59) {
+            throw new Error(`Invalid minutes: ${minutes}. Must be 0-59`);
+          }
+          if (seconds < 0 || seconds > 59) {
+            throw new Error(`Invalid seconds: ${seconds}. Must be 0-59`);
+          }
+          return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+        };
         try {
+          const normalizedStartTime = normalizeTime(startTime);
+          const normalizedEndTime = normalizeTime(endTime);
+          if (normalizedEndTime <= normalizedStartTime) {
+            insertErrors.push(`Slot day ${slot.dayOfWeek ?? slot.day_of_week}: end_time (${normalizedEndTime}) must be greater than start_time (${normalizedStartTime}). Current values violate the valid_time_range constraint.`);
+            continue;
+          }
           const result = await query(
             `INSERT INTO vendor_availability_v2 (
               vendor_id, day_of_week, 
@@ -150846,16 +151139,17 @@ function registerVendorScheduleEndpoints(app3) {
               time_window_start, time_window_end,
               service_styles, service_type, 
               location_data, buffer_time, max_capacity, is_available
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            ) VALUES ($1, $2, $3::TIME, $4::TIME, $5::TIME, $6::TIME, $7, $8, $9, $10, $11, $12)
             RETURNING id`,
             [
-              vendorId,
+              finalVendorId,
+              // ✅ FIX: Use finalVendorId instead of vendorId
               slot.dayOfWeek ?? slot.day_of_week,
-              startTime,
-              endTime,
-              startTime,
+              normalizedStartTime,
+              normalizedEndTime,
+              normalizedStartTime,
               // Also populate time_window_start for backwards compat
-              endTime,
+              normalizedEndTime,
               // Also populate time_window_end for backwards compat
               serviceStyles,
               serviceStyles[0] || "at_center",
@@ -150871,7 +151165,7 @@ function registerVendorScheduleEndpoints(app3) {
           }
         } catch (e) {
           console.error("[AVAILABILITY] Error inserting slot:", e.message, slot);
-          insertErrors.push(`Slot day ${slot.dayOfWeek}: ${e.message}`);
+          insertErrors.push(`Slot day ${slot.dayOfWeek ?? slot.day_of_week}: ${e.message}`);
         }
       }
       if (insertErrors.length > 0 && insertedSlots.length === 0) {
@@ -223627,12 +223921,12 @@ app2.options("*", async (c) => {
     return new Response(null, {
       status: 200,
       headers: {
-        "Access-Control-Allow-Origin": allowedOrigin,
-        "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-        "Access-Control-Allow-Headers": allowedHeaders,
-        "Access-Control-Allow-Credentials": "true",
-        "Access-Control-Max-Age": "86400",
-        "Content-Length": "0"
+        "access-control-allow-origin": allowedOrigin,
+        "access-control-allow-methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+        "access-control-allow-headers": allowedHeaders,
+        "access-control-allow-credentials": "true",
+        "access-control-max-age": "86400",
+        "content-length": "0"
       }
     });
   } catch (error) {
@@ -223642,12 +223936,12 @@ app2.options("*", async (c) => {
     return new Response(null, {
       status: 200,
       headers: {
-        "Access-Control-Allow-Origin": allowedOrigin,
-        "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-        "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
-        "Access-Control-Allow-Credentials": "true",
-        "Access-Control-Max-Age": "86400",
-        "Content-Length": "0"
+        "access-control-allow-origin": allowedOrigin,
+        "access-control-allow-methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+        "access-control-allow-headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
+        "access-control-allow-credentials": "true",
+        "access-control-max-age": "86400",
+        "content-length": "0"
       }
     });
   }
@@ -223879,10 +224173,10 @@ app2.notFound((c) => {
   const origin = c.req.header("origin") || c.req.header("Origin") || "";
   const allowedOrigin = getAllowedOrigin(origin);
   return c.json({ error: "Not Found" }, 404, {
-    "Access-Control-Allow-Origin": allowedOrigin,
-    "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-    "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
-    "Access-Control-Allow-Credentials": "true"
+    "access-control-allow-origin": allowedOrigin,
+    "access-control-allow-methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+    "access-control-allow-headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
+    "access-control-allow-credentials": "true"
   });
 });
 app2.onError((err, c) => {
@@ -223905,10 +224199,10 @@ app2.onError((err, c) => {
   const origin = c.req.header("origin") || c.req.header("Origin") || "";
   const allowedOrigin = getAllowedOrigin(origin);
   const corsHeaders = {
-    "Access-Control-Allow-Origin": allowedOrigin,
-    "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-    "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
-    "Access-Control-Allow-Credentials": "true"
+    "access-control-allow-origin": allowedOrigin,
+    "access-control-allow-methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+    "access-control-allow-headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
+    "access-control-allow-credentials": "true"
   };
   if (requestPath.includes("service-catalog/categories") || requestPath.includes("/categories") || requestPath.endsWith("categories") || c.req.path.includes("service-catalog/categories") || c.req.path.includes("categories")) {
     if (process.env.DEBUG === "true") {
@@ -224095,12 +224389,12 @@ var handler = async (event, context) => {
           statusCode: 200,
           body: "",
           headers: {
-            "Access-Control-Allow-Origin": allowedOrigin,
-            "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-            "Access-Control-Allow-Headers": allowedHeaders,
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Max-Age": "86400",
-            "Content-Length": "0"
+            "access-control-allow-origin": allowedOrigin,
+            "access-control-allow-methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+            "access-control-allow-headers": allowedHeaders,
+            "access-control-allow-credentials": "true",
+            "access-control-max-age": "86400",
+            "content-length": "0"
           }
         };
       } catch (optionsError) {
@@ -224109,12 +224403,12 @@ var handler = async (event, context) => {
           statusCode: 200,
           body: "",
           headers: {
-            "Access-Control-Allow-Origin": getDefaultCorsOrigin(),
-            "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-            "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Max-Age": "86400",
-            "Content-Length": "0"
+            "access-control-allow-origin": getDefaultCorsOrigin(),
+            "access-control-allow-methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+            "access-control-allow-headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
+            "access-control-allow-credentials": "true",
+            "access-control-max-age": "86400",
+            "content-length": "0"
           }
         };
       }
@@ -224124,12 +224418,12 @@ var handler = async (event, context) => {
         statusCode: 200,
         body: "",
         headers: {
-          "Access-Control-Allow-Origin": getDefaultCorsOrigin(),
-          "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-          "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
-          "Access-Control-Allow-Credentials": "true",
-          "Access-Control-Max-Age": "86400",
-          "Content-Length": "0"
+          "access-control-allow-origin": getDefaultCorsOrigin(),
+          "access-control-allow-methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+          "access-control-allow-headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
+          "access-control-allow-credentials": "true",
+          "access-control-max-age": "86400",
+          "content-length": "0"
         }
       };
     }
@@ -224232,13 +224526,13 @@ var handler = async (event, context) => {
       });
       const origin = event.headers?.origin || event.headers?.Origin || event.headers?.["origin"] || event.headers?.["Origin"];
       const allowedOrigin = getAllowedOrigin(origin);
-      const hasCorsHeaders = responseHeaders["access-control-allow-origin"] || responseHeaders["Access-Control-Allow-Origin"];
+      const hasCorsHeaders = responseHeaders["access-control-allow-origin"] || responseHeaders["access-control-allow-origin"];
       const finalHeaders = { ...responseHeaders };
       if (!hasCorsHeaders) {
-        finalHeaders["Access-Control-Allow-Origin"] = allowedOrigin;
-        finalHeaders["Access-Control-Allow-Credentials"] = "true";
-        finalHeaders["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD";
-        finalHeaders["Access-Control-Allow-Headers"] = "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With";
+        finalHeaders["access-control-allow-origin"] = allowedOrigin;
+        finalHeaders["access-control-allow-credentials"] = "true";
+        finalHeaders["access-control-allow-methods"] = "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD";
+        finalHeaders["access-control-allow-headers"] = "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With";
       }
       const finalResponse = {
         statusCode: response.status,
@@ -224257,12 +224551,12 @@ var handler = async (event, context) => {
           statusCode: 200,
           body: "",
           headers: {
-            "Access-Control-Allow-Origin": allowedOrigin2,
-            "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-            "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Max-Age": "86400",
-            "Content-Length": "0"
+            "access-control-allow-origin": allowedOrigin2,
+            "access-control-allow-methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+            "access-control-allow-headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
+            "access-control-allow-credentials": "true",
+            "access-control-max-age": "86400",
+            "content-length": "0"
           }
         };
       }
@@ -224279,10 +224573,10 @@ var handler = async (event, context) => {
         body: JSON.stringify({ error: "Internal Server Error" }),
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": allowedOrigin,
-          "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-          "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
-          "Access-Control-Allow-Credentials": "true"
+          "access-control-allow-origin": allowedOrigin,
+          "access-control-allow-methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+          "access-control-allow-headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
+          "access-control-allow-credentials": "true"
         }
       };
     }
@@ -224296,12 +224590,12 @@ var handler = async (event, context) => {
           statusCode: 200,
           body: "",
           headers: {
-            "Access-Control-Allow-Origin": getDefaultCorsOrigin(),
-            "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-            "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Max-Age": "86400",
-            "Content-Length": "0"
+            "access-control-allow-origin": getDefaultCorsOrigin(),
+            "access-control-allow-methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+            "access-control-allow-headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
+            "access-control-allow-credentials": "true",
+            "access-control-max-age": "86400",
+            "content-length": "0"
           }
         };
       }
@@ -224310,12 +224604,12 @@ var handler = async (event, context) => {
         statusCode: 200,
         body: "",
         headers: {
-          "Access-Control-Allow-Origin": getDefaultCorsOrigin(),
-          "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-          "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
-          "Access-Control-Allow-Credentials": "true",
-          "Access-Control-Max-Age": "86400",
-          "Content-Length": "0"
+          "access-control-allow-origin": getDefaultCorsOrigin(),
+          "access-control-allow-methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+          "access-control-allow-headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
+          "access-control-allow-credentials": "true",
+          "access-control-max-age": "86400",
+          "content-length": "0"
         }
       };
     }
@@ -224325,10 +224619,10 @@ var handler = async (event, context) => {
       body: JSON.stringify({ error: "Internal Server Error" }),
       headers: {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": getDefaultCorsOrigin(),
-        "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
-        "Access-Control-Allow-Headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
-        "Access-Control-Allow-Credentials": "true"
+        "access-control-allow-origin": getDefaultCorsOrigin(),
+        "access-control-allow-methods": "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD",
+        "access-control-allow-headers": "authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With",
+        "access-control-allow-credentials": "true"
       }
     };
   }

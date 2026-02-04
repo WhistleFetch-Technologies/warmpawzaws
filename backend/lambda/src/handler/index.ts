@@ -237,12 +237,12 @@ app.options('*', async (c) => {
     return new Response(null, {
       status: 200,
       headers: {
-        'Access-Control-Allow-Origin': allowedOrigin,
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'Access-Control-Allow-Headers': allowedHeaders,
-        'Access-Control-Allow-Credentials': 'true',
-        'Access-Control-Max-Age': '86400',
-        'Content-Length': '0',
+        'access-control-allow-origin': allowedOrigin,
+        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+        'access-control-allow-headers': allowedHeaders,
+        'access-control-allow-credentials': 'true',
+        'access-control-max-age': '86400',
+        'content-length': '0',
       },
     });
   } catch (error) {
@@ -253,12 +253,12 @@ app.options('*', async (c) => {
     return new Response(null, {
       status: 200,
       headers: {
-        'Access-Control-Allow-Origin': allowedOrigin,
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-        'Access-Control-Allow-Credentials': 'true',
-        'Access-Control-Max-Age': '86400',
-        'Content-Length': '0',
+        'access-control-allow-origin': allowedOrigin,
+        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+        'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+        'access-control-allow-credentials': 'true',
+        'access-control-max-age': '86400',
+        'content-length': '0',
       },
     });
   }
@@ -543,10 +543,10 @@ app.notFound((c) => {
   const origin = c.req.header('origin') || c.req.header('Origin') || '';
   const allowedOrigin = getAllowedOrigin(origin);
   return c.json({ error: 'Not Found' }, 404, {
-    'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-    'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-    'Access-Control-Allow-Credentials': 'true',
+    'access-control-allow-origin': allowedOrigin,
+    'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+    'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+    'access-control-allow-credentials': 'true',
   });
 });
 
@@ -578,10 +578,10 @@ app.onError((err, c) => {
   const origin = c.req.header('origin') || c.req.header('Origin') || '';
   const allowedOrigin = getAllowedOrigin(origin);
   const corsHeaders = {
-    'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-    'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-    'Access-Control-Allow-Credentials': 'true',
+    'access-control-allow-origin': allowedOrigin,
+    'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+    'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+    'access-control-allow-credentials': 'true',
   };
   
   // CRITICAL: Check path FIRST - this is the most reliable way to match
@@ -799,12 +799,12 @@ const CORS_PREFLIGHT_200 = (origin: string): APIGatewayProxyResultV2 => ({
   statusCode: 200,
   body: '',
   headers: {
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-    'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-    'Access-Control-Allow-Credentials': 'true',
-    'Access-Control-Max-Age': '86400',
-    'Content-Length': '0',
+    'access-control-allow-origin': origin,
+    'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+    'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+    'access-control-allow-credentials': 'true',
+    'access-control-max-age': '86400',
+    'content-length': '0',
   },
 });
 
@@ -872,12 +872,12 @@ export const handler = async (
         statusCode: 200,
         body: '',
         headers: {
-          'Access-Control-Allow-Origin': allowedOrigin,
-          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'Access-Control-Allow-Headers': allowedHeaders,
-          'Access-Control-Allow-Credentials': 'true',
-          'Access-Control-Max-Age': '86400',
-          'Content-Length': '0',
+          'access-control-allow-origin': allowedOrigin,
+          'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+          'access-control-allow-headers': allowedHeaders,
+          'access-control-allow-credentials': 'true',
+          'access-control-max-age': '86400',
+          'content-length': '0',
         },
       };
     } catch (optionsError) {
@@ -888,12 +888,12 @@ export const handler = async (
         statusCode: 200,
         body: '',
         headers: {
-          'Access-Control-Allow-Origin': getDefaultCorsOrigin(),
-          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-          'Access-Control-Allow-Credentials': 'true',
-          'Access-Control-Max-Age': '86400',
-          'Content-Length': '0',
+          'access-control-allow-origin': getDefaultCorsOrigin(),
+          'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+          'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+          'access-control-allow-credentials': 'true',
+          'access-control-max-age': '86400',
+          'content-length': '0',
         },
       };
     }
@@ -905,12 +905,12 @@ export const handler = async (
       statusCode: 200,
       body: '',
       headers: {
-        'Access-Control-Allow-Origin': getDefaultCorsOrigin(),
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-        'Access-Control-Allow-Credentials': 'true',
-        'Access-Control-Max-Age': '86400',
-        'Content-Length': '0',
+        'access-control-allow-origin': getDefaultCorsOrigin(),
+        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+        'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+        'access-control-allow-credentials': 'true',
+        'access-control-max-age': '86400',
+        'content-length': '0',
       },
     };
   }
@@ -1077,7 +1077,7 @@ export const handler = async (
     const allowedOrigin = getAllowedOrigin(origin);
     
     // Check if Hono CORS middleware already set CORS headers
-    const hasCorsHeaders = responseHeaders['access-control-allow-origin'] || responseHeaders['Access-Control-Allow-Origin'];
+    const hasCorsHeaders = responseHeaders['access-control-allow-origin'] || responseHeaders['access-control-allow-origin'];
     
     // Merge CORS headers with response headers
     // Only set CORS headers if Hono didn't already set them (prevents duplicates)
@@ -1085,10 +1085,10 @@ export const handler = async (
     
     if (!hasCorsHeaders) {
       // Only set CORS headers if they weren't already set by Hono middleware
-      finalHeaders['Access-Control-Allow-Origin'] = allowedOrigin;
-      finalHeaders['Access-Control-Allow-Credentials'] = 'true';
-      finalHeaders['Access-Control-Allow-Methods'] = 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD';
-      finalHeaders['Access-Control-Allow-Headers'] = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With';
+      finalHeaders['access-control-allow-origin'] = allowedOrigin;
+      finalHeaders['access-control-allow-credentials'] = 'true';
+      finalHeaders['access-control-allow-methods'] = 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD';
+      finalHeaders['access-control-allow-headers'] = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With';
     }
     
     const finalResponse = {
@@ -1119,12 +1119,12 @@ export const handler = async (
         statusCode: 200,
         body: '',
         headers: {
-          'Access-Control-Allow-Origin': allowedOrigin,
-          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-          'Access-Control-Allow-Credentials': 'true',
-          'Access-Control-Max-Age': '86400',
-          'Content-Length': '0',
+          'access-control-allow-origin': allowedOrigin,
+          'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+          'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+          'access-control-allow-credentials': 'true',
+          'access-control-max-age': '86400',
+          'content-length': '0',
         },
       };
     }
@@ -1152,10 +1152,10 @@ export const handler = async (
       body: JSON.stringify({ error: 'Internal Server Error' }),
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': allowedOrigin,
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-        'Access-Control-Allow-Credentials': 'true',
+        'access-control-allow-origin': allowedOrigin,
+        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+        'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+        'access-control-allow-credentials': 'true',
       },
     };
   }
@@ -1174,12 +1174,12 @@ export const handler = async (
           statusCode: 200,
           body: '',
           headers: {
-            'Access-Control-Allow-Origin': getDefaultCorsOrigin(),
-            'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-            'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-            'Access-Control-Allow-Credentials': 'true',
-            'Access-Control-Max-Age': '86400',
-            'Content-Length': '0',
+            'access-control-allow-origin': getDefaultCorsOrigin(),
+            'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+            'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+            'access-control-allow-credentials': 'true',
+            'access-control-max-age': '86400',
+            'content-length': '0',
           },
         };
       }
@@ -1189,12 +1189,12 @@ export const handler = async (
         statusCode: 200,
         body: '',
         headers: {
-          'Access-Control-Allow-Origin': getDefaultCorsOrigin(),
-          'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-          'Access-Control-Allow-Credentials': 'true',
-          'Access-Control-Max-Age': '86400',
-          'Content-Length': '0',
+          'access-control-allow-origin': getDefaultCorsOrigin(),
+          'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+          'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+          'access-control-allow-credentials': 'true',
+          'access-control-max-age': '86400',
+          'content-length': '0',
         },
       };
     }
@@ -1206,10 +1206,10 @@ export const handler = async (
       body: JSON.stringify({ error: 'Internal Server Error' }),
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': getDefaultCorsOrigin(),
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'Access-Control-Allow-Headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-        'Access-Control-Allow-Credentials': 'true',
+        'access-control-allow-origin': getDefaultCorsOrigin(),
+        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+        'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+        'access-control-allow-credentials': 'true',
       },
     };
   }

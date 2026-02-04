@@ -1260,6 +1260,190 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         return c.json({ error: 'slots array is required' }, 400);
       }
 
+      // ✅ FIX: Comprehensive vendor lookup - check all possible ways vendor can be identified
+      // The foreign key constraint requires vendor_id to exist in vendors table
+      // If vendor only exists in vendor_identity (approved), we need to find or create the vendor record
+      let actualVendorId = vendorId;
+      
+      console.log(`[AVAILABILITY] 🔍 Looking up vendor with ID: ${vendorId}`);
+      
+      // Step 1: Check vendors table directly
+      let vendorFound = false;
+      let existingVendor = await select('vendors', { id: vendorId });
+      if (existingVendor.length > 0) {
+        vendorFound = true;
+        actualVendorId = vendorId;
+        console.log(`[AVAILABILITY] ✅ Vendor found in vendors table: ${actualVendorId}`);
+      }
+      
+      // Step 2: If not found, check vendor_identity by id
+      let identity: any = null;
+      if (!vendorFound) {
+        const identitiesById = await select('vendor_identity', { id: vendorId });
+        if (identitiesById.length > 0) {
+          identity = identitiesById[0];
+          console.log(`[AVAILABILITY] ✅ Found vendor_identity by id: ${identity.id}, vendor_id: ${identity.vendor_id}`);
+          
+          // Check if identity has vendor_id pointing to an existing vendor
+          if (identity.vendor_id) {
+            const vendorByVendorId = await select('vendors', { id: identity.vendor_id });
+            if (vendorByVendorId.length > 0) {
+              actualVendorId = identity.vendor_id;
+              vendorFound = true;
+              console.log(`[AVAILABILITY] ✅ Vendor found via identity.vendor_id: ${actualVendorId}`);
+            }
+          }
+          
+          // Also check vendors by phone
+          if (!vendorFound && identity.phone) {
+            const vendorByPhone = await select('vendors', { phone: identity.phone });
+            if (vendorByPhone.length > 0) {
+              actualVendorId = vendorByPhone[0].id;
+              vendorFound = true;
+              console.log(`[AVAILABILITY] ✅ Vendor found by phone: ${actualVendorId}`);
+            }
+          }
+        }
+      }
+      
+      // Step 3: If still not found, check vendor_identity by vendor_id field
+      if (!vendorFound && !identity) {
+        const identitiesByVendorId = await query(
+          `SELECT * FROM vendor_identity WHERE vendor_id = $1 LIMIT 1`,
+          [vendorId]
+        );
+        if (identitiesByVendorId.rows && identitiesByVendorId.rows.length > 0) {
+          identity = identitiesByVendorId.rows[0];
+          console.log(`[AVAILABILITY] ✅ Found vendor_identity by vendor_id field: ${identity.id}`);
+          // vendorId IS the vendor ID, check if it exists
+          const vendorCheck = await select('vendors', { id: vendorId });
+          if (vendorCheck.length > 0) {
+            actualVendorId = vendorId;
+            vendorFound = true;
+            console.log(`[AVAILABILITY] ✅ Vendor exists with ID: ${actualVendorId}`);
+          }
+        }
+      }
+      
+      // Step 4: If still not found, try to get phone from JWT and search by phone
+      if (!vendorFound && !identity) {
+        console.log(`[AVAILABILITY] 🔍 Vendor not found, trying JWT phone lookup...`);
+        try {
+          const authHeader = c.req.header('Authorization');
+          if (authHeader) {
+            const token = authHeader.replace(/^Bearer\s+/i, '');
+            if (token) {
+              const parts = token.split('.');
+              if (parts.length === 3) {
+                const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
+                const phone = payload.phone || payload.phone_number || payload['cognito:username'];
+                if (phone) {
+                  console.log(`[AVAILABILITY] 🔍 Trying to find vendor_identity by phone from JWT: ${phone}`);
+                  const identitiesByPhone = await select('vendor_identity', { phone });
+                  if (identitiesByPhone.length > 0) {
+                    identity = identitiesByPhone[0];
+                    console.log(`[AVAILABILITY] ✅ Found vendor_identity by phone: ${identity.id}`);
+                    // Try to find vendor by phone or use identity.vendor_id
+                    if (identity.vendor_id) {
+                      const vendorCheck = await select('vendors', { id: identity.vendor_id });
+                      if (vendorCheck.length > 0) {
+                        actualVendorId = identity.vendor_id;
+                        vendorFound = true;
+                        console.log(`[AVAILABILITY] ✅ Vendor found via identity.vendor_id: ${actualVendorId}`);
+                      }
+                    }
+                    if (!vendorFound && identity.phone) {
+                      const vendorByPhone = await select('vendors', { phone: identity.phone });
+                      if (vendorByPhone.length > 0) {
+                        actualVendorId = vendorByPhone[0].id;
+                        vendorFound = true;
+                        console.log(`[AVAILABILITY] ✅ Vendor found by phone: ${actualVendorId}`);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (jwtError) {
+          console.warn('[AVAILABILITY] Could not extract phone from JWT:', jwtError);
+        }
+      }
+      
+      // If we have identity but no vendor, create vendor record
+      if (!vendorFound && identity) {
+        if (identity.onboarding_status === 'APPROVED' || identity.onboarding_status === 'ACTIVATED') {
+          // Check if vendor exists by phone (there might be an existing vendor with different ID)
+          const vendorByPhone = await select('vendors', { phone: identity.phone });
+          if (vendorByPhone.length > 0) {
+            actualVendorId = vendorByPhone[0].id;
+            vendorFound = true;
+            console.log(`[AVAILABILITY] ✅ Found existing vendor by phone: ${actualVendorId}`);
+          } else {
+            // Get application data for vendor details
+            const identityId = identity.id;
+            const applications = await select('vendor_onboarding_applications', { vendor_identity_id: identityId });
+            const application = applications.length > 0 ? applications[0] : null;
+            const payload = application?.application_payload || {};
+            
+            // Create vendors record
+            // ✅ FIX: Use identity.vendor_id if it exists, otherwise use identity.id
+            const newVendorId = identity.vendor_id || identityId;
+            console.log(`[AVAILABILITY] 🔨 Auto-creating vendor record for approved vendor ${identityId}, using vendor ID: ${newVendorId}`);
+            try {
+              const newVendor = await insert('vendors', {
+                id: newVendorId,
+                phone: identity.phone,
+                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
+                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+                owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
+                role_id: identity.selected_role_id,
+                category: 'general',
+                address: payload.address || 'Not specified',
+                city: payload.city || 'Not specified',
+                state: payload.state || 'Not specified',
+                pincode: payload.pin || payload.pincode || '',
+                status: 'active',
+                is_active: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              });
+              console.log(`[AVAILABILITY] ✅ Created vendor record for ${newVendorId}`);
+              actualVendorId = newVendorId;
+              vendorFound = true;
+            } catch (createError: any) {
+              console.error(`[AVAILABILITY] ❌ Failed to create vendor record:`, createError);
+              return c.json({ 
+                error: 'Failed to create vendor record',
+                details: `Vendor exists in vendor_identity but could not be created in vendors table: ${createError.message}`
+              }, 500);
+            }
+          }
+        } else {
+          return c.json({ 
+            error: 'Vendor not approved or activated',
+            details: `Vendor onboarding status is ${identity.onboarding_status}. Please complete approval first.`
+          }, 403);
+        }
+      }
+      
+      // Final check - if vendor still not found, return error
+      if (!vendorFound) {
+        // One last check in vendors table
+        const finalCheck = await select('vendors', { id: actualVendorId });
+        if (finalCheck.length === 0) {
+          console.error(`[AVAILABILITY] ❌ Vendor ${vendorId} not found after all checks`);
+          return c.json({ 
+            error: 'Vendor not found',
+            details: `Vendor with ID ${vendorId} does not exist in vendor_identity or vendors table. If you are logged in, please ensure your vendor account is properly set up.`
+          }, 404);
+        }
+        vendorFound = true;
+      }
+      
+      // Use the actual vendor ID (might be different if found by phone or vendor_id)
+      const finalVendorId = actualVendorId;
+
       // Ensure vendor_availability_v2 has the required columns (add individually to avoid conflicts)
       try {
         await query(`ALTER TABLE vendor_availability_v2 ADD COLUMN IF NOT EXISTS service_styles TEXT[] DEFAULT '{}'`).catch(() => {});
@@ -1270,10 +1454,10 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         console.log('[AVAILABILITY] Column migration note:', alterErr.message);
       }
 
-      // Delete existing availability for this vendor
+      // Delete existing availability for this vendor (use finalVendorId)
       await query(
         'DELETE FROM vendor_availability_v2 WHERE vendor_id = $1',
-        [vendorId]
+        [finalVendorId]
       ).catch((err) => {
         console.warn('[AVAILABILITY] Delete error (may be OK):', err.message);
       });
@@ -1285,10 +1469,75 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       for (const slot of slots) {
         const serviceStyles = slot.serviceStyles || slot.service_styles || ['at_center'];
         const locationData = slot.locationData || slot.location_data || null;
-        const startTime = slot.timeWindowStart || slot.time_window_start || slot.startTime;
-        const endTime = slot.timeWindowEnd || slot.time_window_end || slot.endTime;
+        let startTime = slot.timeWindowStart || slot.time_window_start || slot.startTime;
+        let endTime = slot.timeWindowEnd || slot.time_window_end || slot.endTime;
+        
+        // ✅ FIX: Validate and normalize time values
+        if (!startTime || !endTime) {
+          insertErrors.push(`Slot day ${slot.dayOfWeek ?? slot.day_of_week}: Missing start_time or end_time`);
+          continue;
+        }
+        
+        // Convert to string if needed and normalize format
+        const normalizeTime = (time: any): string => {
+          if (!time) throw new Error('Time value is required');
+          const timeStr = String(time).trim();
+          
+          // Handle various formats: "09:00", "09:00:00", "9:00 AM", etc.
+          let normalized = timeStr.toUpperCase().trim();
+          const isPM = normalized.includes('PM');
+          const isAM = normalized.includes('AM');
+          
+          // Remove AM/PM
+          normalized = normalized.replace(/\s*(AM|PM)\s*/i, '').trim();
+          
+          // Parse time components
+          const parts = normalized.split(':').map(p => p.trim());
+          if (parts.length < 2) {
+            throw new Error(`Invalid time format: ${timeStr}. Expected HH:MM or HH:MM:SS`);
+          }
+          
+          let hours = parseInt(parts[0], 10);
+          const minutes = parseInt(parts[1], 10) || 0;
+          const seconds = parts[2] ? parseInt(parts[2], 10) : 0;
+          
+          // Validate numeric values
+          if (isNaN(hours) || isNaN(minutes) || isNaN(seconds)) {
+            throw new Error(`Invalid time format: ${timeStr}. Non-numeric values found`);
+          }
+          
+          // Convert 12-hour to 24-hour
+          if (isPM && hours !== 12) {
+            hours += 12;
+          } else if (isAM && hours === 12) {
+            hours = 0;
+          }
+          
+          // Validate ranges
+          if (hours < 0 || hours > 23) {
+            throw new Error(`Invalid hours: ${hours}. Must be 0-23`);
+          }
+          if (minutes < 0 || minutes > 59) {
+            throw new Error(`Invalid minutes: ${minutes}. Must be 0-59`);
+          }
+          if (seconds < 0 || seconds > 59) {
+            throw new Error(`Invalid seconds: ${seconds}. Must be 0-59`);
+          }
+          
+          // Return in HH:MM:SS format (PostgreSQL TIME format)
+          return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        };
         
         try {
+          const normalizedStartTime = normalizeTime(startTime);
+          const normalizedEndTime = normalizeTime(endTime);
+          
+          // ✅ FIX: Validate that end_time > start_time (required by constraint)
+          if (normalizedEndTime <= normalizedStartTime) {
+            insertErrors.push(`Slot day ${slot.dayOfWeek ?? slot.day_of_week}: end_time (${normalizedEndTime}) must be greater than start_time (${normalizedStartTime}). Current values violate the valid_time_range constraint.`);
+            continue;
+          }
+          
           // Use correct column names for the vendor_availability_v2 table
           // Table has: service_type (not service_style), is_available (not is_enabled)
           // Also has both start_time/end_time AND time_window_start/time_window_end
@@ -1299,15 +1548,15 @@ export function registerVendorScheduleEndpoints(app: Hono) {
               time_window_start, time_window_end,
               service_styles, service_type, 
               location_data, buffer_time, max_capacity, is_available
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            ) VALUES ($1, $2, $3::TIME, $4::TIME, $5::TIME, $6::TIME, $7, $8, $9, $10, $11, $12)
             RETURNING id`,
             [
-              vendorId,
+              finalVendorId, // ✅ FIX: Use finalVendorId instead of vendorId
               slot.dayOfWeek ?? slot.day_of_week,
-              startTime,
-              endTime,
-              startTime, // Also populate time_window_start for backwards compat
-              endTime,   // Also populate time_window_end for backwards compat
+              normalizedStartTime,
+              normalizedEndTime,
+              normalizedStartTime, // Also populate time_window_start for backwards compat
+              normalizedEndTime,   // Also populate time_window_end for backwards compat
               serviceStyles,
               serviceStyles[0] || 'at_center', // service_type for backwards compat
               locationData ? JSON.stringify(locationData) : null,
@@ -1321,7 +1570,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
           }
         } catch (e: any) {
           console.error('[AVAILABILITY] Error inserting slot:', e.message, slot);
-          insertErrors.push(`Slot day ${slot.dayOfWeek}: ${e.message}`);
+          insertErrors.push(`Slot day ${slot.dayOfWeek ?? slot.day_of_week}: ${e.message}`);
         }
       }
 

@@ -25,11 +25,36 @@ function getRuntimeConfig(): RuntimeConfig {
  */
 export function getApiBaseUrl(): string {
   const cfg = getRuntimeConfig();
-  const raw =
-    cfg.apiBaseUrl ||
-    (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) ||
-    '';
-  return (raw && typeof raw === 'string' ? raw.trim() : '').replace(/\/+$/, '');
+  // Next.js injects NEXT_PUBLIC_* env vars at build time - check multiple sources
+  let raw = '';
+  
+  // 1. Check runtime config first (set by runtime-config.js)
+  if (cfg.apiBaseUrl) {
+    raw = cfg.apiBaseUrl;
+  }
+  // 2. Check window.__NEXT_DATA__.env (Next.js injected env vars)
+  else if (typeof window !== 'undefined' && (window as any).__NEXT_DATA__?.env?.NEXT_PUBLIC_API_BASE_URL) {
+    raw = (window as any).__NEXT_DATA__.env.NEXT_PUBLIC_API_BASE_URL;
+  }
+  // 3. Check process.env (available at build time, might be available in some contexts)
+  else if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
+    raw = process.env.NEXT_PUBLIC_API_BASE_URL;
+  }
+  // 4. Fallback: Use the default API Gateway URL
+  else {
+    raw = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+  }
+  
+  const result = (raw && typeof raw === 'string' ? raw.trim() : '').replace(/\/+$/, '');
+  
+  // Debug log in UAT mode
+  if (typeof window !== 'undefined' && isUatMode()) {
+    if (!result || result === 'http://localhost:3000') {
+      console.warn('⚠️ [UAT] API Base URL is invalid. Using fallback:', result || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com');
+    }
+  }
+  
+  return result || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
 }
 
 // UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)

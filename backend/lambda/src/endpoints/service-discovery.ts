@@ -1316,8 +1316,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       }
 
       const vendor = vendors[0];
-      const requestedDate = new Date(date);
+      // Parse date in local timezone to avoid UTC issues
+      // Date format: "YYYY-MM-DD"
+      const [year, month, day] = date.split('-').map(Number);
+      const requestedDate = new Date(year, month - 1, day);
       const dayOfWeek = requestedDate.getDay();
+      console.log(`[SLOTS] Date parsing: input=${date}, parsed=${requestedDate.toISOString()}, dayOfWeek=${dayOfWeek} (0=Sun, 1=Mon, 2=Tue, etc.)`);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const requestedDateOnly = new Date(requestedDate);
@@ -1420,10 +1424,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           paramIndex++;
         }
 
-        // Filter by service style
-        staffQuery += ` AND (srv.service_style = $${paramIndex} OR srv.service_style IS NULL)`;
-        params.push(serviceStyle);
-        paramIndex++;
+        // Filter by service style - removed since services table doesn't have service_style column
+        // Service style filtering is handled at vendor_services level, not at staff_slot_services level
+        // staffQuery += ` AND (srv.service_style = $${paramIndex} OR srv.service_style IS NULL)`;
+        // params.push(serviceStyle);
+        // paramIndex++;
 
         staffQuery += ` ORDER BY sas.start_time, s.name`;
 
@@ -1533,34 +1538,46 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // ---------- 2) Advanced availability only: vendor_availability_v2 (no basic fallback) ----------
       let va2Slots: any[] = [];
       try {
+        console.log(`[SLOTS] Querying vendor_availability_v2: vendorId=${vendorId}, dayOfWeek=${dayOfWeek}, serviceStyle=${serviceStyle}`);
         const va2Result = await query(
           `SELECT id, time_window_start, time_window_end, start_time, end_time,
-                  COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
-                  buffer_time, buffer_time_minutes, max_capacity, service_style, service_styles
+                  30 as slot_duration_minutes,
+                  15 as buffer_time_minutes, 
+                  max_capacity, service_styles
            FROM vendor_availability_v2
            WHERE vendor_id = $1
              AND day_of_week = $2
-             AND (COALESCE(service_style, service_type) = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
-             AND COALESCE(is_enabled, is_available, true) = true
+             AND $3 = ANY(COALESCE(service_styles, ARRAY[]::text[]))
+             AND COALESCE(is_available, true) = true
            ORDER BY COALESCE(time_window_start, start_time)`,
           [vendorId, dayOfWeek, serviceStyle]
         );
         va2Slots = va2Result?.rows || [];
+        console.log(`[SLOTS] Found ${va2Slots.length} availability records for day_of_week=${dayOfWeek}, serviceStyle=${serviceStyle}`);
+        if (va2Slots.length > 0) {
+          console.log(`[SLOTS] First record:`, JSON.stringify(va2Slots[0]));
+        }
       } catch (e) {
+        console.error(`[SLOTS] Query error:`, e);
         try {
           const va2ResultAlt = await query(
             `SELECT id, start_time as time_window_start, end_time as time_window_end,
                     time_window_start as start_time, time_window_end as end_time,
-                    slot_duration_minutes, buffer_time, buffer_time_minutes, max_capacity, service_style, service_styles
+                    30 as slot_duration_minutes,
+                    15 as buffer_time_minutes,
+                    max_capacity, service_styles
              FROM vendor_availability_v2
              WHERE vendor_id = $1 AND day_of_week = $2
-               AND (service_type = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
-               AND COALESCE(is_available, is_enabled, true) = true
+               AND $3 = ANY(COALESCE(service_styles, ARRAY[]::text[]))
+               AND COALESCE(is_available, true) = true
              ORDER BY start_time`,
             [vendorId, dayOfWeek, serviceStyle]
           );
           va2Slots = va2ResultAlt?.rows || [];
-        } catch (_) { /* ignore */ }
+          console.log(`[SLOTS] Fallback query found ${va2Slots.length} records`);
+        } catch (err) {
+          console.error(`[SLOTS] Fallback query also failed:`, err);
+        }
       }
 
       // Breaks for this day

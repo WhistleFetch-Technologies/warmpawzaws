@@ -78,6 +78,51 @@ interface DynamicVendorOnboardingFormProps {
   isEditMode?: boolean; // ✅ NEW: Flag for edit vs create
 }
 
+// ✅ FIX: Extract default policies as a constant to avoid TDZ (Temporal Dead Zone) issues
+// This prevents "Cannot access 'p' before initialization" errors when fetchPolicies references policies
+const DEFAULT_POLICIES = {
+  vendorOnboardingAgreement: {
+    title: 'Vendor Onboarding Agreement',
+    content: `VENDOR ONBOARDING AGREEMENT
+
+1. SERVICE STANDARDS
+   - The vendor agrees to provide services as per the platform standards and guidelines.
+   - All services must meet the quality benchmarks set by the platform.
+
+2. INFORMATION ACCURACY
+   - All information provided during onboarding must be accurate, complete, and verifiable.
+   - Any misrepresentation may result in immediate termination of the vendor account.
+
+3. DOCUMENTATION REQUIREMENTS
+   - The vendor must complete all required documents and certifications as mandated by applicable laws.
+   - Professional licenses and certifications must be kept current and valid.
+
+4. SERVICE ACTIVATION
+   - Services will be activated only after successful verification and admin approval.
+   - The platform reserves the right to conduct periodic reviews of vendor credentials.`,
+  },
+  termsOfService: {
+    title: 'Terms of Service',
+    content: `TERMS OF SERVICE
+
+1. PLATFORM RIGHTS
+   - The platform reserves the right to approve or reject vendor applications at its sole discretion.
+   - Approval decisions are final and may not be appealed.
+
+2. BOOKING VERIFICATION
+   - All bookings are subject to customer OTP verification before service commencement.
+   - Services must not begin until proper verification is completed.
+
+3. SERVICE REPORTING
+   - Vendors must provide detailed service reports after each booking completion.
+   - Failure to submit reports may delay payment processing.
+
+4. PAYMENT SETTLEMENTS
+   - Payment settlements are processed as per the platform's payment policy.
+   - Standard settlement cycle is 7 business days from service completion.`,
+  },
+};
+
 export function DynamicVendorOnboardingForm({ 
   roleId, 
   onSubmit, 
@@ -97,52 +142,11 @@ export function DynamicVendorOnboardingForm({
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   
-  // Dynamic policies from backend
+  // Dynamic policies from backend - use DEFAULT_POLICIES constant to avoid TDZ issues
   const [policies, setPolicies] = useState<{
     vendorOnboardingAgreement: { title: string; content: string };
     termsOfService: { title: string; content: string };
-  }>({
-    vendorOnboardingAgreement: {
-      title: 'Vendor Onboarding Agreement',
-      content: `VENDOR ONBOARDING AGREEMENT
-
-1. SERVICE STANDARDS
-   - The vendor agrees to provide services as per the platform standards and guidelines.
-   - All services must meet the quality benchmarks set by the platform.
-
-2. INFORMATION ACCURACY
-   - All information provided during onboarding must be accurate, complete, and verifiable.
-   - Any misrepresentation may result in immediate termination of the vendor account.
-
-3. DOCUMENTATION REQUIREMENTS
-   - The vendor must complete all required documents and certifications as mandated by applicable laws.
-   - Professional licenses and certifications must be kept current and valid.
-
-4. SERVICE ACTIVATION
-   - Services will be activated only after successful verification and admin approval.
-   - The platform reserves the right to conduct periodic reviews of vendor credentials.`,
-    },
-    termsOfService: {
-      title: 'Terms of Service',
-      content: `TERMS OF SERVICE
-
-1. PLATFORM RIGHTS
-   - The platform reserves the right to approve or reject vendor applications at its sole discretion.
-   - Approval decisions are final and may not be appealed.
-
-2. BOOKING VERIFICATION
-   - All bookings are subject to customer OTP verification before service commencement.
-   - Services must not begin until proper verification is completed.
-
-3. SERVICE REPORTING
-   - Vendors must provide detailed service reports after each booking completion.
-   - Failure to submit reports may delay payment processing.
-
-4. PAYMENT SETTLEMENTS
-   - Payment settlements are processed as per the platform's payment policy.
-   - Standard settlement cycle is 7 business days from service completion.`,
-    },
-  });
+  }>(DEFAULT_POLICIES);
   const [loadingPolicies, setLoadingPolicies] = useState(false);
   
   // Map location
@@ -159,6 +163,7 @@ export function DynamicVendorOnboardingForm({
   // Using apiClient instead of API_BASE
 
   // Fetch policies when agreement dialog is opened
+  // ✅ FIX: Use DEFAULT_POLICIES constant instead of policies state to avoid TDZ error
   const fetchPolicies = async () => {
     if (loadingPolicies) return;
     
@@ -172,12 +177,12 @@ export function DynamicVendorOnboardingForm({
         
         setPolicies({
           vendorOnboardingAgreement: {
-            title: vendorAgreement?.title || 'Vendor Onboarding Agreement',
-            content: vendorAgreement?.content || policies.vendorOnboardingAgreement.content,
+            title: vendorAgreement?.title || DEFAULT_POLICIES.vendorOnboardingAgreement.title,
+            content: vendorAgreement?.content || DEFAULT_POLICIES.vendorOnboardingAgreement.content,
           },
           termsOfService: {
-            title: terms?.title || 'Terms of Service',
-            content: terms?.content || policies.termsOfService.content,
+            title: terms?.title || DEFAULT_POLICIES.termsOfService.title,
+            content: terms?.content || DEFAULT_POLICIES.termsOfService.content,
           },
         });
       }

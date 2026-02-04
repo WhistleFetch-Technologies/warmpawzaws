@@ -402,17 +402,53 @@ export async function update(
   const params: any[] = [];
   let paramIndex = 1;
 
+  // ✅ FIX: Known JSONB columns that need JSON.stringify and ::jsonb cast
+  const jsonbColumns = new Set([
+    'application_payload',
+    'uploaded_documents', 
+    'metadata',
+    'operating_hours',
+    'config',
+    'settings',
+    'form_data',
+    'additional_info',
+    'pricing',
+    'services_config',
+    'notification_preferences',
+    'search_vector_data',
+    'channels', // notifications.channels is JSONB
+    'data',    // notifications.data is JSONB (booking_id, meeting_id, etc.)
+    'specializations', // vendors.specializations is JSONB array
+  ]);
+  
+  // Also check for columns ending with common JSONB suffixes
+  const isJsonbColumn = (key: string): boolean => {
+    return jsonbColumns.has(key) || 
+           key.endsWith('_config') || 
+           key.endsWith('_metadata') || 
+           key.endsWith('_payload') ||
+           key.endsWith('_data') ||
+           key.endsWith('_settings');
+  };
+
   // Build SET clause
   for (const [key, value] of Object.entries(data)) {
     if (value !== undefined) {
-      // ✅ JSONB columns that store arrays (e.g. vendors.specializations) must be sent as JSON string + ::jsonb
-      const jsonbArrayColumns = new Set(['specializations']);
-      if (jsonbArrayColumns.has(key) && Array.isArray(value)) {
-        setClause.push(`${key} = $${paramIndex}::jsonb`);
-        params.push(JSON.stringify(value));
-        paramIndex++;
-        continue;
+      // ✅ FIX: Handle JSONB columns first (including arrays stored as JSONB like uploaded_documents)
+      if (isJsonbColumn(key) && value !== null && typeof value === 'object') {
+        try {
+          // Serialize to JSON string and cast to JSONB
+          setClause.push(`${key} = $${paramIndex}::jsonb`);
+          params.push(JSON.stringify(value));
+          paramIndex++;
+          continue;
+        } catch (error) {
+          // If JSON.stringify fails (circular reference, etc.), log and skip
+          console.error(`❌ [DB] Failed to serialize JSONB column ${key}:`, error);
+          throw new Error(`Invalid JSON value for column ${key}: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
+      
       // ✅ Arrays (TEXT[], etc.): pass as-is; node-pg serializes to PG array
       if (Array.isArray(value)) {
         setClause.push(`${key} = $${paramIndex}`);
@@ -420,20 +456,10 @@ export async function update(
         paramIndex++;
         continue;
       }
-      // ✅ FIX: Handle JSONB columns (metadata, operating_hours, etc.) by casting to JSONB
-      const isJsonbColumn = key === 'metadata' || 
-                           key === 'operating_hours' || 
-                           key === 'config' || 
-                           key.endsWith('_config') ||
-                           (typeof value === 'object' && value !== null && !(value instanceof Date));
       
-      if (isJsonbColumn && typeof value === 'object' && value !== null) {
-        setClause.push(`${key} = $${paramIndex}::jsonb`);
-        params.push(JSON.stringify(value));
-      } else {
-        setClause.push(`${key} = $${paramIndex}`);
-        params.push(value);
-      }
+      // Regular values
+      setClause.push(`${key} = $${paramIndex}`);
+      params.push(value);
       paramIndex++;
     }
   }
