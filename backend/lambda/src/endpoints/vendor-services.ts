@@ -435,15 +435,21 @@ export function registerVendorServicesEndpoints(app: Hono) {
         }
       }
 
-      const flattenedServices = Object.values(servicesByStyle).flatMap((style: any) => style.services);
+      // Phase 2: Main list only allowed styles; disallowed (e.g. legacy at_center for Walker) in separate bucket.
+      const flattenedServices = allowedServiceStyles.length > 0
+        ? (allowedServiceStyles.flatMap((style: string) => servicesByStyle[style]?.services ?? []))
+        : Object.values(servicesByStyle).flatMap((style: any) => style.services);
+      const disallowedLegacy = allowedServiceStyles.length > 0
+        ? (serviceStyles.filter((s: string) => !allowedServiceStyles.includes(s)).flatMap((style: string) => servicesByStyle[style]?.services ?? []))
+        : [];
 
       return c.json({
         success: true,
         services: flattenedServices,
         servicesByStyle,
         allServices: flattenedServices,
+        disallowedLegacy,
         totalEnabled: flattenedServices.length,
-        // ✅ Include role and capabilities directly (no separate API call needed)
         vendor: {
           id: vendor.id,
           role_id: vendor.role_id,
@@ -456,7 +462,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
           config: roleConfig,
         } : null,
         capabilities,
-        allowedServiceStyles, // ✅ Included so frontend knows what styles are allowed
+        allowedServiceStyles,
         vendorTypes: roleConfig?.vendorTypes || [],
       });
     } catch (error: any) {

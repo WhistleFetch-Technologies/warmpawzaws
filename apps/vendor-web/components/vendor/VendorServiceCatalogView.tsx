@@ -420,10 +420,15 @@ export function VendorServiceCatalogView({
       console.log('🔍 [GROUPING] No role filter applied - showing all services from API');
     }
 
-    // ✅ FIX: DO NOT filter by role-allowed service styles
-    // Backend already validates service styles, so frontend should show all services returned
-    // The role config serviceStyles is for enabling/disabling tabs, not for filtering catalog
-    console.log('🔍 [GROUPING] Skipping service style filter - showing all services from API');
+    // Phase 2: Respect allowedServiceStyles — never show a style that isn't allowed (Walker: no at_center).
+    if (roleAllowedStyles.length > 0) {
+      const beforeStyleFilter = filteredServices.length;
+      filteredServices = filteredServices.filter(service => {
+        const style = normalizeServiceStyle(service.serviceStyle || (service as any).service_style);
+        return roleAllowedStyles.includes(style);
+      });
+      console.log('🔍 [GROUPING] After allowed-service-styles filter:', filteredServices.length, '(removed', beforeStyleFilter - filteredServices.length, ')');
+    }
 
     // 3. User-selected style filter
     if (activeStyle !== 'all') {
@@ -601,19 +606,19 @@ export function VendorServiceCatalogView({
     try {
       setAdding(true);
 
-      // ✅ FIX: Determine service style - use targetServiceStyle, then service.serviceStyle, then activeStyle filter, then default
-      // This ensures services are stored in the correct style tab
-      let effectiveServiceStyle: 'at_home' | 'at_center' | 'tele' = 'at_center';
+      // Phase 2: Determine service style from allowed styles only; never default to at_center when role is Walker.
+      const allowed = roleAllowedStyles.length > 0 ? roleAllowedStyles : (allowedServiceStyles || []);
+      const defaultStyle = (allowed[0] as 'at_home' | 'at_center' | 'tele') || 'at_home';
+      let effectiveServiceStyle: 'at_home' | 'at_center' | 'tele' = defaultStyle;
       
-      if (targetServiceStyle && ['at_home', 'at_center', 'tele'].includes(targetServiceStyle)) {
+      if (targetServiceStyle && ['at_home', 'at_center', 'tele'].includes(targetServiceStyle) && allowed.includes(targetServiceStyle)) {
         effectiveServiceStyle = targetServiceStyle;
-      } else if (service.serviceStyle && ['at_home', 'at_center', 'tele'].includes(service.serviceStyle)) {
-        effectiveServiceStyle = service.serviceStyle;
-      } else if (activeStyle !== 'all' && ['at_home', 'at_center', 'tele'].includes(activeStyle)) {
+      } else if (service.serviceStyle && allowed.includes(service.serviceStyle)) {
+        effectiveServiceStyle = service.serviceStyle as 'at_home' | 'at_center' | 'tele';
+      } else if (activeStyle !== 'all' && allowed.includes(activeStyle)) {
         effectiveServiceStyle = activeStyle;
-      } else if (allowedServiceStyles && allowedServiceStyles.length > 0) {
-        // Use first allowed style as default
-        effectiveServiceStyle = allowedServiceStyles[0] as 'at_home' | 'at_center' | 'tele';
+      } else if (allowed.length > 0) {
+        effectiveServiceStyle = allowed[0] as 'at_home' | 'at_center' | 'tele';
       }
       
       console.log(`📋 [CATALOG] Adding service "${service.serviceName}" with serviceStyle: ${effectiveServiceStyle}`);

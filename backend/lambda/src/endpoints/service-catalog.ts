@@ -88,6 +88,20 @@ const roleMappings: Record<string, string[]> = {
   'event_organizer': ['pet_event_organizer', 'event_organizer'],
 };
 
+/** Phase 2: Normalize to canonical codes only (at_home, at_center, tele) for filtering. */
+const STYLE_ALIAS_TO_CODE: Record<string, string> = {
+  at_center: 'at_center', at_clinic: 'at_center', at_vendor: 'at_center',
+  at_home: 'at_home', home_visit: 'at_home', home_service: 'at_home',
+  tele: 'tele', video_consultation: 'tele', tele_consultation: 'tele', online: 'tele', video: 'tele',
+};
+const CANONICAL_STYLES = ['at_home', 'at_center', 'tele'];
+function toCanonicalServiceStyles(arr: string[]): string[] {
+  const codes = (arr || [])
+    .map((s: string) => (s && typeof s === 'string' ? STYLE_ALIAS_TO_CODE[s.toLowerCase().replace(/\s+/g, '_')] || s.toLowerCase().replace(/\s+/g, '_') : null))
+    .filter((c: string | null): c is string => !!c && CANONICAL_STYLES.includes(c));
+  return [...new Set(codes)];
+}
+
 export function registerServiceCatalogEndpoints(app: Hono) {
   /**
    * GET /services
@@ -233,9 +247,10 @@ export function registerServiceCatalogEndpoints(app: Hono) {
 
       // ✅ FIX: Normalize role config (walker etc. may have serviceStyles as object { selected: ['at_home'] })
       const rawServiceStyles = roleConfig?.serviceStyles;
-      const allowedServiceStylesArray = Array.isArray(rawServiceStyles)
+      const rawArray = Array.isArray(rawServiceStyles)
         ? rawServiceStyles
         : (rawServiceStyles?.selected ?? rawServiceStyles?.solo ?? (rawServiceStyles ? [] : []));
+      const allowedServiceStylesArray = toCanonicalServiceStyles(rawArray);
       const vendorConfiguration = roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
       
       // ✅ CRITICAL: Solo providers cannot use at_center services
@@ -254,7 +269,7 @@ export function registerServiceCatalogEndpoints(app: Hono) {
             config: roleConfig,
           } : null,
           vendorTypes: roleConfig?.vendorTypes || [],
-          serviceStyles: allowedServiceStylesArray.length ? allowedServiceStylesArray : (roleConfig?.serviceStyles || []),
+          serviceStyles: allowedServiceStylesArray,
         });
       }
 
@@ -289,9 +304,15 @@ export function registerServiceCatalogEndpoints(app: Hono) {
       let paramIndex = 2;
 
       // ✅ FIX: For solo providers, exclude at_center services even if serviceStyle is not specified
-      // But allow 'all' and NULL service styles (they apply to all styles)
       if (vendorConfiguration === 'solo') {
         catalogQuery += ` AND (service_style != 'at_center' OR service_style = 'all' OR service_style IS NULL)`;
+      }
+
+      // ✅ Phase 2: When no serviceStyle query, filter by role's allowed styles so Walker never sees at_center catalog.
+      if (!serviceStyle && allowedServiceStylesArray.length > 0) {
+        catalogQuery += ` AND (service_style = ANY($${paramIndex}::text[]) OR service_style = 'all' OR service_style IS NULL)`;
+        params.push(allowedServiceStylesArray);
+        paramIndex++;
       }
 
       // ✅ FIX: Support comma-separated serviceStyle (e.g. at_home,tele) so solo providers get both styles
@@ -351,8 +372,8 @@ export function registerServiceCatalogEndpoints(app: Hono) {
           config: roleConfig,
         } : null,
         vendorTypes: roleConfig?.vendorTypes || [],
-        // ✅ Align with vendor-services: return array so frontend gets allowed styles (walker has { selected: ['at_home'] })
-        serviceStyles: allowedServiceStylesArray.length ? allowedServiceStylesArray : (roleConfig?.serviceStyles || []),
+        // Phase 1: Always return canonical codes only (at_home, at_center, tele); never raw config.
+        serviceStyles: allowedServiceStylesArray,
       });
     } catch (error: any) {
       console.error('Error fetching service catalog:', error);

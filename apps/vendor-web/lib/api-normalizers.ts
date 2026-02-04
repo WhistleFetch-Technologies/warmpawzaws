@@ -130,6 +130,47 @@ function normalizeServiceType(type: string): 'at_center' | 'at_home' | 'tele' {
   return typeMap[type?.toLowerCase()] || 'at_center';
 }
 
+/**
+ * Normalize service style for role config only. Never defaults to at_center for unknown values.
+ * Returns null for unknown/label-only values so callers can filter them out.
+ * Use for config.serviceStyles to avoid phantom at_center (e.g. Walker stays ['at_home'] only).
+ */
+export function normalizeServiceStyleForRoleConfig(style: string): 'at_home' | 'at_center' | 'tele' | null {
+  if (style == null || typeof style !== 'string') return null;
+  const trimmed = style.trim();
+  if (!trimmed) return null;
+  // Canonical codes
+  const typeMap: Record<string, 'at_center' | 'at_home' | 'tele'> = {
+    'at_center': 'at_center',
+    'at_clinic': 'at_center',
+    'at_vendor': 'at_center',
+    'at_home': 'at_home',
+    'home_visit': 'at_home',
+    'home_service': 'at_home',
+    'tele': 'tele',
+    'online': 'tele',
+    'video': 'tele',
+    'video_consultation': 'tele',
+    'tele_consultation': 'tele',
+  };
+  // Accept labels safely: "At Home", "At Center", "Tele Consultation" -> codes (never default to at_center)
+  const labelToCode: Record<string, 'at_center' | 'at_home' | 'tele'> = {
+    'at home': 'at_home',
+    'at_home': 'at_home',
+    'at center': 'at_center',
+    'at_center': 'at_center',
+    'tele consultation': 'tele',
+    'tele_consultation': 'tele',
+  };
+  const lower = trimmed.toLowerCase();
+  const withUnderscores = lower.replace(/\s+/g, '_');
+  if (typeMap[withUnderscores]) return typeMap[withUnderscores];
+  if (labelToCode[lower]) return labelToCode[lower];
+  if (labelToCode[withUnderscores]) return labelToCode[withUnderscores];
+  if (['at_home', 'at_center', 'tele'].includes(withUnderscores)) return withUnderscores as 'at_home' | 'at_center' | 'tele';
+  return null;
+}
+
 // ============================================================================
 // SERVICE NORMALIZERS
 // ============================================================================
@@ -279,6 +320,13 @@ export interface NormalizedRoleConfig {
 
 export function normalizeRoleConfig(raw: any): NormalizedRoleConfig {
   const config = raw.config || raw;
+  // Prefer top-level serviceStyles from API (canonical codes); else config.serviceStyles / config.service_styles
+  const rawStyles = raw.serviceStyles ?? config.serviceStyles ?? config.service_styles ?? [];
+  const arr = Array.isArray(rawStyles) ? rawStyles : [];
+  // Phase 1: No default to at_center for unknown values; only canonical codes (at_home, at_center, tele).
+  const serviceStyles = arr
+    .map((s: string) => normalizeServiceStyleForRoleConfig(s))
+    .filter((s): s is 'at_home' | 'at_center' | 'tele' => s != null);
   
   return {
     roleId: raw.id || raw.roleId || raw.role_id,
@@ -286,9 +334,7 @@ export function normalizeRoleConfig(raw: any): NormalizedRoleConfig {
     displayName: raw.displayName || raw.display_name || raw.name || '',
     icon: config.icon,
     category: config.category,
-    serviceStyles: (config.serviceStyles || config.service_styles || []).map(
-      (s: string) => normalizeServiceType(s)
-    ),
+    serviceStyles,
     capabilities: raw.capabilities || config.capabilities || [],
     pricingControl: {
       canControlPrice: config.pricingControl?.canControlPrice ?? config.pricing_control?.can_control_price ?? true,

@@ -23,6 +23,53 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { isValidUUID } from '../types/entities';
 
 // ============================================================================
+// CANONICAL SERVICE STYLES (Phase 1 - single source of truth)
+// ============================================================================
+const CANONICAL_SERVICE_STYLE_CODES = ['at_home', 'at_center', 'tele'] as const;
+const LABEL_BY_CODE: Record<string, string> = {
+  at_home: 'At Home',
+  at_center: 'At Center',
+  tele: 'Tele Consultation',
+};
+const ALIAS_TO_CODE: Record<string, string> = {
+  at_center: 'at_center',
+  at_clinic: 'at_center',
+  at_vendor: 'at_center',
+  at_home: 'at_home',
+  home_visit: 'at_home',
+  home_service: 'at_home',
+  tele: 'tele',
+  video_consultation: 'tele',
+  tele_consultation: 'tele',
+  online: 'tele',
+  video: 'tele',
+  // Label strings (from legacy or display) -> canonical
+  'at home': 'at_home',
+  'at center': 'at_center',
+  'tele consultation': 'tele',
+};
+
+/** Extract canonical service style codes only (at_home, at_center, tele). No labels, no unknown values. */
+function getCanonicalServiceStyles(config: any): string[] {
+  const raw = config?.serviceStyles ?? config?.service_styles;
+  const arr = Array.isArray(raw)
+    ? raw
+    : (raw && typeof raw === 'object' && (raw.selected || raw.solo)
+        ? (raw.selected ?? raw.solo ?? [])
+        : []);
+  const codes = arr
+    .map((s: string) => {
+      if (!s || typeof s !== 'string') return null;
+      const key = s.toLowerCase().trim().replace(/\s+/g, '_');
+      const keyWithSpaces = s.toLowerCase().trim();
+      const code = ALIAS_TO_CODE[key] ?? ALIAS_TO_CODE[keyWithSpaces] ?? (CANONICAL_SERVICE_STYLE_CODES.includes(key as any) ? key : null);
+      return code;
+    })
+    .filter((c: string | null): c is string => !!c && CANONICAL_SERVICE_STYLE_CODES.includes(c as any));
+  return [...new Set(codes)];
+}
+
+// ============================================================================
 // ROLE HANDLERS
 // ============================================================================
 
@@ -83,8 +130,6 @@ class GetRolesHandler extends BaseHandler {
         // Extract config fields from JSONB config column
         const config = role.config || {};
         const vendorTypes = config.vendorTypes || config.vendor_types || [];
-        const serviceStylesConfig = config.serviceStyles || {};
-        const selectedServiceStyles = serviceStylesConfig.selected || serviceStylesConfig || [];
         const vendorConfiguration = config.vendorConfiguration || null;
         const customerService = (role as any).customer_service || config.customer_service || null;
         const pricingControl = config.pricingControl || config.pricing_control || {
@@ -93,10 +138,13 @@ class GetRolesHandler extends BaseHandler {
         };
         const category = config.category || 'general';
         const icon = config.icon || role.icon || null;
+        // Phase 1: Canonical codes only (at_home, at_center, tele). Labels separate.
+        const serviceStyles = getCanonicalServiceStyles(config);
+        const serviceStylesLabels = Object.fromEntries(
+          serviceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
+        );
         
         // Parse vendorTypes to match reference (organization, Service Provider, Seller, Healthcare Provider)
-        // Backend stores: healthcare_provider, service_provider, seller, ngo, organization, business
-        // Frontend displays: Healthcare Provider, Service Provider, Seller, NGO, organization, Business
         const normalizedVendorTypes = Array.isArray(vendorTypes) 
           ? vendorTypes.map((vt: string) => {
               const mapping: Record<string, string> = {
@@ -110,30 +158,6 @@ class GetRolesHandler extends BaseHandler {
                 'ngo': 'NGO',
               };
               return mapping[vt] || vt;
-            })
-          : [];
-        
-        // Parse serviceStyles to match reference (At Center, At Home, Tele Consultation)
-        // Backend stores: at_clinic, at_center, at_home, video_consultation, tele, online, delivery, pickup
-        // Frontend displays: At Center, At Home, Tele Consultation, Video Consultation, Online, Delivery, Pickup
-        // Use selectedServiceStyles (from config.serviceStyles.selected) or fallback to serviceStylesConfig
-        const serviceStylesToNormalize = Array.isArray(selectedServiceStyles) ? selectedServiceStyles : 
-          (Array.isArray(serviceStylesConfig) ? serviceStylesConfig : []);
-        const normalizedServiceStyles = Array.isArray(serviceStylesToNormalize)
-          ? serviceStylesToNormalize.map((ss: string) => {
-              const mapping: Record<string, string> = {
-                'at_center': 'At Center',
-                'at_clinic': 'At Center',
-                'at_home': 'At Home',
-                'home_visit': 'At Home',
-                'tele': 'Tele Consultation',
-                'video_consultation': 'Video Consultation',
-                'online': 'Online',
-                'delivery': 'Delivery',
-                'pickup': 'Pickup',
-                'outdoor': 'Outdoor',
-              };
-              return mapping[ss] || ss;
             })
           : [];
         
@@ -151,24 +175,8 @@ class GetRolesHandler extends BaseHandler {
           customer_service: customerService,
           vendorConfiguration: vendorConfiguration,
           vendorTypes: normalizedVendorTypes,
-          serviceStyles: normalizedServiceStyles,
-          selectedServiceStyles: Array.isArray(selectedServiceStyles) 
-            ? selectedServiceStyles.map((ss: string) => {
-                const mapping: Record<string, string> = {
-                  'at_center': 'At Center',
-                  'at_clinic': 'At Center',
-                  'at_home': 'At Home',
-                  'home_visit': 'At Home',
-                  'tele': 'Tele Consultation',
-                  'video_consultation': 'Video Consultation',
-                  'online': 'Online',
-                  'delivery': 'Delivery',
-                  'pickup': 'Pickup',
-                  'outdoor': 'Outdoor',
-                };
-                return mapping[ss] || ss;
-              })
-            : [],
+          serviceStyles,
+          serviceStylesLabels,
           pricingControl: {
             canControlPrice: pricingControl.canControlPrice || pricingControl.can_control_price || false,
             canControlDuration: pricingControl.canControlDuration || pricingControl.can_control_duration || false,
@@ -247,15 +255,18 @@ class GetRoleByIdHandler extends BaseHandler {
     // Extract config fields from JSONB config column (same as GetRolesHandler)
     const config = role.config || {};
     const vendorTypes = config.vendorTypes || config.vendor_types || [];
-    const serviceStyles = config.serviceStyles || config.service_styles || [];
     const pricingControl = config.pricingControl || config.pricing_control || {
       canControlPrice: false,
       canControlDuration: false,
     };
     const category = config.category || 'general';
     const icon = config.icon || role.icon || null;
+    // Phase 1: Canonical codes only (at_home, at_center, tele). Labels separate.
+    const serviceStyles = getCanonicalServiceStyles(config);
+    const serviceStylesLabels = Object.fromEntries(
+      serviceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
+    );
     
-    // Normalize vendorTypes and serviceStyles to match reference screens
     const normalizedVendorTypes = Array.isArray(vendorTypes) 
       ? vendorTypes.map((vt: string) => {
           const mapping: Record<string, string> = {
@@ -271,24 +282,6 @@ class GetRoleByIdHandler extends BaseHandler {
           return mapping[vt] || vt;
         })
       : [];
-    
-    const normalizedServiceStyles = Array.isArray(serviceStyles)
-      ? serviceStyles.map((ss: string) => {
-          const mapping: Record<string, string> = {
-            'at_center': 'At Center',
-            'at_clinic': 'At Center',
-            'at_home': 'At Home',
-            'home_visit': 'At Home',
-            'tele': 'Tele Consultation',
-            'video_consultation': 'Video Consultation',
-            'online': 'Online',
-            'delivery': 'Delivery',
-            'pickup': 'Pickup',
-            'outdoor': 'Outdoor',
-          };
-          return mapping[ss] || ss;
-        })
-      : [];
 
     return this.success({
       success: true,
@@ -299,7 +292,8 @@ class GetRoleByIdHandler extends BaseHandler {
       category,
       icon,
       vendorTypes: normalizedVendorTypes,
-      serviceStyles: normalizedServiceStyles,
+      serviceStyles,
+      serviceStylesLabels,
       pricingControl: {
         canControlPrice: pricingControl.canControlPrice || pricingControl.can_control_price || false,
         canControlDuration: pricingControl.canControlDuration || pricingControl.can_control_duration || false,
@@ -307,7 +301,8 @@ class GetRoleByIdHandler extends BaseHandler {
       capabilities,
       isActive: role.is_active !== false,
       isSystem: role.is_system_role || false,
-      // ✅ NEW: Return full config object so frontend can access capabilityRules, serviceStyles structure, etc.
+      updated_at: (role as any).updated_at || null,
+      // ✅ Return full config object so frontend can access capabilityRules, etc. config.serviceStyles in DB may be object; API exposes canonical serviceStyles above.
       config: role.config || {},
     });
   }
@@ -409,6 +404,12 @@ class CreateRoleHandler extends BaseHandler {
         }
       }
 
+      // Phase 1: Response returns canonical serviceStyles only; labels separate
+      const serviceStyles = getCanonicalServiceStyles(roleConfig);
+      const serviceStylesLabels = Object.fromEntries(
+        serviceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
+      );
+
       return this.success({
         success: true,
         message: 'Role created successfully',
@@ -418,13 +419,15 @@ class CreateRoleHandler extends BaseHandler {
           roleName: newRole[0].display_name || newRole[0].name,
           roleCode: newRole[0].name,
           vendorTypes: roleConfig.vendorTypes || [],
-          serviceStyles: roleConfig.serviceStyles || [],
+          serviceStyles,
+          serviceStylesLabels,
           pricingControl: roleConfig.pricingControl || {
             canControlPrice: false,
             canControlDuration: false,
           },
           capabilities: capabilities || [],
           isActive: newRole[0].is_active !== false,
+          updated_at: (newRole[0] as any).updated_at || null,
         },
       });
     } catch (error: any) {
@@ -542,7 +545,7 @@ class UpdateRoleHandler extends BaseHandler {
       const caps = permissions.map(p => p.permission_name);
       const roleConfig = updatedRole[0].config || {};
 
-      // Normalize vendor types and service styles for response
+      // Normalize vendor types for response
       const normalizedVendorTypes = Array.isArray(roleConfig.vendorTypes) 
         ? roleConfig.vendorTypes.map((vt: string) => {
             const mapping: Record<string, string> = {
@@ -559,23 +562,11 @@ class UpdateRoleHandler extends BaseHandler {
           })
         : [];
 
-      const normalizedServiceStyles = Array.isArray(roleConfig.serviceStyles)
-        ? roleConfig.serviceStyles.map((ss: string) => {
-            const mapping: Record<string, string> = {
-              'at_center': 'At Center',
-              'at_clinic': 'At Center',
-              'at_home': 'At Home',
-              'home_visit': 'At Home',
-              'tele': 'Tele Consultation',
-              'video_consultation': 'Video Consultation',
-              'online': 'Online',
-              'delivery': 'Delivery',
-              'pickup': 'Pickup',
-              'outdoor': 'Outdoor',
-            };
-            return mapping[ss] || ss;
-          })
-        : [];
+      // Phase 1: Return canonical codes only; labels separate (same as GetRoleByIdHandler)
+      const serviceStyles = getCanonicalServiceStyles(roleConfig);
+      const serviceStylesLabels = Object.fromEntries(
+        serviceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
+      );
 
       return this.success({
         success: true,
@@ -586,13 +577,15 @@ class UpdateRoleHandler extends BaseHandler {
           roleName: updatedRole[0].display_name || updatedRole[0].name,
           roleCode: updatedRole[0].name,
           vendorTypes: normalizedVendorTypes,
-          serviceStyles: normalizedServiceStyles,
+          serviceStyles,
+          serviceStylesLabels,
           pricingControl: roleConfig.pricingControl || {
             canControlPrice: false,
             canControlDuration: false,
           },
           capabilities: caps,
           isActive: updatedRole[0].is_active !== false,
+          updated_at: (updatedRole[0] as any).updated_at || null,
         },
       });
     } catch (error: any) {

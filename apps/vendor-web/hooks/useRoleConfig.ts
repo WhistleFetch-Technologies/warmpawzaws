@@ -26,9 +26,14 @@ import {
  * - Provides helper methods for common checks
  */
 
-// In-memory cache
-const configCache: Record<string, { config: NormalizedRoleConfig; timestamp: number }> = {};
+// In-memory cache. Key by roleId; include updated_at in stored payload for future cache invalidation.
+const configCache: Record<string, { config: NormalizedRoleConfig; timestamp: number; updatedAt?: string | null }> = {};
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Phase 0: Strict role enforcement — when true, no permissive fallbacks; show "config unavailable" on failure.
+const STRICT_ROLE_ENFORCEMENT =
+  typeof process !== 'undefined' &&
+  (process.env.NEXT_PUBLIC_STRICT_ROLE_ENFORCEMENT === 'true' || process.env.NEXT_PUBLIC_STRICT_ROLE_ENFORCEMENT === '1');
 
 export interface UseRoleConfigResult {
   // Data
@@ -94,7 +99,7 @@ export function useRoleConfig(roleId?: string): UseRoleConfigResult {
       return;
     }
 
-    // Check localStorage cache
+    // Check localStorage cache (invalidate when role changes — key is by roleId)
     if (typeof window !== 'undefined') {
       try {
         const localCached = localStorage.getItem(`roleConfig_${effectiveRoleId}`);
@@ -104,7 +109,6 @@ export function useRoleConfig(roleId?: string): UseRoleConfigResult {
             console.log('[useRoleConfig] Using localStorage cached config');
             setConfig(parsed.config);
             setIsLoading(false);
-            // Still fetch in background to update cache
           }
         }
       } catch (e) {
@@ -124,13 +128,14 @@ export function useRoleConfig(roleId?: string): UseRoleConfigResult {
         
         console.log('[useRoleConfig] ✅ Loaded from DATABASE:', normalized.roleName, 'with', normalized.capabilities?.length || 0, 'capabilities');
         
-        // Update caches
-        configCache[effectiveRoleId] = { config: normalized, timestamp: Date.now() };
+        const updatedAt = (response as any).updated_at ?? null;
+        configCache[effectiveRoleId] = { config: normalized, timestamp: Date.now(), updatedAt };
         
         if (typeof window !== 'undefined') {
           localStorage.setItem(`roleConfig_${effectiveRoleId}`, JSON.stringify({
             config: normalized,
             timestamp: Date.now(),
+            updatedAt,
           }));
         }
         
@@ -143,13 +148,15 @@ export function useRoleConfig(roleId?: string): UseRoleConfigResult {
         
         console.log('[useRoleConfig] ✅ Loaded from DATABASE (wrapped):', normalized.roleName);
         
-        // Update caches
-        configCache[effectiveRoleId] = { config: normalized, timestamp: Date.now() };
+        const rawConfig = response.config || response.data;
+        const updatedAt = (rawConfig as any)?.updated_at ?? (response as any).updated_at ?? null;
+        configCache[effectiveRoleId] = { config: normalized, timestamp: Date.now(), updatedAt };
         
         if (typeof window !== 'undefined') {
           localStorage.setItem(`roleConfig_${effectiveRoleId}`, JSON.stringify({
             config: normalized,
             timestamp: Date.now(),
+            updatedAt,
           }));
         }
         
@@ -159,10 +166,16 @@ export function useRoleConfig(roleId?: string): UseRoleConfigResult {
         throw new Error('Invalid config response from database');
       }
     } catch (err: any) {
-      console.warn('[useRoleConfig] ⚠️ Database fetch failed, using static fallback:', err.message);
+      console.warn('[useRoleConfig] ⚠️ Database fetch failed:', err.message);
       
-      // Fall back to static config ONLY as a last resort
-      // The static config is just for UI structure, not capabilities
+      // Phase 0: When strict role enforcement is on, do NOT use permissive fallbacks — show config unavailable.
+      if (STRICT_ROLE_ENFORCEMENT) {
+        setConfig(null);
+        setError(`Config unavailable: ${err.message}`);
+        return;
+      }
+      
+      // Fall back to static config only when strict mode is off (last resort)
       const staticConfig = getRoleConfig(effectiveRoleId);
       if (staticConfig) {
         console.log('[useRoleConfig] Using static fallback config for:', effectiveRoleId);
@@ -173,7 +186,7 @@ export function useRoleConfig(roleId?: string): UseRoleConfigResult {
           icon: staticConfig.icon,
           category: staticConfig.category,
           serviceStyles: staticConfig.allowedServiceStyles.map(s => s.id),
-          capabilities: [], // No capabilities from static - must come from DB
+          capabilities: [],
           pricingControl: { canControlPrice: true, canControlDuration: true },
         });
       }
@@ -194,28 +207,28 @@ export function useRoleConfig(roleId?: string): UseRoleConfigResult {
     return getDashboardSections(config.roleName, config.capabilities);
   }, [config?.roleName, config?.capabilities]);
 
-  // Compute allowed styles
+  // Compute allowed styles. Phase 0: No config or empty serviceStyles → allow nothing (conservative).
   const allowedStyles = useMemo(() => {
-    if (!config?.serviceStyles?.length) {
-      return Object.values(SERVICE_STYLES);
-    }
+    if (!config || !config.serviceStyles?.length) return [];
     return getAllowedServiceStyles(config.serviceStyles);
-  }, [config?.serviceStyles]);
+  }, [config?.serviceStyles, config]);
 
-  // Helper functions
+  // Helper functions. Phase 0: When no config, conservative — no capability/style allowed.
   const hasCapability = useCallback((capability: string): boolean => {
-    if (!config?.capabilities?.length) return true; // Default to allowed if no config
+    if (!config) return false;
+    if (!config.capabilities?.length) return false;
     return config.capabilities.includes(capability);
-  }, [config?.capabilities]);
+  }, [config?.capabilities, config]);
 
   const isStyleAllowed = useCallback((style: string): boolean => {
-    if (!config?.serviceStyles?.length) return true; // Default to allowed if no config
+    if (!config) return false;
+    if (!config.serviceStyles?.length) return false;
     const normalizedStyle = style.toLowerCase().replace(/-/g, '_');
-    return config.serviceStyles.some(s => 
+    return config.serviceStyles.some(s =>
       s.toLowerCase() === normalizedStyle ||
       s.toLowerCase().replace(/_/g, '') === normalizedStyle.replace(/_/g, '')
     );
-  }, [config?.serviceStyles]);
+  }, [config?.serviceStyles, config]);
 
   const getStyleConfig = useCallback((style: string): ServiceStyleConfig | null => {
     const normalizedStyle = style.toLowerCase().replace(/-/g, '_');
@@ -281,6 +294,7 @@ export function useRoleFilteredServices<T extends { serviceStyle?: string }>(
 
   return useMemo(() => {
     if (isLoading || !services?.length) return services;
-    return services.filter(s => isStyleAllowed(s.serviceStyle || 'at_center'));
+    // Phase 1: Do not default to at_center; only include services with an allowed style.
+    return services.filter(s => s.serviceStyle ? isStyleAllowed(s.serviceStyle) : false);
   }, [services, isStyleAllowed, isLoading]);
 }
