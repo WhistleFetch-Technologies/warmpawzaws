@@ -204,16 +204,19 @@ export function VendorServiceCatalogView({
           const normalizedServices = servicesArray.map((svc: any) => {
             const rawStyle = svc.serviceStyle || svc.service_style;
             const normalizedStyle = normalizeServiceStyle(rawStyle);
+            // ✅ FIX: Handle null categoryId - use categoryName as fallback for categoryId
+            const categoryName = svc.categoryName || svc.category_name || svc.category || 'General';
+            const categoryId = svc.categoryId || svc.category_id || (categoryName ? categoryName.toLowerCase().replace(/\s+/g, '_') : 'general');
             return {
               ...svc,
               // Normalize IDs
               catalogId: svc.catalogId || svc.id || svc.service_id,
-              categoryId: svc.categoryId || svc.category_id || '',
+              categoryId: categoryId,
               subCategoryId: svc.subCategoryId || svc.sub_category_id || '',
               serviceGroupId: svc.serviceGroupId || svc.service_group_id || '',
               // Normalize names
               serviceName: svc.serviceName || svc.service_name || svc.name || '',
-              categoryName: svc.categoryName || svc.category_name || svc.category || 'Uncategorized',
+              categoryName: categoryName,
               subCategoryName: svc.subCategoryName || svc.sub_category_name || '',
               serviceGroupName: svc.serviceGroupName || svc.service_group_name || '',
               // ✅ CRITICAL: Normalize serviceStyle using utility function
@@ -299,21 +302,52 @@ export function VendorServiceCatalogView({
             console.log('📋 [CATALOG] Role name from config:', roleName);
             setVendorRoleName(roleName.toLowerCase());
             
-            // ✅ FIX: Ensure rawStyles is always an array
-            const rawStylesRaw = roleConfigData.config?.serviceStyles || 
-                                  roleConfigData.config?.allowedServiceStyles || 
-                                  roleConfigData.allowedServiceStyles ||
-                                  roleConfigData.serviceStyles ||
-                                  ['at_home', 'at_center', 'tele'];
+            // ✅ FIX: Extract serviceStyles correctly from role config
+            // The API returns: { solo: [], business: [...], selected: [...] }
+            const serviceStylesObj = roleConfigData.config?.serviceStyles || 
+                                     roleConfigData.config?.allowedServiceStyles || 
+                                     roleConfigData.serviceStyles;
             
-            // ✅ FIX: Ensure it's an array (handle case where it might be a string or object)
-            const rawStyles = Array.isArray(rawStylesRaw) 
-              ? rawStylesRaw 
-              : (typeof rawStylesRaw === 'string' 
-                  ? [rawStylesRaw] 
-                  : (rawStylesRaw && typeof rawStylesRaw === 'object' && !Array.isArray(rawStylesRaw)
-                      ? Object.values(rawStylesRaw)
-                      : ['at_home', 'at_center', 'tele']));
+            console.log('📋 [CATALOG] Raw serviceStylesObj from role config:', serviceStylesObj);
+            
+            let rawStyles: string[] = [];
+            
+            if (serviceStylesObj) {
+              // If it's an object with selected/business/solo properties
+              if (typeof serviceStylesObj === 'object' && !Array.isArray(serviceStylesObj)) {
+                // Prefer 'selected' if available, otherwise use 'business' or 'solo' based on vendor type
+                const vendorType = vendorData?.vendorConfiguration || vendorData?.vendor_type || 'business';
+                console.log('📋 [CATALOG] Vendor type:', vendorType, 'serviceStylesObj keys:', Object.keys(serviceStylesObj));
+                
+                if (serviceStylesObj.selected && Array.isArray(serviceStylesObj.selected) && serviceStylesObj.selected.length > 0) {
+                  rawStyles = serviceStylesObj.selected;
+                  console.log('📋 [CATALOG] Using selected styles:', rawStyles);
+                } else if (serviceStylesObj.business && Array.isArray(serviceStylesObj.business) && serviceStylesObj.business.length > 0) {
+                  rawStyles = serviceStylesObj.business;
+                  console.log('📋 [CATALOG] Using business styles:', rawStyles);
+                } else if (serviceStylesObj.solo && Array.isArray(serviceStylesObj.solo) && serviceStylesObj.solo.length > 0) {
+                  rawStyles = serviceStylesObj.solo;
+                  console.log('📋 [CATALOG] Using solo styles:', rawStyles);
+                } else {
+                  // Fallback: try to flatten all arrays from the object
+                  const allStyles = Object.values(serviceStylesObj).flat().filter((s: any) => typeof s === 'string');
+                  rawStyles = Array.from(new Set(allStyles)) as string[];
+                  console.log('📋 [CATALOG] Flattened all styles from object:', rawStyles);
+                }
+              } else if (Array.isArray(serviceStylesObj)) {
+                rawStyles = serviceStylesObj;
+                console.log('📋 [CATALOG] serviceStylesObj is already an array:', rawStyles);
+              } else if (typeof serviceStylesObj === 'string') {
+                rawStyles = [serviceStylesObj];
+                console.log('📋 [CATALOG] serviceStylesObj is a string, converted to array:', rawStyles);
+              }
+            }
+            
+            // Final fallback if nothing was extracted
+            if (rawStyles.length === 0) {
+              rawStyles = roleConfigData.allowedServiceStyles || ['at_home', 'at_center', 'tele'];
+              console.log('📋 [CATALOG] Using fallback styles:', rawStyles);
+            }
             
             // ✅ FIX: Map role config naming to service catalog naming
             const styleMapping: { [key: string]: string } = {
@@ -423,11 +457,23 @@ export function VendorServiceCatalogView({
     // Phase 2: Respect allowedServiceStyles — never show a style that isn't allowed (Walker: no at_center).
     if (roleAllowedStyles.length > 0) {
       const beforeStyleFilter = filteredServices.length;
-      filteredServices = filteredServices.filter(service => {
+      const styleFilteredServices = filteredServices.filter(service => {
         const style = normalizeServiceStyle(service.serviceStyle || (service as any).service_style);
         return roleAllowedStyles.includes(style);
       });
-      console.log('🔍 [GROUPING] After allowed-service-styles filter:', filteredServices.length, '(removed', beforeStyleFilter - filteredServices.length, ')');
+      console.log('🔍 [GROUPING] Style filter would show:', styleFilteredServices.length, 'services (removed', beforeStyleFilter - styleFilteredServices.length, ')');
+      
+      // ✅ CRITICAL FIX: Only apply style filter if it doesn't result in empty list
+      // If style filter results in 0 services but API returned services, show all services
+      if (styleFilteredServices.length > 0) {
+        filteredServices = styleFilteredServices;
+        console.log('🔍 [GROUPING] Applied style filter - showing', filteredServices.length, 'services');
+      } else {
+        console.warn('⚠️ [GROUPING] Style filter would hide all services - showing all services from API instead');
+        // Keep filteredServices as-is (show all services from API)
+      }
+    } else {
+      console.log('🔍 [GROUPING] No style filter applied - roleAllowedStyles is empty');
     }
 
     // 3. User-selected style filter
@@ -457,19 +503,30 @@ export function VendorServiceCatalogView({
     }
 
     // ✅ Only group services that have a proper category (no "Uncategorized" section)
+    // ✅ FIX: Allow "General" category and handle null categoryId properly
     const withCategory = filteredServices.filter(service => {
       const raw = service.categoryName || service.category_name || service.category;
-      return raw && String(raw).trim() && String(raw).toLowerCase() !== 'uncategorized';
+      const categoryId = service.categoryId || service.category_id;
+      // Include if categoryName exists and is not "Uncategorized", or if categoryId exists
+      return (raw && String(raw).trim() && String(raw).toLowerCase() !== 'uncategorized') || 
+             (categoryId && String(categoryId).trim());
     });
 
     // Group by category and subcategory
+    // ✅ FIX: Use a combination of normalized categoryName to prevent duplicates
     const grouped: { [key: string]: CategoryGroup } = {};
+    const serviceKeys = new Set<string>(); // Track services to prevent duplicates
 
     withCategory.forEach(service => {
       // Handle both camelCase and snake_case field names
       const categoryName = service.categoryName || service.category_name || service.category || 'General';
-      const categoryId = service.categoryId || service.category_id || categoryName;
-      const catKey = categoryId;
+      // ✅ FIX: Use normalized categoryName as key to prevent duplicates
+      const normalizedCategoryName = categoryName.trim().toLowerCase();
+      const catKey = normalizedCategoryName;
+      
+      // Generate categoryId from categoryName if null/empty, using consistent format
+      const categoryId = service.categoryId || service.category_id || 
+        (categoryName ? categoryName.toLowerCase().replace(/\s+/g, '_') : 'general');
       
       if (!grouped[catKey]) {
         grouped[catKey] = {
@@ -481,6 +538,14 @@ export function VendorServiceCatalogView({
 
       const subCatName = service.subCategoryName || service.sub_category_name || 'General';
       const subCatId = service.subCategoryId || service.sub_category_id || 'general';
+      
+      // ✅ FIX: Create unique service key to prevent duplicates
+      const serviceKey = `${service.serviceId || service.id || ''}_${service.serviceStyle || ''}_${service.serviceName || ''}`;
+      if (serviceKeys.has(serviceKey)) {
+        console.warn('⚠️ [GROUPING] Duplicate service detected, skipping:', serviceKey);
+        return; // Skip duplicate service
+      }
+      serviceKeys.add(serviceKey);
       
       let subcategory = grouped[catKey].subcategories.find(
         sub => sub.subCategoryId === subCatId

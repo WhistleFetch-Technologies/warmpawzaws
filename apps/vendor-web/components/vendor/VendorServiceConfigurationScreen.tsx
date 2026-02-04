@@ -216,61 +216,122 @@ export function VendorServiceConfigurationScreen({
       }
       
       // 3. Build list: VENDOR'S ADDED SERVICES FIRST (for publishing), then catalog services not yet added
-      const vendorServiceIds = new Set(vendorServices.map((s: any) => 
-        s.serviceId || s.service_id || s.catalogServiceId || s.catalog_service_id || s.id
-      ));
-      const vendorServiceMap = new Map(vendorServices.map((s: any) => [
-        s.serviceId || s.service_id || s.catalogServiceId || s.catalog_service_id || s.id, 
-        s
-      ]));
-      const catalogIds = new Set(catalogServices.map((s: any) => s.serviceId || s.service_id || s.id));
+      // ✅ CRITICAL FIX: Match vendor services by service_id (UUID foreign key to service_catalog.id)
+      // vendor_services.service_id is UUID that references service_catalog.id (UUID)
+      // We must match by catalog UUID, not by TEXT service_id
+      const vendorServiceIds = new Set<string>();
+      const vendorServiceMap = new Map<string, any>();
+      
+      vendorServices.forEach((s: any) => {
+        // ✅ CRITICAL: vendor_services.service_id is UUID (references service_catalog.id)
+        // We need to match by catalog UUID, not by TEXT service_id
+        // ✅ CRITICAL: Only include vendor services that belong to the current vendor
+        if (s.vendor_id !== vendorId) {
+          console.warn(`⚠️ Skipping vendor service ${s.id} - belongs to vendor ${s.vendor_id}, not ${vendorId}`);
+          return;
+        }
+        
+        const catalogUuid = s.service_id; // This is service_catalog.id (UUID)
+        const vendorServiceId = s.id; // This is vendor_services.id (UUID)
+        
+        // Map by catalog UUID (for matching with catalog services)
+        if (catalogUuid) {
+          vendorServiceIds.add(String(catalogUuid));
+          if (!vendorServiceMap.has(String(catalogUuid))) {
+            vendorServiceMap.set(String(catalogUuid), s);
+          }
+        }
+        
+        // Also map by vendor_services.id for direct lookups
+        if (vendorServiceId) {
+          vendorServiceMap.set(`vendor_${vendorServiceId}`, s);
+        }
+      });
+      
+      // ✅ CRITICAL: Match catalog services by catalog.id (UUID), not by serviceId (TEXT)
+      const catalogIds = new Set(catalogServices.map((s: any) => s.catalogId || s.id).filter(Boolean));
       
       // Helper: format a catalog item with optional vendor overrides
-      const formatMerged = (catalogSvc: any, vendorSvc: any, catalogId: string) => ({
-        ...catalogSvc,
-        id: vendorSvc?.id || catalogId,
-        serviceId: catalogId,
-        catalogServiceId: catalogId,
-        name: catalogSvc.name || catalogSvc.serviceName || catalogSvc.service_name || 'Unnamed Service',
-        serviceName: catalogSvc.serviceName || catalogSvc.service_name || catalogSvc.name || 'Unnamed Service',
-        price: vendorSvc?.customPrice ?? vendorSvc?.custom_price ?? catalogSvc.price ?? catalogSvc.basePrice ?? catalogSvc.base_price ?? 0,
-        basePrice: catalogSvc.basePrice ?? catalogSvc.base_price ?? catalogSvc.price ?? 0,
-        customPrice: vendorSvc?.customPrice ?? vendorSvc?.custom_price,
-        duration: vendorSvc?.customDuration ?? vendorSvc?.custom_duration ?? catalogSvc.duration ?? catalogSvc.duration_minutes ?? 30,
-        customDuration: vendorSvc?.customDuration ?? vendorSvc?.custom_duration,
-        categoryName: catalogSvc.categoryName || catalogSvc.category_name || catalogSvc.category || 'Platform Services',
-        category: catalogSvc.category || catalogSvc.category_name || catalogSvc.categoryName || 'Platform Services',
-        subCategoryName: catalogSvc.subCategoryName || catalogSvc.sub_category_name || catalogSvc.subCategory || '',
-        subCategory: catalogSvc.subCategory || catalogSvc.sub_category_name || catalogSvc.subCategoryName || '',
-        isEnabled: vendorSvc ? (vendorSvc.isEnabled !== undefined ? vendorSvc.isEnabled : (vendorSvc.is_enabled !== undefined ? vendorSvc.is_enabled : true)) : false,
-        publishStatus: vendorSvc?.publishStatus || vendorSvc?.publish_status || 'draft',
-        description: vendorSvc?.customDescription || vendorSvc?.custom_description || catalogSvc.description || '',
-        customDescription: vendorSvc?.customDescription || vendorSvc?.custom_description || '',
-        isPlatformService: true,
-        isVendorEnabled: !!vendorSvc,
-      });
+      const formatMerged = (catalogSvc: any, vendorSvc: any, catalogId: string) => {
+        // ✅ CRITICAL FIX: Only use vendor_services.id if service is actually added to vendor
+        // NEVER use catalog.id (UUID) as service.id - it might match another vendor's vendor_services.id
+        // For services not yet added, use catalog serviceId (TEXT) with prefix to avoid UUID conflicts
+        const catalogServiceIdText = catalogSvc.serviceId || catalogSvc.service_id || catalogId;
+        const catalogIdUuid = catalogSvc.catalogId || catalogSvc.id; // service_catalog.id (UUID)
+        
+        // ✅ CRITICAL: Only use vendorSvc.id if:
+        // 1. vendorSvc exists (service is added to vendor)
+        // 2. vendorSvc.id is a valid UUID (vendor_services.id)
+        // 3. vendorSvc.id is NOT the same as catalog.id (to prevent UUID collisions)
+        // 4. vendorSvc.vendor_id matches the current vendor (extra safety check)
+        const serviceId = (vendorSvc?.id && 
+                           vendorSvc.id !== catalogIdUuid && 
+                           vendorSvc.vendor_id === vendorId) 
+          ? vendorSvc.id  // Use vendor_services.id (UUID) if service is added and IDs don't match
+          : `temp_${catalogServiceIdText}`; // Use catalog serviceId (TEXT) as temp ID
+        
+        return {
+          ...catalogSvc,
+          id: serviceId,
+          serviceId: catalogServiceIdText,
+          catalogServiceId: catalogServiceIdText,
+          name: catalogSvc.name || catalogSvc.serviceName || catalogSvc.service_name || 'Unnamed Service',
+          serviceName: catalogSvc.serviceName || catalogSvc.service_name || catalogSvc.name || 'Unnamed Service',
+          price: vendorSvc?.customPrice ?? vendorSvc?.custom_price ?? catalogSvc.price ?? catalogSvc.basePrice ?? catalogSvc.base_price ?? 0,
+          basePrice: catalogSvc.basePrice ?? catalogSvc.base_price ?? catalogSvc.price ?? 0,
+          customPrice: vendorSvc?.customPrice ?? vendorSvc?.custom_price,
+          duration: vendorSvc?.customDuration ?? vendorSvc?.custom_duration ?? catalogSvc.duration ?? catalogSvc.duration_minutes ?? 30,
+          customDuration: vendorSvc?.customDuration ?? vendorSvc?.custom_duration,
+          categoryName: catalogSvc.categoryName || catalogSvc.category_name || catalogSvc.category || 'Platform Services',
+          category: catalogSvc.category || catalogSvc.category_name || catalogSvc.categoryName || 'Platform Services',
+          subCategoryName: catalogSvc.subCategoryName || catalogSvc.sub_category_name || catalogSvc.subCategory || '',
+          subCategory: catalogSvc.subCategory || catalogSvc.sub_category_name || catalogSvc.subCategoryName || '',
+          isEnabled: vendorSvc ? (vendorSvc.isEnabled !== undefined ? vendorSvc.isEnabled : (vendorSvc.is_enabled !== undefined ? vendorSvc.is_enabled : true)) : false,
+          publishStatus: vendorSvc?.publishStatus || vendorSvc?.publish_status || 'draft',
+          description: vendorSvc?.customDescription || vendorSvc?.custom_description || catalogSvc.description || '',
+          customDescription: vendorSvc?.customDescription || vendorSvc?.custom_description || '',
+          isPlatformService: true,
+          isVendorEnabled: !!vendorSvc,
+        };
+      };
       
       // Vendor's added services FIRST (so they always show for publishing, regardless of catalog role)
       const vendorAddedFromCatalog: any[] = [];
       catalogServices.forEach((catalogSvc: any) => {
-        const catalogId = catalogSvc.serviceId || catalogSvc.service_id || catalogSvc.id;
-        const vendorSvc = vendorServiceMap.get(catalogId);
+        // ✅ CRITICAL: Match by catalog.id (UUID), not by serviceId (TEXT)
+        // catalogSvc.catalogId is service_catalog.id (UUID) - this matches vendor_services.service_id (UUID)
+        const catalogUuid = catalogSvc.catalogId || catalogSvc.id; // Use catalog UUID for matching
+        const vendorSvc = catalogUuid ? vendorServiceMap.get(String(catalogUuid)) : null;
         if (vendorSvc) {
-          vendorAddedFromCatalog.push(formatMerged(catalogSvc, vendorSvc, catalogId));
+          // ✅ CRITICAL: Double-check that vendor service belongs to current vendor
+          if (vendorSvc.vendor_id && vendorSvc.vendor_id !== vendorId) {
+            console.error(`❌ UUID COLLISION DETECTED: Catalog service ${catalogSvc.serviceName} has catalog UUID ${catalogUuid} which matches vendor_services.id ${vendorSvc.id} belonging to vendor ${vendorSvc.vendor_id}, not ${vendorId}. Using temp ID.`);
+            const catalogServiceIdText = catalogSvc.serviceId || catalogSvc.service_id || 'unknown';
+            vendorAddedFromCatalog.push(formatMerged(catalogSvc, null, catalogServiceIdText));
+          } else {
+            const catalogServiceIdText = catalogSvc.serviceId || catalogSvc.service_id || 'unknown';
+            vendorAddedFromCatalog.push(formatMerged(catalogSvc, vendorSvc, catalogServiceIdText));
+          }
         }
       });
       const catalogNotAdded = catalogServices
-        .filter((catalogSvc: any) => !vendorServiceIds.has(catalogSvc.serviceId || catalogSvc.service_id || catalogSvc.id))
+        .filter((catalogSvc: any) => {
+          // ✅ CRITICAL: Check by catalog.id (UUID), not by serviceId (TEXT)
+          const catalogUuid = catalogSvc.catalogId || catalogSvc.id;
+          return catalogUuid ? !vendorServiceIds.has(String(catalogUuid)) : true;
+        })
         .map((catalogSvc: any) => {
-          const catalogId = catalogSvc.serviceId || catalogSvc.service_id || catalogSvc.id;
-          return formatMerged(catalogSvc, null, catalogId);
+          const catalogServiceIdText = catalogSvc.serviceId || catalogSvc.service_id || 'unknown';
+          const finalCatalogId = catalogServiceIdText || (catalogSvc.catalogId ? `catalog_${catalogSvc.catalogId}` : 'unknown');
+          return formatMerged(catalogSvc, null, finalCatalogId);
         });
       
       // Vendor services not in catalog (e.g. custom or from different catalog)
       const customVendorServices = vendorServices
         .filter((s: any) => {
-          const svcId = s.serviceId || s.service_id || s.catalogServiceId || s.id;
-          return !catalogIds.has(svcId);
+          // Check if vendor service's service_id (catalog UUID) is in the catalog
+          const catalogUuid = s.service_id; // This is service_catalog.id (UUID)
+          return catalogUuid ? !catalogIds.has(String(catalogUuid)) : true;
         })
         .map((svc: any) => ({
           ...svc,
@@ -344,6 +405,7 @@ export function VendorServiceConfigurationScreen({
           is_enabled: false
         });
         toast.success(`${service.serviceName} disabled`);
+        await loadServices(); // Reload to ensure state is synced
       } else if (newEnabled && service.isVendorEnabled) {
         // Re-enabling a previously disabled vendor service
         console.log(`✅ Re-enabling vendor service ${service.serviceName}...`);
@@ -351,6 +413,24 @@ export function VendorServiceConfigurationScreen({
           is_enabled: true
         });
         toast.success(`${service.serviceName} enabled`);
+        await loadServices(); // Reload to ensure state is synced
+      } else if (newEnabled && !service.isVendorEnabled && service.isPlatformService) {
+        // Enabling a catalog service that hasn't been added yet - add it
+        console.log(`➕ Adding and enabling catalog service ${service.serviceName}...`);
+        const result = await apiClient.post(`/vendor/${vendorId}/services/add-from-catalog`, {
+          catalogServiceId: service.serviceId || service.catalogServiceId || service.id,
+          serviceStyle: serviceStyle,
+          customPrice: service.customPrice || service.basePrice || service.price,
+          customDuration: service.customDuration || service.duration,
+          isEnabled: true
+        }) as any;
+        
+        if (result?.success) {
+          toast.success(`${service.serviceName} added and enabled!`);
+          await loadServices(); // Reload to get the new vendor service ID
+        } else {
+          throw new Error(result?.error || 'Failed to add service');
+        }
       }
       
       setHasChanges(false); // Changes saved immediately
@@ -430,6 +510,7 @@ export function VendorServiceConfigurationScreen({
 
   // ✅ NEW: Batch publish/unpublish functions
   const batchPublishServices = async () => {
+    // Only publish enabled services that aren't already published
     const enabledServices = services.filter(s => s.isEnabled && s.publishStatus !== 'published');
     if (enabledServices.length === 0) {
       toast.info('No enabled services to publish');
@@ -438,11 +519,52 @@ export function VendorServiceConfigurationScreen({
 
     try {
       setIsPublishing(true);
-      const publishPromises = enabledServices.map(service =>
-        apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
-          publish_status: 'published'
-        })
-      );
+      const publishPromises = enabledServices.map(service => {
+        // ✅ CRITICAL: Validate service.id before using it
+        // If service.id starts with 'temp_', it's not added to vendor yet
+        if (service.id && service.id.startsWith('temp_')) {
+          // Service not yet added - add it first
+          const catalogId = service.serviceId || service.catalogServiceId || service.id.replace('temp_', '');
+          return apiClient.post(`/vendor/${vendorId}/services/add-from-catalog`, {
+            catalogServiceId: catalogId,
+            serviceStyle: serviceStyle,
+            customPrice: service.customPrice || service.basePrice || service.price,
+            customDuration: service.customDuration || service.duration,
+            isEnabled: true,
+            publish_status: 'published'
+          });
+        }
+        
+        // If service is not yet added to vendor, add it first
+        if (!service.isVendorEnabled && service.isPlatformService) {
+          return apiClient.post(`/vendor/${vendorId}/services/add-from-catalog`, {
+            catalogServiceId: service.serviceId || service.catalogServiceId || service.id,
+            serviceStyle: serviceStyle,
+            customPrice: service.customPrice || service.basePrice || service.price,
+            customDuration: service.customDuration || service.duration,
+            isEnabled: true,
+            publish_status: 'published'
+          });
+        } else {
+          // ✅ CRITICAL: Validate that service.id is a valid UUID and not a catalog ID
+          // service.id should be vendor_services.id (UUID), not service_catalog.id (UUID)
+          if (!service.id || service.id.startsWith('temp_')) {
+            toast.error(`Service "${service.serviceName || service.name}" is not yet added to your vendor. Please add it first.`);
+            return Promise.reject(new Error('Service not added to vendor'));
+          }
+          
+          // Validate it's a UUID format (vendor_services.id is always UUID)
+          const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(service.id);
+          if (!isUUID) {
+            toast.error(`Invalid service ID for "${service.serviceName || service.name}". Please refresh and try again.`);
+            return Promise.reject(new Error('Invalid service ID format'));
+          }
+          
+          return apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
+            publish_status: 'published'
+          });
+        }
+      });
 
       await Promise.all(publishPromises);
       toast.success(`${enabledServices.length} service(s) published successfully!`);
@@ -456,6 +578,7 @@ export function VendorServiceConfigurationScreen({
   };
 
   const batchUnpublishServices = async () => {
+    // Only unpublish published services
     const publishedServices = services.filter(s => s.publishStatus === 'published');
     if (publishedServices.length === 0) {
       toast.info('No published services to unpublish');
@@ -499,6 +622,22 @@ export function VendorServiceConfigurationScreen({
 
   // ✅ NEW: Delete Service (for custom services and services added via service management)
   const deleteService = async (serviceId: string) => {
+    const service = services.find(s => s.id === serviceId);
+    if (!service) return;
+    
+    // ✅ FIX: Validate service is actually added to vendor before deleting
+    if (!service.isVendorEnabled || service.id.startsWith('temp_')) {
+      toast.error('Service not yet added to your vendor. Cannot delete.');
+      return;
+    }
+    
+    // ✅ FIX: Validate service.id is a UUID (vendor_services.id)
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(service.id);
+    if (!isUUID || service.id === service.serviceId || service.id === service.catalogServiceId) {
+      toast.error('Invalid service ID. Cannot delete.');
+      return;
+    }
+    
     try {
       const data = await apiClient.delete(`/vendor/${vendorId}/services/${serviceId}`) as any;
 
@@ -574,10 +713,41 @@ export function VendorServiceConfigurationScreen({
       setSaving(true);
       console.log('💾 Saving service configuration...');
       
-      // Only save services that have a vendor_services row (vendor-added or custom); catalog-not-added would 404 on PUT
-      const servicesWithVendorRow = services.filter(s => s.isVendorEnabled !== false);
+      // ✅ FIX: Only save services that have a vendor_services row (vendor-added or custom)
+      // Must have isVendorEnabled === true AND a valid vendor_services.id
+      const servicesWithVendorRow = services.filter(s => {
+        // Must be explicitly enabled in vendor_services
+        if (s.isVendorEnabled !== true) return false;
+        // Must have a vendor_services.id (not just catalog ID)
+        // When isVendorEnabled is true, s.id should be vendor_services.id
+        if (!s.id) return false;
+        // ✅ CRITICAL: If id starts with 'temp_', it's not a vendor_services.id
+        if (s.id.startsWith('temp_')) {
+          console.warn(`⚠️ Service ${s.name || s.serviceName} has temp ID. Skipping.`);
+          return false;
+        }
+        // ✅ CRITICAL: Validate it's a UUID format (vendor_services.id is always UUID)
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.id);
+        if (!isUUID) {
+          console.warn(`⚠️ Service ${s.name || s.serviceName} has invalid ID format: ${s.id}. Skipping.`);
+          return false;
+        }
+        // ✅ CRITICAL: If id equals serviceId or catalogServiceId, it's likely a catalog ID, not vendor_services.id
+        if (s.id === s.serviceId || s.id === s.catalogServiceId || s.id === s.catalogId) {
+          console.warn(`⚠️ Service ${s.name || s.serviceName} has catalog ID instead of vendor_services.id. Skipping.`);
+          return false;
+        }
+        return true;
+      });
+      
+      if (servicesWithVendorRow.length === 0) {
+        toast.info('No services to save. Please add services from catalog first.');
+        return false;
+      }
+      
       const servicesToSave = servicesWithVendorRow.map(s => ({
-        serviceId: s.id,
+        vendorServiceId: s.id, // ✅ FIX: This is vendor_services.id when isVendorEnabled is true
+        catalogServiceId: s.serviceId || s.catalogServiceId, // Catalog ID for reference
         serviceName: s.name || s.serviceName || 'Unnamed Service',
         isEnabled: s.isEnabled,
         customPrice: s.customPrice,
@@ -590,8 +760,8 @@ export function VendorServiceConfigurationScreen({
       // ✅ NEW: Validate enabled services
       const invalidServices = servicesToSave.filter(s => {
         if (!s.isEnabled) return false;
-        const price = s.customPrice || s.price;
-        const duration = s.customDuration || 30;
+        const price = s.customPrice ?? s.price ?? 0;
+        const duration = s.customDuration ?? 30;
         return price <= 0 || duration < 5;
       });
 
@@ -600,10 +770,19 @@ export function VendorServiceConfigurationScreen({
         return false;
       }
 
-      // Update all services so is_enabled (including disable), price, and duration persist; no filter so disabling a service is saved
+      // ✅ FIX: Use vendorServiceId (vendor_services.id) for PUT requests
       const updatePromises = servicesToSave.map(service => {
         const price = service.customPrice ?? service.price ?? 0;
-        return apiClient.put(`/vendor/${vendorId}/services/${service.serviceId}`, {
+        // ✅ CRITICAL: Use vendorServiceId which is vendor_services.id, not catalog ID
+        console.log(`💾 Saving service: vendorServiceId=${service.vendorServiceId}, catalogServiceId=${service.catalogServiceId}, serviceName=${service.serviceName}`);
+        
+        // ✅ CRITICAL: Final validation - ensure vendorServiceId is not a catalog UUID
+        if (service.vendorServiceId === service.catalogServiceId) {
+          console.error(`❌ CRITICAL: vendorServiceId matches catalogServiceId! This should never happen. Skipping service ${service.serviceName}`);
+          return Promise.reject(new Error(`Invalid service ID: vendorServiceId cannot equal catalogServiceId`));
+        }
+        
+        return apiClient.put(`/vendor/${vendorId}/services/${service.vendorServiceId}`, {
           is_enabled: service.isEnabled,
           price,
           customPrice: service.customPrice,
@@ -644,9 +823,9 @@ export function VendorServiceConfigurationScreen({
       
       console.log('🚀 Publishing services...');
       
-      // Publish services by updating publish_status
+      // ✅ FIX: Only publish services that exist in vendor_services
       const publishPromises = services
-        .filter(s => s.isEnabled)
+        .filter(s => s.isEnabled && s.isVendorEnabled === true && s.id && s.id !== s.serviceId && s.id !== s.catalogServiceId)
         .map(service => 
           apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
             publish_status: 'published'

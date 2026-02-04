@@ -107741,7 +107741,16 @@ async function update(table, filters, data) {
   const whereClause = [];
   for (const [key, value] of Object.entries(filters)) {
     if (value !== void 0) {
-      whereClause.push(`${key} = $${paramIndex}`);
+      if (key === "id" || key.endsWith("_id")) {
+        const isLikelyUuid = typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+        if (isLikelyUuid) {
+          whereClause.push(`${key} = $${paramIndex}::uuid`);
+        } else {
+          whereClause.push(`CAST(${key} AS TEXT) = CAST($${paramIndex} AS TEXT)`);
+        }
+      } else {
+        whereClause.push(`${key} = $${paramIndex}`);
+      }
       params.push(value);
       paramIndex++;
     }
@@ -131287,6 +131296,10 @@ var GetBookingHistoryHandlerEnhanced = class extends BaseHandlerEnhanced {
     if (bookings.length === 0) {
       return this.error("Booking not found", 404, "NOT_FOUND", void 0, requestId);
     }
+    const booking = bookings[0];
+    const petId = booking.pet_id;
+    const customerId = booking.customer_id;
+    const bookingCreatedAt = booking.created_at;
     let history = [];
     try {
       const tableCheck = await query(
@@ -131358,7 +131371,103 @@ var GetBookingHistoryHandlerEnhanced = class extends BaseHandlerEnhanced {
       console.warn("[Booking History] Error querying prescriptions:", err?.message || error);
       prescriptions = [];
     }
-    const combinedHistory = [...history, ...prescriptions].sort((a, b) => {
+    let medicalRecords = [];
+    try {
+      if (!petId) {
+        console.warn("[Booking History] Booking missing pet_id, cannot query medical records by pet");
+        const medicalRecordsResult = await query(
+          `SELECT 
+            mr.id,
+            mr.booking_id,
+            mr.pet_id,
+            mr.customer_id,
+            mr.record_type,
+            mr.title,
+            mr.description,
+            mr.file_url,
+            mr.record_date,
+            mr.created_at,
+            mr.vendor_id,
+            v.business_name as vendor_name
+          FROM medical_records mr
+          LEFT JOIN vendors v ON v.id = mr.vendor_id
+          WHERE mr.booking_id = $1::uuid
+          ORDER BY mr.created_at ASC`,
+          [bookingId]
+        );
+        medicalRecords = medicalRecordsResult.rows.map((record) => ({
+          id: `medical_record_${record.id}`,
+          type: "medical_record",
+          booking_id: record.booking_id || bookingId,
+          description: record.title || `Document uploaded${record.description ? ` - ${record.description}` : ""}`,
+          actor: record.vendor_name || (record.vendor_id ? "Vendor" : "Customer"),
+          actor_type: record.vendor_id ? "vendor" : "customer",
+          timestamp: record.created_at,
+          created_at: record.created_at,
+          medical_record_data: {
+            id: record.id,
+            record_type: record.record_type,
+            title: record.title,
+            description: record.description,
+            file_url: record.file_url,
+            record_date: record.record_date
+          }
+        }));
+      } else {
+        const medicalRecordsResult = await query(
+          `SELECT 
+            mr.id,
+            mr.booking_id,
+            mr.pet_id,
+            mr.customer_id,
+            mr.record_type,
+            mr.title,
+            mr.description,
+            mr.file_url,
+            mr.record_date,
+            mr.created_at,
+            mr.vendor_id,
+            v.business_name as vendor_name
+          FROM medical_records mr
+          LEFT JOIN vendors v ON v.id = mr.vendor_id
+          WHERE (
+            -- Records directly linked to this booking
+            mr.booking_id = $1::uuid
+            OR
+            -- Records for the same pet (customer-uploaded documents may not have booking_id)
+            (mr.pet_id = $2::uuid)
+          )
+          ORDER BY mr.created_at ASC`,
+          [bookingId, petId]
+        );
+        medicalRecords = medicalRecordsResult.rows.map((record) => ({
+          id: `medical_record_${record.id}`,
+          type: "medical_record",
+          booking_id: record.booking_id || bookingId,
+          description: record.title || `Document uploaded${record.description ? ` - ${record.description}` : ""}`,
+          actor: record.vendor_name || (record.vendor_id ? "Vendor" : "Customer"),
+          actor_type: record.vendor_id ? "vendor" : "customer",
+          timestamp: record.created_at,
+          created_at: record.created_at,
+          medical_record_data: {
+            id: record.id,
+            record_type: record.record_type,
+            title: record.title,
+            description: record.description,
+            file_url: record.file_url,
+            record_date: record.record_date
+          }
+        }));
+        console.log(`[Booking History] Found ${medicalRecords.length} medical records for booking ${bookingId}, pet ${petId}`);
+      }
+    } catch (error) {
+      const err = error;
+      console.error("[Booking History] Error querying medical records:", err?.message || error);
+      console.error("[Booking History] Stack:", err?.stack);
+      console.error("[Booking History] Query params:", { bookingId, petId, customerId });
+      medicalRecords = [];
+    }
+    const combinedHistory = [...history, ...prescriptions, ...medicalRecords].sort((a, b) => {
       const aTime = new Date(a.created_at || a.timestamp || 0).getTime();
       const bTime = new Date(b.created_at || b.timestamp || 0).getTime();
       return aTime - bTime;
@@ -131366,7 +131475,9 @@ var GetBookingHistoryHandlerEnhanced = class extends BaseHandlerEnhanced {
     return this.success({
       booking: bookings[0],
       history: combinedHistory,
-      prescriptions
+      prescriptions,
+      // Also return separately for easy access
+      medicalRecords
       // Also return separately for easy access
     }, requestId);
   }
@@ -135195,6 +135306,41 @@ function registerTrackingEndpoints(app3) {
 var import_crypto14 = require("crypto");
 init_base_handler();
 init_rds_connection();
+var CANONICAL_SERVICE_STYLE_CODES = ["at_home", "at_center", "tele"];
+var LABEL_BY_CODE = {
+  at_home: "At Home",
+  at_center: "At Center",
+  tele: "Tele Consultation"
+};
+var ALIAS_TO_CODE = {
+  at_center: "at_center",
+  at_clinic: "at_center",
+  at_vendor: "at_center",
+  at_home: "at_home",
+  home_visit: "at_home",
+  home_service: "at_home",
+  tele: "tele",
+  video_consultation: "tele",
+  tele_consultation: "tele",
+  online: "tele",
+  video: "tele",
+  // Label strings (from legacy or display) -> canonical
+  "at home": "at_home",
+  "at center": "at_center",
+  "tele consultation": "tele"
+};
+function getCanonicalServiceStyles(config) {
+  const raw2 = config?.serviceStyles ?? config?.service_styles;
+  const arr = Array.isArray(raw2) ? raw2 : raw2 && typeof raw2 === "object" && (raw2.selected || raw2.solo) ? raw2.selected ?? raw2.solo ?? [] : [];
+  const codes = arr.map((s) => {
+    if (!s || typeof s !== "string") return null;
+    const key = s.toLowerCase().trim().replace(/\s+/g, "_");
+    const keyWithSpaces = s.toLowerCase().trim();
+    const code = ALIAS_TO_CODE[key] ?? ALIAS_TO_CODE[keyWithSpaces] ?? (CANONICAL_SERVICE_STYLE_CODES.includes(key) ? key : null);
+    return code;
+  }).filter((c) => !!c && CANONICAL_SERVICE_STYLE_CODES.includes(c));
+  return [...new Set(codes)];
+}
 var GetRolesHandler = class extends BaseHandler {
   async handle(context) {
     const queryParams = context.event.queryStringParameters || {};
@@ -135236,8 +135382,6 @@ var GetRolesHandler = class extends BaseHandler {
       const capabilities = permissionsByRole.get(role.id) || [];
       const config = role.config || {};
       const vendorTypes = config.vendorTypes || config.vendor_types || [];
-      const serviceStylesConfig = config.serviceStyles || {};
-      const selectedServiceStyles = serviceStylesConfig.selected || serviceStylesConfig || [];
       const vendorConfiguration = config.vendorConfiguration || null;
       const customerService = role.customer_service || config.customer_service || null;
       const pricingControl = config.pricingControl || config.pricing_control || {
@@ -135246,6 +135390,10 @@ var GetRolesHandler = class extends BaseHandler {
       };
       const category = config.category || "general";
       const icon = config.icon || role.icon || null;
+      const serviceStyles = getCanonicalServiceStyles(config);
+      const serviceStylesLabels = Object.fromEntries(
+        serviceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
+      );
       const normalizedVendorTypes = Array.isArray(vendorTypes) ? vendorTypes.map((vt) => {
         const mapping = {
           "healthcare_provider": "Healthcare Provider",
@@ -135258,22 +135406,6 @@ var GetRolesHandler = class extends BaseHandler {
           "ngo": "NGO"
         };
         return mapping[vt] || vt;
-      }) : [];
-      const serviceStylesToNormalize = Array.isArray(selectedServiceStyles) ? selectedServiceStyles : Array.isArray(serviceStylesConfig) ? serviceStylesConfig : [];
-      const normalizedServiceStyles = Array.isArray(serviceStylesToNormalize) ? serviceStylesToNormalize.map((ss) => {
-        const mapping = {
-          "at_center": "At Center",
-          "at_clinic": "At Center",
-          "at_home": "At Home",
-          "home_visit": "At Home",
-          "tele": "Tele Consultation",
-          "video_consultation": "Video Consultation",
-          "online": "Online",
-          "delivery": "Delivery",
-          "pickup": "Pickup",
-          "outdoor": "Outdoor"
-        };
-        return mapping[ss] || ss;
       }) : [];
       return {
         ...role,
@@ -135289,22 +135421,8 @@ var GetRolesHandler = class extends BaseHandler {
         customer_service: customerService,
         vendorConfiguration,
         vendorTypes: normalizedVendorTypes,
-        serviceStyles: normalizedServiceStyles,
-        selectedServiceStyles: Array.isArray(selectedServiceStyles) ? selectedServiceStyles.map((ss) => {
-          const mapping = {
-            "at_center": "At Center",
-            "at_clinic": "At Center",
-            "at_home": "At Home",
-            "home_visit": "At Home",
-            "tele": "Tele Consultation",
-            "video_consultation": "Video Consultation",
-            "online": "Online",
-            "delivery": "Delivery",
-            "pickup": "Pickup",
-            "outdoor": "Outdoor"
-          };
-          return mapping[ss] || ss;
-        }) : [],
+        serviceStyles,
+        serviceStylesLabels,
         pricingControl: {
           canControlPrice: pricingControl.canControlPrice || pricingControl.can_control_price || false,
           canControlDuration: pricingControl.canControlDuration || pricingControl.can_control_duration || false
@@ -135370,13 +135488,16 @@ var GetRoleByIdHandler = class extends BaseHandler {
     const capabilities = permissions.map((p) => p.permission_name);
     const config = role.config || {};
     const vendorTypes = config.vendorTypes || config.vendor_types || [];
-    const serviceStyles = config.serviceStyles || config.service_styles || [];
     const pricingControl = config.pricingControl || config.pricing_control || {
       canControlPrice: false,
       canControlDuration: false
     };
     const category = config.category || "general";
     const icon = config.icon || role.icon || null;
+    const serviceStyles = getCanonicalServiceStyles(config);
+    const serviceStylesLabels = Object.fromEntries(
+      serviceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
+    );
     const normalizedVendorTypes = Array.isArray(vendorTypes) ? vendorTypes.map((vt) => {
       const mapping = {
         "healthcare_provider": "Healthcare Provider",
@@ -135390,21 +135511,6 @@ var GetRoleByIdHandler = class extends BaseHandler {
       };
       return mapping[vt] || vt;
     }) : [];
-    const normalizedServiceStyles = Array.isArray(serviceStyles) ? serviceStyles.map((ss) => {
-      const mapping = {
-        "at_center": "At Center",
-        "at_clinic": "At Center",
-        "at_home": "At Home",
-        "home_visit": "At Home",
-        "tele": "Tele Consultation",
-        "video_consultation": "Video Consultation",
-        "online": "Online",
-        "delivery": "Delivery",
-        "pickup": "Pickup",
-        "outdoor": "Outdoor"
-      };
-      return mapping[ss] || ss;
-    }) : [];
     return this.success({
       success: true,
       ...role,
@@ -135414,7 +135520,8 @@ var GetRoleByIdHandler = class extends BaseHandler {
       category,
       icon,
       vendorTypes: normalizedVendorTypes,
-      serviceStyles: normalizedServiceStyles,
+      serviceStyles,
+      serviceStylesLabels,
       pricingControl: {
         canControlPrice: pricingControl.canControlPrice || pricingControl.can_control_price || false,
         canControlDuration: pricingControl.canControlDuration || pricingControl.can_control_duration || false
@@ -135422,7 +135529,8 @@ var GetRoleByIdHandler = class extends BaseHandler {
       capabilities,
       isActive: role.is_active !== false,
       isSystem: role.is_system_role || false,
-      // ✅ NEW: Return full config object so frontend can access capabilityRules, serviceStyles structure, etc.
+      updated_at: role.updated_at || null,
+      // ✅ Return full config object so frontend can access capabilityRules, etc. config.serviceStyles in DB may be object; API exposes canonical serviceStyles above.
       config: role.config || {}
     });
   }
@@ -135464,7 +135572,7 @@ var CreateRoleHandler = class extends BaseHandler {
         category: category || baseConfig.category || "general",
         icon: icon || baseConfig.icon || null,
         vendorTypes: vendorTypes || baseConfig.vendorTypes || [],
-        serviceStyles: serviceStyles || baseConfig.serviceStyles || [],
+        serviceStyles: serviceStyles2 || baseConfig.serviceStyles || [],
         pricingControl: pricingControl || baseConfig.pricingControl || {
           canControlPrice: false,
           canControlDuration: false
@@ -135504,6 +135612,10 @@ var CreateRoleHandler = class extends BaseHandler {
           }).catch((err) => console.error("Error adding permission:", err));
         }
       }
+      const serviceStyles2 = getCanonicalServiceStyles(roleConfig);
+      const serviceStylesLabels = Object.fromEntries(
+        serviceStyles2.map((c) => [c, LABEL_BY_CODE[c] || c])
+      );
       return this.success({
         success: true,
         message: "Role created successfully",
@@ -135513,13 +135625,15 @@ var CreateRoleHandler = class extends BaseHandler {
           roleName: newRole[0].display_name || newRole[0].name,
           roleCode: newRole[0].name,
           vendorTypes: roleConfig.vendorTypes || [],
-          serviceStyles: roleConfig.serviceStyles || [],
+          serviceStyles: serviceStyles2,
+          serviceStylesLabels,
           pricingControl: roleConfig.pricingControl || {
             canControlPrice: false,
             canControlDuration: false
           },
           capabilities: capabilities || [],
-          isActive: newRole[0].is_active !== false
+          isActive: newRole[0].is_active !== false,
+          updated_at: newRole[0].updated_at || null
         }
       });
     } catch (error) {
@@ -135564,7 +135678,7 @@ var UpdateRoleHandler = class extends BaseHandler {
         category: category !== void 0 ? category : existingConfig.category,
         icon: icon !== void 0 ? icon : existingConfig.icon,
         vendorTypes: vendorTypes !== void 0 ? vendorTypes : existingConfig.vendorTypes || [],
-        serviceStyles: serviceStyles !== void 0 ? serviceStyles : existingConfig.serviceStyles || [],
+        serviceStyles: serviceStyles2 !== void 0 ? serviceStyles2 : existingConfig.serviceStyles || [],
         pricingControl: pricingControl !== void 0 ? pricingControl : existingConfig.pricingControl || {
           canControlPrice: false,
           canControlDuration: false
@@ -135625,21 +135739,10 @@ var UpdateRoleHandler = class extends BaseHandler {
         };
         return mapping[vt] || vt;
       }) : [];
-      const normalizedServiceStyles = Array.isArray(roleConfig.serviceStyles) ? roleConfig.serviceStyles.map((ss) => {
-        const mapping = {
-          "at_center": "At Center",
-          "at_clinic": "At Center",
-          "at_home": "At Home",
-          "home_visit": "At Home",
-          "tele": "Tele Consultation",
-          "video_consultation": "Video Consultation",
-          "online": "Online",
-          "delivery": "Delivery",
-          "pickup": "Pickup",
-          "outdoor": "Outdoor"
-        };
-        return mapping[ss] || ss;
-      }) : [];
+      const serviceStyles2 = getCanonicalServiceStyles(roleConfig);
+      const serviceStylesLabels = Object.fromEntries(
+        serviceStyles2.map((c) => [c, LABEL_BY_CODE[c] || c])
+      );
       return this.success({
         success: true,
         message: "Role updated successfully",
@@ -135649,13 +135752,15 @@ var UpdateRoleHandler = class extends BaseHandler {
           roleName: updatedRole[0].display_name || updatedRole[0].name,
           roleCode: updatedRole[0].name,
           vendorTypes: normalizedVendorTypes,
-          serviceStyles: normalizedServiceStyles,
+          serviceStyles: serviceStyles2,
+          serviceStylesLabels,
           pricingControl: roleConfig.pricingControl || {
             canControlPrice: false,
             canControlDuration: false
           },
           capabilities: caps,
-          isActive: updatedRole[0].is_active !== false
+          isActive: updatedRole[0].is_active !== false,
+          updated_at: updatedRole[0].updated_at || null
         }
       });
     } catch (error) {
@@ -157319,14 +157424,15 @@ function registerVendorServicesEndpoints(app3) {
           servicesByStyle[style].count = servicesByStyle[style].services.length;
         }
       }
-      const flattenedServices = Object.values(servicesByStyle).flatMap((style) => style.services);
+      const flattenedServices = allowedServiceStyles.length > 0 ? allowedServiceStyles.flatMap((style) => servicesByStyle[style]?.services ?? []) : Object.values(servicesByStyle).flatMap((style) => style.services);
+      const disallowedLegacy = allowedServiceStyles.length > 0 ? serviceStyles.filter((s) => !allowedServiceStyles.includes(s)).flatMap((style) => servicesByStyle[style]?.services ?? []) : [];
       return c.json({
         success: true,
         services: flattenedServices,
         servicesByStyle,
         allServices: flattenedServices,
+        disallowedLegacy,
         totalEnabled: flattenedServices.length,
-        // ✅ Include role and capabilities directly (no separate API call needed)
         vendor: {
           id: vendor.id,
           role_id: vendor.role_id,
@@ -157340,7 +157446,6 @@ function registerVendorServicesEndpoints(app3) {
         } : null,
         capabilities,
         allowedServiceStyles,
-        // ✅ Included so frontend knows what styles are allowed
         vendorTypes: roleConfig?.vendorTypes || []
       });
     } catch (error) {
@@ -157791,7 +157896,7 @@ function registerVendorServicesEndpoints(app3) {
         }
       } else {
         const catalogResult = await query(
-          `SELECT * FROM service_catalog WHERE service_id = $1`,
+          `SELECT * FROM service_catalog WHERE service_id = $1::text`,
           [inputServiceId]
         );
         if (catalogResult.rows.length > 0) {
@@ -157907,22 +158012,78 @@ function registerVendorServicesEndpoints(app3) {
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
       let updated;
       if (isUUID) {
-        updated = await update(
-          "vendor_services",
-          { id: serviceId, vendor_id: vendorId },
-          updateData
+        console.log(`[VendorServices PUT] UUID detected: ${serviceId}. Checking if it's a catalog ID first...`);
+        const catalogCheckByUuid = await query(
+          `SELECT id, service_id, service_name, service_style 
+           FROM service_catalog 
+           WHERE id = $1::uuid`,
+          [serviceId]
         );
-        if (updated.length === 0) {
-          updated = await update(
-            "vendor_services",
-            { service_id: serviceId, vendor_id: vendorId },
-            updateData
+        if (catalogCheckByUuid.rows.length > 0) {
+          const catalogService = catalogCheckByUuid.rows[0];
+          console.log(`[VendorServices PUT] UUID is a catalog ID. Looking up vendor service by service_id=${catalogService.id} for vendor ${vendorId}`);
+          const vendorServiceByCatalogId = await query(
+            `SELECT id, vendor_id, service_id, service_name, service_style 
+             FROM vendor_services 
+             WHERE service_id = $1::uuid AND vendor_id = $2::uuid`,
+            [catalogService.id, vendorId]
           );
+          if (vendorServiceByCatalogId.rows.length > 0) {
+            const actualServiceId = vendorServiceByCatalogId.rows[0].id;
+            console.log(`[VendorServices PUT] Found vendor service by catalog ID, using vendor_services.id=${actualServiceId}`);
+            updated = await update(
+              "vendor_services",
+              { id: actualServiceId, vendor_id: vendorId },
+              updateData
+            );
+            console.log(`[VendorServices PUT] Update by catalog ID result: ${updated.length} row(s) updated`);
+          } else {
+            console.log(`[VendorServices PUT] Catalog service exists but vendor ${vendorId} hasn't added it yet`);
+            return c.json({
+              error: "Service exists in catalog but has not been added to this vendor. Please add it first using POST /vendor/:vendorId/services/add-from-catalog",
+              serviceId,
+              catalogServiceId: catalogService.id,
+              catalogServiceName: catalogService.service_name,
+              hint: "Use POST /vendor/:vendorId/services/add-from-catalog to add this service to your offerings first"
+            }, 404);
+          }
+        } else {
+          console.log(`[VendorServices PUT] UUID is not a catalog ID. Checking if it's a vendor_services.id...`);
+          const serviceCheck = await query(
+            `SELECT id, vendor_id, service_id, service_name, service_style, is_enabled, publish_status
+             FROM vendor_services 
+             WHERE id = $1::uuid`,
+            [serviceId]
+          );
+          if (serviceCheck.rows.length > 0) {
+            const service = serviceCheck.rows[0];
+            console.log(`[VendorServices PUT] Found service: id=${service.id}, vendor_id=${service.vendor_id}, requested_vendor_id=${vendorId}`);
+            if (service.vendor_id !== vendorId) {
+              console.log(`[VendorServices PUT] Vendor mismatch: service belongs to ${service.vendor_id}, requested ${vendorId}`);
+              return c.json({
+                error: "Service not found for this vendor or you do not have permission to update it",
+                serviceId,
+                actualVendorId: service.vendor_id,
+                requestedVendorId: vendorId,
+                hint: `This service belongs to vendor ${service.vendor_id}, not ${vendorId}. You can only update services that belong to your vendor.`
+              }, 403);
+            }
+            console.log(`[VendorServices PUT] Service found and vendor matches. Updating...`);
+            updated = await update(
+              "vendor_services",
+              { id: serviceId, vendor_id: vendorId },
+              updateData
+            );
+            console.log(`[VendorServices PUT] Update result: ${updated.length} row(s) updated`);
+          } else {
+            console.log(`[VendorServices PUT] UUID ${serviceId} not found in catalog or vendor_services`);
+            updated = [];
+          }
         }
       } else {
         console.log(`[VendorServices PUT] Looking up text service ID: ${serviceId} for vendor ${vendorId}`);
         const catalogResult = await query(
-          "SELECT id FROM service_catalog WHERE service_id = $1",
+          "SELECT id FROM service_catalog WHERE service_id = $1::text",
           [serviceId]
         );
         if (catalogResult.rows.length > 0) {
@@ -157966,7 +158127,68 @@ function registerVendorServicesEndpoints(app3) {
         }
       }
       if (!updated || updated.length === 0) {
-        return c.json({ error: "Service not found or you do not have permission to update it" }, 404);
+        const isServiceIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
+        let vendorServiceCheck;
+        if (isServiceIdUuid) {
+          vendorServiceCheck = await query(
+            `SELECT id, vendor_id, service_id, service_name, service_style 
+             FROM vendor_services 
+             WHERE id = $1::uuid`,
+            [serviceId]
+          );
+        } else {
+          vendorServiceCheck = await query(
+            `SELECT id, vendor_id, service_id, service_name, service_style 
+             FROM vendor_services 
+             WHERE id::text = $1 OR service_id::text = $1`,
+            [serviceId]
+          );
+        }
+        if (vendorServiceCheck.rows.length > 0) {
+          const service = vendorServiceCheck.rows[0];
+          if (service.vendor_id !== vendorId) {
+            return c.json({
+              error: "Service not found for this vendor or you do not have permission to update it",
+              serviceId,
+              actualVendorId: service.vendor_id,
+              requestedVendorId: vendorId,
+              hint: `This service (id=${service.id}) belongs to vendor ${service.vendor_id}, not ${vendorId}. You can only update services that belong to your vendor.`
+            }, 403);
+          } else {
+            console.error(`[VendorServices PUT] Service exists and vendor matches but update returned 0 rows. Service:`, service);
+            return c.json({
+              error: "Service update failed unexpectedly",
+              serviceId,
+              hint: "The service exists but the update operation failed. Please try again or contact support."
+            }, 500);
+          }
+        }
+        let catalogCheck;
+        if (isServiceIdUuid) {
+          catalogCheck = await query(
+            "SELECT id, service_name FROM service_catalog WHERE id = $1::uuid OR service_id = $1::text",
+            [serviceId]
+          );
+        } else {
+          catalogCheck = await query(
+            "SELECT id, service_name FROM service_catalog WHERE id::text = $1 OR service_id = $1::text",
+            [serviceId]
+          );
+        }
+        if (catalogCheck.rows.length > 0) {
+          return c.json({
+            error: "Service exists in catalog but has not been added to this vendor. Please add it first using POST /vendor/:vendorId/services/add-from-catalog",
+            serviceId,
+            catalogService: catalogCheck.rows[0],
+            hint: "Use POST /vendor/:vendorId/services/add-from-catalog to add this service to your offerings first"
+          }, 404);
+        }
+        return c.json({
+          error: "Service not found or you do not have permission to update it",
+          serviceId,
+          vendorId,
+          hint: `The service ID ${serviceId} does not exist in vendor_services or service_catalog for vendor ${vendorId}`
+        }, 404);
       }
       return c.json({
         success: true,
@@ -158044,20 +158266,30 @@ function registerVendorServicesEndpoints(app3) {
         return c.json({ error: "catalogServiceId or serviceId is required" }, 400);
       }
       console.log(`\u2795 Adding catalog service ${finalCatalogServiceId} to vendor ${actualVendorId}...`);
-      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(finalCatalogServiceId);
       let catalogService;
-      if (isUUID) {
+      if (finalCatalogServiceId.startsWith("catalog_")) {
+        const catalogUuid = finalCatalogServiceId.replace("catalog_", "");
         const catalogServices = await query(
-          `SELECT * FROM service_catalog WHERE id = $1`,
-          [finalCatalogServiceId]
+          `SELECT * FROM service_catalog WHERE id = $1::uuid`,
+          [catalogUuid]
         );
         catalogService = catalogServices.rows[0];
       } else {
-        const catalogServices = await query(
-          `SELECT * FROM service_catalog WHERE service_id = $1`,
-          [finalCatalogServiceId]
-        );
-        catalogService = catalogServices.rows[0];
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(finalCatalogServiceId);
+        if (isUUID) {
+          console.warn(`[VendorServices] Raw UUID detected for catalogServiceId: ${finalCatalogServiceId}. This might cause conflicts.`);
+          const catalogServices = await query(
+            `SELECT * FROM service_catalog WHERE id = $1::uuid`,
+            [finalCatalogServiceId]
+          );
+          catalogService = catalogServices.rows[0];
+        } else {
+          const catalogServices = await query(
+            `SELECT * FROM service_catalog WHERE service_id = $1::text`,
+            [finalCatalogServiceId]
+          );
+          catalogService = catalogServices.rows[0];
+        }
       }
       if (!catalogService) {
         return c.json({ error: `Catalog service not found: ${finalCatalogServiceId}` }, 404);
@@ -158510,7 +158742,7 @@ function registerVendorServicesEndpoints(app3) {
       } else {
         console.log(`[VendorServices] Looking up text service ID: ${serviceId} for vendor ${vendorId}`);
         const catalogResult = await query(
-          "SELECT id FROM service_catalog WHERE service_id = $1",
+          "SELECT id FROM service_catalog WHERE service_id = $1::text",
           [serviceId]
         );
         if (catalogResult.rows.length > 0) {
@@ -158554,7 +158786,54 @@ function registerVendorServicesEndpoints(app3) {
         }
       }
       if (!updated || updated.length === 0) {
-        return c.json({ error: "Service not found or you do not have permission to update it" }, 404);
+        const isServiceIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
+        let catalogCheck;
+        if (isServiceIdUuid) {
+          catalogCheck = await query(
+            "SELECT id, service_name FROM service_catalog WHERE id = $1::uuid OR service_id = $1::text",
+            [serviceId]
+          );
+        } else {
+          catalogCheck = await query(
+            "SELECT id, service_name FROM service_catalog WHERE id::text = $1 OR service_id = $1::text",
+            [serviceId]
+          );
+        }
+        if (catalogCheck.rows.length > 0) {
+          return c.json({
+            error: "Service exists in catalog but has not been added to this vendor. Please add it first using POST /vendor/:vendorId/services/add-from-catalog",
+            serviceId,
+            catalogService: catalogCheck.rows[0],
+            hint: "Use POST /vendor/:vendorId/services/add-from-catalog to add this service to your offerings first"
+          }, 404);
+        }
+        let otherVendorCheck;
+        if (isServiceIdUuid) {
+          otherVendorCheck = await query(
+            "SELECT vendor_id FROM vendor_services WHERE id = $1::uuid OR service_id = $1::uuid",
+            [serviceId]
+          );
+        } else {
+          otherVendorCheck = await query(
+            "SELECT vendor_id FROM vendor_services WHERE id::text = $1 OR service_id::text = $1",
+            [serviceId]
+          );
+        }
+        if (otherVendorCheck.rows.length > 0) {
+          const actualVendorId = otherVendorCheck.rows[0].vendor_id;
+          return c.json({
+            error: "Service not found for this vendor or you do not have permission to update it",
+            serviceId,
+            actualVendorId,
+            requestedVendorId: vendorId,
+            hint: `This service belongs to vendor ${actualVendorId}, not ${vendorId}. You can only update services that belong to your vendor.`
+          }, 403);
+        }
+        return c.json({
+          error: "Service not found or you do not have permission to update it",
+          serviceId,
+          hint: "The service ID does not exist in vendor_services or service_catalog"
+        }, 404);
       }
       return c.json({
         success: true,
@@ -160282,6 +160561,24 @@ var roleMappings2 = {
   "adoption_center": ["adoption_center", "pet_shelter", "pet_adoption_center"],
   "event_organizer": ["pet_event_organizer", "event_organizer"]
 };
+var STYLE_ALIAS_TO_CODE = {
+  at_center: "at_center",
+  at_clinic: "at_center",
+  at_vendor: "at_center",
+  at_home: "at_home",
+  home_visit: "at_home",
+  home_service: "at_home",
+  tele: "tele",
+  video_consultation: "tele",
+  tele_consultation: "tele",
+  online: "tele",
+  video: "tele"
+};
+var CANONICAL_STYLES = ["at_home", "at_center", "tele"];
+function toCanonicalServiceStyles(arr) {
+  const codes = (arr || []).map((s) => s && typeof s === "string" ? STYLE_ALIAS_TO_CODE[s.toLowerCase().replace(/\s+/g, "_")] || s.toLowerCase().replace(/\s+/g, "_") : null).filter((c) => !!c && CANONICAL_STYLES.includes(c));
+  return [...new Set(codes)];
+}
 function registerServiceCatalogEndpoints(app3) {
   app3.get("/services", async (c) => {
     try {
@@ -160337,8 +160634,14 @@ function registerServiceCatalogEndpoints(app3) {
       const service = services.rows[0];
       return c.json({
         success: true,
-        id: service.service_id || service.id,
-        serviceId: service.service_id || service.id,
+        // ✅ CRITICAL FIX: NEVER use service_catalog.id (UUID) as id/serviceId
+        // Only use service_id (TEXT) to prevent UUID collisions with vendor_services.id
+        id: service.service_id || `catalog_${service.id}`,
+        // Use TEXT service_id, or prefixed catalog UUID if service_id is null
+        serviceId: service.service_id || `catalog_${service.id}`,
+        // Use TEXT service_id, or prefixed catalog UUID if service_id is null
+        catalogId: service.id,
+        // Store catalog UUID separately for reference (but don't use as id)
         serviceName: service.service_name,
         name: service.service_name,
         displayName: service.display_name || service.service_name,
@@ -160389,7 +160692,8 @@ function registerServiceCatalogEndpoints(app3) {
         console.warn(`[Service Catalog] Failed to load role ${roleId}:`, roleError.message);
       }
       const rawServiceStyles = roleConfig?.serviceStyles;
-      const allowedServiceStylesArray = Array.isArray(rawServiceStyles) ? rawServiceStyles : rawServiceStyles?.selected ?? rawServiceStyles?.solo ?? (rawServiceStyles ? [] : []);
+      const rawArray = Array.isArray(rawServiceStyles) ? rawServiceStyles : rawServiceStyles?.selected ?? rawServiceStyles?.solo ?? (rawServiceStyles ? [] : []);
+      const allowedServiceStylesArray = toCanonicalServiceStyles(rawArray);
       const vendorConfiguration = roleConfig?.vendorConfiguration || roleConfig?.vendor_configuration;
       if (vendorConfiguration === "solo" && serviceStyle === "at_center") {
         return c.json({
@@ -160406,7 +160710,7 @@ function registerServiceCatalogEndpoints(app3) {
             config: roleConfig
           } : null,
           vendorTypes: roleConfig?.vendorTypes || [],
-          serviceStyles: allowedServiceStylesArray.length ? allowedServiceStylesArray : roleConfig?.serviceStyles || []
+          serviceStyles: allowedServiceStylesArray
         });
       }
       const roleNameNorm = role?.name?.toLowerCase().replace(/\s+/g, "_");
@@ -160433,6 +160737,11 @@ function registerServiceCatalogEndpoints(app3) {
       if (vendorConfiguration === "solo") {
         catalogQuery += ` AND (service_style != 'at_center' OR service_style = 'all' OR service_style IS NULL)`;
       }
+      if (!serviceStyle && allowedServiceStylesArray.length > 0) {
+        catalogQuery += ` AND (service_style = ANY($${paramIndex}::text[]) OR service_style = 'all' OR service_style IS NULL)`;
+        params.push(allowedServiceStylesArray);
+        paramIndex++;
+      }
       if (serviceStyle) {
         const styles = serviceStyle.split(",").map((s) => s.trim()).filter(Boolean);
         const validStyles = styles.filter((s) => ["at_home", "at_center", "tele", "all"].includes(s));
@@ -160449,8 +160758,15 @@ function registerServiceCatalogEndpoints(app3) {
       catalogQuery += ` ORDER BY display_order ASC`;
       const services = await query(catalogQuery, params);
       const filteredServices = services.rows.map((service) => ({
-        id: service.service_id || service.id,
-        serviceId: service.service_id || service.id,
+        // ✅ CRITICAL FIX: NEVER use service_catalog.id (UUID) as id/serviceId
+        // Only use service_id (TEXT) to prevent UUID collisions with vendor_services.id
+        // The catalog UUID might match another vendor's vendor_services.id, causing wrong service updates
+        id: service.service_id || `catalog_${service.id}`,
+        // Use TEXT service_id, or prefixed catalog UUID if service_id is null
+        serviceId: service.service_id || `catalog_${service.id}`,
+        // Use TEXT service_id, or prefixed catalog UUID if service_id is null
+        catalogId: service.id,
+        // Store catalog UUID separately for reference (but don't use as id)
         serviceName: service.service_name,
         displayName: service.display_name || service.service_name,
         name: service.service_name,
@@ -160485,8 +160801,8 @@ function registerServiceCatalogEndpoints(app3) {
           config: roleConfig
         } : null,
         vendorTypes: roleConfig?.vendorTypes || [],
-        // ✅ Align with vendor-services: return array so frontend gets allowed styles (walker has { selected: ['at_home'] })
-        serviceStyles: allowedServiceStylesArray.length ? allowedServiceStylesArray : roleConfig?.serviceStyles || []
+        // Phase 1: Always return canonical codes only (at_home, at_center, tele); never raw config.
+        serviceStyles: allowedServiceStylesArray
       });
     } catch (error) {
       console.error("Error fetching service catalog:", error);

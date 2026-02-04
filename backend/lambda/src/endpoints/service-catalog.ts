@@ -180,8 +180,11 @@ export function registerServiceCatalogEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        id: service.service_id || service.id,
-        serviceId: service.service_id || service.id,
+        // ✅ CRITICAL FIX: NEVER use service_catalog.id (UUID) as id/serviceId
+        // Only use service_id (TEXT) to prevent UUID collisions with vendor_services.id
+        id: service.service_id || `catalog_${service.id}`, // Use TEXT service_id, or prefixed catalog UUID if service_id is null
+        serviceId: service.service_id || `catalog_${service.id}`, // Use TEXT service_id, or prefixed catalog UUID if service_id is null
+        catalogId: service.id, // Store catalog UUID separately for reference (but don't use as id)
         serviceName: service.service_name,
         name: service.service_name,
         displayName: service.display_name || service.service_name,
@@ -335,8 +338,12 @@ export function registerServiceCatalogEndpoints(app: Hono) {
       const services = await query(catalogQuery, params);
 
       const filteredServices = services.rows.map((service: any) => ({
-        id: service.service_id || service.id,
-        serviceId: service.service_id || service.id,
+        // ✅ CRITICAL FIX: NEVER use service_catalog.id (UUID) as id/serviceId
+        // Only use service_id (TEXT) to prevent UUID collisions with vendor_services.id
+        // The catalog UUID might match another vendor's vendor_services.id, causing wrong service updates
+        id: service.service_id || `catalog_${service.id}`, // Use TEXT service_id, or prefixed catalog UUID if service_id is null
+        serviceId: service.service_id || `catalog_${service.id}`, // Use TEXT service_id, or prefixed catalog UUID if service_id is null
+        catalogId: service.id, // Store catalog UUID separately for reference (but don't use as id)
         serviceName: service.service_name,
         displayName: service.display_name || service.service_name,
         name: service.service_name,

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { X, Send, Paperclip, Image, FileText, AlertCircle, Clock, CheckCheck, User, Phone, Calendar, MessageSquare, Headphones, Video, VideoOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -128,6 +129,7 @@ export function VendorChatModal({
   onSupportHandoff,
   onVideoCallStart, // ✅ NEW: Video call callback
 }: VendorChatModalProps) {
+  const router = useRouter();
   // State
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [booking, setBooking] = useState<BookingInfo | null>(null);
@@ -408,7 +410,7 @@ export function VendorChatModal({
 
         // Open video in same window so vendor stays in app (no new tab / login page)
         const videoUrl = `/video/${bookingId}${currentMeetingId ? `?meetingId=${currentMeetingId}` : ''}`;
-        window.location.href = videoUrl;
+        router.push(videoUrl);
         
         toast.success('Opening video call...');
       } else {

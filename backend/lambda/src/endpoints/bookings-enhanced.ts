@@ -1091,6 +1091,11 @@ class GetBookingHistoryHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error('Booking not found', 404, 'NOT_FOUND', undefined, requestId);
     }
 
+    const booking = bookings[0];
+    const petId = booking.pet_id;
+    const customerId = booking.customer_id;
+    const bookingCreatedAt = booking.created_at;
+
     // Get status history (check if table exists)
     let history: Array<Record<string, unknown>> = [];
     try {
@@ -1171,8 +1176,114 @@ class GetBookingHistoryHandlerEnhanced extends BaseHandlerEnhanced {
       prescriptions = [];
     }
 
-    // Combine status history and prescriptions, sort by timestamp
-    const combinedHistory = [...history, ...prescriptions].sort((a: any, b: any) => {
+    // ✅ FIX: Add medical records (including customer-uploaded documents) to booking history
+    // Query includes:
+    // 1. Records with booking_id matching this booking
+    // 2. Records for the same pet_id (customer-uploaded documents may not have booking_id)
+    let medicalRecords: Array<Record<string, unknown>> = [];
+    try {
+      if (!petId) {
+        console.warn('[Booking History] Booking missing pet_id, cannot query medical records by pet');
+        // Still try to get records by booking_id only
+        const medicalRecordsResult = await query(
+          `SELECT 
+            mr.id,
+            mr.booking_id,
+            mr.pet_id,
+            mr.customer_id,
+            mr.record_type,
+            mr.title,
+            mr.description,
+            mr.file_url,
+            mr.record_date,
+            mr.created_at,
+            mr.vendor_id,
+            v.business_name as vendor_name
+          FROM medical_records mr
+          LEFT JOIN vendors v ON v.id = mr.vendor_id
+          WHERE mr.booking_id = $1::uuid
+          ORDER BY mr.created_at ASC`,
+          [bookingId]
+        );
+        medicalRecords = medicalRecordsResult.rows.map((record: any) => ({
+          id: `medical_record_${record.id}`,
+          type: 'medical_record',
+          booking_id: record.booking_id || bookingId,
+          description: record.title || `Document uploaded${record.description ? ` - ${record.description}` : ''}`,
+          actor: record.vendor_name || (record.vendor_id ? 'Vendor' : 'Customer'),
+          actor_type: record.vendor_id ? 'vendor' : 'customer',
+          timestamp: record.created_at,
+          created_at: record.created_at,
+          medical_record_data: {
+            id: record.id,
+            record_type: record.record_type,
+            title: record.title,
+            description: record.description,
+            file_url: record.file_url,
+            record_date: record.record_date,
+          },
+        }));
+      } else {
+        // Query with pet_id - this will catch all records for this pet, including customer uploads
+        const medicalRecordsResult = await query(
+          `SELECT 
+            mr.id,
+            mr.booking_id,
+            mr.pet_id,
+            mr.customer_id,
+            mr.record_type,
+            mr.title,
+            mr.description,
+            mr.file_url,
+            mr.record_date,
+            mr.created_at,
+            mr.vendor_id,
+            v.business_name as vendor_name
+          FROM medical_records mr
+          LEFT JOIN vendors v ON v.id = mr.vendor_id
+          WHERE (
+            -- Records directly linked to this booking
+            mr.booking_id = $1::uuid
+            OR
+            -- Records for the same pet (customer-uploaded documents may not have booking_id)
+            (mr.pet_id = $2::uuid)
+          )
+          ORDER BY mr.created_at ASC`,
+          [bookingId, petId]
+        );
+        
+        // Format medical records as history entries
+        medicalRecords = medicalRecordsResult.rows.map((record: any) => ({
+          id: `medical_record_${record.id}`,
+          type: 'medical_record',
+          booking_id: record.booking_id || bookingId,
+          description: record.title || `Document uploaded${record.description ? ` - ${record.description}` : ''}`,
+          actor: record.vendor_name || (record.vendor_id ? 'Vendor' : 'Customer'),
+          actor_type: record.vendor_id ? 'vendor' : 'customer',
+          timestamp: record.created_at,
+          created_at: record.created_at,
+          medical_record_data: {
+            id: record.id,
+            record_type: record.record_type,
+            title: record.title,
+            description: record.description,
+            file_url: record.file_url,
+            record_date: record.record_date,
+          },
+        }));
+
+        console.log(`[Booking History] Found ${medicalRecords.length} medical records for booking ${bookingId}, pet ${petId}`);
+      }
+    } catch (error: unknown) {
+      const err = error as any;
+      console.error('[Booking History] Error querying medical records:', err?.message || error);
+      console.error('[Booking History] Stack:', err?.stack);
+      console.error('[Booking History] Query params:', { bookingId, petId, customerId });
+      medicalRecords = [];
+    }
+
+    // Combine status history, prescriptions, and medical records, sort by timestamp
+    const combinedHistory = [...history, ...prescriptions, ...medicalRecords].sort((a: any, b: any) => {
       const aTime = new Date(a.created_at || a.timestamp || 0).getTime();
       const bTime = new Date(b.created_at || b.timestamp || 0).getTime();
       return aTime - bTime;
@@ -1182,6 +1293,7 @@ class GetBookingHistoryHandlerEnhanced extends BaseHandlerEnhanced {
       booking: bookings[0],
       history: combinedHistory,
       prescriptions: prescriptions, // Also return separately for easy access
+      medicalRecords: medicalRecords, // Also return separately for easy access
     }, requestId);
   }
 }

@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, AlertCircle, Navigation, Loader2, MessageSquare, FileText, RefreshCw, History, Pill, Video, Stethoscope, Printer, Upload } from 'lucide-react';
+import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, AlertCircle, Navigation, Loader2, MessageSquare, FileText, RefreshCw, History, Pill, Video, Stethoscope, Printer, Upload, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 // Uses apiClient (API Gateway)
 import { toast } from 'sonner';
@@ -109,6 +110,8 @@ interface Prescription {
 }
 
 export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefresh }: AppointmentDetailModalProps) {
+  const router = useRouter();
+  const isNavigatingRef = useRef(false); // Prevent multiple navigation attempts
   const [booking, setBooking] = useState<Booking | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
@@ -216,15 +219,39 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         actor: a.performedBy || a.actor,
       }));
       
-      // Get activities from history (includes prescriptions)
-      const activitiesFromHistory = (historyList || []).map((h: any) => ({
-        id: h.id || `history_${h.type}_${h.timestamp}`,
-        type: h.type === 'prescription' ? 'prescription' : h.type || 'status_change',
-        description: h.description || (h.type === 'prescription' ? `Prescription created${h.prescription_data?.diagnosis ? ` - Diagnosis: ${h.prescription_data.diagnosis}` : ''}` : ''),
-        timestamp: h.created_at || h.timestamp,
-        actor: h.actor || 'System',
-        prescriptionData: h.prescription_data, // Include prescription data for history display
-      }));
+      // Get activities from history (includes prescriptions and medical records)
+      const activitiesFromHistory = (historyList || []).map((h: any) => {
+        // Handle medical records (customer-uploaded documents)
+        if (h.type === 'medical_record') {
+          return {
+            id: h.id || `history_${h.type}_${h.timestamp}`,
+            type: 'medical_record',
+            description: h.description || h.medical_record_data?.title || 'Document uploaded',
+            timestamp: h.created_at || h.timestamp,
+            actor: h.actor || 'Customer',
+            medicalRecordData: h.medical_record_data, // Include medical record data for display
+          };
+        }
+        // Handle prescriptions
+        if (h.type === 'prescription') {
+          return {
+            id: h.id || `history_${h.type}_${h.timestamp}`,
+            type: 'prescription',
+            description: h.description || `Prescription created${h.prescription_data?.diagnosis ? ` - Diagnosis: ${h.prescription_data.diagnosis}` : ''}`,
+            timestamp: h.created_at || h.timestamp,
+            actor: h.actor || 'System',
+            prescriptionData: h.prescription_data, // Include prescription data for history display
+          };
+        }
+        // Handle status changes
+        return {
+          id: h.id || `history_${h.type}_${h.timestamp}`,
+          type: h.type || 'status_change',
+          description: h.description || '',
+          timestamp: h.created_at || h.timestamp,
+          actor: h.actor || 'System',
+        };
+      });
       
       // Combine and sort by timestamp
       const allActivities = [...activitiesFromDetails, ...activitiesFromHistory].sort((a, b) => {
@@ -382,40 +409,72 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const mapInstanceRef = useRef<any>(null); // ✅ NEW: Google Maps instance
   const routePolylineRef = useRef<any>(null); // ✅ NEW: Route polyline
 
-  const handleStartVideoCall = async () => {
-    if (!booking?.id) return;
+  const handleStartVideoCall = async (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    
+    if (!booking?.id || isNavigatingRef.current) return;
+    isNavigatingRef.current = true;
     setProcessing(true);
     try {
+      const effectiveVendorId = vendorData?.id || booking.vendorId;
+      
+      if (!effectiveVendorId) {
+        toast.error('Vendor ID is missing. Please sign in again.');
+        setProcessing(false);
+        isNavigatingRef.current = false;
+        return;
+      }
+      
+      // ✅ CRITICAL: Ensure vendorId is stored in localStorage BEFORE navigation
+      // This prevents the VideoPageClient from not finding it after page reload
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('vendorId', effectiveVendorId);
+        localStorage.setItem('vendor_id', effectiveVendorId);
+        sessionStorage.setItem('vendorId', effectiveVendorId);
+        sessionStorage.setItem('vendor_id', effectiveVendorId);
+        
+        // Also ensure vendorData is stored
+        if (vendorData) {
+          localStorage.setItem('vendorData', JSON.stringify(vendorData));
+        }
+        
+        console.log('[Video Call] Stored vendorId before navigation:', effectiveVendorId);
+      }
+      
       toast.info('Starting video call...');
       const createRes = await apiClient.post('/video-call/create-meeting', {
         bookingId: booking.id,
         customerId: booking.customerId || '',
-        vendorId: vendorData?.id || booking.vendorId,
+        vendorId: effectiveVendorId,
       }) as any;
       if (!createRes?.success && !createRes?.meetingId) {
         toast.error('Failed to create video call');
+        setProcessing(false);
+        isNavigatingRef.current = false;
         return;
       }
-      const joinRes = await apiClient.post<any>('/video-call/join', {
+      
+      // Notify customer that vendor is ready (fire and forget)
+      apiClient.post('/video-call/notify-ready', {
         bookingId: booking.id,
-        userId: vendorData?.id || booking.vendorId,
-        userType: 'vendor',
-      });
-      if (joinRes?.success) {
-        await apiClient.post('/video-call/notify-ready', {
-          bookingId: booking.id,
-          participantType: 'vendor',
-          participantId: vendorData?.id || booking.vendorId,
-        }).catch(() => {});
-        toast.success('Customer notified! Opening video call...');
-        window.location.href = `/video/${booking.id}`;
-      } else {
-        toast.error('Failed to join video call');
+        participantType: 'vendor',
+        participantId: effectiveVendorId,
+      }).catch(() => {});
+      
+      // ✅ CRITICAL FIX: Pass vendorId in URL to avoid localStorage issues after page reload
+      const videoUrl = `/video/${booking.id}?vendorId=${encodeURIComponent(effectiveVendorId)}`;
+      console.log('[Video Call] Navigating to:', videoUrl, 'with vendorId:', effectiveVendorId);
+      
+      if (typeof window !== 'undefined') {
+        // Use direct navigation with vendorId in URL
+        window.location.href = videoUrl;
       }
     } catch (err: any) {
+      console.error('Error starting video call:', err);
       toast.error(err?.message || 'Failed to start video call');
-    } finally {
       setProcessing(false);
+      isNavigatingRef.current = false;
     }
   };
 
@@ -816,6 +875,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     switch (type) {
       case 'status_change': return CheckCircle2;
       case 'prescription': return Pill; // ✅ CRITICAL FIX: Use Pill icon for prescriptions
+      case 'medical_record': return FileText; // ✅ NEW: Use FileText icon for medical records/documents
       case 'chat': return MessageSquare;
       case 'note': return FileText;
       case 'follow_up': return RefreshCw;
@@ -1170,12 +1230,40 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                         <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
                           {activity.type === 'prescription' ? (
                             <Pill className="w-4 h-4 text-green-600" />
+                          ) : activity.type === 'medical_record' ? (
+                            <FileText className="w-4 h-4 text-blue-600" />
                           ) : (
                             <IconComponent className="w-4 h-4 text-gray-600" />
                           )}
                         </div>
                         <div className="flex-1">
                           <p className="text-sm text-gray-900">{activity.description}</p>
+                          {/* ✅ Medical record (customer-uploaded document) line item */}
+                          {activity.type === 'medical_record' && (activity as any).medicalRecordData && (
+                            <div className="mt-2 p-2 bg-blue-50 rounded-lg flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <p className="text-xs text-blue-700 font-medium">
+                                  {(activity as any).medicalRecordData.title || 'Uploaded Document'}
+                                </p>
+                                {(activity as any).medicalRecordData.description && (
+                                  <p className="text-xs text-gray-600 mt-1">
+                                    {(activity as any).medicalRecordData.description}
+                                  </p>
+                                )}
+                              </div>
+                              {(activity as any).medicalRecordData.file_url && (
+                                <a
+                                  href={(activity as any).medicalRecordData.file_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1 px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition-colors"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  View Document
+                                </a>
+                              )}
+                            </div>
+                          )}
                           {/* ✅ Prescription line item: details + View A4 */}
                           {activity.type === 'prescription' && (activity as any).prescriptionData && (
                             <div className="mt-2 p-2 bg-green-50 rounded-lg flex flex-wrap items-center justify-between gap-2">
@@ -1367,6 +1455,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               {/* Tele style: Video Call for all providers (vet, groomer, nutritionist, walker, trainer) */}
               {isTeleStyle && booking.status !== 'completed' && booking.status !== 'cancelled' && (
                 <button
+                  type="button"
                   onClick={handleStartVideoCall}
                   disabled={processing}
                   className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
@@ -1517,6 +1606,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           userType="vendor"
           serviceStyle={isTeleStyle ? 'tele' : undefined}
           onStartVideoCall={async (bid) => {
+            if (isNavigatingRef.current) return;
+            isNavigatingRef.current = true;
             try {
               setProcessing(true);
               toast.info('Starting video call...');
@@ -1527,28 +1618,32 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               }) as any;
               if (!createRes?.success && !createRes?.meetingId) {
                 toast.error('Failed to create video call');
+                setProcessing(false);
+                isNavigatingRef.current = false;
                 return;
               }
-              const joinRes = await apiClient.post<any>('/video-call/join', {
+              
+              // Notify customer that vendor is ready (fire and forget)
+              apiClient.post('/video-call/notify-ready', {
                 bookingId: bid,
-                userId: vendorData?.id,
-                userType: 'vendor',
-              });
-              if (joinRes?.success) {
-                await apiClient.post('/video-call/notify-ready', {
-                  bookingId: bid,
-                  participantType: 'vendor',
-                  participantId: vendorData?.id,
-                }).catch(() => {});
-                toast.success('Customer notified! Opening video call...');
-                window.location.href = `/video/${bid}`;
-              } else {
-                toast.error('Failed to join video call');
+                participantType: 'vendor',
+                participantId: vendorData?.id,
+              }).catch(() => {});
+              
+              // Navigate directly to video page - don't use reload as it may clear state
+              const videoUrl = `/video/${bid}`;
+              console.log('[Video Call] Navigating directly to:', videoUrl);
+              
+              if (typeof window !== 'undefined') {
+                // Use direct navigation - this will load the page fresh with the new URL
+                // The VideoPageClient will read vendorId from localStorage on mount
+                window.location.href = videoUrl;
               }
             } catch (err: any) {
+              console.error('Error starting video call:', err);
               toast.error(err?.message || 'Failed to start video call');
-            } finally {
               setProcessing(false);
+              isNavigatingRef.current = false;
             }
           }}
           onClose={() => {

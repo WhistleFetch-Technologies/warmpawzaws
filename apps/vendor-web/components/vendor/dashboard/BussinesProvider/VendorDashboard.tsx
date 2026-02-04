@@ -58,6 +58,7 @@ import { Badge } from '../../../ui/badge';
 import { VendorNotificationModal } from '../../VendorNotificationModal';
 import { Dashboardstats, DashboardWarnings, NotificationItem, ScheduleItem, VendorDashboardProps, WatchlistItem } from '../types';
 import { formatBookingTime } from '../helpers';
+import { toast } from 'sonner';
 
 // Lazy-load heavy/cyclic components to avoid TDZ when dashboard chunk loads
 const SoloProviderDashboard = lazy(() =>
@@ -1316,13 +1317,49 @@ export function VendorDashboard({
                                 {(serviceType === 'tele' || serviceType === 'teleconsultation') && (
                                   <button
                                     type="button"
-                                    onClick={(e) => {
+                                    disabled={appointment.status === 'completed' || appointment.status === 'cancelled' || !appointment.bookingId}
+                                    onClick={async (e) => {
                                       e.preventDefault();
                                       e.stopPropagation();
                                       const bid = appointment.bookingId || appointment.id;
-                                      if (bid) router.push(`/video/${bid}`);
+                                      
+                                      // ✅ VALIDATION: Only allow video call for valid booking statuses
+                                      if (!bid) {
+                                        toast.error('Booking ID is missing');
+                                        return;
+                                      }
+                                      
+                                      const validStatuses = ['confirmed', 'in_progress', 'active', 'arrived'];
+                                      if (!validStatuses.includes(appointment.status?.toLowerCase())) {
+                                        toast.error(`Video call is not available. Booking status: ${appointment.status}`);
+                                        return;
+                                      }
+                                      
+                                      // ✅ VALIDATION: Check if meeting exists or can be created
+                                      try {
+                                        toast.info('Preparing video call...');
+                                        
+                                        // Try to create/join meeting first
+                                        const createRes = await apiClient.post('/video-call/create-meeting', {
+                                          bookingId: bid,
+                                          customerId: (appointment as any).customerId || '',
+                                          vendorId: vendorData?.id || vendorId,
+                                        }) as any;
+                                        
+                                        if (!createRes?.success && !createRes?.meetingId) {
+                                          toast.error('Failed to create video call. Please try again.');
+                                          return;
+                                        }
+                                        
+                                        // ✅ CRITICAL FIX: Pass vendorId in URL to avoid localStorage issues
+                                        const effectiveVendorId = vendorData?.id || vendorId;
+                                        window.location.href = `/video/${bid}?vendorId=${encodeURIComponent(effectiveVendorId)}`;
+                                      } catch (err: any) {
+                                        console.error('Error starting video call:', err);
+                                        toast.error(err?.message || 'Failed to start video call');
+                                      }
                                     }}
-                                    className="flex-1 min-w-[80px] py-1.5 px-3 bg-purple-100 text-purple-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1 hover:bg-purple-200"
+                                    className="flex-1 min-w-[80px] py-1.5 px-3 bg-purple-100 text-purple-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1 hover:bg-purple-200 disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
                                     <Video className="w-3.5 h-3.5" /> Join
                                   </button>

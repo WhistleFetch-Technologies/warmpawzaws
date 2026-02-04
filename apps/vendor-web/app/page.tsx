@@ -25,6 +25,16 @@ export default function VendorHomePage() {
   const hasChecked = useRef(false); // ✅ FIX: Single check flag
 
   useEffect(() => {
+    // ✅ CRITICAL: Don't render this page if we're on a video route
+    // Next.js static export might route all paths to root page
+    if (typeof window !== 'undefined') {
+      const pathname = window.location.pathname;
+      if (pathname.startsWith('/video/')) {
+        console.log('[VendorHomePage] Skipping render - on video route:', pathname);
+        return; // Don't render anything, let the video page handle it
+      }
+    }
+
     // Run session check on every mount so Strict Mode remount still gets session (avoids stuck loading)
     hasChecked.current = true;
 
@@ -70,6 +80,12 @@ export default function VendorHomePage() {
     });
     setIsLoading(false);
   }, []); // Empty dependency - run once
+
+  // ✅ CRITICAL: Don't render if we're on a video route
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/video/')) {
+    console.log('[VendorHomePage] Returning null - on video route');
+    return null; // Let the video page render
+  }
 
   if (isLoading) {
     return (

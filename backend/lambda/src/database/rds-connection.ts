@@ -473,7 +473,21 @@ export async function update(
   const whereClause: string[] = [];
   for (const [key, value] of Object.entries(filters)) {
     if (value !== undefined) {
-      whereClause.push(`${key} = $${paramIndex}`);
+      // ✅ FIX: Auto-detect UUID columns (id, *_id) and cast appropriately
+      // This prevents "operator does not exist: uuid = text" errors
+      if (key === 'id' || key.endsWith('_id')) {
+        // Try to detect if it's a UUID format (basic check)
+        const isLikelyUuid = typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+        if (isLikelyUuid) {
+          // Use UUID type directly - PostgreSQL will handle conversion
+          whereClause.push(`${key} = $${paramIndex}::uuid`);
+        } else {
+          // For non-UUID values, cast both sides to text to avoid type mismatch
+          whereClause.push(`CAST(${key} AS TEXT) = CAST($${paramIndex} AS TEXT)`);
+        }
+      } else {
+        whereClause.push(`${key} = $${paramIndex}`);
+      }
       params.push(value);
       paramIndex++;
     }

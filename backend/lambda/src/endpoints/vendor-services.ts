@@ -1010,7 +1010,7 @@ export function registerVendorServicesEndpoints(app: Hono) {
         // Input is TEXT catalog ID (like "general-checkup")
         // Query service_catalog by TEXT service_id
         const catalogResult = await query(
-          `SELECT * FROM service_catalog WHERE service_id = $1`,
+          `SELECT * FROM service_catalog WHERE service_id = $1::text`,
           [inputServiceId]
         );
         
@@ -1157,26 +1157,95 @@ export function registerVendorServicesEndpoints(app: Hono) {
       let updated: any[];
       
       if (isUUID) {
-        // Direct UUID lookup by vendor_services.id or vendor_services.service_id
-        updated = await update('vendor_services',
-          { id: serviceId, vendor_id: vendorId },
-          updateData
+        // ✅ CRITICAL FIX: Check if UUID is a service_catalog.id FIRST
+        // This prevents UUID collisions where catalog.id matches another vendor's vendor_services.id
+        console.log(`[VendorServices PUT] UUID detected: ${serviceId}. Checking if it's a catalog ID first...`);
+        const catalogCheckByUuid = await query(
+          `SELECT id, service_id, service_name, service_style 
+           FROM service_catalog 
+           WHERE id = $1::uuid`,
+          [serviceId]
         );
         
-        // If not found by id, try by service_id (foreign key to service catalog)
-        if (updated.length === 0) {
-          updated = await update('vendor_services',
-            { service_id: serviceId, vendor_id: vendorId },
-            updateData
+        if (catalogCheckByUuid.rows.length > 0) {
+          // ✅ UUID is a catalog ID - look up vendor's service by service_id (foreign key)
+          const catalogService = catalogCheckByUuid.rows[0];
+          console.log(`[VendorServices PUT] UUID is a catalog ID. Looking up vendor service by service_id=${catalogService.id} for vendor ${vendorId}`);
+          
+          const vendorServiceByCatalogId = await query(
+            `SELECT id, vendor_id, service_id, service_name, service_style 
+             FROM vendor_services 
+             WHERE service_id = $1::uuid AND vendor_id = $2::uuid`,
+            [catalogService.id, vendorId]
           );
+          
+          if (vendorServiceByCatalogId.rows.length > 0) {
+            // Found vendor's service - use the actual vendor_services.id
+            const actualServiceId = vendorServiceByCatalogId.rows[0].id;
+            console.log(`[VendorServices PUT] Found vendor service by catalog ID, using vendor_services.id=${actualServiceId}`);
+            updated = await update('vendor_services',
+              { id: actualServiceId, vendor_id: vendorId },
+              updateData
+            );
+            console.log(`[VendorServices PUT] Update by catalog ID result: ${updated.length} row(s) updated`);
+          } else {
+            // Catalog service exists but vendor hasn't added it yet
+            console.log(`[VendorServices PUT] Catalog service exists but vendor ${vendorId} hasn't added it yet`);
+            return c.json({ 
+              error: 'Service exists in catalog but has not been added to this vendor. Please add it first using POST /vendor/:vendorId/services/add-from-catalog',
+              serviceId: serviceId,
+              catalogServiceId: catalogService.id,
+              catalogServiceName: catalogService.service_name,
+              hint: 'Use POST /vendor/:vendorId/services/add-from-catalog to add this service to your offerings first'
+            }, 404);
+          }
+        } else {
+          // ✅ UUID is NOT a catalog ID - check if it's a vendor_services.id
+          console.log(`[VendorServices PUT] UUID is not a catalog ID. Checking if it's a vendor_services.id...`);
+          const serviceCheck = await query(
+            `SELECT id, vendor_id, service_id, service_name, service_style, is_enabled, publish_status
+             FROM vendor_services 
+             WHERE id = $1::uuid`,
+            [serviceId]
+          );
+          
+          if (serviceCheck.rows.length > 0) {
+            const service = serviceCheck.rows[0];
+            console.log(`[VendorServices PUT] Found service: id=${service.id}, vendor_id=${service.vendor_id}, requested_vendor_id=${vendorId}`);
+            
+            // Check if vendor_id matches
+            if (service.vendor_id !== vendorId) {
+              console.log(`[VendorServices PUT] Vendor mismatch: service belongs to ${service.vendor_id}, requested ${vendorId}`);
+              return c.json({ 
+                error: 'Service not found for this vendor or you do not have permission to update it',
+                serviceId: serviceId,
+                actualVendorId: service.vendor_id,
+                requestedVendorId: vendorId,
+                hint: `This service belongs to vendor ${service.vendor_id}, not ${vendorId}. You can only update services that belong to your vendor.`
+              }, 403);
+            }
+            
+            // Service exists and vendor matches - proceed with update
+            console.log(`[VendorServices PUT] Service found and vendor matches. Updating...`);
+            updated = await update('vendor_services',
+              { id: serviceId, vendor_id: vendorId },
+              updateData
+            );
+            console.log(`[VendorServices PUT] Update result: ${updated.length} row(s) updated`);
+          } else {
+            // UUID doesn't exist in catalog or vendor_services
+            console.log(`[VendorServices PUT] UUID ${serviceId} not found in catalog or vendor_services`);
+            updated = [];
+          }
         }
       } else {
         // ✅ FIX: Text identifier - try multiple matching strategies
         console.log(`[VendorServices PUT] Looking up text service ID: ${serviceId} for vendor ${vendorId}`);
         
-        // Strategy 1: Look up from service_catalog by service_id
+        // Strategy 1: Look up from service_catalog by service_id (TEXT column)
+        // ✅ FIX: service_catalog.service_id is TEXT, so cast parameter to TEXT to avoid type mismatch
         const catalogResult = await query(
-          'SELECT id FROM service_catalog WHERE service_id = $1',
+          'SELECT id FROM service_catalog WHERE service_id = $1::text',
           [serviceId]
         );
         
@@ -1233,7 +1302,79 @@ export function registerVendorServicesEndpoints(app: Hono) {
       }
 
       if (!updated || updated.length === 0) {
-        return c.json({ error: 'Service not found or you do not have permission to update it' }, 404);
+        // ✅ FIX: Provide more helpful error message for PUT endpoint
+        // First check if service exists in vendor_services at all (any vendor)
+        const isServiceIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
+        
+        let vendorServiceCheck;
+        if (isServiceIdUuid) {
+          vendorServiceCheck = await query(
+            `SELECT id, vendor_id, service_id, service_name, service_style 
+             FROM vendor_services 
+             WHERE id = $1::uuid`,
+            [serviceId]
+          );
+        } else {
+          vendorServiceCheck = await query(
+            `SELECT id, vendor_id, service_id, service_name, service_style 
+             FROM vendor_services 
+             WHERE id::text = $1 OR service_id::text = $1`,
+            [serviceId]
+          );
+        }
+        
+        if (vendorServiceCheck.rows.length > 0) {
+          const service = vendorServiceCheck.rows[0];
+          // Service exists but vendor_id doesn't match
+          if (service.vendor_id !== vendorId) {
+            return c.json({ 
+              error: 'Service not found for this vendor or you do not have permission to update it',
+              serviceId: serviceId,
+              actualVendorId: service.vendor_id,
+              requestedVendorId: vendorId,
+              hint: `This service (id=${service.id}) belongs to vendor ${service.vendor_id}, not ${vendorId}. You can only update services that belong to your vendor.`
+            }, 403);
+          } else {
+            // Service exists and vendor matches, but update failed - this shouldn't happen
+            console.error(`[VendorServices PUT] Service exists and vendor matches but update returned 0 rows. Service:`, service);
+            return c.json({ 
+              error: 'Service update failed unexpectedly',
+              serviceId: serviceId,
+              hint: 'The service exists but the update operation failed. Please try again or contact support.'
+            }, 500);
+          }
+        }
+        
+        // Service doesn't exist in vendor_services - check if it exists in catalog
+        let catalogCheck;
+        if (isServiceIdUuid) {
+          catalogCheck = await query(
+            'SELECT id, service_name FROM service_catalog WHERE id = $1::uuid OR service_id = $1::text',
+            [serviceId]
+          );
+        } else {
+          catalogCheck = await query(
+            'SELECT id, service_name FROM service_catalog WHERE id::text = $1 OR service_id = $1::text',
+            [serviceId]
+          );
+        }
+        
+        if (catalogCheck.rows.length > 0) {
+          return c.json({ 
+            error: 'Service exists in catalog but has not been added to this vendor. Please add it first using POST /vendor/:vendorId/services/add-from-catalog',
+            serviceId: serviceId,
+            catalogService: catalogCheck.rows[0],
+            hint: 'Use POST /vendor/:vendorId/services/add-from-catalog to add this service to your offerings first'
+          }, 404);
+        }
+        
+        // Service doesn't exist anywhere
+        return c.json({ 
+          error: 'Service not found or you do not have permission to update it',
+          serviceId: serviceId,
+          vendorId: vendorId,
+          hint: `The service ID ${serviceId} does not exist in vendor_services or service_catalog for vendor ${vendorId}`
+        }, 404);
       }
 
       return c.json({
@@ -1336,24 +1477,39 @@ export function registerVendorServicesEndpoints(app: Hono) {
       
       console.log(`➕ Adding catalog service ${finalCatalogServiceId} to vendor ${actualVendorId}...`);
       
-      // Check if catalogServiceId is UUID or text identifier
-      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(finalCatalogServiceId);
-      
+      // ✅ CRITICAL FIX: Handle prefixed catalog IDs (catalog_<uuid>) and regular service_id (TEXT)
+      // Never use raw catalog UUIDs directly - they might match another vendor's vendor_services.id
       let catalogService: any;
       
-      if (isUUID) {
+      // Check if it's a prefixed catalog ID (catalog_<uuid>)
+      if (finalCatalogServiceId.startsWith('catalog_')) {
+        const catalogUuid = finalCatalogServiceId.replace('catalog_', '');
         const catalogServices = await query(
-          `SELECT * FROM service_catalog WHERE id = $1`,
-          [finalCatalogServiceId]
+          `SELECT * FROM service_catalog WHERE id = $1::uuid`,
+          [catalogUuid]
         );
         catalogService = catalogServices.rows[0];
       } else {
-        // Look up by text service_id
-        const catalogServices = await query(
-          `SELECT * FROM service_catalog WHERE service_id = $1`,
-          [finalCatalogServiceId]
-        );
-        catalogService = catalogServices.rows[0];
+        // Check if it's a raw UUID (should not happen, but handle it)
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(finalCatalogServiceId);
+        
+        if (isUUID) {
+          // ⚠️ WARNING: Raw UUID detected - this might be a catalog UUID or vendor_services.id
+          // Try catalog first, but log a warning
+          console.warn(`[VendorServices] Raw UUID detected for catalogServiceId: ${finalCatalogServiceId}. This might cause conflicts.`);
+          const catalogServices = await query(
+            `SELECT * FROM service_catalog WHERE id = $1::uuid`,
+            [finalCatalogServiceId]
+          );
+          catalogService = catalogServices.rows[0];
+        } else {
+          // Look up by text service_id (preferred method)
+          const catalogServices = await query(
+            `SELECT * FROM service_catalog WHERE service_id = $1::text`,
+            [finalCatalogServiceId]
+          );
+          catalogService = catalogServices.rows[0];
+        }
       }
       
       if (!catalogService) {
@@ -1926,9 +2082,10 @@ export function registerVendorServicesEndpoints(app: Hono) {
         // ✅ FIX: Text identifier - try multiple matching strategies
         console.log(`[VendorServices] Looking up text service ID: ${serviceId} for vendor ${vendorId}`);
         
-        // Strategy 1: Look up from service_catalog by service_id
+        // Strategy 1: Look up from service_catalog by service_id (TEXT column)
+        // ✅ FIX: service_catalog.service_id is TEXT, so cast parameter to TEXT to avoid type mismatch
         const catalogResult = await query(
-          'SELECT id FROM service_catalog WHERE service_id = $1',
+          'SELECT id FROM service_catalog WHERE service_id = $1::text',
           [serviceId]
         );
         
@@ -1985,7 +2142,63 @@ export function registerVendorServicesEndpoints(app: Hono) {
       }
 
       if (!updated || updated.length === 0) {
-        return c.json({ error: 'Service not found or you do not have permission to update it' }, 404);
+        // ✅ FIX: Provide more helpful error message for POST endpoint
+        // Check if service exists in service_catalog but not in vendor_services
+        // ✅ FIX: Handle UUID casting properly
+        const isServiceIdUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
+        let catalogCheck;
+        if (isServiceIdUuid) {
+          catalogCheck = await query(
+            'SELECT id, service_name FROM service_catalog WHERE id = $1::uuid OR service_id = $1::text',
+            [serviceId]
+          );
+        } else {
+          catalogCheck = await query(
+            'SELECT id, service_name FROM service_catalog WHERE id::text = $1 OR service_id = $1::text',
+            [serviceId]
+          );
+        }
+        
+        if (catalogCheck.rows.length > 0) {
+          return c.json({ 
+            error: 'Service exists in catalog but has not been added to this vendor. Please add it first using POST /vendor/:vendorId/services/add-from-catalog',
+            serviceId: serviceId,
+            catalogService: catalogCheck.rows[0],
+            hint: 'Use POST /vendor/:vendorId/services/add-from-catalog to add this service to your offerings first'
+          }, 404);
+        }
+        
+        // Check if service exists for a different vendor
+        // ✅ FIX: Handle UUID casting properly
+        let otherVendorCheck;
+        if (isServiceIdUuid) {
+          otherVendorCheck = await query(
+            'SELECT vendor_id FROM vendor_services WHERE id = $1::uuid OR service_id = $1::uuid',
+            [serviceId]
+          );
+        } else {
+          otherVendorCheck = await query(
+            'SELECT vendor_id FROM vendor_services WHERE id::text = $1 OR service_id::text = $1',
+            [serviceId]
+          );
+        }
+        
+        if (otherVendorCheck.rows.length > 0) {
+          const actualVendorId = otherVendorCheck.rows[0].vendor_id;
+          return c.json({ 
+            error: 'Service not found for this vendor or you do not have permission to update it',
+            serviceId: serviceId,
+            actualVendorId: actualVendorId,
+            requestedVendorId: vendorId,
+            hint: `This service belongs to vendor ${actualVendorId}, not ${vendorId}. You can only update services that belong to your vendor.`
+          }, 403); // 403 Forbidden - more appropriate than 404
+        }
+        
+        return c.json({ 
+          error: 'Service not found or you do not have permission to update it',
+          serviceId: serviceId,
+          hint: 'The service ID does not exist in vendor_services or service_catalog'
+        }, 404);
       }
 
       return c.json({
