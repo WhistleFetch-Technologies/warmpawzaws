@@ -156,6 +156,7 @@ export function UniversalAppointmentManagement({
 
   // GPS tracking state
   const [isTracking, setIsTracking] = useState<{ [key: string]: boolean }>({});
+  const [trackingSessionIds, setTrackingSessionIds] = useState<{ [key: string]: string }>({});
   const [trackingLocation, setTrackingLocation] = useState<{ [key: string]: { lat: number; lng: number; updated: string } }>({});
 
   // Get API endpoint based on user type
@@ -402,34 +403,36 @@ export function UniversalAppointmentManagement({
     }
   };
 
-  const startLocationTracking = async (bookingId: string, customerLat: string, customerLng: string) => {
+  const startLocationTracking = async (bookingId: string, _customerLat: string, _customerLng: string) => {
+    const effectiveVendorId = userType === 'staff' ? (userData?.vendor_id || userId) : userId;
     try {
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           async (position) => {
-            const location = {
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-            };
+            const latitude = position.coords.latitude;
+            const longitude = position.coords.longitude;
 
-            await apiClient.post<any>('/location/start-sharing', {
+            const res = await apiClient.post<any>('/tracking/start', {
               bookingId,
-              vendorId: userType === 'staff' ? (userData?.vendor_id || userId) : userId,
-              customerId: bookings.find(b => b.id === bookingId)?.customerId || 'unknown',
-              location,
+              vendorId: effectiveVendorId,
+              startLatitude: latitude,
+              startLongitude: longitude,
             });
 
+            const sessionId = res?.session?.id;
+            if (!sessionId) {
+              toast.error('Could not start tracking session');
+              return;
+            }
+
+            setTrackingSessionIds(prev => ({ ...prev, [bookingId]: sessionId }));
+            (window as any)[`tracking_session_${bookingId}`] = sessionId;
             setIsTracking(prev => ({ ...prev, [bookingId]: true }));
             setTrackingLocation(prev => ({
               ...prev,
-              [bookingId]: {
-                lat: location.latitude,
-                lng: location.longitude,
-                updated: new Date().toISOString(),
-              },
+              [bookingId]: { lat: latitude, lng: longitude, updated: new Date().toISOString() },
             }));
 
-            // Update location every 45s, throttled to min 30s between server updates (P3 performance)
             const throttleKey = `gps_last_sent_${bookingId}`;
             const interval = setInterval(async () => {
               const now = Date.now();
@@ -437,25 +440,16 @@ export function UniversalAppointmentManagement({
               if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                   async (pos) => {
-                    const loc = {
-                      latitude: pos.coords.latitude,
-                      longitude: pos.coords.longitude,
-                    };
-
+                    const loc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
                     try {
-                      await apiClient.post<any>('/location/update', {
-                        bookingId,
-                        location: loc,
+                      await apiClient.post<any>(`/tracking/${sessionId}/update`, {
+                        latitude: loc.latitude,
+                        longitude: loc.longitude,
                       });
                       (window as any)[throttleKey] = Date.now();
-
                       setTrackingLocation(prev => ({
                         ...prev,
-                        [bookingId]: {
-                          lat: loc.latitude,
-                          lng: loc.longitude,
-                          updated: new Date().toISOString(),
-                        },
+                        [bookingId]: { lat: loc.latitude, lng: loc.longitude, updated: new Date().toISOString() },
                       }));
                     } catch (error: any) {
                       console.error('Error updating location:', error);
@@ -467,7 +461,6 @@ export function UniversalAppointmentManagement({
                     }
                   },
                   (error) => {
-                    console.error('Error getting location:', error);
                     if (error?.code === error?.TIMEOUT || error?.code === 3) {
                       toast.error('Location timed out. Check signal; tracking will retry.');
                     }
@@ -491,9 +484,18 @@ export function UniversalAppointmentManagement({
   };
 
   const stopLocationTracking = async (bookingId: string) => {
+    const sessionId = trackingSessionIds[bookingId] || (window as any)[`tracking_session_${bookingId}`];
     try {
-      await apiClient.post<any>('/location/stop-sharing', { bookingId });
-      
+      if (sessionId) {
+        await apiClient.post<any>(`/tracking/${sessionId}/cancel`, { reason: 'vendor_stopped' });
+        delete (window as any)[`tracking_session_${bookingId}`];
+        setTrackingSessionIds(prev => {
+          const next = { ...prev };
+          delete next[bookingId];
+          return next;
+        });
+      }
+
       const interval = (window as any)[`tracking_${bookingId}`];
       if (interval) {
         clearInterval(interval);
@@ -505,7 +507,6 @@ export function UniversalAppointmentManagement({
         delete newState[bookingId];
         return newState;
       });
-      
       setTrackingLocation(prev => {
         const newState = { ...prev };
         delete newState[bookingId];

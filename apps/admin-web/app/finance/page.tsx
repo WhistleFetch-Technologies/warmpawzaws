@@ -17,6 +17,7 @@ import {
 	FileCheck,
 	Building,
 	RefreshCw,
+	Package,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import {
@@ -31,6 +32,7 @@ import {
 	CancellationPolicyManagement,
 	DynamicSettlementRulesManager,
 	FlexibleTaxRulesManager,
+	EcommercePoliciesSection,
 } from "@/components/admin/finance";
 import { FeeConfigurationManager } from "@/components/admin/finance/FeeConfigurationManager";
 
@@ -55,6 +57,7 @@ type TabType =
 	| "payment-policies"
 	| "refund-policies"
 	| "cancellation-policy"
+	| "ecommerce-policies"
 	| "gst-config"
 	| "flexible-tax"
 	| "settlements"
@@ -137,6 +140,7 @@ export default function FinanceManagement() {
 			label: "Cancellation Policy",
 			icon: FileCheck,
 		},
+		{ id: "ecommerce-policies", label: "Ecommerce Policies", icon: Package },
 		{ id: "gst-config", label: "GST Configuration", icon: ReceiptText },
 		{ id: "flexible-tax", label: "Flexible Tax System", icon: ReceiptText },
 		{ id: "settlements", label: "Settlements", icon: Receipt },
@@ -333,6 +337,12 @@ export default function FinanceManagement() {
 					{activeTab === "cancellation-policy" && (
 						<div className="bg-white rounded-lg border border-gray-200 p-6">
 							<CancellationPolicyManagement />
+						</div>
+					)}
+
+					{activeTab === "ecommerce-policies" && (
+						<div className="bg-white rounded-lg border border-gray-200 p-6">
+							<EcommercePoliciesSection />
 						</div>
 					)}
 

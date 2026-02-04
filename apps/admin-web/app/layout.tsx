@@ -6,7 +6,7 @@ import { Providers } from './providers';
 const inter = Inter({ 
   subsets: ['latin'],
   display: 'swap',
-  preload: true,
+  preload: false, // Avoid "preloaded but not used" warning on client-rendered/loading pages
 });
 
 export const metadata: Metadata = {

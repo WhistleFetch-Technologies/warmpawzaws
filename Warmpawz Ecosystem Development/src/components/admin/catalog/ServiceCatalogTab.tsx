@@ -116,7 +116,7 @@ export function ServiceCatalogTab() {
     groupServicesByCategory();
   }, [services, searchQuery]);
 
-  // Load specializations for selected category (for multi-select in create/edit)
+  // Load specializations for selected category and applicable roles (from Catalog > Categories; filtered by selected roles)
   useEffect(() => {
     if (!formData.categoryId) {
       setSpecializationsByCategory([]);
@@ -124,8 +124,11 @@ export function ServiceCatalogTab() {
     }
     let cancelled = false;
     setLoadingSpecializations(true);
+    const roleIdsParam = (formData.applicableRoles?.length ?? 0) > 0
+      ? `&roleIds=${encodeURIComponent(formData.applicableRoles.join(','))}`
+      : '';
     fetch(
-      `${getApiBaseUrl()}/admin/specializations?categoryId=${encodeURIComponent(formData.categoryId)}`,
+      `${getApiBaseUrl()}/admin/specializations?categoryId=${encodeURIComponent(formData.categoryId)}${roleIdsParam}`,
       { headers: { Authorization: (getAuthHeaders().Authorization || '') } }
     )
       .then((res) => res.json())
@@ -145,7 +148,7 @@ export function ServiceCatalogTab() {
         if (!cancelled) setLoadingSpecializations(false);
       });
     return () => { cancelled = true; };
-  }, [formData.categoryId]);
+  }, [formData.categoryId, (formData.applicableRoles ?? []).join(',')]);
 
   const loadRoleConfigs = async () => {
     try {
@@ -901,13 +904,15 @@ export function ServiceCatalogTab() {
 
             <div className="col-span-2">
               <label className="block text-sm font-medium mb-2">Specializations (optional)</label>
-              <p className="text-xs text-gray-500 mb-2">Link this service to category specializations for vendor profile and problem-grid matching.</p>
+              <p className="text-xs text-gray-500 mb-2">From Catalog &gt; Categories, filtered by selected applicable roles.</p>
               {!formData.categoryId ? (
                 <p className="text-sm text-gray-400">Select a category first to load specializations.</p>
+              ) : (formData.applicableRoles?.length ?? 0) === 0 ? (
+                <p className="text-sm text-gray-400">Select at least one applicable role to load specializations.</p>
               ) : loadingSpecializations ? (
                 <p className="text-sm text-gray-500">Loading…</p>
               ) : specializationsByCategory.length === 0 ? (
-                <p className="text-sm text-gray-500">No specializations for this category.</p>
+                <p className="text-sm text-gray-500">No specializations for this category and selected roles.</p>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {specializationsByCategory.map((spec) => {

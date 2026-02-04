@@ -100,6 +100,91 @@ function getCategoryDisplayName(categoryId: string): string {
   return categoryNames[categoryId] || categoryId;
 }
 
+/** Map service_catalog category_id to specialization_master category_id (some differ) */
+const CATEGORY_TO_SPEC: Record<string, string> = {
+  veterinary: 'veterinary',
+  grooming: 'grooming',
+  training: 'training',
+  walking: 'walking',
+  diagnostic: 'veterinary',
+  diagnostics: 'veterinary',
+  pharmacy: 'veterinary',
+  emergency: 'veterinary',
+  wellness: 'wellness',
+  specialty: 'veterinary',
+  boarding: 'boarding',
+  nutrition: 'wellness',
+  behavioral: 'behavioral',
+  behaviour: 'behavioral',
+};
+
+/** Expand role names for overlap matching (sitter → sitter,pet_sitter so we match specs with either) */
+const ROLE_EXPANSIONS: Record<string, string[]> = {
+  sitter: ['sitter', 'pet_sitter'],
+  pet_sitter: ['sitter', 'pet_sitter'],
+  boarding: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_sitter', 'pet_boarding'],
+  pet_boarding: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_sitter', 'pet_boarding'],
+  pet_boarding_daycare: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_sitter', 'pet_boarding'],
+  pet_boarder: ['boarding', 'pet_boarder', 'pet_daycare'],
+  pet_daycare: ['boarding', 'pet_daycare', 'pet_sitter'],
+  walker: ['walker', 'pet_walker', 'dog_walker'],
+  pet_walker: ['walker', 'pet_walker', 'dog_walker'],
+  vet_solo: ['vet_solo', 'vet', 'veterinarian', 'vet_clinic'],
+  vet_clinic: ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian'],
+  veterinarian: ['vet', 'veterinarian', 'vet_clinic', 'vet_solo'],
+  groomer_solo: ['groomer', 'pet_groomer', 'groomer_center', 'groomer_solo'],
+  groomer_center: ['groomer', 'pet_groomer', 'groomer_center', 'groomer_solo'],
+  pet_groomer: ['groomer', 'pet_groomer', 'groomer_center', 'groomer_solo'],
+  trainer_solo: ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
+  trainer_center: ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
+  pet_trainer: ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
+  resort: ['resort', 'pet_resort'],
+  pet_resort: ['resort', 'pet_resort'],
+  sunset: ['sunset', 'pet_sunset_services'],
+  pet_sunset_services: ['sunset', 'pet_sunset_services'],
+  nutritionist: ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
+  nutritionist_center: ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
+  pet_nutritionist: ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
+};
+
+/** Normalize display names / variants to canonical codes (frontend may send "Pet Sitter" or "Groomer (Center)" etc) */
+const ROLE_DISPLAY_TO_CODE: Record<string, string> = {
+  'pet sitter': 'sitter', 'pet_sitter': 'sitter',
+  'pet walker': 'walker', 'pet_walker': 'walker',
+  'pet resort': 'resort', 'pet_resort': 'resort',
+  'pet boarding': 'pet_boarding', 'pet_boarding': 'pet_boarding',
+  'pet boarding & daycare': 'pet_boarding_daycare', 'pet_boarding_daycare': 'pet_boarding_daycare',
+  'boarding': 'boarding', 'pet_boarder': 'pet_boarder', 'pet_daycare': 'pet_daycare',
+  'sunset care': 'sunset', 'pet_sunset_services': 'sunset',
+  'trainer (center)': 'trainer_center', 'trainer (solo)': 'trainer_solo', 'trainer_center': 'trainer_center', 'trainer_solo': 'trainer_solo',
+  'veterinarian (solo)': 'vet_solo', 'veterinary clinic': 'vet_clinic', 'vet_solo': 'vet_solo', 'vet_clinic': 'vet_clinic',
+  'veterinarian': 'vet_solo', 'vet': 'vet_solo',
+  'groomer (center)': 'groomer_center', 'groomer (solo)': 'groomer_solo', 'groomer_center': 'groomer_center', 'groomer_solo': 'groomer_solo',
+  'groomer_(center)': 'groomer_center', 'groomer_(solo)': 'groomer_solo',
+  'pet groomer': 'pet_groomer', 'pet_groomer': 'pet_groomer', 'grooming center': 'groomer_center',
+  'nutritionist (center)': 'nutritionist_center', 'nutritionist (solo)': 'nutritionist',
+  'nutritionist_center': 'nutritionist_center', 'nutritionist': 'nutritionist',
+  'nutritionist_(center)': 'nutritionist_center', 'nutritionist_(solo)': 'nutritionist',
+  'pet nutritionist': 'pet_nutritionist', 'pet_nutritionist': 'pet_nutritionist',
+};
+
+function normalizeRoleForApi(r: string): string {
+  const s = (r || '').toString().trim().toLowerCase().replace(/\s+/g, '_');
+  return ROLE_DISPLAY_TO_CODE[s] ?? ROLE_DISPLAY_TO_CODE[(r || '').toString().trim().toLowerCase()] ?? s;
+}
+
+function expandRoleIdsForOverlap(roleIds: string[]): string[] {
+  const seen = new Set<string>();
+  for (const r of roleIds) {
+    const norm = normalizeRoleForApi(r);
+    if (!norm) continue;
+    seen.add(norm);
+    const expanded = ROLE_EXPANSIONS[norm];
+    if (expanded) expanded.forEach((x) => seen.add(x));
+  }
+  return Array.from(seen);
+}
+
 // ============================================================================
 // ENDPOINTS
 // ============================================================================
@@ -118,8 +203,62 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
   app.get('/admin/specializations', async (c) => {
     try {
       const categoryId = c.req.query('categoryId');
+      const roleIdsRaw = c.req.query('roleIds'); // comma-separated; filter to specializations whose applicable_roles overlap
       const includeSymptoms = c.req.query('includeSymptoms') === 'true';
       const includeInactive = c.req.query('includeInactive') === 'true';
+      
+      const roleIds = roleIdsRaw && typeof roleIdsRaw === 'string' && roleIdsRaw.trim()
+        ? roleIdsRaw.split(',').map((r: string) => r.trim()).filter(Boolean)
+        : [];
+      const expandedRoleIds = roleIds.length > 0 ? expandRoleIdsForOverlap(roleIds) : [];
+      // Forensic: log incoming params
+      console.log('[SPEC-MASTER] GET /admin/specializations', { categoryId: categoryId ?? '(none)', roleIdsRaw: roleIdsRaw ?? '(none)', roleIds, expandedRoleIds });
+      
+      // ✅ API CONTRACT: When roleIds provided but no categoryId, derive categories from service_catalog (role config → services → categories → specializations)
+      let effectiveCategoryId: string | null = null;
+      let categoriesFromRoles: string[] = [];
+      if (!categoryId && expandedRoleIds.length > 0) {
+        try {
+          const catResult = await query(
+            `SELECT DISTINCT category_id FROM service_catalog
+             WHERE status = 'active' AND category_id IS NOT NULL AND category_id != ''
+               AND applicable_roles && $1::text[]`,
+            [expandedRoleIds]
+          );
+          categoriesFromRoles = (catResult.rows || []).map((r: any) => r.category_id).filter(Boolean);
+          // Map to specialization_master convention
+          categoriesFromRoles = [...new Set(categoriesFromRoles.map((cid: string) =>
+            CATEGORY_TO_SPEC[(cid || '').toLowerCase()] || cid
+          ))];
+        } catch (e: any) {
+          console.warn('[SPEC-MASTER] Could not get categories from service_catalog:', e.message);
+        }
+      } else if (categoryId) {
+        const raw = (categoryId as string).trim();
+        const bySlug = CATEGORY_TO_SPEC[raw.toLowerCase()] ?? raw;
+        // Admin UI may send service_categories.id (UUID) not slug; specialization_master uses slugs
+        const looksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw);
+        if (looksLikeUuid || !CATEGORY_TO_SPEC[raw.toLowerCase()]) {
+          try {
+            const resolved = await query(
+              `SELECT category_id FROM service_categories WHERE id::text = $1 OR category_id = $2 LIMIT 1`,
+              [raw, raw]
+            );
+            if (resolved.rows?.length > 0 && resolved.rows[0].category_id) {
+              const slug = String(resolved.rows[0].category_id).trim();
+              effectiveCategoryId = CATEGORY_TO_SPEC[slug.toLowerCase()] || slug;
+            } else {
+              effectiveCategoryId = bySlug;
+            }
+          } catch (e: any) {
+            console.warn('[SPEC-MASTER] Resolve categoryId from service_categories:', e.message);
+            effectiveCategoryId = bySlug;
+          }
+        } else {
+          effectiveCategoryId = bySlug;
+        }
+      }
+      console.log('[SPEC-MASTER] Resolved', { effectiveCategoryId, categoriesFromRoles });
       
       let sqlQuery = `
         SELECT 
@@ -135,14 +274,46 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
         sqlQuery += ` AND sm.is_active = true`;
       }
       
-      if (categoryId) {
-        params.push(categoryId);
-        sqlQuery += ` AND sm.category_id = $${params.length}`;
+      if (effectiveCategoryId) {
+        params.push(effectiveCategoryId);
+        sqlQuery += ` AND (sm.category_id = $${params.length} OR LOWER(sm.category_id) = LOWER($${params.length}))`;
+      } else if (categoriesFromRoles.length > 0) {
+        params.push(categoriesFromRoles);
+        sqlQuery += ` AND (sm.category_id = ANY($${params.length}::text[]) OR EXISTS (SELECT 1 FROM unnest($${params.length}::text[]) AS x WHERE LOWER(sm.category_id) = LOWER(x)))`;
+      }
+      
+      // Filter by roles: expand role names (sitter→sitter,pet_sitter) so we match specs with legacy roles
+      if (expandedRoleIds.length > 0) {
+        params.push(expandedRoleIds);
+        sqlQuery += ` AND (sm.applicable_roles = '{}' OR sm.applicable_roles IS NULL OR array_length(sm.applicable_roles, 1) IS NULL OR sm.applicable_roles && $${params.length}::text[])`;
       }
       
       sqlQuery += ` ORDER BY sm.category_id, sm.display_order, sm.name`;
       
-      const result = await query(sqlQuery, params);
+      let result = await query(sqlQuery, params);
+      console.log('[SPEC-MASTER] Query result', { effectiveCategoryId, categoriesFromRoles: categoriesFromRoles.length, expandedRoleIdsCount: expandedRoleIds.length, rowCount: result.rows.length });
+      
+      // Fallback: when we have a category (or categories from roles) and role filter returned 0, return all specs for that category so UI shows something
+      if (result.rows.length === 0 && expandedRoleIds.length > 0 && (effectiveCategoryId || categoriesFromRoles.length > 0)) {
+        let fallbackQuery = `
+          SELECT sm.*, (SELECT COUNT(*) FROM specialization_symptoms ss WHERE ss.specialization_id = sm.specialization_id AND ss.is_active = true) as symptom_count
+          FROM specialization_master sm WHERE sm.is_active = true
+        `;
+        const fallbackParams: any[] = [];
+        if (effectiveCategoryId) {
+          fallbackParams.push(effectiveCategoryId);
+          fallbackQuery += ` AND (sm.category_id = $${fallbackParams.length} OR LOWER(sm.category_id) = LOWER($${fallbackParams.length}))`;
+        } else if (categoriesFromRoles.length > 0) {
+          fallbackParams.push(categoriesFromRoles);
+          fallbackQuery += ` AND (sm.category_id = ANY($${fallbackParams.length}::text[]) OR EXISTS (SELECT 1 FROM unnest($${fallbackParams.length}::text[]) AS x WHERE LOWER(sm.category_id) = LOWER(x)))`;
+        }
+        fallbackQuery += ` ORDER BY sm.category_id, sm.display_order, sm.name`;
+        const fallbackResult = await query(fallbackQuery, fallbackParams);
+        if (fallbackResult.rows.length > 0) {
+          console.log('[SPEC-MASTER] Fallback (no role filter) returned', fallbackResult.rows.length, 'rows');
+          result = fallbackResult;
+        }
+      }
       
       let specializations = result.rows.map((row: any) => ({
         id: row.id,
@@ -205,6 +376,7 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
       return c.json({
         success: true,
         data: specializations,
+        specializations,
         byCategory,
         total: specializations.length,
       });
@@ -886,7 +1058,7 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
         console.warn('[SPEC-MASTER] Could not get categories from service_catalog:', e.message);
       }
 
-      // 2) Get specializations for those categories from specialization_master (category has specializations for every service)
+      // 2) Get specializations for those categories from specialization_master, filtered by role (applicable_roles overlap)
       if (categoriesFromServices.length > 0) {
         const smResult = await query(
           `SELECT sm.*
@@ -894,8 +1066,9 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
            WHERE sm.is_active = true
              AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
              AND sm.category_id = ANY($1::text[])
+             AND (sm.applicable_roles = '{}' OR sm.applicable_roles && $2::text[])
            ORDER BY sm.display_order, sm.name`,
-          [categoriesFromServices]
+          [categoriesFromServices, roleNames]
         );
         rows = smResult.rows || [];
         if (rows.length > 0) {
@@ -913,8 +1086,9 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
              WHERE sm.is_active = true
                AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
                AND sm.category_id = ANY($1::text[])
+               AND (sm.applicable_roles = '{}' OR sm.applicable_roles && $2::text[])
              ORDER BY sm.display_order, sm.name`,
-            [categoriesForRole]
+            [categoriesForRole, roleNames]
           );
           rows = result.rows || [];
         }

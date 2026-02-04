@@ -145,6 +145,12 @@ export function VendorCustomServiceCreation({
 
   // ✅ 360°: Specializations for this custom service (multi-select; drives "What's your pet needs?" discovery)
   const [selectedSpecializationIds, setSelectedSpecializationIds] = useState<string[]>([]);
+  const [specRefreshKey, setSpecRefreshKey] = useState(0);
+
+  // ✅ Refetch specializations when create/edit modal opens (to get latest from Catalog > Categories)
+  useEffect(() => {
+    if (showCreateDialog || showEditDialog) setSpecRefreshKey((k) => k + 1);
+  }, [showCreateDialog, showEditDialog]);
 
   // ✅ NEW: Load categories from admin catalog (441 services)
   useEffect(() => {
@@ -947,6 +953,7 @@ export function VendorCustomServiceCreation({
                 roleId={getVendorRoleId(vendorData) || ''}
                 selected={selectedSpecializationIds}
                 onChange={setSelectedSpecializationIds}
+                refreshTrigger={specRefreshKey}
               />
             </div>
 

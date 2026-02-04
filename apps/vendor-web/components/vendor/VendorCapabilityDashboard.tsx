@@ -450,7 +450,8 @@ function CapabilitySection({ capability, vendorId, vendor }: { capability?: Capa
         {capability.name === 'meal_plans' && <MealPlansSection vendorId={vendorId} />}
         {capability.name === 'walking' && <WalkingSection vendorId={vendorId} />}
         {capability.name === 'ambulance' && <AmbulanceSection vendorId={vendorId} />}
-        {capability.name === 'holiday_packages' && <HolidaysSection vendorId={vendorId} />}
+        {/* DETACHED: Package Management - 500 errors */}
+        {false && capability.name === 'holiday_packages' && <HolidaysSection vendorId={vendorId} />}
         {capability.name === 'products' && <ProductsSection vendorId={vendorId} />}
         {capability.name === 'training_programs' && <TrainingSection vendorId={vendorId} />}
         {capability.name === 'chat' && <ChatSection vendorId={vendorId} />}
@@ -459,7 +460,7 @@ function CapabilitySection({ capability, vendorId, vendor }: { capability?: Capa
         {capability.name === 'settlements' && <SettlementsSection vendorId={vendorId} />}
         {capability.name === 'bank_account' && <BankAccountSection vendorId={vendorId} />}
         {capability.name === 'orders' && <OrdersSection vendorId={vendorId} />}
-        {capability.name === 'packages' && <PackagesSection vendorId={vendorId} />}
+        {false && capability.name === 'packages' && <PackagesSection vendorId={vendorId} />}
         {capability.name === 'subscriptions' && <SubscriptionsSection vendorId={vendorId} />}
         {capability.name === 'inventory' && <InventorySection vendorId={vendorId} />}
         {capability.name === 'gps_tracking' && <GPSTrackingSection vendorId={vendorId} />}

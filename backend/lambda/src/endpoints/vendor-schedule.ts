@@ -18,6 +18,7 @@
 
 import { Hono } from 'hono';
 import { select, query, insert, update } from '../database/rds-connection';
+import { resolveVendorById } from './vendor-profile';
 import { validateScheduleSlot } from '../utils/scheduling-policy-enforcer';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -1600,17 +1601,25 @@ export function registerVendorScheduleEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/availability
    * Get full availability including slots, breaks, and holidays
+   * ✅ Uses resolveVendorById so vendor_identity id (e.g. e23c969e) resolves to actual vendors.id (e.g. 45f32970)
    */
   app.get("/vendor/:vendorId/availability", async (c) => {
     try {
       const { vendorId } = c.req.param();
+
+      // Resolve vendor (frontend may pass vendor_identity id; data is stored by vendors.id)
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      const actualVendorId = vendor.id;
 
       // Get availability slots (use is_available column, not is_enabled)
       const slotsResult = await query(
         `SELECT * FROM vendor_availability_v2
          WHERE vendor_id = $1 AND (is_available = true OR is_available IS NULL)
          ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC`,
-        [vendorId]
+        [actualVendorId]
       ).catch(() => ({ rows: [] }));
 
       // Get breaks
@@ -1618,7 +1627,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         `SELECT * FROM vendor_breaks
          WHERE vendor_id = $1 AND is_active = true
          ORDER BY day_of_week ASC, start_time ASC`,
-        [vendorId]
+        [actualVendorId]
       ).catch(() => ({ rows: [] }));
 
       // Get holidays (try enhanced table first, fallback to basic)
@@ -1630,7 +1639,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
              AND is_active = true
              AND (end_date >= CURRENT_DATE OR is_recurring_yearly = true)
            ORDER BY start_date ASC`,
-          [vendorId]
+          [actualVendorId]
         );
       } catch {
         // Fallback to basic holidays
@@ -1640,13 +1649,9 @@ export function registerVendorScheduleEndpoints(app: Hono) {
            FROM vendor_holidays
            WHERE vendor_id = $1 AND date >= CURRENT_DATE
            ORDER BY date ASC`,
-          [vendorId]
+          [actualVendorId]
         ).catch(() => ({ rows: [] }));
       }
-
-      // Get vendor online status
-      const vendorResult = await select('vendors', { id: vendorId });
-      const vendor = vendorResult[0] || {};
 
       return c.json({
         success: true,

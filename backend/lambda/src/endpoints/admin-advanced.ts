@@ -2740,8 +2740,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/finance/cancellation-policies', async (c) => {
     try {
-      const policies = await query('SELECT * FROM cancellation_policies ORDER BY created_at DESC');
-      return c.json({ success: true, policies: policies.rows ?? [] });
+      const result = await query('SELECT * FROM cancellation_policies ORDER BY created_at DESC');
+      const policies = (result as any).rows ?? (Array.isArray(result) ? result : []);
+      return c.json({ success: true, policies });
     } catch (error: unknown) {
       const msg = String(getErrorMessage(error));
       if (/relation\s+["']?cancellation_policies["']?\s+does not exist/i.test(msg)) {
@@ -2782,6 +2783,14 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const serviceTypesArr = Array.isArray(serviceTypes) ? serviceTypes : (body.service_types && Array.isArray(body.service_types) ? body.service_types : []);
       const priorityVal = Number.isFinite(Number(priority)) ? Number(priority) : 0;
 
+      const windowsArr = Array.isArray(cancellationWindows) ? cancellationWindows : [];
+      const penaltyObj = vendorCancellationPenalty && typeof vendorCancellationPenalty === 'object'
+        ? vendorCancellationPenalty
+        : { enabled: true, penaltyPercentage: 10, compensationPercentage: 50 };
+      const noShowObj = noShowPolicy && typeof noShowPolicy === 'object'
+        ? noShowPolicy
+        : { enabled: true, refundPercentage: 0, penaltyAmount: 0 };
+
       const newPolicy = await insert('cancellation_policies', {
         policy_name: name,
         description: description || '',
@@ -2790,6 +2799,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         service_types: serviceTypesArr,
         hours_before_booking: gracePeriodHours ?? 2,
         cancellation_fee_percentage: cancellationFee,
+        cancellation_windows: windowsArr,
+        vendor_cancellation_penalty: penaltyObj,
+        no_show_policy: noShowObj,
+        service_category: body.serviceCategory ?? body.service_category ?? null,
+        service_format: body.serviceFormat ?? body.service_format ?? null,
         priority: priorityVal,
         is_active: isActive !== false,
         created_at: new Date().toISOString(),
@@ -2828,6 +2842,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.cancellationWindows?.[0]?.penaltyPercentage !== undefined) {
         updateData.cancellation_fee_percentage = body.cancellationWindows[0].penaltyPercentage;
       }
+      if (body.cancellationWindows !== undefined) updateData.cancellation_windows = Array.isArray(body.cancellationWindows) ? body.cancellationWindows : [];
+      if (body.vendorCancellationPenalty !== undefined) updateData.vendor_cancellation_penalty = body.vendorCancellationPenalty && typeof body.vendorCancellationPenalty === 'object' ? body.vendorCancellationPenalty : undefined;
+      if (body.noShowPolicy !== undefined) updateData.no_show_policy = body.noShowPolicy && typeof body.noShowPolicy === 'object' ? body.noShowPolicy : undefined;
+      if (body.serviceCategory !== undefined || body.service_category !== undefined) updateData.service_category = body.serviceCategory ?? body.service_category ?? null;
+      if (body.serviceFormat !== undefined || body.service_format !== undefined) updateData.service_format = body.serviceFormat ?? body.service_format ?? null;
 
       const updated = await update('cancellation_policies', { id }, updateData);
 
@@ -2838,6 +2857,87 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating cancellation policy:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.delete('/admin/finance/cancellation-policies/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      await deleteRows('cancellation_policies', { id });
+      return c.json({ success: true, message: 'Cancellation policy deleted' });
+    } catch (error: any) {
+      console.error('Error deleting cancellation policy:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.get('/admin/finance/ecommerce-policy-config', async (c) => {
+    try {
+      const result = await query(
+        `SELECT setting_value FROM admin_settings WHERE setting_category = $1 AND setting_key = $2 LIMIT 1`,
+        ['ecommerce', 'cancellation_refund_policy']
+      ).catch(() => ({ rows: [] }));
+      const rows = (result as any).rows ?? [];
+      const value = rows.length > 0 ? rows[0].setting_value : null;
+      const config = value && typeof value === 'object'
+        ? value
+        : typeof value === 'string'
+          ? (() => { try { return JSON.parse(value); } catch { return {}; } })()
+          : {};
+      return c.json({
+        success: true,
+        config: {
+          returnWindowHours: config.returnWindowHours ?? config.return_window_hours ?? 48,
+          cancelBeforeDispatchFullRefund: config.cancelBeforeDispatchFullRefund !== false && config.cancel_before_dispatch_full_refund !== false,
+          refundProcessingDays: config.refundProcessingDays ?? config.refund_processing_days ?? 7,
+          nonReturnableCategories: Array.isArray(config.nonReturnableCategories ?? config.non_returnable_categories)
+            ? (config.nonReturnableCategories ?? config.non_returnable_categories)
+            : ['opened_pet_food', 'opened_treats_supplements', 'hygiene_once_opened', 'customized', 'clearance'],
+        },
+      });
+    } catch (error: unknown) {
+      return c.json({
+        success: true,
+        config: {
+          returnWindowHours: 48,
+          cancelBeforeDispatchFullRefund: true,
+          refundProcessingDays: 7,
+          nonReturnableCategories: ['opened_pet_food', 'opened_treats_supplements', 'hygiene_once_opened', 'customized', 'clearance'],
+        },
+      });
+    }
+  });
+
+  app.put('/admin/finance/ecommerce-policy-config', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const payload = {
+        returnWindowHours: body.returnWindowHours ?? 48,
+        cancelBeforeDispatchFullRefund: body.cancelBeforeDispatchFullRefund !== false,
+        refundProcessingDays: body.refundProcessingDays ?? 7,
+        nonReturnableCategories: Array.isArray(body.nonReturnableCategories) ? body.nonReturnableCategories : [],
+      };
+      const existing = await query(
+        `SELECT id, setting_value FROM admin_settings WHERE setting_category = $1 AND setting_key = $2 LIMIT 1`,
+        ['ecommerce', 'cancellation_refund_policy']
+      ).catch(() => ({ rows: [] }));
+      const rows = (existing as any).rows ?? [];
+      if (rows.length > 0) {
+        await update('admin_settings', { id: rows[0].id }, { setting_value: payload, updated_at: new Date().toISOString() });
+      } else {
+        await insert('admin_settings', {
+          setting_category: 'ecommerce',
+          setting_key: 'cancellation_refund_policy',
+          setting_value: payload,
+          is_active: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
+      return c.json({ success: true, message: 'Ecommerce policy config saved', config: payload });
+    } catch (error: any) {
+      console.error('Error saving ecommerce policy config:', error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });
@@ -4114,7 +4214,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const result = await query(`
         SELECT id, tier_name, display_name, description, commission_rate, payout_period_days,
-               monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles, created_at, updated_at
+               monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
+               terms_and_conditions, terms_version, created_at, updated_at
         FROM vendor_tiers
         ORDER BY tier_level ASC NULLS LAST, created_at DESC
       `);
@@ -4131,6 +4232,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         isActive: row.is_active !== false,
         features: Array.isArray(row.features) ? row.features : (row.features ? [row.features] : []),
         roles: Array.isArray(row.applicable_roles) ? (row.applicable_roles as string[]) : [],
+        termsAndConditions: row.terms_and_conditions ?? '',
+        termsVersion: row.terms_version ?? '1.0',
       }));
       return c.json({ success: true, tiers: rows });
     } catch (error: unknown) {
@@ -4163,32 +4266,55 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const features = Array.isArray(body.features) ? body.features : [];
       const roles = Array.isArray(body.roles) ? body.roles : [];
       const roleUuids = roles.filter((r): r is string => typeof r === 'string' && /^[0-9a-f-]{36}$/i.test(r));
+      const termsAndConditions = body.termsAndConditions != null ? String(body.termsAndConditions) : (body.terms_and_conditions != null ? String(body.terms_and_conditions) : '');
+      const termsVersion = body.termsVersion != null ? String(body.termsVersion) : (body.terms_version != null ? String(body.terms_version) : '1.0');
 
       const levelResult = await query('SELECT COALESCE(MAX(tier_level), 0) + 1 AS next_level FROM vendor_tiers');
       const nextLevel = Number((levelResult.rows?.[0] as Record<string, unknown>)?.next_level) || 1;
 
-      const insertResult = await query(
-        `INSERT INTO vendor_tiers (
-          tier_name, tier_level, display_name, description, commission_rate, payout_period_days,
-          monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days,
-                  monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles, created_at`,
-        [
-          name,
-          nextLevel,
-          displayName,
-          description || null,
-          commissionRate,
-          payoutPeriodDays,
-          monthlyCost,
-          yearlyCost,
-          isDefault,
-          isActive,
-          JSON.stringify(features),
-          roleUuids.length ? roleUuids : [],
-        ]
-      );
+      let insertResult;
+      try {
+        insertResult = await query(
+          `INSERT INTO vendor_tiers (
+            tier_name, tier_level, display_name, description, commission_rate, payout_period_days,
+            monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
+            terms_and_conditions, terms_version
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days,
+                    monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
+                    terms_and_conditions, terms_version, created_at`,
+          [
+            name,
+            nextLevel,
+            displayName,
+            description || null,
+            commissionRate,
+            payoutPeriodDays,
+            monthlyCost,
+            yearlyCost,
+            isDefault,
+            isActive,
+            JSON.stringify(features),
+            roleUuids.length ? roleUuids : [],
+            termsAndConditions || null,
+            termsVersion || '1.0',
+          ]
+        );
+      } catch (colErr: unknown) {
+        if (/column "terms_and_conditions" does not exist/i.test(String(colErr))) {
+          insertResult = await query(
+            `INSERT INTO vendor_tiers (
+              tier_name, tier_level, display_name, description, commission_rate, payout_period_days,
+              monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days,
+                      monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles, created_at`,
+            [name, nextLevel, displayName, description || null, commissionRate, payoutPeriodDays, monthlyCost, yearlyCost, isDefault, isActive, JSON.stringify(features), roleUuids.length ? roleUuids : []]
+          );
+        } else {
+          throw colErr;
+        }
+      }
       const row = insertResult.rows?.[0] as Record<string, unknown> | undefined;
       if (!row) {
         return c.json({ success: false, error: 'Failed to create tier' }, 500);
@@ -4206,6 +4332,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         isActive: row.is_active !== false,
         features: Array.isArray(row.features) ? row.features : [],
         roles: Array.isArray(row.applicable_roles) ? (row.applicable_roles as string[]) : [],
+        termsAndConditions: row.terms_and_conditions ?? '',
+        termsVersion: row.terms_version ?? '1.0',
       };
       return c.json({ success: true, tier });
     } catch (error: unknown) {
@@ -4248,13 +4376,21 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (isActive !== undefined) { updates.push(`is_active = $${idx++}`); values.push(isActive); }
       if (features !== undefined) { updates.push(`features = $${idx++}`); values.push(JSON.stringify(features)); }
       if (body.roles !== undefined) { updates.push(`applicable_roles = $${idx++}`); values.push(roleUuids); }
+      if (body.termsAndConditions !== undefined || body.terms_and_conditions !== undefined) {
+        updates.push(`terms_and_conditions = $${idx++}`);
+        values.push(body.termsAndConditions != null ? String(body.termsAndConditions) : body.terms_and_conditions != null ? String(body.terms_and_conditions) : null);
+      }
+      if (body.termsVersion !== undefined || body.terms_version !== undefined) {
+        updates.push(`terms_version = $${idx++}`);
+        values.push(body.termsVersion != null ? String(body.termsVersion) : body.terms_version != null ? String(body.terms_version) : '1.0');
+      }
       if (updates.length === 0) {
         return c.json({ success: false, error: 'No fields to update' }, 400);
       }
       updates.push(`updated_at = NOW()`);
       values.push(id);
       const updateResult = await query(
-        `UPDATE vendor_tiers SET ${updates.join(', ')} WHERE id = $${idx}::uuid RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles`,
+        `UPDATE vendor_tiers SET ${updates.join(', ')} WHERE id = $${idx}::uuid RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles, terms_and_conditions, terms_version`,
         values
       );
       const row = updateResult.rows?.[0] as Record<string, unknown> | undefined;
@@ -4274,6 +4410,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         isActive: row.is_active !== false,
         features: Array.isArray(row.features) ? row.features : [],
         roles: Array.isArray(row.applicable_roles) ? (row.applicable_roles as string[]) : [],
+        termsAndConditions: row.terms_and_conditions ?? '',
+        termsVersion: row.terms_version ?? '1.0',
       };
       return c.json({ success: true, tier });
     } catch (error: unknown) {
@@ -4309,15 +4447,18 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       await query(`
         INSERT INTO vendor_tiers (tier_name, tier_level, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, is_free_tier)
         VALUES
-          ('Free Tier', 1, 'Free Tier', 'This tier is free of cost', 20, 7, 0, 0, true, true, true),
-          ('Professional', 2, 'Professional', 'Professional tier', 15, 7, 999, 9990, false, true, false),
-          ('Growth', 3, 'Growth', 'Growth tier', 12, 7, 2499, 24990, false, true, false)
+          ('Basic', 1, 'Basic', 'Basic tier - free of cost, zero commission', 0, 7, 0, 0, true, true, true),
+          ('Advance', 2, 'Advance', 'Advance tier - lower commission', 10, 7, 1999, 19990, false, true, false),
+          ('Premium', 3, 'Premium', 'Premium tier - lowest commission', 7, 7, 2999, 29990, false, true, false)
         ON CONFLICT (tier_name) DO UPDATE SET
           display_name = EXCLUDED.display_name,
+          description = EXCLUDED.description,
           commission_rate = EXCLUDED.commission_rate,
           payout_period_days = EXCLUDED.payout_period_days,
           monthly_cost = EXCLUDED.monthly_cost,
           yearly_cost = EXCLUDED.yearly_cost,
+          is_default = EXCLUDED.is_default,
+          is_free_tier = EXCLUDED.is_free_tier,
           updated_at = NOW()
       `);
       const listResult = await query(`

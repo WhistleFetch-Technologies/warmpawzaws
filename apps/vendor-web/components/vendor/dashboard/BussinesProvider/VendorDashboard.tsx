@@ -311,12 +311,33 @@ export function VendorDashboard({
         );
       }
 
-      // ✅ FIX: Only use scheduleRes if dashboardRes didn't have bookings
+      // ✅ FIX: Only use scheduleRes if dashboardRes didn't have bookings; ensure each item has bookingId so Details works
       if (scheduleRes && scheduleRes.success && scheduleRes.bookings?.length > 0) {
         criticalParsing.push(
           Promise.resolve().then(() => {
-            // Only set if not already set from dashboardRes
-            setTodaySchedule((prev: ScheduleItem[]) => prev.length > 0 ? prev : (scheduleRes.bookings || scheduleRes.schedule || []));
+            const scheduleBookings = (scheduleRes.bookings || scheduleRes.schedule || []) as any[];
+            const mapped: ScheduleItem[] = scheduleBookings.map((b: any) => ({
+              id: b.id || b.booking_id,
+              bookingId: b.id || b.booking_id,
+              time: b.booking_time ? formatBookingTime(b.booking_time) : 'N/A',
+              duration: b.duration_minutes ?? 30,
+              petName: b.pet_name || 'Pet',
+              petBreed: b.pet_breed,
+              customerName: b.customer_name || 'Customer',
+              customerPhone: b.customer_phone || '',
+              serviceName: b.service_name || 'Service',
+              serviceType: b.service_type || 'at_center',
+              status: b.status || 'pending',
+              price: parseFloat(b.total_amount || '0'),
+              address: b.address || '',
+              specialInstructions: b.notes,
+              hasPrescription: b.hasPrescription || false,
+              hasUnreadMessages: b.hasUnreadMessages || false,
+              unreadMessageCount: b.unreadMessageCount || 0,
+              chatEnabled: b.chatEnabled !== false,
+              isFollowUp: b.isFollowUp || false,
+            }));
+            setTodaySchedule((prev: ScheduleItem[]) => prev.length > 0 ? prev : mapped);
           })
         );
       }
@@ -851,21 +872,7 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* Package Management - Hidden for Pharmacy AND Solo Providers (EXCEPT trainers/walkers/sitters) */}
-                {/* ✅ FIX: Solo trainers/walkers/sitters CAN create session packages */}
-                {(() => {
-                  const isTrainerWalkerSitter = hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter', 'pet_groomer', 'groomer', 'groomer_solo']);
-                  const canShowPackages = !isPharmacy && onNavigateToPackages && capabilities.package_management && (!isSoloProvider || isTrainerWalkerSitter);
-                  return canShowPackages && (
-                    <button
-                      onClick={onNavigateToPackages}
-                      className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-purple-100 transition-colors"
-                    >
-                      <Gift className="w-6 h-6 text-purple-600 mb-1" />
-                      <span className="text-xs font-medium text-gray-900">Packages</span>
-                    </button>
-                  );
-                })()}
+                {/* DETACHED: Package Management - 500 errors, will fix later */}
 
                 {/* ❌ REMOVED: Custom Services button - removed per user request */}
 
@@ -1549,6 +1556,9 @@ export function VendorDashboard({
           <AppointmentDetailModal
             bookingId={selectedAppointment.bookingId}
             vendorData={vendorData}
+            roleId={vendorData?.roleId || vendorData?.role_id}
+            roleName={roleName}
+            capabilities={capabilities}
             onClose={() => {
               setAppointmentDetailModalOpen(false);
               setSelectedAppointment(null);

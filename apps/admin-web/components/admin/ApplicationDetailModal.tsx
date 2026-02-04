@@ -52,6 +52,48 @@ function getDocumentLabel(type: string): string {
   return DOCUMENT_TYPE_LABELS[type] || type.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').replace(/\b\w/g, l => l.toUpperCase()).trim();
 }
 
+// Keys already shown in Vendor Details tab (first tab) – exclude from vendor-specific tab
+const STANDARD_DETAIL_KEYS = new Set([
+  'fullName', 'ownerName', 'businessName', 'phone', 'email', 'address', 'city', 'state', 'pincode', 'pinCode', 'pin',
+  'landmark', 'experience', 'experienceYears', 'category', 'serviceCategory', 'roleName', 'roleId', 'role_id',
+  'gstNumber', 'panNumber', 'licenseNumber', 'registration_number', 'licenseExpiryDate',
+  'submittedAt', 'applicationId', 'vendorId', 'vendor_id', 'vendorType', 'vendor_type',
+  'documents', 'uploaded_documents', 'uploadedDocuments', 'coordinates', 'location', 'serviceStyles', 'agreedToTerms', 'formVersion',
+  'latitude', 'longitude', 'lat', 'lng',
+]);
+
+function humanizeFieldName(key: string): string {
+  return key
+    .replace(/_/g, ' ')
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+}
+
+function getVendorSpecificFields(customFields: Record<string, any>): { label: string; value: string }[] {
+  const out: { label: string; value: string }[] = [];
+  for (const [key, val] of Object.entries(customFields)) {
+    if (STANDARD_DETAIL_KEYS.has(key)) continue;
+    if (val === undefined || val === null || val === '') continue;
+    if (typeof val === 'object' && !Array.isArray(val) && (val as object).constructor?.name === 'Object') {
+      try {
+        const str = JSON.stringify(val);
+        if (str.length > 500) continue;
+        out.push({ label: humanizeFieldName(key), value: str });
+      } catch {
+        continue;
+      }
+    } else if (Array.isArray(val)) {
+      const str = val.map((v) => (typeof v === 'object' ? JSON.stringify(v) : String(v))).join(', ');
+      if (str) out.push({ label: humanizeFieldName(key), value: str.length > 200 ? str.slice(0, 200) + '…' : str });
+    } else {
+      const valueStr = String(val).trim();
+      if (valueStr) out.push({ label: humanizeFieldName(key), value: valueStr });
+    }
+  }
+  return out;
+}
+
 interface ApplicationDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -69,7 +111,7 @@ export function ApplicationDetailModal({
   onReject,
   onRequestClarification
 }: ApplicationDetailModalProps) {
-  const [activeTab, setActiveTab] = useState<'details' | 'documents'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'documents' | 'vendor_specific'>('details');
   const [rejecting, setRejecting] = useState(false);
   const [clarifying, setClarifying] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -256,6 +298,11 @@ export function ApplicationDetailModal({
   const appId = application.applicationId || application.id;
   const customFields = application.customFields || application.formData || {};
   const vendorType = application.vendorType || application.vendor_type || 'business';
+  const fullName = application.fullName || application.ownerName || customFields.fullName || customFields.ownerName || 'N/A';
+  const businessName = application.businessName || customFields.businessName || '';
+  const state = application.state ?? customFields.state ?? '';
+  const pincode = application.pincode ?? customFields.pincode ?? customFields.pinCode ?? customFields.pin ?? '';
+  const applicantHeaderLabel = vendorType === 'solo' ? fullName : (businessName ? `${businessName} · ${fullName}` : fullName);
 
   const handleApprove = async () => {
     try {
@@ -370,7 +417,7 @@ export function ApplicationDetailModal({
         <div className="px-0 py-4 border-b border-gray-200 flex items-center justify-between">
           <div>
             <h2 className="text-xl">Application Details</h2>
-            <p className="text-sm text-gray-500">Review vendor application</p>
+            <p className="text-sm text-gray-500 mt-0.5">{applicantHeaderLabel}</p>
           </div>
           <button onClick={onClose} className="p-0 hover:bg-gray-100 rounded-lg">
             <X className="w-5 h-5" />
@@ -399,6 +446,16 @@ export function ApplicationDetailModal({
           >
             Documents & Certificates
           </button>
+          <button
+            onClick={() => setActiveTab('vendor_specific')}
+            className={`px-4 py-0 text-sm border-b-2 transition-colors ${
+              activeTab === 'vendor_specific'
+                ? 'border-[#FF8C42] text-[#FF8C42]'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Vendor-specific details
+          </button>
         </div>
 
         {/* Content */}
@@ -412,8 +469,8 @@ export function ApplicationDetailModal({
                   {getVendorTypeBadge(vendorType)}
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <InfoRow label="Full Name" value={application.fullName || application.ownerName} />
-                  <InfoRow label="Business Name" value={application.businessName || 'N/A'} />
+                  <InfoRow label="Full Name" value={fullName} />
+                  {vendorType !== 'solo' && <InfoRow label="Business Name" value={businessName || 'N/A'} />}
                   <InfoRow label="Phone" value={application.phone || application.mobile} />
                   <InfoRow label="Email" value={application.email} />
                   <InfoRow label="Service Category" value={application.serviceCategory || application.category || application.roleName || 'N/A'} />
@@ -428,9 +485,9 @@ export function ApplicationDetailModal({
                   <div className="col-span-2">
                     <InfoRow label="Full Address" value={application.address} />
                   </div>
-                  <InfoRow label="City" value={application.city} />
-                  <InfoRow label="State" value={application.state} />
-                  <InfoRow label="Pincode" value={application.pincode} />
+                  <InfoRow label="City" value={application.city || customFields.city} />
+                  <InfoRow label="State" value={state || 'N/A'} />
+                  <InfoRow label="Pincode" value={pincode || 'N/A'} />
                   {application.landmark && <InfoRow label="Landmark" value={application.landmark} />}
                 </div>
               </div>
@@ -526,6 +583,34 @@ export function ApplicationDetailModal({
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'vendor_specific' && (
+            <div className="space-y-4">
+              <h3 className="text-base font-medium">Vendor-specific details</h3>
+              <p className="text-sm text-gray-500">Any other details captured in the onboarding form (beyond the standard Vendor Details tab).</p>
+              {(() => {
+                const extra = getVendorSpecificFields(customFields);
+                if (extra.length === 0) {
+                  return (
+                    <div className="text-center py-12 bg-gray-50 rounded-xl">
+                      <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-500 font-medium">No vendor-specific details</p>
+                      <p className="text-sm text-gray-400 mt-1">No additional fields were captured for this application</p>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="bg-gray-50 rounded-xl p-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {extra.map(({ label, value }) => (
+                        <InfoRow key={label} label={label} value={value} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>

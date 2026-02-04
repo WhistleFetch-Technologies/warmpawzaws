@@ -18,6 +18,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { getRefundTierForCancellation, computeRefundFromTier } from '../lib/services/cancellation-policy-service';
 
 // ============================================================================
 // GET /customer/appointments - List all appointments for customer
@@ -245,7 +246,7 @@ class CancelAppointmentHandler extends BaseHandler {
       const appointmentId = context.event.pathParameters?.id;
       const customerId = context.event.pathParameters?.customerId || context.userId;
       const body = this.parseBody(context.event);
-      const { reason } = body || {};
+      const { reason, refundMethod = 'wallet' } = body || {};
 
       if (!appointmentId) {
         return this.error('Appointment ID is required', 400);
@@ -255,9 +256,11 @@ class CancelAppointmentHandler extends BaseHandler {
         return this.error('Customer ID is required', 401);
       }
 
-      // Verify appointment belongs to customer
+      // Verify appointment belongs to customer and get booking details for policy/refund
       const appointment = await query(`
-        SELECT a.*, b.customer_id, b.status as booking_status, b.id as booking_id
+        SELECT a.*, b.customer_id, b.status as booking_status, b.id as booking_id,
+               b.booking_date, b.booking_time, b.vendor_id, b.service_id, b.service_type,
+               b.payment_status, b.total_amount
         FROM appointments a
         INNER JOIN bookings b ON a.booking_id = b.id
         WHERE a.id = $1 AND b.customer_id = $2
@@ -282,12 +285,68 @@ class CancelAppointmentHandler extends BaseHandler {
         RETURNING *
       `, [reason || 'No reason provided', appointmentId]);
 
-      // Update booking status
+      const bookingId = appointment.rows[0].booking_id;
+      const bookingRow = appointment.rows[0];
+
+      // Update booking status and who cancelled (pet_parent) for policy enforcement
       await query(`
         UPDATE bookings
-        SET status = 'cancelled', updated_at = NOW()
-        WHERE id = $1
-      `, [appointment.rows[0].booking_id]);
+        SET status = 'cancelled', cancelled_at = NOW(), cancelled_by = 'pet_parent',
+            cancellation_reason = $1, updated_at = NOW()
+        WHERE id = $2
+      `, [reason || 'No reason provided', bookingId]);
+
+      // Apply refund per policy (vendor_refund_tiers by who cancels)
+      let refundInfo: { amount: number; percentage: number; method: string; status: string; message: string } | null = null;
+      if (bookingRow.payment_status === 'paid' && bookingRow.total_amount > 0) {
+        try {
+          const totalAmount = parseFloat(String(bookingRow.total_amount));
+          const tier = await getRefundTierForCancellation(
+            {
+              id: bookingId,
+              vendor_id: bookingRow.vendor_id,
+              service_id: bookingRow.service_id,
+              service_type: bookingRow.service_type,
+              booking_date: bookingRow.booking_date,
+              booking_time: bookingRow.booking_time,
+              total_amount: totalAmount,
+            },
+            'pet_parent'
+          );
+          const computed = tier
+            ? computeRefundFromTier(totalAmount, tier, 100, 0)
+            : { refundAmount: totalAmount, refundPercentage: 100, cancellationFee: 0 };
+          const refundAmount = tier ? computed.refundAmount : Math.max(0, (totalAmount * computed.refundPercentage) / 100 - computed.cancellationFee);
+          if (refundAmount > 0) {
+            const payments = await query(
+              `SELECT id FROM payments WHERE booking_id = $1 AND payment_status = 'completed' LIMIT 1`,
+              [bookingId]
+            ).catch(() => ({ rows: [] }));
+            const paymentId = (payments as any).rows?.[0]?.id;
+            if (refundMethod === 'wallet') {
+              await query(
+                `INSERT INTO wallet_transactions (customer_id, type, amount, description, reference_type, reference_id, status)
+                 VALUES ($1, 'credit', $2, $3, 'booking_refund', $4, 'completed')`,
+                [bookingRow.customer_id, refundAmount, `Refund for cancelled appointment (${computed.refundPercentage}%)`, bookingId]
+              ).catch(() => null);
+              await query(
+                `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1 WHERE id = $2`,
+                [refundAmount, bookingRow.customer_id]
+              ).catch(() => null);
+              refundInfo = { amount: refundAmount, percentage: computed.refundPercentage, method: 'wallet', status: 'completed', message: `₹${refundAmount.toFixed(2)} credited to wallet` };
+            } else if (paymentId) {
+              await query(
+                `INSERT INTO refunds (payment_id, booking_id, customer_id, vendor_id, refund_amount, refund_reason, refund_status, refund_method, requested_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW())`,
+                [paymentId, bookingId, bookingRow.customer_id, bookingRow.vendor_id || null, refundAmount, `Appointment cancellation: ${reason || 'No reason'} (${computed.refundPercentage}% refund)`]
+              ).catch(() => null);
+              refundInfo = { amount: refundAmount, percentage: computed.refundPercentage, method: 'original', status: 'pending', message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method` };
+            }
+          }
+        } catch (refundErr: any) {
+          console.error('Error applying refund on appointment cancel:', refundErr);
+        }
+      }
 
       // Create cancellation history
       await query(`
@@ -301,7 +360,8 @@ class CancelAppointmentHandler extends BaseHandler {
 
       return this.success({
         appointment: updated.rows[0],
-        message: 'Appointment cancelled successfully'
+        message: 'Appointment cancelled successfully',
+        refund: refundInfo ?? undefined,
       });
     } catch (error: any) {
       console.error('Error cancelling appointment:', error);

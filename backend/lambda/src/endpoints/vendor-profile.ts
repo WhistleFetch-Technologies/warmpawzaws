@@ -38,6 +38,61 @@ const CRITICAL_FIELDS = [
   'longitude',
 ];
 
+/** Resolve vendor by ID - checks vendors, then vendor_identity with auto-create. Returns vendor row or null. Exported for use by vendor-schedule. */
+export async function resolveVendorById(vendorId: string): Promise<any | null> {
+  let vendors = await select('vendors', { id: vendorId });
+  if (vendors.length > 0) return vendors[0];
+
+  console.log(`[PROFILE] Vendor ${vendorId} not in vendors table, checking vendor_identity...`);
+  const identities = await select('vendor_identity', { id: vendorId });
+  if (identities.length === 0) {
+    // Also try vendor_identity.vendor_id in case frontend has vendors.id
+    const byVendorId = await query(
+      `SELECT * FROM vendor_identity WHERE vendor_id = $1 LIMIT 1`,
+      [vendorId]
+    );
+    if (byVendorId.rows?.length > 0) {
+      const identity = byVendorId.rows[0];
+      const linked = await select('vendors', { id: identity.vendor_id });
+      if (linked.length > 0) return linked[0];
+    }
+    return null;
+  }
+
+  const identity = identities[0];
+  if (identity.onboarding_status !== 'APPROVED' && identity.onboarding_status !== 'ACTIVATED') {
+    return null;
+  }
+
+  const vendorByPhone = await select('vendors', { phone: identity.phone });
+  if (vendorByPhone.length > 0) return vendorByPhone[0];
+
+  const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
+  const application = applications.length > 0 ? applications[0] : null;
+  const payload = application?.application_payload || {};
+
+  console.log(`[PROFILE] Auto-creating vendor record for approved vendor ${vendorId}`);
+  const newVendor = await insert('vendors', {
+    id: vendorId,
+    phone: identity.phone,
+    email: payload.email || payload.businessEmail || `vendor-${identity.phone}@warmpawz.app`,
+    business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+    owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
+    role_id: identity.selected_role_id,
+    vendor_type: (identity as any).vendor_type || payload.vendorType || payload.vendor_type || 'business',
+    category: 'general',
+    address: payload.address || 'Not specified',
+    city: payload.city || 'Not specified',
+    state: payload.state || 'Not specified',
+    pincode: payload.pin || payload.pincode || '',
+    status: 'active',
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  return newVendor[0];
+}
+
 // Helper to decode JWT and extract phone number
 async function decodeJwtFromHeader(authHeader: string | undefined): Promise<{ phone?: string; userId?: string }> {
   if (!authHeader) return {};
@@ -247,9 +302,9 @@ export function registerVendorProfileEndpoints(app: Hono) {
       
       console.log(`📸 [PROFILE-PHOTO] Uploading photo for vendor: ${vendorId}`);
       
-      // Verify vendor exists
-      const vendors = await select('vendors', { id: vendorId });
-      if (vendors.length === 0) {
+      // Verify vendor exists (same resolver as GET profile - supports vendor_identity + auto-create)
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
 
@@ -271,7 +326,8 @@ export function registerVendorProfileEndpoints(app: Hono) {
       // Generate unique filename
       const timestamp = Date.now();
       const ext = photo.name.split('.').pop() || 'jpg';
-      const fileName = `vendors/${vendorId}/profile/photo_${timestamp}.${ext}`;
+      const actualVendorId = vendor.id; // Use resolved vendor id (may differ from URL if matched by phone)
+      const fileName = `vendors/${actualVendorId}/profile/photo_${timestamp}.${ext}`;
       
       // Convert File to ArrayBuffer and upload
       const arrayBuffer = await photo.arrayBuffer();
@@ -294,14 +350,13 @@ export function registerVendorProfileEndpoints(app: Hono) {
         { expiresIn: 604800 } // 7 days (max for presigned URLs)
       );
       
-      // Update vendor with new photo URL
-      // ✅ FIX: Use profile_photo_url instead of logo_url (column name matches schema)
-      await update('vendors', { id: vendorId }, {
+      // Update vendor with new photo URL (use resolved vendor.id, not URL param)
+      await update('vendors', { id: actualVendorId }, {
         profile_photo_url: signedUrl,
         updated_at: new Date().toISOString(),
       });
       
-      console.log(`✅ [PROFILE-PHOTO] Photo uploaded successfully for vendor ${vendorId}`);
+      console.log(`✅ [PROFILE-PHOTO] Photo uploaded successfully for vendor ${actualVendorId}`);
       
       return c.json({
         success: true,
@@ -345,13 +400,11 @@ export function registerVendorProfileEndpoints(app: Hono) {
         updates[dbKey] = value;
       }
 
-      // Get existing vendor
-      const vendors = await select('vendors', { id: vendorId });
-      if (vendors.length === 0) {
+      // Get existing vendor (same resolver - supports vendor_identity + auto-create)
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
-
-      const vendor = vendors[0];
       const wasApproved = vendor.status === 'approved';
       const previousStatus = vendor.status;
 
@@ -437,7 +490,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
           }),
         })).catch(err => console.error('SNS notification failed:', err));
 
-        const updated = await update('vendors', { id: vendorId }, updateData);
+        const updated = await update('vendors', { id: vendor.id }, updateData);
 
         return c.json({
           success: true,
@@ -451,7 +504,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
         // Non-critical fields only - no re-approval needed
         console.log(`✅ [PROFILE-UPDATE] Non-critical fields updated - no re-approval needed`);
 
-        const updated = await update('vendors', { id: vendorId }, updateData);
+        const updated = await update('vendors', { id: vendor.id }, updateData);
 
         return c.json({
           success: true,
@@ -524,64 +577,15 @@ export function registerVendorProfileEndpoints(app: Hono) {
         });
       }
 
-      // ✅ CRITICAL FIX: Check both vendors table and vendor_identity table
-      // If vendor only exists in vendor_identity (approved), auto-create the vendor record
-      let vendors = await select('vendors', { id: vendorId });
-      
-      if (vendors.length === 0) {
-        console.log(`[PROFILE] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
+      // ✅ Use shared resolver: checks vendors, vendor_identity, auto-creates if approved
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         const identities = await select('vendor_identity', { id: vendorId });
-        
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === 'APPROVED' || identity.onboarding_status === 'ACTIVATED') {
-            // Check if vendor exists by phone (there might be an existing vendor with different ID)
-            const vendorByPhone = await select('vendors', { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              vendors = vendorByPhone;
-              console.log(`[PROFILE] Found existing vendor by phone: ${vendors[0].id}`);
-            } else {
-              // Get application data for vendor details
-              const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              
-              // Create vendors record
-              console.log(`[PROFILE] Auto-creating vendor record for approved vendor ${vendorId}`);
-              const newVendor = await insert('vendors', {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
-                role_id: identity.selected_role_id,
-                vendor_type: (identity as any).vendor_type || payload.vendorType || payload.vendor_type || 'business',
-                category: 'general',
-                address: payload.address || 'Not specified',
-                city: payload.city || 'Not specified',
-                state: payload.state || 'Not specified',
-                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
-                status: 'active',
-                is_active: true,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              });
-              vendors = newVendor;
-              console.log(`[PROFILE] Created vendor record for ${vendorId}`);
-            }
-          } else {
-            return c.json({ error: 'Vendor not approved or activated' }, 403);
-          }
-        } else {
-          return c.json({ error: 'Vendor not found' }, 404);
+        if (identities.length > 0 && identities[0].onboarding_status !== 'APPROVED' && identities[0].onboarding_status !== 'ACTIVATED') {
+          return c.json({ error: 'Vendor not approved or activated' }, 403);
         }
-      }
-      
-      if (vendors.length === 0) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
-
-      const vendor = vendors[0];
       
       // ✅ CRITICAL: Query DB directly for role and capabilities (no frontend dependency)
       let role = null;

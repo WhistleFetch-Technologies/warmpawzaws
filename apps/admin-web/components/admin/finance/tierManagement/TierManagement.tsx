@@ -42,6 +42,8 @@ interface Tier {
   splitPaymentIntervalDays?: number;
   features: string[];
   roles: string[];
+  termsAndConditions?: string;
+  termsVersion?: string;
   isDefault: boolean;
   isActive: boolean;
 }
@@ -193,6 +195,8 @@ export function TierManagement() {
         splitPaymentIntervalDays: 30,
         features: [],
         roles: [],
+        termsAndConditions: '',
+        termsVersion: '1.0',
         isDefault: false,
         isActive: true,
       });
@@ -476,6 +480,15 @@ export function TierManagement() {
                       }}
                     />
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Terms & Conditions (vendor must accept before upgrade)</Label>
+                  <Textarea
+                    value={currentTier.termsAndConditions ?? ''}
+                    onChange={(e) => setCurrentTier({ ...currentTier, termsAndConditions: e.target.value })}
+                    placeholder="Enter terms and conditions for this tier. Leave empty if no T&C required."
+                    className="resize-none h-24 text-sm"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Applicable Roles</Label>

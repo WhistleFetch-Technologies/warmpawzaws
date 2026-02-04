@@ -10,6 +10,7 @@ interface FormField {
   label: string;
   type: 'text' | 'email' | 'tel' | 'textarea' | 'select' | 'checkbox' | 'file' | 'aadhaar-otp' | 'pan-verify' | 'gst-verify' | 'declaration';
   placeholder?: string;
+  helpText?: string;
   required: boolean;
   options?: string[]; // For select fields
   order: number;
@@ -527,6 +528,10 @@ function FieldEditModal({
   onClose: () => void;
 }) {
   const [formData, setFormData] = useState(field);
+  // Sync when field prop changes (e.g. after reload so placeholder/label reflect saved values)
+  useEffect(() => {
+    setFormData(field);
+  }, [field.id, field.placeholder, field.label, field.helpText]);
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">

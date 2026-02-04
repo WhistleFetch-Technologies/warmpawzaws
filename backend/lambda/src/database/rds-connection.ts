@@ -347,6 +347,10 @@ export async function insert(
     'search_vector_data',
     'channels', // notifications.channels is JSONB
     'data',    // notifications.data is JSONB (booking_id, meeting_id, etc.)
+    'cancellation_windows',      // cancellation_policies
+    'vendor_cancellation_penalty',
+    'no_show_policy',
+    'setting_value',             // admin_settings
   ]);
   
   // Also check for columns ending with common JSONB suffixes
@@ -419,6 +423,10 @@ export async function update(
     'channels', // notifications.channels is JSONB
     'data',    // notifications.data is JSONB (booking_id, meeting_id, etc.)
     'specializations', // vendors.specializations is JSONB array
+    'cancellation_windows',
+    'vendor_cancellation_penalty',
+    'no_show_policy',
+    'setting_value',   // admin_settings
   ]);
   
   // Also check for columns ending with common JSONB suffixes
@@ -547,7 +555,15 @@ export async function upsert(
     return `(${keys.map((_, i) => `$${start + i}`).join(', ')})`;
   }).join(', ');
 
-  const values = dataArray.flatMap(row => keys.map(key => (row as any)[key]));
+  // Serialize JSONB columns (e.g. platform_settings.setting_value) to avoid "invalid input syntax for type json"
+  const jsonbKeys = new Set(['setting_value']);
+  const values = dataArray.flatMap(row => keys.map(key => {
+    const value = (row as any)[key];
+    if (jsonbKeys.has(key) && value !== null && value !== undefined && typeof value === 'object') {
+      return JSON.stringify(value);
+    }
+    return value;
+  }));
   const columns = keys.join(', ');
   const updateClause = keys.filter(k => k !== conflictColumn)
     .map(k => `${k} = EXCLUDED.${k}`)

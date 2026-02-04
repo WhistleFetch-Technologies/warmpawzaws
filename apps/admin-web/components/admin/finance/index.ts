@@ -5,6 +5,7 @@ export * from './gstConfig/GSTConfigurationManagement';
 export * from './paymentPolicies/PaymentRulesSection';
 export * from './refundPolicies/RefundPoliciesSection';
 export * from './cancellationPolicy/CancellationPolicyManagement';
+export * from './ecommercePolicies/EcommercePoliciesSection';
 export * from './scheduleSettings/SettlementScheduleSettings';
 export * from './paymentGateway/AdminPaymentSettings';
 export * from './settlementRules/DynamicSettlementRulesManager';

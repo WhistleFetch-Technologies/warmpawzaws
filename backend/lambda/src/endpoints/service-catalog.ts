@@ -21,6 +21,30 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { inferSpecializationIdsFromCategory } from '../utils/infer-specialization-from-category';
+import {
+  categoryToApplicableRoles,
+  defaultServiceStyleForRoles,
+  normalizeServiceStyle,
+  isAllowedServiceStyle,
+} from '../utils/service-catalog-sync';
+
+/** Map service_catalog category_id to specialization_master category_id for spec resolution */
+const CATEGORY_TO_SPEC_CATEGORY: Record<string, string> = {
+  veterinary: 'veterinary',
+  grooming: 'grooming',
+  training: 'training',
+  walking: 'walking',
+  diagnostic: 'veterinary',
+  diagnostics: 'veterinary',
+  pharmacy: 'veterinary',
+  emergency: 'veterinary',
+  wellness: 'wellness',
+  specialty: 'veterinary',
+  boarding: 'boarding',
+  nutrition: 'wellness',
+  behavioral: 'behavioral',
+  behaviour: 'behavioral',
+};
 
 /**
  * Map role IDs/names to service catalog applicable_roles
@@ -1291,6 +1315,92 @@ export function registerServiceCatalogEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating service:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/service-catalog/ensure-roles-and-specializations
+   * Ensures every service has: (1) applicable_roles from category if missing,
+   * (2) valid service_style aligned with role config, (3) at least one specialization
+   * inferred from category/service nature and validated against specialization_master.
+   * CRUD-only: updates existing rows; does not change create/read/delete behavior.
+   */
+  app.post("/admin/service-catalog/ensure-roles-and-specializations", async (c) => {
+    try {
+      const all = await query('SELECT id, service_id, service_name, display_name, category_id, category_name, applicable_roles, service_style, specialization_ids FROM service_catalog');
+      const rows = (all.rows || []) as any[];
+      const updates: { id: string; applicable_roles: string[]; service_style: string; specialization_ids: string[] }[] = [];
+
+      for (const row of rows) {
+        let roles = Array.isArray(row.applicable_roles) ? row.applicable_roles.filter(Boolean) : [];
+        const hadNoRoles = roles.length === 0;
+        if (hadNoRoles) {
+          roles = categoryToApplicableRoles(
+            row.category_id,
+            row.category_name,
+            row.service_id,
+            row.service_name
+          );
+        }
+        if (roles.length === 0) continue;
+
+        let style = row.service_style;
+        const hadInvalidStyle = !style || !isAllowedServiceStyle(style);
+        if (hadInvalidStyle) {
+          style = defaultServiceStyleForRoles(roles);
+        }
+        style = normalizeServiceStyle(style);
+
+        let specIds = Array.isArray(row.specialization_ids) ? row.specialization_ids.filter(Boolean) : [];
+        const hadNoSpecs = specIds.length === 0;
+        if (hadNoSpecs) {
+          const inferred = inferSpecializationIdsFromCategory(
+            row.category_id,
+            row.service_name,
+            row.display_name
+          );
+          const specCategory = CATEGORY_TO_SPEC_CATEGORY[(row.category_id || '').toLowerCase()] || (row.category_id || '').toLowerCase() || 'veterinary';
+          const validSpecs = await query(
+            `SELECT specialization_id FROM specialization_master WHERE is_active = true AND (category_id = $1 OR LOWER(category_id) = LOWER($1))`,
+            [specCategory]
+          );
+          const validSet = new Set((validSpecs.rows || []).map((r: any) => (r.specialization_id || '').trim()).filter(Boolean));
+          specIds = inferred.filter((id) => validSet.has((id || '').trim()));
+          if (specIds.length === 0 && validSpecs.rows?.length) {
+            specIds = (validSpecs.rows as any[]).slice(0, 2).map((r: any) => r.specialization_id).filter(Boolean);
+          }
+        }
+
+        const needsUpdate = hadNoRoles || hadInvalidStyle || hadNoSpecs;
+        if (!needsUpdate) continue;
+
+        updates.push({
+          id: row.id,
+          applicable_roles: roles,
+          service_style: style,
+          specialization_ids: specIds,
+        });
+      }
+
+      let updatedCount = 0;
+      for (const u of updates) {
+        await update('service_catalog', { id: u.id }, {
+          applicable_roles: u.applicable_roles,
+          service_style: u.service_style,
+          specialization_ids: u.specialization_ids,
+        });
+        updatedCount += 1;
+      }
+
+      return c.json({
+        success: true,
+        message: 'Roles, service_style, and specializations ensured',
+        total: rows.length,
+        updated: updatedCount,
+      });
+    } catch (error: any) {
+      console.error('Error ensuring roles and specializations:', error);
       return c.json({ error: error.message }, 500);
     }
   });

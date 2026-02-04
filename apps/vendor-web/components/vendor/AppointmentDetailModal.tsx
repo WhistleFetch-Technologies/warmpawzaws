@@ -26,6 +26,10 @@ interface AppointmentDetailModalProps {
   vendorData?: any;
   onClose: () => void;
   onRefresh?: () => void;
+  /** Role/capabilities from parent (dashboard) so prescription shows for all vet appointments (tele, home, center) */
+  roleId?: string;
+  roleName?: string;
+  capabilities?: Record<string, boolean> | string[];
 }
 
 interface Booking {
@@ -109,7 +113,7 @@ interface Prescription {
   uploadedBy: string;
 }
 
-export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefresh }: AppointmentDetailModalProps) {
+export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefresh, roleId: propRoleId, roleName: propRoleName, capabilities: propCapabilities }: AppointmentDetailModalProps) {
   const router = useRouter();
   const isNavigatingRef = useRef(false); // Prevent multiple navigation attempts
   const [booking, setBooking] = useState<Booking | null>(null);
@@ -311,22 +315,27 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     }
   };
   
-  // Vet/nutritionist: show prescription (vet, clinic, diagnostics, nutritionist). Others (groomer, walker, trainer): no prescription.
+  // Vet/nutritionist: show prescription for ALL vet appointments (tele, home, center) per role config. Not gated by service type.
   const isVetOrNutritionist = (() => {
     if (!booking) return false;
-    const roleId = vendorData?.roleId ?? '';
-    const role = vendorData?.role ?? '';
-    const roleName = vendorData?.roleName ?? '';
-    const capabilities = vendorData?.capabilities ?? [];
+    const roleId = (propRoleId ?? vendorData?.roleId ?? vendorData?.role_id ?? '').toString();
+    const role = (vendorData?.role ?? '').toString();
+    const roleName = (propRoleName ?? vendorData?.roleName ?? vendorData?.role_name ?? '').toString();
+    const caps = propCapabilities ?? vendorData?.capabilities;
+    const hasPrescriptionCapability = (() => {
+      if (Array.isArray(caps)) return caps.some((c: string) => /prescription/i.test(String(c)));
+      if (caps && typeof caps === 'object') return !!(caps.prescription || caps.prescriptions || caps.prescription_create);
+      return false;
+    })();
     const svcName = (booking.serviceName || booking.serviceCategory || '').toLowerCase();
-    const svcType = (booking.serviceType || '').toLowerCase();
+    const svcType = (booking.serviceType || booking.serviceStyle || booking.service_style || '').toLowerCase();
     return (
-      (typeof roleId === 'string' && /vet|clinic|diagnostics|nutritionist/i.test(roleId)) ||
-      (typeof role === 'string' && /vet|clinic|diagnostics|nutritionist/i.test(role)) ||
-      (typeof roleName === 'string' && /vet|clinic|diagnostics|nutritionist/i.test(roleName)) ||
-      (Array.isArray(capabilities) && (capabilities.includes('prescriptions') || capabilities.includes('prescription_create'))) ||
+      (roleId && /vet|clinic|diagnostics|nutritionist|veterinary|pet_clinic/i.test(roleId)) ||
+      (role && /vet|clinic|diagnostics|nutritionist/i.test(role)) ||
+      (roleName && /vet|clinic|diagnostics|nutritionist|veterinary/i.test(roleName)) ||
+      hasPrescriptionCapability ||
       /vet|clinic|consultation|nutritionist|diagnostic/i.test(svcName) ||
-      /vet|clinic|consultation|nutritionist/i.test(svcType)
+      /vet|clinic|consultation|nutritionist|at_clinic/i.test(svcType)
     );
   })();
 
@@ -334,10 +343,12 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const isDiagnosticsBooking = (() => {
     if (!booking) return false;
     const svcCat = (booking.serviceCategory || '').toString().toLowerCase();
-    const svcName = (booking.serviceName || '').toLowerCase();
-    const cap = vendorData?.capabilities ?? [];
+    const svcName = (booking.serviceName || '').toString().toLowerCase();
+    const cap = propCapabilities ?? vendorData?.capabilities ?? [];
     const isLabOrDiagnostics = svcCat === 'diagnostics' || /lab|diagnostic/.test(svcName);
-    const canUploadReports = Array.isArray(cap) && cap.some((c: string) => /diagnostic_lab|diagnostic_results|diagnostics/i.test(String(c)));
+    const canUploadReports = Array.isArray(cap)
+      ? cap.some((c: string) => /diagnostic_lab|diagnostic_results|diagnostics/i.test(String(c)))
+      : cap && typeof cap === 'object' && !!(cap.diagnostics || cap.diagnostic_results || cap.diagnostic_lab);
     return isLabOrDiagnostics && canUploadReports;
   })();
 

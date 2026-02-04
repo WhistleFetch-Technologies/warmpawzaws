@@ -2928,16 +2928,28 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
-  /** Map frontend refund tier body (camelCase) to DB columns (snake_case). DB: service_location IN ('home','clinic','both','tele','all'). Tele = Tele/Video Consultation; All = all locations. */
+  /** Map frontend refund tier body (camelCase) to DB columns (snake_case). Supports cancellation_window (customer) and vendor_cancellation_reason (provider). */
+  const customerWindowToHours: Record<string, number> = {
+    '48_plus': 48, '24_plus': 24, '24_48': 24, '12_plus': 12, '12_24': 12, '6_plus': 6, '6_12': 6,
+    'under_24_no_show': 0, 'under_12_no_show': 0, 'under_6_no_show': 0,
+    after_checkin: 0, did_not_join_video: 0,
+  };
   const mapRefundTierBodyToDb = (body: any): Record<string, unknown> => {
     const vendorTypes = Array.isArray(body.vendorTypes) ? body.vendorTypes : (body.vendor_types ? (Array.isArray(body.vendor_types) ? body.vendor_types : []) : []);
     const serviceLocationMap: Record<string, string> = { at_home: 'home', at_center: 'clinic', both: 'both', tele: 'tele', all: 'all' };
     const rawLoc = body.serviceLocation ?? body.service_location ?? 'all';
     const service_location = serviceLocationMap[String(rawLoc)] ?? (['home', 'clinic', 'both', 'tele', 'all'].includes(String(rawLoc)) ? String(rawLoc) : 'all');
-    const hoursBeforeService = Number(body.hoursBeforeService ?? body.hours_before_service ?? 24);
+    const cancelledBy = body.cancelledBy ?? body.cancelled_by ?? null;
+    const cancellationWindow = body.cancellationWindow ?? body.cancellation_window ?? null;
+    const vendorCancellationReason = body.vendorCancellationReason ?? body.vendor_cancellation_reason ?? null;
+    let hoursBeforeService = Number(body.hoursBeforeService ?? body.hours_before_service ?? 24);
+    if (cancelledBy === 'pet_parent' && cancellationWindow && customerWindowToHours[cancellationWindow] !== undefined) {
+      hoursBeforeService = customerWindowToHours[cancellationWindow];
+    }
     const refundPercentage = Number(body.refundPercentage ?? body.refund_percentage ?? 75);
     const cancellationFee = Number(body.cancellationFee ?? body.cancellation_fee ?? 0);
-    return {
+    const maxPartial = body.maxPartialRefundPercentage ?? body.max_partial_refund_percentage;
+    const out: Record<string, unknown> = {
       name: body.name ?? '',
       vendor_types: vendorTypes,
       service_location,
@@ -2947,6 +2959,24 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       is_active: body.isActive !== false && body.is_active !== false,
       tier_level: Number(body.tierLevel ?? body.tier_level ?? 0) || 0,
     };
+    if (maxPartial !== undefined && maxPartial !== null) out.max_partial_refund_percentage = Number.isFinite(Number(maxPartial)) ? Math.min(100, Math.max(0, Number(maxPartial))) : null;
+    if (body.serviceCategory !== undefined || body.service_category !== undefined) out.service_category = body.serviceCategory ?? body.service_category ?? null;
+    if (body.serviceFormat !== undefined || body.service_format !== undefined) out.service_format = body.serviceFormat ?? body.service_format ?? null;
+    if (cancelledBy !== undefined && cancelledBy !== null) {
+      const v = String(cancelledBy).toLowerCase();
+      out.cancelled_by = ['pet_parent', 'provider'].includes(v) ? v : null;
+    }
+    if (cancellationWindow !== undefined && cancellationWindow !== null) (out as any).cancellation_window = String(cancellationWindow);
+    if (vendorCancellationReason !== undefined && vendorCancellationReason !== null) (out as any).vendor_cancellation_reason = String(vendorCancellationReason).toLowerCase();
+    // Optional flexible rule: hours_operator (gte|lte|gt|lt) + hours_threshold (number)
+    const hoursOp = body.hoursOperator ?? body.hours_operator ?? null;
+    const hoursThr = body.hoursThreshold ?? body.hours_threshold ?? null;
+    if (hoursOp !== undefined && hoursOp !== null) {
+      const v = String(hoursOp).toLowerCase();
+      (out as any).hours_operator = ['gte', 'lte', 'gt', 'lt'].includes(v) ? v : null;
+    }
+    if (hoursThr !== undefined && hoursThr !== null) (out as any).hours_threshold = Number.isFinite(Number(hoursThr)) ? Number(hoursThr) : null;
+    return out;
   };
 
   app.post('/admin/vendor-settings/refund-tiers', async (c) => {

@@ -22,6 +22,7 @@ import { select, query, insert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
+import { resolveVendorById } from './vendor-profile';
 
 /**
  * Calculate distance between two coordinates (Haversine formula)
@@ -538,6 +539,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const targetRolesLower = targetRoles.map((r) => r.toLowerCase());
         console.log('[discover-services] at_home/tele category=%s roleId=%s targetRoles=%s', category, roleId, JSON.stringify(targetRolesLower));
 
+        // Rule book: discovery radius, max results, sort (vendor radius takes precedence; rule is fallback)
+        const roleIdForRule = (category || roleId || targetRoles[0] || 'all') as string;
+        const discoveryRules = await getDiscoveryRules(roleIdForRule, 'discover', 'at_home', category || undefined);
+        const ruleRadiusKm = typeof discoveryRules.discovery_radius_km === 'number' ? discoveryRules.discovery_radius_km : 50;
+        const ruleMaxResults = typeof discoveryRules.discovery_max_results === 'number' ? discoveryRules.discovery_max_results : 50;
+        const ruleSortDefault = typeof discoveryRules.discovery_sort_default === 'string' ? discoveryRules.discovery_sort_default : 'relevance';
+
         // Match role name exactly or with spaces normalized to underscores (e.g. "Pet Walker" -> pet_walker). Require role so role_id NULL vendors are excluded.
         const roleRestrictClause = targetRolesLower.length > 0
           ? ` AND r.id IS NOT NULL AND (LOWER(r.name) = ANY($1::text[]) OR LOWER(REPLACE(COALESCE(r.name, ''), ' ', '_')) = ANY($1::text[]))`
@@ -577,7 +585,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           SELECT DISTINCT v.id, v.business_name, v.owner_name, v.phone, v.city, v.state,
                  v.latitude, v.longitude, r.name as role_name, r.display_name as role_display_name,
                  v.languages, v.is_verified, v.profile_image, v.specializations, v.is_online,
-                 v.vendor_type, v.metadata
+                 v.vendor_type, v.metadata,
+                 v.service_radius,
+                 (SELECT MIN(vs.service_radius_km) FROM vendor_services vs
+                  WHERE vs.vendor_id = v.id AND vs.is_enabled = true
+                    AND (vs.service_style = 'at_home' OR vs.service_style = 'tele')) AS service_radius_km_min
           FROM vendors v
           LEFT JOIN roles r ON v.role_id = r.id
           WHERE (v.status = 'approved' OR v.status = 'active')
@@ -594,7 +606,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ${existsServiceClause}
         `;
 
-        vendorQuery += ` LIMIT 50`;
+        vendorQuery += ` LIMIT 200`;
 
         let vendorResults: { rows: any[] };
         try {
@@ -680,7 +692,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             distance = R * c;
             distanceText = distance < 1 ? `${Math.round(distance * 1000)}m away` : `${distance.toFixed(1)} km away`;
           }
-          
+
+          // Rule book + vendor precedence: effectiveRadius = vendor.service_radius ?? service_radius_km ?? rule ?? 50
+          const vendorRadius = vendor.service_radius != null ? Number(vendor.service_radius) : null;
+          const serviceRadiusKm = vendor.service_radius_km_min != null ? Number(vendor.service_radius_km_min) : null;
+          const effectiveRadiusKm = (vendorRadius ?? serviceRadiusKm ?? ruleRadiusKm ?? 50);
+          const withinRadius = !(latitude && longitude) || (distance != null && distance <= effectiveRadiusKm);
+          if (!withinRadius) continue;
+
           // ✅ FIX: Get rating from reviews
           let avgRating = 0;
           let totalReviews = 0;
@@ -786,14 +805,37 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             })(),
           });
         }
-        
-        console.log(`[Discover Services] Found ${allProviders.length} solo providers for style=${serviceStyle}`);
-        
+
+        // Rule book: sort by discovery_sort_default (query sortBy overrides when provided)
+        const effectiveSort = (sortBy && sortBy.trim()) ? sortBy.trim().toLowerCase() : (ruleSortDefault || 'relevance').toLowerCase();
+        if (effectiveSort === 'nearest' || effectiveSort === 'distance') {
+          allProviders.sort((a: any, b: any) => {
+            if (a.distance === null && b.distance === null) return 0;
+            if (a.distance === null) return 1;
+            if (b.distance === null) return -1;
+            return a.distance - b.distance;
+          });
+        } else if (effectiveSort === 'rating') {
+          allProviders.sort((a: any, b: any) => (b.rating || 0) - (a.rating || 0));
+        } else {
+          // relevance: weighted score (rating + review count + distance bonus)
+          allProviders.sort((a: any, b: any) => {
+            const aScore = (parseFloat(a.rating) || 0) * 10 + (a.totalReviews || 0) * 0.5 + (a.distance != null ? Math.max(0, 50 - a.distance) : 0);
+            const bScore = (parseFloat(b.rating) || 0) * 10 + (b.totalReviews || 0) * 0.5 + (b.distance != null ? Math.max(0, 50 - b.distance) : 0);
+            return bScore - aScore;
+          });
+        }
+
+        // Rule book: limit by discovery_max_results
+        const limitedProviders = allProviders.slice(0, ruleMaxResults);
+
+        console.log(`[Discover Services] Found ${limitedProviders.length} solo providers for style=${serviceStyle} (after radius/sort/limit)`);
+
         return c.json({
           success: true,
-          vendors: allProviders,
-          providers: allProviders, // Alias for compatibility
-          total: allProviders.length,
+          vendors: limitedProviders,
+          providers: limitedProviders, // Alias for compatibility
+          total: limitedProviders.length,
         });
       }
 
@@ -1698,6 +1740,91 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         });
       }
 
+      // ---------- 3) Fallback: vendor_availability_slots (solo/date-specific) when vendor_availability_v2 has no rows ----------
+      let vasRows: any[] = [];
+      try {
+        const vasResult = await query(
+          `SELECT id, start_time, end_time
+           FROM vendor_availability_slots
+           WHERE vendor_id = $1 AND date = $2 AND is_available = true
+           ORDER BY start_time`,
+          [vendorId, date]
+        ).catch(() => ({ rows: [] }));
+        vasRows = vasResult?.rows ?? [];
+        if (vasRows.length > 0) {
+          console.log(`[SLOTS] Using vendor_availability_slots fallback: ${vasRows.length} rows for vendorId=${vendorId}, date=${date}`);
+        }
+      } catch (e) {
+        // Table may not exist
+      }
+
+      if (vasRows.length > 0) {
+        const slotDuration = 30;
+        const bufferMinutes = minNoticeMinutes;
+        const slots: any[] = [];
+        for (const row of vasRows) {
+          const startTime = row.start_time;
+          const endTime = row.end_time;
+          if (!startTime || !endTime) continue;
+          const winStart = timeToMinutes(startTime);
+          const winEnd = timeToMinutes(endTime);
+          let currentMinutes = winStart;
+
+          while (currentMinutes + slotDuration <= winEnd) {
+            const timeStr = `${String(Math.floor(currentMinutes / 60)).padStart(2, '0')}:${String(currentMinutes % 60).padStart(2, '0')}`;
+
+            if (isToday) {
+              const slotDateTime = new Date(requestedDate);
+              slotDateTime.setHours(Math.floor(currentMinutes / 60), currentMinutes % 60, 0, 0);
+              if (slotDateTime < minBookingTime) {
+                currentMinutes += slotDuration;
+                continue;
+              }
+            }
+
+            const slotEndMin = currentMinutes + totalDuration;
+            const inBreak = breaks.some((brk: { startTime: string; endTime: string }) => {
+              const bStart = timeToMinutes(brk.startTime);
+              const bEnd = timeToMinutes(brk.endTime);
+              return currentMinutes < bEnd && slotEndMin > bStart;
+            });
+            if (inBreak) {
+              currentMinutes += slotDuration;
+              continue;
+            }
+
+            const slotEndWithBuffer = currentMinutes + totalDuration + bufferMinutes;
+            const overlapsBooking = existingBookings.some((b: { booking_time: string; duration_minutes: number }) => {
+              const bStart = timeToMinutes(b.booking_time);
+              const bEnd = bStart + b.duration_minutes + bufferMinutes;
+              return currentMinutes < bEnd && slotEndWithBuffer > bStart;
+            });
+            if (overlapsBooking) {
+              currentMinutes += slotDuration;
+              continue;
+            }
+
+            slots.push({
+              time: timeStr,
+              available: true,
+              booked: false,
+            });
+            currentMinutes += slotDuration;
+          }
+        }
+
+        const sortedSlots = slots.sort((a, b) => a.time.localeCompare(b.time));
+        return c.json({
+          success: true,
+          slots: sortedSlots,
+          date,
+          vendorId,
+          serviceStyle,
+          staffBased: false,
+          source: 'vendor_availability_slots',
+        });
+      }
+
       // No advanced availability: return empty (service booking uses only advanced availability)
       return c.json({
         success: true,
@@ -2276,64 +2403,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     try {
       const { vendorId } = c.req.param();
 
-      // ✅ CRITICAL FIX: Check both vendors table and vendor_identity table
-      // If vendor only exists in vendor_identity (approved), we need to find or create the vendor record
-      let actualVendorId = vendorId;
-      let vendors = await select('vendors', { id: vendorId });
-      
-      if (vendors.length === 0) {
-        console.log(`[FACILITY] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-        const identities = await select('vendor_identity', { id: vendorId });
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === 'APPROVED' || identity.onboarding_status === 'ACTIVATED') {
-            // Check if vendor exists by phone (there might be an existing vendor with different ID)
-            const vendorByPhone = await select('vendors', { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              actualVendorId = vendorByPhone[0].id;
-              vendors = vendorByPhone;
-              console.log(`[FACILITY] Found existing vendor by phone: ${actualVendorId}`);
-            } else {
-              // Get application data for vendor details
-              const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              
-              // Create vendors record
-              console.log(`[FACILITY] Auto-creating vendor record for approved vendor ${vendorId}`);
-              const newVendor = await insert('vendors', {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
-                role_id: identity.selected_role_id,
-                category: 'general',
-                address: payload.address || 'Not specified',
-                city: payload.city || 'Not specified',
-                state: payload.state || 'Not specified',
-                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
-                status: 'active',
-                is_active: true,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              });
-              vendors = newVendor;
-              console.log(`[FACILITY] Created vendor record for ${vendorId}`);
-            }
-          } else {
-            return c.json({ error: 'Vendor not approved or activated' }, 403);
-          }
-        } else {
-          return c.json({ error: 'Vendor not found' }, 404);
-        }
-      }
-
-      if (vendors.length === 0) {
+      // Resolve vendor (frontend may pass vendor_identity.id; data is stored by vendors.id)
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
-
-      const vendor = vendors[0];
 
       // Get services
       // Check if is_global column exists
@@ -2547,13 +2621,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
       const facilityData = await c.req.json();
 
-      // Verify vendor exists
-      const vendors = await select('vendors', { id: vendorId });
-      if (vendors.length === 0) {
+      // Resolve vendor (frontend may pass vendor_identity.id; data is stored by vendors.id)
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
-
-      const vendor = vendors[0];
+      const actualVendorId = vendor.id;
 
       // ✅ FIX: Build update data object, mapping frontend fields to database columns
       const updateData: any = {};
@@ -2689,9 +2762,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // Always update the updated_at timestamp
       updateData.updated_at = new Date().toISOString();
 
-      // Update vendor record with facility information
+      // Update vendor record with facility information (use resolved vendor id)
       const { update } = await import('../database/rds-connection');
-      const updated = await update('vendors', { id: vendorId }, updateData);
+      const updated = await update('vendors', { id: actualVendorId }, updateData);
 
       if (updated.length === 0) {
         return c.json({ error: 'Failed to update facility' }, 500);
@@ -2703,11 +2776,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         : null;
       if (specArr !== null) {
         try {
-          await query('DELETE FROM vendor_specializations WHERE vendor_id = $1', [vendorId]);
+          await query('DELETE FROM vendor_specializations WHERE vendor_id = $1', [actualVendorId]);
           for (const spec of specArr) {
             const s = typeof spec === 'string' ? spec.trim() : (spec?.id ?? spec?.specializationId ?? String(spec));
             if (s) {
-              await insert('vendor_specializations', { vendor_id: vendorId, specialization: s });
+              await insert('vendor_specializations', { vendor_id: actualVendorId, specialization: s });
             }
           }
         } catch (syncErr: any) {
@@ -2748,11 +2821,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       
       console.log(`📸 [FACILITY-PHOTOS] Uploading photos for vendor: ${vendorId}`);
       
-      // Verify vendor exists
-      const vendors = await select('vendors', { id: vendorId });
-      if (vendors.length === 0) {
+      // Resolve vendor (frontend may pass vendor_identity.id; data is stored by vendors.id)
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
+      const actualVendorId = vendor.id;
 
       // Parse the multipart form data
       const formData = await c.req.formData();
@@ -2779,7 +2853,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           // Generate a unique filename
           const timestamp = Date.now();
           const ext = photo.name.split('.').pop() || 'jpg';
-          const fileKey = `vendors/${vendorId}/facility/facility_${timestamp}_${Math.random().toString(36).substr(2, 9)}.${ext}`;
+          const fileKey = `vendors/${actualVendorId}/facility/facility_${timestamp}_${Math.random().toString(36).substr(2, 9)}.${ext}`;
           
           // Convert File to ArrayBuffer and upload to S3
           const arrayBuffer = await photo.arrayBuffer();
@@ -2804,19 +2878,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }
       }
 
-      // Update vendor metadata with new photos
-      const vendor = vendors[0];
+      // Update vendor metadata with new photos (use resolved vendor id)
       const existingMetadata = (vendor.metadata as any) || {};
       const existingPhotos = existingMetadata.facility_photos || [];
       const allPhotos = [...existingPhotos, ...photoUrls];
       
       const { update } = await import('../database/rds-connection');
-      await update('vendors', { id: vendorId }, {
+      await update('vendors', { id: actualVendorId }, {
         metadata: { ...existingMetadata, facility_photos: allPhotos },
         updated_at: new Date().toISOString(),
       });
 
-      console.log(`✅ [FACILITY-PHOTOS] Uploaded ${photoUrls.length} photos for vendor ${vendorId}`);
+      console.log(`✅ [FACILITY-PHOTOS] Uploaded ${photoUrls.length} photos for vendor ${actualVendorId}`);
 
       return c.json({
         success: true,

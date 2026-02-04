@@ -780,10 +780,15 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
             declarationType: f.declarationType || f.id, // Use explicit declarationType if set, otherwise fallback to id
           }));
           
-          // Merge KYC fields with existing fields (KYC fields replace existing with same ID)
+          // Merge KYC fields with stored overrides: DB overrides (placeholder, label, helpText) apply on top of KYC defaults
           const kycFieldIds = new Set(kycFormFields.map((f: any) => f.id));
+          const dbFields = [...fields]; // copy from onboarding_forms
           const nonKycFields = fields.filter((f: any) => !kycFieldIds.has(f.id) && !kycFieldIds.has(f.fieldName));
-          fields = [...nonKycFields, ...kycFormFields];
+          const mergedKycFields = kycFormFields.map((kf: any) => {
+            const stored = dbFields.find((f: any) => f.id === kf.id || f.fieldName === kf.id || f.name === kf.id);
+            return stored ? { ...kf, ...stored } : kf;
+          });
+          fields = [...nonKycFields, ...mergedKycFields];
           
           console.log(`[GET /admin/onboarding-fields/:roleId] Total fields after merge: ${fields.length}`);
         }
@@ -920,44 +925,93 @@ export function registerOnboardingFormManagementEndpoints(app: Hono) {
 
   /**
    * PUT /admin/onboarding-fields/:roleId/:fieldId
-   * Update an existing onboarding field
+   * Update an existing onboarding field, or create a stored override for a KYC field
    */
   app.put('/admin/onboarding-fields/:roleId/:fieldId', async (c) => {
     try {
       const { roleId, fieldId } = c.req.param();
       const updates = await c.req.json();
 
-      const forms = await select('onboarding_forms', { role_id: roleId });
+      // Resolve role (same as GET) so alias roleId works and DB uses canonical name
+      const role = await getRoleByName(roleId);
+      if (!role) {
+        return c.json({ error: 'Role not found', requestedRole: roleId }, 404);
+      }
+      const actualRoleName = role.name;
+
+      let forms = await select('onboarding_forms', { role_id: actualRoleName });
+
+      // Ensure table exists before insert
+      await query(`
+        CREATE TABLE IF NOT EXISTS onboarding_forms (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          role_id VARCHAR(255) UNIQUE NOT NULL,
+          fields JSONB NOT NULL,
+          sections JSONB,
+          status VARCHAR(50) DEFAULT 'active',
+          version INTEGER DEFAULT 1,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `).catch(() => {});
+
       if (forms.length === 0) {
-        return c.json({ error: 'Form not found for this role' }, 404);
+        // No form row yet: create one with this field as first stored override (e.g. KYC field)
+        let kycBase: any = null;
+        try {
+          const { getKYCFieldsForRole } = await import('../lib/kyc-form-fields');
+          const kycFields = getKYCFieldsForRole(actualRoleName, 'solo') || getKYCFieldsForRole(actualRoleName, 'business') || getKYCFieldsForRole(actualRoleName);
+          kycBase = kycFields.find((f: any) => f.id === fieldId || f.fieldName === fieldId);
+        } catch (_) {}
+        const merged = kycBase
+          ? { ...kycBase, id: fieldId, fieldName: fieldId, name: fieldId, ...updates, updatedAt: new Date().toISOString() }
+          : { id: fieldId, fieldName: fieldId, name: fieldId, ...updates, updatedAt: new Date().toISOString() };
+        await insert('onboarding_forms', {
+          role_id: actualRoleName,
+          fields: JSON.stringify([merged]),
+          status: 'active',
+          version: 1,
+        });
+        await incrementFormVersion(actualRoleName);
+        return c.json({ success: true, field: merged, message: 'Field updated successfully' });
       }
 
       let fields: any[] = typeof forms[0].fields === 'string'
         ? JSON.parse(forms[0].fields)
         : forms[0].fields || [];
 
-      const fieldIndex = fields.findIndex((f: any) => f.id === fieldId);
-      if (fieldIndex === -1) {
-        return c.json({ error: 'Field not found' }, 404);
+      const fieldIndex = fields.findIndex((f: any) => f.id === fieldId || f.fieldName === fieldId || f.name === fieldId);
+      if (fieldIndex >= 0) {
+        // Update existing stored field
+        fields[fieldIndex] = {
+          ...fields[fieldIndex],
+          ...updates,
+          updatedAt: new Date().toISOString(),
+        };
+      } else {
+        // KYC field not yet in DB: add stored override (GET will merge onto KYC default)
+        let kycBase: any = null;
+        try {
+          const { getKYCFieldsForRole } = await import('../lib/kyc-form-fields');
+          const kycFields = getKYCFieldsForRole(actualRoleName, 'solo') || getKYCFieldsForRole(actualRoleName, 'business') || getKYCFieldsForRole(actualRoleName);
+          kycBase = kycFields.find((f: any) => f.id === fieldId || f.fieldName === fieldId);
+        } catch (_) {}
+        const merged = kycBase
+          ? { ...kycBase, id: fieldId, fieldName: fieldId, name: fieldId, ...updates, updatedAt: new Date().toISOString() }
+          : { id: fieldId, fieldName: fieldId, name: fieldId, ...updates, updatedAt: new Date().toISOString() };
+        fields.push(merged);
       }
 
-      // Update field
-      fields[fieldIndex] = {
-        ...fields[fieldIndex],
-        ...updates,
-        updatedAt: new Date().toISOString(),
-      };
-
-      // Save updated fields
-      await update('onboarding_forms', { role_id: roleId }, {
+      await update('onboarding_forms', { role_id: actualRoleName }, {
         fields: JSON.stringify(fields),
         updated_at: new Date().toISOString(),
       });
-      await incrementFormVersion(roleId);
+      await incrementFormVersion(actualRoleName);
 
+      const updatedField = fields[fieldIndex >= 0 ? fieldIndex : fields.length - 1];
       return c.json({
         success: true,
-        field: fields[fieldIndex],
+        field: updatedField,
         message: 'Field updated successfully',
       });
     } catch (error: any) {

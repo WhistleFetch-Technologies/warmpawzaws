@@ -60,7 +60,7 @@ import { DiagnosticsOrderDashboard } from './diagnostics/DiagnosticsOrderDashboa
 import { AppointmentDetailModal } from './AppointmentDetailModal'; // ✅ Diagnostics booking detail
 import { ServicePricing } from './pricing/ServicePricing'; // ✅ NEW: Service pricing
 import { ProgressTrackingDashboard } from './ProgressTrackingDashboard'; // ✅ FIX: Progress tracking - CORRECTED PATH
-import { PackageManagementContainer } from './packages/PackageManagementContainer'; // ✅ FIX: Package management
+// DETACHED: PackageManagementContainer - 500 errors, will fix later
 import { VendorCustomServiceCreationEnhanced as VendorCustomServiceCreation } from './VendorCustomServiceCreationEnhanced'; // ✅ ENHANCED: Role-based custom services
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { ShelterAdoptionSystem } from './ShelterAdoptionSystem'; // ✅ FIX: Adoption management
@@ -1644,7 +1644,7 @@ export function VendorLandingPage({
               }}
               onNavigateToPricing={() => setShowPricing(true)}
               onNavigateToProgressTracking={() => setShowProgressTracking(true)}
-              onNavigateToPackages={() => setShowPackages(true)}
+              onNavigateToPackages={undefined}
               onNavigateToCustomServices={() => setShowCustomServices(true)}
               onNavigateToAdoptionSystem={() => setShowAdoptionSystem(true)}
               onNavigateToMemorialServices={() => setShowMemorialServices(true)}

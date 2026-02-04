@@ -19,6 +19,7 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { select, update, query, insert } from '../database/rds-connection';
 import { logBookingStatusChange } from '../utils/audit-log';
+import { resolveVendorId } from '../utils/vendor-resolve';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds, parseSelectedServices } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
@@ -32,11 +33,14 @@ export function registerVendorBookingsEndpoints(app: Hono) {
    */
   app.get("/vendor/bookings/:vendorId", async (c) => {
     try {
-      const { vendorId } = c.req.param();
-      
-      // Check capability - allow booking_view, booking_create, or bookings (post-role-migration)
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
+      const vendorIds = [vendorId];
+      if (paramVendorId !== vendorId) vendorIds.push(paramVendorId);
+
       const hasBookingCapability = await checkVendorCapability(vendorId, 'booking_view') ||
                                    await checkVendorCapability(vendorId, 'booking_create') ||
+                                   await checkVendorCapability(paramVendorId, 'bookings') ||
                                    await checkVendorCapability(vendorId, 'bookings');
       if (!hasBookingCapability) {
         return c.json({ error: 'Vendor does not have booking viewing capability' }, 403);
@@ -44,13 +48,14 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       const date = c.req.query('date');
       const filter = c.req.query('filter') || 'all';
 
-      console.log(`📋 [VENDOR-BOOKINGS] Fetching bookings for vendor: ${vendorId}`);
+      console.log(`📋 [VENDOR-BOOKINGS] Fetching bookings for vendor: ${paramVendorId} (resolved: ${vendorId})`);
       console.log(`   Filters: date=${date}, status=${filter}`);
 
-      // Get vendor bookings
-      let queryText = 'SELECT * FROM bookings WHERE vendor_id = $1';
-      const params: any[] = [vendorId];
-      let paramIndex = 2;
+      let queryText = vendorIds.length === 1
+        ? 'SELECT * FROM bookings WHERE vendor_id = $1'
+        : 'SELECT * FROM bookings WHERE vendor_id = $1 OR vendor_id = $2';
+      const params: any[] = [...vendorIds];
+      let paramIndex = vendorIds.length + 1;
 
       // Filter by date
       if (date) {
@@ -329,6 +334,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           status: 'cancelled',
           cancellation_reason: reason || null,
           cancelled_at: new Date().toISOString(),
+          cancelled_by: 'provider',
         }
       );
 
@@ -396,6 +402,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           status: 'cancelled',
           cancellation_reason: reason || 'Vendor declined booking',
           cancelled_at: new Date().toISOString(),
+          cancelled_by: 'provider',
           metadata: {
             ...(booking.metadata || {}),
             suggestAlternative: suggestAlternative || null,
@@ -541,16 +548,18 @@ export function registerVendorBookingsEndpoints(app: Hono) {
    */
   app.get("/vendor/bookings/:bookingId/details", async (c) => {
     try {
-      const { bookingId } = c.req.param();
+      const rawBookingId = c.req.param('bookingId');
+      // Normalize so client quirks (whitespace, casing) don't cause 404; UUIDs are case-insensitive in PG but param must be valid
+      const bookingId = typeof rawBookingId === 'string' ? rawBookingId.trim().toLowerCase() : String(rawBookingId || '').trim().toLowerCase();
 
       console.log(`📋 [VENDOR-BOOKINGS] Fetching booking details for: ${bookingId}`);
 
       // Validate UUID format
-      if (!isValidUUID(bookingId)) {
+      if (!bookingId || !isValidUUID(bookingId)) {
         return c.json({ error: 'Invalid booking ID format' }, 400);
       }
 
-      // Get booking
+      // Get booking (by id only; vendor scoping is not required for details)
       const bookings = await select('bookings', { id: bookingId });
       if (bookings.length === 0) {
         return c.json({ error: 'Booking not found' }, 404);
@@ -780,9 +789,11 @@ export function registerVendorBookingsEndpoints(app: Hono) {
   // Frontend calls /vendor/:vendorId/bookings but backend has /vendor/bookings/:vendorId
   app.get("/vendor/:vendorId/bookings", async (c) => {
     try {
-      const { vendorId } = c.req.param();
-      
-      // Check capability - allow booking_view, booking_create, or bookings (post-role-migration)
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
+      const vendorIds = [vendorId];
+      if (paramVendorId !== vendorId) vendorIds.push(paramVendorId);
+
       const hasBookingCapability = await checkVendorCapability(vendorId, 'booking_view') ||
                                    await checkVendorCapability(vendorId, 'booking_create') ||
                                    await checkVendorCapability(vendorId, 'bookings');
@@ -793,13 +804,14 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       const status = c.req.query('status') || 'all';
       const startDate = c.req.query('startDate');
 
-      console.log(`📋 [VENDOR-BOOKINGS] Fetching bookings for vendor: ${vendorId} (alias route)`);
+      console.log(`📋 [VENDOR-BOOKINGS] Fetching bookings for vendor: ${paramVendorId} (alias, resolved: ${vendorId})`);
       console.log(`   Filters: date=${date}, status=${status}, startDate=${startDate}`);
 
-      // Get vendor bookings
-      let queryText = 'SELECT * FROM bookings WHERE vendor_id = $1';
-      const params: any[] = [vendorId];
-      let paramIndex = 2;
+      let queryText = vendorIds.length === 1
+        ? 'SELECT * FROM bookings WHERE vendor_id = $1'
+        : 'SELECT * FROM bookings WHERE vendor_id = $1 OR vendor_id = $2';
+      const params: any[] = [...vendorIds];
+      let paramIndex = vendorIds.length + 1;
 
       // Filter by date
       if (date) {
@@ -880,18 +892,27 @@ export function registerVendorBookingsEndpoints(app: Hono) {
    */
   app.get("/vendor/:vendorId/bookings/today", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
       const today = new Date().toISOString().split('T')[0];
 
-      console.log(`📋 [VENDOR-BOOKINGS] Fetching today's bookings for vendor: ${vendorId}`);
+      console.log(`📋 [VENDOR-BOOKINGS] Fetching today's bookings for vendor: ${paramVendorId} (resolved: ${vendorId})`);
 
-      // Get today's bookings
-      const result = await query(
-        `SELECT * FROM bookings 
-         WHERE vendor_id = $1 AND booking_date = $2 
-         ORDER BY booking_time ASC`,
-        [vendorId, today]
-      ).catch(() => ({ rows: [] }));
+      const vendorIds = [vendorId];
+      if (paramVendorId !== vendorId) vendorIds.push(paramVendorId);
+      const result = vendorIds.length === 1
+        ? await query(
+            `SELECT * FROM bookings 
+             WHERE vendor_id = $1 AND booking_date = $2 
+             ORDER BY booking_time ASC`,
+            [vendorId, today]
+          ).catch(() => ({ rows: [] }))
+        : await query(
+            `SELECT * FROM bookings 
+             WHERE (vendor_id = $1 OR vendor_id = $2) AND booking_date = $3 
+             ORDER BY booking_time ASC`,
+            [vendorIds[0], vendorIds[1], today]
+          ).catch(() => ({ rows: [] }));
 
       // Enrich bookings with customer and service data
       const enrichedBookings = await Promise.all(

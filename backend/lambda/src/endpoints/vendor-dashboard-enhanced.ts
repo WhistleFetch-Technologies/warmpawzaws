@@ -18,6 +18,7 @@
 
 import { Hono } from 'hono';
 import { select, query } from '../database/rds-connection';
+import { resolveVendorId } from '../utils/vendor-resolve';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 
@@ -58,13 +59,15 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         });
       }
 
-      console.log(`📊 [DASHBOARD] Fetching dashboard for vendor: ${vendorId}, timeframe: ${timeframe}`);
+      const resolvedVendorId = await resolveVendorId(vendorId);
+      const vendorIds = [resolvedVendorId];
+      if (vendorId !== resolvedVendorId) vendorIds.push(vendorId);
 
-      // Get vendor (post-role-migration: vendor may be in vendor_identity only; still show bookings)
-      const vendors = await select('vendors', { id: vendorId });
+      console.log(`📊 [DASHBOARD] Fetching dashboard for vendor: ${vendorId} (resolved: ${resolvedVendorId}), timeframe: ${timeframe}`);
+
+      const vendors = await select('vendors', { id: resolvedVendorId });
       const vendor = vendors.length > 0 ? vendors[0] : null;
 
-      // Calculate date range
       const now = new Date();
       const today = now.toISOString().split('T')[0];
       let startDate = new Date();
@@ -77,23 +80,42 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       }
 
-      // Get bookings for vendor with enrichment (always query by vendorId so placeholder shows post-migration)
-      const bookings = await query(
-        `SELECT b.*,
-                COALESCE(s.name, vs.service_name) as service_name,
-                COALESCE(s.category, vs.category) as service_category,
-                c.full_name as customer_name,
-                c.phone as customer_phone
-         FROM bookings b
-         LEFT JOIN services s ON b.service_id = s.id
-         LEFT JOIN vendor_services vs ON vs.id = b.service_id
-         LEFT JOIN customers c ON b.customer_id = c.id
-         WHERE b.vendor_id = $1 
-           AND b.booking_date >= $2
-           AND b.status != 'cancelled'
-         ORDER BY b.booking_date ASC, b.booking_time ASC`,
-        [vendorId, startDate.toISOString().split('T')[0]]
-      ).catch(() => ({ rows: [] }));
+      const startDateStr = startDate.toISOString().split('T')[0];
+      const bookings = vendorIds.length === 1
+        ? await query(
+            `SELECT b.*,
+                    COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                    COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
+                    c.full_name as customer_name,
+                    c.phone as customer_phone
+             FROM bookings b
+             LEFT JOIN services s ON b.service_id = s.id
+             LEFT JOIN vendor_services vs ON vs.id = b.service_id
+             LEFT JOIN service_catalog sc ON sc.id = b.service_id
+             LEFT JOIN customers c ON b.customer_id = c.id
+             WHERE b.vendor_id = $1 
+               AND b.booking_date >= $2
+               AND b.status != 'cancelled'
+             ORDER BY b.booking_date ASC, b.booking_time ASC`,
+            [resolvedVendorId, startDateStr]
+          ).catch(() => ({ rows: [] }))
+        : await query(
+            `SELECT b.*,
+                    COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                    COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
+                    c.full_name as customer_name,
+                    c.phone as customer_phone
+             FROM bookings b
+             LEFT JOIN services s ON b.service_id = s.id
+             LEFT JOIN vendor_services vs ON vs.id = b.service_id
+             LEFT JOIN service_catalog sc ON sc.id = b.service_id
+             LEFT JOIN customers c ON b.customer_id = c.id
+             WHERE (b.vendor_id = $1 OR b.vendor_id = $2)
+               AND b.booking_date >= $3
+               AND b.status != 'cancelled'
+             ORDER BY b.booking_date ASC, b.booking_time ASC`,
+            [vendorIds[0], vendorIds[1], startDateStr]
+          ).catch(() => ({ rows: [] }));
 
       // Calculate stats
       const stats = {
@@ -191,15 +213,16 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
   /**
    * GET /vendor/:vendorId/dashboard
-   * Alternative route pattern for frontend compatibility
+   * Alternative route pattern for frontend compatibility.
+   * Uses resolveVendorId so both identity-id and vendor-id bookings are returned (fixes center/clinic "Appointment not found").
    */
   app.get("/vendor/:vendorId/dashboard", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
       const timeframe = c.req.query('timeframe') || 'today';
 
       // Handle test IDs - return empty dashboard
-      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+      if (paramVendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
         return c.json({
           success: true,
           stats: {
@@ -215,51 +238,52 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         });
       }
 
-      console.log(`📊 [DASHBOARD] Fetching dashboard for vendor: ${vendorId}, timeframe: ${timeframe}`);
+      const resolvedVendorId = await resolveVendorId(paramVendorId);
+      const vendorIds = [resolvedVendorId];
+      if (paramVendorId !== resolvedVendorId) vendorIds.push(paramVendorId);
+
+      console.log(`📊 [DASHBOARD] Fetching dashboard for vendor: ${paramVendorId} (resolved: ${resolvedVendorId}), timeframe: ${timeframe}`);
 
       // Get vendor (post-role-migration: still return bookings so dashboard shows placeholders)
-      const vendors = await select('vendors', { id: vendorId });
+      const vendors = await select('vendors', { id: resolvedVendorId });
       const vendor = vendors.length > 0 ? vendors[0] : null;
 
       // Get today's date
       const today = new Date().toISOString().split('T')[0];
 
-      // Get bookings stats (include pending in today_bookings so new appointments show)
-      const bookingsStats = await query(
-        `SELECT 
+      // Get bookings stats (include both identity and vendor id so center/clinic bookings count)
+      const [statsParam1, statsParam2] = vendorIds.length >= 2 ? [vendorIds[0], vendorIds[1]] : [vendorIds[0], vendorIds[0]];
+      const bookingsStatsQuery = vendorIds.length === 1
+        ? `SELECT 
           COUNT(*) FILTER (WHERE booking_date = $1 AND status IN ('pending', 'confirmed')) as today_bookings,
           COUNT(*) FILTER (WHERE status IN ('pending', 'confirmed')) as pending_bookings,
           COUNT(*) FILTER (WHERE booking_date = $1 AND status = 'completed') as completed_today
         FROM bookings 
-        WHERE vendor_id = $2`,
-        [today, vendorId]
-      ).catch(() => ({ rows: [{ today_bookings: '0', pending_bookings: '0', completed_today: '0' }] }));
-
-      // Get earnings stats
-      const earningsStats = await query(
-        `SELECT 
-          COALESCE(SUM(total_amount), 0) as earnings,
-          COALESCE(SUM(CASE WHEN status = 'completed' AND settlement_status != 'settled' THEN total_amount ELSE 0 END), 0) as pending_settlement
+        WHERE vendor_id = $2`
+        : `SELECT 
+          COUNT(*) FILTER (WHERE booking_date = $1 AND status IN ('pending', 'confirmed')) as today_bookings,
+          COUNT(*) FILTER (WHERE status IN ('pending', 'confirmed')) as pending_bookings,
+          COUNT(*) FILTER (WHERE booking_date = $1 AND status = 'completed') as completed_today
         FROM bookings 
-        WHERE vendor_id = $1 AND status = 'completed'`,
-        [vendorId]
-      ).catch(() => ({ rows: [{ earnings: '0', pending_settlement: '0' }] }));
+        WHERE (vendor_id = $2 OR vendor_id = $3)`;
+      const bookingsStatsParams = vendorIds.length === 1 ? [today, statsParam1] : [today, statsParam1, statsParam2];
+      const bookingsStats = await query(bookingsStatsQuery, bookingsStatsParams).catch(() => ({ rows: [{ today_bookings: '0', pending_bookings: '0', completed_today: '0' }] }));
 
-      // Get rating
-      const ratingStats = await query(
-        `SELECT 
-          COALESCE(AVG(rating), 4.8) as rating,
-          COUNT(*) as total_reviews
-        FROM reviews 
-        WHERE vendor_id = $1 AND is_approved = true`,
-        [vendorId]
-      ).catch(() => ({ rows: [{ rating: '4.8', total_reviews: '0' }] }));
+      const earningsQuery = vendorIds.length === 1
+        ? `SELECT COALESCE(SUM(total_amount), 0) as earnings, COALESCE(SUM(CASE WHEN status = 'completed' AND settlement_status != 'settled' THEN total_amount ELSE 0 END), 0) as pending_settlement FROM bookings WHERE vendor_id = $1 AND status = 'completed'`
+        : `SELECT COALESCE(SUM(total_amount), 0) as earnings, COALESCE(SUM(CASE WHEN status = 'completed' AND settlement_status != 'settled' THEN total_amount ELSE 0 END), 0) as pending_settlement FROM bookings WHERE (vendor_id = $1 OR vendor_id = $2) AND status = 'completed'`;
+      const earningsStats = await query(earningsQuery, vendorIds).catch(() => ({ rows: [{ earnings: '0', pending_settlement: '0' }] }));
+
+      const ratingQuery = vendorIds.length === 1
+        ? `SELECT COALESCE(AVG(rating), 4.8) as rating, COUNT(*) as total_reviews FROM reviews WHERE vendor_id = $1 AND is_approved = true`
+        : `SELECT COALESCE(AVG(rating), 4.8) as rating, COUNT(*) as total_reviews FROM reviews WHERE (vendor_id = $1 OR vendor_id = $2) AND is_approved = true`;
+      const ratingStats = await query(ratingQuery, vendorIds).catch(() => ({ rows: [{ rating: '4.8', total_reviews: '0' }] }));
 
       const stats = bookingsStats.rows[0];
       const earnings = earningsStats.rows[0];
       const rating = ratingStats.rows[0];
 
-      // ✅ FIX: Get bookings for display, sorted by date and time (earliest first)
+      // ✅ FIX: Get bookings for display (vendor_id IN resolved/param), include service_catalog for center/clinic service names
       let startDate = new Date();
       if (timeframe === 'today') {
         startDate = new Date(today);
@@ -269,22 +293,38 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         startDate.setMonth(startDate.getMonth() - 1);
       }
 
-      const bookingsResult = await query(
-        `SELECT b.*,
-                COALESCE(s.name, vs.service_name) as service_name,
-                COALESCE(s.category, vs.category) as service_category,
+      const startDateStr = startDate.toISOString().split('T')[0];
+      const bookingsQuery = vendorIds.length === 1
+        ? `SELECT b.*,
+                COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
                 c.full_name as customer_name,
                 c.phone as customer_phone
          FROM bookings b
          LEFT JOIN services s ON b.service_id = s.id
          LEFT JOIN vendor_services vs ON vs.id = b.service_id
+         LEFT JOIN service_catalog sc ON sc.id = b.service_id
          LEFT JOIN customers c ON b.customer_id = c.id
          WHERE b.vendor_id = $1 
            AND b.booking_date >= $2
            AND b.status NOT IN ('cancelled')
-         ORDER BY b.booking_date ASC, b.booking_time ASC`,
-        [vendorId, startDate.toISOString().split('T')[0]]
-      ).catch(() => ({ rows: [] }));
+         ORDER BY b.booking_date ASC, b.booking_time ASC`
+        : `SELECT b.*,
+                COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
+                c.full_name as customer_name,
+                c.phone as customer_phone
+         FROM bookings b
+         LEFT JOIN services s ON b.service_id = s.id
+         LEFT JOIN vendor_services vs ON vs.id = b.service_id
+         LEFT JOIN service_catalog sc ON sc.id = b.service_id
+         LEFT JOIN customers c ON b.customer_id = c.id
+         WHERE (b.vendor_id = $1 OR b.vendor_id = $2)
+           AND b.booking_date >= $3
+           AND b.status NOT IN ('cancelled')
+         ORDER BY b.booking_date ASC, b.booking_time ASC`;
+      const bookingsParams = vendorIds.length === 1 ? [resolvedVendorId, startDateStr] : [vendorIds[0], vendorIds[1], startDateStr];
+      const bookingsResult = await query(bookingsQuery, bookingsParams).catch(() => ({ rows: [] }));
 
       // Transform bookings for frontend
       const enrichedBookings = bookingsResult.rows.map((b: any) => ({
@@ -307,7 +347,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         notes: b.notes,
       }));
 
-      console.log(`📊 [DASHBOARD] Returning ${enrichedBookings.length} bookings for vendor ${vendorId}`);
+      console.log(`📊 [DASHBOARD] Returning ${enrichedBookings.length} bookings for vendor ${paramVendorId}`);
 
       return c.json({
         success: true,
@@ -332,15 +372,18 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/analytics
    * Get comprehensive analytics for vendor
+   * ✅ Resolves vendor_identity id → vendors.id so dashboard works when app sends identity id
    */
   app.get("/vendor/:vendorId/analytics", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
       const period = c.req.query('period') || 'month'; // day, week, month, year, all
 
-      console.log(`📊 [ANALYTICS] Fetching analytics for vendor: ${vendorId}, period: ${period}`);
+      // Resolve identity id to vendor id (same as dashboard and vendor-services)
+      const vendorId = await resolveVendorId(paramVendorId);
+      console.log(`📊 [ANALYTICS] Fetching analytics for vendor: ${paramVendorId} (resolved: ${vendorId}), period: ${period}`);
 
-      // Get vendor
+      // Get vendor by resolved id
       const vendors = await select('vendors', { id: vendorId });
       if (vendors.length === 0) {
         return c.json({ error: 'Vendor not found' }, 404);
@@ -368,7 +411,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           break;
       }
 
-      // Get bookings
+      // Get bookings (use resolved vendor id)
       const bookings = await query(
         `SELECT * FROM bookings 
          WHERE vendor_id = $1 
@@ -430,13 +473,11 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
    */
   app.get("/vendor/:vendorId/earnings", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
       const period = c.req.query('period') || 'month'; // day, week, month, year, lifetime
 
-      console.log(`💰 [EARNINGS] Fetching earnings for vendor: ${vendorId}, period: ${period}`);
-
       // Handle test IDs
-      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+      if (paramVendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
         return c.json({
           success: true,
           earnings: {
@@ -449,6 +490,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           },
         });
       }
+
+      const vendorId = await resolveVendorId(paramVendorId);
+      console.log(`💰 [EARNINGS] Fetching earnings for vendor: ${paramVendorId} (resolved: ${vendorId}), period: ${period}`);
 
       // Calculate date range
       const now = new Date();
@@ -472,7 +516,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           break;
       }
 
-      // Get vendor_earnings records
+      // Get vendor_earnings records (use resolved vendor id)
       const earningsQuery = period === 'lifetime'
         ? `SELECT ve.*, b.booking_date, b.service_id, s.name as service_name
            FROM vendor_earnings ve
@@ -605,20 +649,21 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
    */
   app.get("/vendor/:vendorId/transactions", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
       const period = c.req.query('period') || 'month';
       const limit = parseInt(c.req.query('limit') || '50', 10);
 
-      console.log(`💳 [TRANSACTIONS] Fetching transactions for vendor: ${vendorId}, period: ${period}, limit: ${limit}`);
-
       // Handle test IDs
-      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+      if (paramVendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
         return c.json({
           success: true,
           transactions: [],
           total: 0,
         });
       }
+
+      const vendorId = await resolveVendorId(paramVendorId);
+      console.log(`💳 [TRANSACTIONS] Fetching transactions for vendor: ${paramVendorId} (resolved: ${vendorId}), period: ${period}, limit: ${limit}`);
 
       // Calculate date range
       const now = new Date();
@@ -642,7 +687,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           break;
       }
 
-      // Get completed bookings with customer info as transactions
+      // Get completed bookings with customer info as transactions (use resolved vendor id)
       const transactionsQuery = `
         SELECT 
           b.id,
@@ -714,11 +759,12 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
    */
   app.get("/vendor/:vendorId/settlements/:settlementId/breakup", async (c) => {
     try {
-      const { vendorId, settlementId } = c.req.param();
+      const { vendorId: paramVendorId, settlementId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
 
-      console.log(`📊 [SETTLEMENT-BREAKUP] Fetching breakup for settlement: ${settlementId}`);
+      console.log(`📊 [SETTLEMENT-BREAKUP] Fetching breakup for settlement: ${settlementId}, vendor: ${paramVendorId} (resolved: ${vendorId})`);
 
-      // Get settlement with breakup
+      // Get settlement with breakup (use resolved vendor id)
       const settlements = await query(
         `SELECT s.*, b.service_name, b.booking_date, b.booking_time,
                 v.tier, v.business_name as vendor_name, vt.tier_name, vt.commission_rate as tier_commission
@@ -851,13 +897,13 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
    */
   app.get("/vendor/:vendorId/settlements", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
       const status = c.req.query('status');
       const limit = parseInt(c.req.query('limit') || '20');
       const offset = parseInt(c.req.query('offset') || '0');
 
       // Handle test IDs
-      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+      if (paramVendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
         return c.json({
           success: true,
           settlements: [],
@@ -866,6 +912,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         });
       }
 
+      const vendorId = await resolveVendorId(paramVendorId);
       let whereClause = 's.vendor_id = $1';
       const params: any[] = [vendorId];
 

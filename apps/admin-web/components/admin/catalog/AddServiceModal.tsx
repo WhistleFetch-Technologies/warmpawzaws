@@ -1,11 +1,39 @@
 'use client';
 
 import { X, Package } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { EnhancedModal } from '../shared/EnhancedModal';
 import { EnhancedButton } from '../shared/EnhancedButton';
+
+/** Map display names / variants to canonical role codes for API (must match backend specialization_master ROLE_DISPLAY_TO_CODE) */
+const ROLE_DISPLAY_TO_CODE: Record<string, string> = {
+  'pet sitter': 'sitter', sitter: 'sitter', pet_sitter: 'sitter',
+  'pet walker': 'walker', walker: 'walker', pet_walker: 'walker',
+  'pet resort': 'resort', resort: 'resort', pet_resort: 'resort',
+  'sunset care': 'sunset', sunset: 'sunset', pet_sunset_services: 'sunset',
+  'trainer (center)': 'trainer_center', trainer_center: 'trainer_center',
+  'trainer (solo)': 'trainer_solo', trainer_solo: 'trainer_solo',
+  'veterinarian (solo)': 'vet_solo', vet_solo: 'vet_solo',
+  'veterinary clinic': 'vet_clinic', vet_clinic: 'vet_clinic',
+  'veterinarian': 'vet_solo', vet: 'vet_solo',
+  boarding: 'boarding', pet_boarder: 'pet_boarder', pet_daycare: 'pet_daycare',
+  'pet boarding': 'pet_boarding', pet_boarding: 'pet_boarding',
+  'pet boarding & daycare': 'pet_boarding_daycare', pet_boarding_daycare: 'pet_boarding_daycare',
+  'groomer (center)': 'groomer_center', 'groomer (solo)': 'groomer_solo',
+  groomer_center: 'groomer_center', groomer_solo: 'groomer_solo',
+  'pet groomer': 'pet_groomer', pet_groomer: 'pet_groomer', 'grooming center': 'groomer_center',
+  'nutritionist (center)': 'nutritionist_center', 'nutritionist (solo)': 'nutritionist',
+  nutritionist_center: 'nutritionist_center', nutritionist: 'nutritionist',
+  'pet nutritionist': 'pet_nutritionist', pet_nutritionist: 'pet_nutritionist',
+};
+function toCanonicalRoleCode(v: string): string {
+  const raw = (v || '').toString().trim();
+  const withSpace = raw.toLowerCase().replace(/\s+/g, ' ');
+  const withUnderscore = raw.toLowerCase().replace(/\s+/g, '_');
+  return ROLE_DISPLAY_TO_CODE[withSpace] ?? ROLE_DISPLAY_TO_CODE[withUnderscore] ?? ROLE_DISPLAY_TO_CODE[raw] ?? withUnderscore;
+}
 
 interface Service {
   id: string;
@@ -65,6 +93,7 @@ export function AddServiceModal({
       
       if (service) {
         const specIds = (service as any).specializationIds ?? (service as any).specialization_ids ?? [];
+        const rawRoles = (service.applicableRoles || []).map((r: string) => toCanonicalRoleCode(r));
         setFormData({
           name: service.name || '',
           code: '',
@@ -77,7 +106,7 @@ export function AddServiceModal({
                        service.serviceType === 'at_center' ? 'at-center' : 
                        service.serviceType || 'at-center') as 'at-home' | 'at-center' | 'tele' | 'delivery',
           status: (service.status && service.status !== 'pending' ? service.status : 'active') as 'active' | 'inactive' | 'draft',
-          applicableRoles: service.applicableRoles || [],
+          applicableRoles: [...new Set(rawRoles.filter(Boolean))],
           specializationIds: Array.isArray(specIds) ? specIds : [],
         });
       } else {
@@ -98,33 +127,68 @@ export function AddServiceModal({
     }
   }, [isOpen, categoryId, subCategoryId, service]);
 
-  // Load specializations when category changes
-  useEffect(() => {
-    if (!formData.categoryId) {
+  // Resolve category to slug for API (specialization_master uses slugs; admin may send service_categories.id UUID)
+  const getCategorySlugForSpec = useCallback((categoryIdVal: string) => {
+    if (!categoryIdVal) return '';
+    const c = categories.find((cat: any) => (cat.id && String(cat.id) === String(categoryIdVal)) || (cat.category_id && String(cat.category_id) === String(categoryIdVal)));
+    return (c?.category_id || c?.id || categoryIdVal) as string;
+  }, [categories]);
+
+  // Load specializations - extracted so we can call directly on role change (guarantees dynamic update)
+  const loadSpecializations = useCallback((categoryIdVal: string, rolesArr: string[]) => {
+    const hasCategory = !!categoryIdVal;
+    const hasRoles = rolesArr.length > 0;
+    if (!hasCategory && !hasRoles) {
       setSpecializationsByCategory([]);
       return;
     }
-    let cancelled = false;
+    const canonRoles = rolesArr.map(toCanonicalRoleCode).filter(Boolean);
+    const roleIdsParam = canonRoles.length > 0 ? `roleIds=${encodeURIComponent(canonRoles.join(','))}` : '';
+    // Use slug when available so backend specialization_master (slug-based) matches; backend also resolves UUID if needed
+    const categorySlug = getCategorySlugForSpec(categoryIdVal) || categoryIdVal;
+    const categoryParam = hasCategory ? `categoryId=${encodeURIComponent(categorySlug)}` : '';
+    const params = [categoryParam, roleIdsParam].filter(Boolean).join('&');
+    const query = `/admin/specializations?${params}`;
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+      console.log('[AddServiceModal] Loading specializations', { categoryIdVal, categorySlug, canonRoles, query });
+    }
     setLoadingSpecializations(true);
     apiClient
-      .get<any>(`/admin/specializations?categoryId=${encodeURIComponent(formData.categoryId)}`)
+      .get<any>(query)
       .then((data) => {
-        if (cancelled) return;
         const list = (data.specializations ?? data.data ?? []).map((s: any) => ({
           specializationId: s.specializationId ?? s.specialization_id,
           name: s.name ?? '',
           displayName: s.displayName ?? s.display_name ?? s.name ?? '',
         }));
         setSpecializationsByCategory(list);
+        setFormData((prev) => {
+          const validIds = new Set(list.map((s: { specializationId: string }) => s.specializationId));
+          const kept = (prev.specializationIds || []).filter((id) => validIds.has(id));
+          return kept.length === (prev.specializationIds?.length ?? 0) ? prev : { ...prev, specializationIds: kept };
+        });
       })
-      .catch(() => {
-        if (!cancelled) setSpecializationsByCategory([]);
+      .catch((err) => {
+        if (typeof window !== 'undefined') console.warn('[AddServiceModal] Specializations API failed', query, err);
+        setSpecializationsByCategory([]);
       })
-      .finally(() => {
-        if (!cancelled) setLoadingSpecializations(false);
-      });
-    return () => { cancelled = true; };
-  }, [formData.categoryId]);
+      .finally(() => setLoadingSpecializations(false));
+  }, [getCategorySlugForSpec]);
+
+  // Trigger load when category or roles change
+  useEffect(() => {
+    if (!isOpen) return;
+    loadSpecializations(formData.categoryId || '', formData.applicableRoles);
+  }, [isOpen, formData.categoryId, JSON.stringify(formData.applicableRoles), loadSpecializations]);
+
+  const effectiveHandleChange = (field: string, value: any) => {
+    handleChange(field, value);
+    if (field === 'applicableRoles') {
+      // Immediately fetch with new roles (don't wait for re-render)
+      const cat = formData.categoryId || '';
+      loadSpecializations(cat, Array.isArray(value) ? value : []);
+    }
+  };
 
   const loadCategories = async () => {
     try {
@@ -139,8 +203,7 @@ export function AddServiceModal({
     try {
       const data = await apiClient.get<any>('/admin/roles');
       const allRoles = data.roles || data?.data || [];
-      // ✅ FIX: Filter to active roles only (canonical roles post-migration)
-      const activeRoles = Array.isArray(allRoles) 
+      const activeRoles = Array.isArray(allRoles)
         ? allRoles.filter((r: any) => r.isActive !== false && r.is_active !== false)
         : [];
       setRoles(activeRoles);
@@ -148,6 +211,11 @@ export function AddServiceModal({
       console.error('Error loading roles:', error);
     }
   };
+
+  /** Get canonical role code for API */
+  const getRoleCode = (role: any) => toCanonicalRoleCode((role?.roleCode ?? role?.name ?? '').toString().trim());
+  /** Check if role is selected (selected array stores canonical codes) */
+  const isRoleSelected = (role: any, selected: string[]) => selected.includes(getRoleCode(role));
 
   const handleChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -431,16 +499,78 @@ export function AddServiceModal({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
+              Applicable Roles <span className="text-red-500">*</span>
+            </label>
+            <div className="border border-gray-300 rounded-lg p-4 max-h-48 overflow-y-auto bg-gray-50">
+              {roles.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-4">Loading roles...</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {roles.map(role => {
+                    const roleCode = getRoleCode(role);
+                    const selected = isRoleSelected(role, formData.applicableRoles);
+                    const equivToRemove: Record<string, string[]> = {
+                      sitter: ['sitter', 'pet_sitter'],
+                      pet_sitter: ['sitter', 'pet_sitter'],
+                      walker: ['walker', 'pet_walker'],
+                      pet_walker: ['walker', 'pet_walker'],
+                      resort: ['resort', 'pet_resort'],
+                      pet_resort: ['resort', 'pet_resort'],
+                      groomer_center: ['groomer_center', 'pet_groomer', 'groomer_solo', 'groomer'],
+                      groomer_solo: ['groomer_solo', 'pet_groomer', 'groomer_center', 'groomer'],
+                      pet_groomer: ['pet_groomer', 'groomer_center', 'groomer_solo', 'groomer'],
+                      nutritionist_center: ['nutritionist_center', 'nutritionist', 'pet_nutritionist'],
+                      nutritionist: ['nutritionist', 'nutritionist_center', 'pet_nutritionist'],
+                      pet_nutritionist: ['pet_nutritionist', 'nutritionist', 'nutritionist_center'],
+                    };
+                    return (
+                      <label key={role.id} className="flex items-center gap-2 p-2 hover:bg-white rounded cursor-pointer transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                            const canon = getRoleCode(role);
+                            if (!canon) return;
+                            const current = formData.applicableRoles;
+                            if (e.target.checked) {
+                              if (current.includes(canon)) return;
+                              effectiveHandleChange('applicableRoles', [...current.filter((r) => toCanonicalRoleCode(r) !== canon), canon]);
+                            } else {
+                              const codes = equivToRemove[canon] || [canon];
+                              const toRemove = new Set(codes.flatMap((c) => [c, toCanonicalRoleCode(c)]));
+                              effectiveHandleChange('applicableRoles', current.filter((r) => !toRemove.has(r)));
+                            }
+                          }}
+                          className="w-4 h-4 text-[#FF8C42] border-gray-300 rounded focus:ring-[#FF8C42]"
+                        />
+                        <span className="text-sm text-gray-700">{role.display_name || role.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Select roles that can use this service. Specializations below are filtered by these roles (from Catalog &gt; Categories).
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
               Specializations (optional)
             </label>
-            <p className="text-xs text-gray-500 mb-2">Link this service to category specializations for vendor profile and problem-grid matching.</p>
-            {!formData.categoryId ? (
-              <p className="text-sm text-gray-400">Select a category first to load specializations.</p>
+            <p className="text-xs text-gray-500 mb-2">Link this service to category specializations for vendor profile and problem-grid matching. From Catalog &gt; Categories, filtered by selected roles.</p>
+            {!formData.categoryId && formData.applicableRoles.length === 0 ? (
+              <p className="text-sm text-gray-400">Select applicable roles above (or a category) to load specializations.</p>
             ) : loadingSpecializations ? (
               <p className="text-sm text-gray-500">Loading…</p>
             ) : specializationsByCategory.length === 0 ? (
-              <p className="text-sm text-gray-500">No specializations for this category.</p>
+              <p className="text-sm text-gray-500">No specializations for this category and selected roles.</p>
             ) : (
+              <>
+              {formData.applicableRoles.length === 0 && (
+                <p className="text-xs text-amber-600 mb-2">Showing all specializations for this category. Select applicable roles above to filter.</p>
+              )}
               <div className="border border-gray-300 rounded-lg p-4 max-h-40 overflow-y-auto bg-gray-50 flex flex-wrap gap-2">
                 {specializationsByCategory.map((spec) => {
                   const selected = formData.specializationIds.includes(spec.specializationId);
@@ -463,42 +593,8 @@ export function AddServiceModal({
                   );
                 })}
               </div>
+              </>
             )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Applicable Roles <span className="text-red-500">*</span>
-            </label>
-            <div className="border border-gray-300 rounded-lg p-4 max-h-48 overflow-y-auto bg-gray-50">
-              {roles.length === 0 ? (
-                <p className="text-sm text-gray-500 text-center py-4">Loading roles...</p>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  {roles.map(role => (
-                    <label key={role.id} className="flex items-center gap-2 p-2 hover:bg-white rounded cursor-pointer transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={formData.applicableRoles.includes(role.name || role.code)}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                          const roleCode = role.name || role.code;
-                          if (e.target.checked) {
-                            handleChange('applicableRoles', [...formData.applicableRoles, roleCode]);
-                          } else {
-                            handleChange('applicableRoles', formData.applicableRoles.filter(r => r !== roleCode));
-                          }
-                        }}
-                        className="w-4 h-4 text-[#FF8C42] border-gray-300 rounded focus:ring-[#FF8C42]"
-                      />
-                      <span className="text-sm text-gray-700">{role.display_name || role.name}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Select roles that can use this service. Leave empty to create an unassigned service.
-            </p>
           </div>
         </div>
       </EnhancedModal>

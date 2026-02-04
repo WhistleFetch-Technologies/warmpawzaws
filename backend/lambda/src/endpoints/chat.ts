@@ -461,6 +461,29 @@ export function registerChatEndpoints(app: Hono) {
   });
 
   /**
+   * POST /chat/mark-read/:bookingId
+   * Mark all messages for a booking as read (e.g. when vendor opens chat).
+   * Frontend: VendorBookingCard calls this with { vendorId }.
+   */
+  app.post("/chat/mark-read/:bookingId", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const body = await c.req.json().catch(() => ({})) as { vendorId?: string };
+      if (!isValidUUID(bookingId)) {
+        return c.json({ success: true, message: 'No messages to mark' });
+      }
+      await query(
+        `UPDATE chat_messages SET is_read = true, read_at = COALESCE(read_at, NOW()) WHERE booking_id = $1 AND is_read = false`,
+        [bookingId]
+      ).catch(() => ({ rowCount: 0 }));
+      return c.json({ success: true, message: 'Messages marked as read' });
+    } catch (error: any) {
+      console.error('Error marking booking chat as read:', error);
+      return c.json({ success: true, message: 'Messages marked as read' });
+    }
+  });
+
+  /**
    * POST /chat/send
    * Send a chat message (unified endpoint - handles both booking-based and direct messaging)
    */

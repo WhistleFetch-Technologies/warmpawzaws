@@ -82,6 +82,27 @@ const roleMappings: Record<string, string[]> = {
   'event_organizer': ['pet_event_organizer', 'event_organizer'],
 };
 
+/**
+ * Resolve request vendorId to actual vendor id (vendors table).
+ * When vendorId is a vendor_identity id and there is an existing vendor with the same phone,
+ * add-from-catalog creates the service under that vendor. GET/PUT must use the same resolved id
+ * so list and update work. This helper does NOT create vendors (only add-from-catalog does).
+ */
+async function resolveVendorId(paramVendorId: string): Promise<string> {
+  const existingVendor = await select('vendors', { id: paramVendorId });
+  if (existingVendor.length > 0) return paramVendorId;
+  const identities = await select('vendor_identity', { id: paramVendorId });
+  if (identities.length === 0) return paramVendorId;
+  const identity = identities[0];
+  if (identity.onboarding_status !== 'APPROVED' && identity.onboarding_status !== 'ACTIVATED') return paramVendorId;
+  const vendorByPhone = await select('vendors', { phone: identity.phone });
+  if (vendorByPhone.length > 0) {
+    console.log(`[VendorServices] Resolved vendorId ${paramVendorId} to actual vendor ${vendorByPhone[0].id} (by phone)`);
+    return vendorByPhone[0].id;
+  }
+  return paramVendorId;
+}
+
 export function registerVendorServicesEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/services
@@ -90,7 +111,8 @@ export function registerVendorServicesEndpoints(app: Hono) {
    */
   app.get("/vendor/:vendorId/services", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
       const customOnly = c.req.query('custom') === 'true'; // ✅ Support custom=true filter
 
       // Handle test IDs - return empty services
@@ -544,7 +566,8 @@ export function registerVendorServicesEndpoints(app: Hono) {
    */
   app.get("/vendor/:vendorId/services/:serviceStyle", async (c) => {
     try {
-      const { vendorId, serviceStyle } = c.req.param();
+      const { vendorId: paramVendorId, serviceStyle } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
 
       if (!['at_home', 'at_center', 'tele'].includes(serviceStyle)) {
         return c.json({ error: 'Invalid service style' }, 400);
@@ -1066,6 +1089,8 @@ export function registerVendorServicesEndpoints(app: Hono) {
         }, 200);
       }
 
+      // ✅ duration_minutes is NOT NULL - coerce to 5–1440, default 30
+      const safeDuration = Math.max(5, Math.min(1440, Number(customDuration ?? baseService.duration_minutes ?? 30) || 30));
       const vendorService = await insert('vendor_services', {
         vendor_id: actualVendorId,
         service_id: effectiveServiceId, // Now always UUID
@@ -1074,8 +1099,8 @@ export function registerVendorServicesEndpoints(app: Hono) {
         service_style: serviceStyle,
         price: customPrice || baseService.price || 0,
         custom_price: customPrice || null,
-        duration_minutes: customDuration || baseService.duration_minutes || 30,
-        custom_duration: customDuration || null,
+        duration_minutes: safeDuration,
+        custom_duration: (customDuration != null && customDuration !== '') ? (Number(customDuration) || 30) : null,
         is_enabled: isEnabled !== false,
         publish_status: publishStatus || 'published',
         is_custom_service: isCustomService || false,
@@ -1104,7 +1129,8 @@ export function registerVendorServicesEndpoints(app: Hono) {
    */
   app.put("/vendor/:vendorId/services/:serviceId", async (c) => {
     try {
-      const { vendorId, serviceId } = c.req.param();
+      const { vendorId: paramVendorId, serviceId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
       
       // Check if vendor has services or custom_services capability
       const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
@@ -1125,11 +1151,15 @@ export function registerVendorServicesEndpoints(app: Hono) {
       if (serviceData.customPrice !== undefined) {
         updateData.custom_price = serviceData.customPrice;
       }
+      // ✅ FIX: duration_minutes is NOT NULL - never set null/undefined; coerce to 5–1440, default 30
       if (serviceData.duration !== undefined || serviceData.customDuration !== undefined) {
-        updateData.duration_minutes = serviceData.duration || serviceData.customDuration;
+        const raw = serviceData.duration ?? serviceData.customDuration;
+        const mins = (raw != null && raw !== '') ? (Number(raw) || 30) : 30;
+        updateData.duration_minutes = Math.max(5, Math.min(1440, mins));
       }
       if (serviceData.customDuration !== undefined) {
-        updateData.custom_duration = serviceData.customDuration;
+        const raw = serviceData.customDuration;
+        updateData.custom_duration = (raw != null && raw !== '') ? (Number(raw) || 30) : null;
       }
       if (serviceData.isEnabled !== undefined || serviceData.is_enabled !== undefined) {
         updateData.is_enabled = serviceData.isEnabled !== undefined ? serviceData.isEnabled : serviceData.is_enabled;
@@ -1384,7 +1414,13 @@ export function registerVendorServicesEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating vendor service:', error);
-      return c.json({ error: error.message }, 500);
+      const msg = error?.message || String(error);
+      const isTransient = msg.includes('pool exhausted') || msg.includes('try again in a moment') ||
+        msg.includes('timeout') || msg.includes('Connection terminated') || msg.includes('ETIMEDOUT') || msg.includes('ECONNREFUSED');
+      if (isTransient) {
+        return c.json({ error: 'Service temporarily unavailable. Please try again in a moment.' }, 503);
+      }
+      return c.json({ error: msg }, 500);
     }
   });
 
@@ -1589,16 +1625,19 @@ export function registerVendorServicesEndpoints(app: Hono) {
    */
   app.post("/vendor/:vendorId/services/custom", async (c) => {
     try {
-      const { vendorId } = c.req.param();
-      
+      const { vendorId: paramVendorId } = c.req.param();
+      // Resolve identity ID to vendor ID (same as GET /vendor/:vendorId/services) so requests
+      // using JWT identity id succeed when vendor row is keyed by vendor id or matched by phone.
+      const vendorId = await resolveVendorId(paramVendorId);
+
       // Check if vendor has services or custom_services capability
       const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
                                      await checkVendorCapability(vendorId, 'custom_services');
       if (!hasServicesCapability) {
         return c.json({ error: 'Vendor does not have services capability' }, 403);
       }
-      
-      // Get vendor to determine serviceStyle
+
+      // Get vendor to determine serviceStyle (use resolved vendor id)
       const vendors = await select('vendors', { id: vendorId });
       if (vendors.length === 0) {
         return c.json({ error: 'Vendor not found' }, 404);
@@ -2041,11 +2080,15 @@ export function registerVendorServicesEndpoints(app: Hono) {
       if (serviceData.customPrice !== undefined) {
         updateData.custom_price = serviceData.customPrice;
       }
+      // ✅ FIX: duration_minutes is NOT NULL - never set null/undefined; coerce to 5–1440, default 30
       if (serviceData.duration !== undefined || serviceData.customDuration !== undefined) {
-        updateData.duration_minutes = serviceData.duration || serviceData.customDuration;
+        const raw = serviceData.duration ?? serviceData.customDuration;
+        const mins = (raw != null && raw !== '') ? (Number(raw) || 30) : 30;
+        updateData.duration_minutes = Math.max(5, Math.min(1440, mins));
       }
       if (serviceData.customDuration !== undefined) {
-        updateData.custom_duration = serviceData.customDuration;
+        const raw = serviceData.customDuration;
+        updateData.custom_duration = (raw != null && raw !== '') ? (Number(raw) || 30) : null;
       }
       if (serviceData.isEnabled !== undefined || serviceData.is_enabled !== undefined) {
         updateData.is_enabled = serviceData.isEnabled !== undefined ? serviceData.isEnabled : serviceData.is_enabled;
@@ -2219,7 +2262,8 @@ export function registerVendorServicesEndpoints(app: Hono) {
    */
   app.delete("/vendor/:vendorId/services/:serviceId", async (c) => {
     try {
-      const { vendorId, serviceId } = c.req.param();
+      const { vendorId: paramVendorId, serviceId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
       
       // Check if vendor has services or custom_services capability
       const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
@@ -2250,7 +2294,8 @@ export function registerVendorServicesEndpoints(app: Hono) {
    */
   app.post("/vendor/:vendorId/services/custom/:serviceId/publish", async (c) => {
     try {
-      const { vendorId, serviceId } = c.req.param();
+      const { vendorId: paramVendorId, serviceId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
       
       // Check if vendor has services capability
       const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 

@@ -32,10 +32,14 @@ interface TierInfo {
   features: string[];
   canUpgrade: boolean;
   nextTier?: string;
+  payoutCycleLabel?: string;
+  upgradeTiers?: Array<{ name: string; displayName?: string; commissionRate: number; monthlyCost: number; yearlyCost: number; features: string[]; termsAndConditions?: string; requiresTermsAcceptance?: boolean }>;
   upgradeRequirements?: {
     upgradeCost: number;
     commissionRate: number;
     features: string[];
+    termsAndConditions?: string;
+    requiresTermsAcceptance?: boolean;
   };
 }
 
@@ -115,6 +119,10 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   
   // Payout request
   const [requestingPayout, setRequestingPayout] = useState(false);
+  // Tier upgrade modal
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradeTermsAccepted, setUpgradeTermsAccepted] = useState(false);
+  const [upgradeSettlementSchedule, setUpgradeSettlementSchedule] = useState<'monthly' | 'weekly_4'>('monthly');
 
   useEffect(() => {
     loadAllData();
@@ -185,8 +193,10 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
         
         setTierInfo({
           current: safeString(t.current ?? t.tier_name ?? t.tierName, defaultTierInfo.current),
-          name: safeString(t.name ?? t.tier_name ?? t.tierName ?? t.current, defaultTierInfo.name),
+          name: safeString(t.name ?? t.tier_name ?? t.tierName ?? t.current ?? t.displayName, defaultTierInfo.name),
           commissionRate: safeNumber(t.commissionRate ?? t.commission_rate ?? t.commission, defaultTierInfo.commissionRate),
+          payoutCycleLabel: typeof t.payoutCycleLabel === 'string' ? t.payoutCycleLabel : undefined,
+          upgradeTiers: Array.isArray(t.upgradeTiers) ? t.upgradeTiers : undefined,
           features: Array.isArray(t.features) ? t.features : 
                    (Array.isArray(t.benefits) ? t.benefits : defaultTierInfo.features),
           canUpgrade: typeof t.canUpgrade === 'boolean' ? t.canUpgrade : 
@@ -211,7 +221,9 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                   ? (t.upgradeRequirements || t.requirements || t.upgrade_requirements).features 
                   : (Array.isArray((t.upgradeRequirements || t.requirements || t.upgrade_requirements).benefits)
                     ? (t.upgradeRequirements || t.requirements || t.upgrade_requirements).benefits
-                    : defaultTierInfo.upgradeRequirements!.features)
+                    : defaultTierInfo.upgradeRequirements!.features),
+                termsAndConditions: (t.upgradeRequirements || t.requirements || t.upgrade_requirements).termsAndConditions ?? (t.upgradeRequirements || t.requirements || t.upgrade_requirements).terms_and_conditions ?? null,
+                requiresTermsAcceptance: Boolean((t.upgradeRequirements || t.requirements || t.upgrade_requirements).requiresTermsAcceptance ?? (t.upgradeRequirements || t.requirements || t.upgrade_requirements).requires_terms_acceptance),
               }
             : defaultTierInfo.upgradeRequirements
         });
@@ -342,58 +354,61 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
     }
   };
 
-  const VALID_TIERS = ['Bronze', 'Silver', 'Gold', 'Platinum'] as const;
+  const handleTierUpgradeClick = () => {
+    if (!tierInfo?.canUpgrade || !tierInfo.nextTier) return;
+    setUpgradeTermsAccepted(false);
+    setUpgradeSettlementSchedule('monthly');
+    setShowUpgradeModal(true);
+  };
 
   const handleTierUpgrade = async () => {
-    if (!tierInfo || !tierInfo.upgradeRequirements) return;
-    // Resolve next tier: API may return string or object { name: 'Silver' }
+    if (!tierInfo) return;
     const raw = tierInfo.nextTier;
     const rawStr = typeof raw === 'string'
       ? raw.trim()
       : (raw && typeof raw === 'object' && typeof (raw as any).name === 'string')
         ? String((raw as any).name).trim()
         : '';
-    let nextTierName = VALID_TIERS.find(t => t.toLowerCase() === rawStr.toLowerCase());
+    const nextTierName = rawStr || (tierInfo.upgradeRequirements && (tierInfo.upgradeRequirements as any).name);
     if (!nextTierName) {
-      // Derive from current tier so we never send an invalid value
-      const currentName = (typeof tierInfo.name === 'string' ? tierInfo.name : tierInfo.current || 'Bronze').trim();
-      const currentIdx = VALID_TIERS.findIndex(t => t.toLowerCase() === currentName.toLowerCase());
-      const nextIdx = currentIdx >= 0 && currentIdx < VALID_TIERS.length - 1 ? currentIdx + 1 : 0;
-      nextTierName = VALID_TIERS[nextIdx];
+      alert('No upgrade tier available for your role.');
+      setShowUpgradeModal(false);
+      return;
     }
-    const upgradeCost = typeof tierInfo.upgradeRequirements.upgradeCost === 'number' 
-      ? tierInfo.upgradeRequirements.upgradeCost : 0;
-    const upgradeFeatures = Array.isArray(tierInfo.upgradeRequirements.features) 
-      ? tierInfo.upgradeRequirements.features : [];
-    const currentCommissionRaw = typeof tierInfo.commissionRate === 'number' ? tierInfo.commissionRate : 15;
-    const nextCommissionRaw = typeof tierInfo.upgradeRequirements.commissionRate === 'number' 
-      ? tierInfo.upgradeRequirements.commissionRate : 12;
-    // API may return percentage (15) or decimal (0.15) - normalize to percentage
-    const currentCommission = currentCommissionRaw > 1 ? currentCommissionRaw : currentCommissionRaw * 100;
-    const nextCommission = nextCommissionRaw > 1 ? nextCommissionRaw : nextCommissionRaw * 100;
-    
-    const confirmed = confirm(
-      `Upgrade to ${nextTierName} tier for ₹${upgradeCost.toLocaleString()}?\n\n` +
-      `Benefits:\n${upgradeFeatures.join('\n')}\n\n` +
-      `Commission will reduce from ${currentCommission.toFixed(0)}% to ${nextCommission.toFixed(0)}%`
-    );
-    
-    if (!confirmed) return;
-    
+    const req = tierInfo.upgradeRequirements;
+    const requiresTerms = req?.requiresTermsAcceptance === true || !!(req?.termsAndConditions && String(req.termsAndConditions).trim());
+    if (requiresTerms && !upgradeTermsAccepted) {
+      alert('Please accept the terms and conditions to proceed.');
+      return;
+    }
+    const upgradeCost = typeof req?.upgradeCost === 'number' ? req.upgradeCost : 0;
+    setShowUpgradeModal(false);
+
     try {
-      // Backend expects newTier (exactly Bronze, Silver, Gold, Platinum) and paymentMethod: 'upfront' | 'settlement_deduction'
       const response = await apiClient.post<any>(`/vendor/${vendorId}/tier/upgrade`, {
         newTier: nextTierName,
-        paymentMethod: 'settlement_deduction'
+        paymentMethod: 'settlement_deduction',
+        subscriptionPeriod: 'monthly',
+        settlementSchedule: upgradeSettlementSchedule,
+        termsAccepted: upgradeTermsAccepted || !requiresTerms,
       });
-      
+
       if (response?.success) {
         alert(`Successfully upgraded to ${nextTierName} tier!`);
         await loadAllData();
+      } else if (response?.requiresTermsAcceptance) {
+        setShowUpgradeModal(true);
+        alert(response?.error || 'Please accept the terms and conditions.');
+      } else {
+        alert(response?.error || 'Failed to upgrade tier.');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to upgrade tier:', error);
-      alert('Failed to upgrade tier. Please try again.');
+      const msg = error?.response?.data?.error || error?.message || 'Failed to upgrade tier. Please try again.';
+      if (msg?.includes('terms')) {
+        setShowUpgradeModal(true);
+      }
+      alert(msg);
     }
   };
 
@@ -430,9 +445,9 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   // Helper functions
   const getTierIcon = (tier: string) => {
     switch (tier?.toLowerCase()) {
-      case 'bronze': case 'basic': return <Star className="w-5 h-5 text-amber-700" />;
-      case 'silver': case 'premium': return <Zap className="w-5 h-5 text-gray-400" />;
-      case 'gold': return <Award className="w-5 h-5 text-yellow-500" />;
+      case 'bronze': case 'basic': case 'free tier': return <Star className="w-5 h-5 text-amber-700" />;
+      case 'silver': case 'advance': case 'professional': return <Zap className="w-5 h-5 text-gray-400" />;
+      case 'gold': case 'premium': case 'growth': return <Award className="w-5 h-5 text-yellow-500" />;
       case 'platinum': case 'enterprise': return <Crown className="w-5 h-5 text-purple-500" />;
       default: return <Star className="w-5 h-5" />;
     }
@@ -440,9 +455,9 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
 
   const getTierColor = (tier: string) => {
     switch (tier?.toLowerCase()) {
-      case 'bronze': case 'basic': return 'text-amber-700 bg-amber-100';
-      case 'silver': case 'premium': return 'text-gray-600 bg-gray-100';
-      case 'gold': return 'text-yellow-700 bg-yellow-100';
+      case 'bronze': case 'basic': case 'free tier': return 'text-amber-700 bg-amber-100';
+      case 'silver': case 'advance': case 'professional': return 'text-gray-600 bg-gray-100';
+      case 'gold': case 'premium': case 'growth': return 'text-yellow-700 bg-yellow-100';
       case 'platinum': case 'enterprise': return 'text-purple-700 bg-purple-100';
       default: return 'text-gray-600 bg-gray-100';
     }
@@ -501,7 +516,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                 </Button>
                 {tierInfo?.canUpgrade && (
                   <Button 
-                    onClick={handleTierUpgrade} 
+                    onClick={handleTierUpgradeClick} 
                     size="sm"
                     className="bg-white text-orange-600 hover:bg-white/90 text-xs px-3"
                   >
@@ -535,7 +550,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
             <div className="grid grid-cols-2 gap-2 mb-3">
               <div className="bg-white/10 rounded-lg p-2">
                 <p className="text-[10px] opacity-80">Next Payout</p>
-                <p className="text-sm font-medium">Every Tuesday</p>
+                <p className="text-sm font-medium">{tierInfo.payoutCycleLabel || 'Weekly (every 7 days)'}</p>
               </div>
               {tierInfo.nextTier && (
                 <div className="bg-white/10 rounded-lg p-2">
@@ -798,7 +813,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                           </li>
                         ))}
                       </ul>
-                      <Button onClick={handleTierUpgrade} size="sm" className="bg-purple-600 hover:bg-purple-700 text-xs">
+                      <Button onClick={handleTierUpgradeClick} size="sm" className="bg-purple-600 hover:bg-purple-700 text-xs">
                         Upgrade for ₹{(typeof tierInfo.upgradeRequirements.upgradeCost === 'number' ? tierInfo.upgradeRequirements.upgradeCost : 5000).toLocaleString()}
                       </Button>
                     </div>
@@ -1118,7 +1133,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                   </ul>
                   
                   {tierInfo?.current?.toLowerCase() === 'bronze' && (
-                    <Button onClick={handleTierUpgrade} className="w-full bg-gray-600 hover:bg-gray-700">
+                    <Button onClick={handleTierUpgradeClick} className="w-full bg-gray-600 hover:bg-gray-700">
                       Upgrade - ₹5,000
                     </Button>
                   )}
@@ -1201,7 +1216,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                   </ul>
                   
                   {tierInfo?.current?.toLowerCase() === 'gold' && (
-                    <Button onClick={handleTierUpgrade} className="w-full bg-purple-600 hover:bg-purple-700">
+                    <Button onClick={handleTierUpgradeClick} className="w-full bg-purple-600 hover:bg-purple-700">
                       Upgrade - ₹25,000
                     </Button>
                   )}
@@ -1212,6 +1227,48 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
         </div>
       </div>
     </div>
+
+      {/* Tier Upgrade Modal - terms acceptance and settlement schedule */}
+      {showUpgradeModal && tierInfo && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="upgrade-modal-title">
+          <div className="bg-white rounded-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto shadow-xl">
+            <h3 id="upgrade-modal-title" className="text-lg font-bold text-gray-900 mb-4">Upgrade to {typeof tierInfo.nextTier === 'string' ? tierInfo.nextTier : 'Next'} Tier</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Pay ₹{(tierInfo.upgradeRequirements?.upgradeCost ?? 0).toLocaleString()} via settlement deduction.
+            </p>
+            {tierInfo.upgradeRequirements?.requiresTermsAcceptance && tierInfo.upgradeRequirements?.termsAndConditions && (
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg max-h-32 overflow-y-auto">
+                <p className="text-xs text-gray-600 font-medium mb-2">Terms & Conditions</p>
+                <p className="text-xs text-gray-700 whitespace-pre-wrap">{String(tierInfo.upgradeRequirements.termsAndConditions).slice(0, 500)}{String(tierInfo.upgradeRequirements.termsAndConditions).length > 500 ? '...' : ''}</p>
+                <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                  <input type="checkbox" checked={upgradeTermsAccepted} onChange={(e) => setUpgradeTermsAccepted(e.target.checked)} className="w-4 h-4" />
+                  <span className="text-sm text-gray-700">I accept the terms and conditions</span>
+                </label>
+              </div>
+            )}
+            <div className="mb-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">Settlement deduction</p>
+              <div className="space-y-2">
+                <label className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer ${upgradeSettlementSchedule === 'monthly' ? 'border-orange-500 bg-orange-50' : 'border-gray-200'}`}>
+                  <input type="radio" name="schedule" value="monthly" checked={upgradeSettlementSchedule === 'monthly'} onChange={() => setUpgradeSettlementSchedule('monthly')} />
+                  <span className="text-sm">Deduct once from next settlement</span>
+                </label>
+                <label className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer ${upgradeSettlementSchedule === 'weekly_4' ? 'border-orange-500 bg-orange-50' : 'border-gray-200'}`}>
+                  <input type="radio" name="schedule" value="weekly_4" checked={upgradeSettlementSchedule === 'weekly_4'} onChange={() => setUpgradeSettlementSchedule('weekly_4')} />
+                  <span className="text-sm">Split over 4 weekly settlements</span>
+                </label>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setShowUpgradeModal(false)}>Cancel</Button>
+              <Button className="flex-1 bg-orange-500 hover:bg-orange-600" onClick={handleTierUpgrade}>
+                Confirm Upgrade
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Settlement Breakup Modal - portaled to body so it shows above Reporting container */}
       {showBreakupModal && selectedSettlementBreakup && typeof document !== 'undefined' && createPortal(

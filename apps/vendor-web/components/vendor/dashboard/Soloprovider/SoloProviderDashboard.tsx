@@ -103,8 +103,9 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const [processingOtp, setProcessingOtp] = useState(false);
   const [otpAction, setOtpAction] = useState<'start' | 'complete'>('complete');
 
-  // GPS tracking state
+  // GPS tracking state (use /tracking/start so customer can track via GET /tracking/booking/:bookingId)
   const [isTracking, setIsTracking] = useState<{ [key: string]: boolean }>({});
+  const [trackingSessionIds, setTrackingSessionIds] = useState<{ [key: string]: string }>({});
   const [trackingLocation, setTrackingLocation] = useState<{ [key: string]: { lat: number; lng: number; updated: string } }>({});
 
   // Dashboard warnings state
@@ -289,39 +290,38 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialLoadComplete]);
 
-  // GPS tracking functions
-  const startLocationTracking = async (bookingId: string, customerLat: string, customerLng: string) => {
+  // GPS tracking: use /tracking/start so customer can track via GET /tracking/booking/:bookingId (joining hands with customer)
+  const startLocationTracking = async (bookingId: string, _customerLat: string, _customerLng: string) => {
     if (!vendorId) return;
 
     try {
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           async (position) => {
-            const location = {
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-            };
+            const latitude = position.coords.latitude;
+            const longitude = position.coords.longitude;
 
-            // Start location sharing
-            const appointment = todaySchedule.find(a => a.bookingId === bookingId);
-            await apiClient.post<any>('/location/start-sharing', {
+            const res = await apiClient.post<any>('/tracking/start', {
               bookingId,
-              vendorId: vendorId,
-              customerId: (appointment as any)?.customerId || 'unknown',
-              location,
+              vendorId,
+              startLatitude: latitude,
+              startLongitude: longitude,
             });
 
+            const sessionId = res?.session?.id;
+            if (!sessionId) {
+              toast.error('Could not start tracking session');
+              return;
+            }
+
+            setTrackingSessionIds(prev => ({ ...prev, [bookingId]: sessionId }));
+            (window as any)[`tracking_session_${bookingId}`] = sessionId;
             setIsTracking(prev => ({ ...prev, [bookingId]: true }));
             setTrackingLocation(prev => ({
               ...prev,
-              [bookingId]: {
-                lat: location.latitude,
-                lng: location.longitude,
-                updated: new Date().toISOString(),
-              },
+              [bookingId]: { lat: latitude, lng: longitude, updated: new Date().toISOString() },
             }));
 
-            // Update location every 45s, throttled to min 30s between server updates (P3 performance)
             const throttleKey = `gps_last_sent_${bookingId}`;
             const interval = setInterval(async () => {
               const now = Date.now();
@@ -329,25 +329,16 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                   async (pos) => {
-                    const loc = {
-                      latitude: pos.coords.latitude,
-                      longitude: pos.coords.longitude,
-                    };
-
+                    const loc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
                     try {
-                      await apiClient.post<any>('/location/update', {
-                        bookingId,
-                        location: loc,
+                      await apiClient.post<any>(`/tracking/${sessionId}/update`, {
+                        latitude: loc.latitude,
+                        longitude: loc.longitude,
                       });
                       (window as any)[throttleKey] = Date.now();
-
                       setTrackingLocation(prev => ({
                         ...prev,
-                        [bookingId]: {
-                          lat: loc.latitude,
-                          lng: loc.longitude,
-                          updated: new Date().toISOString(),
-                        },
+                        [bookingId]: { lat: loc.latitude, lng: loc.longitude, updated: new Date().toISOString() },
                       }));
                     } catch (error: any) {
                       console.error('Error updating location:', error);
@@ -359,7 +350,6 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                     }
                   },
                   (error) => {
-                    console.error('Error getting location:', error);
                     if (error?.code === error?.TIMEOUT || error?.code === 3) {
                       toast.error('Location timed out. Check signal; tracking will retry.');
                     }
@@ -368,7 +358,6 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               }
             }, 45000);
 
-            // Store interval ID for cleanup
             (window as any)[`tracking_${bookingId}`] = interval;
           },
           (error) => {
@@ -384,10 +373,18 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   };
 
   const stopLocationTracking = async (bookingId: string) => {
+    const sessionId = trackingSessionIds[bookingId] || (window as any)[`tracking_session_${bookingId}`];
     try {
-      await apiClient.post<any>('/location/stop-sharing', { bookingId });
+      if (sessionId) {
+        await apiClient.post<any>(`/tracking/${sessionId}/cancel`, { reason: 'vendor_stopped' });
+        delete (window as any)[`tracking_session_${bookingId}`];
+        setTrackingSessionIds(prev => {
+          const next = { ...prev };
+          delete next[bookingId];
+          return next;
+        });
+      }
 
-      // Clear interval
       const interval = (window as any)[`tracking_${bookingId}`];
       if (interval) {
         clearInterval(interval);
@@ -399,7 +396,6 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         delete newState[bookingId];
         return newState;
       });
-
       setTrackingLocation(prev => {
         const newState = { ...prev };
         delete newState[bookingId];
@@ -944,6 +940,9 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         <AppointmentDetailModal
           bookingId={selectedAppointment.bookingId}
           vendorData={vendorData}
+          roleId={vendorData?.roleId || vendorData?.role_id}
+          roleName={roleName}
+          capabilities={capabilities}
           onClose={() => {
             setAppointmentDetailModalOpen(false);
             setSelectedAppointment(null);

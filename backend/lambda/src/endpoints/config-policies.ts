@@ -153,7 +153,49 @@ const DEFAULT_POLICIES = {
   },
 };
 
+/** Platform-defined service categories and formats for cancellation/refund policies (Warmpawz business rules). */
+const PLATFORM_POLICY_OPTIONS = {
+  serviceCategories: [
+    { id: 'veterinary', name: 'Veterinary Services', description: 'In-clinic, teleconsultation, doorstep' },
+    { id: 'grooming', name: 'Grooming Services', description: 'Centre-based and doorstep grooming' },
+    { id: 'walkers_training_boarding', name: 'Walkers, Training & Boarding', description: 'Dog walkers, trainers, behaviourists, boarding' },
+    { id: 'ecommerce', name: 'E-commerce Products', description: 'Product orders, returns, replacements' },
+  ],
+  serviceFormats: [
+    { id: 'in_clinic', name: 'In-Clinic', description: 'At centre / clinic' },
+    { id: 'teleconsultation', name: 'Teleconsultation', description: 'Online / video / audio' },
+    { id: 'doorstep', name: 'Doorstep / Home Visit', description: 'At customer location' },
+    { id: 'centre', name: 'Centre-Based', description: 'Service at provider centre' },
+  ],
+};
+
 export function registerConfigPoliciesEndpoints(app: Hono) {
+  /**
+   * GET /config/policy-options
+   * Returns service categories and service formats for policy configuration (dynamic per platform).
+   */
+  app.get("/config/policy-options", async (c) => {
+    try {
+      let options = PLATFORM_POLICY_OPTIONS;
+      try {
+        const row = await query(
+          `SELECT setting_value FROM admin_settings WHERE setting_category = 'policy' AND setting_key = 'policy_options' LIMIT 1`
+        ).catch(() => ({ rows: [] }));
+        if ((row as any).rows?.length > 0 && (row as any).rows[0].setting_value) {
+          const custom = typeof (row as any).rows[0].setting_value === 'string'
+            ? JSON.parse((row as any).rows[0].setting_value)
+            : (row as any).rows[0].setting_value;
+          if (custom?.serviceCategories?.length || custom?.serviceFormats?.length) options = { ...options, ...custom };
+        }
+      } catch {
+        // use defaults
+      }
+      return c.json({ success: true, ...options });
+    } catch (error: any) {
+      return c.json({ success: true, ...PLATFORM_POLICY_OPTIONS });
+    }
+  });
+
   /**
    * GET /config/policies
    * Get policies for a specific service type

@@ -36,6 +36,11 @@ import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../
 import { normalizeBooking, isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
 import {
+  getRefundTierForCancellation,
+  computeRefundFromTier,
+  type CancelledBy,
+} from '../lib/services/cancellation-policy-service';
+import {
   CreateBookingRequestSchema,
   UpdateBookingStatusRequestSchema,
 } from '@warmpawz/api-contracts/bookings';
@@ -1651,6 +1656,11 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const actorType = context.userRole || body.actorType || 'customer';
     const refundMethod = body.refundMethod || 'wallet'; // 'wallet' or 'original'
 
+    // Normalize who cancels for policy: pet_parent (customer) vs provider (vendor/platform)
+    const cancelledBy: CancelledBy = ['vendor', 'staff', 'admin', 'platform'].includes(String(actorType).toLowerCase())
+      ? 'provider'
+      : 'pet_parent';
+
     // Get current booking
     const existingBookings = await select('bookings', { id: bookingId });
     if (existingBookings.length === 0) {
@@ -1686,16 +1696,17 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     try {
-      // Update booking status to cancelled
+      // Update booking status to cancelled and record who cancelled (for policy enforcement)
       await withTransaction(async (client) => {
         await client.query(
           `UPDATE bookings 
            SET status = 'cancelled', 
                cancelled_at = NOW(), 
                cancellation_reason = $1,
+               cancelled_by = $2,
                updated_at = NOW() 
-           WHERE id = $2`,
-          [reason, bookingId]
+           WHERE id = $3`,
+          [reason, cancelledBy, bookingId]
         );
       });
 
@@ -1722,46 +1733,57 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
         requestId,
       });
 
-      // Process refund if payment was made
+      // Process refund if payment was made (policy: vendor_refund_tiers by who cancels, else fallback)
       let refundInfo = null;
       if (currentBooking.payment_status === 'paid' && currentBooking.total_amount > 0) {
         try {
-          // Calculate refund amount using policy
-          const bookingDateTime = new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
-          const hoursUntilBooking = (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
-          
-          // Get refund rules
-          const rulesResult = await query(
-            `SELECT * FROM booking_cancellation_rules
-             WHERE (vendor_id = $1 OR vendor_id IS NULL)
-               AND (service_id = $2 OR service_id IS NULL)
-             ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
-             LIMIT 1`,
-            [currentBooking.vendor_id || null, currentBooking.service_id || null]
-          ).catch(() => ({ rows: [] }));
-          
-          // Calculate refund percentage based on rules
-          let refundPercentage = 100; // Default to full refund
-          const rule = rulesResult.rows[0];
-          if (rule) {
-            if (hoursUntilBooking >= (rule.full_refund_before_hours || 24)) {
-              refundPercentage = 100;
-            } else if (hoursUntilBooking >= (rule.partial_refund_before_hours || 12)) {
-              refundPercentage = rule.partial_refund_percentage || 50;
-            } else if (hoursUntilBooking >= (rule.no_refund_before_hours || 0)) {
-              refundPercentage = 25;
-            } else {
-              refundPercentage = 0;
-            }
+          const totalAmount = parseFloat(String(currentBooking.total_amount));
+          let refundAmount: number;
+          let refundPercentage: number;
+
+          const tier = await getRefundTierForCancellation(
+            {
+              id: currentBooking.id,
+              vendor_id: currentBooking.vendor_id,
+              service_id: currentBooking.service_id,
+              service_type: currentBooking.service_type,
+              booking_date: currentBooking.booking_date,
+              booking_time: currentBooking.booking_time,
+              total_amount: totalAmount,
+            },
+            cancelledBy
+          );
+
+          if (tier) {
+            const computed = computeRefundFromTier(totalAmount, tier, 100, 0);
+            refundAmount = computed.refundAmount;
+            refundPercentage = computed.refundPercentage;
           } else {
-            // Default policy: 100% if 24+ hours, 50% if 12+ hours, 25% if 6+ hours, 0% otherwise
-            if (hoursUntilBooking >= 24) refundPercentage = 100;
-            else if (hoursUntilBooking >= 12) refundPercentage = 50;
-            else if (hoursUntilBooking >= 6) refundPercentage = 25;
-            else refundPercentage = 0;
+            // Fallback: booking_cancellation_rules or default time-based
+            const bookingDateTime = new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
+            const hoursUntilBooking = (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
+            const rulesResult = await query(
+              `SELECT * FROM booking_cancellation_rules
+               WHERE (vendor_id = $1 OR vendor_id IS NULL)
+                 AND (service_id = $2 OR service_id IS NULL)
+               ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
+               LIMIT 1`,
+              [currentBooking.vendor_id || null, currentBooking.service_id || null]
+            ).catch(() => ({ rows: [] }));
+            const rule = (rulesResult as any).rows?.[0];
+            if (rule) {
+              if (hoursUntilBooking >= (rule.full_refund_before_hours || 24)) refundPercentage = 100;
+              else if (hoursUntilBooking >= (rule.partial_refund_before_hours || 12)) refundPercentage = rule.partial_refund_percentage || 50;
+              else if (hoursUntilBooking >= (rule.no_refund_before_hours || 0)) refundPercentage = 25;
+              else refundPercentage = 0;
+            } else {
+              if (hoursUntilBooking >= 24) refundPercentage = 100;
+              else if (hoursUntilBooking >= 12) refundPercentage = 50;
+              else if (hoursUntilBooking >= 6) refundPercentage = 25;
+              else refundPercentage = 0;
+            }
+            refundAmount = Math.max(0, (totalAmount * refundPercentage) / 100);
           }
-          
-          const refundAmount = (parseFloat(currentBooking.total_amount) * refundPercentage) / 100;
           
           if (refundAmount > 0) {
             // Get payment for refund

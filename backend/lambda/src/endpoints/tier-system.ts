@@ -23,16 +23,19 @@ import { Hono } from 'hono';
 import { select, update, query, insert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { resolveVendorById } from './vendor-profile';
 
-// Default tier configuration (fallback if DB tiers not available)
-const TIER_CONFIG = {
+// Fallback when vendor_tiers is empty (legacy)
+const TIER_CONFIG_FALLBACK: Record<string, { commission: number; minBookings: number; minRevenue: number; monthlyFee: number; yearlyFee: number }> = {
   Bronze: { commission: 15.0, minBookings: 0, minRevenue: 0, monthlyFee: 0, yearlyFee: 0 },
   Silver: { commission: 12.0, minBookings: 50, minRevenue: 50000, monthlyFee: 999, yearlyFee: 9990 },
   Gold: { commission: 10.0, minBookings: 200, minRevenue: 200000, monthlyFee: 2499, yearlyFee: 24990 },
   Platinum: { commission: 8.0, minBookings: 500, minRevenue: 500000, monthlyFee: 4999, yearlyFee: 49990 },
+  Basic: { commission: 0, minBookings: 0, minRevenue: 0, monthlyFee: 0, yearlyFee: 0 },
 };
 
-// Number of settlements to spread tier upgrade deduction
+// Settlement deduction options: monthly (1x), weekly_4 (4x over 4 weeks)
+const DEDUCTION_OPTIONS = { monthly: 1, weekly_4: 4 } as const;
 const DEFAULT_DEDUCTION_INSTALLMENTS = 2;
 
 export function registerTierSystemEndpoints(app: Hono) {
@@ -124,63 +127,105 @@ export function registerTierSystemEndpoints(app: Hono) {
 
   /**
    * GET /vendor/:vendorId/tier
-   * Get vendor tier information
+   * Get vendor tier information from vendor_tiers (admin-configured).
+   * Uses applicable_roles to filter upgrade options by vendor role.
    */
   app.get("/vendor/:vendorId/tier", async (c) => {
     try {
       const { vendorId } = c.req.param();
 
-      const vendors = await select('vendors', { id: vendorId });
-      if (vendors.length === 0) {
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
+      const actualVendorId = vendor.id;
 
-      const vendor = vendors[0];
-      const currentTier = vendor.tier || 'Bronze';
+      // Fetch all active tiers from vendor_tiers (admin-configured)
+      const tiersResult = await query(
+        `SELECT id, tier_name, tier_level, display_name, commission_rate, payout_period_days,
+                monthly_cost, yearly_cost, six_month_cost, twelve_month_cost,
+                features, applicable_roles, is_default, is_free_tier,
+                terms_and_conditions, terms_version, allow_split_payment, split_payment_installments
+         FROM vendor_tiers
+         WHERE is_active = true
+         ORDER BY tier_level ASC`
+      ).catch(() => ({ rows: [] }));
+      const dbTiers = tiersResult.rows || [];
+
+      // Resolve current tier: vendor.tier → lookup in dbTiers; else use default
+      let currentTierRow = dbTiers.find((t: any) =>
+        String(t.tier_name || '').toLowerCase() === String(vendor.tier || '').toLowerCase()
+      );
+      if (!currentTierRow) {
+        currentTierRow = dbTiers.find((t: any) => t.is_default) || dbTiers[0];
+      }
+      const currentTierName = currentTierRow?.tier_name || vendor.tier || 'Basic';
+      const currentLevel = currentTierRow?.tier_level ?? 1;
 
       // Get vendor stats
       const bookings = await query(
         `SELECT COUNT(*) as count, SUM(total_amount) as revenue 
          FROM bookings 
          WHERE vendor_id = $1 AND status = 'completed'`,
-        [vendorId]
+        [actualVendorId]
       ).catch(() => ({ rows: [{ count: '0', revenue: '0' }] }));
-
       const totalBookings = parseInt(bookings.rows[0]?.count || '0', 10);
       const totalRevenue = parseFloat(bookings.rows[0]?.revenue || '0');
 
-      // Check eligibility for next tier
-      const tiers = ['Bronze', 'Silver', 'Gold', 'Platinum'];
-      const currentTierIndex = tiers.indexOf(currentTier);
-      const nextTier = currentTierIndex < tiers.length - 1 ? tiers[currentTierIndex + 1] : null;
+      // Filter upgrade tiers: tier_level > current, and applicable to vendor role
+      const vendorRoleId = vendor.role_id || null;
+      const upgradeTiers = dbTiers.filter((t: any) => {
+        if ((t.tier_level ?? 0) <= currentLevel) return false;
+        const roles = t.applicable_roles;
+        if (!roles || !Array.isArray(roles) || roles.length === 0) return true;
+        return vendorRoleId && roles.some((r: any) => String(r) === String(vendorRoleId));
+      });
 
-      let nextTierEligible = false;
-      let nextTierProgress = { bookings: 0, revenue: 0 };
-
-      if (nextTier) {
-        const nextTierConfig = TIER_CONFIG[nextTier as keyof typeof TIER_CONFIG];
-        nextTierEligible = totalBookings >= nextTierConfig.minBookings && totalRevenue >= nextTierConfig.minRevenue;
-        nextTierProgress = {
-          bookings: Math.min(100, (totalBookings / nextTierConfig.minBookings) * 100),
-          revenue: Math.min(100, (totalRevenue / nextTierConfig.minRevenue) * 100),
-        };
-      }
+      const nextTierRow = upgradeTiers[0];
+      const nextTierName = nextTierRow?.tier_name || null;
+      const features = Array.isArray(currentTierRow?.features)
+        ? currentTierRow.features
+        : (currentTierRow?.features ? [currentTierRow.features] : ['Basic listing', 'Standard support', 'Weekly settlements']);
+      const commissionRate = currentTierRow
+        ? parseFloat(currentTierRow.commission_rate || '0')
+        : (TIER_CONFIG_FALLBACK[currentTierName]?.commission ?? 0);
+      const payoutDays = currentTierRow?.payout_period_days ?? 7;
 
       return c.json({
         success: true,
         tier: {
-          current: currentTier,
-          commission: TIER_CONFIG[currentTier as keyof typeof TIER_CONFIG].commission,
-          stats: {
-            totalBookings,
-            totalRevenue,
-          },
-          nextTier: nextTier ? {
-            name: nextTier,
-            eligible: nextTierEligible,
-            requirements: TIER_CONFIG[nextTier as keyof typeof TIER_CONFIG],
-            progress: nextTierProgress,
+          current: currentTierName,
+          name: currentTierRow?.display_name || currentTierName,
+          commission: commissionRate,
+          commissionRate,
+          commission_rate: commissionRate,
+          payoutPeriodDays: payoutDays,
+          payoutCycleLabel: payoutDays === 1 ? 'Daily' : payoutDays === 7 ? 'Weekly' : `Every ${payoutDays} days`,
+          stats: { totalBookings, totalRevenue },
+          features,
+          nextTier: nextTierName,
+          next_tier: nextTierName,
+          eligible: !!nextTierRow,
+          canUpgrade: !!nextTierRow,
+          upgradeTiers: upgradeTiers.map((t: any) => ({
+            name: t.tier_name,
+            displayName: t.display_name,
+            commissionRate: parseFloat(t.commission_rate || '0'),
+            monthlyCost: parseFloat(t.monthly_cost || '0'),
+            yearlyCost: parseFloat(t.yearly_cost || '0'),
+            features: Array.isArray(t.features) ? t.features : [],
+            termsAndConditions: t.terms_and_conditions || null,
+            termsVersion: t.terms_version || '1.0',
+            requiresTermsAcceptance: !!(t.terms_and_conditions && String(t.terms_and_conditions).trim()),
+          })),
+          requirements: nextTierRow ? {
+            upgradeCost: parseFloat(nextTierRow.monthly_cost || '0'),
+            commissionRate: parseFloat(nextTierRow.commission_rate || '0'),
+            features: Array.isArray(nextTierRow.features) ? nextTierRow.features : [],
+            termsAndConditions: nextTierRow.terms_and_conditions || null,
+            requiresTermsAcceptance: !!(nextTierRow.terms_and_conditions && String(nextTierRow.terms_and_conditions).trim()),
           } : null,
+          progress: { bookings: 100, revenue: 100 },
         },
       });
     } catch (error: any) {
@@ -201,7 +246,9 @@ export function registerTierSystemEndpoints(app: Hono) {
       const { 
         newTier, 
         paymentMethod = 'settlement_deduction', // 'upfront' or 'settlement_deduction'
-        subscriptionPeriod = 'monthly',
+        subscriptionPeriod = 'monthly', // 'monthly' | 'yearly' | 'twelve_month' | 'six_month'
+        settlementSchedule = 'monthly', // 'monthly' = 1 installment from next settlement; 'weekly_4' = 4 weekly installments
+        termsAccepted = false,
         razorpayPaymentId, // Required if paymentMethod is 'upfront'
         razorpayOrderId,
         adminId 
@@ -209,17 +256,16 @@ export function registerTierSystemEndpoints(app: Hono) {
 
       console.log(`🎯 [TIER-UPGRADE] Vendor ${vendorId} upgrading to ${newTier} via ${paymentMethod}`);
 
-      if (!newTier || !['Bronze', 'Silver', 'Gold', 'Platinum'].includes(newTier)) {
-        return c.json({ error: 'Invalid tier. Must be Bronze, Silver, Gold, or Platinum' }, 400);
+      if (!newTier || typeof newTier !== 'string') {
+        return c.json({ error: 'Tier name is required' }, 400);
       }
 
-      const vendors = await select('vendors', { id: vendorId });
-      if (vendors.length === 0) {
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
-
-      const vendor = vendors[0];
-      const oldTier = vendor.tier || 'Bronze';
+      const actualVendorId = vendor.id;
+      const oldTier = vendor.tier || 'Basic';
 
       // Get tier details from database
       const tierResult = await query(
@@ -239,6 +285,16 @@ export function registerTierSystemEndpoints(app: Hono) {
       
       const tierInfo = tierRows[0];
 
+      // T&C check: if tier has terms, vendor must accept
+      const hasTerms = tierInfo.terms_and_conditions && String(tierInfo.terms_and_conditions).trim().length > 0;
+      if (hasTerms && !termsAccepted) {
+        return c.json({ 
+          error: 'You must accept the terms and conditions for this tier to upgrade',
+          requiresTermsAcceptance: true,
+          termsPreview: String(tierInfo.terms_and_conditions).slice(0, 200) + (String(tierInfo.terms_and_conditions).length > 200 ? '...' : ''),
+        }, 400);
+      }
+
       // Calculate subscription cost
       const tierFee = subscriptionPeriod === 'yearly' || subscriptionPeriod === 'twelve_month'
         ? parseFloat(tierInfo.yearly_cost || tierInfo.twelve_month_cost || '0')
@@ -246,25 +302,27 @@ export function registerTierSystemEndpoints(app: Hono) {
           ? parseFloat(tierInfo.six_month_cost || (tierInfo.monthly_cost * 5.5) || '0')
           : parseFloat(tierInfo.monthly_cost || '0');
 
-      // Bronze is always free
-      if (newTier === 'Bronze') {
-        // Just update tier to Bronze (free tier)
+      // Free tier: is_free_tier or monthly_cost = 0
+      const isFreeTier = tierInfo.is_free_tier === true || parseFloat(tierInfo.monthly_cost || '0') === 0;
+      if (isFreeTier) {
+        const commissionPct = parseFloat(tierInfo.commission_rate || '0');
         const updated = await update('vendors',
-          { id: vendorId },
+          { id: actualVendorId },
           {
             tier: newTier,
-            commission_percentage: TIER_CONFIG[newTier as keyof typeof TIER_CONFIG].commission,
+            commission_percentage: commissionPct,
           }
         );
 
         return c.json({
           success: true,
           vendor: updated[0],
-          message: `Vendor tier set to Bronze (free tier)`,
+          message: `Vendor tier set to ${newTier} (free tier)`,
           tierFee: 0,
         });
       }
 
+      let usedDeductionInstallments = 0;
       // Handle paid tier upgrade
       if (tierFee > 0) {
         if (paymentMethod === 'upfront') {
@@ -287,7 +345,7 @@ export function registerTierSystemEndpoints(app: Hono) {
           }
 
           const subscription = await insert('vendor_tier_subscriptions', {
-            vendor_id: vendorId,
+            vendor_id: actualVendorId,
             tier_id: tierInfo.id,
             subscription_type: subscriptionPeriod,
             payment_type: 'upfront',
@@ -302,7 +360,7 @@ export function registerTierSystemEndpoints(app: Hono) {
 
           // Record payment
           await insert('tier_upgrade_payments', {
-            vendor_id: vendorId,
+            vendor_id: actualVendorId,
             subscription_id: subscription[0]?.id,
             tier_id: tierInfo.id,
             payment_type: 'upfront',
@@ -314,10 +372,13 @@ export function registerTierSystemEndpoints(app: Hono) {
           });
 
         } else if (paymentMethod === 'settlement_deduction') {
-          // Create deduction to be recovered from settlements
-          console.log(`📉 [TIER-UPGRADE] Creating settlement deduction for ₹${tierFee} over ${DEFAULT_DEDUCTION_INSTALLMENTS} payouts`);
+          // settlementSchedule: 'monthly' = 1 installment; 'weekly_4' = 4 weekly installments
+          const installments = DEDUCTION_OPTIONS[settlementSchedule as keyof typeof DEDUCTION_OPTIONS]
+            ?? (tierInfo.allow_split_payment ? (tierInfo.split_payment_installments || DEFAULT_DEDUCTION_INSTALLMENTS) : DEFAULT_DEDUCTION_INSTALLMENTS);
+          const safeInstallments = Math.min(4, Math.max(1, installments));
+          const amountPerInstallment = Math.ceil(tierFee / safeInstallments);
 
-          const amountPerInstallment = Math.ceil(tierFee / DEFAULT_DEDUCTION_INSTALLMENTS);
+          console.log(`📉 [TIER-UPGRADE] Creating settlement deduction for ₹${tierFee} over ${safeInstallments} payouts (schedule: ${settlementSchedule})`);
 
           // Create subscription record
           const subscriptionEndDate = new Date();
@@ -330,7 +391,7 @@ export function registerTierSystemEndpoints(app: Hono) {
           }
 
           const subscription = await insert('vendor_tier_subscriptions', {
-            vendor_id: vendorId,
+            vendor_id: actualVendorId,
             tier_id: tierInfo.id,
             subscription_type: subscriptionPeriod,
             payment_type: 'split',
@@ -338,7 +399,7 @@ export function registerTierSystemEndpoints(app: Hono) {
             total_amount: tierFee,
             discount_amount: 0,
             final_amount: tierFee,
-            settlement_deduction_installments: DEFAULT_DEDUCTION_INSTALLMENTS,
+            settlement_deduction_installments: safeInstallments,
             status: 'active',
             start_date: new Date().toISOString().split('T')[0],
             end_date: subscriptionEndDate.toISOString().split('T')[0],
@@ -346,26 +407,26 @@ export function registerTierSystemEndpoints(app: Hono) {
 
           // Create deduction record to be processed during settlements
           await insert('tier_upgrade_deductions', {
-            vendor_id: vendorId,
+            vendor_id: actualVendorId,
             subscription_id: subscription[0]?.id,
             tier_id: tierInfo.id,
             total_amount: tierFee,
-            recovery_installments: DEFAULT_DEDUCTION_INSTALLMENTS,
+            recovery_installments: safeInstallments,
             amount_per_installment: amountPerInstallment,
             amount_remaining: tierFee,
             status: 'pending',
           });
 
-          console.log(`✅ [TIER-UPGRADE] Deduction created: ₹${amountPerInstallment} x ${DEFAULT_DEDUCTION_INSTALLMENTS} payouts`);
+          console.log(`✅ [TIER-UPGRADE] Deduction created: ₹${amountPerInstallment} x ${safeInstallments} payouts`);
         }
       }
 
       // Update vendor tier
       const updated = await update('vendors',
-        { id: vendorId },
+        { id: actualVendorId },
         {
           tier: newTier,
-          commission_percentage: parseFloat(tierInfo.commission_rate) || TIER_CONFIG[newTier as keyof typeof TIER_CONFIG].commission,
+          commission_percentage: parseFloat(tierInfo.commission_rate) || 0,
           metadata: {
             ...(vendor.metadata || {}),
             tierHistory: [
@@ -383,17 +444,37 @@ export function registerTierSystemEndpoints(app: Hono) {
         }
       );
 
+      // Record T&C acceptance if tier has terms
+      if (hasTerms && tierInfo.terms_and_conditions) {
+        try {
+          await insert('vendor_tier_acceptances', {
+            vendor_id: actualVendorId,
+            tier_id: tierInfo.id,
+            terms_version: tierInfo.terms_version || '1.0',
+            terms_text_snapshot: String(tierInfo.terms_and_conditions).slice(0, 10000),
+            accepted_via: 'web',
+          }).catch((err) => console.warn('[TIER-UPGRADE] T&C acceptance record failed (non-fatal):', err?.message));
+        } catch (_) { /* non-fatal */ }
+      }
+
+      const deductionInstallments = paymentMethod === 'settlement_deduction' ? usedDeductionInstallments || (DEDUCTION_OPTIONS[settlementSchedule as keyof typeof DEDUCTION_OPTIONS] ?? DEFAULT_DEDUCTION_INSTALLMENTS) : 0;
+      const amtPerPayout = deductionInstallments > 0 ? Math.ceil(tierFee / deductionInstallments) : 0;
+
       return c.json({
         success: true,
         vendor: updated[0],
         message: `Vendor tier upgraded from ${oldTier} to ${newTier}`,
         tierFee,
         paymentMethod,
+        settlementSchedule: paymentMethod === 'settlement_deduction' ? settlementSchedule : null,
         deductionInfo: paymentMethod === 'settlement_deduction' ? {
           totalAmount: tierFee,
-          installments: DEFAULT_DEDUCTION_INSTALLMENTS,
-          amountPerPayout: Math.ceil(tierFee / DEFAULT_DEDUCTION_INSTALLMENTS),
-          note: `₹${Math.ceil(tierFee / DEFAULT_DEDUCTION_INSTALLMENTS)} will be deducted from your next ${DEFAULT_DEDUCTION_INSTALLMENTS} settlements`,
+          installments: deductionInstallments,
+          amountPerPayout: amtPerPayout,
+          schedule: settlementSchedule,
+          note: deductionInstallments === 1
+            ? `₹${amtPerPayout} will be deducted from your next settlement`
+            : `₹${amtPerPayout} will be deducted from your next ${deductionInstallments} settlements (weekly)`,
         } : null,
       });
     } catch (error: any) {
@@ -409,6 +490,9 @@ export function registerTierSystemEndpoints(app: Hono) {
   app.get("/vendor/:vendorId/tier/deductions", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) return c.json({ error: 'Vendor not found' }, 404);
+      const actualVendorId = vendor.id;
 
       const deductions = await query(
         `SELECT d.*, t.tier_name, t.commission_rate 
@@ -416,7 +500,7 @@ export function registerTierSystemEndpoints(app: Hono) {
          LEFT JOIN vendor_tiers t ON d.tier_id = t.id
          WHERE d.vendor_id = $1 AND d.status IN ('pending', 'in_progress')
          ORDER BY d.created_at DESC`,
-        [vendorId]
+        [actualVendorId]
       ).catch(() => ({ rows: [] }));
 
       const deductionRows = Array.isArray(deductions) ? deductions : deductions.rows || [];
@@ -457,10 +541,12 @@ export function registerTierSystemEndpoints(app: Hono) {
    * Get tier configuration
    */
   app.get("/admin/tiers/config", async (c) => {
-    return c.json({
-      success: true,
-      tiers: TIER_CONFIG,
-    });
+    const dbTiers = await query('SELECT * FROM vendor_tiers WHERE is_active = true ORDER BY tier_level').catch(() => ({ rows: [] }));
+    const rows = dbTiers.rows || [];
+    if (rows.length > 0) {
+      return c.json({ success: true, tiers: rows.map((r: any) => ({ name: r.tier_name, commission: r.commission_rate, monthlyFee: r.monthly_cost, yearlyFee: r.yearly_cost })) });
+    }
+    return c.json({ success: true, tiers: TIER_CONFIG_FALLBACK });
   });
 
   /**
@@ -470,10 +556,12 @@ export function registerTierSystemEndpoints(app: Hono) {
   app.post("/admin/tiers/calculate-commissions", async (c) => {
     try {
       const vendors = await select('vendors', { is_active: true });
+      const tiersResult = await query('SELECT tier_name, commission_rate FROM vendor_tiers WHERE is_active = true').catch(() => ({ rows: [] }));
+      const tierMap = Object.fromEntries((tiersResult.rows || []).map((r: any) => [r.tier_name, parseFloat(r.commission_rate || '0')]));
 
       const results = vendors.map((vendor: any) => {
-        const tier = vendor.tier || 'Bronze';
-        const commission = TIER_CONFIG[tier as keyof typeof TIER_CONFIG].commission;
+        const tier = vendor.tier || 'Basic';
+        const commission = tierMap[tier] ?? TIER_CONFIG_FALLBACK[tier]?.commission ?? 0;
 
         return {
           vendorId: vendor.id,

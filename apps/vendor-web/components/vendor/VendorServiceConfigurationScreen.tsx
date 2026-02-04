@@ -102,6 +102,28 @@ export function VendorServiceConfigurationScreen({
   });
   
   const isPlatformManaged = serviceStyle === 'at_home' || serviceStyle === 'tele';
+
+  // ✅ Run a PUT with retry on 503 (transient overload) so save/publish work seamlessly
+  const putWithRetry = async <T,>(putFn: () => Promise<T>, maxRetries = 2): Promise<T> => {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await putFn();
+      } catch (e: any) {
+        lastErr = e;
+        const is503 = e?.statusCode === 503 || e?.message?.includes('temporarily unavailable');
+        if (is503 && attempt < maxRetries) {
+          const delayMs = 1000 * (attempt + 1);
+          await new Promise<void>(r => setTimeout(r, delayMs));
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw lastErr;
+  };
+
+  const delayMs = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
   
   // ✅ FIX: Use vendor's actual role - never default to 'veterinarian' (would show wrong catalog)
   const roleId = roleIdProp ?? vendorData?.roleId ?? vendorData?.role_id ?? vendorData?.roleName ?? roleConfig?.name ?? roleConfig?.roleId ?? null;
@@ -222,15 +244,11 @@ export function VendorServiceConfigurationScreen({
       const vendorServiceIds = new Set<string>();
       const vendorServiceMap = new Map<string, any>();
       
+      // Backend GET /vendor/:vendorId/services/:style resolves identity id → vendor id and returns only that vendor's services.
+      // So when vendorId is identity id (e.g. e23c969e), response services have vendor_id = resolved id (e.g. 45f32970).
+      // We must NOT filter by s.vendor_id !== vendorId or we would skip all returned services.
       vendorServices.forEach((s: any) => {
         // ✅ CRITICAL: vendor_services.service_id is UUID (references service_catalog.id)
-        // We need to match by catalog UUID, not by TEXT service_id
-        // ✅ CRITICAL: Only include vendor services that belong to the current vendor
-        if (s.vendor_id !== vendorId) {
-          console.warn(`⚠️ Skipping vendor service ${s.id} - belongs to vendor ${s.vendor_id}, not ${vendorId}`);
-          return;
-        }
-        
         const catalogUuid = s.service_id; // This is service_catalog.id (UUID)
         const vendorServiceId = s.id; // This is vendor_services.id (UUID)
         
@@ -259,20 +277,17 @@ export function VendorServiceConfigurationScreen({
         const catalogServiceIdText = catalogSvc.serviceId || catalogSvc.service_id || catalogId;
         const catalogIdUuid = catalogSvc.catalogId || catalogSvc.id; // service_catalog.id (UUID)
         
-        // ✅ CRITICAL: Only use vendorSvc.id if:
-        // 1. vendorSvc exists (service is added to vendor)
-        // 2. vendorSvc.id is a valid UUID (vendor_services.id)
-        // 3. vendorSvc.id is NOT the same as catalog.id (to prevent UUID collisions)
-        // 4. vendorSvc.vendor_id matches the current vendor (extra safety check)
-        const serviceId = (vendorSvc?.id && 
-                           vendorSvc.id !== catalogIdUuid && 
-                           vendorSvc.vendor_id === vendorId) 
+        // ✅ CRITICAL: Use vendorSvc.id when service is added and IDs don't collide.
+        // Do NOT require vendorSvc.vendor_id === vendorId: backend already returned only this vendor's
+        // services (resolved from identity id), so vendor_id may be resolved id (45f32970) while vendorId is identity id (e23c969e).
+        const serviceId = (vendorSvc?.id && vendorSvc.id !== catalogIdUuid)
           ? vendorSvc.id  // Use vendor_services.id (UUID) if service is added and IDs don't match
           : `temp_${catalogServiceIdText}`; // Use catalog serviceId (TEXT) as temp ID
         
         return {
           ...catalogSvc,
           id: serviceId,
+          vendorServiceId: vendorSvc?.id ? vendorSvc.id : undefined,
           serviceId: catalogServiceIdText,
           catalogServiceId: catalogServiceIdText,
           name: catalogSvc.name || catalogSvc.serviceName || catalogSvc.service_name || 'Unnamed Service',
@@ -303,15 +318,9 @@ export function VendorServiceConfigurationScreen({
         const catalogUuid = catalogSvc.catalogId || catalogSvc.id; // Use catalog UUID for matching
         const vendorSvc = catalogUuid ? vendorServiceMap.get(String(catalogUuid)) : null;
         if (vendorSvc) {
-          // ✅ CRITICAL: Double-check that vendor service belongs to current vendor
-          if (vendorSvc.vendor_id && vendorSvc.vendor_id !== vendorId) {
-            console.error(`❌ UUID COLLISION DETECTED: Catalog service ${catalogSvc.serviceName} has catalog UUID ${catalogUuid} which matches vendor_services.id ${vendorSvc.id} belonging to vendor ${vendorSvc.vendor_id}, not ${vendorId}. Using temp ID.`);
-            const catalogServiceIdText = catalogSvc.serviceId || catalogSvc.service_id || 'unknown';
-            vendorAddedFromCatalog.push(formatMerged(catalogSvc, null, catalogServiceIdText));
-          } else {
-            const catalogServiceIdText = catalogSvc.serviceId || catalogSvc.service_id || 'unknown';
-            vendorAddedFromCatalog.push(formatMerged(catalogSvc, vendorSvc, catalogServiceIdText));
-          }
+          // vendorSvc came from our GET request; backend already filtered by resolved vendor id, so it's ours
+          const catalogServiceIdText = catalogSvc.serviceId || catalogSvc.service_id || 'unknown';
+          vendorAddedFromCatalog.push(formatMerged(catalogSvc, vendorSvc, catalogServiceIdText));
         }
       });
       const catalogNotAdded = catalogServices
@@ -335,6 +344,7 @@ export function VendorServiceConfigurationScreen({
         })
         .map((svc: any) => ({
           ...svc,
+          vendorServiceId: svc.id,
           name: svc.name || svc.serviceName || svc.service_name || 'Custom Service',
           serviceName: svc.serviceName || svc.service_name || svc.name || 'Custom Service',
           price: svc.price ?? svc.basePrice ?? svc.base_price ?? 0,
@@ -380,7 +390,7 @@ export function VendorServiceConfigurationScreen({
           catalogServiceId: service.serviceId || service.catalogServiceId || service.id,
           serviceStyle: serviceStyle,
           customPrice: service.customPrice || service.basePrice || service.price,
-          customDuration: service.customDuration || service.duration,
+          customDuration: Math.max(5, Math.min(1440, Number(service.customDuration ?? service.duration ?? 30) || 30)),
           isEnabled: true
         }) as any;
         
@@ -402,7 +412,8 @@ export function VendorServiceConfigurationScreen({
         // Disabling an enabled vendor service - just update status
         console.log(`➖ Disabling vendor service ${service.serviceName}...`);
         await apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
-          is_enabled: false
+          is_enabled: false,
+          duration: service.customDuration ?? service.duration ?? 30,
         });
         toast.success(`${service.serviceName} disabled`);
         await loadServices(); // Reload to ensure state is synced
@@ -410,7 +421,8 @@ export function VendorServiceConfigurationScreen({
         // Re-enabling a previously disabled vendor service
         console.log(`✅ Re-enabling vendor service ${service.serviceName}...`);
         await apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
-          is_enabled: true
+          is_enabled: true,
+          duration: service.customDuration ?? service.duration ?? 30,
         });
         toast.success(`${service.serviceName} enabled`);
         await loadServices(); // Reload to ensure state is synced
@@ -421,7 +433,7 @@ export function VendorServiceConfigurationScreen({
           catalogServiceId: service.serviceId || service.catalogServiceId || service.id,
           serviceStyle: serviceStyle,
           customPrice: service.customPrice || service.basePrice || service.price,
-          customDuration: service.customDuration || service.duration,
+          customDuration: Math.max(5, Math.min(1440, Number(service.customDuration ?? service.duration ?? 30) || 30)),
           isEnabled: true
         }) as any;
         
@@ -508,9 +520,8 @@ export function VendorServiceConfigurationScreen({
     toast.success('All services disabled');
   };
 
-  // ✅ NEW: Batch publish/unpublish functions
+  // ✅ NEW: Batch publish/unpublish - run one request at a time with retry to avoid 503
   const batchPublishServices = async () => {
-    // Only publish enabled services that aren't already published
     const enabledServices = services.filter(s => s.isEnabled && s.publishStatus !== 'published');
     if (enabledServices.length === 0) {
       toast.info('No enabled services to publish');
@@ -519,54 +530,41 @@ export function VendorServiceConfigurationScreen({
 
     try {
       setIsPublishing(true);
-      const publishPromises = enabledServices.map(service => {
-        // ✅ CRITICAL: Validate service.id before using it
-        // If service.id starts with 'temp_', it's not added to vendor yet
+      for (let i = 0; i < enabledServices.length; i++) {
+        const service = enabledServices[i];
         if (service.id && service.id.startsWith('temp_')) {
-          // Service not yet added - add it first
           const catalogId = service.serviceId || service.catalogServiceId || service.id.replace('temp_', '');
-          return apiClient.post(`/vendor/${vendorId}/services/add-from-catalog`, {
+          await apiClient.post(`/vendor/${vendorId}/services/add-from-catalog`, {
             catalogServiceId: catalogId,
             serviceStyle: serviceStyle,
             customPrice: service.customPrice || service.basePrice || service.price,
-            customDuration: service.customDuration || service.duration,
+            customDuration: Math.max(5, Math.min(1440, Number(service.customDuration ?? service.duration ?? 30) || 30)),
             isEnabled: true,
             publish_status: 'published'
           });
-        }
-        
-        // If service is not yet added to vendor, add it first
-        if (!service.isVendorEnabled && service.isPlatformService) {
-          return apiClient.post(`/vendor/${vendorId}/services/add-from-catalog`, {
+        } else if (!service.isVendorEnabled && service.isPlatformService) {
+          await apiClient.post(`/vendor/${vendorId}/services/add-from-catalog`, {
             catalogServiceId: service.serviceId || service.catalogServiceId || service.id,
             serviceStyle: serviceStyle,
             customPrice: service.customPrice || service.basePrice || service.price,
-            customDuration: service.customDuration || service.duration,
+            customDuration: Math.max(5, Math.min(1440, Number(service.customDuration ?? service.duration ?? 30) || 30)),
             isEnabled: true,
             publish_status: 'published'
           });
         } else {
-          // ✅ CRITICAL: Validate that service.id is a valid UUID and not a catalog ID
-          // service.id should be vendor_services.id (UUID), not service_catalog.id (UUID)
           if (!service.id || service.id.startsWith('temp_')) {
-            toast.error(`Service "${service.serviceName || service.name}" is not yet added to your vendor. Please add it first.`);
-            return Promise.reject(new Error('Service not added to vendor'));
+            toast.error(`Service "${service.serviceName || service.name}" is not yet added. Please add it first.`);
+            continue;
           }
-          
-          // Validate it's a UUID format (vendor_services.id is always UUID)
           const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(service.id);
-          if (!isUUID) {
-            toast.error(`Invalid service ID for "${service.serviceName || service.name}". Please refresh and try again.`);
-            return Promise.reject(new Error('Invalid service ID format'));
-          }
-          
-          return apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
-            publish_status: 'published'
-          });
+          if (!isUUID) continue;
+          const vendorServiceId = service.vendorServiceId ?? service.id;
+          await putWithRetry(() =>
+            apiClient.put(`/vendor/${vendorId}/services/${vendorServiceId}`, { publish_status: 'published' })
+          );
         }
-      });
-
-      await Promise.all(publishPromises);
+        if (i < enabledServices.length - 1) await delayMs(250);
+      }
       toast.success(`${enabledServices.length} service(s) published successfully!`);
       await loadServices();
     } catch (error) {
@@ -578,7 +576,6 @@ export function VendorServiceConfigurationScreen({
   };
 
   const batchUnpublishServices = async () => {
-    // Only unpublish published services
     const publishedServices = services.filter(s => s.publishStatus === 'published');
     if (publishedServices.length === 0) {
       toast.info('No published services to unpublish');
@@ -587,13 +584,14 @@ export function VendorServiceConfigurationScreen({
 
     try {
       setIsPublishing(true);
-      const unpublishPromises = publishedServices.map(service =>
-        apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
-          publish_status: 'draft'
-        })
-      );
-
-      await Promise.all(unpublishPromises);
+      for (let i = 0; i < publishedServices.length; i++) {
+        const service = publishedServices[i];
+        const vendorServiceId = service.vendorServiceId ?? service.id;
+        await putWithRetry(() =>
+          apiClient.put(`/vendor/${vendorId}/services/${vendorServiceId}`, { publish_status: 'draft' })
+        );
+        if (i < publishedServices.length - 1) await delayMs(250);
+      }
       toast.success(`${publishedServices.length} service(s) unpublished successfully!`);
       await loadServices();
     } catch (error) {
@@ -770,28 +768,29 @@ export function VendorServiceConfigurationScreen({
         return false;
       }
 
-      // ✅ FIX: Use vendorServiceId (vendor_services.id) for PUT requests
-      const updatePromises = servicesToSave.map(service => {
+      // ✅ Run PUTs sequentially with retry on 503 so save works seamlessly (no Lambda/DB overload)
+      for (let i = 0; i < servicesToSave.length; i++) {
+        const service = servicesToSave[i];
         const price = service.customPrice ?? service.price ?? 0;
-        // ✅ CRITICAL: Use vendorServiceId which is vendor_services.id, not catalog ID
-        console.log(`💾 Saving service: vendorServiceId=${service.vendorServiceId}, catalogServiceId=${service.catalogServiceId}, serviceName=${service.serviceName}`);
-        
-        // ✅ CRITICAL: Final validation - ensure vendorServiceId is not a catalog UUID
         if (service.vendorServiceId === service.catalogServiceId) {
-          console.error(`❌ CRITICAL: vendorServiceId matches catalogServiceId! This should never happen. Skipping service ${service.serviceName}`);
-          return Promise.reject(new Error(`Invalid service ID: vendorServiceId cannot equal catalogServiceId`));
+          console.error(`❌ CRITICAL: vendorServiceId matches catalogServiceId! Skipping ${service.serviceName}`);
+          continue;
         }
-        
-        return apiClient.put(`/vendor/${vendorId}/services/${service.vendorServiceId}`, {
-          is_enabled: service.isEnabled,
-          price,
-          customPrice: service.customPrice,
-          customDuration: service.customDuration,
-          description: service.customDescription,
-        });
-      });
-      
-      await Promise.all(updatePromises);
+        // ✅ duration_minutes is NOT NULL: always send a valid number (backend fallback is 30)
+        const durationMins = Math.max(5, Math.min(1440, Number(service.customDuration ?? service.duration ?? 30) || 30));
+        console.log(`💾 Saving service: vendorServiceId=${service.vendorServiceId}, serviceName=${service.serviceName}`);
+        await putWithRetry(() =>
+          apiClient.put(`/vendor/${vendorId}/services/${service.vendorServiceId}`, {
+            is_enabled: service.isEnabled,
+            price,
+            customPrice: service.customPrice,
+            duration: durationMins,
+            customDuration: service.customDuration ?? service.duration ?? durationMins,
+            description: service.customDescription,
+          })
+        );
+        if (i < servicesToSave.length - 1) await delayMs(250);
+      }
       const data: { success: boolean; error?: string } = { success: true };
 
       if (data && data.success) {
@@ -823,30 +822,22 @@ export function VendorServiceConfigurationScreen({
       
       console.log('🚀 Publishing services...');
       
-      // ✅ FIX: Only publish services that exist in vendor_services
-      const publishPromises = services
-        .filter(s => s.isEnabled && s.isVendorEnabled === true && s.id && s.id !== s.serviceId && s.id !== s.catalogServiceId)
-        .map(service => 
-          apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
-            publish_status: 'published'
-          })
+      const toPublish = services.filter(
+        s => s.isEnabled && s.isVendorEnabled === true && (s.vendorServiceId || s.id) && s.id !== s.serviceId && s.id !== s.catalogServiceId
+      );
+      for (let i = 0; i < toPublish.length; i++) {
+        const service = toPublish[i];
+        const vendorServiceId = service.vendorServiceId ?? service.id;
+        await putWithRetry(() =>
+          apiClient.put(`/vendor/${vendorId}/services/${vendorServiceId}`, { publish_status: 'published' })
         );
-      
-      await Promise.all(publishPromises);
+        if (i < toPublish.length - 1) await delayMs(250);
+      }
       const data: { success: boolean; status?: string; publishedCount?: number; error?: string } = { success: true };
 
       if (data && data.success) {
         console.log('✅ Services published:', data);
-        
-        if (data.status === 'published') {
-          toast.success(`${data.publishedCount || 0} service(s) published successfully!`);
-        } else if (data.status === 'pending_approval') {
-          toast.success('Services submitted for admin approval');
-        } else {
-          toast.success('Services published successfully!');
-        }
-        
-        // Reload services to show updated status
+        toast.success('Services published successfully!');
         await loadServices();
       } else {
         console.error('❌ Failed to publish:', data);
@@ -927,17 +918,25 @@ export function VendorServiceConfigurationScreen({
       }
       
       // Single custom service (not package)
+      // Backend requires category/categoryName; modal form does not include it — supply from roleConfig
+      const categoryName = roleConfig?.label || packageData.categoryName || packageData.category || 'General';
       const data = await apiClient.post(`/vendor/${vendorId}/services/custom`, {
         serviceStyle,
+        category: categoryName,
+        categoryName,
         ...packageData
       }) as any;
 
       if (data && data.success) {
         console.log('✅ Custom service added:', data);
         toast.success('Custom service added successfully!');
-        
-        // Reload services
-        await loadServices();
+        // Reload services; do not throw so modal can close (EnhancedPackageCreationModal calls onClose after onSubmit resolves)
+        try {
+          await loadServices();
+        } catch (reloadErr) {
+          console.warn('Services list reload failed after adding custom service:', reloadErr);
+          toast.info('Service added. List may refresh shortly.');
+        }
       } else {
         console.error('❌ Failed to add custom service:', data);
         toast.error(data?.error || 'Failed to add custom service');

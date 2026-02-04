@@ -225,11 +225,51 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       params.push(limit, offset);
 
       const result = await query(queryText, params);
+      const recordsFromMr = (result as any).rows || [];
+
+      // Include prescriptions for this pet so vet summaries appear in pet profile medical history
+      let prescriptionRecords: any[] = [];
+      try {
+        const prescResult = await query(
+          `SELECT p.id, p.booking_id, p.pet_id, p.vendor_id, p.medications, p.instructions, p.diagnosis,
+                  p.prescription_date, p.follow_up_date, p.created_at, p.medication_name,
+                  v.business_name as vendor_name
+           FROM prescriptions p
+           LEFT JOIN vendors v ON p.vendor_id = v.id
+           WHERE p.pet_id = $1::uuid
+           ORDER BY p.prescription_date DESC, p.created_at DESC
+           LIMIT $2 OFFSET $3`,
+          [petId, limit, offset]
+        );
+        prescriptionRecords = ((prescResult as any).rows || []).map((p: any) => ({
+          id: p.id,
+          booking_id: p.booking_id,
+          pet_id: p.pet_id,
+          vendor_id: p.vendor_id,
+          vendor_name: p.vendor_name,
+          record_type: 'prescription',
+          prescription_date: p.prescription_date,
+          record_date: p.prescription_date || p.created_at,
+          created_at: p.created_at,
+          content_data: { medications: p.medications, instructions: p.instructions, diagnosis: p.diagnosis, medication_name: p.medication_name },
+          source: 'prescriptions',
+        }));
+      } catch (prescErr) {
+        console.warn('[Medical Records] Pet prescriptions query failed (non-blocking):', prescErr);
+      }
+
+      const combined = [...recordsFromMr.map((r: any) => ({ ...r, source: 'medical_records' })), ...prescriptionRecords];
+      combined.sort((a: any, b: any) => {
+        const dateA = new Date(a.record_date || a.prescription_date || a.created_at || 0).getTime();
+        const dateB = new Date(b.record_date || b.prescription_date || b.created_at || 0).getTime();
+        return dateB - dateA;
+      });
+      const paginated = combined.slice(0, limit);
 
       return c.json({
         success: true,
-        records: (result as any).rows || [],
-        total: (result as any).rows?.length || 0,
+        records: paginated,
+        total: combined.length,
       });
 
     } catch (error: any) {

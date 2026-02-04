@@ -293,6 +293,7 @@ export function VendorCustomServiceCreationEnhanced({
   
   // Specializations (optional – for discovery / "What's your pet's need?")
   const [selectedSpecializationIds, setSelectedSpecializationIds] = useState<string[]>([]);
+  const [specRefreshKey, setSpecRefreshKey] = useState(0);
   
   // Available vendor services for combo packages
   const [vendorServices, setVendorServices] = useState<any[]>([]);
@@ -345,6 +346,11 @@ export function VendorCustomServiceCreationEnhanced({
   // Other solo providers cannot create any packages
   const canCreateSessionPackage = !isSoloProvider || isTrainerWalkerSitter;
   
+  // ✅ Refetch specializations when create modal opens (to get latest from Catalog > Categories)
+  useEffect(() => {
+    if (showCreateDialog) setSpecRefreshKey((k) => k + 1);
+  }, [showCreateDialog]);
+
   // ✅ FIX: Ensure non-trainer/walker/sitter solo providers cannot create packages
   useEffect(() => {
     if (isSoloProvider && !isTrainerWalkerSitter && isPackage) {
@@ -1134,6 +1140,7 @@ export function VendorCustomServiceCreationEnhanced({
                   roleId={getVendorRoleId(vendorData) || ''}
                   selected={selectedSpecializationIds}
                   onChange={setSelectedSpecializationIds}
+                  refreshTrigger={specRefreshKey}
                 />
               </Suspense>
             </div>

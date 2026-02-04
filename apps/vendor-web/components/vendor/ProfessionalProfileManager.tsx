@@ -574,19 +574,20 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
               <EnhancedAddressAutocomplete
                 value={profile.address || ''}
                 onChange={(address: string, components?: AddressComponents) => {
-                  // Single state update: address + city, state, pincode from search (pincode from postal_code)
+                  // Update address + city, state, pincode from Places (pincode from postal_code)
                   setProfile(prev => ({
                     ...prev,
                     address,
-                    ...(components?.city != null && { city: components.city ?? prev.city }),
-                    ...(components?.state != null && { state: components.state ?? prev.state }),
-                    ...(components && 'pincode' in components && { pincode: components.pincode ?? prev.pincode ?? '' }),
+                    ...(components?.city !== undefined && { city: components.city ?? prev.city ?? '' }),
+                    ...(components?.state !== undefined && { state: components.state ?? prev.state ?? '' }),
+                    ...(components?.pincode !== undefined && { pincode: components.pincode ?? prev.pincode ?? '' }),
                   }));
                   setHasChanges(true);
                 }}
                 placeholder="Search address, landmark, city..."
                 className={`mt-1 ${formErrors.address ? 'border-red-300' : ''}`}
                 required
+                types={['geocode']}
               />
               {formErrors.address && <p className="text-red-500 text-xs mt-1">{formErrors.address}</p>}
             </div>

@@ -8,7 +8,6 @@ import { toast } from 'sonner';
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { VendorServiceConfigurationScreen } from './VendorServiceConfigurationScreen';
 import { VendorCustomServiceCreationEnhanced as VendorCustomServiceCreation } from './VendorCustomServiceCreationEnhanced'; // ✅ ENHANCED: Role-based custom services
-import { PackageManagementContainer } from './packages/PackageManagementContainer';
 import { VendorServiceCatalogView } from './VendorServiceCatalogView';
 import { getVendorRoleId, hasVendorRole } from '@/lib/vendor-utils';
 import { getServiceStyleLabelForRole } from '@/lib/service-style-labels';
@@ -35,7 +34,6 @@ export function VendorServiceManagementComplete({
   const [fetchedRoleId, setFetchedRoleId] = useState<string | null>(null); // ✅ NEW: Store roleId from API
   const [fetchedRoleName, setFetchedRoleName] = useState<string | null>(null); // ✅ Role name for role-based labels
   const [showCustomServices, setShowCustomServices] = useState(false); // ✅ NEW
-  const [showPackages, setShowPackages] = useState(false); // ✅ NEW: Package Management
   const [showCatalogView, setShowCatalogView] = useState(false); // ✅ NEW: Catalog browsing
   const [serviceCounts, setServiceCounts] = useState<Record<ServiceStyle, number>>({
     at_home: 0,
@@ -58,10 +56,10 @@ export function VendorServiceManagementComplete({
   
   // ✅ Refresh counts when returning from sub-views
   useEffect(() => {
-    if (!selectedServiceStyle && !showCatalogView && !showCustomServices && !showPackages) {
+    if (!selectedServiceStyle && !showCatalogView && !showCustomServices) {
       loadRoleConfiguration();
     }
-  }, [selectedServiceStyle, showCatalogView, showCustomServices, showPackages]);
+  }, [selectedServiceStyle, showCatalogView, showCustomServices]);
 
   // ✅ PHASE 3: Role-based conditional field visibility (using utility functions)
   const vendorRoleId = getVendorRoleId(vendorData);
@@ -357,19 +355,8 @@ export function VendorServiceManagementComplete({
     );
   }
 
-  // ✅ NEW: If package management view is active
-  if (showPackages) {
-    // ✅ FIX: Training Solo Vendors cannot create standalone packages - only view/manage existing ones
-    const canCreateStandalonePackages = !(isTrainerWalkerSitter && isSoloProvider);
-    return (
-      <PackageManagementContainer
-        vendorId={vendorId}
-        vendorData={vendorData}
-        onBack={() => setShowPackages(false)}
-        allowCreate={canCreateStandalonePackages}
-      />
-    );
-  }
+  // DETACHED: Package Management - 500 errors, will fix later
+  // if (showPackages) { return <PackageManagementContainer ... /> }
 
   // ✅ NEW: If catalog view is active
   if (showCatalogView) {
@@ -573,43 +560,7 @@ export function VendorServiceManagementComplete({
           </div>
         )}
 
-        {/* ✅ NEW: Package Management Section (Capability-based) */}
-        {/* ✅ FIX: Solo groomer/vet do NOT get packages; solo trainer/walker/sitter get session packages */}
-        {/* ✅ FIX: Training Solo Vendors can VIEW packages but cannot CREATE standalone packages - they create packages via Custom Service creation/edit only */}
-        {(capabilities.custom_packages || capabilities.customPackages || capabilities.packages) && canCreatePackages && !isSoloGroomer && !isSoloVet && (
-          <div className="p-4">
-            <div className={`bg-gradient-to-r ${isTrainerWalkerSitter && isSoloProvider ? 'from-green-500 to-emerald-600' : 'from-[#FF8C42] to-[#FF6B35]'} rounded-2xl p-6 text-white`}>
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <h3 className="font-semibold mb-2 text-lg">
-                    {isTrainerWalkerSitter && isSoloProvider ? 'Session Packages' : 'Package Management'}
-                  </h3>
-                  <p className="text-sm text-white/90 mb-4">
-                    {isTrainerWalkerSitter && isSoloProvider 
-                      ? 'View and manage your session packages. Create new packages via Custom Services.'
-                      : 'Create and manage service packages to offer bundled services'
-                    }
-                  </p>
-                </div>
-                <Plus className="w-6 h-6 flex-shrink-0" />
-              </div>
-              
-              <Button
-                onClick={() => setShowPackages(true)}
-                className={`w-full ${isTrainerWalkerSitter && isSoloProvider ? 'bg-white text-green-600 hover:bg-gray-100' : 'bg-white text-[#FF8C42] hover:bg-gray-100'} font-semibold`}
-              >
-                {isTrainerWalkerSitter && isSoloProvider ? 'View Session Packages' : 'Manage Packages'}
-              </Button>
-              
-              <p className="text-xs text-white/80 mt-3 text-center">
-                {isTrainerWalkerSitter && isSoloProvider 
-                  ? '📊 Track package usage on customer and vendor dashboards'
-                  : '⭐ Available for business accounts'
-                }
-              </p>
-            </div>
-          </div>
-        )}
+        {/* DETACHED: Package Management - 500 errors, will fix later */}
 
         {/* Help Section */}
         <div className="p-4 mt-8">

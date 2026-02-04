@@ -55,12 +55,15 @@ interface SpecializationSelectorProps {
   roleId?: string;
   selected: string[];
   onChange: (specs: string[]) => void;
+  /** When this changes (e.g. modal opens), refetch to get latest from Catalog > Categories */
+  refreshTrigger?: unknown;
 }
 
 export function SpecializationSelector({ 
   roleId, 
   selected = [], // ✅ FIX: Default to empty array
-  onChange 
+  onChange,
+  refreshTrigger,
 }: SpecializationSelectorProps) {
   const [specializations, setSpecializations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,7 +114,7 @@ export function SpecializationSelector({
       setLoading(false);
       setError('Role ID is required to load specializations');
     }
-  }, [roleId]);
+  }, [roleId, refreshTrigger]);
 
   const toggleSpec = (specId: string) => {
     if (selected.includes(specId)) {

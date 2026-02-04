@@ -45,13 +45,37 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
       setLoading(true);
       setError(null);
 
-      console.log('[MEDICAL UI] Requesting history for appointment:', bookingId);
-
-      const data = await apiClient.get(`/appointments/${bookingId}/medical-records`) as any;
+      // P2P: Vendor views pet medical records in appointment context — use backend booking endpoint
+      const data = await apiClient.get(`/medical-records/booking/${bookingId}`) as any;
       if (data.success) {
-        setRecords(data.records || []);
+        // Backend returns { success, records, prescriptions, referralRecords }; records may be empty array
+        const rawRecords = Array.isArray(data.records) ? data.records : [];
+        // Map backend shape to modal format (id, type, title, description, date, doctorName, clinicName, url, metadata)
+        const allowedTypes: MedicalRecord['type'][] = ['prescription', 'vaccination', 'lab_report', 'consultation_note', 'vet_summary', 'upload', 'xray', 'other'];
+        const mapped = rawRecords.map((r: any) => {
+          const rawType = r.record_type || (r.source === 'prescriptions' ? 'prescription' : 'other');
+          const recordType: MedicalRecord['type'] = rawType === 'vet_summary' ? 'consultation_note' : (allowedTypes.includes(rawType as any) ? rawType as MedicalRecord['type'] : 'other');
+          const title = r.title || (recordType === 'prescription' ? 'Prescription' : r.description || 'Record');
+          const date = r.prescription_date || r.created_at || r.record_date;
+          const content = r.content_data || {};
+          return {
+            id: r.id || `rec_${date}_${Math.random().toString(36).slice(2)}`,
+            type: recordType,
+            title,
+            description: r.description || content.diagnosis || content.instructions || '',
+            date: date ? new Date(date).toISOString().slice(0, 10) : '',
+            uploadedBy: r.uploaded_by,
+            doctorName: r.staff_name || content.doctorName,
+            clinicName: r.vendor_name || content.clinicName,
+            url: r.file_url || r.url,
+            fileName: r.file_name,
+            fileType: r.file_type,
+            metadata: content.diagnosis ? { diagnosis: content.diagnosis, dosage: content.dosage } : undefined,
+          };
+        });
+        setRecords(mapped);
         setPetInfo({
-          name: data.petName || petName,
+          name: petName,
           photo: data.petPhoto,
           species: data.petSpecies,
           breed: data.petBreed
@@ -169,10 +193,10 @@ export function MedicalHistoryModal({ petId, bookingId, petName, vendorId, onClo
               <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-3">
                 <AlertCircle className="w-6 h-6 text-red-600" />
               </div>
-              <h3 className="text-red-900 font-semibold mb-1">Access Restricted</h3>
+              <h3 className="text-red-900 font-semibold mb-1">Could not load records</h3>
               <p className="text-sm text-red-700 max-w-xs mx-auto">{error}</p>
               <p className="text-xs text-red-500 mt-2">
-                Records are only available during active appointments for the assigned pet.
+                Check your connection and try again, or contact support if the problem continues.
               </p>
             </div>
           ) : filteredRecords.length === 0 ? (

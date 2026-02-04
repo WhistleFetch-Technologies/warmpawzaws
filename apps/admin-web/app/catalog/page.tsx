@@ -1,7 +1,7 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 import { HierarchicalServiceList } from '@/components/admin/catalog/HierarchicalServiceList';
@@ -43,6 +43,7 @@ interface Category {
   id: string;
   name: string;
   display_name: string;
+  category_id?: string;
 }
 
 // ============================================================================
@@ -199,12 +200,13 @@ export default function ServiceCatalogPage() {
 
   const handleEdit = (service: ServiceCatalogItem) => {
     setEditingService(service);
+    const normRoles = (service.applicable_roles || []).map((r: string) => toCanonicalRoleCode(r)).filter(Boolean);
     setFormData({
       service_name: service.service_name,
       display_name: service.display_name,
       description: service.description,
       category_id: service.category_id,
-      applicable_roles: service.applicable_roles,
+      applicable_roles: [...new Set(normRoles)],
       specialization_ids: service.specialization_ids ?? [],
       service_style: service.service_style,
       base_price: service.base_price,
@@ -272,33 +274,78 @@ export default function ServiceCatalogPage() {
     }
   };
 
-  // Load specializations when category changes (for create/edit modal)
-  useEffect(() => {
-    if (!showModal || !formData.category_id) {
+  // Normalize role to canonical code for API (must match backend ROLE_EXPANSIONS / ROLE_DISPLAY_TO_CODE)
+  const toCanonicalRoleCode = (v: string) => {
+    const map: Record<string, string> = {
+      'pet sitter': 'sitter', sitter: 'sitter', pet_sitter: 'sitter',
+      'pet walker': 'walker', walker: 'walker', pet_walker: 'walker',
+      'pet resort': 'resort', resort: 'resort', pet_resort: 'resort',
+      'pet boarding': 'pet_boarding', pet_boarding: 'pet_boarding',
+      'pet boarding & daycare': 'pet_boarding_daycare', pet_boarding_daycare: 'pet_boarding_daycare',
+      'boarding': 'boarding', pet_boarder: 'pet_boarder', pet_daycare: 'pet_daycare',
+      'sunset care': 'sunset', sunset: 'sunset',
+      'trainer (center)': 'trainer_center', trainer_center: 'trainer_center',
+      'trainer (solo)': 'trainer_solo', trainer_solo: 'trainer_solo',
+      'veterinarian (solo)': 'vet_solo', vet_solo: 'vet_solo',
+      'veterinary clinic': 'vet_clinic', vet_clinic: 'vet_clinic',
+      'groomer (center)': 'groomer_center', 'groomer (solo)': 'groomer_solo', groomer_center: 'groomer_center', groomer_solo: 'groomer_solo', pet_groomer: 'pet_groomer',
+      'nutritionist (center)': 'nutritionist_center', 'nutritionist (solo)': 'nutritionist', nutritionist_center: 'nutritionist_center', nutritionist: 'nutritionist', pet_nutritionist: 'pet_nutritionist',
+    };
+    const n = (v || '').toString().trim().toLowerCase().replace(/\s+/g, '_');
+    const withSpace = (v || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+    return map[n] ?? map[withSpace] ?? n;
+  };
+
+  // Resolve category id (UUID from dropdown) to slug for specialization_master API
+  const getCategorySlugForSpec = useCallback((catIdVal: string) => {
+    if (!catIdVal) return '';
+    const c = categories.find((cat: any) => String(cat?.id) === String(catIdVal) || String(cat?.category_id) === String(catIdVal));
+    return (c?.category_id || c?.id || catIdVal) as string;
+  }, [categories]);
+
+  const loadSpecializationsForCatalog = useCallback((catId: string, rolesArr: string[]) => {
+    const hasCat = !!catId;
+    const hasRoles = rolesArr.length > 0;
+    if (!showModal || (!hasCat && !hasRoles)) {
       setSpecializationsByCategory([]);
       return;
     }
-    let cancelled = false;
+    const canonRoles = rolesArr.map(toCanonicalRoleCode).filter(Boolean);
+    const roleParam = canonRoles.length > 0 ? `roleIds=${encodeURIComponent(canonRoles.join(','))}` : '';
+    const categorySlug = getCategorySlugForSpec(catId) || catId;
+    const catParam = hasCat ? `categoryId=${encodeURIComponent(categorySlug)}` : '';
+    const params = [catParam, roleParam].filter(Boolean).join('&');
+    const url = `/admin/specializations?${params}`;
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+      console.log('[Catalog] Loading specializations', { catId, categorySlug, canonRoles, url });
+    }
     setLoadingSpecializations(true);
-    apiClient
-      .get<any>(`/admin/specializations?categoryId=${encodeURIComponent(formData.category_id)}`)
+    apiClient.get<any>(url)
       .then((data) => {
-        if (cancelled) return;
         const list = (data.specializations ?? data.data ?? []).map((s: any) => ({
           specializationId: s.specializationId ?? s.specialization_id,
           name: s.name ?? '',
           displayName: s.displayName ?? s.display_name ?? s.name ?? '',
         }));
         setSpecializationsByCategory(list);
+        setFormData((prev) => {
+          const validIds = new Set(list.map((s: { specializationId: string }) => s.specializationId));
+          const kept = (prev.specialization_ids || []).filter((id: string) => validIds.has(id));
+          return kept.length === (prev.specialization_ids?.length ?? 0) ? prev : { ...prev, specialization_ids: kept };
+        });
       })
-      .catch(() => {
-        if (!cancelled) setSpecializationsByCategory([]);
+      .catch((err) => {
+        if (typeof window !== 'undefined') console.warn('[Catalog] Specializations API failed', url, err);
+        setSpecializationsByCategory([]);
       })
-      .finally(() => {
-        if (!cancelled) setLoadingSpecializations(false);
-      });
-    return () => { cancelled = true; };
-  }, [showModal, formData.category_id]);
+      .finally(() => setLoadingSpecializations(false));
+  }, [showModal, getCategorySlugForSpec]);
+
+  const applicableRolesKey = JSON.stringify(formData.applicable_roles ?? []);
+  useEffect(() => {
+    if (!showModal) return;
+    loadSpecializationsForCatalog(formData.category_id || '', formData.applicable_roles ?? []);
+  }, [showModal, formData.category_id, applicableRolesKey, loadSpecializationsForCatalog]);
 
   const handleReorder = async (serviceId: string, direction: 'up' | 'down') => {
     const currentIndex = services.findIndex(s => s.id === serviceId);
@@ -366,9 +413,15 @@ export default function ServiceCatalogPage() {
   useEffect(() => {
     apiClient.get<any>('/admin/roles').then((r: any) => {
       const roles = r?.roles || r?.data || [];
-      const names = Array.isArray(roles) 
-        ? roles.filter((x: any) => x.isActive !== false && x.is_active !== false)
-          .map((x: any) => x.name || x.roleCode || x.roleId).filter(Boolean)
+      const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || '');
+      const names = Array.isArray(roles)
+        ? roles
+            .filter((x: any) => x.isActive !== false && x.is_active !== false)
+            .map((x: any) => {
+              const v = x.name || x.roleCode || (isUuid(x.roleId || x.id) ? null : (x.roleId || x.id));
+              return v;
+            })
+            .filter(Boolean)
         : [];
       if (names.length > 0) setCatalogRoles(names);
     }).catch(() => {});
@@ -857,7 +910,11 @@ export default function ServiceCatalogPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
                   <select
                     value={formData.category_id || ''}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, category_id: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                      const newCategoryId = e.target.value;
+                      setFormData(prev => ({ ...prev, category_id: newCategoryId }));
+                      loadSpecializationsForCatalog(newCategoryId, formData.applicable_roles ?? []);
+                    }}
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                   >
                     <option value="">Select Category</option>
@@ -902,50 +959,10 @@ export default function ServiceCatalogPage() {
                 </div>
               </div>
 
-              {/* Specializations (optional) */}
+              {/* Applicable Roles — select first so specializations below filter dynamically */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Specializations (optional)</label>
-                <p className="text-xs text-gray-500 mb-2">Link this service to category specializations for vendor profile and problem-grid matching.</p>
-                {!formData.category_id ? (
-                  <p className="text-sm text-gray-400">Select a category first to load specializations.</p>
-                ) : loadingSpecializations ? (
-                  <p className="text-sm text-gray-500">Loading…</p>
-                ) : specializationsByCategory.length === 0 ? (
-                  <p className="text-sm text-gray-500">No specializations for this category.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 border border-gray-200 rounded-lg">
-                    {specializationsByCategory.map((spec) => {
-                      const selected = (formData.specialization_ids || []).includes(spec.specializationId);
-                      return (
-                        <button
-                          key={spec.specializationId}
-                          type="button"
-                          onClick={() => {
-                            const current = formData.specialization_ids || [];
-                            setFormData(prev => ({
-                              ...prev,
-                              specialization_ids: selected
-                                ? current.filter((id) => id !== spec.specializationId)
-                                : [...current, spec.specializationId],
-                            }));
-                          }}
-                          className={`px-3 py-1 rounded-lg text-sm transition ${
-                            selected
-                              ? 'bg-purple-500 text-white'
-                              : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
-                          }`}
-                        >
-                          {spec.displayName || spec.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Applicable Roles */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Applicable Roles</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Applicable Roles <span className="text-red-500">*</span></label>
+                <p className="text-xs text-gray-500 mb-2">Select roles that can use this service. Specializations below are filtered by these roles (from Catalog &gt; Categories).</p>
                 <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 border border-gray-200 rounded-lg">
                   {ROLES.map(role => (
                     <button
@@ -953,15 +970,15 @@ export default function ServiceCatalogPage() {
                       type="button"
                       onClick={() => {
                         const roles = formData.applicable_roles || [];
-                        setFormData(prev => ({
-                          ...prev,
-                          applicable_roles: roles.includes(role)
-                            ? roles.filter(r => r !== role)
-                            : [...roles, role]
-                        }));
+                        const canon = toCanonicalRoleCode(role);
+                        const newRoles = roles.includes(canon)
+                          ? roles.filter(r => toCanonicalRoleCode(r) !== canon)
+                          : [...roles.filter(r => toCanonicalRoleCode(r) !== canon), canon];
+                        setFormData(prev => ({ ...prev, applicable_roles: newRoles }));
+                        loadSpecializationsForCatalog(formData.category_id || '', newRoles);
                       }}
                       className={`px-3 py-1 rounded-lg text-sm transition ${
-                        (formData.applicable_roles || []).includes(role)
+                        (formData.applicable_roles || []).map(toCanonicalRoleCode).includes(toCanonicalRoleCode(role))
                           ? 'bg-orange-500 text-white'
                           : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
                       }`}
@@ -970,6 +987,52 @@ export default function ServiceCatalogPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Specializations (optional) — from Catalog > Categories, filtered by selected applicable roles */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Specializations (optional)</label>
+                <p className="text-xs text-gray-500 mb-2">Link this service to category specializations (Catalog &gt; Categories), filtered by selected applicable roles.</p>
+                {!formData.category_id ? (
+                  <p className="text-sm text-gray-400">Select a category first to load specializations.</p>
+                ) : loadingSpecializations ? (
+                  <p className="text-sm text-gray-500">Loading…</p>
+                ) : specializationsByCategory.length === 0 ? (
+                  <p className="text-sm text-gray-500">No specializations for this category and selected roles.</p>
+                ) : (
+                  <>
+                    {(formData.applicable_roles?.length ?? 0) === 0 && (
+                      <p className="text-xs text-amber-600 mb-2">Showing all specializations for this category. Select applicable roles above to filter.</p>
+                    )}
+                    <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 border border-gray-200 rounded-lg">
+                      {specializationsByCategory.map((spec) => {
+                        const selected = (formData.specialization_ids || []).includes(spec.specializationId);
+                        return (
+                          <button
+                            key={spec.specializationId}
+                            type="button"
+                            onClick={() => {
+                              const current = formData.specialization_ids || [];
+                              setFormData(prev => ({
+                                ...prev,
+                                specialization_ids: selected
+                                  ? current.filter((id) => id !== spec.specializationId)
+                                  : [...current, spec.specializationId],
+                              }));
+                            }}
+                            className={`px-3 py-1 rounded-lg text-sm transition ${
+                              selected
+                                ? 'bg-purple-500 text-white'
+                                : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
+                            }`}
+                          >
+                            {spec.displayName || spec.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
