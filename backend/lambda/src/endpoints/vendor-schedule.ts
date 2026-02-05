@@ -259,73 +259,86 @@ export function registerVendorScheduleEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/schedule
    * Get vendor schedule configuration
+   * ✅ Resolves vendor via resolveVendorById so identity ID works (new vendors)
    */
   app.get("/vendor/:vendorId/schedule", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const trimmedId = (vendorId || '').trim();
+
+      // Always return schedule as Record<number, any[]> so UI never gets .map on non-array
+      const emptyScheduleByDay: Record<number, any[]> = {};
+      for (let i = 0; i < 7; i++) {
+        emptyScheduleByDay[i] = [];
+      }
+      const emptyResponse = () => c.json({
+        success: true,
+        schedule: emptyScheduleByDay,
+        totalSlots: 0,
+      });
 
       // Handle test IDs - return empty schedule
-      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
-        const scheduleByDay: Record<number, any[]> = {};
-        for (let i = 0; i < 7; i++) {
-          scheduleByDay[i] = [];
-        }
-        return c.json({
-          success: true,
-          schedule: scheduleByDay,
-          totalSlots: 0,
-        });
+      if (trimmedId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmedId)) {
+        return emptyResponse();
       }
 
-      // ✅ FIX: Use vendor_availability_v2 table (exists in schema, migration 006)
-      // Handle both column name variations
-      let schedule;
-      try {
-        // Try with service_style/time_window columns first
-        schedule = await query(
-          `SELECT *, 
-                  COALESCE(service_style, service_type) as service_style,
-                  COALESCE(time_window_start, start_time) as time_window_start,
-                  COALESCE(time_window_end, end_time) as time_window_end,
-                  COALESCE(is_enabled, is_available) as is_enabled
-           FROM vendor_availability_v2
-           WHERE vendor_id = $1
-           ORDER BY day_of_week, COALESCE(time_window_start, start_time)`,
-          [vendorId]
-        );
-      } catch (error: any) {
-        // If UUID validation fails, return empty schedule
-        if (error.message?.includes('invalid input syntax for type uuid')) {
-          const scheduleByDay: Record<number, any[]> = {};
-          for (let i = 0; i < 7; i++) {
-            scheduleByDay[i] = [];
-          }
-          return c.json({
-            success: true,
-            schedule: scheduleByDay,
-            totalSlots: 0,
-          });
-        }
-        throw error;
-      }
+      // ✅ Resolve vendor (frontend may pass vendor_identity id; data is stored by vendors.id)
+      const vendor = await resolveVendorById(trimmedId);
+      const actualVendorId = vendor?.id ?? trimmedId;
 
-      // Group by day of week
+      // ✅ Use vendor_availability_v2 (advance scheduling). Do not reference service_style — schema may have service_type only (migration 057).
       const scheduleByDay: Record<number, any[]> = {};
       for (let i = 0; i < 7; i++) {
         scheduleByDay[i] = [];
       }
-
-      schedule.rows.forEach((slot: any) => {
-        if (!scheduleByDay[slot.day_of_week]) {
-          scheduleByDay[slot.day_of_week] = [];
+      let schedule: { rows: any[] };
+      try {
+        schedule = await query(
+          `SELECT id, vendor_id, staff_id, day_of_week,
+                  COALESCE(time_window_start, start_time) AS time_window_start,
+                  COALESCE(time_window_end, end_time) AS time_window_end,
+                  COALESCE(is_enabled, is_available, true) AS is_enabled
+           FROM vendor_availability_v2
+           WHERE vendor_id = $1
+           ORDER BY day_of_week, COALESCE(time_window_start, start_time)`,
+          [actualVendorId]
+        );
+      } catch (error: any) {
+        if (error.message?.includes('invalid input syntax for type uuid')) {
+          return emptyResponse();
         }
-        scheduleByDay[slot.day_of_week].push(slot);
+        if (error.message?.includes('does not exist')) {
+          try {
+            schedule = await query(
+              `SELECT id, vendor_id, staff_id, day_of_week,
+                      start_time AS time_window_start, end_time AS time_window_end,
+                      is_available AS is_enabled
+               FROM vendor_availability_v2
+               WHERE vendor_id = $1
+               ORDER BY day_of_week, start_time`,
+              [actualVendorId]
+            );
+          } catch (_) {
+            return emptyResponse();
+          }
+        } else {
+          throw error;
+        }
+      }
+
+      const rows = Array.isArray(schedule?.rows) ? schedule.rows : [];
+      rows.forEach((slot: any) => {
+        const day = slot.day_of_week;
+        if (day != null && day >= 0 && day <= 6) {
+          if (!scheduleByDay[day]) scheduleByDay[day] = [];
+          scheduleByDay[day].push(slot);
+        }
       });
 
       return c.json({
         success: true,
         schedule: scheduleByDay,
-        totalSlots: schedule.rows.length,
+        totalSlots: rows.length,
       });
     } catch (error: any) {
       console.error('Error fetching vendor schedule:', error);
@@ -1261,26 +1274,35 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         return c.json({ error: 'slots array is required' }, 400);
       }
 
-      // ✅ FIX: Comprehensive vendor lookup - check all possible ways vendor can be identified
-      // The foreign key constraint requires vendor_id to exist in vendors table
-      // If vendor only exists in vendor_identity (approved), we need to find or create the vendor record
-      let actualVendorId = vendorId;
-      
-      console.log(`[AVAILABILITY] 🔍 Looking up vendor with ID: ${vendorId}`);
-      
-      // Step 1: Check vendors table directly
-      let vendorFound = false;
-      let existingVendor = await select('vendors', { id: vendorId });
-      if (existingVendor.length > 0) {
-        vendorFound = true;
-        actualVendorId = vendorId;
-        console.log(`[AVAILABILITY] ✅ Vendor found in vendors table: ${actualVendorId}`);
+      const trimmedVendorId = (vendorId || '').trim();
+      if (!trimmedVendorId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
       }
-      
+
+      // ✅ FIX: Use shared resolution (vendors + vendor_identity + auto-create) so newly onboarded vendors work
+      let actualVendorId = trimmedVendorId;
+      let vendorFound = false;
+      const resolvedVendor = await resolveVendorById(trimmedVendorId);
+      if (resolvedVendor && resolvedVendor.id) {
+        actualVendorId = resolvedVendor.id;
+        vendorFound = true;
+        console.log(`[AVAILABILITY] ✅ Resolved vendor via resolveVendorById: ${actualVendorId}`);
+      }
+
+      if (!vendorFound) {
+        console.log(`[AVAILABILITY] 🔍 Looking up vendor with ID: ${trimmedVendorId}`);
+        let existingVendor = await select('vendors', { id: trimmedVendorId });
+        if (existingVendor.length > 0) {
+          vendorFound = true;
+          actualVendorId = trimmedVendorId;
+          console.log(`[AVAILABILITY] ✅ Vendor found in vendors table: ${actualVendorId}`);
+        }
+      }
+
       // Step 2: If not found, check vendor_identity by id
       let identity: any = null;
       if (!vendorFound) {
-        const identitiesById = await select('vendor_identity', { id: vendorId });
+        const identitiesById = await select('vendor_identity', { id: trimmedVendorId });
         if (identitiesById.length > 0) {
           identity = identitiesById[0];
           console.log(`[AVAILABILITY] ✅ Found vendor_identity by id: ${identity.id}, vendor_id: ${identity.vendor_id}`);
@@ -1311,15 +1333,14 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       if (!vendorFound && !identity) {
         const identitiesByVendorId = await query(
           `SELECT * FROM vendor_identity WHERE vendor_id = $1 LIMIT 1`,
-          [vendorId]
+          [trimmedVendorId]
         );
         if (identitiesByVendorId.rows && identitiesByVendorId.rows.length > 0) {
           identity = identitiesByVendorId.rows[0];
           console.log(`[AVAILABILITY] ✅ Found vendor_identity by vendor_id field: ${identity.id}`);
-          // vendorId IS the vendor ID, check if it exists
-          const vendorCheck = await select('vendors', { id: vendorId });
+          const vendorCheck = await select('vendors', { id: trimmedVendorId });
           if (vendorCheck.length > 0) {
-            actualVendorId = vendorId;
+            actualVendorId = trimmedVendorId;
             vendorFound = true;
             console.log(`[AVAILABILITY] ✅ Vendor exists with ID: ${actualVendorId}`);
           }
@@ -1430,13 +1451,12 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       
       // Final check - if vendor still not found, return error
       if (!vendorFound) {
-        // One last check in vendors table
         const finalCheck = await select('vendors', { id: actualVendorId });
         if (finalCheck.length === 0) {
-          console.error(`[AVAILABILITY] ❌ Vendor ${vendorId} not found after all checks`);
+          console.error(`[AVAILABILITY] ❌ Vendor ${trimmedVendorId} not found after all checks`);
           return c.json({ 
             error: 'Vendor not found',
-            details: `Vendor with ID ${vendorId} does not exist in vendor_identity or vendors table. If you are logged in, please ensure your vendor account is properly set up.`
+            details: `Vendor with ID ${trimmedVendorId} does not exist in vendor_identity or vendors table. If you are logged in, please ensure your vendor account is properly set up.`
           }, 404);
         }
         vendorFound = true;

@@ -38,25 +38,50 @@ const CRITICAL_FIELDS = [
   'longitude',
 ];
 
+/** Normalize phone to digits-only for consistent lookup (e.g. +919876543210 → 919876543210). */
+function normalizePhoneForLookup(phone: string | undefined): string | undefined {
+  if (phone == null || String(phone).trim() === '') return undefined;
+  return String(phone).replace(/\D/g, '');
+}
+
 /** Resolve vendor by ID - checks vendors, then vendor_identity with auto-create. Returns vendor row or null. Exported for use by vendor-schedule. */
 export async function resolveVendorById(vendorId: string): Promise<any | null> {
-  let vendors = await select('vendors', { id: vendorId });
+  const trimmedId = (vendorId || '').trim();
+  if (!trimmedId) return null;
+
+  let vendors = await select('vendors', { id: trimmedId });
   if (vendors.length > 0) return vendors[0];
 
-  console.log(`[PROFILE] Vendor ${vendorId} not in vendors table, checking vendor_identity...`);
-  const identities = await select('vendor_identity', { id: vendorId });
+  console.log(`[PROFILE] Vendor ${trimmedId} not in vendors table, checking vendor_identity...`);
+  let identities = await select('vendor_identity', { id: trimmedId });
   if (identities.length === 0) {
-    // Also try vendor_identity.vendor_id in case frontend has vendors.id
+    // Fallback: vendor_identity.vendor_id in case frontend has vendors.id
     const byVendorId = await query(
       `SELECT * FROM vendor_identity WHERE vendor_id = $1 LIMIT 1`,
-      [vendorId]
-    );
+      [trimmedId]
+    ).catch(() => ({ rows: [] }));
     if (byVendorId.rows?.length > 0) {
       const identity = byVendorId.rows[0];
       const linked = await select('vendors', { id: identity.vendor_id });
       if (linked.length > 0) return linked[0];
     }
-    return null;
+    // Fallback: text comparison in case of type/format mismatch (e.g. UUID vs text)
+    const byText = await query(
+      `SELECT * FROM vendor_identity WHERE id::text = $1 OR vendor_id::text = $1 LIMIT 1`,
+      [trimmedId]
+    ).catch(() => ({ rows: [] }));
+    if (byText.rows?.length > 0) identities = byText.rows;
+    if (identities.length === 0) {
+      // Fallback: via vendor_onboarding_applications (frontend may send application id)
+      const viaApp = await query(
+        `SELECT vi.* FROM vendor_identity vi
+         INNER JOIN vendor_onboarding_applications voa ON voa.vendor_identity_id = vi.id
+         WHERE voa.id::text = $1 OR voa.vendor_identity_id::text = $1 OR vi.id::text = $1 LIMIT 1`,
+        [trimmedId]
+      ).catch(() => ({ rows: [] }));
+      if (viaApp.rows?.length > 0) identities = viaApp.rows;
+    }
+    if (identities.length === 0) return null;
   }
 
   const identity = identities[0];
@@ -64,16 +89,25 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
     return null;
   }
 
-  const vendorByPhone = await select('vendors', { phone: identity.phone });
-  if (vendorByPhone.length > 0) return vendorByPhone[0];
+  const phoneNorm = normalizePhoneForLookup(identity.phone);
+  if (phoneNorm) {
+    const vendorByPhone = await query(
+      `SELECT * FROM vendors WHERE REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE $1 OR phone = $2 LIMIT 1`,
+      [`%${phoneNorm}%`, identity.phone]
+    ).catch(() => ({ rows: [] }));
+    if (vendorByPhone.rows?.length > 0) return vendorByPhone.rows[0];
+  }
+  const vendorByPhoneDirect = await select('vendors', { phone: identity.phone });
+  if (vendorByPhoneDirect.length > 0) return vendorByPhoneDirect[0];
 
-  const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
+  const applications = await select('vendor_onboarding_applications', { vendor_identity_id: identity.id });
   const application = applications.length > 0 ? applications[0] : null;
   const payload = application?.application_payload || {};
 
-  console.log(`[PROFILE] Auto-creating vendor record for approved vendor ${vendorId}`);
+  const newVendorId = identity.vendor_id || identity.id;
+  console.log(`[PROFILE] Auto-creating vendor record for approved vendor ${identity.id}, using vendor id: ${newVendorId}`);
   const newVendor = await insert('vendors', {
-    id: vendorId,
+    id: newVendorId,
     phone: identity.phone,
     email: payload.email || payload.businessEmail || `vendor-${identity.phone}@warmpawz.app`,
     business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
@@ -796,6 +830,13 @@ export function registerVendorProfileEndpoints(app: Hono) {
         return c.json({ error: 'Invalid vendor ID' }, 400);
       }
 
+      // Resolve identity id to vendors.id so we find rows stored by vendor-bank-accounts
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+
       // ✅ FIX: Check which table exists and query both
       const schemaCheck = await query(`
         SELECT 
@@ -811,7 +852,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
         try {
           const accounts = await query(
             `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 ORDER BY is_primary DESC, created_at DESC LIMIT 1`,
-            [vendorId]
+            [resolvedVendorId]
           );
           bankAccounts = accounts.rows;
         } catch (e) {
@@ -822,7 +863,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
       // Fallback to vendor_bank_details if no results
       if (bankAccounts.length === 0 && schema.has_details_table) {
         try {
-          bankAccounts = await select('vendor_bank_details', { vendor_id: vendorId });
+          bankAccounts = await select('vendor_bank_details', { vendor_id: resolvedVendorId });
         } catch (e) {
           console.warn('Error querying vendor_bank_details:', e);
         }
@@ -863,17 +904,18 @@ export function registerVendorProfileEndpoints(app: Hono) {
         return c.json({ error: 'Invalid IFSC code format' }, 400);
       }
 
-      // Check if vendor exists
-      const vendors = await select('vendors', { id: vendorId });
-      if (vendors.length === 0) {
+      // Resolve identity id to vendors.id for consistent storage with vendor-bank-accounts
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
+      const resolvedVendorId = vendor.id;
 
       // Check if bank account already exists
-      const existing = await select('vendor_bank_details', { vendor_id: vendorId });
+      const existing = await select('vendor_bank_details', { vendor_id: resolvedVendorId });
       
       const bankData = {
-        vendor_id: vendorId,
+        vendor_id: resolvedVendorId,
         account_holder_name: account_holder_name.trim(),
         account_number: account_number.replace(/\s/g, ''),
         ifsc_code: ifsc_code.toUpperCase().trim(),
@@ -887,7 +929,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
 
       if (existing.length > 0) {
         // Update existing
-        await update('vendor_bank_details', { vendor_id: vendorId }, bankData);
+        await update('vendor_bank_details', { vendor_id: resolvedVendorId }, bankData);
       } else {
         // Create new
         await insert('vendor_bank_details', bankData);
@@ -900,7 +942,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
              bank_account_completed_at = NOW(),
              updated_at = NOW()
          WHERE vendor_id = $1`,
-        [vendorId]
+        [resolvedVendorId]
       ).catch((error) => {
         // Expected: table may not exist in all environments
         if (error instanceof Error && !error.message.includes('does not exist')) {
@@ -917,7 +959,9 @@ export function registerVendorProfileEndpoints(app: Hono) {
 
   /**
    * POST /vendor/:vendorId/bank-account/verify
-   * Request bank account verification
+   * Verify bank account using Razorpay (name, IFSC, account number).
+   * Uses Razorpay IFSC API + format validation. Config from AWS Secrets Manager.
+   * ✅ FIX: Check both vendor_bank_accounts and vendor_bank_details tables.
    */
   app.post("/vendor/:vendorId/bank-account/verify", async (c) => {
     try {
@@ -927,23 +971,90 @@ export function registerVendorProfileEndpoints(app: Hono) {
         return c.json({ error: 'Invalid vendor ID' }, 400);
       }
 
-      const bankAccounts = await select('vendor_bank_details', { vendor_id: vendorId });
-      
+      // Resolve identity id to vendors.id so we find rows stored by vendor-bank-accounts
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+
+      // Check both tables (same logic as GET /vendor/:vendorId/bank-account)
+      const schemaCheck = await query(`
+        SELECT 
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as has_accounts_table,
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_details') as has_details_table
+      `);
+      const schema = schemaCheck.rows?.[0] || {};
+      let bankAccounts: any[] = [];
+
+      if (schema.has_accounts_table) {
+        try {
+          const accounts = await query(
+            `SELECT *, 'vendor_bank_accounts' as _source FROM vendor_bank_accounts WHERE vendor_id = $1 ORDER BY is_primary DESC, created_at DESC LIMIT 1`,
+            [resolvedVendorId]
+          );
+          bankAccounts = accounts.rows || [];
+        } catch (e) {
+          console.warn('Error querying vendor_bank_accounts for verify:', e);
+        }
+      }
+      if (bankAccounts.length === 0 && schema.has_details_table) {
+        try {
+          bankAccounts = await select('vendor_bank_details', { vendor_id: resolvedVendorId });
+          if (bankAccounts.length > 0) (bankAccounts[0] as any)._source = 'vendor_bank_details';
+        } catch (e) {
+          console.warn('Error querying vendor_bank_details for verify:', e);
+        }
+      }
+
       if (bankAccounts.length === 0) {
         return c.json({ error: 'Bank account not found. Please add bank account details first.' }, 404);
       }
 
-      // In a real system, this would trigger an admin review workflow
-      // For now, we just mark it as pending verification
-      // Admin can verify via admin panel
+      const bank = bankAccounts[0] as any;
+      const accountHolderName = (bank.account_holder_name || '').trim();
+      const accountNumber = (bank.account_number || '').replace(/\s/g, '');
+      const ifscCode = (bank.ifsc_code || '').toUpperCase().trim();
+      const sourceTable = bank._source || (schema.has_accounts_table ? 'vendor_bank_accounts' : 'vendor_bank_details');
+
+      if (!accountHolderName || !accountNumber || !ifscCode) {
+        return c.json({
+          success: false,
+          error: 'Bank account record missing name, account number, or IFSC. Please complete all fields.',
+        }, 400);
+      }
+
+      const { validateBankAccountStrict } = await import('./razorpay');
+      const result = await validateBankAccountStrict(accountNumber, ifscCode, accountHolderName);
+
+      if (result.error) {
+        return c.json({
+          success: false,
+          error: result.error,
+          details: result.details,
+        }, 400);
+      }
+
+      const verifyPayload = {
+        is_verified: true,
+        verified_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      if (sourceTable === 'vendor_bank_accounts' && bank.id) {
+        await update('vendor_bank_accounts', { id: bank.id, vendor_id: resolvedVendorId }, verifyPayload);
+      } else {
+        await update('vendor_bank_details', { vendor_id: resolvedVendorId }, verifyPayload);
+      }
 
       return c.json({ 
         success: true, 
-        message: 'Verification request submitted. Our team will review and verify your account shortly.' 
+        message: 'Bank account verified successfully. Name, IFSC, and account number validated.',
+        verified: true,
       });
     } catch (error: any) {
-      console.error('Error requesting verification:', error);
-      return c.json({ error: error.message }, 500);
+      console.error('Error verifying bank account:', error);
+      return c.json({ error: error.message || 'Verification failed' }, 500);
     }
   });
 
