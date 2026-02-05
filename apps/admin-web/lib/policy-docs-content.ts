@@ -8,6 +8,7 @@ export type PolicyDocKey =
   | 'finance-payment-policies'
   | 'finance-refund-policies'
   | 'finance-cancellation-policy'
+  | 'finance-ecommerce-policies'
   | 'logistics-partners'
   | 'logistics-delivery-rules'
   | 'finance-gst-configuration'
@@ -406,6 +407,33 @@ Delivery rules define **which logistics partner** is used for an order based on 
 - Use **Fallback Partners** for resilience (e.g. secondary courier when primary is overloaded).
 - Use **Regions** and **Categories** so each rule only applies where the selected partner actually operates.`,
   },
+  'finance-ecommerce-policies': {
+    title: 'Ecommerce Cancellation & Returns – Admin Guide',
+    markdown: `# Ecommerce Cancellation & Returns – Admin Guide
+
+## What is Ecommerce Policy?
+
+Ecommerce policies define **order cancellation** (before/after dispatch), **return window**, **refund processing**, and **non-returnable categories** for products sold on the Warmpawz platform.
+
+---
+
+## Key Options
+
+| Option | Description |
+|--------|-------------|
+| **Return window (hours)** | Return or replacement requests must be raised within this many hours of delivery (e.g. 48). |
+| **Cancel before dispatch** | If enabled, orders cancelled before they are shipped receive a full refund. |
+| **Refund processing (days)** | Refunds are processed to the original payment method within this many business days (e.g. 5–7). |
+| **Non-returnable categories** | Categories that are generally non-returnable unless the product is damaged, defective, or wrong item (e.g. opened pet food, hygiene once opened, customized). |
+
+---
+
+## Where Ecommerce Policy Is Used
+
+- **Order cancellation** – Before dispatch: full refund. After dispatch: no cancel; customer may request return/replacement per eligibility.
+- **Returns & replacements** – Eligibility: damaged, defective, wrong item, expired. Return window applies.
+- **Refunds** – Processed within configured business days to original payment method.`,
+  },
   'finance-gst-configuration': {
     title: 'GST Configuration – Admin Guide',
     markdown: `# GST Configuration – Admin Guide
@@ -548,27 +576,26 @@ Settlements are **vendor payables** – the amount due to vendors after deductin
 
 ## What is Payout Management?
 
-Payout Management is where you **review, approve, and process vendor payouts**. It shows pending, processing, and completed payouts; vendor details; net amount (after commission and TDS); and lets you **Process** or **Reject** payouts. Export to CSV for reconciliation.
+Payout Management is where you **review and process vendor payouts**. **Scheduled** payouts run automatically as per each vendor's **tier** (settlement period and frequency are defined in Finance → Tier Management). **Manual** processing here is for: (1) **Retry** after a payout failed (e.g. bank not verified or wrong details — fix the bank info, then Process again), and (2) **Adhoc/urgent** payouts on request. It shows pending, processing, completed, and failed payouts; lets you **Process** or **Reject**; Export to CSV.
 
 ---
 
 ## How to Use Payout Management
 
 1. Go to **Finance & Logistics** → **Payout Management**.
-2. View stats; use search and status filter to find payouts.
+2. View stats; use search and status filter (e.g. **Failed** to find payouts to retry after fixing bank).
 3. Click a payout for details (amount, commission, TDS, net, bank, period).
-4. Click **Process** to send payout to vendor bank; **Reject** with reason if needed.
+4. Click **Process** to send to vendor bank (use for pending, scheduled, or **failed** retry); **Reject** with reason if needed.
 5. Use **Export** for CSV reconciliation.
 
 ---
 
-## Where Payout Management Is Used
+## Scheduled vs manual
 
-| Where | How |
-|-------|-----|
-| **Settlements** | Settlements generate payables; Payout Management disburses them. |
-| **Vendor bank** | Payouts go to bank account linked to vendor; ensure verified. |
-| **Gateway / bank API** | Process calls your payout API (e.g. Razorpay) to credit vendor. |
+| Mode | How |
+|------|-----|
+| **Scheduled** | Settlements are created and paid as per tier (Tier Management: payout period and frequency). Run "Process Now" in Schedule Settings to create new settlements; scheduled job can send to bank per config. |
+| **Manual** | Use **Process** here to send a payout to bank (e.g. retry after fixing bank verification or wrong account, or adhoc/urgent on request). |
 
 ---
 
@@ -576,16 +603,16 @@ Payout Management is where you **review, approve, and process vendor payouts**. 
 
 | Option | Impacts |
 |--------|---------|
-| **Process** | Triggers transfer to vendor bank. |
+| **Process** | Triggers transfer to vendor bank (pending, scheduled, or **failed** retry). |
 | **Reject** | Cancels payout; use for wrong details or disputes. |
-| **Status** | pending / processing / completed / rejected. |
+| **Status** | pending / processing / completed / failed / rejected. |
 | **Export** | CSV for reconciliation or accounting. |
 
 ---
 
 ## Tips
 
-- Verify vendor bank (account, IFSC, holder) before processing.
+- Verify vendor bank (account, IFSC, holder) before processing; after a **failed** payout, fix details then use **Process** again.
 - Use Reject with clear reason so support can fix details.
 - Run Export regularly for audit and bank reconciliation.`,
   },

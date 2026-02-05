@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, Loader2, Globe, Shield, Bell, DollarSign, Clock, MapPin } from 'lucide-react';
+import { Settings, Save, Loader2, Globe, Shield, Bell, IndianRupee, Clock, MapPin } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 interface PlatformConfig {
@@ -147,7 +147,7 @@ export function PlatformSettings() {
 
   const tabs = [
     { id: 'general', label: 'General', icon: Globe },
-    { id: 'business', label: 'Business', icon: DollarSign },
+    { id: 'business', label: 'Business', icon: IndianRupee },
     { id: 'booking', label: 'Booking', icon: Clock },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'security', label: 'Security', icon: Shield },

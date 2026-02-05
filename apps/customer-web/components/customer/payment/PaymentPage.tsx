@@ -196,6 +196,7 @@ export function PaymentPage({
         items: [{
           id: serviceId || 'service',
           type: 'service',
+          serviceId,
           amount: baseAmount,
           quantity: 1,
           category: 'pet_services',

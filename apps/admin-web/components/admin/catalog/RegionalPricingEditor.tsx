@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { DollarSign, Info, TrendingUp, AlertCircle } from 'lucide-react';
+import { IndianRupee, Info, TrendingUp, AlertCircle } from 'lucide-react';
 
 interface Region {
   regionId: string;
@@ -82,7 +82,7 @@ export function RegionalPricingEditor({
       regionId,
       basePrice: 0,
       currency: region?.currency.code || 'USD',
-      symbol: region?.currency.symbol || '$',
+      symbol: region?.currency.symbol || '₹',
       taxRate: region?.business.taxRate,
     };
   };
@@ -104,7 +104,7 @@ export function RegionalPricingEditor({
           regionId,
           basePrice: 0,
           currency: region?.currency.code || 'USD',
-          symbol: region?.currency.symbol || '$',
+          symbol: region?.currency.symbol || '₹',
           taxRate: region?.business.taxRate,
           ...updates,
         },
@@ -156,7 +156,7 @@ export function RegionalPricingEditor({
     return (
       <div className={`p-4 border-2 border-gray-200 rounded-lg bg-white ${className}`}>
         <div className="flex items-center gap-3 mb-4">
-          <DollarSign className="w-5 h-5 text-orange-600" />
+          <IndianRupee className="w-5 h-5 text-orange-600" />
           <label className="text-base font-medium text-gray-900">Regional Pricing</label>
         </div>
         <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
@@ -176,7 +176,7 @@ export function RegionalPricingEditor({
     <div className={`p-4 border-2 border-gray-200 rounded-lg bg-white ${className}`}>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <DollarSign className="w-5 h-5 text-orange-600" />
+          <IndianRupee className="w-5 h-5 text-orange-600" />
           <label className="text-base font-medium text-gray-900">Regional Pricing</label>
           <span className="text-sm text-gray-500">
             ({requiredRegions.length} {requiredRegions.length === 1 ? 'region' : 'regions'})

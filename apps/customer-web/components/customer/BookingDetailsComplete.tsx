@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { 
   ArrowLeft, Calendar, Clock, MapPin, User, Phone, 
-  DollarSign, CheckCircle, XCircle, AlertCircle, 
+  IndianRupee, CheckCircle, XCircle, AlertCircle, 
   Edit, Trash2, FileText, Navigation
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';

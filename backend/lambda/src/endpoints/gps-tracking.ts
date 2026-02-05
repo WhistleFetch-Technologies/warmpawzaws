@@ -142,19 +142,23 @@ export function registerGpsTrackingEndpoints(app: Hono) {
         };
       }
 
-      // If booking has address text but no coords, geocode using Google Maps API for real destination
+      // If booking has address text but no coords, geocode using Google Maps API (customer home at booking)
       if (!destinationLocation) {
-        const addressText = booking.address || (booking as any).destination_address || 
-          (booking as any).location || (booking as any).delivery_address || 
+        const addressText = booking.address || (booking as any).destination_address ||
+          (booking as any).location || (booking as any).delivery_address ||
           (booking as any).customer_address;
         if (addressText) {
           const geocoded = await geocodeAddress(addressText);
           if (geocoded) {
             destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
             console.log('[GPS Tracking] Geocoded address to destination:', geocoded.latitude, geocoded.longitude);
-          } else {
-            console.log('[GPS Tracking] Geocoding failed; using default destination (address text present)');
+          } else if (uatMode) {
+            console.log('[GPS Tracking] Geocoding failed; UAT mode using default destination');
             destinationLocation = { ...UAT_DEFAULT_DESTINATION };
+          } else {
+            return c.json({
+              error: 'Could not resolve destination coordinates. Please ensure the customer address has a valid location, or add latitude/longitude to the address.',
+            }, 400);
           }
         }
       }
@@ -218,17 +222,19 @@ export function registerGpsTrackingEndpoints(app: Hono) {
 
     } catch (error: any) {
       console.error('Error starting tracking:', error);
-      const msg = error?.message || '';
-      // Return 503 with JSON so API Gateway does not replace with generic 503 (table missing / DB unavailable)
+      const msg = String(error?.message || '');
+      // Return 503 with JSON so API Gateway does not replace with generic 503
       if (msg.includes('relation') && msg.includes('does not exist')) {
         return c.json({
           error: 'Tracking service is being set up. Please try again in a few minutes.',
           code: 'TRACKING_UNAVAILABLE',
         }, 503);
       }
-      if (msg.includes('connection') || msg.includes('timeout') || msg.includes('ECONNREFUSED')) {
+      if (msg.includes('connection') || msg.includes('timeout') || msg.includes('ECONNREFUSED') ||
+          msg.includes('pool exhausted') || msg.includes('try again in a moment') ||
+          msg.includes('Task timed out') || msg.includes('timed out')) {
         return c.json({
-          error: 'Service temporarily unavailable. Please try again.',
+          error: 'Service temporarily unavailable. Please try again in a moment.',
           code: 'SERVICE_UNAVAILABLE',
         }, 503);
       }

@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Settings, User, Building2, CreditCard, Clock, Bell, Power } from 'lucide-react';
+import { ArrowLeft, Settings, User, Building2, CreditCard, Bell, Power } from 'lucide-react';
 
 interface VendorProfile {
   id: string;
@@ -137,7 +137,6 @@ export function VendorSettingsPage({ vendorId, onBack }: VendorSettingsPageProps
     { id: 'golive', label: 'Go Live', icon: Power },
     { id: 'profile', label: 'Profile', icon: User },
     { id: 'bank', label: 'Bank', icon: CreditCard },
-    { id: 'schedule', label: 'Schedule', icon: Clock },
     { id: 'notifications', label: 'Alerts', icon: Bell },
   ];
 
@@ -407,17 +406,6 @@ export function VendorSettingsPage({ vendorId, onBack }: VendorSettingsPageProps
             </div>
           )}
 
-          {/* Schedule Tab */}
-          {activeTab === 'schedule' && (
-            <div className="bg-white rounded-xl border p-4">
-              <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-orange-500" />
-                Working Schedule
-              </h3>
-              <ScheduleManager vendorId={vendorId} />
-            </div>
-          )}
-
           {/* Notifications Tab */}
           {activeTab === 'notifications' && (
             <div className="bg-white rounded-xl border p-4">
@@ -494,128 +482,6 @@ function ChecklistItem({ label, done, hint }: { label: string; done: boolean; hi
         <p className={`text-sm font-medium ${done ? 'text-green-800' : 'text-gray-700'}`}>{label}</p>
         <p className="text-xs text-gray-500">{hint}</p>
       </div>
-    </div>
-  );
-}
-
-// Schedule Manager Component
-function ScheduleManager({ vendorId }: { vendorId: string }) {
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const daysFull = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const [schedule, setSchedule] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    loadSchedule();
-  }, [vendorId]);
-
-  const loadSchedule = async () => {
-    try {
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/schedule`);
-      if (response.success && response.schedule) {
-        setSchedule(response.schedule);
-      } else {
-        // Default schedule
-        setSchedule(daysFull.map((_, idx) => ({
-          day_of_week: idx,
-          is_open: idx !== 0, // Closed on Sunday
-          open_time: '09:00',
-          close_time: '18:00',
-        })));
-      }
-    } catch (err) {
-      console.error('Error loading schedule:', err);
-      // Set default schedule on error
-      setSchedule(daysFull.map((_, idx) => ({
-        day_of_week: idx,
-        is_open: idx !== 0,
-        open_time: '09:00',
-        close_time: '18:00',
-      })));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      await apiClient.put(`/vendor/${vendorId}/schedule`, { schedule });
-      alert('Schedule saved successfully');
-    } catch (err) {
-      alert('Failed to save schedule');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-8">
-        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500"></div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {schedule.map((day, idx) => (
-        <div key={idx} className="flex items-center gap-2 py-2 border-b border-gray-100 last:border-0">
-          <div className="w-10">
-            <span className="text-xs font-semibold text-gray-600">{days[day.day_of_week]}</span>
-          </div>
-          
-          <label className="flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={day.is_open}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                const newSchedule = [...schedule];
-                newSchedule[idx].is_open = e.target.checked;
-                setSchedule(newSchedule);
-              }}
-              className="w-4 h-4 accent-orange-500 rounded"
-            />
-          </label>
-          
-          {day.is_open ? (
-            <div className="flex items-center gap-1.5 flex-1">
-              <input
-                type="time"
-                value={day.open_time}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                  const newSchedule = [...schedule];
-                  newSchedule[idx].open_time = e.target.value;
-                  setSchedule(newSchedule);
-                }}
-                className="flex-1 px-2 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500"
-              />
-              <span className="text-xs text-gray-400">to</span>
-              <input
-                type="time"
-                value={day.close_time}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                  const newSchedule = [...schedule];
-                  newSchedule[idx].close_time = e.target.value;
-                  setSchedule(newSchedule);
-                }}
-                className="flex-1 px-2 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500"
-              />
-            </div>
-          ) : (
-            <span className="text-xs text-gray-400 italic flex-1">Closed</span>
-          )}
-        </div>
-      ))}
-      
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="w-full mt-4 py-2.5 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 disabled:opacity-50 transition-colors text-sm"
-      >
-        {saving ? 'Saving...' : 'Save Schedule'}
-      </button>
     </div>
   );
 }

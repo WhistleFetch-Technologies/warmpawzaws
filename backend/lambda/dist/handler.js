@@ -107655,8 +107655,14 @@ async function insert(table, data) {
     "search_vector_data",
     "channels",
     // notifications.channels is JSONB
-    "data"
+    "data",
     // notifications.data is JSONB (booking_id, meeting_id, etc.)
+    "cancellation_windows",
+    // cancellation_policies
+    "vendor_cancellation_penalty",
+    "no_show_policy",
+    "setting_value"
+    // admin_settings
   ]);
   const isJsonbColumn = (key) => {
     return jsonbColumns.has(key) || key.endsWith("_config") || key.endsWith("_metadata") || key.endsWith("_payload") || key.endsWith("_data") || key.endsWith("_settings");
@@ -107705,8 +107711,13 @@ async function update(table, filters, data) {
     // notifications.channels is JSONB
     "data",
     // notifications.data is JSONB (booking_id, meeting_id, etc.)
-    "specializations"
+    "specializations",
     // vendors.specializations is JSONB array
+    "cancellation_windows",
+    "vendor_cancellation_penalty",
+    "no_show_policy",
+    "setting_value"
+    // admin_settings
   ]);
   const isJsonbColumn = (key) => {
     return jsonbColumns.has(key) || key.endsWith("_config") || key.endsWith("_metadata") || key.endsWith("_payload") || key.endsWith("_data") || key.endsWith("_settings");
@@ -107783,7 +107794,14 @@ async function upsert(table, data, conflictColumn = "id") {
     const start = idx * keys.length + 1;
     return `(${keys.map((_2, i) => `$${start + i}`).join(", ")})`;
   }).join(", ");
-  const values = dataArray.flatMap((row) => keys.map((key) => row[key]));
+  const jsonbKeys = /* @__PURE__ */ new Set(["setting_value"]);
+  const values = dataArray.flatMap((row) => keys.map((key) => {
+    const value = row[key];
+    if (jsonbKeys.has(key) && value !== null && value !== void 0 && typeof value === "object") {
+      return JSON.stringify(value);
+    }
+    return value;
+  }));
   const columns = keys.join(", ");
   const updateClause = keys.filter((k) => k !== conflictColumn).map((k) => `${k} = EXCLUDED.${k}`).join(", ");
   const queryText = `
@@ -118543,10 +118561,17 @@ var init_tax_calculation_service = __esm({
             category: category || item.category
           });
           let hsnDetails = null;
-          if (item.hsnCode) {
-            hsnDetails = await this.getHSNCodeDetails(item.hsnCode);
+          let taxCategoryDetails = null;
+          if (item.hsnCodeId) {
+            hsnDetails = await this.getHSNCodeById(item.hsnCodeId);
           }
-          const gstRate = hsnDetails?.gst_rate || taxRule.gst_rate || 18;
+          if (!hsnDetails && item.hsnCode) {
+            hsnDetails = await this.getHSNCodeByCode(item.hsnCode);
+          }
+          if (!hsnDetails && item.taxCategoryId) {
+            taxCategoryDetails = await this.getTaxCategoryDetails(item.taxCategoryId);
+          }
+          const gstRate = hsnDetails?.gst_rate ?? taxCategoryDetails?.tax_rate ?? taxCategoryDetails?.default_gst_rate ?? taxRule.gst_rate ?? 18;
           const cgstRate = taxRule.cgst_percentage || gstRate / 2;
           const sgstRate = taxRule.sgst_percentage || gstRate / 2;
           const igstRate = taxRule.igst_percentage || gstRate;
@@ -118558,7 +118583,7 @@ var init_tax_calculation_service = __esm({
           taxBreakdowns.push({
             itemId: item.id,
             itemType: item.type,
-            hsnCode: item.hsnCode || hsnDetails?.hsn_code,
+            hsnCode: item.hsnCode || hsnDetails?.hsn_code || hsnDetails?.code,
             baseAmount: itemAmount,
             quantity: item.quantity || 1,
             gstRate,
@@ -118618,6 +118643,11 @@ var init_tax_calculation_service = __esm({
           queryParams.push(category || item.category);
           paramIndex++;
         }
+        if (item.taxCategoryId) {
+          queryStr += ` AND (tax_category_id IS NULL OR tax_category_id = $${paramIndex})`;
+          queryParams.push(item.taxCategoryId);
+          paramIndex++;
+        }
         if (customerLocation?.state) {
           queryStr += ` AND (customer_state IS NULL OR customer_state = $${paramIndex})`;
           queryParams.push(customerLocation.state);
@@ -118652,15 +118682,37 @@ var init_tax_calculation_service = __esm({
         };
       }
       /**
-       * Get HSN code details
+       * Get HSN code by UUID (from service_catalog.hsn_code_id)
        */
-      async getHSNCodeDetails(hsnCode) {
-        const queryStr = `
-      SELECT * FROM hsn_codes
-      WHERE hsn_code = $1 AND is_active = true
-      LIMIT 1
-    `;
-        const result = await query(queryStr, [hsnCode]);
+      async getHSNCodeById(id) {
+        const result = await query(
+          `SELECT * FROM hsn_codes WHERE id = $1 AND is_active = true LIMIT 1`,
+          [id]
+        );
+        const rows = Array.isArray(result) ? result : result.rows || [];
+        return rows.length > 0 ? rows[0] : null;
+      }
+      /**
+       * Get HSN code by code string (hsn_code or code column)
+       */
+      async getHSNCodeByCode(hsnCode) {
+        const result = await query(
+          `SELECT * FROM hsn_codes 
+       WHERE (hsn_code = $1 OR code = $1) AND is_active = true 
+       LIMIT 1`,
+          [hsnCode]
+        );
+        const rows = Array.isArray(result) ? result : result.rows || [];
+        return rows.length > 0 ? rows[0] : null;
+      }
+      /**
+       * Get tax category details (tax_rate or default_gst_rate)
+       */
+      async getTaxCategoryDetails(id) {
+        const result = await query(
+          `SELECT * FROM tax_categories WHERE id = $1 AND is_active = true LIMIT 1`,
+          [id]
+        );
         const rows = Array.isArray(result) ? result : result.rows || [];
         return rows.length > 0 ? rows[0] : null;
       }
@@ -120881,7 +120933,7 @@ var init_gps_tracking_service = __esm({
           }
           const booking = bookings[0];
           const customerId = booking.customer_id;
-          const eta = await this.calculateETA(startLocation, destinationLocation);
+          const eta = await this.calculateETA(startLocation, destinationLocation, true);
           const session = await insert("gps_tracking_sessions", {
             booking_id: bookingId,
             vendor_id: vendorId,
@@ -120900,11 +120952,15 @@ var init_gps_tracking_service = __esm({
             started_at: (/* @__PURE__ */ new Date()).toISOString(),
             created_at: (/* @__PURE__ */ new Date()).toISOString()
           });
-          await update("bookings", { id: bookingId }, {
-            status: "in_transit",
-            vendor_started_at: (/* @__PURE__ */ new Date()).toISOString(),
-            estimated_arrival_time: new Date(Date.now() + eta.etaMinutes * 60 * 1e3).toISOString()
-          });
+          try {
+            await update("bookings", { id: bookingId }, {
+              status: "in_transit",
+              vendor_started_at: (/* @__PURE__ */ new Date()).toISOString(),
+              estimated_arrival_time: new Date(Date.now() + eta.etaMinutes * 60 * 1e3).toISOString()
+            });
+          } catch (updateErr) {
+            console.warn("[GPS] Booking status update failed (non-fatal):", updateErr.message);
+          }
           const vendors = await select("vendors", { id: vendorId });
           const vendorName = vendors[0]?.business_name || "Your service provider";
           const trackingUrl = `${process.env.CUSTOMER_APP_URL || "https://app.warmpawz.com"}/track/${session[0].id}`;
@@ -121127,9 +121183,10 @@ var init_gps_tracking_service = __esm({
       /**
        * Calculate ETA using Google Maps Distance Matrix API
        * Uses GOOGLE_MAPS_API_KEY from env (set from Secrets Manager at deploy) or fetches from Secrets Manager at runtime
+       * @param skipPolyline - When true, skips Directions API call to save time (e.g. on session start)
        */
-      async calculateETA(origin, destination) {
-        const FETCH_TIMEOUT_MS = 6e3;
+      async calculateETA(origin, destination, skipPolyline = false) {
+        const FETCH_TIMEOUT_MS = 5e3;
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
         try {
@@ -121147,20 +121204,22 @@ var init_gps_tracking_service = __esm({
                 const durationInTraffic = element.duration_in_traffic?.value || element.duration?.value || 0;
                 const distance = element.distance?.value || 0;
                 let routePolyline;
-                try {
-                  const polyController = new AbortController();
-                  const polyTimeout = setTimeout(() => polyController.abort(), 4e3);
-                  const directionsResponse = await fetch(
-                    `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&departure_time=now&key=${apiKey}`,
-                    { signal: polyController.signal }
-                  );
-                  clearTimeout(polyTimeout);
-                  if (directionsResponse.ok) {
-                    const directionsData = await directionsResponse.json();
-                    routePolyline = directionsData.routes?.[0]?.overview_polyline?.points;
+                if (!skipPolyline) {
+                  try {
+                    const polyController = new AbortController();
+                    const polyTimeout = setTimeout(() => polyController.abort(), 2e3);
+                    const directionsResponse = await fetch(
+                      `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${destination.latitude},${destination.longitude}&mode=driving&departure_time=now&key=${apiKey}`,
+                      { signal: polyController.signal }
+                    );
+                    clearTimeout(polyTimeout);
+                    if (directionsResponse.ok) {
+                      const directionsData = await directionsResponse.json();
+                      routePolyline = directionsData.routes?.[0]?.overview_polyline?.points;
+                    }
+                  } catch (e) {
+                    console.warn("Could not get route polyline:", e);
                   }
-                } catch (e) {
-                  console.warn("Could not get route polyline:", e);
                 }
                 return {
                   etaMinutes: Math.ceil(durationInTraffic / 60) + ETA_BUFFER_MINUTES,
@@ -123273,10 +123332,12 @@ async function getRazorpayConfig() {
     });
     if (secretConfig && secretConfig.keyId && secretConfig.keySecret) {
       console.log("[RAZORPAY-CONFIG] Loaded from AWS Secrets Manager");
+      const xAccount = secretConfig.razorpayXAccountNumber || secretConfig.xAccountNumber || "";
       return {
         keyId: secretConfig.keyId,
         keySecret: secretConfig.keySecret,
-        webhookSecret: secretConfig.webhookSecret || ""
+        webhookSecret: secretConfig.webhookSecret || "",
+        razorpayXAccountNumber: xAccount?.trim() || void 0
       };
     }
   } catch (error) {
@@ -123290,10 +123351,12 @@ async function getRazorpayConfig() {
       const config = integrations[0].integration_config;
       if (config.keyId && config.keySecret) {
         console.log("[RAZORPAY-CONFIG] Loaded from database");
+        const xAccount = config.razorpayXAccountNumber || config.xAccountNumber || "";
         return {
           keyId: config.keyId,
           keySecret: config.keySecret,
-          webhookSecret: config.webhookSecret || ""
+          webhookSecret: config.webhookSecret || "",
+          razorpayXAccountNumber: xAccount?.trim() || void 0
         };
       }
     }
@@ -123318,10 +123381,15 @@ async function getRazorpayAuthHeader() {
   const auth = Buffer.from(`${config.keyId}:${config.keySecret}`).toString("base64");
   return `Basic ${auth}`;
 }
-async function razorpayRequest(endpoint, method = "GET", body, timeoutMs = 2e4) {
+async function razorpayRequest(endpoint, method = "GET", body, timeoutMs = 2e4, extraHeaders) {
   const authHeader = await getRazorpayAuthHeader();
   const url = `https://api.razorpay.com/v1${endpoint}`;
   console.log(`[RAZORPAY-REQUEST] ${method} ${endpoint} (timeout: ${timeoutMs}ms)`);
+  const headers = {
+    "Authorization": authHeader,
+    "Content-Type": "application/json",
+    ...extraHeaders
+  };
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     console.warn(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`);
@@ -123331,10 +123399,7 @@ async function razorpayRequest(endpoint, method = "GET", body, timeoutMs = 2e4) 
     const startTime = Date.now();
     const response = await fetch(url, {
       method,
-      headers: {
-        "Authorization": authHeader,
-        "Content-Type": "application/json"
-      },
+      headers,
       body: body ? JSON.stringify(body) : void 0,
       signal: controller.signal
     });
@@ -123368,16 +123433,68 @@ function getRazorpayClient() {
     }
   };
   const payouts = {
-    async create(body) {
-      return razorpayRequest("/payouts", "POST", body);
+    /** Create payout (Composite API: pass account_number + fund_account with contact + bank_account). Optional idempotencyKey. */
+    async create(body, idempotencyKey) {
+      const extraHeaders = {};
+      if (idempotencyKey) extraHeaders["X-Payout-Idempotency"] = idempotencyKey;
+      return razorpayRequest("/payouts", "POST", body, 2e4, Object.keys(extraHeaders).length ? extraHeaders : void 0);
     }
+  };
+  const validateBankAccount = async (params) => {
+    const sourceAccount = await getRazorpayXAccountNumber();
+    if (!sourceAccount?.trim()) {
+      return { valid: false, error: "RazorpayX source account not configured (razorpayXAccountNumber in secret or RAZORPAY_X_ACCOUNT_NUMBER)" };
+    }
+    const ref = params.reference_id || `val-${Date.now()}`;
+    const body = {
+      source_account_number: sourceAccount,
+      validation_type: "optimized",
+      reference_id: ref.slice(0, 40),
+      fund_account: {
+        account_type: "bank_account",
+        bank_account: {
+          name: params.beneficiary_name,
+          ifsc: params.ifsc.toUpperCase(),
+          account_number: String(params.account_number).replace(/\s/g, "")
+        }
+      },
+      contact: {
+        name: params.beneficiary_name,
+        email: params.contact_email || `vendor-${ref}@validation.warmpawz.com`,
+        contact: (params.contact_phone || "0000000000").replace(/\D/g, "").slice(-10) || "0000000000",
+        type: "vendor",
+        reference_id: ref.slice(0, 40)
+      }
+    };
+    try {
+      const res = await razorpayRequest("/fund_accounts/validations", "POST", body, 15e3);
+      const status = res?.status;
+      const validationId = res?.id;
+      if (status === "completed") return { valid: true, validationId };
+      if (status === "failed") return { valid: false, error: res?.status_details?.description || "Validation failed", validationId };
+      return { valid: false, error: status === "created" ? "Validation initiated; check RazorpayX dashboard for result" : "Validation incomplete", validationId };
+    } catch (e) {
+      const msg = e?.message || "Validation API error";
+      return { valid: false, error: msg };
+    }
+  };
+  const getRazorpayXAccountNumber = async () => {
+    try {
+      const config = await getRazorpayConfig();
+      if (config.razorpayXAccountNumber) return config.razorpayXAccountNumber.trim();
+    } catch (_) {
+    }
+    const env = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
+    return env || null;
   };
   return {
     request: razorpayRequest,
     getConfig: getRazorpayConfig,
     getAuthHeader: getRazorpayAuthHeader,
+    getRazorpayXAccountNumber,
     payments,
-    payouts
+    payouts,
+    validateBankAccount
   };
 }
 var init_razorpay_client = __esm({
@@ -123901,6 +124018,43 @@ function registerRazorpayEndpoints(app3) {
           details: "Account number must be 9\u201318 digits."
         }, 400);
       }
+      try {
+        const client2 = getRazorpayClient();
+        const result = await client2.validateBankAccount({
+          account_number,
+          ifsc: ifsc_code,
+          beneficiary_name,
+          contact_phone: body?.contact,
+          contact_email: body?.email,
+          reference_id: body?.reference_id
+        });
+        if (result.valid) {
+          return c.json({
+            success: true,
+            valid: true,
+            bank_details: {
+              bank: ifscData.BANK || "",
+              branch: ifscData.BRANCH || "",
+              city: ifscData.CITY || "",
+              state: ifscData.STATE || "",
+              ifsc: ifsc_code
+            },
+            account_number_masked: account_number.replace(/\d(?=\d{4})/g, "*"),
+            validationId: result.validationId,
+            message: "Bank account verified via Razorpay."
+          });
+        }
+        if (result.error) {
+          return c.json({
+            success: false,
+            valid: false,
+            error: result.error,
+            details: result.error
+          }, 400);
+        }
+      } catch (apiErr) {
+        console.warn("[verify-bank-account] Razorpay validation API not used:", apiErr?.message);
+      }
       return c.json({
         success: true,
         valid: false,
@@ -123912,7 +124066,7 @@ function registerRazorpayEndpoints(app3) {
           ifsc: ifsc_code
         },
         account_number_masked: account_number.replace(/\d(?=\d{4})/g, "*"),
-        message: "Format validation passed for name, IFSC, and account number. Verification (name + account + IFSC match) requires Razorpay Fund Account Validation; this endpoint cannot confirm account holder or account number."
+        message: "Format validation passed. For full verification, configure RazorpayX (RAZORPAY_X_ACCOUNT_NUMBER) and allowlist IPs in RazorpayX Dashboard."
       });
     } catch (error) {
       console.error("Error verifying bank account:", error);
@@ -129709,12 +129863,15 @@ function registerVendorOnboardingFixes(app3) {
           id: row.application_id,
           applicationId: row.application_id,
           vendorId: row.vendor_identity_id,
-          fullName: payload.fullName || payload.businessName || "N/A",
+          fullName: payload.fullName || payload.ownerName || payload.businessName || "N/A",
           businessName: payload.businessName || payload.fullName || "N/A",
+          ownerName: payload.ownerName || payload.fullName || "N/A",
           phone: row.phone || payload.phone || "N/A",
           email: payload.email || "N/A",
           address: payload.address || "N/A",
           city: payload.city || "N/A",
+          state: payload.state || "N/A",
+          pincode: payload.pincode || payload.pinCode || payload.pin || "N/A",
           category: row.role_display_name || row.role_name || "N/A",
           roleName: row.role_name,
           experience: payload.experience || "0",
@@ -130025,15 +130182,15 @@ async function calculateMultipleCommuteTimes(origin, destinations, options = {})
 }
 async function getStaffLocationForCommute(staffId, vendorId) {
   try {
-    const { select: select26 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-    const staff = await select26("staff", { id: staffId });
+    const { select: select25 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const staff = await select25("staff", { id: staffId });
     if (staff.length > 0 && staff[0].current_latitude && staff[0].current_longitude) {
       return {
         latitude: parseFloat(staff[0].current_latitude),
         longitude: parseFloat(staff[0].current_longitude)
       };
     }
-    const vendors = await select26("vendors", { id: vendorId });
+    const vendors = await select25("vendors", { id: vendorId });
     if (vendors.length > 0 && vendors[0].latitude && vendors[0].longitude) {
       return {
         latitude: parseFloat(vendors[0].latitude),
@@ -130048,8 +130205,8 @@ async function getStaffLocationForCommute(staffId, vendorId) {
 }
 async function calculateStaffETA(staffId, customerLocation, bookingDateTime, options = {}) {
   try {
-    const { select: select26 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-    const staff = await select26("staff", { id: staffId });
+    const { select: select25 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const staff = await select25("staff", { id: staffId });
     if (staff.length === 0) {
       throw new Error("Staff not found");
     }
@@ -130459,6 +130616,123 @@ async function getRuleNumberArray(roleId, ruleKey, flow, serviceStyle, serviceTy
   if (Array.isArray(v)) return v;
   const def = PLATFORM_DEFAULTS[ruleKey];
   return Array.isArray(def) ? def : [5, 10, 20];
+}
+
+// src/lib/services/cancellation-policy-service.ts
+init_rds_connection();
+function serviceTypeToLocation(serviceType) {
+  const t = (serviceType || "").toLowerCase();
+  if (t === "at_home") return "home";
+  if (t === "at_center" || t === "at_vendor") return "clinic";
+  if (t === "tele") return "tele";
+  return "all";
+}
+async function getRefundTierForCancellation(booking, cancelledBy, options) {
+  const bookingDateTime = /* @__PURE__ */ new Date(`${booking.booking_date}T${booking.booking_time}`);
+  const hoursUntilBooking = (bookingDateTime.getTime() - Date.now()) / (1e3 * 60 * 60);
+  const serviceLocation = serviceTypeToLocation(booking.service_type);
+  let vendorRoleName = null;
+  if (booking.vendor_id) {
+    const vendorRoleResult = await query(
+      `SELECT r.name AS role_name
+       FROM vendors v
+       JOIN roles r ON r.id = v.role_id
+       WHERE v.id = $1 AND r.is_active = true
+       LIMIT 1`,
+      [booking.vendor_id]
+    ).catch(() => ({ rows: [] }));
+    const rows2 = Array.isArray(vendorRoleResult) ? vendorRoleResult : vendorRoleResult.rows || [];
+    vendorRoleName = rows2[0]?.role_name ?? null;
+  }
+  const cancelledByParam = cancelledBy === "pet_parent" ? "pet_parent" : "provider";
+  if (cancelledBy === "provider") {
+    const vendorReason = options?.vendorCancellationReason ? String(options.vendorCancellationReason).toLowerCase() : null;
+    const tiersResult2 = await query(
+      `SELECT id, name, refund_percentage, cancellation_fee, max_partial_refund_percentage, hours_before_service
+       FROM vendor_refund_tiers
+       WHERE is_active = true
+         AND cancelled_by = 'provider'
+         AND (vendor_cancellation_reason IS NULL OR vendor_cancellation_reason = $1 OR $1 IS NULL)
+         AND (
+           service_location = 'all'
+           OR service_location = $2
+           OR (service_location = 'both' AND $2 IN ('home', 'clinic'))
+         )
+         AND (
+           COALESCE(array_length(vendor_types, 1), 0) = 0
+           OR ($3 IS NOT NULL AND $3 != '' AND $3 = ANY(COALESCE(vendor_types, ARRAY[]::text[])))
+         )
+       ORDER BY vendor_cancellation_reason DESC NULLS LAST
+       LIMIT 1`,
+      [vendorReason, serviceLocation, vendorRoleName || null]
+    ).catch(() => ({ rows: [] }));
+    const rows2 = Array.isArray(tiersResult2) ? tiersResult2 : tiersResult2.rows || [];
+    const tier2 = rows2[0];
+    if (!tier2) return null;
+    return {
+      refundPercentage: Number(tier2.refund_percentage ?? 100),
+      cancellationFee: Number(tier2.cancellation_fee ?? 0),
+      maxPartialRefundPercentage: tier2.max_partial_refund_percentage != null ? Number(tier2.max_partial_refund_percentage) : null,
+      tierId: tier2.id,
+      tierName: tier2.name
+    };
+  }
+  const h = Math.max(0, hoursUntilBooking);
+  const tiersResult = await query(
+    `SELECT id, name, refund_percentage, cancellation_fee, max_partial_refund_percentage, hours_before_service
+     FROM vendor_refund_tiers
+     WHERE is_active = true
+       AND cancelled_by = 'pet_parent'
+       AND (
+         (hours_operator IS NOT NULL AND hours_threshold IS NOT NULL AND (
+           (hours_operator = 'gte' AND $1 >= hours_threshold) OR
+           (hours_operator = 'lte' AND $1 <= hours_threshold) OR
+           (hours_operator = 'gt' AND $1 > hours_threshold) OR
+           (hours_operator = 'lt' AND $1 < hours_threshold)
+         ))
+         OR
+         ((hours_operator IS NULL OR hours_threshold IS NULL) AND hours_before_service <= $1)
+       )
+       AND (
+         service_location = 'all'
+         OR service_location = $2
+         OR (service_location = 'both' AND $2 IN ('home', 'clinic'))
+       )
+       AND (
+         COALESCE(array_length(vendor_types, 1), 0) = 0
+         OR ($3 IS NOT NULL AND $3 != '' AND $3 = ANY(COALESCE(vendor_types, ARRAY[]::text[])))
+       )
+     ORDER BY COALESCE(hours_threshold, hours_before_service) DESC NULLS LAST
+     LIMIT 1`,
+    [h, serviceLocation, vendorRoleName || null]
+  ).catch(() => ({ rows: [] }));
+  const rows = Array.isArray(tiersResult) ? tiersResult : tiersResult.rows || [];
+  const tier = rows[0];
+  if (!tier) return null;
+  const refundPercentage = Number(tier.refund_percentage ?? 75);
+  const cancellationFee = Number(tier.cancellation_fee ?? 0);
+  const maxPartial = tier.max_partial_refund_percentage != null ? Number(tier.max_partial_refund_percentage) : null;
+  return {
+    refundPercentage,
+    cancellationFee,
+    maxPartialRefundPercentage: Number.isFinite(maxPartial) ? maxPartial : null,
+    tierId: tier.id,
+    tierName: tier.name
+  };
+}
+function computeRefundFromTier(totalAmount, tier, fallbackPercentage = 100, fallbackFee = 0) {
+  const refundPercentage = tier ? tier.refundPercentage : fallbackPercentage;
+  const cancellationFee = tier ? tier.cancellationFee : fallbackFee;
+  let effectivePercentage = refundPercentage;
+  if (tier?.maxPartialRefundPercentage != null && effectivePercentage > tier.maxPartialRefundPercentage) {
+    effectivePercentage = tier.maxPartialRefundPercentage;
+  }
+  const refundAmount = Math.max(0, totalAmount * effectivePercentage / 100 - cancellationFee);
+  return {
+    refundAmount,
+    refundPercentage: effectivePercentage,
+    cancellationFee
+  };
 }
 
 // src/endpoints/bookings-enhanced.ts
@@ -131300,6 +131574,12 @@ var GetBookingHistoryHandlerEnhanced = class extends BaseHandlerEnhanced {
     const petId = booking.pet_id;
     const customerId = booking.customer_id;
     const bookingCreatedAt = booking.created_at;
+    const isDiagnosticsBooking = (() => {
+      const notesStr = typeof booking.notes === "string" ? booking.notes : JSON.stringify(booking.notes || "");
+      const svcId = String(booking.service_id || "").toLowerCase();
+      const svcType = String(booking.service_type || booking.service_style || "").toLowerCase();
+      return notesStr && (notesStr.includes('"tests"') || notesStr.includes('"test_name"') || notesStr.includes('"testName"')) || svcId === "diagnostics" || /diagnostic|lab.?test/i.test(svcType);
+    })();
     let history = [];
     try {
       const tableCheck = await query(
@@ -131326,54 +131606,105 @@ var GetBookingHistoryHandlerEnhanced = class extends BaseHandlerEnhanced {
       history = [];
     }
     let prescriptions = [];
-    try {
-      const prescriptionsResult = await query(
-        `SELECT 
-          p.id,
-          p.booking_id,
-          p.medications,
-          p.instructions,
-          p.diagnosis,
-          p.prescription_date,
-          p.follow_up_date,
-          p.created_at,
-          p.created_by,
-          p.created_by_role,
-          v.business_name as vendor_name,
-          s.name as staff_name
-        FROM prescriptions p
-        LEFT JOIN vendors v ON v.id = p.vendor_id
-        LEFT JOIN staff s ON s.id = p.staff_id
-        WHERE p.booking_id = $1
-        ORDER BY p.created_at ASC`,
-        [bookingId]
-      );
-      prescriptions = prescriptionsResult.rows.map((presc) => ({
-        id: `prescription_${presc.id}`,
-        type: "prescription",
-        booking_id: bookingId,
-        description: `Prescription created${presc.diagnosis ? ` - Diagnosis: ${presc.diagnosis}` : ""}`,
-        actor: presc.staff_name || presc.vendor_name || "Vendor",
-        actor_type: presc.created_by_role || "vendor",
-        timestamp: presc.created_at,
-        created_at: presc.created_at,
-        prescription_data: {
-          id: presc.id,
-          medications: presc.medications,
-          instructions: presc.instructions,
-          diagnosis: presc.diagnosis,
-          prescription_date: presc.prescription_date,
-          follow_up_date: presc.follow_up_date
+    if (!isDiagnosticsBooking) {
+      try {
+        const prescriptionsResult = await query(
+          `SELECT 
+            p.id,
+            p.booking_id,
+            p.medications,
+            p.instructions,
+            p.diagnosis,
+            p.prescription_date,
+            p.follow_up_date,
+            p.created_at,
+            p.created_by,
+            p.created_by_role,
+            v.business_name as vendor_name,
+            s.name as staff_name
+          FROM prescriptions p
+          LEFT JOIN vendors v ON v.id = p.vendor_id
+          LEFT JOIN staff s ON s.id = p.staff_id
+          WHERE p.booking_id = $1
+          ORDER BY p.created_at ASC`,
+          [bookingId]
+        );
+        prescriptions = prescriptionsResult.rows.map((presc) => ({
+          id: `prescription_${presc.id}`,
+          type: "prescription",
+          booking_id: bookingId,
+          description: `Prescription created${presc.diagnosis ? ` - Diagnosis: ${presc.diagnosis}` : ""}`,
+          actor: presc.staff_name || presc.vendor_name || "Vendor",
+          actor_type: presc.created_by_role || "vendor",
+          timestamp: presc.created_at,
+          created_at: presc.created_at,
+          prescription_data: {
+            id: presc.id,
+            medications: presc.medications,
+            instructions: presc.instructions,
+            diagnosis: presc.diagnosis,
+            prescription_date: presc.prescription_date,
+            follow_up_date: presc.follow_up_date
+          }
+        }));
+      } catch (error) {
+        const err = error;
+        console.warn("[Booking History] Error querying prescriptions:", err?.message || error);
+        prescriptions = [];
+      }
+    } else {
+      console.log(`[Booking History] Skipping prescriptions for diagnostics booking ${bookingId}`);
+    }
+    let diagnosticReports = [];
+    if (isDiagnosticsBooking) {
+      try {
+        const tableCheck = await query(
+          `SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'diagnostic_reports'
+          )`
+        );
+        if (tableCheck.rows[0]?.exists) {
+          const drCols = await query(
+            `SELECT column_name FROM information_schema.columns 
+             WHERE table_schema = 'public' AND table_name = 'diagnostic_reports'`
+          );
+          const hasBookingId = drCols.rows.some((r) => r.column_name === "booking_id");
+          const hasDiagnosticBookingId = drCols.rows.some((r) => r.column_name === "diagnostic_booking_id");
+          const idCol = hasBookingId ? "booking_id" : hasDiagnosticBookingId ? "diagnostic_booking_id" : null;
+          if (idCol) {
+            const { rows: drRows } = await query(
+              `SELECT * FROM diagnostic_reports WHERE ${idCol} = $1 ORDER BY created_at ASC`,
+              [bookingId]
+            );
+            diagnosticReports = drRows.map((r) => ({
+              id: `diagnostic_report_${r.id}`,
+              type: "diagnostic_report",
+              booking_id: bookingId,
+              description: `Lab report uploaded${r.test_name ? ` - ${r.test_name}` : ""}`,
+              actor: r.vendor_id ? "Lab" : "Vendor",
+              actor_type: "vendor",
+              timestamp: r.created_at,
+              created_at: r.created_at,
+              diagnostic_report_data: {
+                id: r.id,
+                test_name: r.test_name,
+                report_url: r.report_url || r.report_file_url,
+                summary: r.summary,
+                findings: r.findings,
+                status: r.status
+              }
+            }));
+          }
         }
-      }));
-    } catch (error) {
-      const err = error;
-      console.warn("[Booking History] Error querying prescriptions:", err?.message || error);
-      prescriptions = [];
+      } catch (err) {
+        console.warn("[Booking History] Error querying diagnostic_reports:", err?.message);
+      }
     }
     let medicalRecords = [];
     try {
-      if (!petId) {
+      const restrictToBookingOnly = isDiagnosticsBooking;
+      if (!petId || restrictToBookingOnly) {
         console.warn("[Booking History] Booking missing pet_id, cannot query medical records by pet");
         const medicalRecordsResult = await query(
           `SELECT 
@@ -131467,7 +131798,7 @@ var GetBookingHistoryHandlerEnhanced = class extends BaseHandlerEnhanced {
       console.error("[Booking History] Query params:", { bookingId, petId, customerId });
       medicalRecords = [];
     }
-    const combinedHistory = [...history, ...prescriptions, ...medicalRecords].sort((a, b) => {
+    const combinedHistory = [...history, ...prescriptions, ...diagnosticReports, ...medicalRecords].sort((a, b) => {
       const aTime = new Date(a.created_at || a.timestamp || 0).getTime();
       const bTime = new Date(b.created_at || b.timestamp || 0).getTime();
       return aTime - bTime;
@@ -131476,9 +131807,10 @@ var GetBookingHistoryHandlerEnhanced = class extends BaseHandlerEnhanced {
       booking: bookings[0],
       history: combinedHistory,
       prescriptions,
-      // Also return separately for easy access
-      medicalRecords
-      // Also return separately for easy access
+      medicalRecords,
+      diagnosticReports,
+      isDiagnosticsBooking
+      // Frontend uses this to hide prescription creation and show report upload
     }, requestId);
   }
 };
@@ -131759,6 +132091,7 @@ var CancelBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
     const actorId = context.userId || body.customerId || body.actorId;
     const actorType = context.userRole || body.actorType || "customer";
     const refundMethod = body.refundMethod || "wallet";
+    const cancelledBy = ["vendor", "staff", "admin", "platform"].includes(String(actorType).toLowerCase()) ? "provider" : "pet_parent";
     const existingBookings = await select("bookings", { id: bookingId });
     if (existingBookings.length === 0) {
       return this.error("Booking not found", 404, "NOT_FOUND", void 0, requestId);
@@ -131793,9 +132126,10 @@ var CancelBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
            SET status = 'cancelled', 
                cancelled_at = NOW(), 
                cancellation_reason = $1,
+               cancelled_by = $2,
                updated_at = NOW() 
-           WHERE id = $2`,
-          [reason, bookingId]
+           WHERE id = $3`,
+          [reason, cancelledBy, bookingId]
         );
       });
       await logBookingStatusChange(
@@ -131820,35 +132154,50 @@ var CancelBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
       let refundInfo = null;
       if (currentBooking.payment_status === "paid" && currentBooking.total_amount > 0) {
         try {
-          const bookingDateTime2 = /* @__PURE__ */ new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
-          const hoursUntilBooking = (bookingDateTime2.getTime() - Date.now()) / (1e3 * 60 * 60);
-          const rulesResult = await query(
-            `SELECT * FROM booking_cancellation_rules
-             WHERE (vendor_id = $1 OR vendor_id IS NULL)
-               AND (service_id = $2 OR service_id IS NULL)
-             ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
-             LIMIT 1`,
-            [currentBooking.vendor_id || null, currentBooking.service_id || null]
-          ).catch(() => ({ rows: [] }));
-          let refundPercentage = 100;
-          const rule = rulesResult.rows[0];
-          if (rule) {
-            if (hoursUntilBooking >= (rule.full_refund_before_hours || 24)) {
-              refundPercentage = 100;
-            } else if (hoursUntilBooking >= (rule.partial_refund_before_hours || 12)) {
-              refundPercentage = rule.partial_refund_percentage || 50;
-            } else if (hoursUntilBooking >= (rule.no_refund_before_hours || 0)) {
-              refundPercentage = 25;
-            } else {
-              refundPercentage = 0;
-            }
+          const totalAmount = parseFloat(String(currentBooking.total_amount));
+          let refundAmount;
+          let refundPercentage;
+          const tier = await getRefundTierForCancellation(
+            {
+              id: currentBooking.id,
+              vendor_id: currentBooking.vendor_id,
+              service_id: currentBooking.service_id,
+              service_type: currentBooking.service_type,
+              booking_date: currentBooking.booking_date,
+              booking_time: currentBooking.booking_time,
+              total_amount: totalAmount
+            },
+            cancelledBy
+          );
+          if (tier) {
+            const computed = computeRefundFromTier(totalAmount, tier, 100, 0);
+            refundAmount = computed.refundAmount;
+            refundPercentage = computed.refundPercentage;
           } else {
-            if (hoursUntilBooking >= 24) refundPercentage = 100;
-            else if (hoursUntilBooking >= 12) refundPercentage = 50;
-            else if (hoursUntilBooking >= 6) refundPercentage = 25;
-            else refundPercentage = 0;
+            const bookingDateTime2 = /* @__PURE__ */ new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
+            const hoursUntilBooking = (bookingDateTime2.getTime() - Date.now()) / (1e3 * 60 * 60);
+            const rulesResult = await query(
+              `SELECT * FROM booking_cancellation_rules
+               WHERE (vendor_id = $1 OR vendor_id IS NULL)
+                 AND (service_id = $2 OR service_id IS NULL)
+               ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
+               LIMIT 1`,
+              [currentBooking.vendor_id || null, currentBooking.service_id || null]
+            ).catch(() => ({ rows: [] }));
+            const rule = rulesResult.rows?.[0];
+            if (rule) {
+              if (hoursUntilBooking >= (rule.full_refund_before_hours || 24)) refundPercentage = 100;
+              else if (hoursUntilBooking >= (rule.partial_refund_before_hours || 12)) refundPercentage = rule.partial_refund_percentage || 50;
+              else if (hoursUntilBooking >= (rule.no_refund_before_hours || 0)) refundPercentage = 25;
+              else refundPercentage = 0;
+            } else {
+              if (hoursUntilBooking >= 24) refundPercentage = 100;
+              else if (hoursUntilBooking >= 12) refundPercentage = 50;
+              else if (hoursUntilBooking >= 6) refundPercentage = 25;
+              else refundPercentage = 0;
+            }
+            refundAmount = Math.max(0, totalAmount * refundPercentage / 100);
           }
-          const refundAmount = parseFloat(currentBooking.total_amount) * refundPercentage / 100;
           if (refundAmount > 0) {
             const payments = await query(
               `SELECT id FROM payments WHERE booking_id = $1 AND payment_status = 'completed' LIMIT 1`,
@@ -132952,33 +133301,66 @@ var CreatePaymentHandlerEnhanced = class extends BaseHandlerEnhanced {
       }
       const serviceId = booking.service_id;
       let serviceHsnCode = null;
+      let serviceHsnCodeId = null;
+      let serviceTaxCategoryId = null;
       let serviceCategory = null;
       let serviceStyle = booking.service_style;
       if (serviceId) {
-        const services = await select("services", { id: serviceId });
-        if (services.length > 0) {
-          serviceHsnCode = services[0].hsn_code;
-          serviceCategory = services[0].category;
+        const vendorSvcs = await query(
+          `SELECT vs.*, sc.tax_category_id, sc.hsn_code_id, sc.category_id, sc.category_name
+           FROM vendor_services vs
+           LEFT JOIN service_catalog sc ON sc.id = vs.service_id
+           WHERE vs.id = $1::uuid LIMIT 1`,
+          [serviceId]
+        ).catch(() => ({ rows: [] }));
+        if (vendorSvcs.rows?.length > 0) {
+          const row = vendorSvcs.rows[0];
+          serviceTaxCategoryId = row.tax_category_id;
+          serviceHsnCodeId = row.hsn_code_id;
+          serviceCategory = row.category_name || row.category_id || row.category;
+        }
+        if (!serviceTaxCategoryId && !serviceHsnCodeId) {
+          const catalogRows = await query(
+            `SELECT tax_category_id, hsn_code_id, category_id, category_name FROM service_catalog WHERE id = $1::uuid LIMIT 1`,
+            [serviceId]
+          ).catch(() => ({ rows: [] }));
+          if (catalogRows.rows?.length > 0) {
+            const row = catalogRows.rows[0];
+            serviceTaxCategoryId = row.tax_category_id;
+            serviceHsnCodeId = row.hsn_code_id;
+            if (!serviceCategory) serviceCategory = row.category_name || row.category_id;
+          }
+        }
+        if (!serviceHsnCode && !serviceHsnCodeId && !serviceTaxCategoryId) {
+          const services = await select("services", { id: serviceId });
+          if (services.length > 0) {
+            serviceHsnCode = services[0].hsn_code;
+            if (!serviceCategory) serviceCategory = services[0].category;
+          }
         }
       }
+      const vendorRow = booking.vendor_id ? await select("vendors", { id: booking.vendor_id }) : [];
+      const roleId = vendorRow.length > 0 ? vendorRow[0]?.role_id : void 0;
       try {
         const { taxCalculationService: taxCalculationService2 } = await Promise.resolve().then(() => (init_tax_calculation_service(), tax_calculation_service_exports));
         const taxResult = await taxCalculationService2.calculateTax({
           items: [{
             id: serviceId || booking.id,
             type: "service",
-            hsnCode: serviceHsnCode,
+            hsnCode: serviceHsnCode || void 0,
+            hsnCodeId: serviceHsnCodeId || void 0,
+            taxCategoryId: serviceTaxCategoryId || void 0,
             amount,
             quantity: 1,
-            category: serviceCategory,
-            serviceStyle,
-            roleId: booking.vendor_id ? (await select("vendors", { id: booking.vendor_id }))[0]?.role_id : void 0
+            category: serviceCategory || void 0,
+            serviceStyle: serviceStyle || void 0,
+            roleId
           }],
           customerLocation,
           vendorLocation,
           vendorId: booking.vendor_id || void 0,
-          serviceType: serviceCategory,
-          category: serviceCategory
+          serviceType: serviceCategory || void 0,
+          category: serviceCategory || void 0
         });
         taxBreakdown = taxResult;
         gstAmount = taxResult.totalTax;
@@ -133496,23 +133878,23 @@ function createLambdaContext4() {
 async function triggerAutoShipment(orderId, orderType) {
   console.log(`[AUTO-SHIPMENT] Triggering for order ${orderId}, type: ${orderType}`);
   try {
-    const { select: select26, insert: insert14, update: update17, query: dbQuery } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
+    const { select: select25, insert: insert14, update: update17, query: dbQuery } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
     const { logisticsPartnerService: logisticsPartnerService2 } = await Promise.resolve().then(() => (init_logistics_partner_service(), logistics_partner_service_exports));
     let order = null;
     let orderItems = [];
     let vendorId = null;
     if (orderType === "ecommerce") {
-      const orders = await select26("orders", { id: orderId });
+      const orders = await select25("orders", { id: orderId });
       if (orders.length === 0) {
         console.warn(`[AUTO-SHIPMENT] Order not found: ${orderId}`);
         return;
       }
       order = orders[0];
-      const items = await select26("order_items", { order_id: orderId });
+      const items = await select25("order_items", { order_id: orderId });
       orderItems = items;
       vendorId = order.vendor_id;
     } else if (orderType === "pharmacy") {
-      const orders = await select26("pharmacy_orders", { id: orderId });
+      const orders = await select25("pharmacy_orders", { id: orderId });
       if (orders.length === 0) {
         console.warn(`[AUTO-SHIPMENT] Pharmacy order not found: ${orderId}`);
         return;
@@ -133532,7 +133914,7 @@ async function triggerAutoShipment(orderId, orderType) {
       console.log(`[AUTO-SHIPMENT] Pharmacy delivery tracking created for ${orderId}`);
       return;
     } else if (orderType === "meal") {
-      const orders = await select26("meal_orders", { id: orderId });
+      const orders = await select25("meal_orders", { id: orderId });
       if (orders.length === 0) {
         console.warn(`[AUTO-SHIPMENT] Meal order not found: ${orderId}`);
         return;
@@ -133562,7 +133944,7 @@ async function triggerAutoShipment(orderId, orderType) {
     }
     let customer = null;
     if (order.customer_id) {
-      const customers = await select26("customers", { id: order.customer_id });
+      const customers = await select25("customers", { id: order.customer_id });
       if (customers.length > 0) customer = customers[0];
     }
     const shippingAddress = typeof order.shipping_address === "string" ? JSON.parse(order.shipping_address) : order.shipping_address;
@@ -135572,7 +135954,7 @@ var CreateRoleHandler = class extends BaseHandler {
         category: category || baseConfig.category || "general",
         icon: icon || baseConfig.icon || null,
         vendorTypes: vendorTypes || baseConfig.vendorTypes || [],
-        serviceStyles: serviceStyles2 || baseConfig.serviceStyles || [],
+        serviceStyles: serviceStyles || baseConfig.serviceStyles || [],
         pricingControl: pricingControl || baseConfig.pricingControl || {
           canControlPrice: false,
           canControlDuration: false
@@ -135612,9 +135994,9 @@ var CreateRoleHandler = class extends BaseHandler {
           }).catch((err) => console.error("Error adding permission:", err));
         }
       }
-      const serviceStyles2 = getCanonicalServiceStyles(roleConfig);
+      const canonicalServiceStyles = getCanonicalServiceStyles(roleConfig);
       const serviceStylesLabels = Object.fromEntries(
-        serviceStyles2.map((c) => [c, LABEL_BY_CODE[c] || c])
+        canonicalServiceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
       );
       return this.success({
         success: true,
@@ -135625,7 +136007,7 @@ var CreateRoleHandler = class extends BaseHandler {
           roleName: newRole[0].display_name || newRole[0].name,
           roleCode: newRole[0].name,
           vendorTypes: roleConfig.vendorTypes || [],
-          serviceStyles: serviceStyles2,
+          serviceStyles: canonicalServiceStyles,
           serviceStylesLabels,
           pricingControl: roleConfig.pricingControl || {
             canControlPrice: false,
@@ -135678,7 +136060,7 @@ var UpdateRoleHandler = class extends BaseHandler {
         category: category !== void 0 ? category : existingConfig.category,
         icon: icon !== void 0 ? icon : existingConfig.icon,
         vendorTypes: vendorTypes !== void 0 ? vendorTypes : existingConfig.vendorTypes || [],
-        serviceStyles: serviceStyles2 !== void 0 ? serviceStyles2 : existingConfig.serviceStyles || [],
+        serviceStyles: serviceStyles !== void 0 ? serviceStyles : existingConfig.serviceStyles || [],
         pricingControl: pricingControl !== void 0 ? pricingControl : existingConfig.pricingControl || {
           canControlPrice: false,
           canControlDuration: false
@@ -135739,9 +136121,9 @@ var UpdateRoleHandler = class extends BaseHandler {
         };
         return mapping[vt] || vt;
       }) : [];
-      const serviceStyles2 = getCanonicalServiceStyles(roleConfig);
+      const canonicalServiceStyles = getCanonicalServiceStyles(roleConfig);
       const serviceStylesLabels = Object.fromEntries(
-        serviceStyles2.map((c) => [c, LABEL_BY_CODE[c] || c])
+        canonicalServiceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
       );
       return this.success({
         success: true,
@@ -135752,7 +136134,7 @@ var UpdateRoleHandler = class extends BaseHandler {
           roleName: updatedRole[0].display_name || updatedRole[0].name,
           roleCode: updatedRole[0].name,
           vendorTypes: normalizedVendorTypes,
-          serviceStyles: serviceStyles2,
+          serviceStyles: canonicalServiceStyles,
           serviceStylesLabels,
           pricingControl: roleConfig.pricingControl || {
             canControlPrice: false,
@@ -137914,8 +138296,13 @@ function registerOnboardingFormManagementEndpoints(app3) {
             // Use explicit declarationType if set, otherwise fallback to id
           }));
           const kycFieldIds = new Set(kycFormFields.map((f) => f.id));
+          const dbFields = [...fields];
           const nonKycFields = fields.filter((f) => !kycFieldIds.has(f.id) && !kycFieldIds.has(f.fieldName));
-          fields = [...nonKycFields, ...kycFormFields];
+          const mergedKycFields = kycFormFields.map((kf) => {
+            const stored = dbFields.find((f) => f.id === kf.id || f.fieldName === kf.id || f.name === kf.id);
+            return stored ? { ...kf, ...stored } : kf;
+          });
+          fields = [...nonKycFields, ...mergedKycFields];
           console.log(`[GET /admin/onboarding-fields/:roleId] Total fields after merge: ${fields.length}`);
         }
         const roleConfig = ROLE_KYC_CONFIGS2[actualRoleName] || ROLE_KYC_CONFIGS2[`${actualRoleName}_solo`] || ROLE_KYC_CONFIGS2[`${actualRoleName}_business`];
@@ -138015,28 +138402,71 @@ function registerOnboardingFormManagementEndpoints(app3) {
     try {
       const { roleId, fieldId } = c.req.param();
       const updates = await c.req.json();
-      const forms = await select("onboarding_forms", { role_id: roleId });
+      const role = await getRoleByName(roleId);
+      if (!role) {
+        return c.json({ error: "Role not found", requestedRole: roleId }, 404);
+      }
+      const actualRoleName = role.name;
+      let forms = await select("onboarding_forms", { role_id: actualRoleName });
+      await query(`
+        CREATE TABLE IF NOT EXISTS onboarding_forms (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          role_id VARCHAR(255) UNIQUE NOT NULL,
+          fields JSONB NOT NULL,
+          sections JSONB,
+          status VARCHAR(50) DEFAULT 'active',
+          version INTEGER DEFAULT 1,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `).catch(() => {
+      });
       if (forms.length === 0) {
-        return c.json({ error: "Form not found for this role" }, 404);
+        let kycBase = null;
+        try {
+          const { getKYCFieldsForRole: getKYCFieldsForRole2 } = await Promise.resolve().then(() => (init_kyc_form_fields(), kyc_form_fields_exports));
+          const kycFields = getKYCFieldsForRole2(actualRoleName, "solo") || getKYCFieldsForRole2(actualRoleName, "business") || getKYCFieldsForRole2(actualRoleName);
+          kycBase = kycFields.find((f) => f.id === fieldId || f.fieldName === fieldId);
+        } catch (_) {
+        }
+        const merged = kycBase ? { ...kycBase, id: fieldId, fieldName: fieldId, name: fieldId, ...updates, updatedAt: (/* @__PURE__ */ new Date()).toISOString() } : { id: fieldId, fieldName: fieldId, name: fieldId, ...updates, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+        await insert("onboarding_forms", {
+          role_id: actualRoleName,
+          fields: JSON.stringify([merged]),
+          status: "active",
+          version: 1
+        });
+        await incrementFormVersion(actualRoleName);
+        return c.json({ success: true, field: merged, message: "Field updated successfully" });
       }
       let fields = typeof forms[0].fields === "string" ? JSON.parse(forms[0].fields) : forms[0].fields || [];
-      const fieldIndex = fields.findIndex((f) => f.id === fieldId);
-      if (fieldIndex === -1) {
-        return c.json({ error: "Field not found" }, 404);
+      const fieldIndex = fields.findIndex((f) => f.id === fieldId || f.fieldName === fieldId || f.name === fieldId);
+      if (fieldIndex >= 0) {
+        fields[fieldIndex] = {
+          ...fields[fieldIndex],
+          ...updates,
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+      } else {
+        let kycBase = null;
+        try {
+          const { getKYCFieldsForRole: getKYCFieldsForRole2 } = await Promise.resolve().then(() => (init_kyc_form_fields(), kyc_form_fields_exports));
+          const kycFields = getKYCFieldsForRole2(actualRoleName, "solo") || getKYCFieldsForRole2(actualRoleName, "business") || getKYCFieldsForRole2(actualRoleName);
+          kycBase = kycFields.find((f) => f.id === fieldId || f.fieldName === fieldId);
+        } catch (_) {
+        }
+        const merged = kycBase ? { ...kycBase, id: fieldId, fieldName: fieldId, name: fieldId, ...updates, updatedAt: (/* @__PURE__ */ new Date()).toISOString() } : { id: fieldId, fieldName: fieldId, name: fieldId, ...updates, updatedAt: (/* @__PURE__ */ new Date()).toISOString() };
+        fields.push(merged);
       }
-      fields[fieldIndex] = {
-        ...fields[fieldIndex],
-        ...updates,
-        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      await update("onboarding_forms", { role_id: roleId }, {
+      await update("onboarding_forms", { role_id: actualRoleName }, {
         fields: JSON.stringify(fields),
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
-      await incrementFormVersion(roleId);
+      await incrementFormVersion(actualRoleName);
+      const updatedField = fields[fieldIndex >= 0 ? fieldIndex : fields.length - 1];
       return c.json({
         success: true,
-        field: fields[fieldIndex],
+        field: updatedField,
         message: "Field updated successfully"
       });
     } catch (error) {
@@ -138813,7 +139243,7 @@ async function geocodeAddress(address) {
   try {
     const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(trimmed)}&key=${apiKey}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5e3);
+    const timeoutId = setTimeout(() => controller.abort(), 3e3);
     const response = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
     if (!response.ok) return null;
@@ -138934,9 +139364,13 @@ function registerGpsTrackingEndpoints(app3) {
           if (geocoded) {
             destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
             console.log("[GPS Tracking] Geocoded address to destination:", geocoded.latitude, geocoded.longitude);
-          } else {
-            console.log("[GPS Tracking] Geocoding failed; using default destination (address text present)");
+          } else if (uatMode) {
+            console.log("[GPS Tracking] Geocoding failed; UAT mode using default destination");
             destinationLocation = { ...UAT_DEFAULT_DESTINATION };
+          } else {
+            return c.json({
+              error: "Could not resolve destination coordinates. Please ensure the customer address has a valid location, or add latitude/longitude to the address."
+            }, 400);
           }
         }
       }
@@ -138989,16 +139423,16 @@ function registerGpsTrackingEndpoints(app3) {
       });
     } catch (error) {
       console.error("Error starting tracking:", error);
-      const msg = error?.message || "";
+      const msg = String(error?.message || "");
       if (msg.includes("relation") && msg.includes("does not exist")) {
         return c.json({
           error: "Tracking service is being set up. Please try again in a few minutes.",
           code: "TRACKING_UNAVAILABLE"
         }, 503);
       }
-      if (msg.includes("connection") || msg.includes("timeout") || msg.includes("ECONNREFUSED")) {
+      if (msg.includes("connection") || msg.includes("timeout") || msg.includes("ECONNREFUSED") || msg.includes("pool exhausted") || msg.includes("try again in a moment") || msg.includes("Task timed out") || msg.includes("timed out")) {
         return c.json({
-          error: "Service temporarily unavailable. Please try again.",
+          error: "Service temporarily unavailable. Please try again in a moment.",
           code: "SERVICE_UNAVAILABLE"
         }, 503);
       }
@@ -141340,6 +141774,1188 @@ async function checkVendorCapability(vendorId, capability) {
   }
 }
 
+// src/endpoints/vendor-profile.ts
+init_rds_connection();
+init_sns_client();
+var import_client_sns5 = require("@aws-sdk/client-sns");
+var CRITICAL_FIELDS = [
+  "business_name",
+  "owner_name",
+  "gst_number",
+  "pan_number",
+  "registration_number",
+  "address",
+  "city",
+  "state",
+  "pincode",
+  "latitude",
+  "longitude"
+];
+function normalizePhoneForLookup(phone) {
+  if (phone == null || String(phone).trim() === "") return void 0;
+  return String(phone).replace(/\D/g, "");
+}
+async function resolveVendorById(vendorId) {
+  const trimmedId = (vendorId || "").trim();
+  if (!trimmedId) return null;
+  let vendors = await select("vendors", { id: trimmedId });
+  if (vendors.length > 0) return vendors[0];
+  console.log(`[PROFILE] Vendor ${trimmedId} not in vendors table, checking vendor_identity...`);
+  let identities = await select("vendor_identity", { id: trimmedId });
+  if (identities.length === 0) {
+    const byVendorId = await query(
+      `SELECT * FROM vendor_identity WHERE vendor_id = $1 LIMIT 1`,
+      [trimmedId]
+    ).catch(() => ({ rows: [] }));
+    if (byVendorId.rows?.length > 0) {
+      const identity2 = byVendorId.rows[0];
+      const linked = await select("vendors", { id: identity2.vendor_id });
+      if (linked.length > 0) return linked[0];
+    }
+    const byText = await query(
+      `SELECT * FROM vendor_identity WHERE id::text = $1 OR vendor_id::text = $1 LIMIT 1`,
+      [trimmedId]
+    ).catch(() => ({ rows: [] }));
+    if (byText.rows?.length > 0) identities = byText.rows;
+    if (identities.length === 0) {
+      const viaApp = await query(
+        `SELECT vi.* FROM vendor_identity vi
+         INNER JOIN vendor_onboarding_applications voa ON voa.vendor_identity_id = vi.id
+         WHERE voa.id::text = $1 OR voa.vendor_identity_id::text = $1 OR vi.id::text = $1 LIMIT 1`,
+        [trimmedId]
+      ).catch(() => ({ rows: [] }));
+      if (viaApp.rows?.length > 0) identities = viaApp.rows;
+    }
+    if (identities.length === 0) return null;
+  }
+  const identity = identities[0];
+  if (identity.onboarding_status !== "APPROVED" && identity.onboarding_status !== "ACTIVATED") {
+    return null;
+  }
+  const phoneNorm = normalizePhoneForLookup(identity.phone);
+  if (phoneNorm) {
+    const vendorByPhone = await query(
+      `SELECT * FROM vendors WHERE REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE $1 OR phone = $2 LIMIT 1`,
+      [`%${phoneNorm}%`, identity.phone]
+    ).catch(() => ({ rows: [] }));
+    if (vendorByPhone.rows?.length > 0) return vendorByPhone.rows[0];
+  }
+  const vendorByPhoneDirect = await select("vendors", { phone: identity.phone });
+  if (vendorByPhoneDirect.length > 0) return vendorByPhoneDirect[0];
+  const applications = await select("vendor_onboarding_applications", { vendor_identity_id: identity.id });
+  const application = applications.length > 0 ? applications[0] : null;
+  const payload = application?.application_payload || {};
+  const newVendorId = identity.vendor_id || identity.id;
+  console.log(`[PROFILE] Auto-creating vendor record for approved vendor ${identity.id}, using vendor id: ${newVendorId}`);
+  const newVendor = await insert("vendors", {
+    id: newVendorId,
+    phone: identity.phone,
+    email: payload.email || payload.businessEmail || `vendor-${identity.phone}@warmpawz.app`,
+    business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+    owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
+    role_id: identity.selected_role_id,
+    vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
+    category: "general",
+    address: payload.address || "Not specified",
+    city: payload.city || "Not specified",
+    state: payload.state || "Not specified",
+    pincode: payload.pin || payload.pincode || "",
+    status: "active",
+    is_active: true,
+    created_at: (/* @__PURE__ */ new Date()).toISOString(),
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  return newVendor[0];
+}
+async function decodeJwtFromHeader(authHeader) {
+  if (!authHeader) return {};
+  const token = authHeader.replace(/^Bearer\s+/i, "");
+  if (!token) return {};
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return {};
+    const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf-8"));
+    const phone = payload.phone || payload.phone_number || payload["cognito:username"];
+    const userId = payload.userId || payload.sub || payload.user_id;
+    console.log(`\u{1F510} [JWT-DECODE] Extracted phone: ${phone}, userId: ${userId}`);
+    return {
+      phone,
+      userId
+    };
+  } catch (e) {
+    console.warn("Failed to decode JWT:", e);
+    return {};
+  }
+}
+function registerVendorProfileEndpoints(app3) {
+  app3.get("/vendor/profile", async (c) => {
+    try {
+      const authHeader = c.req.header("Authorization");
+      const { phone, userId: vendorIdFromAuth } = await decodeJwtFromHeader(authHeader);
+      console.log(`\u{1F4CA} [PROFILE-GET] Getting profile for phone: ${phone}, vendorId: ${vendorIdFromAuth}`);
+      let vendor = null;
+      let identityData = null;
+      if (vendorIdFromAuth && !vendorIdFromAuth.startsWith("temp_")) {
+        try {
+          const vendors = await select("vendors", { id: vendorIdFromAuth });
+          if (vendors.length > 0) {
+            vendor = vendors[0];
+          }
+        } catch (e) {
+          console.warn(`[PROFILE-GET] Error finding vendor by ID ${vendorIdFromAuth}:`, e);
+        }
+      }
+      if (!vendor && phone) {
+        try {
+          const vendorsByPhone = await select("vendors", { phone });
+          if (vendorsByPhone.length > 0) {
+            vendor = vendorsByPhone[0];
+          }
+        } catch (e) {
+          console.warn(`[PROFILE-GET] Error finding vendor by phone:`, e);
+        }
+      }
+      if (phone) {
+        try {
+          const identities = await select("vendor_identity", { phone });
+          if (identities.length > 0) {
+            identityData = identities[0];
+            if (!vendor && identityData && typeof identityData.vendor_id === "string") {
+              try {
+                const vendors = await select("vendors", { id: identityData.vendor_id });
+                if (vendors.length > 0) {
+                  vendor = vendors[0];
+                }
+              } catch (e) {
+                console.warn(`[PROFILE-GET] Error finding vendor by identity.vendor_id:`, e);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`[PROFILE-GET] Error fetching vendor_identity:`, e);
+        }
+      }
+      if (!vendor) {
+        if (identityData) {
+          const identityStatus = identityData.onboarding_status || "INIT";
+          console.log(`\u{1F4DD} [PROFILE-GET] Vendor in onboarding, status: ${identityStatus}`);
+          return c.json({
+            success: true,
+            vendor: {
+              id: identityData.id,
+              phone,
+              status: identityStatus.toLowerCase(),
+              isActive: false,
+              onboardingStatus: identityStatus
+            },
+            status: identityStatus === "APPROVED" ? "approved" : identityStatus === "INIT" ? "new" : identityStatus.toLowerCase(),
+            message: "Vendor in onboarding"
+          });
+        }
+        console.log(`\u26A0\uFE0F [PROFILE-GET] No vendor found for phone: ${phone}`);
+        return c.json({
+          success: true,
+          vendor: null,
+          status: "new",
+          message: "No vendor profile found"
+        });
+      }
+      let applicationData = null;
+      try {
+        const applications = await select("vendor_onboarding_applications", { vendor_id: vendor.id });
+        if (applications.length > 0) {
+          applicationData = applications[0];
+        }
+      } catch (e) {
+        try {
+          const appsByPhone = await query(
+            "SELECT * FROM vendor_onboarding_applications WHERE application_payload->>'phone' = $1 ORDER BY created_at DESC LIMIT 1",
+            [phone]
+          );
+          if (appsByPhone.rows?.length > 0) {
+            applicationData = appsByPhone.rows[0];
+          }
+        } catch (e2) {
+          console.warn("[PROFILE-GET] Error fetching applications:", e2);
+        }
+      }
+      let roleInfo = null;
+      try {
+        if (vendor.role_id) {
+          const roles = await select("roles", { id: vendor.role_id });
+          if (roles.length > 0) {
+            roleInfo = roles[0];
+          }
+        }
+      } catch (e) {
+        console.warn("[PROFILE-GET] Error fetching role info:", e);
+      }
+      let uiStatus = "new";
+      if (vendor.is_active) {
+        uiStatus = "active";
+      } else if (vendor.status === "approved") {
+        uiStatus = vendor.setup_completed ? "active" : "approved";
+      } else if (vendor.status === "pending" || vendor.status === "under_review") {
+        uiStatus = "pending";
+      } else if (vendor.status === "rejected") {
+        uiStatus = "rejected";
+      } else if (applicationData?.status) {
+        uiStatus = applicationData.status;
+      }
+      console.log(`\u2705 [PROFILE-GET] Found vendor: ${vendor.id}, status: ${uiStatus}`);
+      return c.json({
+        success: true,
+        vendor: {
+          id: vendor.id,
+          businessName: vendor.business_name,
+          ownerName: vendor.owner_name,
+          phone: vendor.phone,
+          email: vendor.email,
+          status: uiStatus,
+          isActive: vendor.is_active,
+          setupCompleted: vendor.setup_completed,
+          servicesSetupCompleted: vendor.services_setup_completed,
+          availabilitySetupCompleted: vendor.availability_setup_completed,
+          roleId: vendor.role_id,
+          roleName: roleInfo?.name,
+          vendorType: vendor.vendor_type,
+          serviceStyle: vendor.service_style,
+          applicationId: applicationData?.id,
+          applicationStatus: applicationData?.status,
+          createdAt: vendor.created_at
+        }
+      });
+    } catch (error) {
+      console.error("\u274C [PROFILE-GET] Error:", error);
+      return c.json({ error: "Failed to get vendor profile", details: error.message }, 500);
+    }
+  });
+  app3.post("/vendor/:vendorId/profile/photo", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      console.log(`\u{1F4F8} [PROFILE-PHOTO] Uploading photo for vendor: ${vendorId}`);
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const formData = await c.req.formData();
+      const photo = formData.get("photo");
+      if (!photo) {
+        return c.json({ error: "No photo provided" }, 400);
+      }
+      const { S3Client: S3Client7, PutObjectCommand: PutObjectCommand6, GetObjectCommand: GetObjectCommand5 } = await import("@aws-sdk/client-s3");
+      const { getSignedUrl: getSignedUrl4 } = await import("@aws-sdk/s3-request-presigner");
+      const s3Client6 = new S3Client7({ region: process.env.AWS_REGION || "ap-south-1" });
+      const BUCKET_NAME3 = process.env.S3_UPLOADS_BUCKET || "warmpawz-dev-uploads";
+      const timestamp = Date.now();
+      const ext = photo.name.split(".").pop() || "jpg";
+      const actualVendorId = vendor.id;
+      const fileName = `vendors/${actualVendorId}/profile/photo_${timestamp}.${ext}`;
+      const arrayBuffer = await photo.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      await s3Client6.send(new PutObjectCommand6({
+        Bucket: BUCKET_NAME3,
+        Key: fileName,
+        Body: uint8Array,
+        ContentType: photo.type || "image/jpeg"
+      }));
+      const signedUrl = await getSignedUrl4(
+        s3Client6,
+        new GetObjectCommand5({
+          Bucket: BUCKET_NAME3,
+          Key: fileName
+        }),
+        { expiresIn: 604800 }
+        // 7 days (max for presigned URLs)
+      );
+      await update("vendors", { id: actualVendorId }, {
+        profile_photo_url: signedUrl,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      console.log(`\u2705 [PROFILE-PHOTO] Photo uploaded successfully for vendor ${actualVendorId}`);
+      return c.json({
+        success: true,
+        photo_url: signedUrl,
+        fileName
+      });
+    } catch (error) {
+      console.error("\u274C [PROFILE-PHOTO] Error uploading photo:", error);
+      return c.json({ error: error.message || "Failed to upload photo" }, 500);
+    }
+  });
+  const profileUpdateHandler = async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const rawUpdates = await c.req.json();
+      console.log(`\u{1F4DD} [PROFILE-UPDATE] Vendor ${vendorId} updating profile`, rawUpdates);
+      const camelToSnakeMap = {
+        businessName: "business_name",
+        ownerName: "owner_name",
+        profilePhotoUrl: "profile_photo_url",
+        isActive: "is_active",
+        setupCompleted: "setup_completed",
+        servicesSetupCompleted: "services_setup_completed",
+        availabilitySetupCompleted: "availability_setup_completed",
+        roleId: "role_id",
+        createdAt: "created_at",
+        updatedAt: "updated_at"
+      };
+      const updates = {};
+      for (const [key, value] of Object.entries(rawUpdates)) {
+        const dbKey = camelToSnakeMap[key] || key;
+        updates[dbKey] = value;
+      }
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const wasApproved = vendor.status === "approved";
+      const previousStatus = vendor.status;
+      let criticalFieldsChanged = false;
+      const changedFields = [];
+      for (const field of CRITICAL_FIELDS) {
+        if (updates[field] !== void 0 && updates[field] !== vendor[field]) {
+          criticalFieldsChanged = true;
+          changedFields.push(field);
+        }
+      }
+      console.log(`\u{1F50D} [PROFILE-UPDATE] Critical fields changed: ${criticalFieldsChanged}`);
+      console.log(`\u{1F4CB} [PROFILE-UPDATE] Changed fields: ${changedFields.join(", ")}`);
+      const schemaResult = await query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'vendors'
+      `);
+      const existingColumns = new Set(schemaResult.rows.map((r) => r.column_name));
+      const safeColumns = [
+        "business_name",
+        "owner_name",
+        "phone",
+        "email",
+        "address",
+        "city",
+        "state",
+        "pincode",
+        "description",
+        "profile_photo_url",
+        "latitude",
+        "longitude",
+        "is_active",
+        "status",
+        "setup_completed",
+        "services_setup_completed",
+        "availability_setup_completed",
+        "metadata",
+        "experience_years",
+        "qualifications",
+        "service_area",
+        "specializations"
+        // ✅ Added for solo provider profile
+      ];
+      const updateData = {};
+      for (const [key, value] of Object.entries(updates)) {
+        if (safeColumns.includes(key) && existingColumns.has(key)) {
+          updateData[key] = value;
+        }
+      }
+      const skippedFields = Object.keys(updates).filter((k) => !existingColumns.has(k) && safeColumns.includes(k));
+      if (skippedFields.length > 0) {
+        console.log(`\u26A0\uFE0F [PROFILE-UPDATE] Skipped non-existent columns: ${skippedFields.join(", ")}`);
+      }
+      if (criticalFieldsChanged && wasApproved) {
+        console.log(`\u26A0\uFE0F [PROFILE-UPDATE] Critical fields changed - requiring re-approval`);
+        updateData.status = "pending";
+        updateData.metadata = {
+          ...vendor.metadata || {},
+          previousStatus,
+          wasApprovedBefore: true,
+          reapprovalReason: `Critical profile fields updated: ${changedFields.join(", ")}`,
+          reapprovalRequestedAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        await insert("notifications", {
+          recipient_id: null,
+          // Admin notifications can have null recipient_id
+          recipient_type: "admin",
+          title: "Profile Update Review Required",
+          message: `Approved vendor "${vendor.business_name}" updated their profile. Re-approval required.`,
+          notification_type: "admin_alert",
+          channels: { email: true, sms: false, inApp: true, push: false },
+          is_read: false
+        }).catch((error) => {
+          console.warn("[VENDOR-PROFILE] Error creating notification:", error instanceof Error ? error.message : "Unknown error");
+        });
+        const snsClient4 = getSnsClient();
+        await snsClient4.send(new import_client_sns5.PublishCommand({
+          TopicArn: process.env.ADMIN_ALERT_TOPIC_ARN,
+          Message: JSON.stringify({
+            eventType: "VendorProfileUpdate",
+            vendorId,
+            vendorName: vendor.business_name,
+            changedFields,
+            requiresReapproval: true
+          })
+        })).catch((err) => console.error("SNS notification failed:", err));
+        const updated = await update("vendors", { id: vendor.id }, updateData);
+        return c.json({
+          success: true,
+          message: "Profile updated. Re-approval required for critical changes.",
+          requiresReapproval: true,
+          changedFields,
+          status: "pending",
+          vendor: updated[0]
+        });
+      } else {
+        console.log(`\u2705 [PROFILE-UPDATE] Non-critical fields updated - no re-approval needed`);
+        const updated = await update("vendors", { id: vendor.id }, updateData);
+        return c.json({
+          success: true,
+          message: "Profile updated successfully",
+          requiresReapproval: false,
+          status: vendor.status,
+          vendor: updated[0]
+        });
+      }
+    } catch (error) {
+      console.error("\u274C [PROFILE-UPDATE] Error updating profile:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  };
+  app3.put("/vendor/:vendorId/profile", profileUpdateHandler);
+  app3.post("/vendor/:vendorId/profile", profileUpdateHandler);
+  app3.get("/vendor/:vendorId/profile/edit-check", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const vendor = vendors[0];
+      const isApproved = vendor.status === "approved";
+      return c.json({
+        canEdit: true,
+        // Vendors can always edit
+        currentStatus: vendor.status,
+        warning: isApproved ? "Editing critical profile fields will require admin re-approval" : null,
+        criticalFields: CRITICAL_FIELDS
+      });
+    } catch (error) {
+      console.error("\u274C [PROFILE-UPDATE] Error checking edit status:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/profile", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return c.json({
+          success: true,
+          vendor: {
+            id: vendorId,
+            business_name: "Test Vendor",
+            owner_name: "Test Owner",
+            role: null,
+            capabilities: [],
+            vendorTypes: [],
+            serviceStyles: []
+          }
+        });
+      }
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        const identities = await select("vendor_identity", { id: vendorId });
+        if (identities.length > 0 && identities[0].onboarding_status !== "APPROVED" && identities[0].onboarding_status !== "ACTIVATED") {
+          return c.json({ error: "Vendor not approved or activated" }, 403);
+        }
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      let role = null;
+      let capabilities = [];
+      let roleConfig = {};
+      let vendorConfiguration = null;
+      let selectedServiceStyles = [];
+      let customerService = null;
+      if (vendor.role_id) {
+        try {
+          const roles = await select("roles", { id: vendor.role_id });
+          if (roles.length > 0) {
+            role = roles[0];
+            roleConfig = role.config || {};
+            customerService = role.customer_service || roleConfig?.customer_service || null;
+            const vendorType = vendor.vendor_type;
+            vendorConfiguration = vendorType === "solo" || vendorType === "business" ? vendorType : roleConfig?.vendorConfiguration || null;
+            selectedServiceStyles = roleConfig?.serviceStyles?.selected || [];
+            const permissions = await select("role_permissions", { role_id: vendor.role_id });
+            const baseCapabilities = permissions.map((p) => p.permission_name);
+            if (vendorConfiguration) {
+              const { stage2_service_styles: effectiveCapabilities } = getEffectiveCapabilities({
+                vendorConfiguration,
+                selectedServiceStyles,
+                baseCapabilities,
+                capabilityRules: roleConfig?.capabilityRules
+              });
+              capabilities = effectiveCapabilities;
+            } else {
+              capabilities = baseCapabilities;
+            }
+          }
+        } catch (roleError) {
+          console.warn(`[Vendor Profile] Failed to load role ${vendor.role_id}:`, roleError.message);
+        }
+      }
+      return c.json({
+        success: true,
+        vendor: {
+          ...vendor,
+          // ✅ Explicitly include profile fields (even if null) for solo providers
+          qualifications: vendor.qualifications || null,
+          service_area: vendor.service_area || null,
+          description: vendor.description || null,
+          experience_years: vendor.experience_years ?? null,
+          // Include role info directly in response
+          role: role ? {
+            id: role.id,
+            name: role.name,
+            display_name: role.display_name,
+            description: role.description,
+            config: roleConfig
+          } : null,
+          customer_service: customerService,
+          vendorConfiguration,
+          serviceStyles: selectedServiceStyles,
+          capabilities,
+          // ✅ Filtered capabilities (two-stage)
+          vendorTypes: roleConfig?.vendorTypes || [],
+          profileType: vendorConfiguration === "solo" ? "professional" : "center",
+          allowedServiceStyles: vendorConfiguration ? roleConfig?.serviceStyles?.[vendorConfiguration] || [] : []
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching vendor profile:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/complete", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return c.json({
+          success: true,
+          vendor: {
+            id: vendorId,
+            business_name: "Test Vendor",
+            owner_name: "Test Owner",
+            role: null,
+            capabilities: [],
+            vendorTypes: [],
+            serviceStyles: []
+          },
+          onboardingForm: null,
+          setupStatus: {
+            profileCompleted: false,
+            servicesConfigured: false,
+            availabilitySet: false,
+            paymentSetup: false,
+            isComplete: false
+          }
+        });
+      }
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const vendor = vendors[0];
+      let role = null;
+      let capabilities = [];
+      let roleConfig = {};
+      let onboardingForm = null;
+      if (vendor.role_id) {
+        try {
+          const roles = await select("roles", { id: vendor.role_id });
+          if (roles.length > 0) {
+            role = roles[0];
+            roleConfig = role.config || {};
+            try {
+              const allPermissions = await query(
+                `SELECT role_id, permission_name 
+                 FROM role_permissions 
+                 WHERE role_id = ANY($1::text[])`,
+                [[vendor.role_id]]
+              );
+              capabilities = allPermissions.rows.map((p) => p.permission_name);
+            } catch {
+              const permissions = await select("role_permissions", { role_id: vendor.role_id });
+              capabilities = permissions.map((p) => p.permission_name);
+            }
+            try {
+              const forms = await select("onboarding_forms", { role_id: role.name });
+              if (forms.length > 0) {
+                const fields = typeof forms[0].fields === "string" ? JSON.parse(forms[0].fields) : forms[0].fields || [];
+                onboardingForm = {
+                  fields: fields.filter((f) => f.isActive !== false),
+                  version: forms[0].version || 1
+                };
+              }
+            } catch (formError) {
+              console.warn(`[Vendor Complete] Failed to load onboarding form:`, formError.message);
+            }
+          }
+        } catch (roleError) {
+          console.warn(`[Vendor Complete] Failed to load role ${vendor.role_id}:`, roleError.message);
+        }
+      }
+      return c.json({
+        success: true,
+        vendor: {
+          ...vendor,
+          role: role ? {
+            id: role.id,
+            name: role.name,
+            display_name: role.display_name,
+            description: role.description,
+            config: roleConfig
+          } : null,
+          capabilities,
+          vendorTypes: roleConfig?.vendorTypes || [],
+          serviceStyles: roleConfig?.serviceStyles || [],
+          onboardingForm
+          // Include form if available
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching complete vendor data:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/bank-account", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      const schemaCheck = await query(`
+        SELECT 
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as has_accounts_table,
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_details') as has_details_table
+      `);
+      const schema = schemaCheck.rows[0] || {};
+      let bankAccounts = [];
+      if (schema.has_accounts_table) {
+        try {
+          const accounts = await query(
+            `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 ORDER BY is_primary DESC, created_at DESC LIMIT 1`,
+            [resolvedVendorId]
+          );
+          bankAccounts = accounts.rows;
+        } catch (e) {
+          console.warn("Error querying vendor_bank_accounts:", e);
+        }
+      }
+      if (bankAccounts.length === 0 && schema.has_details_table) {
+        try {
+          bankAccounts = await select("vendor_bank_details", { vendor_id: resolvedVendorId });
+        } catch (e) {
+          console.warn("Error querying vendor_bank_details:", e);
+        }
+      }
+      if (bankAccounts.length === 0) {
+        return c.json({ success: true, bankAccount: null });
+      }
+      const bankAccount = normalizeDbRow(bankAccounts[0]);
+      return c.json({ success: true, bankAccount });
+    } catch (error) {
+      console.error("Error fetching bank account:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/vendor/:vendorId/bank-account", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { account_holder_name, account_number, ifsc_code, bank_name, branch_name } = body;
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      if (!account_holder_name || !account_number || !ifsc_code || !bank_name) {
+        return c.json({ error: "Missing required fields: account_holder_name, account_number, ifsc_code, bank_name" }, 400);
+      }
+      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc_code.toUpperCase())) {
+        return c.json({ error: "Invalid IFSC code format" }, 400);
+      }
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      const existing = await select("vendor_bank_details", { vendor_id: resolvedVendorId });
+      const bankData = {
+        vendor_id: resolvedVendorId,
+        account_holder_name: account_holder_name.trim(),
+        account_number: account_number.replace(/\s/g, ""),
+        ifsc_code: ifsc_code.toUpperCase().trim(),
+        bank_name: bank_name.trim(),
+        branch_name: branch_name?.trim() || null,
+        is_verified: false,
+        // Reset verification status on update
+        verified_at: null,
+        verified_by: null,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (existing.length > 0) {
+        await update("vendor_bank_details", { vendor_id: resolvedVendorId }, bankData);
+      } else {
+        await insert("vendor_bank_details", bankData);
+      }
+      await query(
+        `UPDATE vendor_setup_completion 
+         SET bank_account_completed = true, 
+             bank_account_completed_at = NOW(),
+             updated_at = NOW()
+         WHERE vendor_id = $1`,
+        [resolvedVendorId]
+      ).catch((error) => {
+        if (error instanceof Error && !error.message.includes("does not exist")) {
+          console.warn("[VENDOR-PROFILE] Unexpected error updating vendor onboarding:", error.message);
+        }
+      });
+      return c.json({ success: true, message: "Bank account saved successfully" });
+    } catch (error) {
+      console.error("Error saving bank account:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/vendor/:vendorId/bank-account/verify", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      const schemaCheck = await query(`
+        SELECT 
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as has_accounts_table,
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_details') as has_details_table
+      `);
+      const schema = schemaCheck.rows?.[0] || {};
+      let bankAccounts = [];
+      if (schema.has_accounts_table) {
+        try {
+          const accounts = await query(
+            `SELECT *, 'vendor_bank_accounts' as _source FROM vendor_bank_accounts WHERE vendor_id = $1 ORDER BY is_primary DESC, created_at DESC LIMIT 1`,
+            [resolvedVendorId]
+          );
+          bankAccounts = accounts.rows || [];
+        } catch (e) {
+          console.warn("Error querying vendor_bank_accounts for verify:", e);
+        }
+      }
+      if (bankAccounts.length === 0 && schema.has_details_table) {
+        try {
+          bankAccounts = await select("vendor_bank_details", { vendor_id: resolvedVendorId });
+          if (bankAccounts.length > 0) bankAccounts[0]._source = "vendor_bank_details";
+        } catch (e) {
+          console.warn("Error querying vendor_bank_details for verify:", e);
+        }
+      }
+      if (bankAccounts.length === 0) {
+        return c.json({ error: "Bank account not found. Please add bank account details first." }, 404);
+      }
+      const bank = bankAccounts[0];
+      const accountHolderName = (bank.account_holder_name || "").trim();
+      const accountNumber = (bank.account_number || "").replace(/\s/g, "");
+      const ifscCode = (bank.ifsc_code || "").toUpperCase().trim();
+      const sourceTable = bank._source || (schema.has_accounts_table ? "vendor_bank_accounts" : "vendor_bank_details");
+      if (!accountHolderName || !accountNumber || !ifscCode) {
+        return c.json({
+          success: false,
+          error: "Bank account record missing name, account number, or IFSC. Please complete all fields."
+        }, 400);
+      }
+      const { validateBankAccountStrict: validateBankAccountStrict2 } = await Promise.resolve().then(() => (init_razorpay(), razorpay_exports));
+      const result = await validateBankAccountStrict2(accountNumber, ifscCode, accountHolderName);
+      if (result.error) {
+        return c.json({
+          success: false,
+          error: result.error,
+          details: result.details
+        }, 400);
+      }
+      const verifyPayload = {
+        is_verified: true,
+        verified_at: (/* @__PURE__ */ new Date()).toISOString(),
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (sourceTable === "vendor_bank_accounts" && bank.id) {
+        await update("vendor_bank_accounts", { id: bank.id, vendor_id: resolvedVendorId }, verifyPayload);
+      } else {
+        await update("vendor_bank_details", { vendor_id: resolvedVendorId }, verifyPayload);
+      }
+      return c.json({
+        success: true,
+        message: "Bank account verified successfully. Name, IFSC, and account number validated.",
+        verified: true
+      });
+    } catch (error) {
+      console.error("Error verifying bank account:", error);
+      return c.json({ error: error.message || "Verification failed" }, 500);
+    }
+  });
+  app3.post("/vendor/:vendorId/bank-account/document", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { document_type, document_url } = body;
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      if (!document_type || !document_url) {
+        return c.json({ error: "document_type and document_url are required" }, 400);
+      }
+      return c.json({ success: true, message: "Document uploaded successfully" });
+    } catch (error) {
+      console.error("Error uploading document:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/settings", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      let vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        console.log(`[SETTINGS] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
+        const identities = await select("vendor_identity", { id: vendorId });
+        if (identities.length > 0) {
+          const identity = identities[0];
+          if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
+            const vendorByPhone = await select("vendors", { phone: identity.phone });
+            if (vendorByPhone.length > 0) {
+              vendors = vendorByPhone;
+              console.log(`[SETTINGS] Found existing vendor by phone: ${vendors[0].id}`);
+            } else {
+              const applications = await select("vendor_onboarding_applications", { vendor_identity_id: vendorId });
+              const application = applications.length > 0 ? applications[0] : null;
+              const payload = application?.application_payload || {};
+              console.log(`[SETTINGS] Auto-creating vendor record for approved vendor ${vendorId}`);
+              const newVendor = await insert("vendors", {
+                id: vendorId,
+                phone: identity.phone,
+                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
+                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+                owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
+                role_id: identity.selected_role_id,
+                vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
+                category: "general",
+                address: payload.address || "Not specified",
+                city: payload.city || "Not specified",
+                state: payload.state || "Not specified",
+                pincode: payload.pin || payload.pincode || "",
+                // Don't use default - require actual pincode
+                status: "active",
+                is_active: true,
+                created_at: (/* @__PURE__ */ new Date()).toISOString(),
+                updated_at: (/* @__PURE__ */ new Date()).toISOString()
+              });
+              vendors = newVendor;
+              console.log(`[SETTINGS] Created vendor record for ${vendorId}`);
+            }
+          } else {
+            return c.json({ error: "Vendor not approved or activated" }, 403);
+          }
+        } else {
+          return c.json({ error: "Vendor not found" }, 404);
+        }
+      }
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const vendor = vendors[0];
+      const settings = {
+        service_radius: vendor.service_radius || null,
+        emergency_contact: vendor.emergency_contact || null,
+        max_dogs_per_walk: vendor.max_dogs_per_walk || null,
+        walk_durations: vendor.walk_durations || [],
+        other_config: vendor.other_config || {}
+      };
+      return c.json({ success: true, settings });
+    } catch (error) {
+      console.error("Error fetching settings:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  const settingsHandler = async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { service_radius, emergency_contact, max_dogs_per_walk, walk_durations, other_config } = body;
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      if (emergency_contact) {
+        if (!emergency_contact.name || !emergency_contact.phone) {
+          return c.json({ error: "Emergency contact must have both name and phone" }, 400);
+        }
+        const phoneDigits = emergency_contact.phone.replace(/\D/g, "");
+        if (phoneDigits.length < 10) {
+          return c.json({ error: "Invalid emergency contact phone number" }, 400);
+        }
+      }
+      let vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        console.log(`[SETTINGS-UPDATE] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
+        const identities = await select("vendor_identity", { id: vendorId });
+        if (identities.length > 0) {
+          const identity = identities[0];
+          if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
+            const vendorByPhone = await select("vendors", { phone: identity.phone });
+            if (vendorByPhone.length > 0) {
+              vendors = vendorByPhone;
+              console.log(`[SETTINGS-UPDATE] Found existing vendor by phone: ${vendors[0].id}`);
+            } else {
+              const applications = await select("vendor_onboarding_applications", { vendor_identity_id: vendorId });
+              const application = applications.length > 0 ? applications[0] : null;
+              const payload = application?.application_payload || {};
+              console.log(`[SETTINGS-UPDATE] Auto-creating vendor record for approved vendor ${vendorId}`);
+              const newVendor = await insert("vendors", {
+                id: vendorId,
+                phone: identity.phone,
+                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
+                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+                owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
+                role_id: identity.selected_role_id,
+                vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
+                category: "general",
+                address: payload.address || "Not specified",
+                city: payload.city || "Not specified",
+                state: payload.state || "Not specified",
+                pincode: payload.pin || payload.pincode || "",
+                // Don't use default - require actual pincode
+                status: "active",
+                is_active: true,
+                created_at: (/* @__PURE__ */ new Date()).toISOString(),
+                updated_at: (/* @__PURE__ */ new Date()).toISOString()
+              });
+              vendors = newVendor;
+              console.log(`[SETTINGS-UPDATE] Created vendor record for ${vendorId}`);
+            }
+          } else {
+            return c.json({ error: "Vendor not approved or activated" }, 403);
+          }
+        } else {
+          return c.json({ error: "Vendor not found" }, 404);
+        }
+      }
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const schemaCheck = await query(`
+        SELECT 
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'service_radius') as has_service_radius,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'emergency_contact') as has_emergency_contact,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'max_dogs_per_walk') as has_max_dogs,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'walk_durations') as has_walk_durations,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'other_config') as has_other_config,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_settings') as has_vendor_settings_table
+      `);
+      const schema = schemaCheck.rows[0] || {};
+      const setClauses = ["updated_at = NOW()"];
+      const params = [];
+      let paramIdx = 1;
+      if (service_radius !== void 0 && schema.has_service_radius) {
+        setClauses.push(`service_radius = $${paramIdx}`);
+        params.push(service_radius);
+        paramIdx++;
+      }
+      if (emergency_contact !== void 0 && schema.has_emergency_contact) {
+        setClauses.push(`emergency_contact = $${paramIdx}::jsonb`);
+        params.push(JSON.stringify(emergency_contact));
+        paramIdx++;
+      }
+      if (max_dogs_per_walk !== void 0 && schema.has_max_dogs) {
+        setClauses.push(`max_dogs_per_walk = $${paramIdx}`);
+        params.push(max_dogs_per_walk);
+        paramIdx++;
+      }
+      if (walk_durations !== void 0 && schema.has_walk_durations) {
+        if (Array.isArray(walk_durations) && walk_durations.length > 0) {
+          setClauses.push(`walk_durations = $${paramIdx}::text[]`);
+          params.push(walk_durations);
+          paramIdx++;
+        } else {
+          setClauses.push(`walk_durations = NULL`);
+        }
+      }
+      if (other_config !== void 0 && schema.has_other_config) {
+        setClauses.push(`other_config = $${paramIdx}::jsonb`);
+        params.push(JSON.stringify(other_config || {}));
+        paramIdx++;
+      }
+      const actualVendorId = vendors[0].id;
+      params.push(actualVendorId);
+      await query(
+        `UPDATE vendors SET ${setClauses.join(", ")} WHERE id = $${paramIdx}`,
+        params
+      );
+      return c.json({ success: true, message: "Settings updated successfully" });
+    } catch (error) {
+      console.error("Error updating settings:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  };
+  app3.put("/vendor/:vendorId/settings", settingsHandler);
+  app3.post("/vendor/:vendorId/settings", settingsHandler);
+  app3.get("/vendor/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return c.json({
+          success: true,
+          vendor: {
+            id: vendorId,
+            business_name: "Test Vendor",
+            owner_name: "Test Owner",
+            role: null,
+            capabilities: []
+          },
+          menu: []
+        });
+      }
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const vendor = vendors[0];
+      let role = null;
+      let capabilities = [];
+      let roleConfig = {};
+      let isCafe = false;
+      if (vendor.role_id) {
+        try {
+          const roles = await select("roles", { id: vendor.role_id });
+          if (roles.length > 0) {
+            role = roles[0];
+            roleConfig = role.config || {};
+            const permissions = await select("role_permissions", { role_id: vendor.role_id });
+            capabilities = permissions.map((p) => p.permission_name);
+            const roleName = (role.name || "").toLowerCase();
+            isCafe = roleName.includes("cafe") || roleName.includes("restaurant") || capabilities.includes("cafe") || capabilities.includes("cafe_menu");
+          }
+        } catch (roleError) {
+          console.warn(`[Vendor Details] Failed to load role ${vendor.role_id}:`, roleError.message);
+        }
+      }
+      const vendorResponse = {
+        id: vendor.id,
+        business_name: vendor.business_name,
+        owner_name: vendor.owner_name,
+        role_id: vendor.role_id,
+        role: role ? {
+          id: role.id,
+          name: role.name,
+          display_name: role.display_name
+        } : null,
+        capabilities,
+        address: vendor.address,
+        city: vendor.city,
+        state: vendor.state,
+        pincode: vendor.pincode,
+        phone: vendor.phone,
+        email: vendor.email,
+        latitude: vendor.latitude,
+        longitude: vendor.longitude,
+        description: vendor.description || "",
+        operating_hours: vendor.operating_hours ? typeof vendor.operating_hours === "string" ? JSON.parse(vendor.operating_hours) : vendor.operating_hours : null,
+        // Include other vendor fields
+        ...vendor
+      };
+      let menu = [];
+      if (isCafe) {
+        try {
+          const menuItems = await query(
+            `SELECT * FROM cafe_menu_items 
+             WHERE vendor_id = $1 
+             AND is_active = true
+             ORDER BY category, name ASC`,
+            [vendorId]
+          ).catch(() => ({ rows: [] }));
+          menu = menuItems.rows || [];
+        } catch (menuError) {
+          console.warn(`[Vendor Details] Failed to load menu for cafe ${vendorId}:`, menuError.message);
+        }
+      }
+      return c.json({
+        success: true,
+        vendor: vendorResponse,
+        menu
+        // Include menu for cafes
+      });
+    } catch (error) {
+      console.error("Error fetching vendor details:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+}
+
+// src/utils/vendor-resolve.ts
+init_rds_connection();
+async function resolveVendorId(paramVendorId) {
+  const trimmed = (paramVendorId || "").trim();
+  if (!trimmed) return paramVendorId;
+  const existingVendor = await select("vendors", { id: trimmed });
+  if (existingVendor.length > 0) return trimmed;
+  const identities = await select("vendor_identity", { id: trimmed });
+  if (identities.length === 0) return trimmed;
+  const identity = identities[0];
+  if (identity.onboarding_status !== "APPROVED" && identity.onboarding_status !== "ACTIVATED") return trimmed;
+  const vendorByPhone = await select("vendors", { phone: identity.phone });
+  if (vendorByPhone.length > 0) {
+    console.log(`[VendorResolve] Resolved vendorId ${trimmed} to vendor ${vendorByPhone[0].id} (by phone)`);
+    return vendorByPhone[0].id;
+  }
+  try {
+    const applications = await select("vendor_onboarding_applications", { vendor_identity_id: identity.id });
+    const application = applications.length > 0 ? applications[0] : null;
+    const payload = application?.application_payload || {};
+    const newVendor = await insert("vendors", {
+      id: identity.id,
+      phone: identity.phone,
+      email: payload.email || payload.businessEmail || `vendor-${identity.phone}@warmpawz.app`,
+      business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+      owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
+      role_id: identity.selected_role_id,
+      vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
+      category: "general",
+      address: payload.address || "Not specified",
+      city: payload.city || "Not specified",
+      state: payload.state || "Not specified",
+      pincode: payload.pin || payload.pincode || "",
+      status: "active",
+      is_active: true,
+      created_at: (/* @__PURE__ */ new Date()).toISOString(),
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    if (newVendor?.length > 0) {
+      console.log(`[VendorResolve] Auto-created vendors row for identity ${identity.id} (new vendor)`);
+      return identity.id;
+    }
+  } catch (err) {
+    if (err?.message?.includes("duplicate key") || err?.code === "23505") {
+      return identity.id;
+    }
+    console.warn("[VendorResolve] Auto-create vendor failed:", err?.message);
+  }
+  return trimmed;
+}
+
 // src/endpoints/specialized-services.ts
 function registerSpecializedServicesEndpoints(app3) {
   app3.get("/discover/meal-plans", async (c) => {
@@ -141601,7 +143217,7 @@ function registerSpecializedServicesEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/ambulance/vehicles", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const vendorId = await resolveVendorId(c.req.param("vendorId"));
       const hasAmbulanceCapability = await checkVendorCapability(vendorId, "ambulance");
       if (!hasAmbulanceCapability) {
         return c.json({ error: "Vendor does not have ambulance capability" }, 403);
@@ -141619,7 +143235,7 @@ function registerSpecializedServicesEndpoints(app3) {
   });
   app3.post("/vendor/:vendorId/ambulance/vehicles", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const vendorId = await resolveVendorId(c.req.param("vendorId"));
       const hasAmbulanceCapability = await checkVendorCapability(vendorId, "ambulance");
       if (!hasAmbulanceCapability) {
         return c.json({ error: "Vendor does not have ambulance capability" }, 403);
@@ -141644,7 +143260,9 @@ function registerSpecializedServicesEndpoints(app3) {
   });
   app3.put("/vendor/:vendorId/ambulance/vehicles/:vehicleId", async (c) => {
     try {
-      const { vendorId, vehicleId } = c.req.param();
+      const p = c.req.param();
+      const vendorId = await resolveVendorId(p.vendorId);
+      const vehicleId = p.vehicleId;
       const hasAmbulanceCapability = await checkVendorCapability(vendorId, "ambulance");
       if (!hasAmbulanceCapability) {
         return c.json({ error: "Vendor does not have ambulance capability" }, 403);
@@ -141674,13 +143292,16 @@ function registerSpecializedServicesEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/diagnostics/tests", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const vendorId = await resolveVendorId(c.req.param("vendorId"));
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) return c.json({ error: "Vendor not found" }, 404);
+      const actualVendorId = vendor.id;
       const publishedOnly = c.req.query("publishedOnly") === "true";
       const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostic_results") || await checkVendorCapability(vendorId, "diagnostics") || await checkVendorCapability(vendorId, "test_catalog") || await checkVendorCapability(vendorId, "diagnostic_lab") || await checkVendorCapability(vendorId, "diagnostic lab");
       if (!hasDiagnosticsCapability) {
         return c.json({ error: "Vendor does not have diagnostics capability" }, 403);
       }
-      const filter = { vendor_id: vendorId };
+      const filter = { vendor_id: actualVendorId };
       if (publishedOnly) {
         filter.is_available = true;
       }
@@ -141807,6 +143428,9 @@ function registerSpecializedServicesEndpoints(app3) {
   app3.post("/vendor/:vendorId/diagnostics/tests", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) return c.json({ error: "Vendor not found" }, 404);
+      const actualVendorId = vendor.id;
       const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostic_results") || await checkVendorCapability(vendorId, "diagnostics") || await checkVendorCapability(vendorId, "test_catalog") || await checkVendorCapability(vendorId, "diagnostic_lab") || await checkVendorCapability(vendorId, "diagnostic lab");
       if (!hasDiagnosticsCapability) {
         return c.json({ error: "Vendor does not have diagnostics capability" }, 403);
@@ -141815,7 +143439,7 @@ function registerSpecializedServicesEndpoints(app3) {
       try {
         const categoryVal = testData.category === "other" && (testData.otherCategoryName || testData.other_category_name) ? testData.otherCategoryName || testData.other_category_name : testData.category || testData.test_category;
         const test = await insert("diagnostic_tests", {
-          vendor_id: vendorId,
+          vendor_id: actualVendorId,
           test_name: testData.testName || testData.test_name || testData.name,
           test_code: testData.testCode || testData.test_code,
           category: categoryVal,
@@ -141842,7 +143466,7 @@ function registerSpecializedServicesEndpoints(app3) {
           try {
             const categoryVal = testData.category === "other" && (testData.otherCategoryName || testData.other_category_name) ? testData.otherCategoryName || testData.other_category_name : testData.category || testData.test_category;
             const testCore = await insert("diagnostic_tests", {
-              vendor_id: vendorId,
+              vendor_id: actualVendorId,
               test_name: testData.testName || testData.test_name || testData.name,
               test_category: categoryVal,
               description: testData.description,
@@ -141863,7 +143487,7 @@ function registerSpecializedServicesEndpoints(app3) {
             if (fallbackError.message?.includes("column") && fallbackError.message?.includes("does not exist")) {
               const catVal = testData.category === "other" && (testData.otherCategoryName || testData.other_category_name) ? testData.otherCategoryName || testData.other_category_name : testData.category || testData.test_category;
               const testMin = await insert("diagnostic_tests", {
-                vendor_id: vendorId,
+                vendor_id: actualVendorId,
                 test_name: testData.testName || testData.test_name || testData.name,
                 test_category: catVal,
                 price: testData.price ?? 0,
@@ -141886,6 +143510,9 @@ function registerSpecializedServicesEndpoints(app3) {
   app3.put("/vendor/:vendorId/diagnostics/tests/:testId", async (c) => {
     try {
       const { vendorId, testId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) return c.json({ error: "Vendor not found" }, 404);
+      const actualVendorId = vendor.id;
       const hasDiagnosticsCapability = await checkVendorCapability(vendorId, "diagnostic_results") || await checkVendorCapability(vendorId, "diagnostics") || await checkVendorCapability(vendorId, "test_catalog") || await checkVendorCapability(vendorId, "diagnostic_lab") || await checkVendorCapability(vendorId, "diagnostic lab");
       if (!hasDiagnosticsCapability) {
         return c.json({ error: "Vendor does not have diagnostics capability" }, 403);
@@ -141948,11 +143575,11 @@ function registerSpecializedServicesEndpoints(app3) {
         const updateFields = { ...coreUpdateFields, ...extendedUpdateFields };
         const updated = await update(
           "diagnostic_tests",
-          { id: testId },
+          { id: testId, vendor_id: actualVendorId },
           updateFields
         );
         if (updated.length === 0) {
-          return c.json({ error: "Test not found" }, 404);
+          return c.json({ error: "Test not found or access denied" }, 404);
         }
         return c.json({ success: true, test: updated[0], message: "Test updated successfully" });
       } catch (updateError) {
@@ -141960,11 +143587,11 @@ function registerSpecializedServicesEndpoints(app3) {
           console.warn("\u26A0\uFE0F Extended columns not found, retrying with core columns only. Run migration 503 to add missing columns.");
           const updatedCore = await update(
             "diagnostic_tests",
-            { id: testId },
+            { id: testId, vendor_id: actualVendorId },
             coreUpdateFields
           );
           if (updatedCore.length === 0) {
-            return c.json({ error: "Test not found" }, 404);
+            return c.json({ error: "Test not found or access denied" }, 404);
           }
           return c.json({
             success: true,
@@ -142086,7 +143713,7 @@ function registerSpecializedServicesEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/pharmacy/medicines", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const vendorId = await resolveVendorId(c.req.param("vendorId"));
       if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
         return c.json({ success: true, medicines: [], total: 0 });
       }
@@ -142117,7 +143744,7 @@ function registerSpecializedServicesEndpoints(app3) {
   });
   app3.post("/vendor/:vendorId/pharmacy/medicines", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const vendorId = await resolveVendorId(c.req.param("vendorId"));
       const hasPharmacyCapability = await checkVendorCapability(vendorId, "pharmacy");
       const hasInventoryCapability = await checkVendorCapability(vendorId, "inventory");
       if (!hasPharmacyCapability && !hasInventoryCapability) {
@@ -142144,17 +143771,30 @@ function registerSpecializedServicesEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/nutritionist/meal-plans", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param("vendorId");
+      const vendorId = await resolveVendorId(paramVendorId);
       const hasMealPlansCapability = await checkVendorCapability(vendorId, "meal_plans");
       if (!hasMealPlansCapability) {
         return c.json({ error: "Vendor does not have meal plans capability" }, 403);
       }
-      const mealPlans = await select(
+      const rows = await select(
         "meal_plans",
         { vendor_id: vendorId },
         { orderBy: "created_at", orderDirection: "DESC" }
       );
-      return c.json({ success: true, mealPlans, total: mealPlans.length });
+      const mealPlans = (rows || []).map((r) => ({
+        ...r,
+        name: r.plan_name || r.name,
+        pet_types: (() => {
+          try {
+            const d = typeof r.dietary_requirements === "string" ? JSON.parse(r.dietary_requirements) : r.dietary_requirements;
+            return d?.pet_types || d?.petTypes || ["Dog", "Cat"];
+          } catch {
+            return ["Dog", "Cat"];
+          }
+        })()
+      }));
+      return c.json({ success: true, mealPlans, plans: mealPlans, total: mealPlans.length });
     } catch (error) {
       console.error("Error fetching meal plans:", error);
       return c.json({ error: error.message }, 500);
@@ -142162,23 +143802,127 @@ function registerSpecializedServicesEndpoints(app3) {
   });
   app3.post("/vendor/:vendorId/nutritionist/meal-plans", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param("vendorId");
+      const vendorId = await resolveVendorId(paramVendorId);
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({
+          error: "Vendor not found",
+          hint: "The vendor ID may be invalid. Please ensure you are logged in with a valid vendor account."
+        }, 404);
+      }
       const hasMealPlansCapability = await checkVendorCapability(vendorId, "meal_plans");
       if (!hasMealPlansCapability) {
         return c.json({ error: "Vendor does not have meal plans capability" }, 403);
       }
       const mealPlanData = await c.req.json();
+      const planName = mealPlanData.planName || mealPlanData.plan_name || mealPlanData.name || "Meal Plan";
+      const durationDays = mealPlanData.duration_days ?? mealPlanData.durationDays ?? 7;
+      const price = mealPlanData.price ?? mealPlanData.pricePerWeek ?? 0;
       const mealPlan = await insert("meal_plans", {
         vendor_id: vendorId,
-        plan_name: mealPlanData.planName || mealPlanData.plan_name || mealPlanData.name,
-        description: mealPlanData.description,
-        meals: mealPlanData.meals || [],
-        nutritional_goals: mealPlanData.nutritionalGoals || mealPlanData.nutritional_goals || {},
+        plan_name: planName,
+        description: mealPlanData.description || null,
+        duration_days: durationDays,
+        price,
+        meals_per_day: mealPlanData.meals_per_day ?? mealPlanData.mealsPerDay ?? 2,
+        dietary_requirements: JSON.stringify({
+          pet_types: mealPlanData.pet_types || mealPlanData.petTypes || ["Dog", "Cat"],
+          meals: mealPlanData.meals || [],
+          nutritional_goals: mealPlanData.nutritionalGoals || mealPlanData.nutritional_goals || {}
+        }),
         is_active: mealPlanData.isActive !== false
       });
       return c.json({ success: true, mealPlan: mealPlan[0], message: "Meal plan created successfully" });
     } catch (error) {
       console.error("Error creating meal plan:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.put("/vendor/:vendorId/nutritionist/meal-plans/:planId", async (c) => {
+    try {
+      const paramVendorId = c.req.param("vendorId");
+      const vendorId = await resolveVendorId(paramVendorId);
+      const { planId } = c.req.param();
+      const mealPlanData = await c.req.json();
+      const check2 = await query(
+        `SELECT id FROM meal_plans WHERE id = $1 AND vendor_id = $2`,
+        [planId, vendorId]
+      );
+      if (!check2.rows?.length) {
+        return c.json({ error: "Meal plan not found" }, 404);
+      }
+      const planName = mealPlanData.planName ?? mealPlanData.plan_name ?? mealPlanData.name;
+      const durationDays = mealPlanData.duration_days ?? mealPlanData.durationDays;
+      const price = mealPlanData.price;
+      const mealsPerDay = mealPlanData.meals_per_day ?? mealPlanData.mealsPerDay;
+      const description = mealPlanData.description;
+      const isActive = mealPlanData.isActive;
+      const petTypes = mealPlanData.pet_types ?? mealPlanData.petTypes;
+      const updates = [];
+      const params = [];
+      let idx = 1;
+      if (planName != null) {
+        updates.push(`plan_name = $${idx}`);
+        params.push(planName);
+        idx++;
+      }
+      if (description != null) {
+        updates.push(`description = $${idx}`);
+        params.push(description);
+        idx++;
+      }
+      if (durationDays != null) {
+        updates.push(`duration_days = $${idx}`);
+        params.push(durationDays);
+        idx++;
+      }
+      if (price != null) {
+        updates.push(`price = $${idx}`);
+        params.push(price);
+        idx++;
+      }
+      if (mealsPerDay != null) {
+        updates.push(`meals_per_day = $${idx}`);
+        params.push(mealsPerDay);
+        idx++;
+      }
+      if (isActive !== void 0) {
+        updates.push(`is_active = $${idx}`);
+        params.push(isActive);
+        idx++;
+      }
+      if (petTypes != null) {
+        updates.push(`dietary_requirements = $${idx}::jsonb`);
+        params.push(JSON.stringify({ pet_types: petTypes }));
+        idx++;
+      }
+      if (updates.length === 0) {
+        return c.json({ success: true, message: "No changes" });
+      }
+      params.push(planId, vendorId);
+      await query(
+        `UPDATE meal_plans SET ${updates.join(", ")}, updated_at = NOW() WHERE id = $${idx} AND vendor_id = $${idx + 1}`,
+        params
+      );
+      return c.json({ success: true, message: "Meal plan updated" });
+    } catch (error) {
+      console.error("Error updating meal plan:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.delete("/vendor/:vendorId/nutritionist/meal-plans/:planId", async (c) => {
+    try {
+      const paramVendorId = c.req.param("vendorId");
+      const vendorId = await resolveVendorId(paramVendorId);
+      const { planId } = c.req.param();
+      const del = await query(`DELETE FROM meal_plans WHERE id = $1 AND vendor_id = $2 RETURNING id`, [planId, vendorId]);
+      if (!del.rows?.length) {
+        return c.json({ error: "Meal plan not found" }, 404);
+      }
+      return c.json({ success: true, message: "Meal plan deleted" });
+    } catch (error) {
+      console.error("Error deleting meal plan:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -142391,7 +144135,8 @@ function registerSpecializedServicesEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/meal-products", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param("vendorId");
+      const vendorId = await resolveVendorId(paramVendorId);
       const list = [];
       try {
         let productsResult;
@@ -142487,7 +144232,15 @@ function registerSpecializedServicesEndpoints(app3) {
   });
   app3.post("/vendor/:vendorId/meal-products", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param("vendorId");
+      const vendorId = await resolveVendorId(paramVendorId);
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({
+          error: "Vendor not found",
+          hint: "The vendor ID may be invalid or the vendor record does not exist. Please ensure you are logged in with a valid vendor account."
+        }, 404);
+      }
       const data = await c.req.json();
       const dietaryPayload = {
         petTypes: data.petTypes || ["Dog", "Cat"],
@@ -142546,7 +144299,9 @@ function registerSpecializedServicesEndpoints(app3) {
   });
   app3.put("/vendor/:vendorId/meal-products/:productId", async (c) => {
     try {
-      const { vendorId, productId } = c.req.param();
+      const paramVendorId = c.req.param("vendorId");
+      const vendorId = await resolveVendorId(paramVendorId);
+      const { productId } = c.req.param();
       const data = await c.req.json();
       const meta = data.metadata || {};
       const dietaryPayload = {
@@ -142624,7 +144379,9 @@ function registerSpecializedServicesEndpoints(app3) {
   });
   app3.delete("/vendor/:vendorId/meal-products/:productId", async (c) => {
     try {
-      const { vendorId, productId } = c.req.param();
+      const paramVendorId = c.req.param("vendorId");
+      const vendorId = await resolveVendorId(paramVendorId);
+      const { productId } = c.req.param();
       let del = await query(`DELETE FROM products WHERE id = $1 AND vendor_id = $2 RETURNING id`, [productId, vendorId]);
       if (del.rows?.length === 0) {
         del = await query(`DELETE FROM meal_plans WHERE id = $1 AND vendor_id = $2 RETURNING id`, [productId, vendorId]);
@@ -145634,6 +147391,11 @@ function registerServiceDiscoveryEndpoints(app3) {
         const targetRoles2 = await resolveTargetRolesForDiscovery(category || null, roleId || null);
         const targetRolesLower = targetRoles2.map((r) => r.toLowerCase());
         console.log("[discover-services] at_home/tele category=%s roleId=%s targetRoles=%s", category, roleId, JSON.stringify(targetRolesLower));
+        const roleIdForRule = category || roleId || targetRoles2[0] || "all";
+        const discoveryRules = await getDiscoveryRules(roleIdForRule, "discover", "at_home", category || void 0);
+        const ruleRadiusKm = typeof discoveryRules.discovery_radius_km === "number" ? discoveryRules.discovery_radius_km : 50;
+        const ruleMaxResults = typeof discoveryRules.discovery_max_results === "number" ? discoveryRules.discovery_max_results : 50;
+        const ruleSortDefault = typeof discoveryRules.discovery_sort_default === "string" ? discoveryRules.discovery_sort_default : "relevance";
         const roleRestrictClause = targetRolesLower.length > 0 ? ` AND r.id IS NOT NULL AND (LOWER(r.name) = ANY($1::text[]) OR LOWER(REPLACE(COALESCE(r.name, ''), ' ', '_')) = ANY($1::text[]))` : "";
         const soloCondition = targetRolesLower.length > 0 ? "" : ` AND (
               v.vendor_type = 'solo'
@@ -145660,7 +147422,11 @@ function registerServiceDiscoveryEndpoints(app3) {
           SELECT DISTINCT v.id, v.business_name, v.owner_name, v.phone, v.city, v.state,
                  v.latitude, v.longitude, r.name as role_name, r.display_name as role_display_name,
                  v.languages, v.is_verified, v.profile_image, v.specializations, v.is_online,
-                 v.vendor_type, v.metadata
+                 v.vendor_type, v.metadata,
+                 v.service_radius,
+                 (SELECT MIN(vs.service_radius_km) FROM vendor_services vs
+                  WHERE vs.vendor_id = v.id AND vs.is_enabled = true
+                    AND (vs.service_style = 'at_home' OR vs.service_style = 'tele')) AS service_radius_km_min
           FROM vendors v
           LEFT JOIN roles r ON v.role_id = r.id
           WHERE (v.status = 'approved' OR v.status = 'active')
@@ -145676,7 +147442,7 @@ function registerServiceDiscoveryEndpoints(app3) {
             AND COALESCE(LOWER(v.business_name), '') NOT LIKE '% business%'
             ${existsServiceClause}
         `;
-        vendorQuery2 += ` LIMIT 50`;
+        vendorQuery2 += ` LIMIT 200`;
         let vendorResults2;
         try {
           vendorResults2 = await query(vendorQuery2, vendorParams);
@@ -145748,6 +147514,11 @@ function registerServiceDiscoveryEndpoints(app3) {
             distance = R * c2;
             distanceText = distance < 1 ? `${Math.round(distance * 1e3)}m away` : `${distance.toFixed(1)} km away`;
           }
+          const vendorRadius = vendor.service_radius != null ? Number(vendor.service_radius) : null;
+          const serviceRadiusKm = vendor.service_radius_km_min != null ? Number(vendor.service_radius_km_min) : null;
+          const effectiveRadiusKm = vendorRadius ?? serviceRadiusKm ?? ruleRadiusKm ?? 50;
+          const withinRadius = !(latitude && longitude) || distance != null && distance <= effectiveRadiusKm;
+          if (!withinRadius) continue;
           let avgRating = 0;
           let totalReviews = 0;
           try {
@@ -145852,13 +147623,31 @@ function registerServiceDiscoveryEndpoints(app3) {
             })()
           });
         }
-        console.log(`[Discover Services] Found ${allProviders.length} solo providers for style=${serviceStyle}`);
+        const effectiveSort = sortBy && sortBy.trim() ? sortBy.trim().toLowerCase() : (ruleSortDefault || "relevance").toLowerCase();
+        if (effectiveSort === "nearest" || effectiveSort === "distance") {
+          allProviders.sort((a, b) => {
+            if (a.distance === null && b.distance === null) return 0;
+            if (a.distance === null) return 1;
+            if (b.distance === null) return -1;
+            return a.distance - b.distance;
+          });
+        } else if (effectiveSort === "rating") {
+          allProviders.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+        } else {
+          allProviders.sort((a, b) => {
+            const aScore = (parseFloat(a.rating) || 0) * 10 + (a.totalReviews || 0) * 0.5 + (a.distance != null ? Math.max(0, 50 - a.distance) : 0);
+            const bScore = (parseFloat(b.rating) || 0) * 10 + (b.totalReviews || 0) * 0.5 + (b.distance != null ? Math.max(0, 50 - b.distance) : 0);
+            return bScore - aScore;
+          });
+        }
+        const limitedProviders = allProviders.slice(0, ruleMaxResults);
+        console.log(`[Discover Services] Found ${limitedProviders.length} solo providers for style=${serviceStyle} (after radius/sort/limit)`);
         return c.json({
           success: true,
-          vendors: allProviders,
-          providers: allProviders,
+          vendors: limitedProviders,
+          providers: limitedProviders,
           // Alias for compatibility
-          total: allProviders.length
+          total: limitedProviders.length
         });
       }
       let vendorQuery = `
@@ -146600,6 +148389,81 @@ function registerServiceDiscoveryEndpoints(app3) {
           staffBased: false
         });
       }
+      let vasRows = [];
+      try {
+        const vasResult = await query(
+          `SELECT id, start_time, end_time
+           FROM vendor_availability_slots
+           WHERE vendor_id = $1 AND date = $2 AND is_available = true
+           ORDER BY start_time`,
+          [vendorId, date]
+        ).catch(() => ({ rows: [] }));
+        vasRows = vasResult?.rows ?? [];
+        if (vasRows.length > 0) {
+          console.log(`[SLOTS] Using vendor_availability_slots fallback: ${vasRows.length} rows for vendorId=${vendorId}, date=${date}`);
+        }
+      } catch (e) {
+      }
+      if (vasRows.length > 0) {
+        const slotDuration = 30;
+        const bufferMinutes = minNoticeMinutes;
+        const slots = [];
+        for (const row of vasRows) {
+          const startTime = row.start_time;
+          const endTime = row.end_time;
+          if (!startTime || !endTime) continue;
+          const winStart = timeToMinutes2(startTime);
+          const winEnd = timeToMinutes2(endTime);
+          let currentMinutes = winStart;
+          while (currentMinutes + slotDuration <= winEnd) {
+            const timeStr = `${String(Math.floor(currentMinutes / 60)).padStart(2, "0")}:${String(currentMinutes % 60).padStart(2, "0")}`;
+            if (isToday) {
+              const slotDateTime = new Date(requestedDate);
+              slotDateTime.setHours(Math.floor(currentMinutes / 60), currentMinutes % 60, 0, 0);
+              if (slotDateTime < minBookingTime) {
+                currentMinutes += slotDuration;
+                continue;
+              }
+            }
+            const slotEndMin = currentMinutes + totalDuration;
+            const inBreak = breaks.some((brk) => {
+              const bStart = timeToMinutes2(brk.startTime);
+              const bEnd = timeToMinutes2(brk.endTime);
+              return currentMinutes < bEnd && slotEndMin > bStart;
+            });
+            if (inBreak) {
+              currentMinutes += slotDuration;
+              continue;
+            }
+            const slotEndWithBuffer = currentMinutes + totalDuration + bufferMinutes;
+            const overlapsBooking = existingBookings.some((b) => {
+              const bStart = timeToMinutes2(b.booking_time);
+              const bEnd = bStart + b.duration_minutes + bufferMinutes;
+              return currentMinutes < bEnd && slotEndWithBuffer > bStart;
+            });
+            if (overlapsBooking) {
+              currentMinutes += slotDuration;
+              continue;
+            }
+            slots.push({
+              time: timeStr,
+              available: true,
+              booked: false
+            });
+            currentMinutes += slotDuration;
+          }
+        }
+        const sortedSlots = slots.sort((a, b) => a.time.localeCompare(b.time));
+        return c.json({
+          success: true,
+          slots: sortedSlots,
+          date,
+          vendorId,
+          serviceStyle,
+          staffBased: false,
+          source: "vendor_availability_slots"
+        });
+      }
       return c.json({
         success: true,
         slots: [],
@@ -147062,56 +148926,10 @@ function registerServiceDiscoveryEndpoints(app3) {
   app3.get("/vendor/:vendorId/facility", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      let actualVendorId = vendorId;
-      let vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        console.log(`[FACILITY] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-        const identities = await select("vendor_identity", { id: vendorId });
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
-            const vendorByPhone = await select("vendors", { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              actualVendorId = vendorByPhone[0].id;
-              vendors = vendorByPhone;
-              console.log(`[FACILITY] Found existing vendor by phone: ${actualVendorId}`);
-            } else {
-              const applications = await select("vendor_onboarding_applications", { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              console.log(`[FACILITY] Auto-creating vendor record for approved vendor ${vendorId}`);
-              const newVendor = await insert("vendors", {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
-                role_id: identity.selected_role_id,
-                category: "general",
-                address: payload.address || "Not specified",
-                city: payload.city || "Not specified",
-                state: payload.state || "Not specified",
-                pincode: payload.pin || payload.pincode || "",
-                // Don't use default - require actual pincode
-                status: "active",
-                is_active: true,
-                created_at: (/* @__PURE__ */ new Date()).toISOString(),
-                updated_at: (/* @__PURE__ */ new Date()).toISOString()
-              });
-              vendors = newVendor;
-              console.log(`[FACILITY] Created vendor record for ${vendorId}`);
-            }
-          } else {
-            return c.json({ error: "Vendor not approved or activated" }, 403);
-          }
-        } else {
-          return c.json({ error: "Vendor not found" }, 404);
-        }
-      }
-      if (vendors.length === 0) {
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors[0];
       const serviceColumns = await query(
         `SELECT column_name FROM information_schema.columns 
          WHERE table_name = 'services' AND column_name = 'is_global'`
@@ -147282,11 +149100,11 @@ function registerServiceDiscoveryEndpoints(app3) {
     try {
       const { vendorId } = c.req.param();
       const facilityData = await c.req.json();
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors[0];
+      const actualVendorId = vendor.id;
       const updateData = {};
       if (facilityData.address !== void 0) updateData.address = facilityData.address;
       if (facilityData.city !== void 0) updateData.city = facilityData.city;
@@ -147373,18 +149191,18 @@ function registerServiceDiscoveryEndpoints(app3) {
       }
       updateData.updated_at = (/* @__PURE__ */ new Date()).toISOString();
       const { update: update17 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-      const updated = await update17("vendors", { id: vendorId }, updateData);
+      const updated = await update17("vendors", { id: actualVendorId }, updateData);
       if (updated.length === 0) {
         return c.json({ error: "Failed to update facility" }, 500);
       }
       const specArr = facilityData.specializations !== void 0 ? Array.isArray(facilityData.specializations) ? facilityData.specializations : typeof facilityData.specializations === "string" ? [facilityData.specializations] : [] : null;
       if (specArr !== null) {
         try {
-          await query("DELETE FROM vendor_specializations WHERE vendor_id = $1", [vendorId]);
+          await query("DELETE FROM vendor_specializations WHERE vendor_id = $1", [actualVendorId]);
           for (const spec of specArr) {
             const s = typeof spec === "string" ? spec.trim() : spec?.id ?? spec?.specializationId ?? String(spec);
             if (s) {
-              await insert("vendor_specializations", { vendor_id: vendorId, specialization: s });
+              await insert("vendor_specializations", { vendor_id: actualVendorId, specialization: s });
             }
           }
         } catch (syncErr) {
@@ -147416,10 +149234,11 @@ function registerServiceDiscoveryEndpoints(app3) {
     try {
       const { vendorId } = c.req.param();
       console.log(`\u{1F4F8} [FACILITY-PHOTOS] Uploading photos for vendor: ${vendorId}`);
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: "Vendor not found" }, 404);
       }
+      const actualVendorId = vendor.id;
       const formData = await c.req.formData();
       const photos = formData.getAll("photos");
       if (!photos || photos.length === 0) {
@@ -147436,7 +149255,7 @@ function registerServiceDiscoveryEndpoints(app3) {
         try {
           const timestamp = Date.now();
           const ext = photo.name.split(".").pop() || "jpg";
-          const fileKey = `vendors/${vendorId}/facility/facility_${timestamp}_${Math.random().toString(36).substr(2, 9)}.${ext}`;
+          const fileKey = `vendors/${actualVendorId}/facility/facility_${timestamp}_${Math.random().toString(36).substr(2, 9)}.${ext}`;
           const arrayBuffer = await photo.arrayBuffer();
           const uint8Array = new Uint8Array(arrayBuffer);
           await s3Client6.send(new PutObjectCommand6({
@@ -147453,16 +149272,15 @@ function registerServiceDiscoveryEndpoints(app3) {
           console.error(`\u274C [FACILITY-PHOTOS] Error processing photo ${photo.name}:`, photoError);
         }
       }
-      const vendor = vendors[0];
       const existingMetadata = vendor.metadata || {};
       const existingPhotos = existingMetadata.facility_photos || [];
       const allPhotos = [...existingPhotos, ...photoUrls];
       const { update: update17 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-      await update17("vendors", { id: vendorId }, {
+      await update17("vendors", { id: actualVendorId }, {
         metadata: { ...existingMetadata, facility_photos: allPhotos },
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
       });
-      console.log(`\u2705 [FACILITY-PHOTOS] Uploaded ${photoUrls.length} photos for vendor ${vendorId}`);
+      console.log(`\u2705 [FACILITY-PHOTOS] Uploaded ${photoUrls.length} photos for vendor ${actualVendorId}`);
       return c.json({
         success: true,
         photoUrls,
@@ -148913,7 +150731,7 @@ function registerReviewEndpoints(app3) {
 // src/endpoints/notifications.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns5 = require("@aws-sdk/client-sns");
+var import_client_sns6 = require("@aws-sdk/client-sns");
 function registerNotificationEndpoints(app3) {
   app3.get("/notifications", async (c) => {
     try {
@@ -149025,7 +150843,7 @@ function registerNotificationEndpoints(app3) {
           }
           if (phone) {
             const snsClient4 = getSnsClient();
-            await snsClient4.send(new import_client_sns5.PublishCommand({
+            await snsClient4.send(new import_client_sns6.PublishCommand({
               PhoneNumber: phone,
               Message: `${title}
 
@@ -150226,58 +152044,71 @@ function registerVendorScheduleEndpoints(app3) {
   app3.get("/vendor/:vendorId/schedule", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
-        const scheduleByDay2 = {};
-        for (let i = 0; i < 7; i++) {
-          scheduleByDay2[i] = [];
-        }
-        return c.json({
-          success: true,
-          schedule: scheduleByDay2,
-          totalSlots: 0
-        });
+      const trimmedId = (vendorId || "").trim();
+      const emptyScheduleByDay = {};
+      for (let i = 0; i < 7; i++) {
+        emptyScheduleByDay[i] = [];
       }
-      let schedule;
-      try {
-        schedule = await query(
-          `SELECT *, 
-                  COALESCE(service_style, service_type) as service_style,
-                  COALESCE(time_window_start, start_time) as time_window_start,
-                  COALESCE(time_window_end, end_time) as time_window_end,
-                  COALESCE(is_enabled, is_available) as is_enabled
-           FROM vendor_availability_v2
-           WHERE vendor_id = $1
-           ORDER BY day_of_week, COALESCE(time_window_start, start_time)`,
-          [vendorId]
-        );
-      } catch (error) {
-        if (error.message?.includes("invalid input syntax for type uuid")) {
-          const scheduleByDay2 = {};
-          for (let i = 0; i < 7; i++) {
-            scheduleByDay2[i] = [];
-          }
-          return c.json({
-            success: true,
-            schedule: scheduleByDay2,
-            totalSlots: 0
-          });
-        }
-        throw error;
+      const emptyResponse = () => c.json({
+        success: true,
+        schedule: emptyScheduleByDay,
+        totalSlots: 0
+      });
+      if (trimmedId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmedId)) {
+        return emptyResponse();
       }
+      const vendor = await resolveVendorById(trimmedId);
+      const actualVendorId = vendor?.id ?? trimmedId;
       const scheduleByDay = {};
       for (let i = 0; i < 7; i++) {
         scheduleByDay[i] = [];
       }
-      schedule.rows.forEach((slot) => {
-        if (!scheduleByDay[slot.day_of_week]) {
-          scheduleByDay[slot.day_of_week] = [];
+      let schedule;
+      try {
+        schedule = await query(
+          `SELECT id, vendor_id, staff_id, day_of_week,
+                  COALESCE(time_window_start, start_time) AS time_window_start,
+                  COALESCE(time_window_end, end_time) AS time_window_end,
+                  COALESCE(is_enabled, is_available, true) AS is_enabled
+           FROM vendor_availability_v2
+           WHERE vendor_id = $1
+           ORDER BY day_of_week, COALESCE(time_window_start, start_time)`,
+          [actualVendorId]
+        );
+      } catch (error) {
+        if (error.message?.includes("invalid input syntax for type uuid")) {
+          return emptyResponse();
         }
-        scheduleByDay[slot.day_of_week].push(slot);
+        if (error.message?.includes("does not exist")) {
+          try {
+            schedule = await query(
+              `SELECT id, vendor_id, staff_id, day_of_week,
+                      start_time AS time_window_start, end_time AS time_window_end,
+                      is_available AS is_enabled
+               FROM vendor_availability_v2
+               WHERE vendor_id = $1
+               ORDER BY day_of_week, start_time`,
+              [actualVendorId]
+            );
+          } catch (_) {
+            return emptyResponse();
+          }
+        } else {
+          throw error;
+        }
+      }
+      const rows = Array.isArray(schedule?.rows) ? schedule.rows : [];
+      rows.forEach((slot) => {
+        const day2 = slot.day_of_week;
+        if (day2 != null && day2 >= 0 && day2 <= 6) {
+          if (!scheduleByDay[day2]) scheduleByDay[day2] = [];
+          scheduleByDay[day2].push(slot);
+        }
       });
       return c.json({
         success: true,
         schedule: scheduleByDay,
-        totalSlots: schedule.rows.length
+        totalSlots: rows.length
       });
     } catch (error) {
       console.error("Error fetching vendor schedule:", error);
@@ -151017,18 +152848,30 @@ function registerVendorScheduleEndpoints(app3) {
       if (!Array.isArray(slots)) {
         return c.json({ error: "slots array is required" }, 400);
       }
-      let actualVendorId = vendorId;
-      console.log(`[AVAILABILITY] \u{1F50D} Looking up vendor with ID: ${vendorId}`);
+      const trimmedVendorId = (vendorId || "").trim();
+      if (!trimmedVendorId) {
+        return c.json({ error: "Vendor ID is required" }, 400);
+      }
+      let actualVendorId = trimmedVendorId;
       let vendorFound = false;
-      let existingVendor = await select("vendors", { id: vendorId });
-      if (existingVendor.length > 0) {
+      const resolvedVendor = await resolveVendorById(trimmedVendorId);
+      if (resolvedVendor && resolvedVendor.id) {
+        actualVendorId = resolvedVendor.id;
         vendorFound = true;
-        actualVendorId = vendorId;
-        console.log(`[AVAILABILITY] \u2705 Vendor found in vendors table: ${actualVendorId}`);
+        console.log(`[AVAILABILITY] \u2705 Resolved vendor via resolveVendorById: ${actualVendorId}`);
+      }
+      if (!vendorFound) {
+        console.log(`[AVAILABILITY] \u{1F50D} Looking up vendor with ID: ${trimmedVendorId}`);
+        let existingVendor = await select("vendors", { id: trimmedVendorId });
+        if (existingVendor.length > 0) {
+          vendorFound = true;
+          actualVendorId = trimmedVendorId;
+          console.log(`[AVAILABILITY] \u2705 Vendor found in vendors table: ${actualVendorId}`);
+        }
       }
       let identity = null;
       if (!vendorFound) {
-        const identitiesById = await select("vendor_identity", { id: vendorId });
+        const identitiesById = await select("vendor_identity", { id: trimmedVendorId });
         if (identitiesById.length > 0) {
           identity = identitiesById[0];
           console.log(`[AVAILABILITY] \u2705 Found vendor_identity by id: ${identity.id}, vendor_id: ${identity.vendor_id}`);
@@ -151053,14 +152896,14 @@ function registerVendorScheduleEndpoints(app3) {
       if (!vendorFound && !identity) {
         const identitiesByVendorId = await query(
           `SELECT * FROM vendor_identity WHERE vendor_id = $1 LIMIT 1`,
-          [vendorId]
+          [trimmedVendorId]
         );
         if (identitiesByVendorId.rows && identitiesByVendorId.rows.length > 0) {
           identity = identitiesByVendorId.rows[0];
           console.log(`[AVAILABILITY] \u2705 Found vendor_identity by vendor_id field: ${identity.id}`);
-          const vendorCheck = await select("vendors", { id: vendorId });
+          const vendorCheck = await select("vendors", { id: trimmedVendorId });
           if (vendorCheck.length > 0) {
-            actualVendorId = vendorId;
+            actualVendorId = trimmedVendorId;
             vendorFound = true;
             console.log(`[AVAILABILITY] \u2705 Vendor exists with ID: ${actualVendorId}`);
           }
@@ -151161,10 +153004,10 @@ function registerVendorScheduleEndpoints(app3) {
       if (!vendorFound) {
         const finalCheck = await select("vendors", { id: actualVendorId });
         if (finalCheck.length === 0) {
-          console.error(`[AVAILABILITY] \u274C Vendor ${vendorId} not found after all checks`);
+          console.error(`[AVAILABILITY] \u274C Vendor ${trimmedVendorId} not found after all checks`);
           return c.json({
             error: "Vendor not found",
-            details: `Vendor with ID ${vendorId} does not exist in vendor_identity or vendors table. If you are logged in, please ensure your vendor account is properly set up.`
+            details: `Vendor with ID ${trimmedVendorId} does not exist in vendor_identity or vendors table. If you are logged in, please ensure your vendor account is properly set up.`
           }, 404);
         }
         vendorFound = true;
@@ -151296,17 +153139,22 @@ function registerVendorScheduleEndpoints(app3) {
   app3.get("/vendor/:vendorId/availability", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const actualVendorId = vendor.id;
       const slotsResult = await query(
         `SELECT * FROM vendor_availability_v2
          WHERE vendor_id = $1 AND (is_available = true OR is_available IS NULL)
          ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC`,
-        [vendorId]
+        [actualVendorId]
       ).catch(() => ({ rows: [] }));
       const breaksResult = await query(
         `SELECT * FROM vendor_breaks
          WHERE vendor_id = $1 AND is_active = true
          ORDER BY day_of_week ASC, start_time ASC`,
-        [vendorId]
+        [actualVendorId]
       ).catch(() => ({ rows: [] }));
       let holidaysResult = { rows: [] };
       try {
@@ -151316,7 +153164,7 @@ function registerVendorScheduleEndpoints(app3) {
              AND is_active = true
              AND (end_date >= CURRENT_DATE OR is_recurring_yearly = true)
            ORDER BY start_date ASC`,
-          [vendorId]
+          [actualVendorId]
         );
       } catch {
         holidaysResult = await query(
@@ -151325,11 +153173,9 @@ function registerVendorScheduleEndpoints(app3) {
            FROM vendor_holidays
            WHERE vendor_id = $1 AND date >= CURRENT_DATE
            ORDER BY date ASC`,
-          [vendorId]
+          [actualVendorId]
         ).catch(() => ({ rows: [] }));
       }
-      const vendorResult = await select("vendors", { id: vendorId });
-      const vendor = vendorResult[0] || {};
       return c.json({
         success: true,
         availability: {
@@ -152102,6 +153948,15 @@ function registerPrescriptionEndpoints(app3) {
         const bookings = await select("bookings", { id: bookingId });
         if (bookings.length > 0) {
           const b = bookings[0];
+          const notesStr = typeof b.notes === "string" ? b.notes : JSON.stringify(b.notes || "");
+          const svcId = String(b.service_id || "").toLowerCase();
+          const isDiagnosticsBooking = notesStr && (notesStr.includes('"tests"') || notesStr.includes('"test_name"')) || svcId === "diagnostics" || /diagnostic|lab.?test/i.test(String(b.service_type || b.service_style || ""));
+          if (isDiagnosticsBooking) {
+            return c.json({
+              error: "Prescriptions cannot be created for lab test orders. Use the Upload Lab Report flow for diagnostics.",
+              code: "DIAGNOSTICS_BOOKING_NO_PRESCRIPTION"
+            }, 400);
+          }
           if ((!customerId || !isValidUUID(customerId)) && b.customer_id) {
             prescriptionData.customerId = b.customer_id;
             console.log(`[Prescription] Resolved customerId from booking ${bookingId}: ${prescriptionData.customerId}`);
@@ -153021,10 +154876,47 @@ function registerMedicalRecordsEndpoints(app3) {
       queryText += ` ORDER BY mr.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
       const result = await query(queryText, params);
+      const recordsFromMr = result.rows || [];
+      let prescriptionRecords = [];
+      try {
+        const prescResult = await query(
+          `SELECT p.id, p.booking_id, p.pet_id, p.vendor_id, p.medications, p.instructions, p.diagnosis,
+                  p.prescription_date, p.follow_up_date, p.created_at, p.medication_name,
+                  v.business_name as vendor_name
+           FROM prescriptions p
+           LEFT JOIN vendors v ON p.vendor_id = v.id
+           WHERE p.pet_id = $1::uuid
+           ORDER BY p.prescription_date DESC, p.created_at DESC
+           LIMIT $2 OFFSET $3`,
+          [petId, limit, offset]
+        );
+        prescriptionRecords = (prescResult.rows || []).map((p) => ({
+          id: p.id,
+          booking_id: p.booking_id,
+          pet_id: p.pet_id,
+          vendor_id: p.vendor_id,
+          vendor_name: p.vendor_name,
+          record_type: "prescription",
+          prescription_date: p.prescription_date,
+          record_date: p.prescription_date || p.created_at,
+          created_at: p.created_at,
+          content_data: { medications: p.medications, instructions: p.instructions, diagnosis: p.diagnosis, medication_name: p.medication_name },
+          source: "prescriptions"
+        }));
+      } catch (prescErr) {
+        console.warn("[Medical Records] Pet prescriptions query failed (non-blocking):", prescErr);
+      }
+      const combined = [...recordsFromMr.map((r) => ({ ...r, source: "medical_records" })), ...prescriptionRecords];
+      combined.sort((a, b) => {
+        const dateA = new Date(a.record_date || a.prescription_date || a.created_at || 0).getTime();
+        const dateB = new Date(b.record_date || b.prescription_date || b.created_at || 0).getTime();
+        return dateB - dateA;
+      });
+      const paginated = combined.slice(0, limit);
       return c.json({
         success: true,
-        records: result.rows || [],
-        total: result.rows?.length || 0
+        records: paginated,
+        total: combined.length
       });
     } catch (error) {
       console.error("Error fetching medical records:", error);
@@ -154847,7 +156739,8 @@ init_rds_connection();
 function registerAnalyticsEndpoints(app3) {
   app3.get("/analytics/vendor/:vendorId/dashboard", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param("vendorId");
+      const vendorId = await resolveVendorId(paramVendorId);
       const period = c.req.query("period") || "all";
       const vendors = await select("vendors", { id: vendorId });
       if (vendors.length === 0) {
@@ -155042,7 +156935,8 @@ function registerAnalyticsEndpoints(app3) {
   });
   app3.get("/analytics/vendor/:vendorId/revenue", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param("vendorId");
+      const vendorId = await resolveVendorId(paramVendorId);
       const startDate = c.req.query("startDate");
       const endDate = c.req.query("endDate");
       let revenueQuery = `
@@ -155239,9 +157133,9 @@ function registerAnalyticsEndpoints(app3) {
                FROM bookings WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'`).catch(() => ({ rows: [{ total: 0, completed: 0, gmv: 0, completed_gmv: 0 }] })),
         query(`SELECT 
                 COALESCE(SUM(amount), 0) as total_revenue,
-                COALESCE(SUM(platform_fee), 0) as commission
+                COALESCE(SUM(COALESCE(platform_fee, commission_amount)), 0) as commission
                FROM payments 
-               WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days' AND status = 'success'`).catch(() => ({ rows: [{ total_revenue: 0, commission: 0 }] })),
+               WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days' AND payment_status IN ('completed', 'success')`).catch(() => ({ rows: [{ total_revenue: 0, commission: 0 }] })),
         query(`SELECT 
                 COUNT(*) as total,
                 COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days') as new_customers
@@ -155290,10 +157184,10 @@ function registerAnalyticsEndpoints(app3) {
       const revenueData = await query(
         `SELECT DATE_TRUNC('day', created_at) as date, 
                 COALESCE(SUM(amount), 0) as revenue,
-                COALESCE(SUM(platform_fee), 0) as commission,
+                COALESCE(SUM(COALESCE(platform_fee, commission_amount)), 0) as commission,
                 COUNT(*) as count
          FROM payments 
-         WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days' AND status = 'success'
+         WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days' AND payment_status IN ('completed', 'success')
          GROUP BY DATE_TRUNC('day', created_at)
          ORDER BY date`
       ).catch(() => ({ rows: [] }));
@@ -157137,10 +159031,29 @@ var roleMappings = {
   "adoption_center": ["adoption_center", "pet_shelter", "pet_adoption_center"],
   "event_organizer": ["pet_event_organizer", "event_organizer"]
 };
+async function resolveVendorId2(paramVendorId) {
+  const trimmed = (paramVendorId || "").trim();
+  if (!trimmed) return null;
+  const vendor = await resolveVendorById(trimmed);
+  if (vendor?.id) {
+    if (vendor.id !== trimmed) {
+      console.log(`[VendorServices] Resolved vendorId ${trimmed} to actual vendor ${vendor.id}`);
+    }
+    return vendor.id;
+  }
+  return null;
+}
 function registerVendorServicesEndpoints(app3) {
   app3.get("/vendor/:vendorId/services", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      if (!(paramVendorId || "").trim()) {
+        return c.json({ error: "Vendor ID is required" }, 400);
+      }
+      const vendorId = await resolveVendorId2(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
       const customOnly = c.req.query("custom") === "true";
       if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
         return c.json({
@@ -157455,7 +159368,11 @@ function registerVendorServicesEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/services/enabled", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendorId = await resolveVendorId2(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
       console.log(`[VendorServices] Fetching enabled services for vendor ${vendorId}...`);
       const result = await query(
         `SELECT 
@@ -157509,7 +159426,11 @@ function registerVendorServicesEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/services/:serviceStyle", async (c) => {
     try {
-      const { vendorId, serviceStyle } = c.req.param();
+      const { vendorId: paramVendorId, serviceStyle } = c.req.param();
+      const vendorId = await resolveVendorId2(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
       if (!["at_home", "at_center", "tele"].includes(serviceStyle)) {
         return c.json({ error: "Invalid service style" }, 400);
       }
@@ -157740,54 +159661,19 @@ function registerVendorServicesEndpoints(app3) {
   });
   app3.post("/vendor/:vendorId/services", async (c) => {
     try {
-      const { vendorId } = c.req.param();
-      const hasServicesCapability = await checkVendorCapability(vendorId, "services") || await checkVendorCapability(vendorId, "custom_services");
+      const { vendorId: paramVendorId } = c.req.param();
+      const trimmedId = (paramVendorId || "").trim();
+      if (!trimmedId) {
+        return c.json({ error: "Vendor ID is required" }, 400);
+      }
+      const vendor = await resolveVendorById(trimmedId);
+      if (!vendor?.id) {
+        return c.json({ error: "Vendor identity not found" }, 404);
+      }
+      const actualVendorId = vendor.id;
+      const hasServicesCapability = await checkVendorCapability(actualVendorId, "services") || await checkVendorCapability(actualVendorId, "custom_services");
       if (!hasServicesCapability) {
         return c.json({ error: "Vendor does not have services capability" }, 403);
-      }
-      let actualVendorId = vendorId;
-      const existingVendor = await select("vendors", { id: vendorId });
-      if (existingVendor.length === 0) {
-        console.log(`[VendorServices] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-        const identities = await select("vendor_identity", { id: vendorId });
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
-            const vendorByPhone = await select("vendors", { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              actualVendorId = vendorByPhone[0].id;
-              console.log(`[VendorServices] Found existing vendor by phone: ${actualVendorId}`);
-            } else {
-              const applications = await select("vendor_onboarding_applications", { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              console.log(`[VendorServices] Auto-creating vendor record for approved vendor ${vendorId}`);
-              const newVendor = await insert("vendors", {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
-                role_id: identity.selected_role_id,
-                category: "general",
-                address: payload.address || "Not specified",
-                city: payload.city || "Not specified",
-                state: payload.state || "Not specified",
-                pincode: payload.pin || payload.pincode || "",
-                // Don't use default - require actual pincode
-                status: "active",
-                is_active: true,
-                created_at: (/* @__PURE__ */ new Date()).toISOString(),
-                updated_at: (/* @__PURE__ */ new Date()).toISOString()
-              });
-              console.log(`[VendorServices] Created vendor record for ${vendorId}`);
-            }
-          } else {
-            return c.json({ error: "Vendor not approved or activated" }, 403);
-          }
-        } else {
-          return c.json({ error: "Vendor identity not found" }, 404);
-        }
       }
       const serviceData = await c.req.json();
       const {
@@ -157817,13 +159703,7 @@ function registerVendorServicesEndpoints(app3) {
       if (!inputServiceId || !serviceStyle) {
         return c.json({ error: "serviceId and serviceStyle are required" }, 400);
       }
-      let vendorForValidation = [];
-      if (existingVendor.length > 0) {
-        vendorForValidation = existingVendor;
-      } else {
-        const resolvedVendor = await select("vendors", { id: actualVendorId });
-        vendorForValidation = resolvedVendor;
-      }
+      const vendorForValidation = vendor ? [vendor] : await select("vendors", { id: actualVendorId });
       if (vendorForValidation.length > 0 && vendorForValidation[0].role_id) {
         try {
           const roles = await select("roles", { id: vendorForValidation[0].role_id });
@@ -157940,6 +159820,7 @@ function registerVendorServicesEndpoints(app3) {
           isEnabled: existing.rows[0].is_enabled
         }, 200);
       }
+      const safeDuration = Math.max(5, Math.min(1440, Number(customDuration ?? baseService.duration_minutes ?? 30) || 30));
       const vendorService = await insert("vendor_services", {
         vendor_id: actualVendorId,
         service_id: effectiveServiceId,
@@ -157949,8 +159830,8 @@ function registerVendorServicesEndpoints(app3) {
         service_style: serviceStyle,
         price: customPrice || baseService.price || 0,
         custom_price: customPrice || null,
-        duration_minutes: customDuration || baseService.duration_minutes || 30,
-        custom_duration: customDuration || null,
+        duration_minutes: safeDuration,
+        custom_duration: customDuration != null && customDuration !== "" ? Number(customDuration) || 30 : null,
         is_enabled: isEnabled !== false,
         publish_status: publishStatus || "published",
         is_custom_service: isCustomService || false,
@@ -157974,7 +159855,11 @@ function registerVendorServicesEndpoints(app3) {
   });
   app3.put("/vendor/:vendorId/services/:serviceId", async (c) => {
     try {
-      const { vendorId, serviceId } = c.req.param();
+      const { vendorId: paramVendorId, serviceId } = c.req.param();
+      const vendorId = await resolveVendorId2(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
       const hasServicesCapability = await checkVendorCapability(vendorId, "services") || await checkVendorCapability(vendorId, "custom_services");
       if (!hasServicesCapability) {
         return c.json({ error: "Vendor does not have services capability" }, 403);
@@ -157988,10 +159873,13 @@ function registerVendorServicesEndpoints(app3) {
         updateData.custom_price = serviceData.customPrice;
       }
       if (serviceData.duration !== void 0 || serviceData.customDuration !== void 0) {
-        updateData.duration_minutes = serviceData.duration || serviceData.customDuration;
+        const raw2 = serviceData.duration ?? serviceData.customDuration;
+        const mins = raw2 != null && raw2 !== "" ? Number(raw2) || 30 : 30;
+        updateData.duration_minutes = Math.max(5, Math.min(1440, mins));
       }
       if (serviceData.customDuration !== void 0) {
-        updateData.custom_duration = serviceData.customDuration;
+        const raw2 = serviceData.customDuration;
+        updateData.custom_duration = raw2 != null && raw2 !== "" ? Number(raw2) || 30 : null;
       }
       if (serviceData.isEnabled !== void 0 || serviceData.is_enabled !== void 0) {
         updateData.is_enabled = serviceData.isEnabled !== void 0 ? serviceData.isEnabled : serviceData.is_enabled;
@@ -158197,56 +160085,26 @@ function registerVendorServicesEndpoints(app3) {
       });
     } catch (error) {
       console.error("Error updating vendor service:", error);
-      return c.json({ error: error.message }, 500);
+      const msg = error?.message || String(error);
+      const isTransient = msg.includes("pool exhausted") || msg.includes("try again in a moment") || msg.includes("timeout") || msg.includes("Connection terminated") || msg.includes("ETIMEDOUT") || msg.includes("ECONNREFUSED");
+      if (isTransient) {
+        return c.json({ error: "Service temporarily unavailable. Please try again in a moment." }, 503);
+      }
+      return c.json({ error: msg }, 500);
     }
   });
   app3.post("/vendor/:vendorId/services/add-from-catalog", async (c) => {
     try {
-      const { vendorId } = c.req.param();
-      let actualVendorId = vendorId;
-      const existingVendor = await select("vendors", { id: vendorId });
-      if (existingVendor.length === 0) {
-        console.log(`[VendorServices] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-        const identities = await select("vendor_identity", { id: vendorId });
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
-            const vendorByPhone = await select("vendors", { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              actualVendorId = vendorByPhone[0].id;
-              console.log(`[VendorServices] Found existing vendor by phone: ${actualVendorId}`);
-            } else {
-              const applications = await select("vendor_onboarding_applications", { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              console.log(`[VendorServices] Auto-creating vendor record for approved vendor ${vendorId}`);
-              const newVendor = await insert("vendors", {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
-                role_id: identity.selected_role_id,
-                category: "general",
-                address: payload.address || "Not specified",
-                city: payload.city || "Not specified",
-                state: payload.state || "Not specified",
-                pincode: payload.pin || payload.pincode || "",
-                // Don't use default - require actual pincode
-                status: "active",
-                is_active: true,
-                created_at: (/* @__PURE__ */ new Date()).toISOString(),
-                updated_at: (/* @__PURE__ */ new Date()).toISOString()
-              });
-              console.log(`[VendorServices] Created vendor record for ${vendorId}`);
-            }
-          } else {
-            return c.json({ error: "Vendor not approved or activated" }, 403);
-          }
-        } else {
-          return c.json({ error: "Vendor identity not found" }, 404);
-        }
+      const { vendorId: paramVendorId } = c.req.param();
+      const trimmedId = (paramVendorId || "").trim();
+      if (!trimmedId) {
+        return c.json({ error: "Vendor ID is required" }, 400);
       }
+      const vendor = await resolveVendorById(trimmedId);
+      if (!vendor?.id) {
+        return c.json({ error: "Vendor identity not found" }, 404);
+      }
+      const actualVendorId = vendor.id;
       const hasServicesCapability = await checkVendorCapability(actualVendorId, "services") || await checkVendorCapability(actualVendorId, "custom_services");
       if (!hasServicesCapability) {
         return c.json({ error: "Vendor does not have services capability" }, 403);
@@ -158351,7 +160209,14 @@ function registerVendorServicesEndpoints(app3) {
   });
   app3.post("/vendor/:vendorId/services/custom", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      if (!(paramVendorId || "").trim()) {
+        return c.json({ error: "Vendor ID is required" }, 400);
+      }
+      const vendorId = await resolveVendorId2(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
       const hasServicesCapability = await checkVendorCapability(vendorId, "services") || await checkVendorCapability(vendorId, "custom_services");
       if (!hasServicesCapability) {
         return c.json({ error: "Vendor does not have services capability" }, 403);
@@ -158468,12 +160333,17 @@ function registerVendorServicesEndpoints(app3) {
         duration_minutes: duration || 30,
         is_active: true
       });
-      const requestedPublishStatus = serviceData.publishStatus || "pending_approval";
+      const requestedPublishStatus = serviceData.publishStatus || "draft";
       const effectivePublishStatus = requestedPublishStatus === "published" ? "pending_approval" : requestedPublishStatus;
+      const allowedPublishStatuses = ["draft", "published", "auto_published", "pending_approval"];
+      const publishStatusForDb = allowedPublishStatuses.includes(effectivePublishStatus) ? effectivePublishStatus : "draft";
       const isEnabled = effectivePublishStatus === "published";
+      const durationFromDetails = packageDetails && typeof packageDetails === "object" ? Number(packageDetails.sessionDuration ?? packageDetails.duration ?? duration) : Number(duration);
+      const safeDurationMinutes = Math.max(5, Math.min(1440, durationFromDetails || duration || 30));
       const metadata = {};
       if (isPackageService && packageDetails && typeof packageDetails === "object") {
         metadata.isPackage = true;
+        metadata.packageType = serviceData.packageType || void 0;
         metadata.packageDetails = packageDetails;
       }
       if (effectiveSpecIds.length > 0) {
@@ -158489,10 +160359,10 @@ function registerVendorServicesEndpoints(app3) {
         service_style: effectiveServiceStyle,
         price: effectivePriceNum,
         custom_price: effectivePriceNum,
-        duration_minutes: duration || 30,
-        custom_duration: duration || 30,
+        duration_minutes: safeDurationMinutes,
+        custom_duration: safeDurationMinutes,
         is_enabled: isEnabled,
-        publish_status: effectivePublishStatus,
+        publish_status: publishStatusForDb,
         is_custom_service: true,
         submitted_for_approval_at: effectivePublishStatus === "pending_approval" ? (/* @__PURE__ */ new Date()).toISOString() : null
       };
@@ -158508,12 +160378,20 @@ function registerVendorServicesEndpoints(app3) {
       });
     } catch (error) {
       console.error("Error creating custom service:", error);
-      return c.json({ error: error.message }, 500);
+      const message2 = error?.message || (typeof error === "string" ? error : "Failed to create custom service");
+      const isConstraint = message2.includes("pending_approval") || message2.includes("check constraint") || message2.includes("violates check");
+      return c.json({
+        error: isConstraint ? "Custom service could not be saved. Please ensure database migration 544 (vendor_services publish_status) has been applied." : message2
+      }, 500);
     }
   });
   app3.post("/vendor/:vendorId/services/bulk-update", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendorId = await resolveVendorId2(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
       const hasServicesCapability = await checkVendorCapability(vendorId, "services") || await checkVendorCapability(vendorId, "custom_services") || await checkVendorCapability(vendorId, "booking");
       if (!hasServicesCapability) {
         return c.json({ error: "Vendor does not have services capability" }, 403);
@@ -158646,7 +160524,11 @@ function registerVendorServicesEndpoints(app3) {
   });
   app3.post("/vendor/:vendorId/services/bulk-publish", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendorId = await resolveVendorId2(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
       const hasServicesCapability = await checkVendorCapability(vendorId, "services") || await checkVendorCapability(vendorId, "custom_services");
       if (!hasServicesCapability) {
         return c.json({ error: "Vendor does not have services capability" }, 403);
@@ -158693,7 +160575,11 @@ function registerVendorServicesEndpoints(app3) {
       return c.json({ error: "Internal routing error - please try again" }, 500);
     }
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendorId = await resolveVendorId2(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
       const hasServicesCapability = await checkVendorCapability(vendorId, "services") || await checkVendorCapability(vendorId, "custom_services");
       if (!hasServicesCapability) {
         return c.json({ error: "Vendor does not have services capability" }, 403);
@@ -158707,10 +160593,13 @@ function registerVendorServicesEndpoints(app3) {
         updateData.custom_price = serviceData.customPrice;
       }
       if (serviceData.duration !== void 0 || serviceData.customDuration !== void 0) {
-        updateData.duration_minutes = serviceData.duration || serviceData.customDuration;
+        const raw2 = serviceData.duration ?? serviceData.customDuration;
+        const mins = raw2 != null && raw2 !== "" ? Number(raw2) || 30 : 30;
+        updateData.duration_minutes = Math.max(5, Math.min(1440, mins));
       }
       if (serviceData.customDuration !== void 0) {
-        updateData.custom_duration = serviceData.customDuration;
+        const raw2 = serviceData.customDuration;
+        updateData.custom_duration = raw2 != null && raw2 !== "" ? Number(raw2) || 30 : null;
       }
       if (serviceData.isEnabled !== void 0 || serviceData.is_enabled !== void 0) {
         updateData.is_enabled = serviceData.isEnabled !== void 0 ? serviceData.isEnabled : serviceData.is_enabled;
@@ -158847,7 +160736,11 @@ function registerVendorServicesEndpoints(app3) {
   });
   app3.delete("/vendor/:vendorId/services/:serviceId", async (c) => {
     try {
-      const { vendorId, serviceId } = c.req.param();
+      const { vendorId: paramVendorId, serviceId } = c.req.param();
+      const vendorId = await resolveVendorId2(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
       const hasServicesCapability = await checkVendorCapability(vendorId, "services") || await checkVendorCapability(vendorId, "custom_services");
       if (!hasServicesCapability) {
         return c.json({ error: "Vendor does not have services capability" }, 403);
@@ -158867,7 +160760,11 @@ function registerVendorServicesEndpoints(app3) {
   });
   app3.post("/vendor/:vendorId/services/custom/:serviceId/publish", async (c) => {
     try {
-      const { vendorId, serviceId } = c.req.param();
+      const { vendorId: paramVendorId, serviceId } = c.req.param();
+      const vendorId = await resolveVendorId2(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
       const hasServicesCapability = await checkVendorCapability(vendorId, "services") || await checkVendorCapability(vendorId, "custom_services");
       if (!hasServicesCapability) {
         return c.json({ error: "Vendor does not have services capability" }, 403);
@@ -160505,7 +162402,117 @@ function inferSpecializationIdsFromCategory(categoryId, serviceName, displayName
   return Array.from(specs);
 }
 
+// src/utils/service-catalog-sync.ts
+function categoryToApplicableRoles(categoryId, categoryName, serviceId, serviceName) {
+  const cid = (categoryId || "").toLowerCase().trim();
+  const cname = (categoryName || "").toLowerCase();
+  const sid = (serviceId || "").toLowerCase();
+  const sname = (serviceName || "").toLowerCase();
+  const combined = [cname, sid, sname].join(" ");
+  if (cid === "veterinary" || /veterinar|vet_|vet |vaccination|checkup/.test(combined)) {
+    return ["veterinarian", "vet_clinic", "vet_solo"];
+  }
+  if (cid === "grooming" || /groom|groom_/.test(combined)) {
+    return ["pet_groomer", "groomer_center", "groomer_solo", "groomer", "pet_spa"];
+  }
+  if (cid === "training" || /train|train_/.test(combined)) {
+    return ["pet_trainer", "trainer_center", "trainer_solo", "trainer"];
+  }
+  if (cid === "walking" || /walk|walk_/.test(combined)) {
+    return ["pet_walker", "walker"];
+  }
+  if (cid === "boarding" || /board|daycare|sit_|sitt/.test(combined)) {
+    return ["pet_boarder", "boarding", "pet_daycare", "pet_sitter", "sitter"];
+  }
+  if (cid === "diagnostic" || cid === "diagnostics" || /diagnostic|diag_/.test(combined)) {
+    return ["diagnostics_center", "vet_clinic", "veterinarian"];
+  }
+  if (cid === "emergency" || /emergency|ambulance/.test(combined)) {
+    return ["ambulance", "pet_ambulance"];
+  }
+  if (cid === "pharmacy" || /pharmacy/.test(combined)) {
+    return ["pharmacy", "pet_pharmacy"];
+  }
+  if (cid === "nutrition" || /nutrition|diet|meal plan/.test(combined)) {
+    return ["pet_nutritionist", "nutritionist", "nutritionist_center"];
+  }
+  if (cid === "behavioral" || cid === "behaviour" || /behavior|behaviour/.test(combined)) {
+    return ["pet_behaviorist", "behaviorist_solo", "behaviorist_center", "behaviorist"];
+  }
+  if (/photo|photographer/.test(combined)) {
+    return ["pet_photographer", "photographer"];
+  }
+  if (/transport|relocate|relocation/.test(combined)) {
+    return ["pet_transport", "relocation"];
+  }
+  if (/resort/.test(combined)) {
+    return ["pet_resort", "resort"];
+  }
+  if (/breed/.test(combined)) {
+    return ["pet_breeder", "breeder"];
+  }
+  if (/retail|store|product/.test(combined)) {
+    return ["pet_products_store", "seller", "pet_store"];
+  }
+  if (/adopt|shelter/.test(combined)) {
+    return ["pet_adoption_center", "adoption_center", "pet_shelter"];
+  }
+  if (/event/.test(combined)) {
+    return ["pet_event_organizer", "event_organizer"];
+  }
+  if (/insurance/.test(combined)) {
+    return ["pet_insurance", "insurance"];
+  }
+  if (/cafe/.test(combined)) {
+    return ["pet_cafe", "cafe"];
+  }
+  if (/wellness/.test(combined)) {
+    return ["pet_nutritionist", "nutritionist", "nutritionist_center"];
+  }
+  return [];
+}
+function defaultServiceStyleForRoles(applicableRoles) {
+  if (!applicableRoles || applicableRoles.length === 0) return "at_center";
+  const roles = applicableRoles.map((r) => (r || "").toLowerCase().replace(/\s+/g, "_"));
+  const soloOnly = ["pet_sitter", "sitter", "pet_walker", "walker", "pet_taxi"];
+  const centerCapable = ["groomer_center", "groomer_solo", "pet_groomer", "vet_solo", "vet_clinic", "veterinarian", "trainer_center", "trainer_solo", "pet_trainer", "nutritionist_center", "nutritionist"];
+  const hasCenter = roles.some((r) => centerCapable.includes(r) || r === "groomer" || r === "vet" || r === "trainer");
+  const hasSoloOnly = roles.some((r) => soloOnly.includes(r));
+  if (hasCenter) return "at_center";
+  if (hasSoloOnly) return "at_home";
+  return "at_center";
+}
+var ALLOWED_STYLES = ["at_home", "at_center", "tele", "all"];
+function isAllowedServiceStyle(style) {
+  if (!style) return false;
+  const s = (style || "").toLowerCase().replace(/\s+/g, "_");
+  if (s === "centre") return true;
+  return ALLOWED_STYLES.includes(s);
+}
+function normalizeServiceStyle2(style) {
+  if (!style) return "at_center";
+  const s = (style || "").toLowerCase().replace(/\s+/g, "_");
+  if (s === "centre") return "at_center";
+  return ALLOWED_STYLES.includes(s) ? s : "at_center";
+}
+
 // src/endpoints/service-catalog.ts
+var CATEGORY_TO_SPEC_CATEGORY = {
+  veterinary: "veterinary",
+  grooming: "grooming",
+  training: "training",
+  walking: "walking",
+  diagnostic: "veterinary",
+  diagnostics: "veterinary",
+  pharmacy: "veterinary",
+  emergency: "veterinary",
+  wellness: "wellness",
+  specialty: "veterinary",
+  boarding: "boarding",
+  nutrition: "wellness",
+  behavioral: "behavioral",
+  behaviour: "behavioral"
+};
 var roleMappings2 = {
   // ✅ FIX: Healthcare roles with clinic services
   "veterinarian": ["vet", "veterinarian", "vet_clinic", "vet_solo"],
@@ -161506,6 +163513,8 @@ function registerServiceCatalogEndpoints(app3) {
       if (body.metadata !== void 0) updateData.metadata = body.metadata;
       const displayOrder = body.display_order ?? body.displayOrder;
       if (displayOrder !== void 0) updateData.display_order = Number(displayOrder);
+      if (v(body.tax_category_id, body.taxCategoryId) !== void 0) updateData.tax_category_id = v(body.tax_category_id, body.taxCategoryId) || null;
+      if (v(body.hsn_code_id, body.hsnCodeId) !== void 0) updateData.hsn_code_id = v(body.hsn_code_id, body.hsnCodeId) || null;
       const specIds = Array.isArray(body.specialization_ids) ? body.specialization_ids : Array.isArray(body.specializationIds) ? body.specializationIds : void 0;
       if (specIds !== void 0) {
         updateData.specialization_ids = specIds;
@@ -161530,6 +163539,77 @@ function registerServiceCatalogEndpoints(app3) {
       });
     } catch (error) {
       console.error("Error updating service:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/admin/service-catalog/ensure-roles-and-specializations", async (c) => {
+    try {
+      const all = await query("SELECT id, service_id, service_name, display_name, category_id, category_name, applicable_roles, service_style, specialization_ids FROM service_catalog");
+      const rows = all.rows || [];
+      const updates = [];
+      for (const row of rows) {
+        let roles = Array.isArray(row.applicable_roles) ? row.applicable_roles.filter(Boolean) : [];
+        const hadNoRoles = roles.length === 0;
+        if (hadNoRoles) {
+          roles = categoryToApplicableRoles(
+            row.category_id,
+            row.category_name,
+            row.service_id,
+            row.service_name
+          );
+        }
+        if (roles.length === 0) continue;
+        let style = row.service_style;
+        const hadInvalidStyle = !style || !isAllowedServiceStyle(style);
+        if (hadInvalidStyle) {
+          style = defaultServiceStyleForRoles(roles);
+        }
+        style = normalizeServiceStyle2(style);
+        let specIds = Array.isArray(row.specialization_ids) ? row.specialization_ids.filter(Boolean) : [];
+        const hadNoSpecs = specIds.length === 0;
+        if (hadNoSpecs) {
+          const inferred = inferSpecializationIdsFromCategory(
+            row.category_id,
+            row.service_name,
+            row.display_name
+          );
+          const specCategory = CATEGORY_TO_SPEC_CATEGORY[(row.category_id || "").toLowerCase()] || (row.category_id || "").toLowerCase() || "veterinary";
+          const validSpecs = await query(
+            `SELECT specialization_id FROM specialization_master WHERE is_active = true AND (category_id = $1 OR LOWER(category_id) = LOWER($1))`,
+            [specCategory]
+          );
+          const validSet = new Set((validSpecs.rows || []).map((r) => (r.specialization_id || "").trim()).filter(Boolean));
+          specIds = inferred.filter((id) => validSet.has((id || "").trim()));
+          if (specIds.length === 0 && validSpecs.rows?.length) {
+            specIds = validSpecs.rows.slice(0, 2).map((r) => r.specialization_id).filter(Boolean);
+          }
+        }
+        const needsUpdate = hadNoRoles || hadInvalidStyle || hadNoSpecs;
+        if (!needsUpdate) continue;
+        updates.push({
+          id: row.id,
+          applicable_roles: roles,
+          service_style: style,
+          specialization_ids: specIds
+        });
+      }
+      let updatedCount = 0;
+      for (const u of updates) {
+        await update("service_catalog", { id: u.id }, {
+          applicable_roles: u.applicable_roles,
+          service_style: u.service_style,
+          specialization_ids: u.specialization_ids
+        });
+        updatedCount += 1;
+      }
+      return c.json({
+        success: true,
+        message: "Roles, service_style, and specializations ensured",
+        total: rows.length,
+        updated: updatedCount
+      });
+    } catch (error) {
+      console.error("Error ensuring roles and specializations:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -161572,7 +163652,45 @@ function registerServiceCatalogEndpoints(app3) {
 init_rds_connection();
 init_razorpay_client();
 init_sns_client();
-var import_client_sns6 = require("@aws-sdk/client-sns");
+var import_client_sns7 = require("@aws-sdk/client-sns");
+async function resolveOrCreateVendorIdForBank(vendorId) {
+  const existingVendor = await select("vendors", { id: vendorId });
+  if (existingVendor.length > 0) return { actualVendorId: vendorId };
+  const identities = await select("vendor_identity", { id: vendorId });
+  if (identities.length === 0) return { error: "Vendor not found", status: 404 };
+  const identity = identities[0];
+  if (identity.onboarding_status !== "APPROVED" && identity.onboarding_status !== "ACTIVATED") {
+    return { error: "Vendor not approved or activated", status: 403 };
+  }
+  const vendorByPhone = await select("vendors", { phone: identity.phone });
+  if (vendorByPhone.length > 0) {
+    console.log(`[BankDetails] Resolved vendorId ${vendorId} to vendor ${vendorByPhone[0].id} (by phone)`);
+    return { actualVendorId: vendorByPhone[0].id };
+  }
+  const applications = await select("vendor_onboarding_applications", { vendor_identity_id: vendorId });
+  const application = applications.length > 0 ? applications[0] : null;
+  const payload = application?.application_payload || {};
+  console.log(`[BankDetails] Auto-creating vendor record for approved vendor ${vendorId}`);
+  await insert("vendors", {
+    id: vendorId,
+    phone: identity.phone,
+    email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
+    business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+    owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
+    role_id: identity.selected_role_id,
+    category: "general",
+    address: payload.address || "Not specified",
+    city: payload.city || "Not specified",
+    state: payload.state || "Not specified",
+    pincode: payload.pin || payload.pincode || "",
+    status: "active",
+    is_active: true,
+    created_at: (/* @__PURE__ */ new Date()).toISOString(),
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  console.log(`[BankDetails] Created vendor record for ${vendorId}`);
+  return { actualVendorId: vendorId };
+}
 function registerSettlementEndpoints(app3) {
   app3.get("/settlements", async (c) => {
     try {
@@ -161683,42 +163801,41 @@ function registerSettlementEndpoints(app3) {
   });
   app3.get("/settlements/policy", async (c) => {
     try {
+      const defaultTierResult = await query(`
+        SELECT payout_period_days, commission_rate, tier_name, display_name
+        FROM vendor_tiers
+        WHERE is_active = true
+        ORDER BY is_default DESC NULLS LAST, tier_level ASC
+        LIMIT 1
+      `).catch(() => ({ rows: [] }));
+      const defaultTier = defaultTierResult.rows?.[0];
+      const payoutPeriodDays = defaultTier?.payout_period_days != null ? Number(defaultTier.payout_period_days) : 7;
       const payoutRules = await select("platform_settings", { setting_key: "admin:settings:payout_rules" });
       const rules = payoutRules.length > 0 ? payoutRules[0].setting_value : {
-        holdPeriodDays: 7,
         minimumPayout: 1e3,
         autoPayout: true,
         defaultCommission: 10
       };
       const scheduleSettings = await query(`
-        SELECT * FROM platform_settings 
-        WHERE setting_key LIKE 'admin:finance:settlement%' 
+        SELECT * FROM platform_settings
+        WHERE setting_key LIKE 'admin:finance:settlement%'
         LIMIT 1
       `).catch(() => ({ rows: [] }));
-      const schedule = scheduleSettings.rows.length > 0 ? scheduleSettings.rows[0].setting_value : {
-        scheduleType: "weekly",
-        settlementPeriodDays: rules.holdPeriodDays,
-        minPayoutAmount: rules.minimumPayout
-      };
+      const rawSchedule = scheduleSettings.rows?.length > 0 ? scheduleSettings.rows[0].setting_value : null;
+      const schedule = rawSchedule ? typeof rawSchedule === "string" ? JSON.parse(rawSchedule) : rawSchedule : { scheduleType: "weekly", minPayoutAmount: rules.minimumPayout };
+      const settlementSchedule = { ...schedule, settlementPeriodDays: payoutPeriodDays };
       return c.json({
         success: true,
         policy: {
-          // Hold period - how long earnings are held before settlement
-          holdPeriodDays: rules.holdPeriodDays || 7,
-          // Minimum amount required for payout
-          minimumPayoutAmount: rules.minimumPayout || 1e3,
-          // Platform commission percentage (based on tier, but default shown)
-          defaultCommissionRate: rules.defaultCommission || 10,
-          // Whether auto-payout is enabled
+          holdPeriodDays: payoutPeriodDays,
+          payoutPeriodDays,
+          minimumPayoutAmount: rules.minimumPayout ?? 1e3,
+          defaultCommissionRate: rules.defaultCommission ?? 10,
           autoPayoutEnabled: rules.autoPayout !== false,
-          // Settlement schedule
-          settlementSchedule: typeof schedule === "string" ? JSON.parse(schedule) : schedule,
-          // Bank verification requirement
+          settlementSchedule,
           bankVerificationRequired: true,
-          // Razorpay integration info
           paymentProcessor: "Razorpay",
-          // Policy description for vendors
-          description: `Earnings are held for ${rules.holdPeriodDays || 7} days before becoming eligible for settlement. Minimum payout amount is \u20B9${rules.minimumPayout || 1e3}. Platform commission is deducted based on your tier (default ${rules.defaultCommission || 10}%). Bank account must be verified via Razorpay to receive payouts.`
+          description: `Earnings are held for ${payoutPeriodDays} days (per your tier) before becoming eligible for settlement. Minimum payout amount is \u20B9${rules.minimumPayout ?? 1e3}. Platform commission is deducted based on your tier (default ${rules.defaultCommission ?? 10}%). Bank account must be verified via Razorpay to receive payouts.`
         }
       });
     } catch (error) {
@@ -161727,6 +163844,7 @@ function registerSettlementEndpoints(app3) {
         success: true,
         policy: {
           holdPeriodDays: 7,
+          payoutPeriodDays: 7,
           minimumPayoutAmount: 1e3,
           defaultCommissionRate: 10,
           autoPayoutEnabled: true,
@@ -161786,23 +163904,22 @@ function registerSettlementEndpoints(app3) {
       try {
         const settings = await select("platform_settings", { setting_key: "admin:settings:payout_rules" });
         const rules = settings.length > 0 ? settings[0].setting_value : {
-          holdPeriodDays: 7,
           minimumPayout: 1e3,
           autoPayout: true,
           defaultCommission: 10
         };
-        const holdPeriodMs = rules.holdPeriodDays * 24 * 60 * 60 * 1e3;
-        const cutoffDate = new Date(Date.now() - holdPeriodMs);
         const eligibleBookings = await query(
           `SELECT b.*, v.commission_percentage, v.tier
-         FROM bookings b
-         INNER JOIN vendors v ON b.vendor_id = v.id
-         WHERE b.status = 'completed'
-         AND b.completed_at < $1
-         AND b.settled_at IS NULL
-         ORDER BY b.completed_at ASC`,
-          [cutoffDate]
+           FROM bookings b
+           INNER JOIN vendors v ON b.vendor_id = v.id
+           LEFT JOIN vendor_tiers vt ON vt.is_active = true AND (TRIM(LOWER(v.tier)) = TRIM(LOWER(vt.tier_name)))
+           WHERE b.status = 'completed'
+             AND b.settled_at IS NULL
+             AND b.completed_at < (NOW() - (COALESCE(vt.payout_period_days, 7) * INTERVAL '1 day'))
+           ORDER BY b.completed_at ASC`
         );
+        const penaltyCutoffDays = 7;
+        const penaltyCutoff = new Date(Date.now() - penaltyCutoffDays * 24 * 60 * 60 * 1e3);
         const vendorPenalties = await query(
           `SELECT 
            b.vendor_id,
@@ -161816,7 +163933,7 @@ function registerSettlementEndpoints(app3) {
          AND b.created_at < $1
          AND b.penalty_processed IS NOT TRUE
          ORDER BY b.created_at ASC`,
-          [cutoffDate]
+          [penaltyCutoff]
         ).catch(() => ({ rows: [] }));
         const cancellationPolicy = await query(
           `SELECT * FROM cancellation_policies 
@@ -161906,26 +164023,21 @@ function registerSettlementEndpoints(app3) {
           if (settlement.netAmount < rules.minimumPayout) {
             continue;
           }
+          const periodEnd = /* @__PURE__ */ new Date();
+          const periodStart = new Date(periodEnd);
+          periodStart.setDate(periodStart.getDate() - 7);
           const settlementRecord = await insert("settlements", {
             vendor_id: vendorId,
             total_amount: settlement.totalAmount,
             commission_amount: settlement.commissionAmount,
-            penalty_deductions: settlement.penaltyDeductions || 0,
             net_amount: settlement.netAmount,
             settlement_status: rules.autoPayout ? "processing" : "pending",
-            settlement_period_start: cutoffDate.toISOString().split("T")[0],
-            settlement_period_end: (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
-            payment_ids: settlement.bookingIds,
-            metadata: JSON.stringify({
-              penaltyDeductions: settlement.penaltyDeductions || 0,
-              penaltyReason: settlement.penaltyDeductions > 0 ? "Vendor cancellation/no-show penalties" : null
-            })
+            settlement_period_start: periodStart.toISOString().split("T")[0],
+            settlement_period_end: periodEnd.toISOString().split("T")[0],
+            payment_ids: settlement.bookingIds
           });
           await query(
-            `UPDATE bookings
-           SET settled_at = NOW(),
-               settlement_status = 'settled'
-           WHERE id = ANY($1)`,
+            `UPDATE bookings SET settled_at = NOW() WHERE id = ANY($1)`,
             [settlement.bookingIds]
           );
           settlements.push(settlementRecord[0]);
@@ -161933,7 +164045,7 @@ function registerSettlementEndpoints(app3) {
             await createPayout(settlementRecord[0].id, vendorId, settlement.netAmount);
           }
           const snsClient4 = getSnsClient();
-          await snsClient4.send(new import_client_sns6.PublishCommand({
+          await snsClient4.send(new import_client_sns7.PublishCommand({
             TopicArn: process.env.SETTLEMENT_CREATED_TOPIC_ARN || "",
             Message: JSON.stringify({
               eventType: "SettlementCreated",
@@ -161999,14 +164111,15 @@ function registerSettlementEndpoints(app3) {
   app3.post("/settlements/request", async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { vendorId, amount } = body;
-      if (!vendorId) {
+      const { vendorId: paramVendorId, amount } = body;
+      if (!paramVendorId) {
         return c.json({ success: false, error: "vendorId is required" }, 400);
       }
       const requestAmount = parseFloat(amount);
       if (isNaN(requestAmount) || requestAmount <= 0) {
         return c.json({ success: false, error: "Valid amount is required" }, 400);
       }
+      const vendorId = await resolveVendorId(paramVendorId);
       let bankDetails = [];
       try {
         const schemaCheck = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as ex`);
@@ -162030,28 +164143,137 @@ function registerSettlementEndpoints(app3) {
       if (!isVerified) {
         return c.json({ success: false, error: "Bank account must be verified before requesting payout. Verify in Settings." }, 400);
       }
-      const pendingRes = await query(
-        `SELECT COALESCE(SUM(COALESCE(net_amount, vendor_amount)), 0) as pending FROM settlements WHERE vendor_id = $1 AND (status = 'pending' OR settlement_status = 'pending')`,
-        [vendorId]
-      ).catch(() => ({ rows: [{ pending: "0" }] }));
-      const pendingAmount = parseFloat(pendingRes.rows[0]?.pending || "0");
-      if (requestAmount > pendingAmount) {
-        return c.json({ success: false, error: `Amount exceeds available (\u20B9${pendingAmount.toFixed(0)})` }, 400);
+      const [settlementsPendingRes, earningsPendingRes] = await Promise.all([
+        query(
+          `SELECT COALESCE(SUM(COALESCE(net_amount, vendor_amount)), 0) as pending FROM settlements WHERE vendor_id = $1 AND (status = 'pending' OR settlement_status = 'pending')`,
+          [vendorId]
+        ).catch(() => ({ rows: [{ pending: "0" }] })),
+        query(
+          `SELECT COALESCE(SUM(amount), 0) as pending FROM vendor_earnings WHERE vendor_id = $1 AND status = 'pending'`,
+          [vendorId]
+        ).catch(() => ({ rows: [{ pending: "0" }] }))
+      ]);
+      const settlementsPending = parseFloat(settlementsPendingRes.rows[0]?.pending || "0");
+      const earningsPending = parseFloat(earningsPendingRes.rows[0]?.pending || "0");
+      const availableAmount = settlementsPending + earningsPending;
+      if (requestAmount > availableAmount) {
+        return c.json({ success: false, error: `Amount exceeds available (\u20B9${availableAmount.toFixed(0)})` }, 400);
       }
-      const payout = await insert("payouts", {
+      let actualPayoutAmount = requestAmount;
+      if (earningsPending >= requestAmount && settlementsPending === 0) {
+        const records = await query(
+          `SELECT id, amount FROM vendor_earnings WHERE vendor_id = $1 AND status = 'pending' ORDER BY realized_at ASC`,
+          [vendorId]
+        ).catch(() => ({ rows: [] }));
+        let allocatable = 0;
+        for (const r of records.rows) {
+          const amt = parseFloat(r.amount || "0");
+          if (allocatable + amt <= requestAmount) allocatable += amt;
+          else break;
+        }
+        if (allocatable > 0 && allocatable < requestAmount) {
+          actualPayoutAmount = allocatable;
+        }
+      }
+      const payoutInsert = await insert("payouts", {
         vendor_id: vendorId,
-        amount: requestAmount,
-        payout_status: "pending",
+        amount: actualPayoutAmount,
+        payout_status: "processing",
         bank_account_number: bank.account_number,
         ifsc_code: bank.ifsc_code,
         account_holder_name: bank.account_holder_name,
         payment_ids: []
       }).catch(() => null);
-      return c.json({
-        success: true,
-        message: "Payout request submitted",
-        payoutId: payout?.[0]?.id
-      });
+      const payoutId = payoutInsert?.[0]?.id;
+      try {
+        const razorpayClient2 = await getRazorpayClient();
+        const payoutResponse = await razorpayClient2.payouts.create({
+          account_number: bank.account_number,
+          fund_account: {
+            account_type: "bank_account",
+            bank_account: {
+              name: bank.account_holder_name,
+              ifsc: bank.ifsc_code,
+              account_number: bank.account_number
+            }
+          },
+          amount: Math.round(actualPayoutAmount * 100),
+          // paise
+          currency: "INR",
+          mode: "IMPS",
+          purpose: "payout",
+          queue_if_low_balance: true,
+          reference_id: `PAYOUT-${payoutId || Date.now()}`
+        });
+        if (payoutId) {
+          await update("payouts", { id: payoutId }, {
+            razorpay_payout_id: payoutResponse.id,
+            payout_status: "processing"
+          });
+        }
+        let remainingToAllocate = actualPayoutAmount;
+        if (settlementsPending > 0 && remainingToAllocate > 0) {
+          const settlementRows = await query(
+            `SELECT id, COALESCE(net_amount, vendor_amount) as amt FROM settlements WHERE vendor_id = $1 AND (status = 'pending' OR settlement_status = 'pending') ORDER BY created_at ASC`,
+            [vendorId]
+          ).catch(() => ({ rows: [] }));
+          for (const row of settlementRows.rows) {
+            if (remainingToAllocate <= 0) break;
+            const amt = parseFloat(row.amt || "0");
+            if (amt <= 0) continue;
+            if (amt <= remainingToAllocate) {
+              remainingToAllocate -= amt;
+              await query(
+                `UPDATE settlements SET status = 'processing', settlement_status = 'processing' WHERE id = $1`,
+                [row.id]
+              ).catch(() => {
+              });
+            }
+          }
+        }
+        if (earningsPending > 0 && remainingToAllocate > 0) {
+          const toMark = await query(
+            `SELECT id, amount FROM vendor_earnings WHERE vendor_id = $1 AND status = 'pending' ORDER BY realized_at ASC`,
+            [vendorId]
+          ).catch(() => ({ rows: [] }));
+          let allocated = 0;
+          for (const row of toMark.rows) {
+            const amt = parseFloat(row.amount || "0");
+            if (amt <= 0) continue;
+            if (allocated + amt > remainingToAllocate) break;
+            allocated += amt;
+            await query(
+              `UPDATE vendor_earnings SET status = 'paid_out', paid_out_at = NOW() WHERE id = $1`,
+              [row.id]
+            ).catch(() => {
+            });
+          }
+        }
+        return c.json({
+          success: true,
+          message: "Payout initiated successfully. Funds will reach your bank within 1\u20132 business days.",
+          payoutId,
+          razorpayPayoutId: payoutResponse.id
+        });
+      } catch (razorpayError) {
+        const isNotFound = razorpayError?.message?.includes("not found") || razorpayError?.message?.includes("404") || razorpayError?.statusCode === 404;
+        if (payoutId) {
+          await update("payouts", { id: payoutId }, {
+            payout_status: isNotFound ? "pending" : "failed",
+            failure_reason: razorpayError?.message || "Razorpay API error"
+          });
+        }
+        if (isNotFound) {
+          return c.json({
+            success: true,
+            message: "Payout request recorded. RazorpayX payout API is not available for this account; your request will be processed manually or when RazorpayX is configured.",
+            payoutId,
+            razorpayPayoutId: null
+          });
+        }
+        const msg = razorpayError?.message || "Razorpay payout failed";
+        return c.json({ success: false, error: msg }, 500);
+      }
     } catch (error) {
       console.error("Error requesting settlement:", error);
       return c.json({ success: false, error: error.message }, 500);
@@ -162098,8 +164320,8 @@ function registerSettlementEndpoints(app3) {
         payout_status: "processing"
       });
       try {
-        const razorpayClient = await getRazorpayClient();
-        const payoutResponse = await razorpayClient.payouts.create({
+        const razorpayClient2 = await getRazorpayClient();
+        const payoutResponse = await razorpayClient2.payouts.create({
           account_number: bank.account_number,
           fund_account: {
             account_type: "bank_account",
@@ -162190,8 +164412,8 @@ function registerSettlementEndpoints(app3) {
             created_at: (/* @__PURE__ */ new Date()).toISOString()
           });
           try {
-            const razorpayClient = await getRazorpayClient();
-            const payoutResponse = await razorpayClient.payouts.create({
+            const razorpayClient2 = await getRazorpayClient();
+            const payoutResponse = await razorpayClient2.payouts.create({
               account_number: bank.account_number,
               fund_account: {
                 account_type: "bank_account",
@@ -162269,7 +164491,10 @@ function registerSettlementEndpoints(app3) {
   });
   app3.put("/vendor/:vendorId/bank-details", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      const resolved = await resolveOrCreateVendorIdForBank(paramVendorId);
+      if ("error" in resolved) return c.json({ error: resolved.error }, resolved.status);
+      const vendorId = resolved.actualVendorId;
       const bankData = await c.req.json().catch(() => ({}));
       const accountNumber = bankData.accountNumber ?? bankData.account_number;
       const ifscCode = bankData.ifscCode ?? bankData.ifsc_code;
@@ -162307,7 +164532,10 @@ function registerSettlementEndpoints(app3) {
   });
   app3.post("/vendor/:vendorId/bank-details", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      const resolved = await resolveOrCreateVendorIdForBank(paramVendorId);
+      if ("error" in resolved) return c.json({ error: resolved.error }, resolved.status);
+      const vendorId = resolved.actualVendorId;
       const bankData = await c.req.json();
       const {
         accountNumber,
@@ -162326,7 +164554,7 @@ function registerSettlementEndpoints(app3) {
           { vendor_id: vendorId },
           {
             account_number: accountNumber,
-            ifsc_code: ifscCode,
+            ifsc_code: (ifscCode || "").toString().toUpperCase(),
             account_holder_name: accountHolderName,
             bank_name: bankName || null
           }
@@ -162336,7 +164564,7 @@ function registerSettlementEndpoints(app3) {
         const created = await insert("vendor_bank_details", {
           vendor_id: vendorId,
           account_number: accountNumber,
-          ifsc_code: ifscCode,
+          ifsc_code: (ifscCode || "").toString().toUpperCase(),
           account_holder_name: accountHolderName,
           bank_name: bankName || null
         });
@@ -162354,58 +164582,17 @@ function registerSettlementEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/bank-details", async (c) => {
     try {
-      const { vendorId } = c.req.param();
-      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+      const { vendorId: paramVendorId } = c.req.param();
+      if (paramVendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
         return c.json({
           success: true,
           bankDetails: null,
           message: "No bank details configured"
         });
       }
-      let actualVendorId = vendorId;
-      const existingVendor = await select("vendors", { id: vendorId });
-      if (existingVendor.length === 0) {
-        console.log(`[BankDetails] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-        const identities = await select("vendor_identity", { id: vendorId });
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
-            const vendorByPhone = await select("vendors", { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              actualVendorId = vendorByPhone[0].id;
-              console.log(`[BankDetails] Found existing vendor by phone: ${actualVendorId}`);
-            } else {
-              const applications = await select("vendor_onboarding_applications", { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              console.log(`[BankDetails] Auto-creating vendor record for approved vendor ${vendorId}`);
-              await insert("vendors", {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
-                role_id: identity.selected_role_id,
-                category: "general",
-                address: payload.address || "Not specified",
-                city: payload.city || "Not specified",
-                state: payload.state || "Not specified",
-                pincode: payload.pin || payload.pincode || "",
-                // Don't use default - require actual pincode
-                status: "active",
-                is_active: true,
-                created_at: (/* @__PURE__ */ new Date()).toISOString(),
-                updated_at: (/* @__PURE__ */ new Date()).toISOString()
-              });
-              console.log(`[BankDetails] Created vendor record for ${vendorId}`);
-            }
-          } else {
-            return c.json({ error: "Vendor not approved or activated" }, 403);
-          }
-        } else {
-          return c.json({ error: "Vendor not found" }, 404);
-        }
-      }
+      const resolved = await resolveOrCreateVendorIdForBank(paramVendorId);
+      if ("error" in resolved) return c.json({ error: resolved.error }, resolved.status);
+      const actualVendorId = resolved.actualVendorId;
       let bankDetails = [];
       try {
         const schemaCheck = await query(`
@@ -162471,7 +164658,18 @@ function registerSettlementEndpoints(app3) {
     } catch (_) {
     }
     if (bankDetails.length === 0) {
-      bankDetails = await select("vendor_bank_details", { vendor_id: vendorId });
+      const hasVerified = await query(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vendor_bank_details' AND column_name = 'is_verified') as ex`
+      ).catch(() => ({ rows: [{ ex: false }] }));
+      if (hasVerified.rows?.[0]?.ex) {
+        const vbd = await query(
+          `SELECT * FROM vendor_bank_details WHERE vendor_id = $1 AND is_verified = true LIMIT 1`,
+          [vendorId]
+        ).catch(() => ({ rows: [] }));
+        bankDetails = vbd.rows || [];
+      } else {
+        bankDetails = await select("vendor_bank_details", { vendor_id: vendorId }).catch(() => []);
+      }
     }
     if (bankDetails.length === 0) {
       console.warn(`Vendor ${vendorId} has no bank details, skipping payout`);
@@ -162483,15 +164681,70 @@ function registerSettlementEndpoints(app3) {
       console.warn(`Vendor ${vendorId} bank not verified, skipping auto payout`);
       return;
     }
-    await insert("payouts", {
+    const accountNumber = String(bank.account_number || "").replace(/\s/g, "");
+    const ifscCode = String(bank.ifsc_code || bank.ifsc || "").toUpperCase().trim();
+    const accountHolder = String(bank.account_holder_name || bank.account_holder || bank.beneficiary_name || "Vendor").trim();
+    if (!accountNumber || !ifscCode || !accountHolder) {
+      console.warn(`Vendor ${vendorId} bank record incomplete, skipping payout`);
+      return;
+    }
+    const payoutRecord = await insert("payouts", {
       vendor_id: vendorId,
       amount,
       settlement_id: settlementId,
-      bank_account_number: bank.account_number,
-      ifsc_code: bank.ifsc_code,
-      account_holder_name: bank.account_holder_name,
+      bank_account_number: accountNumber,
+      ifsc_code: ifscCode,
+      account_holder_name: accountHolder,
       payout_status: "pending"
     });
+    const payoutId = payoutRecord[0]?.id;
+    if (!payoutId) return;
+    const razorpayXAccountNumber = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
+    if (!razorpayXAccountNumber) {
+      return;
+    }
+    let vendorPhone = "0000000000";
+    try {
+      const v = await query(`SELECT phone FROM vendors WHERE id = $1 LIMIT 1`, [vendorId]);
+      if (v?.rows?.[0]?.phone) vendorPhone = String(v.rows[0].phone).replace(/\D/g, "").slice(-10) || vendorPhone;
+    } catch (_) {
+    }
+    const razorpayClient2 = getRazorpayClient();
+    const compositeBody = {
+      account_number: razorpayXAccountNumber,
+      amount: Math.round(amount * 100),
+      currency: "INR",
+      mode: "IMPS",
+      purpose: "payout",
+      fund_account: {
+        account_type: "bank_account",
+        bank_account: { name: accountHolder, ifsc: ifscCode, account_number: accountNumber },
+        contact: {
+          name: accountHolder,
+          email: `vendor-${vendorId}@payout.warmpawz.com`,
+          contact: vendorPhone,
+          type: "vendor",
+          reference_id: `vendor-${vendorId}`
+        }
+      },
+      queue_if_low_balance: true,
+      reference_id: `PAYOUT-${payoutId}`.slice(0, 40)
+    };
+    try {
+      const payoutResponse = await razorpayClient2.payouts.create(compositeBody, payoutId);
+      await query(
+        `UPDATE payouts SET payout_status = $1, razorpay_payout_id = $2 WHERE id = $3::uuid`,
+        ["processing", payoutResponse?.id ?? null, payoutId]
+      );
+    } catch (rpErr) {
+      const msg = rpErr?.message ?? rpErr?.error?.description ?? "Razorpay payout failed";
+      console.warn(`[createPayout] Razorpay error for vendor ${vendorId}:`, msg);
+      await query(
+        `UPDATE payouts SET payout_status = $1, failure_reason = $2 WHERE id = $3::uuid`,
+        ["failed", msg, payoutId]
+      ).catch(() => {
+      });
+    }
   }
 }
 
@@ -163467,7 +165720,7 @@ function registerRegionEndpoints(app3) {
 // src/endpoints/chat.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns7 = require("@aws-sdk/client-sns");
+var import_client_sns8 = require("@aws-sdk/client-sns");
 function registerChatEndpoints(app3) {
   app3.get("/chat/conversations", async (c) => {
     try {
@@ -163762,7 +166015,7 @@ function registerChatEndpoints(app3) {
       const recipientPhone = senderType === "customer" ? (await select("vendors", { id: booking.vendor_id }))[0]?.phone : (await select("customers", { id: booking.customer_id }))[0]?.phone;
       if (recipientPhone) {
         const snsClient4 = getSnsClient();
-        await snsClient4.send(new import_client_sns7.PublishCommand({
+        await snsClient4.send(new import_client_sns8.PublishCommand({
           PhoneNumber: recipientPhone,
           Message: `New message from ${senderName || senderPhone}: ${message2.substring(0, 100)}`,
           MessageAttributes: {
@@ -163801,6 +166054,23 @@ function registerChatEndpoints(app3) {
       return c.json({ error: error.message }, 500);
     }
   });
+  app3.post("/chat/mark-read/:bookingId", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const body = await c.req.json().catch(() => ({}));
+      if (!isValidUUID(bookingId)) {
+        return c.json({ success: true, message: "No messages to mark" });
+      }
+      await query(
+        `UPDATE chat_messages SET is_read = true, read_at = COALESCE(read_at, NOW()) WHERE booking_id = $1 AND is_read = false`,
+        [bookingId]
+      ).catch(() => ({ rowCount: 0 }));
+      return c.json({ success: true, message: "Messages marked as read" });
+    } catch (error) {
+      console.error("Error marking booking chat as read:", error);
+      return c.json({ success: true, message: "Messages marked as read" });
+    }
+  });
   app3.post("/chat/send", async (c) => {
     try {
       const body = await c.req.json();
@@ -163832,7 +166102,7 @@ function registerChatEndpoints(app3) {
       });
       if (receiverPhone) {
         const snsClient4 = getSnsClient();
-        await snsClient4.send(new import_client_sns7.PublishCommand({
+        await snsClient4.send(new import_client_sns8.PublishCommand({
           PhoneNumber: receiverPhone,
           Message: `New message from ${senderName || senderPhone}: ${message2.substring(0, 100)}`,
           MessageAttributes: {
@@ -163883,7 +166153,7 @@ function registerChatEndpoints(app3) {
       if (recipientPhone) {
         const snsClient4 = getSnsClient();
         if (snsClient4) {
-          await snsClient4.send(new import_client_sns7.PublishCommand({
+          await snsClient4.send(new import_client_sns8.PublishCommand({
             TopicArn: process.env.CHAT_NOTIFICATIONS_TOPIC_ARN,
             Message: JSON.stringify({
               type: "chat_message",
@@ -171460,7 +173730,8 @@ function registerReportEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/reports", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param("vendorId");
+      const vendorId = await resolveVendorId(paramVendorId);
       const reportType = c.req.query("reportType") || "all";
       const dateRange = c.req.query("dateRange") || "30d";
       if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
@@ -171577,7 +173848,9 @@ function registerReportEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/reports/:reportId/data", async (c) => {
     try {
-      const { vendorId, reportId } = c.req.param();
+      const paramVendorId = c.req.param("vendorId");
+      const vendorId = await resolveVendorId(paramVendorId);
+      const reportId = c.req.param("reportId");
       const reports = await select("vendor_reports", { id: reportId, vendor_id: vendorId });
       if (reports.length === 0) {
         return c.json({
@@ -172287,61 +174560,75 @@ function registerAdminIntegrationEndpoints(app3) {
     }
   });
   let cachedGoogleMapsKey = null;
+  let cachedMapId = void 0;
   let cacheExpiry = 0;
   const CACHE_TTL_MS = 5 * 60 * 1e3;
+  const DEFAULT_MAP_STYLE_ID = "91ba2b86f2fafdb672497f7c";
   app3.get("/config/google-maps-key", async (c) => {
     try {
-      console.log("[CONFIG] Fetching Google Maps API key...");
+      console.log("[CONFIG] Fetching Google Maps config...");
       if (cachedGoogleMapsKey && Date.now() < cacheExpiry) {
-        console.log("[CONFIG] Returning cached API key");
-        return c.json({ apiKey: cachedGoogleMapsKey });
+        const response = { apiKey: cachedGoogleMapsKey };
+        if (cachedMapId) response.mapId = cachedMapId;
+        return c.json(response);
       }
       let apiKey = null;
+      let mapId = null;
       try {
-        console.log("[CONFIG] Checking database for Google Maps API key...");
-        const settings = await select("platform_settings", { setting_key: "google_maps_api_key" });
-        if (settings.length > 0 && settings[0].setting_value) {
-          const value = settings[0].setting_value;
+        const keySettings = await select("platform_settings", { setting_key: "google_maps_api_key" });
+        if (keySettings.length > 0 && keySettings[0].setting_value) {
+          const value = keySettings[0].setting_value;
           apiKey = typeof value === "string" ? value : value.apiKey || value.key || null;
-          if (apiKey) {
-            console.log("[CONFIG] Found API key in database");
-          }
+        }
+        const mapIdSettings = await select("platform_settings", { setting_key: "google_maps_map_id" });
+        if (mapIdSettings.length > 0 && mapIdSettings[0].setting_value) {
+          const val = mapIdSettings[0].setting_value;
+          mapId = typeof val === "string" ? val : val?.mapId || val?.map_id || null;
         }
       } catch (dbError) {
         console.warn("[CONFIG] Database lookup failed:", dbError);
       }
       if (!apiKey) {
         apiKey = process.env.GOOGLE_MAPS_API_KEY || null;
-        if (apiKey) {
-          console.log("[CONFIG] Found API key in environment variable");
+      }
+      if (!mapId) {
+        mapId = process.env.GOOGLE_MAPS_MAP_ID || null;
+      }
+      if (!apiKey || !mapId) {
+        try {
+          const secretJson = await getSecretJson("google-maps");
+          if (secretJson) {
+            if (!apiKey && secretJson.apiKey) apiKey = secretJson.apiKey;
+            if (!apiKey && secretJson.api_key) apiKey = secretJson.api_key;
+            if (!mapId && secretJson.mapId) mapId = secretJson.mapId;
+            if (!mapId && secretJson.map_id) mapId = secretJson.map_id;
+          }
+        } catch {
+        }
+        if (!apiKey) {
+          try {
+            const keyPromise = getSecret("google-maps/api-key");
+            const timeoutPromise = new Promise(
+              (_, reject) => setTimeout(() => reject(new Error("timeout")), 5e3)
+            );
+            apiKey = await Promise.race([keyPromise, timeoutPromise]);
+          } catch {
+          }
         }
       }
-      if (!apiKey) {
-        try {
-          console.log("[CONFIG] Checking Secrets Manager...");
-          const secretPromise = getSecret("google-maps/api-key");
-          const timeoutPromise = new Promise(
-            (_, reject) => setTimeout(() => reject(new Error("Secrets Manager timeout")), 5e3)
-          );
-          apiKey = await Promise.race([secretPromise, timeoutPromise]);
-          if (apiKey) {
-            console.log("[CONFIG] Found API key in Secrets Manager");
-          }
-        } catch (smError) {
-          console.warn("[CONFIG] Secrets Manager access failed (expected if no VPC endpoint):", smError.message);
-        }
+      if (!mapId) {
+        mapId = DEFAULT_MAP_STYLE_ID;
       }
       if (apiKey) {
         if (/^\d+$/.test(apiKey)) {
-          console.error("[CONFIG] Invalid API Key: Looks like a project number, not an API key");
           return c.json({
             error: "Invalid API key: Please use a Google Maps API key (starts with AIza...), not a project number"
           }, 500);
         }
         cachedGoogleMapsKey = apiKey;
+        cachedMapId = mapId;
         cacheExpiry = Date.now() + CACHE_TTL_MS;
-        console.log("[CONFIG] Returning API key to client:", `${apiKey.substring(0, 10)}...`);
-        return c.json({ apiKey });
+        return c.json({ apiKey, mapId });
       }
       console.warn("[CONFIG] Google Maps API key not found in any source");
       return c.json({
@@ -172349,7 +174636,7 @@ function registerAdminIntegrationEndpoints(app3) {
         hint: "Please configure Google Maps API key in Admin > Platform Settings or via API"
       }, 404);
     } catch (error) {
-      console.error("[CONFIG] Error fetching Google Maps API key:", error);
+      console.error("[CONFIG] Error fetching Google Maps config:", error);
       return c.json({
         error: error.message || "Failed to fetch Google Maps API key",
         details: error.name || "Unknown error"
@@ -174703,8 +176990,8 @@ async function createShiprocketShipmentInternal(params) {
 async function createDelhiveryShipment(c, params) {
   const { orderId, order, orderItems, customer, shippingAddress, partner } = params;
   try {
-    const { getSecretJson: getSecretJson3 } = await Promise.resolve().then(() => (init_secrets_manager(), secrets_manager_exports));
-    const config = await getSecretJson3("delhivery");
+    const { getSecretJson: getSecretJson2 } = await Promise.resolve().then(() => (init_secrets_manager(), secrets_manager_exports));
+    const config = await getSecretJson2("delhivery");
     if (!config?.api_token || !config?.client_name) {
       console.warn("[DELHIVERY] Credentials not configured, falling back to Shiprocket");
       return c.json({
@@ -175158,8 +177445,8 @@ function registerReturnsEndpoints(app3) {
         return sum + parseFloat(item.price || "0") * (item.quantity || 1);
       }, 0);
       try {
-        const razorpayClient = await getRazorpayClient();
-        const refund = await razorpayClient.payments.refund({
+        const razorpayClient2 = await getRazorpayClient();
+        const refund = await razorpayClient2.payments.refund({
           payment_id: order.payment_id || "",
           amount: Math.round(refundAmount * 100)
           // Convert to paise
@@ -175249,7 +177536,7 @@ function registerReturnsEndpoints(app3) {
 // src/endpoints/order-management.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns8 = require("@aws-sdk/client-sns");
+var import_client_sns9 = require("@aws-sdk/client-sns");
 var validTransitions = {
   "pending": ["confirmed", "cancelled"],
   "confirmed": ["processing", "cancelled"],
@@ -175316,7 +177603,7 @@ function registerOrderManagementEndpoints(app3) {
       const vendor = order.vendor_id ? await select("vendors", { id: order.vendor_id }) : [];
       const snsClient4 = getSnsClient();
       if (customer.length > 0 && customer[0].phone) {
-        await snsClient4.send(new import_client_sns8.PublishCommand({
+        await snsClient4.send(new import_client_sns9.PublishCommand({
           PhoneNumber: customer[0].phone,
           Message: `Your order ${order.order_number} status updated to: ${status}`,
           MessageAttributes: {
@@ -175504,7 +177791,7 @@ function registerOrderManagementEndpoints(app3) {
 // src/endpoints/otp-enhanced.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns9 = require("@aws-sdk/client-sns");
+var import_client_sns10 = require("@aws-sdk/client-sns");
 function generateOTP() {
   return Math.floor(1e5 + Math.random() * 9e5).toString();
 }
@@ -175538,7 +177825,7 @@ function registerEnhancedOtpEndpoints(app3) {
       const customer = customers.length > 0 ? customers[0] : null;
       if (customer?.phone) {
         const snsClient4 = getSnsClient();
-        await snsClient4.send(new import_client_sns9.PublishCommand({
+        await snsClient4.send(new import_client_sns10.PublishCommand({
           PhoneNumber: customer.phone,
           Message: `Your Warmpawz verification code for booking ${bookingId} (${action}): ${otp}. Valid for 24 hours.`,
           MessageAttributes: {
@@ -175694,7 +177981,7 @@ function registerEnhancedOtpEndpoints(app3) {
       const customer = customers.length > 0 ? customers[0] : null;
       if (customer?.phone) {
         const snsClient4 = getSnsClient();
-        await snsClient4.send(new import_client_sns9.PublishCommand({
+        await snsClient4.send(new import_client_sns10.PublishCommand({
           PhoneNumber: customer.phone,
           Message: `Your Warmpawz booking ${booking[0].id} is confirmed! Start OTP: ${startOTP}, End OTP: ${endOTP}. Save these for verification.`,
           MessageAttributes: {
@@ -175721,7 +178008,7 @@ function registerEnhancedOtpEndpoints(app3) {
 // src/endpoints/sms-notifications.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns10 = require("@aws-sdk/client-sns");
+var import_client_sns11 = require("@aws-sdk/client-sns");
 var SMS_TEMPLATES = {
   booking_created: {
     id: "booking_created",
@@ -175835,7 +178122,7 @@ async function triggerBookingNotification(event, data) {
       return;
     }
     const snsClient4 = getSnsClient();
-    await snsClient4.send(new import_client_sns10.PublishCommand({
+    await snsClient4.send(new import_client_sns11.PublishCommand({
       PhoneNumber: recipientPhone,
       Message: message2,
       MessageAttributes: {
@@ -175868,7 +178155,7 @@ function registerSmsNotificationEndpoints(app3) {
         return c.json({ error: "phone and message are required" }, 400);
       }
       const snsClient4 = getSnsClient();
-      const result = await snsClient4.send(new import_client_sns10.PublishCommand({
+      const result = await snsClient4.send(new import_client_sns11.PublishCommand({
         PhoneNumber: phone,
         Message: message2,
         MessageAttributes: {
@@ -175962,1035 +178249,6 @@ function registerSmsNotificationEndpoints(app3) {
       });
     } catch (error) {
       console.error("Error fetching SMS history:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-}
-
-// src/endpoints/vendor-profile.ts
-init_rds_connection();
-init_sns_client();
-var import_client_sns11 = require("@aws-sdk/client-sns");
-var CRITICAL_FIELDS = [
-  "business_name",
-  "owner_name",
-  "gst_number",
-  "pan_number",
-  "registration_number",
-  "address",
-  "city",
-  "state",
-  "pincode",
-  "latitude",
-  "longitude"
-];
-async function decodeJwtFromHeader(authHeader) {
-  if (!authHeader) return {};
-  const token = authHeader.replace(/^Bearer\s+/i, "");
-  if (!token) return {};
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return {};
-    const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf-8"));
-    const phone = payload.phone || payload.phone_number || payload["cognito:username"];
-    const userId = payload.userId || payload.sub || payload.user_id;
-    console.log(`\u{1F510} [JWT-DECODE] Extracted phone: ${phone}, userId: ${userId}`);
-    return {
-      phone,
-      userId
-    };
-  } catch (e) {
-    console.warn("Failed to decode JWT:", e);
-    return {};
-  }
-}
-function registerVendorProfileEndpoints(app3) {
-  app3.get("/vendor/profile", async (c) => {
-    try {
-      const authHeader = c.req.header("Authorization");
-      const { phone, userId: vendorIdFromAuth } = await decodeJwtFromHeader(authHeader);
-      console.log(`\u{1F4CA} [PROFILE-GET] Getting profile for phone: ${phone}, vendorId: ${vendorIdFromAuth}`);
-      let vendor = null;
-      let identityData = null;
-      if (vendorIdFromAuth && !vendorIdFromAuth.startsWith("temp_")) {
-        try {
-          const vendors = await select("vendors", { id: vendorIdFromAuth });
-          if (vendors.length > 0) {
-            vendor = vendors[0];
-          }
-        } catch (e) {
-          console.warn(`[PROFILE-GET] Error finding vendor by ID ${vendorIdFromAuth}:`, e);
-        }
-      }
-      if (!vendor && phone) {
-        try {
-          const vendorsByPhone = await select("vendors", { phone });
-          if (vendorsByPhone.length > 0) {
-            vendor = vendorsByPhone[0];
-          }
-        } catch (e) {
-          console.warn(`[PROFILE-GET] Error finding vendor by phone:`, e);
-        }
-      }
-      if (phone) {
-        try {
-          const identities = await select("vendor_identity", { phone });
-          if (identities.length > 0) {
-            identityData = identities[0];
-            if (!vendor && identityData && typeof identityData.vendor_id === "string") {
-              try {
-                const vendors = await select("vendors", { id: identityData.vendor_id });
-                if (vendors.length > 0) {
-                  vendor = vendors[0];
-                }
-              } catch (e) {
-                console.warn(`[PROFILE-GET] Error finding vendor by identity.vendor_id:`, e);
-              }
-            }
-          }
-        } catch (e) {
-          console.warn(`[PROFILE-GET] Error fetching vendor_identity:`, e);
-        }
-      }
-      if (!vendor) {
-        if (identityData) {
-          const identityStatus = identityData.onboarding_status || "INIT";
-          console.log(`\u{1F4DD} [PROFILE-GET] Vendor in onboarding, status: ${identityStatus}`);
-          return c.json({
-            success: true,
-            vendor: {
-              id: identityData.id,
-              phone,
-              status: identityStatus.toLowerCase(),
-              isActive: false,
-              onboardingStatus: identityStatus
-            },
-            status: identityStatus === "APPROVED" ? "approved" : identityStatus === "INIT" ? "new" : identityStatus.toLowerCase(),
-            message: "Vendor in onboarding"
-          });
-        }
-        console.log(`\u26A0\uFE0F [PROFILE-GET] No vendor found for phone: ${phone}`);
-        return c.json({
-          success: true,
-          vendor: null,
-          status: "new",
-          message: "No vendor profile found"
-        });
-      }
-      let applicationData = null;
-      try {
-        const applications = await select("vendor_onboarding_applications", { vendor_id: vendor.id });
-        if (applications.length > 0) {
-          applicationData = applications[0];
-        }
-      } catch (e) {
-        try {
-          const appsByPhone = await query(
-            "SELECT * FROM vendor_onboarding_applications WHERE application_payload->>'phone' = $1 ORDER BY created_at DESC LIMIT 1",
-            [phone]
-          );
-          if (appsByPhone.rows?.length > 0) {
-            applicationData = appsByPhone.rows[0];
-          }
-        } catch (e2) {
-          console.warn("[PROFILE-GET] Error fetching applications:", e2);
-        }
-      }
-      let roleInfo = null;
-      try {
-        if (vendor.role_id) {
-          const roles = await select("roles", { id: vendor.role_id });
-          if (roles.length > 0) {
-            roleInfo = roles[0];
-          }
-        }
-      } catch (e) {
-        console.warn("[PROFILE-GET] Error fetching role info:", e);
-      }
-      let uiStatus = "new";
-      if (vendor.is_active) {
-        uiStatus = "active";
-      } else if (vendor.status === "approved") {
-        uiStatus = vendor.setup_completed ? "active" : "approved";
-      } else if (vendor.status === "pending" || vendor.status === "under_review") {
-        uiStatus = "pending";
-      } else if (vendor.status === "rejected") {
-        uiStatus = "rejected";
-      } else if (applicationData?.status) {
-        uiStatus = applicationData.status;
-      }
-      console.log(`\u2705 [PROFILE-GET] Found vendor: ${vendor.id}, status: ${uiStatus}`);
-      return c.json({
-        success: true,
-        vendor: {
-          id: vendor.id,
-          businessName: vendor.business_name,
-          ownerName: vendor.owner_name,
-          phone: vendor.phone,
-          email: vendor.email,
-          status: uiStatus,
-          isActive: vendor.is_active,
-          setupCompleted: vendor.setup_completed,
-          servicesSetupCompleted: vendor.services_setup_completed,
-          availabilitySetupCompleted: vendor.availability_setup_completed,
-          roleId: vendor.role_id,
-          roleName: roleInfo?.name,
-          vendorType: vendor.vendor_type,
-          serviceStyle: vendor.service_style,
-          applicationId: applicationData?.id,
-          applicationStatus: applicationData?.status,
-          createdAt: vendor.created_at
-        }
-      });
-    } catch (error) {
-      console.error("\u274C [PROFILE-GET] Error:", error);
-      return c.json({ error: "Failed to get vendor profile", details: error.message }, 500);
-    }
-  });
-  app3.post("/vendor/:vendorId/profile/photo", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      console.log(`\u{1F4F8} [PROFILE-PHOTO] Uploading photo for vendor: ${vendorId}`);
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const formData = await c.req.formData();
-      const photo = formData.get("photo");
-      if (!photo) {
-        return c.json({ error: "No photo provided" }, 400);
-      }
-      const { S3Client: S3Client7, PutObjectCommand: PutObjectCommand6, GetObjectCommand: GetObjectCommand5 } = await import("@aws-sdk/client-s3");
-      const { getSignedUrl: getSignedUrl4 } = await import("@aws-sdk/s3-request-presigner");
-      const s3Client6 = new S3Client7({ region: process.env.AWS_REGION || "ap-south-1" });
-      const BUCKET_NAME3 = process.env.S3_UPLOADS_BUCKET || "warmpawz-dev-uploads";
-      const timestamp = Date.now();
-      const ext = photo.name.split(".").pop() || "jpg";
-      const fileName = `vendors/${vendorId}/profile/photo_${timestamp}.${ext}`;
-      const arrayBuffer = await photo.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      await s3Client6.send(new PutObjectCommand6({
-        Bucket: BUCKET_NAME3,
-        Key: fileName,
-        Body: uint8Array,
-        ContentType: photo.type || "image/jpeg"
-      }));
-      const signedUrl = await getSignedUrl4(
-        s3Client6,
-        new GetObjectCommand5({
-          Bucket: BUCKET_NAME3,
-          Key: fileName
-        }),
-        { expiresIn: 604800 }
-        // 7 days (max for presigned URLs)
-      );
-      await update("vendors", { id: vendorId }, {
-        profile_photo_url: signedUrl,
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      console.log(`\u2705 [PROFILE-PHOTO] Photo uploaded successfully for vendor ${vendorId}`);
-      return c.json({
-        success: true,
-        photo_url: signedUrl,
-        fileName
-      });
-    } catch (error) {
-      console.error("\u274C [PROFILE-PHOTO] Error uploading photo:", error);
-      return c.json({ error: error.message || "Failed to upload photo" }, 500);
-    }
-  });
-  const profileUpdateHandler = async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const rawUpdates = await c.req.json();
-      console.log(`\u{1F4DD} [PROFILE-UPDATE] Vendor ${vendorId} updating profile`, rawUpdates);
-      const camelToSnakeMap = {
-        businessName: "business_name",
-        ownerName: "owner_name",
-        profilePhotoUrl: "profile_photo_url",
-        isActive: "is_active",
-        setupCompleted: "setup_completed",
-        servicesSetupCompleted: "services_setup_completed",
-        availabilitySetupCompleted: "availability_setup_completed",
-        roleId: "role_id",
-        createdAt: "created_at",
-        updatedAt: "updated_at"
-      };
-      const updates = {};
-      for (const [key, value] of Object.entries(rawUpdates)) {
-        const dbKey = camelToSnakeMap[key] || key;
-        updates[dbKey] = value;
-      }
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const vendor = vendors[0];
-      const wasApproved = vendor.status === "approved";
-      const previousStatus = vendor.status;
-      let criticalFieldsChanged = false;
-      const changedFields = [];
-      for (const field of CRITICAL_FIELDS) {
-        if (updates[field] !== void 0 && updates[field] !== vendor[field]) {
-          criticalFieldsChanged = true;
-          changedFields.push(field);
-        }
-      }
-      console.log(`\u{1F50D} [PROFILE-UPDATE] Critical fields changed: ${criticalFieldsChanged}`);
-      console.log(`\u{1F4CB} [PROFILE-UPDATE] Changed fields: ${changedFields.join(", ")}`);
-      const schemaResult = await query(`
-        SELECT column_name FROM information_schema.columns 
-        WHERE table_name = 'vendors'
-      `);
-      const existingColumns = new Set(schemaResult.rows.map((r) => r.column_name));
-      const safeColumns = [
-        "business_name",
-        "owner_name",
-        "phone",
-        "email",
-        "address",
-        "city",
-        "state",
-        "pincode",
-        "description",
-        "profile_photo_url",
-        "latitude",
-        "longitude",
-        "is_active",
-        "status",
-        "setup_completed",
-        "services_setup_completed",
-        "availability_setup_completed",
-        "metadata",
-        "experience_years",
-        "qualifications",
-        "service_area",
-        "specializations"
-        // ✅ Added for solo provider profile
-      ];
-      const updateData = {};
-      for (const [key, value] of Object.entries(updates)) {
-        if (safeColumns.includes(key) && existingColumns.has(key)) {
-          updateData[key] = value;
-        }
-      }
-      const skippedFields = Object.keys(updates).filter((k) => !existingColumns.has(k) && safeColumns.includes(k));
-      if (skippedFields.length > 0) {
-        console.log(`\u26A0\uFE0F [PROFILE-UPDATE] Skipped non-existent columns: ${skippedFields.join(", ")}`);
-      }
-      if (criticalFieldsChanged && wasApproved) {
-        console.log(`\u26A0\uFE0F [PROFILE-UPDATE] Critical fields changed - requiring re-approval`);
-        updateData.status = "pending";
-        updateData.metadata = {
-          ...vendor.metadata || {},
-          previousStatus,
-          wasApprovedBefore: true,
-          reapprovalReason: `Critical profile fields updated: ${changedFields.join(", ")}`,
-          reapprovalRequestedAt: (/* @__PURE__ */ new Date()).toISOString()
-        };
-        await insert("notifications", {
-          recipient_id: null,
-          // Admin notifications can have null recipient_id
-          recipient_type: "admin",
-          title: "Profile Update Review Required",
-          message: `Approved vendor "${vendor.business_name}" updated their profile. Re-approval required.`,
-          notification_type: "admin_alert",
-          channels: { email: true, sms: false, inApp: true, push: false },
-          is_read: false
-        }).catch((error) => {
-          console.warn("[VENDOR-PROFILE] Error creating notification:", error instanceof Error ? error.message : "Unknown error");
-        });
-        const snsClient4 = getSnsClient();
-        await snsClient4.send(new import_client_sns11.PublishCommand({
-          TopicArn: process.env.ADMIN_ALERT_TOPIC_ARN,
-          Message: JSON.stringify({
-            eventType: "VendorProfileUpdate",
-            vendorId,
-            vendorName: vendor.business_name,
-            changedFields,
-            requiresReapproval: true
-          })
-        })).catch((err) => console.error("SNS notification failed:", err));
-        const updated = await update("vendors", { id: vendorId }, updateData);
-        return c.json({
-          success: true,
-          message: "Profile updated. Re-approval required for critical changes.",
-          requiresReapproval: true,
-          changedFields,
-          status: "pending",
-          vendor: updated[0]
-        });
-      } else {
-        console.log(`\u2705 [PROFILE-UPDATE] Non-critical fields updated - no re-approval needed`);
-        const updated = await update("vendors", { id: vendorId }, updateData);
-        return c.json({
-          success: true,
-          message: "Profile updated successfully",
-          requiresReapproval: false,
-          status: vendor.status,
-          vendor: updated[0]
-        });
-      }
-    } catch (error) {
-      console.error("\u274C [PROFILE-UPDATE] Error updating profile:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  };
-  app3.put("/vendor/:vendorId/profile", profileUpdateHandler);
-  app3.post("/vendor/:vendorId/profile", profileUpdateHandler);
-  app3.get("/vendor/:vendorId/profile/edit-check", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const vendor = vendors[0];
-      const isApproved = vendor.status === "approved";
-      return c.json({
-        canEdit: true,
-        // Vendors can always edit
-        currentStatus: vendor.status,
-        warning: isApproved ? "Editing critical profile fields will require admin re-approval" : null,
-        criticalFields: CRITICAL_FIELDS
-      });
-    } catch (error) {
-      console.error("\u274C [PROFILE-UPDATE] Error checking edit status:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.get("/vendor/:vendorId/profile", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
-        return c.json({
-          success: true,
-          vendor: {
-            id: vendorId,
-            business_name: "Test Vendor",
-            owner_name: "Test Owner",
-            role: null,
-            capabilities: [],
-            vendorTypes: [],
-            serviceStyles: []
-          }
-        });
-      }
-      let vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        console.log(`[PROFILE] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-        const identities = await select("vendor_identity", { id: vendorId });
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
-            const vendorByPhone = await select("vendors", { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              vendors = vendorByPhone;
-              console.log(`[PROFILE] Found existing vendor by phone: ${vendors[0].id}`);
-            } else {
-              const applications = await select("vendor_onboarding_applications", { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              console.log(`[PROFILE] Auto-creating vendor record for approved vendor ${vendorId}`);
-              const newVendor = await insert("vendors", {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
-                role_id: identity.selected_role_id,
-                vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
-                category: "general",
-                address: payload.address || "Not specified",
-                city: payload.city || "Not specified",
-                state: payload.state || "Not specified",
-                pincode: payload.pin || payload.pincode || "",
-                // Don't use default - require actual pincode
-                status: "active",
-                is_active: true,
-                created_at: (/* @__PURE__ */ new Date()).toISOString(),
-                updated_at: (/* @__PURE__ */ new Date()).toISOString()
-              });
-              vendors = newVendor;
-              console.log(`[PROFILE] Created vendor record for ${vendorId}`);
-            }
-          } else {
-            return c.json({ error: "Vendor not approved or activated" }, 403);
-          }
-        } else {
-          return c.json({ error: "Vendor not found" }, 404);
-        }
-      }
-      if (vendors.length === 0) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const vendor = vendors[0];
-      let role = null;
-      let capabilities = [];
-      let roleConfig = {};
-      let vendorConfiguration = null;
-      let selectedServiceStyles = [];
-      let customerService = null;
-      if (vendor.role_id) {
-        try {
-          const roles = await select("roles", { id: vendor.role_id });
-          if (roles.length > 0) {
-            role = roles[0];
-            roleConfig = role.config || {};
-            customerService = role.customer_service || roleConfig?.customer_service || null;
-            const vendorType = vendor.vendor_type;
-            vendorConfiguration = vendorType === "solo" || vendorType === "business" ? vendorType : roleConfig?.vendorConfiguration || null;
-            selectedServiceStyles = roleConfig?.serviceStyles?.selected || [];
-            const permissions = await select("role_permissions", { role_id: vendor.role_id });
-            const baseCapabilities = permissions.map((p) => p.permission_name);
-            if (vendorConfiguration) {
-              const { stage2_service_styles: effectiveCapabilities } = getEffectiveCapabilities({
-                vendorConfiguration,
-                selectedServiceStyles,
-                baseCapabilities,
-                capabilityRules: roleConfig?.capabilityRules
-              });
-              capabilities = effectiveCapabilities;
-            } else {
-              capabilities = baseCapabilities;
-            }
-          }
-        } catch (roleError) {
-          console.warn(`[Vendor Profile] Failed to load role ${vendor.role_id}:`, roleError.message);
-        }
-      }
-      return c.json({
-        success: true,
-        vendor: {
-          ...vendor,
-          // ✅ Explicitly include profile fields (even if null) for solo providers
-          qualifications: vendor.qualifications || null,
-          service_area: vendor.service_area || null,
-          description: vendor.description || null,
-          experience_years: vendor.experience_years ?? null,
-          // Include role info directly in response
-          role: role ? {
-            id: role.id,
-            name: role.name,
-            display_name: role.display_name,
-            description: role.description,
-            config: roleConfig
-          } : null,
-          customer_service: customerService,
-          vendorConfiguration,
-          serviceStyles: selectedServiceStyles,
-          capabilities,
-          // ✅ Filtered capabilities (two-stage)
-          vendorTypes: roleConfig?.vendorTypes || [],
-          profileType: vendorConfiguration === "solo" ? "professional" : "center",
-          allowedServiceStyles: vendorConfiguration ? roleConfig?.serviceStyles?.[vendorConfiguration] || [] : []
-        }
-      });
-    } catch (error) {
-      console.error("Error fetching vendor profile:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.get("/vendor/:vendorId/complete", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
-        return c.json({
-          success: true,
-          vendor: {
-            id: vendorId,
-            business_name: "Test Vendor",
-            owner_name: "Test Owner",
-            role: null,
-            capabilities: [],
-            vendorTypes: [],
-            serviceStyles: []
-          },
-          onboardingForm: null,
-          setupStatus: {
-            profileCompleted: false,
-            servicesConfigured: false,
-            availabilitySet: false,
-            paymentSetup: false,
-            isComplete: false
-          }
-        });
-      }
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const vendor = vendors[0];
-      let role = null;
-      let capabilities = [];
-      let roleConfig = {};
-      let onboardingForm = null;
-      if (vendor.role_id) {
-        try {
-          const roles = await select("roles", { id: vendor.role_id });
-          if (roles.length > 0) {
-            role = roles[0];
-            roleConfig = role.config || {};
-            try {
-              const allPermissions = await query(
-                `SELECT role_id, permission_name 
-                 FROM role_permissions 
-                 WHERE role_id = ANY($1::text[])`,
-                [[vendor.role_id]]
-              );
-              capabilities = allPermissions.rows.map((p) => p.permission_name);
-            } catch {
-              const permissions = await select("role_permissions", { role_id: vendor.role_id });
-              capabilities = permissions.map((p) => p.permission_name);
-            }
-            try {
-              const forms = await select("onboarding_forms", { role_id: role.name });
-              if (forms.length > 0) {
-                const fields = typeof forms[0].fields === "string" ? JSON.parse(forms[0].fields) : forms[0].fields || [];
-                onboardingForm = {
-                  fields: fields.filter((f) => f.isActive !== false),
-                  version: forms[0].version || 1
-                };
-              }
-            } catch (formError) {
-              console.warn(`[Vendor Complete] Failed to load onboarding form:`, formError.message);
-            }
-          }
-        } catch (roleError) {
-          console.warn(`[Vendor Complete] Failed to load role ${vendor.role_id}:`, roleError.message);
-        }
-      }
-      return c.json({
-        success: true,
-        vendor: {
-          ...vendor,
-          role: role ? {
-            id: role.id,
-            name: role.name,
-            display_name: role.display_name,
-            description: role.description,
-            config: roleConfig
-          } : null,
-          capabilities,
-          vendorTypes: roleConfig?.vendorTypes || [],
-          serviceStyles: roleConfig?.serviceStyles || [],
-          onboardingForm
-          // Include form if available
-        }
-      });
-    } catch (error) {
-      console.error("Error fetching complete vendor data:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.get("/vendor/:vendorId/bank-account", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      if (!isValidUUID(vendorId)) {
-        return c.json({ error: "Invalid vendor ID" }, 400);
-      }
-      const schemaCheck = await query(`
-        SELECT 
-          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as has_accounts_table,
-          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_details') as has_details_table
-      `);
-      const schema = schemaCheck.rows[0] || {};
-      let bankAccounts = [];
-      if (schema.has_accounts_table) {
-        try {
-          const accounts = await query(
-            `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 ORDER BY is_primary DESC, created_at DESC LIMIT 1`,
-            [vendorId]
-          );
-          bankAccounts = accounts.rows;
-        } catch (e) {
-          console.warn("Error querying vendor_bank_accounts:", e);
-        }
-      }
-      if (bankAccounts.length === 0 && schema.has_details_table) {
-        try {
-          bankAccounts = await select("vendor_bank_details", { vendor_id: vendorId });
-        } catch (e) {
-          console.warn("Error querying vendor_bank_details:", e);
-        }
-      }
-      if (bankAccounts.length === 0) {
-        return c.json({ success: true, bankAccount: null });
-      }
-      const bankAccount = normalizeDbRow(bankAccounts[0]);
-      return c.json({ success: true, bankAccount });
-    } catch (error) {
-      console.error("Error fetching bank account:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.post("/vendor/:vendorId/bank-account", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const body = await c.req.json();
-      const { account_holder_name, account_number, ifsc_code, bank_name, branch_name } = body;
-      if (!isValidUUID(vendorId)) {
-        return c.json({ error: "Invalid vendor ID" }, 400);
-      }
-      if (!account_holder_name || !account_number || !ifsc_code || !bank_name) {
-        return c.json({ error: "Missing required fields: account_holder_name, account_number, ifsc_code, bank_name" }, 400);
-      }
-      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc_code.toUpperCase())) {
-        return c.json({ error: "Invalid IFSC code format" }, 400);
-      }
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const existing = await select("vendor_bank_details", { vendor_id: vendorId });
-      const bankData = {
-        vendor_id: vendorId,
-        account_holder_name: account_holder_name.trim(),
-        account_number: account_number.replace(/\s/g, ""),
-        ifsc_code: ifsc_code.toUpperCase().trim(),
-        bank_name: bank_name.trim(),
-        branch_name: branch_name?.trim() || null,
-        is_verified: false,
-        // Reset verification status on update
-        verified_at: null,
-        verified_by: null,
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      if (existing.length > 0) {
-        await update("vendor_bank_details", { vendor_id: vendorId }, bankData);
-      } else {
-        await insert("vendor_bank_details", bankData);
-      }
-      await query(
-        `UPDATE vendor_setup_completion 
-         SET bank_account_completed = true, 
-             bank_account_completed_at = NOW(),
-             updated_at = NOW()
-         WHERE vendor_id = $1`,
-        [vendorId]
-      ).catch((error) => {
-        if (error instanceof Error && !error.message.includes("does not exist")) {
-          console.warn("[VENDOR-PROFILE] Unexpected error updating vendor onboarding:", error.message);
-        }
-      });
-      return c.json({ success: true, message: "Bank account saved successfully" });
-    } catch (error) {
-      console.error("Error saving bank account:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.post("/vendor/:vendorId/bank-account/verify", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      if (!isValidUUID(vendorId)) {
-        return c.json({ error: "Invalid vendor ID" }, 400);
-      }
-      const bankAccounts = await select("vendor_bank_details", { vendor_id: vendorId });
-      if (bankAccounts.length === 0) {
-        return c.json({ error: "Bank account not found. Please add bank account details first." }, 404);
-      }
-      return c.json({
-        success: true,
-        message: "Verification request submitted. Our team will review and verify your account shortly."
-      });
-    } catch (error) {
-      console.error("Error requesting verification:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.post("/vendor/:vendorId/bank-account/document", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const body = await c.req.json();
-      const { document_type, document_url } = body;
-      if (!isValidUUID(vendorId)) {
-        return c.json({ error: "Invalid vendor ID" }, 400);
-      }
-      if (!document_type || !document_url) {
-        return c.json({ error: "document_type and document_url are required" }, 400);
-      }
-      return c.json({ success: true, message: "Document uploaded successfully" });
-    } catch (error) {
-      console.error("Error uploading document:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.get("/vendor/:vendorId/settings", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      if (!isValidUUID(vendorId)) {
-        return c.json({ error: "Invalid vendor ID" }, 400);
-      }
-      let vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        console.log(`[SETTINGS] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-        const identities = await select("vendor_identity", { id: vendorId });
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
-            const vendorByPhone = await select("vendors", { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              vendors = vendorByPhone;
-              console.log(`[SETTINGS] Found existing vendor by phone: ${vendors[0].id}`);
-            } else {
-              const applications = await select("vendor_onboarding_applications", { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              console.log(`[SETTINGS] Auto-creating vendor record for approved vendor ${vendorId}`);
-              const newVendor = await insert("vendors", {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
-                role_id: identity.selected_role_id,
-                vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
-                category: "general",
-                address: payload.address || "Not specified",
-                city: payload.city || "Not specified",
-                state: payload.state || "Not specified",
-                pincode: payload.pin || payload.pincode || "",
-                // Don't use default - require actual pincode
-                status: "active",
-                is_active: true,
-                created_at: (/* @__PURE__ */ new Date()).toISOString(),
-                updated_at: (/* @__PURE__ */ new Date()).toISOString()
-              });
-              vendors = newVendor;
-              console.log(`[SETTINGS] Created vendor record for ${vendorId}`);
-            }
-          } else {
-            return c.json({ error: "Vendor not approved or activated" }, 403);
-          }
-        } else {
-          return c.json({ error: "Vendor not found" }, 404);
-        }
-      }
-      if (vendors.length === 0) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const vendor = vendors[0];
-      const settings = {
-        service_radius: vendor.service_radius || null,
-        emergency_contact: vendor.emergency_contact || null,
-        max_dogs_per_walk: vendor.max_dogs_per_walk || null,
-        walk_durations: vendor.walk_durations || [],
-        other_config: vendor.other_config || {}
-      };
-      return c.json({ success: true, settings });
-    } catch (error) {
-      console.error("Error fetching settings:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  const settingsHandler = async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const body = await c.req.json();
-      const { service_radius, emergency_contact, max_dogs_per_walk, walk_durations, other_config } = body;
-      if (!isValidUUID(vendorId)) {
-        return c.json({ error: "Invalid vendor ID" }, 400);
-      }
-      if (emergency_contact) {
-        if (!emergency_contact.name || !emergency_contact.phone) {
-          return c.json({ error: "Emergency contact must have both name and phone" }, 400);
-        }
-        const phoneDigits = emergency_contact.phone.replace(/\D/g, "");
-        if (phoneDigits.length < 10) {
-          return c.json({ error: "Invalid emergency contact phone number" }, 400);
-        }
-      }
-      let vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        console.log(`[SETTINGS-UPDATE] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-        const identities = await select("vendor_identity", { id: vendorId });
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
-            const vendorByPhone = await select("vendors", { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              vendors = vendorByPhone;
-              console.log(`[SETTINGS-UPDATE] Found existing vendor by phone: ${vendors[0].id}`);
-            } else {
-              const applications = await select("vendor_onboarding_applications", { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              console.log(`[SETTINGS-UPDATE] Auto-creating vendor record for approved vendor ${vendorId}`);
-              const newVendor = await insert("vendors", {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
-                role_id: identity.selected_role_id,
-                vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
-                category: "general",
-                address: payload.address || "Not specified",
-                city: payload.city || "Not specified",
-                state: payload.state || "Not specified",
-                pincode: payload.pin || payload.pincode || "",
-                // Don't use default - require actual pincode
-                status: "active",
-                is_active: true,
-                created_at: (/* @__PURE__ */ new Date()).toISOString(),
-                updated_at: (/* @__PURE__ */ new Date()).toISOString()
-              });
-              vendors = newVendor;
-              console.log(`[SETTINGS-UPDATE] Created vendor record for ${vendorId}`);
-            }
-          } else {
-            return c.json({ error: "Vendor not approved or activated" }, 403);
-          }
-        } else {
-          return c.json({ error: "Vendor not found" }, 404);
-        }
-      }
-      if (vendors.length === 0) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const schemaCheck = await query(`
-        SELECT 
-          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'service_radius') as has_service_radius,
-          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'emergency_contact') as has_emergency_contact,
-          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'max_dogs_per_walk') as has_max_dogs,
-          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'walk_durations') as has_walk_durations,
-          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'other_config') as has_other_config,
-          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_settings') as has_vendor_settings_table
-      `);
-      const schema = schemaCheck.rows[0] || {};
-      const setClauses = ["updated_at = NOW()"];
-      const params = [];
-      let paramIdx = 1;
-      if (service_radius !== void 0 && schema.has_service_radius) {
-        setClauses.push(`service_radius = $${paramIdx}`);
-        params.push(service_radius);
-        paramIdx++;
-      }
-      if (emergency_contact !== void 0 && schema.has_emergency_contact) {
-        setClauses.push(`emergency_contact = $${paramIdx}::jsonb`);
-        params.push(JSON.stringify(emergency_contact));
-        paramIdx++;
-      }
-      if (max_dogs_per_walk !== void 0 && schema.has_max_dogs) {
-        setClauses.push(`max_dogs_per_walk = $${paramIdx}`);
-        params.push(max_dogs_per_walk);
-        paramIdx++;
-      }
-      if (walk_durations !== void 0 && schema.has_walk_durations) {
-        if (Array.isArray(walk_durations) && walk_durations.length > 0) {
-          setClauses.push(`walk_durations = $${paramIdx}::text[]`);
-          params.push(walk_durations);
-          paramIdx++;
-        } else {
-          setClauses.push(`walk_durations = NULL`);
-        }
-      }
-      if (other_config !== void 0 && schema.has_other_config) {
-        setClauses.push(`other_config = $${paramIdx}::jsonb`);
-        params.push(JSON.stringify(other_config || {}));
-        paramIdx++;
-      }
-      const actualVendorId = vendors[0].id;
-      params.push(actualVendorId);
-      await query(
-        `UPDATE vendors SET ${setClauses.join(", ")} WHERE id = $${paramIdx}`,
-        params
-      );
-      return c.json({ success: true, message: "Settings updated successfully" });
-    } catch (error) {
-      console.error("Error updating settings:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  };
-  app3.put("/vendor/:vendorId/settings", settingsHandler);
-  app3.post("/vendor/:vendorId/settings", settingsHandler);
-  app3.get("/vendor/:vendorId", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
-        return c.json({
-          success: true,
-          vendor: {
-            id: vendorId,
-            business_name: "Test Vendor",
-            owner_name: "Test Owner",
-            role: null,
-            capabilities: []
-          },
-          menu: []
-        });
-      }
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const vendor = vendors[0];
-      let role = null;
-      let capabilities = [];
-      let roleConfig = {};
-      let isCafe = false;
-      if (vendor.role_id) {
-        try {
-          const roles = await select("roles", { id: vendor.role_id });
-          if (roles.length > 0) {
-            role = roles[0];
-            roleConfig = role.config || {};
-            const permissions = await select("role_permissions", { role_id: vendor.role_id });
-            capabilities = permissions.map((p) => p.permission_name);
-            const roleName = (role.name || "").toLowerCase();
-            isCafe = roleName.includes("cafe") || roleName.includes("restaurant") || capabilities.includes("cafe") || capabilities.includes("cafe_menu");
-          }
-        } catch (roleError) {
-          console.warn(`[Vendor Details] Failed to load role ${vendor.role_id}:`, roleError.message);
-        }
-      }
-      const vendorResponse = {
-        id: vendor.id,
-        business_name: vendor.business_name,
-        owner_name: vendor.owner_name,
-        role_id: vendor.role_id,
-        role: role ? {
-          id: role.id,
-          name: role.name,
-          display_name: role.display_name
-        } : null,
-        capabilities,
-        address: vendor.address,
-        city: vendor.city,
-        state: vendor.state,
-        pincode: vendor.pincode,
-        phone: vendor.phone,
-        email: vendor.email,
-        latitude: vendor.latitude,
-        longitude: vendor.longitude,
-        description: vendor.description || "",
-        operating_hours: vendor.operating_hours ? typeof vendor.operating_hours === "string" ? JSON.parse(vendor.operating_hours) : vendor.operating_hours : null,
-        // Include other vendor fields
-        ...vendor
-      };
-      let menu = [];
-      if (isCafe) {
-        try {
-          const menuItems = await query(
-            `SELECT * FROM cafe_menu_items 
-             WHERE vendor_id = $1 
-             AND is_active = true
-             ORDER BY category, name ASC`,
-            [vendorId]
-          ).catch(() => ({ rows: [] }));
-          menu = menuItems.rows || [];
-        } catch (menuError) {
-          console.warn(`[Vendor Details] Failed to load menu for cafe ${vendorId}:`, menuError.message);
-        }
-      }
-      return c.json({
-        success: true,
-        vendor: vendorResponse,
-        menu
-        // Include menu for cafes
-      });
-    } catch (error) {
-      console.error("Error fetching vendor details:", error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -177936,32 +179194,6 @@ function registerVendorSettingsEndpoints(app3) {
       return c.json({ error: error.message }, 500);
     }
   });
-  app3.post("/admin/vendor-settings/refund-tiers", async (c) => {
-    try {
-      const tier = await c.req.json();
-      if (!tier.id) {
-        tier.id = `tier_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      }
-      tier.createdAt = tier.createdAt || (/* @__PURE__ */ new Date()).toISOString();
-      const existingSettings = await select("platform_settings", { setting_key: "admin:settings:refund_tiers" });
-      const tiers = existingSettings.length > 0 ? existingSettings[0].setting_value : [];
-      tiers.push(tier);
-      await upsert(
-        "platform_settings",
-        {
-          setting_key: "admin:settings:refund_tiers",
-          setting_value: tiers,
-          setting_type: "json",
-          description: "Refund tiers configuration"
-        },
-        "setting_key"
-      );
-      return c.json({ success: true, tier });
-    } catch (error) {
-      console.error("Error creating refund tier:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
   app3.post("/admin/vendor-settings/booking-rules", async (c) => {
     try {
       const rule = await c.req.json();
@@ -178037,11 +179269,17 @@ function registerVendorPoliciesEndpoints(app3) {
         []
       ).catch(() => ({ rows: [] }));
       const payoutPolicies = await query(
-        `SELECT * FROM payout_policies
-         WHERE is_active = true
-         ORDER BY policy_key`,
+        `SELECT * FROM payout_policies WHERE is_active = true ORDER BY policy_key`,
         []
       ).catch(() => ({ rows: [] }));
+      const tierRow = await query(
+        `SELECT vt.payout_period_days, v.tier, v.commission_percentage
+         FROM vendors v
+         LEFT JOIN vendor_tiers vt ON vt.is_active = true AND (TRIM(LOWER(v.tier)) = TRIM(LOWER(vt.tier_name)))
+         WHERE v.id = $1`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+      const payoutPeriodDays = tierRow.rows?.[0]?.payout_period_days != null ? Number(tierRow.rows[0].payout_period_days) : 7;
       const tierInfo = await query(
         `SELECT tier, commission_percentage FROM vendors WHERE id = $1`,
         [vendorId]
@@ -178075,7 +179313,7 @@ function registerVendorPoliciesEndpoints(app3) {
           },
           payout: {
             policies: payoutPolicies.rows || [],
-            holdPeriodDays: payoutPolicies.rows[0]?.hold_period_days || 7
+            holdPeriodDays: payoutPeriodDays
           }
         }
       });
@@ -178454,18 +179692,21 @@ init_audit_log();
 function registerVendorBookingsEndpoints(app3) {
   app3.get("/vendor/bookings/:vendorId", async (c) => {
     try {
-      const { vendorId } = c.req.param();
-      const hasBookingCapability = await checkVendorCapability(vendorId, "booking_view") || await checkVendorCapability(vendorId, "booking_create") || await checkVendorCapability(vendorId, "bookings");
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
+      const vendorIds = [vendorId];
+      if (paramVendorId !== vendorId) vendorIds.push(paramVendorId);
+      const hasBookingCapability = await checkVendorCapability(vendorId, "booking_view") || await checkVendorCapability(vendorId, "booking_create") || await checkVendorCapability(paramVendorId, "bookings") || await checkVendorCapability(vendorId, "bookings");
       if (!hasBookingCapability) {
         return c.json({ error: "Vendor does not have booking viewing capability" }, 403);
       }
       const date = c.req.query("date");
       const filter = c.req.query("filter") || "all";
-      console.log(`\u{1F4CB} [VENDOR-BOOKINGS] Fetching bookings for vendor: ${vendorId}`);
+      console.log(`\u{1F4CB} [VENDOR-BOOKINGS] Fetching bookings for vendor: ${paramVendorId} (resolved: ${vendorId})`);
       console.log(`   Filters: date=${date}, status=${filter}`);
-      let queryText = "SELECT * FROM bookings WHERE vendor_id = $1";
-      const params = [vendorId];
-      let paramIndex = 2;
+      let queryText = vendorIds.length === 1 ? "SELECT * FROM bookings WHERE vendor_id = $1" : "SELECT * FROM bookings WHERE vendor_id = $1 OR vendor_id = $2";
+      const params = [...vendorIds];
+      let paramIndex = vendorIds.length + 1;
       if (date) {
         queryText += ` AND booking_date = $${paramIndex}`;
         params.push(date);
@@ -178685,7 +179926,8 @@ function registerVendorBookingsEndpoints(app3) {
         {
           status: "cancelled",
           cancellation_reason: reason || null,
-          cancelled_at: (/* @__PURE__ */ new Date()).toISOString()
+          cancelled_at: (/* @__PURE__ */ new Date()).toISOString(),
+          cancelled_by: "provider"
         }
       );
       await logBookingStatusChange(
@@ -178741,6 +179983,7 @@ function registerVendorBookingsEndpoints(app3) {
           status: "cancelled",
           cancellation_reason: reason || "Vendor declined booking",
           cancelled_at: (/* @__PURE__ */ new Date()).toISOString(),
+          cancelled_by: "provider",
           metadata: {
             ...booking.metadata || {},
             suggestAlternative: suggestAlternative || null,
@@ -178862,9 +180105,10 @@ function registerVendorBookingsEndpoints(app3) {
   });
   app3.get("/vendor/bookings/:bookingId/details", async (c) => {
     try {
-      const { bookingId } = c.req.param();
+      const rawBookingId = c.req.param("bookingId");
+      const bookingId = typeof rawBookingId === "string" ? rawBookingId.trim().toLowerCase() : String(rawBookingId || "").trim().toLowerCase();
       console.log(`\u{1F4CB} [VENDOR-BOOKINGS] Fetching booking details for: ${bookingId}`);
-      if (!isValidUUID(bookingId)) {
+      if (!bookingId || !isValidUUID(bookingId)) {
         return c.json({ error: "Invalid booking ID format" }, 400);
       }
       const bookings = await select("bookings", { id: bookingId });
@@ -178899,7 +180143,12 @@ function registerVendorBookingsEndpoints(app3) {
           console.log(`\u{1F4CB} [BOOKING-DETAILS] Extracted pet_id from special_instructions: ${petIdToUse}`);
         }
       }
-      const [customer, service, catalogService, pet, vendor, prescriptions, activities] = await Promise.all([
+      const packagePurchaseId = booking.package_purchase_id;
+      const packagePurchasePromise = packagePurchaseId ? query(
+        "SELECT id, package_name, total_sessions, remaining_sessions, unlimited_usage FROM package_purchases WHERE id = $1",
+        [packagePurchaseId]
+      ).then((r) => r.rows?.[0] || null).catch(() => null) : Promise.resolve(null);
+      const [customer, service, catalogService, pet, vendor, prescriptions, activities, packagePurchase] = await Promise.all([
         // Customer info
         booking.customer_id ? select("customers", { id: booking.customer_id }).catch(() => []) : Promise.resolve([]),
         // Service info (legacy services table)
@@ -178923,7 +180172,8 @@ function registerVendorBookingsEndpoints(app3) {
            WHERE booking_id = $1
            ORDER BY created_at DESC`,
           [bookingId]
-        ).catch(() => ({ rows: [] }))
+        ).catch(() => ({ rows: [] })),
+        packagePurchasePromise
       ]);
       const enrichedBooking = {
         id: booking.id,
@@ -179035,6 +180285,21 @@ function registerVendorBookingsEndpoints(app3) {
         // Multi-service: list of services and total duration
         selectedServices: parseSelectedServices(booking.selected_services),
         totalDurationMinutes: booking.total_duration_minutes != null ? Number(booking.total_duration_minutes) : void 0,
+        // Package session: when booking is part of a package (E2E Section 5 & 9)
+        isPackageSession: Boolean(booking.is_package_session ?? booking.is_package),
+        packagePurchaseId: booking.package_purchase_id || null,
+        packageSessionNumber: booking.package_session_number != null ? Number(booking.package_session_number) : null,
+        packageName: packagePurchase?.package_name || null,
+        packageTotalSessions: packagePurchase?.total_sessions != null ? Number(packagePurchase.total_sessions) : null,
+        packageRemainingSessions: packagePurchase?.remaining_sessions != null ? Number(packagePurchase.remaining_sessions) : null,
+        packageUnlimitedUsage: Boolean(packagePurchase?.unlimited_usage),
+        // Snake_case for frontend compatibility
+        is_package_session: Boolean(booking.is_package_session ?? booking.is_package),
+        package_purchase_id: booking.package_purchase_id || null,
+        package_session_number: booking.package_session_number != null ? Number(booking.package_session_number) : null,
+        package_name: packagePurchase?.package_name || null,
+        package_total_sessions: packagePurchase?.total_sessions != null ? Number(packagePurchase.total_sessions) : null,
+        package_remaining_sessions: packagePurchase?.remaining_sessions != null ? Number(packagePurchase.remaining_sessions) : null,
         // Timestamps
         createdAt: booking.created_at,
         updatedAt: booking.updated_at
@@ -179064,7 +180329,10 @@ function registerVendorBookingsEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/bookings", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
+      const vendorIds = [vendorId];
+      if (paramVendorId !== vendorId) vendorIds.push(paramVendorId);
       const hasBookingCapability = await checkVendorCapability(vendorId, "booking_view") || await checkVendorCapability(vendorId, "booking_create") || await checkVendorCapability(vendorId, "bookings");
       if (!hasBookingCapability) {
         return c.json({ error: "Vendor does not have booking viewing capability" }, 403);
@@ -179072,11 +180340,11 @@ function registerVendorBookingsEndpoints(app3) {
       const date = c.req.query("date");
       const status = c.req.query("status") || "all";
       const startDate = c.req.query("startDate");
-      console.log(`\u{1F4CB} [VENDOR-BOOKINGS] Fetching bookings for vendor: ${vendorId} (alias route)`);
+      console.log(`\u{1F4CB} [VENDOR-BOOKINGS] Fetching bookings for vendor: ${paramVendorId} (alias, resolved: ${vendorId})`);
       console.log(`   Filters: date=${date}, status=${status}, startDate=${startDate}`);
-      let queryText = "SELECT * FROM bookings WHERE vendor_id = $1";
-      const params = [vendorId];
-      let paramIndex = 2;
+      let queryText = vendorIds.length === 1 ? "SELECT * FROM bookings WHERE vendor_id = $1" : "SELECT * FROM bookings WHERE vendor_id = $1 OR vendor_id = $2";
+      const params = [...vendorIds];
+      let paramIndex = vendorIds.length + 1;
       if (date) {
         queryText += ` AND booking_date = $${paramIndex}`;
         params.push(date);
@@ -179136,14 +180404,22 @@ function registerVendorBookingsEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/bookings/today", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
       const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-      console.log(`\u{1F4CB} [VENDOR-BOOKINGS] Fetching today's bookings for vendor: ${vendorId}`);
-      const result = await query(
+      console.log(`\u{1F4CB} [VENDOR-BOOKINGS] Fetching today's bookings for vendor: ${paramVendorId} (resolved: ${vendorId})`);
+      const vendorIds = [vendorId];
+      if (paramVendorId !== vendorId) vendorIds.push(paramVendorId);
+      const result = vendorIds.length === 1 ? await query(
         `SELECT * FROM bookings 
-         WHERE vendor_id = $1 AND booking_date = $2 
-         ORDER BY booking_time ASC`,
+             WHERE vendor_id = $1 AND booking_date = $2 
+             ORDER BY booking_time ASC`,
         [vendorId, today]
+      ).catch(() => ({ rows: [] })) : await query(
+        `SELECT * FROM bookings 
+             WHERE (vendor_id = $1 OR vendor_id = $2) AND booking_date = $3 
+             ORDER BY booking_time ASC`,
+        [vendorIds[0], vendorIds[1], today]
       ).catch(() => ({ rows: [] }));
       const enrichedBookings = await Promise.all(
         result.rows.map(async (booking) => {
@@ -179206,8 +180482,11 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
           timeframe
         });
       }
-      console.log(`\u{1F4CA} [DASHBOARD] Fetching dashboard for vendor: ${vendorId}, timeframe: ${timeframe}`);
-      const vendors = await select("vendors", { id: vendorId });
+      const resolvedVendorId = await resolveVendorId(vendorId);
+      const vendorIds = [resolvedVendorId];
+      if (vendorId !== resolvedVendorId) vendorIds.push(vendorId);
+      console.log(`\u{1F4CA} [DASHBOARD] Fetching dashboard for vendor: ${vendorId} (resolved: ${resolvedVendorId}), timeframe: ${timeframe}`);
+      const vendors = await select("vendors", { id: resolvedVendorId });
       const vendor = vendors.length > 0 ? vendors[0] : null;
       const now = /* @__PURE__ */ new Date();
       const today = now.toISOString().split("T")[0];
@@ -179219,21 +180498,39 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
       } else if (timeframe === "month") {
         startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1e3);
       }
-      const bookings = await query(
+      const startDateStr = startDate.toISOString().split("T")[0];
+      const bookings = vendorIds.length === 1 ? await query(
         `SELECT b.*,
-                COALESCE(s.name, vs.service_name) as service_name,
-                COALESCE(s.category, vs.category) as service_category,
-                c.full_name as customer_name,
-                c.phone as customer_phone
-         FROM bookings b
-         LEFT JOIN services s ON b.service_id = s.id
-         LEFT JOIN vendor_services vs ON vs.id = b.service_id
-         LEFT JOIN customers c ON b.customer_id = c.id
-         WHERE b.vendor_id = $1 
-           AND b.booking_date >= $2
-           AND b.status != 'cancelled'
-         ORDER BY b.booking_date ASC, b.booking_time ASC`,
-        [vendorId, startDate.toISOString().split("T")[0]]
+                    COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                    COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
+                    c.full_name as customer_name,
+                    c.phone as customer_phone
+             FROM bookings b
+             LEFT JOIN services s ON b.service_id = s.id
+             LEFT JOIN vendor_services vs ON vs.id = b.service_id
+             LEFT JOIN service_catalog sc ON sc.id = b.service_id
+             LEFT JOIN customers c ON b.customer_id = c.id
+             WHERE b.vendor_id = $1 
+               AND b.booking_date >= $2
+               AND b.status != 'cancelled'
+             ORDER BY b.booking_date ASC, b.booking_time ASC`,
+        [resolvedVendorId, startDateStr]
+      ).catch(() => ({ rows: [] })) : await query(
+        `SELECT b.*,
+                    COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                    COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
+                    c.full_name as customer_name,
+                    c.phone as customer_phone
+             FROM bookings b
+             LEFT JOIN services s ON b.service_id = s.id
+             LEFT JOIN vendor_services vs ON vs.id = b.service_id
+             LEFT JOIN service_catalog sc ON sc.id = b.service_id
+             LEFT JOIN customers c ON b.customer_id = c.id
+             WHERE (b.vendor_id = $1 OR b.vendor_id = $2)
+               AND b.booking_date >= $3
+               AND b.status != 'cancelled'
+             ORDER BY b.booking_date ASC, b.booking_time ASC`,
+        [vendorIds[0], vendorIds[1], startDateStr]
       ).catch(() => ({ rows: [] }));
       const stats = {
         appointments: 0,
@@ -179321,9 +180618,9 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/dashboard", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
       const timeframe = c.req.query("timeframe") || "today";
-      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+      if (paramVendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
         return c.json({
           success: true,
           stats: {
@@ -179338,37 +180635,49 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
           bookings: []
         });
       }
-      console.log(`\u{1F4CA} [DASHBOARD] Fetching dashboard for vendor: ${vendorId}, timeframe: ${timeframe}`);
-      const vendors = await select("vendors", { id: vendorId });
+      const resolvedVendorId = await resolveVendorId(paramVendorId);
+      const vendorIds = [resolvedVendorId];
+      if (paramVendorId !== resolvedVendorId) vendorIds.push(paramVendorId);
+      console.log(`\u{1F4CA} [DASHBOARD] Fetching dashboard for vendor: ${paramVendorId} (resolved: ${resolvedVendorId}), timeframe: ${timeframe}`);
+      const vendors = await select("vendors", { id: resolvedVendorId });
       const vendor = vendors.length > 0 ? vendors[0] : null;
       const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
-      const bookingsStats = await query(
-        `SELECT 
+      const [statsParam1, statsParam2] = vendorIds.length >= 2 ? [vendorIds[0], vendorIds[1]] : [vendorIds[0], vendorIds[0]];
+      const bookingsStatsQuery = vendorIds.length === 1 ? `SELECT 
           COUNT(*) FILTER (WHERE booking_date = $1 AND status IN ('pending', 'confirmed')) as today_bookings,
           COUNT(*) FILTER (WHERE status IN ('pending', 'confirmed')) as pending_bookings,
           COUNT(*) FILTER (WHERE booking_date = $1 AND status = 'completed') as completed_today
         FROM bookings 
-        WHERE vendor_id = $2`,
-        [today, vendorId]
-      ).catch(() => ({ rows: [{ today_bookings: "0", pending_bookings: "0", completed_today: "0" }] }));
-      const earningsStats = await query(
-        `SELECT 
-          COALESCE(SUM(total_amount), 0) as earnings,
-          COALESCE(SUM(CASE WHEN status = 'completed' AND settlement_status != 'settled' THEN total_amount ELSE 0 END), 0) as pending_settlement
+        WHERE vendor_id = $2` : `SELECT 
+          COUNT(*) FILTER (WHERE booking_date = $1 AND status IN ('pending', 'confirmed')) as today_bookings,
+          COUNT(*) FILTER (WHERE status IN ('pending', 'confirmed')) as pending_bookings,
+          COUNT(*) FILTER (WHERE booking_date = $1 AND status = 'completed') as completed_today
         FROM bookings 
-        WHERE vendor_id = $1 AND status = 'completed'`,
-        [vendorId]
-      ).catch(() => ({ rows: [{ earnings: "0", pending_settlement: "0" }] }));
-      const ratingStats = await query(
-        `SELECT 
-          COALESCE(AVG(rating), 4.8) as rating,
-          COUNT(*) as total_reviews
-        FROM reviews 
-        WHERE vendor_id = $1 AND is_approved = true`,
-        [vendorId]
-      ).catch(() => ({ rows: [{ rating: "4.8", total_reviews: "0" }] }));
+        WHERE (vendor_id = $2 OR vendor_id = $3)`;
+      const bookingsStatsParams = vendorIds.length === 1 ? [today, statsParam1] : [today, statsParam1, statsParam2];
+      const bookingsStats = await query(bookingsStatsQuery, bookingsStatsParams).catch(() => ({ rows: [{ today_bookings: "0", pending_bookings: "0", completed_today: "0" }] }));
+      const hasVendorEarnings = await query(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_earnings') as ex`
+      ).then((r) => r.rows[0]?.ex).catch(() => false);
+      let earningsFromTable = { earnings: "0", pending_settlement: "0" };
+      if (hasVendorEarnings) {
+        const veRes = await query(
+          `SELECT 
+             COALESCE(SUM(amount), 0) as earnings,
+             COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_settlement
+           FROM vendor_earnings
+           WHERE vendor_id = $1`,
+          [resolvedVendorId]
+        ).catch(() => ({ rows: [{ earnings: "0", pending_settlement: "0" }] }));
+        earningsFromTable = veRes.rows[0] || earningsFromTable;
+      }
+      const earningsQuery = vendorIds.length === 1 ? `SELECT COALESCE(SUM(total_amount), 0) as earnings, COALESCE(SUM(CASE WHEN status = 'completed' AND (settlement_status IS NULL OR settlement_status != 'settled') THEN total_amount ELSE 0 END), 0) as pending_settlement FROM bookings WHERE vendor_id = $1 AND status = 'completed'` : `SELECT COALESCE(SUM(total_amount), 0) as earnings, COALESCE(SUM(CASE WHEN status = 'completed' AND (settlement_status IS NULL OR settlement_status != 'settled') THEN total_amount ELSE 0 END), 0) as pending_settlement FROM bookings WHERE (vendor_id = $1 OR vendor_id = $2) AND status = 'completed'`;
+      const earningsStats = await query(earningsQuery, vendorIds).catch(() => ({ rows: [{ earnings: "0", pending_settlement: "0" }] }));
+      const earningsFromBookings = earningsStats.rows[0] || { earnings: "0", pending_settlement: "0" };
+      const earnings = hasVendorEarnings ? { earnings: earningsFromTable.earnings, pending_settlement: earningsFromTable.pending_settlement } : earningsFromBookings;
+      const ratingQuery = vendorIds.length === 1 ? `SELECT COALESCE(AVG(rating), 4.8) as rating, COUNT(*) as total_reviews FROM reviews WHERE vendor_id = $1 AND is_approved = true` : `SELECT COALESCE(AVG(rating), 4.8) as rating, COUNT(*) as total_reviews FROM reviews WHERE (vendor_id = $1 OR vendor_id = $2) AND is_approved = true`;
+      const ratingStats = await query(ratingQuery, vendorIds).catch(() => ({ rows: [{ rating: "4.8", total_reviews: "0" }] }));
       const stats = bookingsStats.rows[0];
-      const earnings = earningsStats.rows[0];
       const rating = ratingStats.rows[0];
       let startDate = /* @__PURE__ */ new Date();
       if (timeframe === "today") {
@@ -179378,22 +180687,36 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
       } else if (timeframe === "month") {
         startDate.setMonth(startDate.getMonth() - 1);
       }
-      const bookingsResult = await query(
-        `SELECT b.*,
-                COALESCE(s.name, vs.service_name) as service_name,
-                COALESCE(s.category, vs.category) as service_category,
+      const startDateStr = startDate.toISOString().split("T")[0];
+      const bookingsQuery = vendorIds.length === 1 ? `SELECT b.*,
+                COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
                 c.full_name as customer_name,
                 c.phone as customer_phone
          FROM bookings b
          LEFT JOIN services s ON b.service_id = s.id
          LEFT JOIN vendor_services vs ON vs.id = b.service_id
+         LEFT JOIN service_catalog sc ON sc.id = b.service_id
          LEFT JOIN customers c ON b.customer_id = c.id
          WHERE b.vendor_id = $1 
            AND b.booking_date >= $2
            AND b.status NOT IN ('cancelled')
-         ORDER BY b.booking_date ASC, b.booking_time ASC`,
-        [vendorId, startDate.toISOString().split("T")[0]]
-      ).catch(() => ({ rows: [] }));
+         ORDER BY b.booking_date ASC, b.booking_time ASC` : `SELECT b.*,
+                COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as service_name,
+                COALESCE(s.category, vs.category, sc.category_id::text) as service_category,
+                c.full_name as customer_name,
+                c.phone as customer_phone
+         FROM bookings b
+         LEFT JOIN services s ON b.service_id = s.id
+         LEFT JOIN vendor_services vs ON vs.id = b.service_id
+         LEFT JOIN service_catalog sc ON sc.id = b.service_id
+         LEFT JOIN customers c ON b.customer_id = c.id
+         WHERE (b.vendor_id = $1 OR b.vendor_id = $2)
+           AND b.booking_date >= $3
+           AND b.status NOT IN ('cancelled')
+         ORDER BY b.booking_date ASC, b.booking_time ASC`;
+      const bookingsParams = vendorIds.length === 1 ? [resolvedVendorId, startDateStr] : [vendorIds[0], vendorIds[1], startDateStr];
+      const bookingsResult = await query(bookingsQuery, bookingsParams).catch(() => ({ rows: [] }));
       const enrichedBookings = bookingsResult.rows.map((b) => ({
         id: b.id,
         booking_id: b.id,
@@ -179413,7 +180736,7 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
         service_type: b.service_type,
         notes: b.notes
       }));
-      console.log(`\u{1F4CA} [DASHBOARD] Returning ${enrichedBookings.length} bookings for vendor ${vendorId}`);
+      console.log(`\u{1F4CA} [DASHBOARD] Returning ${enrichedBookings.length} bookings for vendor ${paramVendorId}`);
       return c.json({
         success: true,
         stats: {
@@ -179436,13 +180759,12 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/analytics", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
       const period = c.req.query("period") || "month";
-      console.log(`\u{1F4CA} [ANALYTICS] Fetching analytics for vendor: ${vendorId}, period: ${period}`);
+      const vendorId = await resolveVendorId(paramVendorId);
+      console.log(`\u{1F4CA} [ANALYTICS] Fetching analytics for vendor: ${paramVendorId} (resolved: ${vendorId}), period: ${period}`);
       const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
+      const hasVendorRow = vendors.length > 0;
       const now = /* @__PURE__ */ new Date();
       let periodStart = /* @__PURE__ */ new Date();
       switch (period) {
@@ -179461,6 +180783,39 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
         case "all":
           periodStart = /* @__PURE__ */ new Date(0);
           break;
+      }
+      if (!hasVendorRow) {
+        const emptyOverview = {
+          totalEarnings: 0,
+          avgBookingValue: 0,
+          totalBookings: 0,
+          completed: 0,
+          uniqueCustomers: 0,
+          returningCustomers: 0,
+          avgRating: "N/A",
+          reviewCount: 0,
+          completionRate: 0,
+          cancellationRate: 0,
+          customerRetentionRate: 0
+        };
+        return c.json({
+          success: true,
+          analytics: {
+            totalBookings: 0,
+            completed: 0,
+            cancelled: 0,
+            pending: 0,
+            confirmed: 0,
+            totalRevenue: 0,
+            averageBookingValue: 0,
+            completionRate: 0,
+            cancellationRate: 0,
+            rating: 0,
+            totalReviews: 0,
+            overview: emptyOverview
+          },
+          period
+        });
       }
       const bookings = await query(
         `SELECT * FROM bookings 
@@ -179490,12 +180845,37 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
         [vendorId]
       ).catch(() => ({ rows: [] }));
       const rating = reviews.rows.length > 0 ? reviews.rows.reduce((sum, r) => sum + parseFloat(r.rating || "0"), 0) / reviews.rows.length : 0;
+      const ratingRounded = parseFloat(rating.toFixed(1));
+      const totalReviews = reviews.rows.length;
+      const customerIds = bookings.rows.map((b) => b.customer_id).filter(Boolean);
+      const uniqueSet = new Set(customerIds);
+      const uniqueCustomers = uniqueSet.size;
+      const countByCustomer = {};
+      customerIds.forEach((id) => {
+        countByCustomer[id] = (countByCustomer[id] || 0) + 1;
+      });
+      const returningCustomers = Object.values(countByCustomer).filter((c2) => c2 > 1).length;
+      const customerRetentionRate = uniqueCustomers > 0 ? returningCustomers / uniqueCustomers * 100 : 0;
+      const overview = {
+        totalEarnings: analytics.totalRevenue,
+        avgBookingValue: analytics.averageBookingValue,
+        totalBookings: analytics.totalBookings,
+        completed: analytics.completed,
+        uniqueCustomers,
+        returningCustomers,
+        avgRating: totalReviews > 0 ? ratingRounded : "N/A",
+        reviewCount: totalReviews,
+        completionRate: analytics.completionRate,
+        cancellationRate: analytics.cancellationRate,
+        customerRetentionRate
+      };
       return c.json({
         success: true,
         analytics: {
           ...analytics,
-          rating: parseFloat(rating.toFixed(1)),
-          totalReviews: reviews.rows.length
+          rating: ratingRounded,
+          totalReviews,
+          overview
         },
         period
       });
@@ -179506,10 +180886,9 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/earnings", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
       const period = c.req.query("period") || "month";
-      console.log(`\u{1F4B0} [EARNINGS] Fetching earnings for vendor: ${vendorId}, period: ${period}`);
-      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+      if (paramVendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
         return c.json({
           success: true,
           earnings: {
@@ -179522,6 +180901,8 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
           }
         });
       }
+      const vendorId = await resolveVendorId(paramVendorId);
+      console.log(`\u{1F4B0} [EARNINGS] Fetching earnings for vendor: ${paramVendorId} (resolved: ${vendorId}), period: ${period}`);
       const now = /* @__PURE__ */ new Date();
       let startDate = /* @__PURE__ */ new Date();
       switch (period) {
@@ -179646,17 +181027,18 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/transactions", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
       const period = c.req.query("period") || "month";
       const limit = parseInt(c.req.query("limit") || "50", 10);
-      console.log(`\u{1F4B3} [TRANSACTIONS] Fetching transactions for vendor: ${vendorId}, period: ${period}, limit: ${limit}`);
-      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+      if (paramVendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
         return c.json({
           success: true,
           transactions: [],
           total: 0
         });
       }
+      const vendorId = await resolveVendorId(paramVendorId);
+      console.log(`\u{1F4B3} [TRANSACTIONS] Fetching transactions for vendor: ${paramVendorId} (resolved: ${vendorId}), period: ${period}, limit: ${limit}`);
       const now = /* @__PURE__ */ new Date();
       let startDate = /* @__PURE__ */ new Date();
       switch (period) {
@@ -179676,50 +181058,107 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
           startDate = /* @__PURE__ */ new Date(0);
           break;
       }
-      const transactionsQuery = `
-        SELECT 
-          b.id,
-          b.booking_date as date,
-          b.completed_at as created_at,
-          s.name as service_name,
-          COALESCE(s.name, b.service_name, 'Service') as service,
-          c.full_name as customer_name,
-          c.phone as customer_phone,
-          b.total_amount as amount,
-          b.status,
-          CASE 
-            WHEN b.status = 'completed' THEN 'completed'
-            WHEN b.status = 'cancelled' THEN 'cancelled'
-            ELSE 'pending'
-          END as transaction_status,
-          'booking' as type
-        FROM bookings b
-        LEFT JOIN services s ON b.service_id = s.id
-        LEFT JOIN customers c ON b.customer_id = c.id
-        WHERE b.vendor_id = $1
-          AND b.status IN ('completed', 'confirmed', 'pending', 'cancelled')
-          ${period !== "lifetime" ? "AND b.created_at >= $3" : ""}
-        ORDER BY b.created_at DESC
-        LIMIT $2
-      `;
-      const result = await query(
-        transactionsQuery,
-        period === "lifetime" ? [vendorId, limit] : [vendorId, limit, startDate.toISOString()]
-      ).catch(() => ({ rows: [] }));
-      const rows = result.rows || [];
-      const transactions = rows.map((t) => ({
-        id: t.id,
-        date: t.date || t.created_at,
-        createdAt: t.created_at,
-        serviceName: t.service_name || t.service || "Service",
-        service: t.service_name || t.service || "Service",
-        customerName: t.customer_name || "Customer",
-        customer: t.customer_name || "Customer",
-        amount: parseFloat(t.amount || "0"),
-        price: parseFloat(t.amount || "0"),
-        status: t.transaction_status || t.status || "completed",
-        type: t.type || "booking"
-      }));
+      const hasVendorEarnings = await query(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_earnings') as ex`
+      ).then((r) => r.rows[0]?.ex).catch(() => false);
+      let transactions = [];
+      if (hasVendorEarnings) {
+        const veQuery = `
+          SELECT 
+            ve.id,
+            ve.realized_at as created_at,
+            b.booking_date as date,
+            COALESCE(sc.display_name, sc.service_name, s.name, vs.service_name, 'Service') as service_name,
+            c.full_name as customer_name,
+            ve.amount,
+            ve.status,
+            'booking' as type
+          FROM vendor_earnings ve
+          LEFT JOIN bookings b ON ve.booking_id = b.id
+          LEFT JOIN service_catalog sc ON b.service_id = sc.id
+          LEFT JOIN services s ON b.service_id = s.id
+          LEFT JOIN vendor_services vs ON b.service_id = vs.id
+          LEFT JOIN customers c ON b.customer_id = c.id
+          WHERE ve.vendor_id = $1
+            ${period !== "lifetime" ? "AND ve.realized_at >= $3" : ""}
+          ORDER BY ve.realized_at DESC
+          LIMIT $2
+        `;
+        const veResult = await query(
+          veQuery,
+          period === "lifetime" ? [vendorId, limit] : [vendorId, limit, startDate.toISOString()]
+        ).catch(() => ({ rows: [] }));
+        const veRows = veResult.rows || [];
+        transactions = veRows.map((t) => {
+          const svcName = t.service_name || t.service || "Service";
+          return {
+            id: t.id,
+            date: t.date || t.created_at,
+            createdAt: t.created_at,
+            created_at: t.created_at,
+            serviceName: svcName,
+            service: svcName,
+            customerName: t.customer_name || "Customer",
+            customer: t.customer_name || "Customer",
+            amount: parseFloat(t.amount || "0"),
+            price: parseFloat(t.amount || "0"),
+            status: t.status || "completed",
+            type: t.type || "booking",
+            description: `Booking - ${svcName}`
+          };
+        });
+      }
+      if (transactions.length === 0) {
+        const transactionsQuery = `
+          SELECT 
+            b.id,
+            b.booking_date as date,
+            b.completed_at as created_at,
+            s.name as service_name,
+            COALESCE(s.name, b.service_name, 'Service') as service,
+            c.full_name as customer_name,
+            c.phone as customer_phone,
+            b.total_amount as amount,
+            b.status,
+            CASE 
+              WHEN b.status = 'completed' THEN 'completed'
+              WHEN b.status = 'cancelled' THEN 'cancelled'
+              ELSE 'pending'
+            END as transaction_status,
+            'booking' as type
+          FROM bookings b
+          LEFT JOIN services s ON b.service_id = s.id
+          LEFT JOIN customers c ON b.customer_id = c.id
+          WHERE b.vendor_id = $1
+            AND b.status IN ('completed', 'confirmed', 'pending', 'cancelled')
+            ${period !== "lifetime" ? "AND b.created_at >= $3" : ""}
+          ORDER BY b.created_at DESC
+          LIMIT $2
+        `;
+        const result = await query(
+          transactionsQuery,
+          period === "lifetime" ? [vendorId, limit] : [vendorId, limit, startDate.toISOString()]
+        ).catch(() => ({ rows: [] }));
+        const rows = result.rows || [];
+        transactions = rows.map((t) => {
+          const svcName = t.service_name || t.service || "Service";
+          return {
+            id: t.id,
+            date: t.date || t.created_at,
+            createdAt: t.created_at,
+            created_at: t.created_at,
+            serviceName: svcName,
+            service: svcName,
+            customerName: t.customer_name || "Customer",
+            customer: t.customer_name || "Customer",
+            amount: parseFloat(t.amount || "0"),
+            price: parseFloat(t.amount || "0"),
+            status: t.transaction_status || t.status || "completed",
+            type: t.type || "booking",
+            description: `Booking - ${svcName}`
+          };
+        });
+      }
       return c.json({
         success: true,
         transactions,
@@ -179738,8 +181177,9 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/settlements/:settlementId/breakup", async (c) => {
     try {
-      const { vendorId, settlementId } = c.req.param();
-      console.log(`\u{1F4CA} [SETTLEMENT-BREAKUP] Fetching breakup for settlement: ${settlementId}`);
+      const { vendorId: paramVendorId, settlementId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
+      console.log(`\u{1F4CA} [SETTLEMENT-BREAKUP] Fetching breakup for settlement: ${settlementId}, vendor: ${paramVendorId} (resolved: ${vendorId})`);
       const settlements = await query(
         `SELECT s.*, b.service_name, b.booking_date, b.booking_time,
                 v.tier, v.business_name as vendor_name, vt.tier_name, vt.commission_rate as tier_commission
@@ -179848,11 +181288,11 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
   });
   app3.get("/vendor/:vendorId/settlements", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
       const status = c.req.query("status");
       const limit = parseInt(c.req.query("limit") || "20");
       const offset = parseInt(c.req.query("offset") || "0");
-      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+      if (paramVendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
         return c.json({
           success: true,
           settlements: [],
@@ -179860,6 +181300,7 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
           summary: { pending: 0, completed: 0, totalSettled: 0 }
         });
       }
+      const vendorId = await resolveVendorId(paramVendorId);
       let whereClause = "s.vendor_id = $1";
       const params = [vendorId];
       if (status && status !== "all") {
@@ -179876,20 +181317,29 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
         params
       ).catch(() => ({ rows: [] }));
       const settlements = Array.isArray(settlementsResult) ? settlementsResult : settlementsResult.rows || [];
-      const summaryResult = await query(
-        `SELECT 
-           COUNT(*) FILTER (WHERE status = 'pending') as pending_count,
-           COUNT(*) FILTER (WHERE status = 'processing') as processing_count,
-           COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
-           COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'pending'), 0) as pending_amount,
-           COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'processing'), 0) as processing_amount,
-           COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'completed'), 0) as completed_amount,
-           COALESCE(SUM(tier_deduction_amount), 0) as total_tier_deductions
-         FROM settlements
-         WHERE vendor_id = $1`,
-        [vendorId]
-      ).catch(() => ({ rows: [{}] }));
+      const [summaryResult, earningsPendingResult] = await Promise.all([
+        query(
+          `SELECT 
+             COUNT(*) FILTER (WHERE status = 'pending') as pending_count,
+             COUNT(*) FILTER (WHERE status = 'processing') as processing_count,
+             COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
+             COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'pending'), 0) as pending_amount,
+             COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'processing'), 0) as processing_amount,
+             COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'completed'), 0) as completed_amount,
+             COALESCE(SUM(tier_deduction_amount), 0) as total_tier_deductions
+           FROM settlements
+           WHERE vendor_id = $1`,
+          [vendorId]
+        ).catch(() => ({ rows: [{}] })),
+        query(
+          `SELECT COALESCE(SUM(amount), 0) as pending FROM vendor_earnings WHERE vendor_id = $1 AND status = 'pending'`,
+          [vendorId]
+        ).catch(() => ({ rows: [{ pending: "0" }] }))
+      ]);
       const summary = Array.isArray(summaryResult) ? summaryResult[0] : (summaryResult.rows || [{}])[0];
+      const earningsPending = parseFloat(earningsPendingResult.rows?.[0]?.pending || "0");
+      const settlementsPending = parseFloat(summary.pending_amount || "0");
+      const totalPendingAmount = settlementsPending + earningsPending;
       return c.json({
         success: true,
         settlements: settlements.map((s) => {
@@ -179923,7 +181373,7 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
           processing: parseInt(summary.processing_count || "0"),
           completed: parseInt(summary.completed_count || "0"),
           totalSettled: parseFloat(summary.completed_amount ?? summary.total_settled ?? "0"),
-          pendingAmount: parseFloat(summary.pending_amount || "0"),
+          pendingAmount: totalPendingAmount,
           processingAmount: parseFloat(summary.processing_amount || "0"),
           completedAmount: parseFloat(summary.completed_amount || "0"),
           totalTierDeductions: parseFloat(summary.total_tier_deductions || "0")
@@ -181329,12 +182779,14 @@ function registerNotificationSystemEndpoints(app3) {
 
 // src/endpoints/tier-system.ts
 init_rds_connection();
-var TIER_CONFIG = {
+var TIER_CONFIG_FALLBACK = {
   Bronze: { commission: 15, minBookings: 0, minRevenue: 0, monthlyFee: 0, yearlyFee: 0 },
   Silver: { commission: 12, minBookings: 50, minRevenue: 5e4, monthlyFee: 999, yearlyFee: 9990 },
   Gold: { commission: 10, minBookings: 200, minRevenue: 2e5, monthlyFee: 2499, yearlyFee: 24990 },
-  Platinum: { commission: 8, minBookings: 500, minRevenue: 5e5, monthlyFee: 4999, yearlyFee: 49990 }
+  Platinum: { commission: 8, minBookings: 500, minRevenue: 5e5, monthlyFee: 4999, yearlyFee: 49990 },
+  Basic: { commission: 0, minBookings: 0, minRevenue: 0, monthlyFee: 0, yearlyFee: 0 }
 };
+var DEDUCTION_OPTIONS = { monthly: 1, weekly_4: 4 };
 var DEFAULT_DEDUCTION_INSTALLMENTS = 2;
 function registerTierSystemEndpoints(app3) {
   app3.get("/admin/tiers/list", async (c) => {
@@ -181410,48 +182862,99 @@ function registerTierSystemEndpoints(app3) {
   app3.get("/vendor/:vendorId/tier", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors[0];
-      const currentTier = vendor.tier || "Bronze";
+      const actualVendorId = vendor.id;
+      const tiersResult = await query(
+        `SELECT id, tier_name, tier_level, display_name, commission_rate, payout_period_days,
+                monthly_cost, yearly_cost, six_month_cost, twelve_month_cost,
+                features, applicable_roles, is_default, is_free_tier,
+                terms_and_conditions, terms_version, allow_split_payment, split_payment_installments
+         FROM vendor_tiers
+         WHERE is_active = true
+         ORDER BY tier_level ASC`
+      ).catch(() => ({ rows: [] }));
+      const dbTiers = tiersResult.rows || [];
+      let currentTierRow = dbTiers.find(
+        (t) => String(t.tier_name || "").toLowerCase() === String(vendor.tier || "").toLowerCase()
+      );
+      if (!currentTierRow) {
+        currentTierRow = dbTiers.find((t) => t.is_default) || dbTiers[0];
+      }
+      const currentTierName = currentTierRow?.tier_name || vendor.tier || "Basic";
+      const currentLevel = currentTierRow?.tier_level ?? 1;
       const bookings = await query(
         `SELECT COUNT(*) as count, SUM(total_amount) as revenue 
          FROM bookings 
          WHERE vendor_id = $1 AND status = 'completed'`,
-        [vendorId]
+        [actualVendorId]
       ).catch(() => ({ rows: [{ count: "0", revenue: "0" }] }));
       const totalBookings = parseInt(bookings.rows[0]?.count || "0", 10);
       const totalRevenue = parseFloat(bookings.rows[0]?.revenue || "0");
-      const tiers = ["Bronze", "Silver", "Gold", "Platinum"];
-      const currentTierIndex = tiers.indexOf(currentTier);
-      const nextTier = currentTierIndex < tiers.length - 1 ? tiers[currentTierIndex + 1] : null;
-      let nextTierEligible = false;
-      let nextTierProgress = { bookings: 0, revenue: 0 };
-      if (nextTier) {
-        const nextTierConfig = TIER_CONFIG[nextTier];
-        nextTierEligible = totalBookings >= nextTierConfig.minBookings && totalRevenue >= nextTierConfig.minRevenue;
-        nextTierProgress = {
-          bookings: Math.min(100, totalBookings / nextTierConfig.minBookings * 100),
-          revenue: Math.min(100, totalRevenue / nextTierConfig.minRevenue * 100)
+      const vendorRoleId = vendor.role_id || null;
+      const upgradeTiers = dbTiers.filter((t) => {
+        if ((t.tier_level ?? 0) <= currentLevel) return false;
+        const roles = t.applicable_roles;
+        if (!roles || !Array.isArray(roles) || roles.length === 0) return true;
+        return vendorRoleId && roles.some((r) => String(r) === String(vendorRoleId));
+      });
+      const nextTierRow = upgradeTiers[0];
+      const nextTierName = nextTierRow?.tier_name || null;
+      const features = Array.isArray(currentTierRow?.features) ? currentTierRow.features : currentTierRow?.features ? [currentTierRow.features] : ["Basic listing", "Standard support", "Weekly settlements"];
+      const commissionRate = currentTierRow ? parseFloat(currentTierRow.commission_rate || "0") : TIER_CONFIG_FALLBACK[currentTierName]?.commission ?? 0;
+      const payoutDays = currentTierRow?.payout_period_days ?? 7;
+      const allTiers = dbTiers.map((t) => {
+        const payoutDays2 = t.payout_period_days ?? 7;
+        return {
+          name: t.tier_name,
+          displayName: t.display_name || t.tier_name,
+          commissionRate: parseFloat(t.commission_rate || "0"),
+          features: Array.isArray(t.features) ? t.features : t.features ? [t.features] : [],
+          payoutPeriodDays: payoutDays2,
+          payoutCycleLabel: payoutDays2 === 1 ? "Daily" : payoutDays2 === 7 ? "Weekly" : `Every ${payoutDays2} days`,
+          monthlyCost: parseFloat(t.monthly_cost || "0"),
+          yearlyCost: parseFloat(t.yearly_cost || "0"),
+          tierLevel: t.tier_level ?? 0
         };
-      }
+      });
       return c.json({
         success: true,
         tier: {
-          current: currentTier,
-          commission: TIER_CONFIG[currentTier].commission,
-          stats: {
-            totalBookings,
-            totalRevenue
-          },
-          nextTier: nextTier ? {
-            name: nextTier,
-            eligible: nextTierEligible,
-            requirements: TIER_CONFIG[nextTier],
-            progress: nextTierProgress
-          } : null
+          current: currentTierName,
+          name: currentTierRow?.display_name || currentTierName,
+          commission: commissionRate,
+          commissionRate,
+          commission_rate: commissionRate,
+          payoutPeriodDays: payoutDays,
+          payoutCycleLabel: payoutDays === 1 ? "Daily" : payoutDays === 7 ? "Weekly" : `Every ${payoutDays} days`,
+          stats: { totalBookings, totalRevenue },
+          features,
+          nextTier: nextTierName,
+          next_tier: nextTierName,
+          eligible: !!nextTierRow,
+          canUpgrade: !!nextTierRow,
+          allTiers,
+          upgradeTiers: upgradeTiers.map((t) => ({
+            name: t.tier_name,
+            displayName: t.display_name,
+            commissionRate: parseFloat(t.commission_rate || "0"),
+            monthlyCost: parseFloat(t.monthly_cost || "0"),
+            yearlyCost: parseFloat(t.yearly_cost || "0"),
+            features: Array.isArray(t.features) ? t.features : [],
+            termsAndConditions: t.terms_and_conditions || null,
+            termsVersion: t.terms_version || "1.0",
+            requiresTermsAcceptance: !!(t.terms_and_conditions && String(t.terms_and_conditions).trim())
+          })),
+          requirements: nextTierRow ? {
+            upgradeCost: parseFloat(nextTierRow.monthly_cost || "0"),
+            commissionRate: parseFloat(nextTierRow.commission_rate || "0"),
+            features: Array.isArray(nextTierRow.features) ? nextTierRow.features : [],
+            termsAndConditions: nextTierRow.terms_and_conditions || null,
+            requiresTermsAcceptance: !!(nextTierRow.terms_and_conditions && String(nextTierRow.terms_and_conditions).trim())
+          } : null,
+          progress: { bookings: 100, revenue: 100 }
         }
       });
     } catch (error) {
@@ -181467,21 +182970,25 @@ function registerTierSystemEndpoints(app3) {
         paymentMethod = "settlement_deduction",
         // 'upfront' or 'settlement_deduction'
         subscriptionPeriod = "monthly",
+        // 'monthly' | 'yearly' | 'twelve_month' | 'six_month'
+        settlementSchedule = "monthly",
+        // 'monthly' = 1 installment from next settlement; 'weekly_4' = 4 weekly installments
+        termsAccepted = false,
         razorpayPaymentId,
         // Required if paymentMethod is 'upfront'
         razorpayOrderId,
         adminId
       } = await c.req.json();
       console.log(`\u{1F3AF} [TIER-UPGRADE] Vendor ${vendorId} upgrading to ${newTier} via ${paymentMethod}`);
-      if (!newTier || !["Bronze", "Silver", "Gold", "Platinum"].includes(newTier)) {
-        return c.json({ error: "Invalid tier. Must be Bronze, Silver, Gold, or Platinum" }, 400);
+      if (!newTier || typeof newTier !== "string") {
+        return c.json({ error: "Tier name is required" }, 400);
       }
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors[0];
-      const oldTier = vendor.tier || "Bronze";
+      const actualVendorId = vendor.id;
+      const oldTier = vendor.tier || "Basic";
       const tierResult = await query(
         `SELECT * FROM vendor_tiers WHERE tier_name = $1`,
         [newTier]
@@ -181494,23 +183001,34 @@ function registerTierSystemEndpoints(app3) {
         }, 400);
       }
       const tierInfo = tierRows[0];
+      const hasTerms = tierInfo.terms_and_conditions && String(tierInfo.terms_and_conditions).trim().length > 0;
+      if (hasTerms && !termsAccepted) {
+        return c.json({
+          error: "You must accept the terms and conditions for this tier to upgrade",
+          requiresTermsAcceptance: true,
+          termsPreview: String(tierInfo.terms_and_conditions).slice(0, 200) + (String(tierInfo.terms_and_conditions).length > 200 ? "..." : "")
+        }, 400);
+      }
       const tierFee = subscriptionPeriod === "yearly" || subscriptionPeriod === "twelve_month" ? parseFloat(tierInfo.yearly_cost || tierInfo.twelve_month_cost || "0") : subscriptionPeriod === "six_month" ? parseFloat(tierInfo.six_month_cost || tierInfo.monthly_cost * 5.5 || "0") : parseFloat(tierInfo.monthly_cost || "0");
-      if (newTier === "Bronze") {
+      const isFreeTier = tierInfo.is_free_tier === true || parseFloat(tierInfo.monthly_cost || "0") === 0;
+      if (isFreeTier) {
+        const commissionPct = parseFloat(tierInfo.commission_rate || "0");
         const updated2 = await update(
           "vendors",
-          { id: vendorId },
+          { id: actualVendorId },
           {
             tier: newTier,
-            commission_percentage: TIER_CONFIG[newTier].commission
+            commission_percentage: commissionPct
           }
         );
         return c.json({
           success: true,
           vendor: updated2[0],
-          message: `Vendor tier set to Bronze (free tier)`,
+          message: `Vendor tier set to ${newTier} (free tier)`,
           tierFee: 0
         });
       }
+      let usedDeductionInstallments = 0;
       if (tierFee > 0) {
         if (paymentMethod === "upfront") {
           if (!razorpayPaymentId) {
@@ -181526,7 +183044,7 @@ function registerTierSystemEndpoints(app3) {
             subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + 1);
           }
           const subscription = await insert("vendor_tier_subscriptions", {
-            vendor_id: vendorId,
+            vendor_id: actualVendorId,
             tier_id: tierInfo.id,
             subscription_type: subscriptionPeriod,
             payment_type: "upfront",
@@ -181539,7 +183057,7 @@ function registerTierSystemEndpoints(app3) {
             end_date: subscriptionEndDate.toISOString().split("T")[0]
           });
           await insert("tier_upgrade_payments", {
-            vendor_id: vendorId,
+            vendor_id: actualVendorId,
             subscription_id: subscription[0]?.id,
             tier_id: tierInfo.id,
             payment_type: "upfront",
@@ -181550,8 +183068,10 @@ function registerTierSystemEndpoints(app3) {
             payment_date: (/* @__PURE__ */ new Date()).toISOString()
           });
         } else if (paymentMethod === "settlement_deduction") {
-          console.log(`\u{1F4C9} [TIER-UPGRADE] Creating settlement deduction for \u20B9${tierFee} over ${DEFAULT_DEDUCTION_INSTALLMENTS} payouts`);
-          const amountPerInstallment = Math.ceil(tierFee / DEFAULT_DEDUCTION_INSTALLMENTS);
+          const installments = DEDUCTION_OPTIONS[settlementSchedule] ?? (tierInfo.allow_split_payment ? tierInfo.split_payment_installments || DEFAULT_DEDUCTION_INSTALLMENTS : DEFAULT_DEDUCTION_INSTALLMENTS);
+          const safeInstallments = Math.min(4, Math.max(1, installments));
+          const amountPerInstallment = Math.ceil(tierFee / safeInstallments);
+          console.log(`\u{1F4C9} [TIER-UPGRADE] Creating settlement deduction for \u20B9${tierFee} over ${safeInstallments} payouts (schedule: ${settlementSchedule})`);
           const subscriptionEndDate = /* @__PURE__ */ new Date();
           if (subscriptionPeriod === "yearly" || subscriptionPeriod === "twelve_month") {
             subscriptionEndDate.setFullYear(subscriptionEndDate.getFullYear() + 1);
@@ -181561,7 +183081,7 @@ function registerTierSystemEndpoints(app3) {
             subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + 1);
           }
           const subscription = await insert("vendor_tier_subscriptions", {
-            vendor_id: vendorId,
+            vendor_id: actualVendorId,
             tier_id: tierInfo.id,
             subscription_type: subscriptionPeriod,
             payment_type: "split",
@@ -181569,30 +183089,30 @@ function registerTierSystemEndpoints(app3) {
             total_amount: tierFee,
             discount_amount: 0,
             final_amount: tierFee,
-            settlement_deduction_installments: DEFAULT_DEDUCTION_INSTALLMENTS,
+            settlement_deduction_installments: safeInstallments,
             status: "active",
             start_date: (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
             end_date: subscriptionEndDate.toISOString().split("T")[0]
           });
           await insert("tier_upgrade_deductions", {
-            vendor_id: vendorId,
+            vendor_id: actualVendorId,
             subscription_id: subscription[0]?.id,
             tier_id: tierInfo.id,
             total_amount: tierFee,
-            recovery_installments: DEFAULT_DEDUCTION_INSTALLMENTS,
+            recovery_installments: safeInstallments,
             amount_per_installment: amountPerInstallment,
             amount_remaining: tierFee,
             status: "pending"
           });
-          console.log(`\u2705 [TIER-UPGRADE] Deduction created: \u20B9${amountPerInstallment} x ${DEFAULT_DEDUCTION_INSTALLMENTS} payouts`);
+          console.log(`\u2705 [TIER-UPGRADE] Deduction created: \u20B9${amountPerInstallment} x ${safeInstallments} payouts`);
         }
       }
       const updated = await update(
         "vendors",
-        { id: vendorId },
+        { id: actualVendorId },
         {
           tier: newTier,
-          commission_percentage: parseFloat(tierInfo.commission_rate) || TIER_CONFIG[newTier].commission,
+          commission_percentage: parseFloat(tierInfo.commission_rate) || 0,
           metadata: {
             ...vendor.metadata || {},
             tierHistory: [
@@ -181609,17 +183129,33 @@ function registerTierSystemEndpoints(app3) {
           }
         }
       );
+      if (hasTerms && tierInfo.terms_and_conditions) {
+        try {
+          await insert("vendor_tier_acceptances", {
+            vendor_id: actualVendorId,
+            tier_id: tierInfo.id,
+            terms_version: tierInfo.terms_version || "1.0",
+            terms_text_snapshot: String(tierInfo.terms_and_conditions).slice(0, 1e4),
+            accepted_via: "web"
+          }).catch((err) => console.warn("[TIER-UPGRADE] T&C acceptance record failed (non-fatal):", err?.message));
+        } catch (_) {
+        }
+      }
+      const deductionInstallments = paymentMethod === "settlement_deduction" ? usedDeductionInstallments || (DEDUCTION_OPTIONS[settlementSchedule] ?? DEFAULT_DEDUCTION_INSTALLMENTS) : 0;
+      const amtPerPayout = deductionInstallments > 0 ? Math.ceil(tierFee / deductionInstallments) : 0;
       return c.json({
         success: true,
         vendor: updated[0],
         message: `Vendor tier upgraded from ${oldTier} to ${newTier}`,
         tierFee,
         paymentMethod,
+        settlementSchedule: paymentMethod === "settlement_deduction" ? settlementSchedule : null,
         deductionInfo: paymentMethod === "settlement_deduction" ? {
           totalAmount: tierFee,
-          installments: DEFAULT_DEDUCTION_INSTALLMENTS,
-          amountPerPayout: Math.ceil(tierFee / DEFAULT_DEDUCTION_INSTALLMENTS),
-          note: `\u20B9${Math.ceil(tierFee / DEFAULT_DEDUCTION_INSTALLMENTS)} will be deducted from your next ${DEFAULT_DEDUCTION_INSTALLMENTS} settlements`
+          installments: deductionInstallments,
+          amountPerPayout: amtPerPayout,
+          schedule: settlementSchedule,
+          note: deductionInstallments === 1 ? `\u20B9${amtPerPayout} will be deducted from your next settlement` : `\u20B9${amtPerPayout} will be deducted from your next ${deductionInstallments} settlements (weekly)`
         } : null
       });
     } catch (error) {
@@ -181630,13 +183166,16 @@ function registerTierSystemEndpoints(app3) {
   app3.get("/vendor/:vendorId/tier/deductions", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) return c.json({ error: "Vendor not found" }, 404);
+      const actualVendorId = vendor.id;
       const deductions = await query(
         `SELECT d.*, t.tier_name, t.commission_rate 
          FROM tier_upgrade_deductions d
          LEFT JOIN vendor_tiers t ON d.tier_id = t.id
          WHERE d.vendor_id = $1 AND d.status IN ('pending', 'in_progress')
          ORDER BY d.created_at DESC`,
-        [vendorId]
+        [actualVendorId]
       ).catch(() => ({ rows: [] }));
       const deductionRows = Array.isArray(deductions) ? deductions : deductions.rows || [];
       const totalPendingDeduction = deductionRows.reduce(
@@ -181668,17 +183207,21 @@ function registerTierSystemEndpoints(app3) {
     }
   });
   app3.get("/admin/tiers/config", async (c) => {
-    return c.json({
-      success: true,
-      tiers: TIER_CONFIG
-    });
+    const dbTiers = await query("SELECT * FROM vendor_tiers WHERE is_active = true ORDER BY tier_level").catch(() => ({ rows: [] }));
+    const rows = dbTiers.rows || [];
+    if (rows.length > 0) {
+      return c.json({ success: true, tiers: rows.map((r) => ({ name: r.tier_name, commission: r.commission_rate, monthlyFee: r.monthly_cost, yearlyFee: r.yearly_cost })) });
+    }
+    return c.json({ success: true, tiers: TIER_CONFIG_FALLBACK });
   });
   app3.post("/admin/tiers/calculate-commissions", async (c) => {
     try {
       const vendors = await select("vendors", { is_active: true });
+      const tiersResult = await query("SELECT tier_name, commission_rate FROM vendor_tiers WHERE is_active = true").catch(() => ({ rows: [] }));
+      const tierMap = Object.fromEntries((tiersResult.rows || []).map((r) => [r.tier_name, parseFloat(r.commission_rate || "0")]));
       const results = vendors.map((vendor) => {
-        const tier = vendor.tier || "Bronze";
-        const commission = TIER_CONFIG[tier].commission;
+        const tier = vendor.tier || "Basic";
+        const commission = tierMap[tier] ?? TIER_CONFIG_FALLBACK[tier]?.commission ?? 0;
         return {
           vendorId: vendor.id,
           businessName: vendor.business_name,
@@ -183375,6 +184918,7 @@ function createLambdaContext17() {
 var import_crypto31 = require("crypto");
 init_base_handler();
 init_rds_connection();
+init_razorpay_client();
 init_aws_clients();
 var RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || "";
 var RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || "";
@@ -183558,7 +185102,11 @@ var VerifyBankAccountHandler = class extends BaseHandler {
 var ProcessSettlementHandler = class extends BaseHandler {
   async handle(context) {
     const body = this.parseBody(context.event);
-    const { vendor_id, booking_ids, amount } = body;
+    const { vendor_id, booking_ids, amount, settlementId, settlementIds } = body;
+    const ids = settlementId ? [settlementId] : Array.isArray(settlementIds) ? settlementIds : [];
+    if (ids.length > 0) {
+      return this.handleProcessBySettlementIds(ids);
+    }
     this.validateRequired(body, ["vendor_id"]);
     const vendors = await select("vendors", { id: vendor_id });
     if (vendors.length === 0) {
@@ -183601,9 +185149,9 @@ var ProcessSettlementHandler = class extends BaseHandler {
           settlement_date: (/* @__PURE__ */ new Date()).toISOString()
         }
       });
-      const settlementId = `STL${Date.now()}${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+      const settlementId2 = `STL${Date.now()}${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
       await insert("vendor_settlements", {
-        id: settlementId,
+        id: settlementId2,
         vendor_id,
         razorpay_transfer_id: transfer.id,
         total_amount: settlementAmount,
@@ -183621,15 +185169,15 @@ var ProcessSettlementHandler = class extends BaseHandler {
             transfer_id = $2,
             updated_at = NOW()
         WHERE vendor_id = $3 AND booking_id = ANY($4)
-      `, [settlementId, transfer.id, vendor_id, bookingIdsToSettle]);
+      `, [settlementId2, transfer.id, vendor_id, bookingIdsToSettle]);
       await publishNotification2("vendor", vendor_id, {
         title: "Settlement Processing",
         body: `Settlement of \u20B9${vendorPayout} is being processed. Expected in 2-3 business days.`,
         type: "settlement_processing",
-        data: { settlement_id: settlementId, amount: vendorPayout }
+        data: { settlement_id: settlementId2, amount: vendorPayout }
       });
       return this.success({
-        settlement_id: settlementId,
+        settlement_id: settlementId2,
         transfer_id: transfer.id,
         total_amount: settlementAmount,
         commission: platformCommission,
@@ -183688,6 +185236,136 @@ var ProcessSettlementHandler = class extends BaseHandler {
       console.error("Error getting vendor tier commission:", error);
       return 10;
     }
+  }
+  /**
+   * Process settlement(s) by ID from settlements table: load settlement, get verified bank,
+   * create payout, call Razorpay Payouts API, update status/failure_reason.
+   */
+  async handleProcessBySettlementIds(settlementIds) {
+    const results = [];
+    const razorpayClient2 = getRazorpayClient();
+    for (const sid of settlementIds) {
+      if (!sid || !isValidUUID(sid)) {
+        results.push({ id: sid, success: false, error: "Invalid settlement ID" });
+        continue;
+      }
+      try {
+        const res = await query(
+          `SELECT * FROM settlements WHERE id = $1::uuid LIMIT 1`,
+          [sid]
+        );
+        const rows = res.rows || [];
+        if (rows.length === 0) {
+          results.push({ id: sid, success: false, error: "Settlement not found" });
+          continue;
+        }
+        const row = rows[0];
+        const vendorId = row.vendor_id;
+        const amount = parseFloat(row.net_amount ?? row.vendor_amount ?? "0");
+        if (amount <= 0) {
+          results.push({ id: sid, success: false, error: "Invalid amount" });
+          continue;
+        }
+        const status = row.settlement_status ?? row.status ?? "";
+        if (status !== "pending" && status !== "failed") {
+          results.push({ id: sid, success: false, error: `Settlement not processable (status: ${status})` });
+          continue;
+        }
+        let bank;
+        let bankDetails = [];
+        try {
+          const hasTable = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as ex`);
+          if (hasTable.rows?.[0]?.ex) {
+            const acc = await query(
+              `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 AND is_verified = true ORDER BY is_primary DESC LIMIT 1`,
+              [vendorId]
+            );
+            bankDetails = acc.rows || [];
+          }
+        } catch (_) {
+        }
+        if (bankDetails.length === 0) {
+          const details = await select("vendor_bank_details", { vendor_id: vendorId }).catch(() => []);
+          bankDetails = Array.isArray(details) ? details : [];
+        }
+        if (bankDetails.length === 0) {
+          results.push({ id: sid, success: false, error: "Vendor bank details not found" });
+          continue;
+        }
+        const b = bankDetails[0];
+        const accountNumber = String(b.account_number ?? b.accountNumber ?? "").trim();
+        const ifscCode = String(b.ifsc_code ?? b.ifsc ?? "").trim().toUpperCase();
+        const accountHolder = String(b.account_holder_name ?? b.account_holder ?? "").trim();
+        if (!accountNumber || !ifscCode || !accountHolder) {
+          results.push({ id: sid, success: false, error: "Incomplete bank details" });
+          continue;
+        }
+        bank = { account_number: accountNumber, ifsc_code: ifscCode, account_holder_name: accountHolder };
+        const payoutInsert = await insert("payouts", {
+          vendor_id: vendorId,
+          amount,
+          settlement_id: sid,
+          bank_account_number: bank.account_number,
+          ifsc_code: bank.ifsc_code,
+          account_holder_name: bank.account_holder_name,
+          payout_status: "pending"
+        });
+        const payoutId = payoutInsert?.[0]?.id;
+        try {
+          const payoutResponse = await razorpayClient2.payouts.create({
+            account_number: bank.account_number,
+            fund_account: {
+              account_type: "bank_account",
+              bank_account: {
+                name: bank.account_holder_name,
+                ifsc: bank.ifsc_code,
+                account_number: bank.account_number
+              }
+            },
+            amount: Math.round(amount * 100),
+            currency: "INR",
+            mode: "IMPS",
+            purpose: "payout",
+            queue_if_low_balance: true,
+            reference_id: `PAYOUT-${payoutId || sid}`
+          });
+          await query(
+            `UPDATE payouts SET payout_status = $1, razorpay_payout_id = $2 WHERE id = $3::uuid`,
+            ["processing", payoutResponse.id, payoutId]
+          );
+          await query(
+            `UPDATE settlements SET settlement_status = $1 WHERE id = $2::uuid`,
+            ["processing", sid]
+          ).catch(() => {
+          });
+          results.push({ id: sid, success: true, payoutId });
+        } catch (rpErr) {
+          const msg = rpErr?.message ?? rpErr?.error?.description ?? "Razorpay payout failed";
+          if (payoutId) {
+            await query(
+              `UPDATE payouts SET payout_status = $1, failure_reason = $2 WHERE id = $3::uuid`,
+              ["failed", msg, payoutId]
+            );
+          }
+          await query(
+            `UPDATE settlements SET settlement_status = $1, failure_reason = $2 WHERE id = $3::uuid`,
+            ["failed", msg, sid]
+          ).catch(() => {
+          });
+          results.push({ id: sid, success: false, error: msg });
+        }
+      } catch (err) {
+        results.push({ id: sid, success: false, error: err?.message ?? "Processing failed" });
+      }
+    }
+    const processed = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+    return this.success({
+      message: `Processed ${processed}, failed ${failed}`,
+      processed,
+      failed,
+      results
+    });
   }
 };
 var GetSettlementStatusHandler = class extends BaseHandler {
@@ -186632,7 +188310,9 @@ function registerAdminAdvancedEndpoints(app3) {
   app3.post("/admin/catalog/services", async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status, applicableRoles, categoryName, subCategoryName, specializationIds, specialization_ids } = body;
+      const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status, applicableRoles, categoryName, subCategoryName, specializationIds, specialization_ids, tax_category_id, taxCategoryId, hsn_code_id, hsnCodeId } = body;
+      const taxCategoryIdVal = tax_category_id ?? taxCategoryId ?? null;
+      const hsnCodeIdVal = hsn_code_id ?? hsnCodeId ?? null;
       const specializationIdsArr = Array.isArray(specializationIds) ? specializationIds : Array.isArray(specialization_ids) ? specialization_ids : [];
       if (!name || !price) {
         return c.json({ success: false, error: "Service name and price are required" }, 400);
@@ -186665,7 +188345,7 @@ function registerAdminAdvancedEndpoints(app3) {
       } else {
         console.warn(`\u26A0\uFE0F Service ${serviceId} created without applicable_roles. Service won't be visible to vendors. Please assign roles via admin UI.`);
       }
-      const newService = await insert("service_catalog", {
+      const insertPayload = {
         service_id: serviceId,
         service_name: name,
         display_name: name,
@@ -186684,7 +188364,10 @@ function registerAdminAdvancedEndpoints(app3) {
         specialization_ids: specializationIdsArr,
         created_at: (/* @__PURE__ */ new Date()).toISOString(),
         updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
+      };
+      if (taxCategoryIdVal) insertPayload.tax_category_id = taxCategoryIdVal;
+      if (hsnCodeIdVal) insertPayload.hsn_code_id = hsnCodeIdVal;
+      const newService = await insert("service_catalog", insertPayload);
       return c.json({
         success: true,
         message: "Service created successfully",
@@ -186718,6 +188401,10 @@ function registerAdminAdvancedEndpoints(app3) {
       if (body.applicableRoles !== void 0) updateData.applicable_roles = Array.isArray(body.applicableRoles) ? body.applicableRoles : [];
       if (body.service_style !== void 0) updateData.service_style = body.service_style;
       if (body.serviceStyle !== void 0) updateData.service_style = body.serviceStyle;
+      if (body.tax_category_id !== void 0) updateData.tax_category_id = body.tax_category_id || null;
+      if (body.taxCategoryId !== void 0) updateData.tax_category_id = body.taxCategoryId || null;
+      if (body.hsn_code_id !== void 0) updateData.hsn_code_id = body.hsn_code_id || null;
+      if (body.hsnCodeId !== void 0) updateData.hsn_code_id = body.hsnCodeId || null;
       if (updateData.applicable_roles && updateData.applicable_roles.length > 0) {
         const validation = await validateApplicableRolesAgainstActiveRoles(updateData.applicable_roles);
         if (!validation.valid) {
@@ -187118,8 +188805,50 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/finance/settlements", async (c) => {
     try {
-      const settlements = await query("SELECT * FROM settlements ORDER BY created_at DESC LIMIT 50");
-      return c.json({ success: true, settlements: settlements.rows });
+      const result = await query(`
+        SELECT s.*,
+               COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
+               COALESCE(v.phone, vi.phone) as vendor_phone,
+               r.name as vendor_role,
+               COALESCE(v.category, vi.vendor_type, '') as business_type
+        FROM settlements s
+        LEFT JOIN vendors v ON s.vendor_id = v.id
+        LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
+        LEFT JOIN roles r ON v.role_id = r.id
+        ORDER BY s.created_at DESC
+        LIMIT 100
+      `);
+      const rows = result.rows || [];
+      const settlements = rows.map((s) => {
+        const status = s.status || s.settlement_status || "pending";
+        const amount = parseFloat(s.vendor_amount ?? s.net_amount ?? s.total_amount ?? "0");
+        const commission = parseFloat(s.commission_amount ?? "0");
+        const periodStart = s.settlement_period_start || s.period_start || s.created_at;
+        const periodEnd = s.settlement_period_end || s.period_end || s.completed_at || s.created_at;
+        const periodStr = periodStart && periodEnd ? `${new Date(periodStart).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })} \u2013 ${new Date(periodEnd).toLocaleDateString("en-IN", { month: "short", day: "numeric", year: "numeric" })}` : s.created_at ? new Date(s.created_at).toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : "\u2014";
+        return {
+          id: s.id,
+          vendor_id: s.vendor_id,
+          vendorName: s.vendor_name || s.business_name || "Unknown",
+          vendor_name: s.vendor_name || s.business_name || "Unknown",
+          vendor_role: s.vendor_role || null,
+          business_type: s.business_type || null,
+          amount,
+          commission,
+          total_amount: parseFloat(s.total_amount ?? "0"),
+          status,
+          failure_reason: s.failure_reason || s.error_message || null,
+          period: periodStr,
+          period_start: periodStart,
+          period_end: periodEnd,
+          currency: s.currency || "INR",
+          razorpay_transfer_id: s.razorpay_transfer_id,
+          created_at: s.created_at,
+          completed_at: s.completed_at,
+          failed_at: s.failed_at
+        };
+      });
+      return c.json({ success: true, settlements });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
@@ -187127,28 +188856,100 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/finance/settlement-schedule", async (c) => {
     try {
-      const schedule = await query("SELECT * FROM settlement_schedules ORDER BY created_at DESC");
-      return c.json({ success: true, schedule: schedule.rows });
+      const scheduleRows = await query("SELECT * FROM settlement_schedules ORDER BY created_at DESC").then((r) => r.rows || []);
+      const defaultTier = await query(`
+        SELECT payout_period_days FROM vendor_tiers WHERE is_active = true ORDER BY is_default DESC NULLS LAST, tier_level ASC LIMIT 1
+      `).then((r) => r.rows?.[0]).catch(() => null);
+      const settlementPeriodDays = defaultTier?.payout_period_days != null ? Number(defaultTier.payout_period_days) : 7;
+      const stored = await query(`
+        SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:finance:settlement-schedule' LIMIT 1
+      `).then((r) => r.rows?.[0]?.setting_value).catch(() => null);
+      const saved = stored ? typeof stored === "string" ? JSON.parse(stored) : stored : {};
+      const settings = {
+        enabled: saved.enabled !== false,
+        scheduleType: saved.scheduleType || "weekly",
+        scheduleDay: saved.scheduleDay ?? 1,
+        scheduleTime: saved.scheduleTime || "09:00",
+        settlementPeriodDays,
+        autoProcess: saved.autoProcess !== false,
+        minPayoutAmount: saved.minPayoutAmount ?? 100,
+        timezone: saved.timezone || "Asia/Kolkata",
+        lastProcessedAt: saved.lastProcessedAt ?? null,
+        nextProcessAt: saved.nextProcessAt ?? null
+      };
+      return c.json({ success: true, schedule: scheduleRows, settings });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
+  app3.post("/admin/finance/settlement-schedule", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { enabled, scheduleType, scheduleDay, scheduleTime, autoProcess, minPayoutAmount, timezone } = body;
+      const toStore = {
+        enabled: enabled !== false,
+        scheduleType: scheduleType || "weekly",
+        scheduleDay: scheduleDay ?? 1,
+        scheduleTime: scheduleTime || "09:00",
+        autoProcess: autoProcess !== false,
+        minPayoutAmount: minPayoutAmount ?? 100,
+        timezone: timezone || "Asia/Kolkata"
+      };
+      const existing = await query(`
+        SELECT id, setting_value FROM platform_settings WHERE setting_key = 'admin:finance:settlement-schedule' LIMIT 1
+      `).then((r) => r.rows);
+      if (existing?.length > 0) {
+        await update("platform_settings", { id: existing[0].id }, { setting_value: toStore, updated_at: (/* @__PURE__ */ new Date()).toISOString() });
+      } else {
+        await insert("platform_settings", {
+          setting_key: "admin:finance:settlement-schedule",
+          setting_value: toStore,
+          setting_type: "object",
+          created_at: (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      const defaultTier = await query(`
+        SELECT payout_period_days FROM vendor_tiers WHERE is_active = true ORDER BY is_default DESC NULLS LAST, tier_level ASC LIMIT 1
+      `).then((r) => r.rows?.[0]).catch(() => null);
+      const settlementPeriodDays = defaultTier?.payout_period_days != null ? Number(defaultTier.payout_period_days) : 7;
+      const settings = { ...toStore, settlementPeriodDays, lastProcessedAt: null, nextProcessAt: null };
+      return c.json({ success: true, settings });
+    } catch (error) {
+      const errorResponse = createSafeErrorResponse(error, "Failed to save settlement schedule", 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
   app3.get("/admin/finance/settlement-rules", async (c) => {
     try {
-      const rules = await query("SELECT * FROM settlement_rules ORDER BY created_at DESC").catch(async () => {
+      const rules = await query("SELECT * FROM settlement_rules ORDER BY priority ASC, created_at DESC").catch(async () => {
         try {
           const settings = await query(`
-            SELECT setting_value 
-            FROM admin_settings 
-            WHERE setting_category = 'settlement' AND setting_key = 'rules'
+            SELECT setting_value FROM admin_settings WHERE setting_category = 'settlement' AND setting_key = 'rules'
           `);
           return { rows: settings.rows.length > 0 ? JSON.parse(settings.rows[0].setting_value) : [] };
         } catch {
           return { rows: [] };
         }
       });
-      return c.json({ success: true, rules: rules.rows || [] });
+      const rows = rules.rows || [];
+      const normalized = rows.map((r) => {
+        const actions = typeof r.actions === "string" ? r.actions ? JSON.parse(r.actions) : {} : r.actions || {};
+        const conditions = typeof r.conditions === "string" ? r.conditions ? JSON.parse(r.conditions) : {} : r.conditions || {};
+        const settlement = actions.settlement || { periodDays: 7, minPayoutAmount: 100, autoProcess: true };
+        return {
+          id: r.id,
+          name: r.rule_name || r.name,
+          priority: r.priority ?? 1,
+          enabled: r.is_active !== false,
+          conditions,
+          settlement: { periodDays: settlement.periodDays ?? 7, minPayoutAmount: settlement.minPayoutAmount ?? 100, autoProcess: settlement.autoProcess !== false, commissionRate: settlement.commissionRate, holdPeriodDays: settlement.holdPeriodDays },
+          createdAt: r.created_at,
+          updatedAt: r.updated_at
+        };
+      });
+      return c.json({ success: true, rules: normalized });
     } catch (error) {
       console.error("Error fetching settlement rules:", error);
       const errorResponse = createSafeErrorResponse(error, "Failed to fetch settlement rules", 500);
@@ -187158,19 +188959,21 @@ function registerAdminAdvancedEndpoints(app3) {
   app3.post("/admin/finance/settlement-rules", async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { name, description, ruleType, conditions, actions, isActive, priority } = body;
-      if (!name || !ruleType) {
-        return c.json({ success: false, error: "Rule name and type are required" }, 400);
+      const { name, description, ruleType, conditions, actions, settlement, isActive, priority } = body;
+      if (!name) {
+        return c.json({ success: false, error: "Rule name is required" }, 400);
       }
+      const mergedActions = { ...typeof actions === "object" && actions !== null ? actions : {}, ...settlement ? { settlement } : {} };
+      const ruleTypeVal = ruleType || "settlement";
       try {
         const newRule = await insert("settlement_rules", {
           rule_name: name,
           description: description || "",
-          rule_type: ruleType,
+          rule_type: ruleTypeVal,
           conditions: JSON.stringify(conditions || {}),
-          actions: JSON.stringify(actions || {}),
+          actions: JSON.stringify(mergedActions),
           is_active: isActive !== false,
-          priority: priority || 1,
+          priority: priority ?? 1,
           created_at: (/* @__PURE__ */ new Date()).toISOString(),
           updated_at: (/* @__PURE__ */ new Date()).toISOString()
         });
@@ -187191,11 +188994,12 @@ function registerAdminAdvancedEndpoints(app3) {
             id: `rule-${Date.now()}`,
             name,
             description,
-            ruleType,
+            ruleType: ruleTypeVal,
             conditions: conditions || {},
-            actions: actions || {},
+            actions: mergedActions,
+            settlement,
             isActive: isActive !== false,
-            priority: priority || 1,
+            priority: priority ?? 1,
             createdAt: (/* @__PURE__ */ new Date()).toISOString()
           };
           existingRules.push(newRule);
@@ -187236,10 +189040,11 @@ function registerAdminAdvancedEndpoints(app3) {
     try {
       const ruleId = c.req.param("id");
       const body = await c.req.json().catch(() => ({}));
-      const { name, description, ruleType, conditions, actions, isActive, priority } = body;
+      const { name, description, ruleType, conditions, actions, settlement, isActive, priority } = body;
       if (!ruleId) {
         return c.json({ success: false, error: "Rule ID is required" }, 400);
       }
+      const mergedActions = settlement != null ? { ...typeof actions === "object" && actions !== null ? actions : {}, settlement } : typeof actions === "object" && actions !== null ? actions : void 0;
       try {
         const updated = await update(
           "settlement_rules",
@@ -187249,7 +189054,7 @@ function registerAdminAdvancedEndpoints(app3) {
             ...description !== void 0 && { description },
             ...ruleType && { rule_type: ruleType },
             ...conditions && { conditions: JSON.stringify(conditions) },
-            ...actions && { actions: JSON.stringify(actions) },
+            ...mergedActions && { actions: JSON.stringify(mergedActions) },
             ...isActive !== void 0 && { is_active: isActive },
             ...priority !== void 0 && { priority },
             updated_at: (/* @__PURE__ */ new Date()).toISOString()
@@ -187364,8 +189169,9 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/finance/cancellation-policies", async (c) => {
     try {
-      const policies = await query("SELECT * FROM cancellation_policies ORDER BY created_at DESC");
-      return c.json({ success: true, policies: policies.rows ?? [] });
+      const result = await query("SELECT * FROM cancellation_policies ORDER BY created_at DESC");
+      const policies = result.rows ?? (Array.isArray(result) ? result : []);
+      return c.json({ success: true, policies });
     } catch (error) {
       const msg = String(getErrorMessage(error));
       if (/relation\s+["']?cancellation_policies["']?\s+does not exist/i.test(msg)) {
@@ -187401,6 +189207,9 @@ function registerAdminAdvancedEndpoints(app3) {
       const vendorTypesArr = Array.isArray(vendorTypes) ? vendorTypes : body.vendor_types && Array.isArray(body.vendor_types) ? body.vendor_types : [];
       const serviceTypesArr = Array.isArray(serviceTypes) ? serviceTypes : body.service_types && Array.isArray(body.service_types) ? body.service_types : [];
       const priorityVal = Number.isFinite(Number(priority)) ? Number(priority) : 0;
+      const windowsArr = Array.isArray(cancellationWindows) ? cancellationWindows : [];
+      const penaltyObj = vendorCancellationPenalty && typeof vendorCancellationPenalty === "object" ? vendorCancellationPenalty : { enabled: true, penaltyPercentage: 10, compensationPercentage: 50 };
+      const noShowObj = noShowPolicy && typeof noShowPolicy === "object" ? noShowPolicy : { enabled: true, refundPercentage: 0, penaltyAmount: 0 };
       const newPolicy = await insert("cancellation_policies", {
         policy_name: name,
         description: description || "",
@@ -187409,6 +189218,11 @@ function registerAdminAdvancedEndpoints(app3) {
         service_types: serviceTypesArr,
         hours_before_booking: gracePeriodHours ?? 2,
         cancellation_fee_percentage: cancellationFee,
+        cancellation_windows: windowsArr,
+        vendor_cancellation_penalty: penaltyObj,
+        no_show_policy: noShowObj,
+        service_category: body.serviceCategory ?? body.service_category ?? null,
+        service_format: body.serviceFormat ?? body.service_format ?? null,
         priority: priorityVal,
         is_active: isActive !== false,
         created_at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -187444,6 +189258,11 @@ function registerAdminAdvancedEndpoints(app3) {
       if (body.cancellationWindows?.[0]?.penaltyPercentage !== void 0) {
         updateData.cancellation_fee_percentage = body.cancellationWindows[0].penaltyPercentage;
       }
+      if (body.cancellationWindows !== void 0) updateData.cancellation_windows = Array.isArray(body.cancellationWindows) ? body.cancellationWindows : [];
+      if (body.vendorCancellationPenalty !== void 0) updateData.vendor_cancellation_penalty = body.vendorCancellationPenalty && typeof body.vendorCancellationPenalty === "object" ? body.vendorCancellationPenalty : void 0;
+      if (body.noShowPolicy !== void 0) updateData.no_show_policy = body.noShowPolicy && typeof body.noShowPolicy === "object" ? body.noShowPolicy : void 0;
+      if (body.serviceCategory !== void 0 || body.service_category !== void 0) updateData.service_category = body.serviceCategory ?? body.service_category ?? null;
+      if (body.serviceFormat !== void 0 || body.service_format !== void 0) updateData.service_format = body.serviceFormat ?? body.service_format ?? null;
       const updated = await update("cancellation_policies", { id }, updateData);
       return c.json({
         success: true,
@@ -187452,6 +189271,84 @@ function registerAdminAdvancedEndpoints(app3) {
       });
     } catch (error) {
       console.error("Error updating cancellation policy:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  app3.delete("/admin/finance/cancellation-policies/:id", async (c) => {
+    try {
+      const id = c.req.param("id");
+      await deleteRows("cancellation_policies", { id });
+      return c.json({ success: true, message: "Cancellation policy deleted" });
+    } catch (error) {
+      console.error("Error deleting cancellation policy:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  app3.get("/admin/finance/ecommerce-policy-config", async (c) => {
+    try {
+      const result = await query(
+        `SELECT setting_value FROM admin_settings WHERE setting_category = $1 AND setting_key = $2 LIMIT 1`,
+        ["ecommerce", "cancellation_refund_policy"]
+      ).catch(() => ({ rows: [] }));
+      const rows = result.rows ?? [];
+      const value = rows.length > 0 ? rows[0].setting_value : null;
+      const config = value && typeof value === "object" ? value : typeof value === "string" ? (() => {
+        try {
+          return JSON.parse(value);
+        } catch {
+          return {};
+        }
+      })() : {};
+      return c.json({
+        success: true,
+        config: {
+          returnWindowHours: config.returnWindowHours ?? config.return_window_hours ?? 48,
+          cancelBeforeDispatchFullRefund: config.cancelBeforeDispatchFullRefund !== false && config.cancel_before_dispatch_full_refund !== false,
+          refundProcessingDays: config.refundProcessingDays ?? config.refund_processing_days ?? 7,
+          nonReturnableCategories: Array.isArray(config.nonReturnableCategories ?? config.non_returnable_categories) ? config.nonReturnableCategories ?? config.non_returnable_categories : ["opened_pet_food", "opened_treats_supplements", "hygiene_once_opened", "customized", "clearance"]
+        }
+      });
+    } catch (error) {
+      return c.json({
+        success: true,
+        config: {
+          returnWindowHours: 48,
+          cancelBeforeDispatchFullRefund: true,
+          refundProcessingDays: 7,
+          nonReturnableCategories: ["opened_pet_food", "opened_treats_supplements", "hygiene_once_opened", "customized", "clearance"]
+        }
+      });
+    }
+  });
+  app3.put("/admin/finance/ecommerce-policy-config", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const payload = {
+        returnWindowHours: body.returnWindowHours ?? 48,
+        cancelBeforeDispatchFullRefund: body.cancelBeforeDispatchFullRefund !== false,
+        refundProcessingDays: body.refundProcessingDays ?? 7,
+        nonReturnableCategories: Array.isArray(body.nonReturnableCategories) ? body.nonReturnableCategories : []
+      };
+      const existing = await query(
+        `SELECT id, setting_value FROM admin_settings WHERE setting_category = $1 AND setting_key = $2 LIMIT 1`,
+        ["ecommerce", "cancellation_refund_policy"]
+      ).catch(() => ({ rows: [] }));
+      const rows = existing.rows ?? [];
+      if (rows.length > 0) {
+        await update("admin_settings", { id: rows[0].id }, { setting_value: payload, updated_at: (/* @__PURE__ */ new Date()).toISOString() });
+      } else {
+        await insert("admin_settings", {
+          setting_category: "ecommerce",
+          setting_key: "cancellation_refund_policy",
+          setting_value: payload,
+          is_active: true,
+          created_at: (/* @__PURE__ */ new Date()).toISOString(),
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      return c.json({ success: true, message: "Ecommerce policy config saved", config: payload });
+    } catch (error) {
+      console.error("Error saving ecommerce policy config:", error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });
@@ -187484,8 +189381,13 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/finance/gst/hsn-codes", async (c) => {
     try {
-      const codes = await query("SELECT * FROM hsn_codes ORDER BY hsn_code ASC");
-      return c.json({ success: true, codes: codes.rows });
+      const codes = await query(
+        `SELECT hc.*, tc.category_name as tax_category_name 
+         FROM hsn_codes hc 
+         LEFT JOIN tax_categories tc ON hc.category_id = tc.id 
+         ORDER BY COALESCE(hc.hsn_code, hc.code) ASC`
+      );
+      return c.json({ success: true, codes: codes.rows, hsnCodes: codes.rows });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
@@ -187494,17 +189396,19 @@ function registerAdminAdvancedEndpoints(app3) {
   app3.post("/admin/finance/gst/hsn-codes", async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { code, description, gstRate, category, cgst, sgst, igst, isActive } = body;
+      const { code, description, gstRate, category, categoryId, cgst, sgst, igst, isActive } = body;
       if (!code || !gstRate) {
         return c.json({ success: false, error: "HSN code and GST rate are required" }, 400);
       }
-      const newCode = await insert("hsn_codes", {
+      const insertPayload = {
         hsn_code: code,
         description: description || "",
         gst_rate: parseFloat(gstRate),
         is_active: isActive !== false,
         created_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
+      };
+      if (categoryId) insertPayload.category_id = categoryId;
+      const newCode = await insert("hsn_codes", insertPayload);
       return c.json({
         success: true,
         message: "HSN code created successfully",
@@ -187524,6 +189428,7 @@ function registerAdminAdvancedEndpoints(app3) {
       if (body.description !== void 0) updateData.description = body.description;
       if (body.gstRate !== void 0) updateData.gst_rate = parseFloat(body.gstRate);
       if (body.isActive !== void 0) updateData.is_active = body.isActive;
+      if (body.categoryId !== void 0) updateData.category_id = body.categoryId || null;
       const updated = await update("hsn_codes", { id }, updateData);
       return c.json({
         success: true,
@@ -187609,7 +189514,11 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.post("/admin/finance/process-settlements", async (c) => {
     try {
-      return c.json({ success: true, message: "Settlements processed" });
+      return c.json({
+        success: true,
+        message: "Use POST /settlements/calculate-daily to run settlement calculation (Schedule Settings \u2192 Process Now does this). Then process payouts from Payout Management.",
+        processed: 0
+      });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
@@ -188288,14 +190197,90 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/payments/analytics", async (c) => {
     try {
-      const analytics = await query(`
-        SELECT 
-          COUNT(*) as total_payments,
-          SUM(amount) as total_amount,
-          COUNT(*) FILTER (WHERE payment_status = 'completed' OR payment_status = 'success') as successful
-        FROM payments
-      `);
-      return c.json({ success: true, analytics: analytics.rows[0] });
+      let veResult = { rows: [] };
+      try {
+        veResult = await query(`
+          SELECT 
+            COALESCE(SUM(total_amount), 0) as total_revenue,
+            COALESCE(SUM(commission_amount), 0) as total_commission,
+            COALESCE(SUM(amount) FILTER (WHERE status IN ('settled', 'paid_out')), 0) as vendor_payout,
+            COALESCE(SUM(amount) FILTER (WHERE status = 'pending'), 0) as pending_amount,
+            COUNT(*) FILTER (WHERE status = 'pending') as pending_count
+          FROM vendor_earnings
+        `);
+      } catch {
+      }
+      const ve = veResult.rows?.[0] || {};
+      let totalRevenue = parseFloat(ve.total_revenue ?? "0");
+      let totalCommission = parseFloat(ve.total_commission ?? "0");
+      let vendorPayout = parseFloat(ve.vendor_payout ?? "0");
+      let pendingAmount = parseFloat(ve.pending_amount ?? "0");
+      let pendingCount = parseInt(ve.pending_count ?? "0", 10);
+      if (totalRevenue === 0 && totalCommission === 0) {
+        try {
+          const payResult = await query(`
+            SELECT 
+              COALESCE(SUM(amount), 0) as total_revenue,
+              COALESCE(SUM(COALESCE(platform_fee, commission_amount)), 0) as commission,
+              COUNT(*) as cnt
+            FROM payments 
+            WHERE payment_status IN ('completed', 'success') AND created_at >= CURRENT_DATE - INTERVAL '90 days'
+          `);
+          const pr = payResult.rows?.[0];
+          if (pr && parseInt(pr.cnt ?? "0", 10) > 0) {
+            totalRevenue = parseFloat(pr.total_revenue ?? "0");
+            totalCommission = parseFloat(pr.commission ?? "0") || totalRevenue * 0.02;
+          }
+        } catch {
+        }
+        try {
+          const bookResult = await query(`
+            SELECT COALESCE(SUM(total_amount), 0) as gmv
+            FROM bookings 
+            WHERE status = 'completed' AND created_at >= CURRENT_DATE - INTERVAL '90 days'
+          `);
+          const br = bookResult.rows?.[0];
+          if (br && totalRevenue === 0) {
+            const gmv = parseFloat(br.gmv ?? "0");
+            if (gmv > 0) {
+              totalRevenue = gmv;
+              totalCommission = totalCommission || gmv * 0.02;
+            }
+          }
+        } catch {
+        }
+      }
+      let setResult = { rows: [] };
+      try {
+        setResult = await query(`
+          SELECT 
+            COALESCE(SUM(COALESCE(vendor_amount, net_amount)), 0) FILTER (WHERE COALESCE(status, settlement_status) IN ('completed', 'processed')) as settled_amount,
+            COALESCE(SUM(COALESCE(vendor_amount, net_amount)), 0) FILTER (WHERE COALESCE(status, settlement_status) IN ('pending', 'processing')) as settlements_pending,
+            COUNT(*) FILTER (WHERE COALESCE(status, settlement_status) IN ('pending', 'processing')) as settlements_pending_count
+          FROM settlements
+        `);
+      } catch {
+      }
+      const setRow = setResult.rows?.[0];
+      const settledFromTable = parseFloat(setRow?.settled_amount ?? "0");
+      vendorPayout = vendorPayout > 0 ? vendorPayout : settledFromTable;
+      pendingAmount = pendingAmount || parseFloat(setRow?.settlements_pending ?? "0");
+      if (pendingCount === 0) pendingCount = parseInt(setRow?.settlements_pending_count ?? "0", 10);
+      return c.json({
+        success: true,
+        analytics: {
+          totalRevenue,
+          totalCommission,
+          vendorPayout,
+          pendingAmount,
+          pendingCount,
+          total_payments: 0,
+          total_amount: totalRevenue,
+          successful: 0,
+          revenueByTier: {},
+          topVendors: []
+        }
+      });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
@@ -188536,10 +190521,77 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/payments/settlements", async (c) => {
     try {
-      const settlements = await query("SELECT * FROM vendor_settlements ORDER BY created_at DESC LIMIT 50").catch(async () => {
-        return await query("SELECT * FROM payouts ORDER BY created_at DESC LIMIT 50").catch(() => ({ rows: [] }));
-      });
-      return c.json({ success: true, settlements: settlements.rows });
+      const statusMap = {
+        pending: "Pending",
+        processing: "Pending",
+        completed: "Paid",
+        failed: "Failed"
+      };
+      const settlements = [];
+      try {
+        const result = await query(`
+          SELECT s.*,
+                 COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name
+          FROM settlements s
+          LEFT JOIN vendors v ON s.vendor_id = v.id
+          LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
+          ORDER BY s.created_at DESC
+          LIMIT 100
+        `);
+        const rows = result.rows || [];
+        for (const s of rows) {
+          const rawStatus = s.status || s.settlement_status || "pending";
+          settlements.push({
+            id: s.id,
+            vendorId: s.vendor_id,
+            vendorName: s.vendor_name || "Unknown",
+            vendor_name: s.vendor_name || "Unknown",
+            amount: parseFloat(s.vendor_amount ?? s.net_amount ?? s.total_amount ?? "0"),
+            commission: parseFloat(s.commission_amount ?? "0"),
+            status: statusMap[rawStatus] || "Pending",
+            failure_reason: s.failure_reason || s.error_message || null,
+            date: s.created_at || s.completed_at,
+            source: "settlement"
+          });
+        }
+      } catch {
+      }
+      if (settlements.length < 100) {
+        try {
+          const veResult = await query(`
+            SELECT v.id as vendor_id, v.business_name as vendor_name,
+                   SUM(ve.amount) as amount,
+                   SUM(ve.commission_amount) as commission_amount,
+                   MAX(ve.realized_at) as date
+            FROM vendor_earnings ve
+            JOIN vendors v ON ve.vendor_id = v.id
+            WHERE ve.status = 'pending'
+            GROUP BY v.id, v.business_name
+            HAVING SUM(ve.amount) > 0
+            ORDER BY MAX(ve.realized_at) DESC
+            LIMIT 50
+          `);
+          const veRows = veResult.rows || [];
+          const existingVendorIds = new Set(settlements.map((s) => String(s.vendorId)));
+          for (const row of veRows) {
+            if (existingVendorIds.has(String(row.vendor_id))) continue;
+            settlements.push({
+              id: `ve-${row.vendor_id}`,
+              vendorId: row.vendor_id,
+              vendorName: row.vendor_name || "Vendor",
+              vendor_name: row.vendor_name || "Vendor",
+              amount: parseFloat(row.amount ?? "0"),
+              commission: parseFloat(row.commission_amount ?? "0"),
+              status: "Due",
+              failure_reason: null,
+              date: row.date,
+              source: "vendor_earnings"
+            });
+          }
+        } catch {
+        }
+      }
+      return c.json({ success: true, settlements, data: { settlements } });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
@@ -188549,7 +190601,8 @@ function registerAdminAdvancedEndpoints(app3) {
     try {
       const result = await query(`
         SELECT id, tier_name, display_name, description, commission_rate, payout_period_days,
-               monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles, created_at, updated_at
+               monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
+               terms_and_conditions, terms_version, created_at, updated_at
         FROM vendor_tiers
         ORDER BY tier_level ASC NULLS LAST, created_at DESC
       `);
@@ -188565,7 +190618,9 @@ function registerAdminAdvancedEndpoints(app3) {
         isDefault: Boolean(row.is_default),
         isActive: row.is_active !== false,
         features: Array.isArray(row.features) ? row.features : row.features ? [row.features] : [],
-        roles: Array.isArray(row.applicable_roles) ? row.applicable_roles : []
+        roles: Array.isArray(row.applicable_roles) ? row.applicable_roles : [],
+        termsAndConditions: row.terms_and_conditions ?? "",
+        termsVersion: row.terms_version ?? "1.0"
       }));
       return c.json({ success: true, tiers: rows });
     } catch (error) {
@@ -188596,30 +190651,53 @@ function registerAdminAdvancedEndpoints(app3) {
       const features = Array.isArray(body.features) ? body.features : [];
       const roles = Array.isArray(body.roles) ? body.roles : [];
       const roleUuids = roles.filter((r) => typeof r === "string" && /^[0-9a-f-]{36}$/i.test(r));
+      const termsAndConditions = body.termsAndConditions != null ? String(body.termsAndConditions) : body.terms_and_conditions != null ? String(body.terms_and_conditions) : "";
+      const termsVersion = body.termsVersion != null ? String(body.termsVersion) : body.terms_version != null ? String(body.terms_version) : "1.0";
       const levelResult = await query("SELECT COALESCE(MAX(tier_level), 0) + 1 AS next_level FROM vendor_tiers");
       const nextLevel = Number(levelResult.rows?.[0]?.next_level) || 1;
-      const insertResult = await query(
-        `INSERT INTO vendor_tiers (
-          tier_name, tier_level, display_name, description, commission_rate, payout_period_days,
-          monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-        RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days,
-                  monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles, created_at`,
-        [
-          name,
-          nextLevel,
-          displayName,
-          description || null,
-          commissionRate,
-          payoutPeriodDays,
-          monthlyCost,
-          yearlyCost,
-          isDefault,
-          isActive,
-          JSON.stringify(features),
-          roleUuids.length ? roleUuids : []
-        ]
-      );
+      let insertResult;
+      try {
+        insertResult = await query(
+          `INSERT INTO vendor_tiers (
+            tier_name, tier_level, display_name, description, commission_rate, payout_period_days,
+            monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
+            terms_and_conditions, terms_version
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days,
+                    monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles,
+                    terms_and_conditions, terms_version, created_at`,
+          [
+            name,
+            nextLevel,
+            displayName,
+            description || null,
+            commissionRate,
+            payoutPeriodDays,
+            monthlyCost,
+            yearlyCost,
+            isDefault,
+            isActive,
+            JSON.stringify(features),
+            roleUuids.length ? roleUuids : [],
+            termsAndConditions || null,
+            termsVersion || "1.0"
+          ]
+        );
+      } catch (colErr) {
+        if (/column "terms_and_conditions" does not exist/i.test(String(colErr))) {
+          insertResult = await query(
+            `INSERT INTO vendor_tiers (
+              tier_name, tier_level, display_name, description, commission_rate, payout_period_days,
+              monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days,
+                      monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles, created_at`,
+            [name, nextLevel, displayName, description || null, commissionRate, payoutPeriodDays, monthlyCost, yearlyCost, isDefault, isActive, JSON.stringify(features), roleUuids.length ? roleUuids : []]
+          );
+        } else {
+          throw colErr;
+        }
+      }
       const row = insertResult.rows?.[0];
       if (!row) {
         return c.json({ success: false, error: "Failed to create tier" }, 500);
@@ -188636,7 +190714,9 @@ function registerAdminAdvancedEndpoints(app3) {
         isDefault: Boolean(row.is_default),
         isActive: row.is_active !== false,
         features: Array.isArray(row.features) ? row.features : [],
-        roles: Array.isArray(row.applicable_roles) ? row.applicable_roles : []
+        roles: Array.isArray(row.applicable_roles) ? row.applicable_roles : [],
+        termsAndConditions: row.terms_and_conditions ?? "",
+        termsVersion: row.terms_version ?? "1.0"
       };
       return c.json({ success: true, tier });
     } catch (error) {
@@ -188710,13 +190790,21 @@ function registerAdminAdvancedEndpoints(app3) {
         updates.push(`applicable_roles = $${idx++}`);
         values.push(roleUuids);
       }
+      if (body.termsAndConditions !== void 0 || body.terms_and_conditions !== void 0) {
+        updates.push(`terms_and_conditions = $${idx++}`);
+        values.push(body.termsAndConditions != null ? String(body.termsAndConditions) : body.terms_and_conditions != null ? String(body.terms_and_conditions) : null);
+      }
+      if (body.termsVersion !== void 0 || body.terms_version !== void 0) {
+        updates.push(`terms_version = $${idx++}`);
+        values.push(body.termsVersion != null ? String(body.termsVersion) : body.terms_version != null ? String(body.terms_version) : "1.0");
+      }
       if (updates.length === 0) {
         return c.json({ success: false, error: "No fields to update" }, 400);
       }
       updates.push(`updated_at = NOW()`);
       values.push(id);
       const updateResult = await query(
-        `UPDATE vendor_tiers SET ${updates.join(", ")} WHERE id = $${idx}::uuid RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles`,
+        `UPDATE vendor_tiers SET ${updates.join(", ")} WHERE id = $${idx}::uuid RETURNING id, tier_name, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, features, applicable_roles, terms_and_conditions, terms_version`,
         values
       );
       const row = updateResult.rows?.[0];
@@ -188735,7 +190823,9 @@ function registerAdminAdvancedEndpoints(app3) {
         isDefault: Boolean(row.is_default),
         isActive: row.is_active !== false,
         features: Array.isArray(row.features) ? row.features : [],
-        roles: Array.isArray(row.applicable_roles) ? row.applicable_roles : []
+        roles: Array.isArray(row.applicable_roles) ? row.applicable_roles : [],
+        termsAndConditions: row.terms_and_conditions ?? "",
+        termsVersion: row.terms_version ?? "1.0"
       };
       return c.json({ success: true, tier });
     } catch (error) {
@@ -188769,15 +190859,18 @@ function registerAdminAdvancedEndpoints(app3) {
       await query(`
         INSERT INTO vendor_tiers (tier_name, tier_level, display_name, description, commission_rate, payout_period_days, monthly_cost, yearly_cost, is_default, is_active, is_free_tier)
         VALUES
-          ('Free Tier', 1, 'Free Tier', 'This tier is free of cost', 20, 7, 0, 0, true, true, true),
-          ('Professional', 2, 'Professional', 'Professional tier', 15, 7, 999, 9990, false, true, false),
-          ('Growth', 3, 'Growth', 'Growth tier', 12, 7, 2499, 24990, false, true, false)
+          ('Basic', 1, 'Basic', 'Basic tier - free of cost, zero commission', 0, 7, 0, 0, true, true, true),
+          ('Advance', 2, 'Advance', 'Advance tier - lower commission', 10, 7, 1999, 19990, false, true, false),
+          ('Premium', 3, 'Premium', 'Premium tier - lowest commission', 7, 7, 2999, 29990, false, true, false)
         ON CONFLICT (tier_name) DO UPDATE SET
           display_name = EXCLUDED.display_name,
+          description = EXCLUDED.description,
           commission_rate = EXCLUDED.commission_rate,
           payout_period_days = EXCLUDED.payout_period_days,
           monthly_cost = EXCLUDED.monthly_cost,
           yearly_cost = EXCLUDED.yearly_cost,
+          is_default = EXCLUDED.is_default,
+          is_free_tier = EXCLUDED.is_free_tier,
           updated_at = NOW()
       `);
       const listResult = await query(`
@@ -188806,11 +190899,106 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/payouts", async (c) => {
     try {
-      const payouts = await query("SELECT * FROM payouts ORDER BY created_at DESC LIMIT 50");
-      const rows = (payouts.rows || []).map((row) => ({
-        ...row,
-        status: row.payout_status ?? row.status ?? "pending"
-      }));
+      const payouts = await query(`
+        SELECT p.*,
+               COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
+               COALESCE(v.phone, vi.phone) as vendor_phone,
+               r.name as vendor_role,
+               COALESCE(v.category, vi.vendor_type, '') as business_type,
+               to_char(p.created_at AT TIME ZONE 'UTC', 'Mon YYYY') as period
+        FROM payouts p
+        LEFT JOIN vendors v ON p.vendor_id = v.id
+        LEFT JOIN vendor_identity vi ON vi.vendor_id = p.vendor_id
+        LEFT JOIN roles r ON v.role_id = r.id
+        ORDER BY p.created_at DESC
+        LIMIT 50
+      `);
+      const rows = (payouts.rows || []).map((row) => {
+        const raw2 = row.payout_status ?? row.status ?? "pending";
+        const status = typeof raw2 === "string" && raw2.trim() ? raw2.trim().toLowerCase() : "pending";
+        const periodVal = row.period ?? (row.created_at ? new Date(row.created_at).toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : null);
+        const vendorName = row.vendor_name ?? row.business_name ?? "Vendor";
+        const vendorPhone = row.vendor_phone ?? null;
+        return {
+          ...row,
+          vendor_name: vendorName,
+          vendorName,
+          vendor_phone: vendorPhone,
+          vendorPhone,
+          vendor_role: row.vendor_role ?? null,
+          business_type: row.business_type ?? null,
+          period: periodVal ?? "\u2014",
+          status,
+          payout_status: status,
+          source: "payout"
+        };
+      });
+      try {
+        let pending;
+        try {
+          pending = await query(`
+            SELECT s.id, s.vendor_id, s.total_amount, s.commission_amount, s.net_amount,
+                   s.settlement_status, s.created_at,
+                   COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
+                   COALESCE(v.phone, vi.phone) as vendor_phone,
+                   r.name as vendor_role,
+                   COALESCE(v.category, vi.vendor_type, '') as business_type
+            FROM settlements s
+            LEFT JOIN vendors v ON s.vendor_id = v.id
+            LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
+            LEFT JOIN roles r ON v.role_id = r.id
+            WHERE s.settlement_status IN ('pending', 'processing')
+            ORDER BY s.created_at DESC
+            LIMIT 50
+          `);
+        } catch {
+          pending = await query(`
+            SELECT s.id, s.vendor_id, s.total_amount, s.commission_amount, s.net_amount,
+                   s.status as settlement_status, s.created_at,
+                   COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
+                   COALESCE(v.phone, vi.phone) as vendor_phone,
+                   r.name as vendor_role,
+                   COALESCE(v.category, vi.vendor_type, '') as business_type
+            FROM settlements s
+            LEFT JOIN vendors v ON s.vendor_id = v.id
+            LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
+            LEFT JOIN roles r ON v.role_id = r.id
+            WHERE s.status IN ('pending', 'processing')
+            ORDER BY s.created_at DESC
+            LIMIT 50
+          `);
+        }
+        const periodFmt = (d) => d ? new Date(d).toLocaleDateString("en-IN", { month: "short", year: "numeric" }) : "\u2014";
+        for (const s of pending.rows || []) {
+          const amt = parseFloat(s.net_amount ?? s.total_amount ?? "0");
+          if (amt <= 0) continue;
+          const vendorName = s.vendor_name ?? "Vendor";
+          const rawSt = s.settlement_status ?? s.status ?? "pending";
+          const st = typeof rawSt === "string" && rawSt.trim() ? rawSt.trim().toLowerCase() : "pending";
+          rows.push({
+            id: `settlement-${s.id}`,
+            payout_id: null,
+            vendor_id: s.vendor_id,
+            vendor_name: vendorName,
+            vendorName,
+            vendor_phone: s.vendor_phone ?? null,
+            vendorPhone: s.vendor_phone ?? null,
+            vendor_role: s.vendor_role ?? null,
+            business_type: s.business_type ?? null,
+            amount: amt,
+            net_amount: amt,
+            netAmount: amt,
+            commission: parseFloat(s.commission_amount ?? "0"),
+            period: periodFmt(s.created_at),
+            status: st === "processing" ? "processing" : "pending",
+            payout_status: st === "processing" ? "processing" : "pending",
+            source: "settlement",
+            settlement_id: s.id,
+            created_at: s.created_at
+          });
+        }
+      } catch {
+      }
       return c.json({ success: true, payouts: rows });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
@@ -188819,33 +191007,227 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/payouts/stats", async (c) => {
     try {
-      const stats = await query(`
-        SELECT 
-          COUNT(*) as total_payouts,
-          COALESCE(SUM(amount), 0) as total_amount,
-          COUNT(*) FILTER (WHERE payout_status = 'pending') as pending_count,
-          COUNT(*) FILTER (WHERE payout_status = 'processing') as processing_count,
-          COUNT(*) FILTER (WHERE payout_status = 'completed') as completed_count,
-          COALESCE(SUM(amount) FILTER (WHERE payout_status = 'pending'), 0) as pending_amount,
-          COALESCE(SUM(amount) FILTER (WHERE payout_status = 'processing'), 0) as processing_amount,
-          COALESCE(SUM(amount) FILTER (WHERE payout_status = 'completed'), 0) as completed_amount
-        FROM payouts
-      `);
+      let stats;
+      try {
+        stats = await query(`
+          SELECT 
+            COUNT(*) as total_payouts,
+            COALESCE(SUM(amount), 0) as total_amount,
+            COUNT(*) FILTER (WHERE payout_status IN ('scheduled', 'pending')) as pending_count,
+            COUNT(*) FILTER (WHERE payout_status = 'processing') as processing_count,
+            COUNT(*) FILTER (WHERE payout_status = 'completed') as completed_count,
+            COALESCE(SUM(amount) FILTER (WHERE payout_status IN ('scheduled', 'pending')), 0) as pending_amount,
+            COALESCE(SUM(amount) FILTER (WHERE payout_status = 'processing'), 0) as processing_amount,
+            COALESCE(SUM(amount) FILTER (WHERE payout_status = 'completed'), 0) as completed_amount
+          FROM payouts
+        `);
+      } catch {
+        stats = await query(`
+          SELECT 
+            COUNT(*) as total_payouts,
+            COALESCE(SUM(amount), 0) as total_amount,
+            COUNT(*) FILTER (WHERE status IN ('scheduled', 'pending')) as pending_count,
+            COUNT(*) FILTER (WHERE status = 'processing') as processing_count,
+            COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
+            COALESCE(SUM(amount) FILTER (WHERE status IN ('scheduled', 'pending')), 0) as pending_amount,
+            COALESCE(SUM(amount) FILTER (WHERE status = 'processing'), 0) as processing_amount,
+            COALESCE(SUM(amount) FILTER (WHERE status = 'completed'), 0) as completed_amount
+          FROM payouts
+        `);
+      }
       const row = stats.rows[0] || {};
+      let pendingCount = parseInt(row.pending_count, 10) || 0;
+      let pendingAmount = parseFloat(row.pending_amount) || 0;
+      let processingCount = parseInt(row.processing_count, 10) || 0;
+      let processingAmount = parseFloat(row.processing_amount) || 0;
+      try {
+        let settlementStats;
+        try {
+          settlementStats = await query(`
+            SELECT 
+              COUNT(*) FILTER (WHERE settlement_status = 'pending') as pending_cnt,
+              COALESCE(SUM(net_amount) FILTER (WHERE settlement_status = 'pending'), 0) as pending_amt,
+              COUNT(*) FILTER (WHERE settlement_status = 'processing') as processing_cnt,
+              COALESCE(SUM(net_amount) FILTER (WHERE settlement_status = 'processing'), 0) as processing_amt
+            FROM settlements
+            WHERE settlement_status IN ('pending', 'processing')
+          `);
+        } catch {
+          settlementStats = await query(`
+            SELECT 
+              COUNT(*) FILTER (WHERE status = 'pending') as pending_cnt,
+              COALESCE(SUM(net_amount) FILTER (WHERE status = 'pending'), 0) as pending_amt,
+              COUNT(*) FILTER (WHERE status = 'processing') as processing_cnt,
+              COALESCE(SUM(net_amount) FILTER (WHERE status = 'processing'), 0) as processing_amt
+            FROM settlements
+            WHERE status IN ('pending', 'processing')
+          `);
+        }
+        const s = settlementStats.rows[0];
+        if (s) {
+          pendingCount += parseInt(s.pending_cnt, 10) || 0;
+          pendingAmount += parseFloat(s.pending_amt) || 0;
+          processingCount += parseInt(s.processing_cnt, 10) || 0;
+          processingAmount += parseFloat(s.processing_amt) || 0;
+        }
+      } catch {
+      }
       return c.json({
         success: true,
         stats: {
-          pendingCount: parseInt(row.pending_count, 10) || 0,
-          processingCount: parseInt(row.processing_count, 10) || 0,
+          pendingCount,
+          processingCount,
           completedCount: parseInt(row.completed_count, 10) || 0,
-          pendingAmount: parseFloat(row.pending_amount) || 0,
-          processingAmount: parseFloat(row.processing_amount) || 0,
+          pendingAmount,
+          processingAmount,
           completedAmount: parseFloat(row.completed_amount) || 0
         }
       });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
+    }
+  });
+  app3.post("/admin/payouts/:id/process", async (c) => {
+    const payoutId = c.req.param("id");
+    try {
+      if (!payoutId || !isValidUUID(payoutId)) {
+        return c.json({ success: false, error: "Invalid payout ID" }, 400);
+      }
+      const payouts = await query(
+        `SELECT * FROM payouts WHERE id = $1 LIMIT 1`,
+        [payoutId]
+      );
+      const payout = (payouts.rows || [])[0];
+      if (!payout) {
+        return c.json({ success: false, error: "Payout not found" }, 404);
+      }
+      const status = payout.payout_status ?? payout.status ?? "";
+      const allowedForProcess = ["pending", "scheduled", "failed"];
+      if (!allowedForProcess.includes(status)) {
+        return c.json({ success: false, error: `Payout cannot be processed (status: ${status}). Use only for pending, scheduled, or failed (retry after fixing bank).` }, 400);
+      }
+      const vendorId = payout.vendor_id;
+      const amount = parseFloat(payout.amount ?? "0");
+      if (amount <= 0) {
+        return c.json({ success: false, error: "Invalid payout amount" }, 400);
+      }
+      let accountNumber;
+      let ifscCode;
+      let accountHolder;
+      if (payout.bank_account_number && payout.ifsc_code && payout.account_holder_name) {
+        accountNumber = String(payout.bank_account_number);
+        ifscCode = String(payout.ifsc_code);
+        accountHolder = String(payout.account_holder_name);
+      } else {
+        let bankDetails = [];
+        try {
+          const schemaCheck = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as ex`);
+          if (schemaCheck.rows[0]?.ex) {
+            const acc = await query(
+              `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 AND is_verified = true ORDER BY is_primary DESC LIMIT 1`,
+              [vendorId]
+            );
+            bankDetails = (acc.rows || []).map((r) => ({
+              account_number: r.account_number,
+              ifsc_code: r.ifsc_code ?? r.ifsc,
+              account_holder_name: r.account_holder_name ?? r.account_holder
+            }));
+          }
+        } catch {
+        }
+        if (bankDetails.length === 0) {
+          const details = await select("vendor_bank_details", { vendor_id: vendorId }).catch(() => []);
+          bankDetails = Array.isArray(details) ? details : [];
+        }
+        if (bankDetails.length === 0) {
+          return c.json({ success: false, error: "Vendor bank details not found. Ask vendor to add bank account." }, 404);
+        }
+        const bank = bankDetails[0];
+        accountNumber = String(bank.account_number ?? bank.accountNumber ?? "").trim();
+        ifscCode = String(bank.ifsc_code ?? bank.ifsc ?? "").trim().toUpperCase();
+        accountHolder = String(bank.account_holder_name ?? bank.account_holder ?? "").trim();
+      }
+      if (!accountNumber || !ifscCode || !accountHolder) {
+        return c.json({ success: false, error: "Incomplete bank details (account number, IFSC, or holder name missing)" }, 400);
+      }
+      const razorpayXAccountNumber = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
+      if (!razorpayXAccountNumber) {
+        return c.json({
+          success: false,
+          error: "RazorpayX payout source account not configured. Set RAZORPAY_X_ACCOUNT_NUMBER (your RazorpayX Current Account / Customer Identifier from x.razorpay.com \u2192 Banking)."
+        }, 503);
+      }
+      let vendorPhone = "0000000000";
+      try {
+        const v = await query(`SELECT phone FROM vendors WHERE id = $1 LIMIT 1`, [vendorId]);
+        if (v?.rows?.[0]?.phone) vendorPhone = String(v.rows[0].phone).replace(/\D/g, "").slice(-10) || vendorPhone;
+      } catch {
+      }
+      let payoutResponse;
+      const compositeBody = {
+        account_number: String(razorpayXAccountNumber).trim(),
+        amount: Math.round(amount * 100),
+        currency: "INR",
+        mode: "IMPS",
+        purpose: "payout",
+        fund_account: {
+          account_type: "bank_account",
+          bank_account: {
+            name: accountHolder,
+            ifsc: ifscCode,
+            account_number: accountNumber
+          },
+          contact: {
+            name: accountHolder,
+            email: `vendor-${vendorId}@payout.warmpawz.com`,
+            contact: vendorPhone,
+            type: "vendor",
+            reference_id: `vendor-${vendorId}`
+          }
+        },
+        queue_if_low_balance: true,
+        reference_id: `PAYOUT-${payoutId}`.slice(0, 40)
+      };
+      try {
+        payoutResponse = await razorpayClient.payouts.create(compositeBody, payoutId);
+      } catch (razorpayError) {
+        const rawMsg = razorpayError?.message ?? razorpayError?.error?.description ?? "Razorpay payout failed";
+        const isNotFound = /not found|404|url was not found/i.test(String(rawMsg));
+        const msg = isNotFound ? "RazorpayX Payouts API is not available for this account. Enable RazorpayX, allowlist IPs in RazorpayX Dashboard, and ensure payout mode is configured." : rawMsg;
+        console.error("[admin/payouts/process] Razorpay error:", rawMsg);
+        try {
+          await query(
+            `UPDATE payouts SET payout_status = $1, failure_reason = $2 WHERE id = $3::uuid`,
+            ["failed", msg, payoutId]
+          );
+        } catch {
+        }
+        const status2 = isNotFound ? 503 : 500;
+        return c.json({ success: false, error: msg }, status2);
+      }
+      try {
+        await query(
+          `UPDATE payouts SET payout_status = $1, razorpay_payout_id = $2 WHERE id = $3::uuid`,
+          ["processing", payoutResponse.id, payoutId]
+        );
+      } catch (updateErr) {
+        console.error("[admin/payouts/process] Update payouts error:", updateErr?.message);
+        return c.json({
+          success: false,
+          error: "Payout sent to Razorpay but failed to update local record. Check payout status in Razorpay dashboard."
+        }, 500);
+      }
+      return c.json({
+        success: true,
+        message: "Payout initiated successfully",
+        payoutId,
+        razorpayPayoutId: payoutResponse.id
+      });
+    } catch (error) {
+      console.error("Error processing payout:", error);
+      const msg = error?.message ?? (typeof error === "string" ? error : "Failed to process payout");
+      return c.json({ success: false, error: msg }, 500);
     }
   });
   app3.get("/admin/platform/feature-flags", async (c) => {
@@ -191798,9 +194180,13 @@ init_base_handler();
 init_rds_connection();
 var GetVendorSetupStatusHandler = class extends BaseHandler {
   async handle(context) {
-    const vendorId = context.event.pathParameters?.vendorId;
-    if (!vendorId) {
+    const param = context.event.pathParameters?.vendorId;
+    if (!param) {
       return this.error("Vendor ID is required", 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error("Vendor not found", 404);
     }
     const vendors = await select("vendors", { id: vendorId });
     if (vendors.length === 0) {
@@ -191819,9 +194205,13 @@ var GetVendorSetupStatusHandler = class extends BaseHandler {
 };
 var CompleteVendorSetupHandler = class extends BaseHandler {
   async handle(context) {
-    const vendorId = context.event.pathParameters?.vendorId;
-    if (!vendorId) {
+    const param = context.event.pathParameters?.vendorId;
+    if (!param) {
       return this.error("Vendor ID is required", 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error("Vendor not found", 404);
     }
     await update("vendors", { id: vendorId }, {
       setup_completed: true,
@@ -191833,9 +194223,13 @@ var CompleteVendorSetupHandler = class extends BaseHandler {
 };
 var GetVendorAvailabilityHandler = class extends BaseHandler {
   async handle(context) {
-    const vendorId = context.event.pathParameters?.vendorId;
-    if (!vendorId) {
+    const param = context.event.pathParameters?.vendorId;
+    if (!param) {
       return this.error("Vendor ID is required", 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error("Vendor not found", 404);
     }
     try {
       const vendors = await select("vendors", { id: vendorId });
@@ -191873,10 +194267,14 @@ var GetVendorAvailabilityHandler = class extends BaseHandler {
 };
 var UpdateVendorAvailabilityHandler = class extends BaseHandler {
   async handle(context) {
-    const vendorId = context.event.pathParameters?.vendorId;
+    const param = context.event.pathParameters?.vendorId;
     const body = this.parseBody(context.event);
-    if (!vendorId) {
+    if (!param) {
       return this.error("Vendor ID is required", 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error("Vendor not found", 404);
     }
     try {
       const vendors = await select("vendors", { id: vendorId });
@@ -191942,7 +194340,7 @@ var UpdateVendorAvailabilityHandler = class extends BaseHandler {
     }
   }
 };
-async function resolveVendorId(vendorId) {
+async function resolveVendorIdBySlug(vendorId) {
   if (!vendorId) return null;
   if (isValidUUID(vendorId)) return vendorId;
   try {
@@ -191958,13 +194356,21 @@ async function resolveVendorId(vendorId) {
     return null;
   }
 }
+async function resolveVendorIdParam(param) {
+  if (!param?.trim()) return null;
+  const fromUtils = await resolveVendorId(param.trim());
+  const vendors = await select("vendors", { id: fromUtils });
+  if (vendors.length > 0) return fromUtils;
+  if (!isValidUUID(param)) return resolveVendorIdBySlug(param);
+  return null;
+}
 var GetAvailableServicesHandler = class extends BaseHandler {
   async handle(context) {
     const vendorIdParam = context.event.pathParameters?.vendorId;
     if (!vendorIdParam) {
       return this.error("Vendor ID is required", 400);
     }
-    const vendorId = await resolveVendorId(vendorIdParam);
+    const vendorId = await resolveVendorIdParam(vendorIdParam);
     if (!vendorId) {
       return this.error("Vendor not found", 404);
     }
@@ -191994,10 +194400,14 @@ var GetAvailableServicesHandler = class extends BaseHandler {
 };
 var SelectVendorServicesHandler = class extends BaseHandler {
   async handle(context) {
-    const vendorId = context.event.pathParameters?.vendorId;
+    const param = context.event.pathParameters?.vendorId;
     const body = this.parseBody(context.event);
-    if (!vendorId || !body.serviceIds) {
+    if (!param || !body.serviceIds) {
       return this.error("Vendor ID and service IDs are required", 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error("Vendor not found", 404);
     }
     for (const serviceId of body.serviceIds) {
       await insert("vendor_services", {
@@ -192044,9 +194454,13 @@ var ConfigureVendorServicesHandler = class extends BaseHandler {
 };
 var GetVendorStatusHandler = class extends BaseHandler {
   async handle(context) {
-    const vendorId = context.event.pathParameters?.vendorId;
-    if (!vendorId) {
+    const param = context.event.pathParameters?.vendorId;
+    if (!param) {
       return this.error("Vendor ID is required", 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error("Vendor not found", 404);
     }
     const vendors = await select("vendors", { id: vendorId });
     if (vendors.length === 0) {
@@ -192058,9 +194472,13 @@ var GetVendorStatusHandler = class extends BaseHandler {
 };
 var GetSoloProviderInfoHandler = class extends BaseHandler {
   async handle(context) {
-    const vendorId = context.event.pathParameters?.vendorId;
-    if (!vendorId) {
+    const param = context.event.pathParameters?.vendorId;
+    if (!param) {
       return this.error("Vendor ID is required", 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error("Vendor not found", 404);
     }
     const vendors = await select("vendors", { id: vendorId });
     if (vendors.length === 0) {
@@ -192078,9 +194496,13 @@ var GetSoloProviderInfoHandler = class extends BaseHandler {
 };
 var GetCenterStatsHandler = class extends BaseHandler {
   async handle(context) {
-    const vendorId = context.event.pathParameters?.vendorId;
-    if (!vendorId) {
+    const param = context.event.pathParameters?.vendorId;
+    if (!param) {
       return this.error("Vendor ID is required", 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error("Vendor not found", 404);
     }
     const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
     const bookings = await select("bookings", {
@@ -192098,10 +194520,14 @@ var GetCenterStatsHandler = class extends BaseHandler {
 };
 var GetStaffStatsHandler = class extends BaseHandler {
   async handle(context) {
-    const vendorId = context.event.pathParameters?.vendorId;
+    const param = context.event.pathParameters?.vendorId;
     const staffId = context.event.pathParameters?.staffId;
-    if (!vendorId || !staffId) {
+    if (!param || !staffId) {
       return this.error("Vendor ID and Staff ID are required", 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error("Vendor not found", 404);
     }
     const bookings = await select("bookings", {
       vendor_id: vendorId,
@@ -192705,7 +195131,39 @@ var DEFAULT_POLICIES = {
     }
   }
 };
+var PLATFORM_POLICY_OPTIONS = {
+  serviceCategories: [
+    { id: "veterinary", name: "Veterinary Services", description: "In-clinic, teleconsultation, doorstep" },
+    { id: "grooming", name: "Grooming Services", description: "Centre-based and doorstep grooming" },
+    { id: "walkers_training_boarding", name: "Walkers, Training & Boarding", description: "Dog walkers, trainers, behaviourists, boarding" },
+    { id: "ecommerce", name: "E-commerce Products", description: "Product orders, returns, replacements" }
+  ],
+  serviceFormats: [
+    { id: "in_clinic", name: "In-Clinic", description: "At centre / clinic" },
+    { id: "teleconsultation", name: "Teleconsultation", description: "Online / video / audio" },
+    { id: "doorstep", name: "Doorstep / Home Visit", description: "At customer location" },
+    { id: "centre", name: "Centre-Based", description: "Service at provider centre" }
+  ]
+};
 function registerConfigPoliciesEndpoints(app3) {
+  app3.get("/config/policy-options", async (c) => {
+    try {
+      let options = PLATFORM_POLICY_OPTIONS;
+      try {
+        const row = await query(
+          `SELECT setting_value FROM admin_settings WHERE setting_category = 'policy' AND setting_key = 'policy_options' LIMIT 1`
+        ).catch(() => ({ rows: [] }));
+        if (row.rows?.length > 0 && row.rows[0].setting_value) {
+          const custom = typeof row.rows[0].setting_value === "string" ? JSON.parse(row.rows[0].setting_value) : row.rows[0].setting_value;
+          if (custom?.serviceCategories?.length || custom?.serviceFormats?.length) options = { ...options, ...custom };
+        }
+      } catch {
+      }
+      return c.json({ success: true, ...options });
+    } catch (error) {
+      return c.json({ success: true, ...PLATFORM_POLICY_OPTIONS });
+    }
+  });
   app3.get("/config/policies", async (c) => {
     try {
       const serviceType = c.req.query("service_type") || "default";
@@ -193091,7 +195549,7 @@ var CancelAppointmentHandler = class extends BaseHandler {
       const appointmentId = context.event.pathParameters?.id;
       const customerId = context.event.pathParameters?.customerId || context.userId;
       const body = this.parseBody(context.event);
-      const { reason } = body || {};
+      const { reason, refundMethod = "wallet" } = body || {};
       if (!appointmentId) {
         return this.error("Appointment ID is required", 400);
       }
@@ -193099,7 +195557,9 @@ var CancelAppointmentHandler = class extends BaseHandler {
         return this.error("Customer ID is required", 401);
       }
       const appointment = await query(`
-        SELECT a.*, b.customer_id, b.status as booking_status, b.id as booking_id
+        SELECT a.*, b.customer_id, b.status as booking_status, b.id as booking_id,
+               b.booking_date, b.booking_time, b.vendor_id, b.service_id, b.service_type,
+               b.payment_status, b.total_amount
         FROM appointments a
         INNER JOIN bookings b ON a.booking_id = b.id
         WHERE a.id = $1 AND b.customer_id = $2
@@ -193120,11 +195580,62 @@ var CancelAppointmentHandler = class extends BaseHandler {
         WHERE id = $2
         RETURNING *
       `, [reason || "No reason provided", appointmentId]);
+      const bookingId = appointment.rows[0].booking_id;
+      const bookingRow = appointment.rows[0];
       await query(`
         UPDATE bookings
-        SET status = 'cancelled', updated_at = NOW()
-        WHERE id = $1
-      `, [appointment.rows[0].booking_id]);
+        SET status = 'cancelled', cancelled_at = NOW(), cancelled_by = 'pet_parent',
+            cancellation_reason = $1, updated_at = NOW()
+        WHERE id = $2
+      `, [reason || "No reason provided", bookingId]);
+      let refundInfo = null;
+      if (bookingRow.payment_status === "paid" && bookingRow.total_amount > 0) {
+        try {
+          const totalAmount = parseFloat(String(bookingRow.total_amount));
+          const tier = await getRefundTierForCancellation(
+            {
+              id: bookingId,
+              vendor_id: bookingRow.vendor_id,
+              service_id: bookingRow.service_id,
+              service_type: bookingRow.service_type,
+              booking_date: bookingRow.booking_date,
+              booking_time: bookingRow.booking_time,
+              total_amount: totalAmount
+            },
+            "pet_parent"
+          );
+          const computed = tier ? computeRefundFromTier(totalAmount, tier, 100, 0) : { refundAmount: totalAmount, refundPercentage: 100, cancellationFee: 0 };
+          const refundAmount = tier ? computed.refundAmount : Math.max(0, totalAmount * computed.refundPercentage / 100 - computed.cancellationFee);
+          if (refundAmount > 0) {
+            const payments = await query(
+              `SELECT id FROM payments WHERE booking_id = $1 AND payment_status = 'completed' LIMIT 1`,
+              [bookingId]
+            ).catch(() => ({ rows: [] }));
+            const paymentId = payments.rows?.[0]?.id;
+            if (refundMethod === "wallet") {
+              await query(
+                `INSERT INTO wallet_transactions (customer_id, type, amount, description, reference_type, reference_id, status)
+                 VALUES ($1, 'credit', $2, $3, 'booking_refund', $4, 'completed')`,
+                [bookingRow.customer_id, refundAmount, `Refund for cancelled appointment (${computed.refundPercentage}%)`, bookingId]
+              ).catch(() => null);
+              await query(
+                `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1 WHERE id = $2`,
+                [refundAmount, bookingRow.customer_id]
+              ).catch(() => null);
+              refundInfo = { amount: refundAmount, percentage: computed.refundPercentage, method: "wallet", status: "completed", message: `\u20B9${refundAmount.toFixed(2)} credited to wallet` };
+            } else if (paymentId) {
+              await query(
+                `INSERT INTO refunds (payment_id, booking_id, customer_id, vendor_id, refund_amount, refund_reason, refund_status, refund_method, requested_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW())`,
+                [paymentId, bookingId, bookingRow.customer_id, bookingRow.vendor_id || null, refundAmount, `Appointment cancellation: ${reason || "No reason"} (${computed.refundPercentage}% refund)`]
+              ).catch(() => null);
+              refundInfo = { amount: refundAmount, percentage: computed.refundPercentage, method: "original", status: "pending", message: `Refund of \u20B9${refundAmount.toFixed(2)} will be processed to original payment method` };
+            }
+          }
+        } catch (refundErr) {
+          console.error("Error applying refund on appointment cancel:", refundErr);
+        }
+      }
       await query(`
         INSERT INTO appointment_history (
           appointment_id,
@@ -193135,7 +195646,8 @@ var CancelAppointmentHandler = class extends BaseHandler {
       `, [appointmentId, reason]);
       return this.success({
         appointment: updated.rows[0],
-        message: "Appointment cancelled successfully"
+        message: "Appointment cancelled successfully",
+        refund: refundInfo ?? void 0
       });
     } catch (error) {
       console.error("Error cancelling appointment:", error);
@@ -193771,10 +196283,11 @@ init_rds_connection();
 var GetDashboardAnalyticsHandler = class extends BaseHandler {
   async handle(context) {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || context.event.queryStringParameters?.vendorId || context.userId;
-      if (!vendorId) {
+      const paramVendorId = context.event.pathParameters?.vendorId || context.event.queryStringParameters?.vendorId || context.userId;
+      if (!paramVendorId) {
         return this.error("Vendor ID is required", 401);
       }
+      const vendorId = await resolveVendorId(paramVendorId);
       if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
         const startDate2 = context.event.queryStringParameters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString().split("T")[0];
         const endDate2 = context.event.queryStringParameters?.endDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
@@ -193958,10 +196471,11 @@ var GetDashboardAnalyticsHandler = class extends BaseHandler {
 var GetRevenueAnalyticsHandler = class extends BaseHandler {
   async handle(context) {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || context.event.queryStringParameters?.vendorId || context.userId;
-      if (!vendorId) {
+      const paramVendorId = context.event.pathParameters?.vendorId || context.event.queryStringParameters?.vendorId || context.userId;
+      if (!paramVendorId) {
         return this.error("Vendor ID is required", 401);
       }
+      const vendorId = await resolveVendorId(paramVendorId);
       if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
         const startDate2 = context.event.queryStringParameters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString().split("T")[0];
         const endDate2 = context.event.queryStringParameters?.endDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
@@ -194066,10 +196580,11 @@ var GetRevenueAnalyticsHandler = class extends BaseHandler {
 var GetBookingAnalyticsHandler = class extends BaseHandler {
   async handle(context) {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || context.event.queryStringParameters?.vendorId || context.userId;
-      if (!vendorId) {
+      const paramVendorId = context.event.pathParameters?.vendorId || context.event.queryStringParameters?.vendorId || context.userId;
+      if (!paramVendorId) {
         return this.error("Vendor ID is required", 401);
       }
+      const vendorId = await resolveVendorId(paramVendorId);
       const startDate = context.event.queryStringParameters?.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1e3).toISOString().split("T")[0];
       const endDate = context.event.queryStringParameters?.endDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
       const bookingTrends = await query(`
@@ -194165,10 +196680,11 @@ var GetBookingAnalyticsHandler = class extends BaseHandler {
 var GetStaffPerformanceHandler = class extends BaseHandler {
   async handle(context) {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || context.event.queryStringParameters?.vendorId;
-      if (!vendorId) {
+      const paramVendorId = context.event.pathParameters?.vendorId || context.event.queryStringParameters?.vendorId;
+      if (!paramVendorId) {
         return this.error("Vendor ID is required", 400);
       }
+      const vendorId = await resolveVendorId(paramVendorId);
       const period = context.event.queryStringParameters?.period || "month";
       const now = /* @__PURE__ */ new Date();
       let startDate;
@@ -194243,10 +196759,11 @@ var GetStaffPerformanceHandler = class extends BaseHandler {
 var GetSalesAnalyticsHandler = class extends BaseHandler {
   async handle(context) {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || context.event.queryStringParameters?.vendorId || context.userId;
-      if (!vendorId) {
+      const paramVendorId = context.event.pathParameters?.vendorId || context.event.queryStringParameters?.vendorId || context.userId;
+      if (!paramVendorId) {
         return this.error("Vendor ID is required", 401);
       }
+      const vendorId = await resolveVendorId(paramVendorId);
       if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
         const period2 = context.event.queryStringParameters?.period || "month";
         return this.success({
@@ -194385,10 +196902,11 @@ var GetSalesAnalyticsHandler = class extends BaseHandler {
 var GetProductPerformanceHandler = class extends BaseHandler {
   async handle(context) {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || context.event.queryStringParameters?.vendorId || context.userId;
-      if (!vendorId) {
+      const paramVendorId = context.event.pathParameters?.vendorId || context.event.queryStringParameters?.vendorId || context.userId;
+      if (!paramVendorId) {
         return this.error("Vendor ID is required", 401);
       }
+      const vendorId = await resolveVendorId(paramVendorId);
       const period = context.event.queryStringParameters?.period || "month";
       const limit = parseInt(context.event.queryStringParameters?.limit || "10", 10);
       if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
@@ -195818,6 +198336,7 @@ var CreateTaxRuleHandler = class extends BaseHandlerEnhanced {
         role_id,
         service_style,
         category,
+        tax_category_id,
         min_amount,
         max_amount,
         customer_state,
@@ -195846,6 +198365,7 @@ var CreateTaxRuleHandler = class extends BaseHandlerEnhanced {
       if (role_id) insertData.role_id = role_id;
       if (service_style) insertData.service_style = service_style;
       if (category) insertData.category = category;
+      if (tax_category_id) insertData.tax_category_id = tax_category_id;
       if (min_amount !== void 0) insertData.min_amount = parseFloat(min_amount);
       if (max_amount !== void 0) insertData.max_amount = parseFloat(max_amount);
       if (customer_state) insertData.customer_state = customer_state;
@@ -195882,6 +198402,7 @@ var UpdateTaxRuleHandler = class extends BaseHandlerEnhanced {
       if (body.role_id !== void 0) updateData.role_id = body.role_id;
       if (body.service_style !== void 0) updateData.service_style = body.service_style;
       if (body.category !== void 0) updateData.category = body.category;
+      if (body.tax_category_id !== void 0) updateData.tax_category_id = body.tax_category_id || null;
       if (body.min_amount !== void 0) updateData.min_amount = parseFloat(body.min_amount);
       if (body.max_amount !== void 0) updateData.max_amount = parseFloat(body.max_amount);
       if (body.customer_state !== void 0) updateData.customer_state = body.customer_state;
@@ -195951,19 +198472,21 @@ var CreateHSNCodeHandler = class extends BaseHandlerEnhanced {
   async handle(context) {
     try {
       const body = this.parseBody(context.event);
-      const { hsn_code, description, gst_rate, is_active = true } = body;
+      const { hsn_code, description, gst_rate, is_active = true, category_id } = body;
       if (!hsn_code || gst_rate === void 0) {
         return this.error("hsn_code and gst_rate are required", 400);
       }
       if (gst_rate < 0 || gst_rate > 100) {
         return this.error("gst_rate must be between 0 and 100", 400);
       }
-      const result = await insert("hsn_codes", {
+      const insertPayload = {
         hsn_code,
         description,
         gst_rate: parseFloat(gst_rate),
         is_active
-      });
+      };
+      if (category_id) insertPayload.category_id = category_id;
+      const result = await insert("hsn_codes", insertPayload);
       const hsnCode = Array.isArray(result) ? result[0] : result;
       return this.success({
         hsnCode,
@@ -195995,6 +198518,7 @@ var UpdateHSNCodeHandler = class extends BaseHandlerEnhanced {
         updateData.gst_rate = parseFloat(body.gst_rate);
       }
       if (body.is_active !== void 0) updateData.is_active = body.is_active;
+      if (body.category_id !== void 0) updateData.category_id = body.category_id || null;
       const result = await update("hsn_codes", { id: codeId }, updateData);
       const hsnCode = Array.isArray(result) ? result[0] : result;
       return this.success({
@@ -196306,75 +198830,132 @@ function registerTaxManagementEndpoints(app3) {
       }
       let customerState = customerLocation?.state;
       let vendorState = vendorLocation?.state;
+      let customerLocationObj;
+      let vendorLocationObj;
       if (!customerState && customerId) {
-        const { select: select26 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-        const customers = await select26("customers", { id: customerId });
+        const customers = await select("customers", { id: customerId });
         if (customers.length > 0 && customers[0].address) {
           const addr = typeof customers[0].address === "string" ? JSON.parse(customers[0].address) : customers[0].address;
           customerState = addr?.state;
+          if (addr?.state) {
+            customerLocationObj = { state: addr.state, city: addr.city, pincode: addr.pincode };
+          }
         }
+      } else if (customerLocation?.state) {
+        customerLocationObj = customerLocation;
       }
       if (!vendorState && vendorId) {
-        const { select: select26 } = await Promise.resolve().then(() => (init_rds_connection(), rds_connection_exports));
-        const vendors = await select26("vendors", { id: vendorId });
+        const vendors = await select("vendors", { id: vendorId });
         if (vendors.length > 0 && vendors[0].address) {
           const addr = typeof vendors[0].address === "string" ? JSON.parse(vendors[0].address) : vendors[0].address;
           vendorState = addr?.state;
+          if (addr?.state) {
+            vendorLocationObj = { state: addr.state, city: addr.city };
+          }
         }
+      } else if (vendorLocation?.state) {
+        vendorLocationObj = vendorLocation;
       }
-      const isInterState = customerState && vendorState && customerState !== vendorState;
-      const defaultRate = 18;
-      let totalAmount = 0;
-      let totalTax = 0;
-      let totalCGST = 0;
-      let totalSGST = 0;
-      let totalIGST = 0;
-      const itemResults = items.map((item) => {
-        const amount = item.amount || 0;
-        const quantity = item.quantity || 1;
-        const itemTotal = amount * quantity;
-        const taxRate = item.taxRate || defaultRate;
-        const itemTax = itemTotal * taxRate / 100;
-        totalAmount += itemTotal;
-        totalTax += itemTax;
-        if (isInterState) {
-          totalIGST += itemTax;
-          return {
-            id: item.id,
-            amount: itemTotal,
-            taxRate,
-            igst: itemTax,
-            cgst: 0,
-            sgst: 0,
-            totalWithTax: itemTotal + itemTax
-          };
-        } else {
-          const halfTax = itemTax / 2;
-          totalCGST += halfTax;
-          totalSGST += halfTax;
-          return {
-            id: item.id,
-            amount: itemTotal,
-            taxRate,
-            igst: 0,
-            cgst: halfTax,
-            sgst: halfTax,
-            totalWithTax: itemTotal + itemTax
-          };
+      const { taxCalculationService: taxCalculationService2 } = await Promise.resolve().then(() => (init_tax_calculation_service(), tax_calculation_service_exports));
+      const taxItems = [];
+      let vendorRoleId;
+      if (vendorId) {
+        const v = await select("vendors", { id: vendorId });
+        if (v.length > 0) vendorRoleId = v[0].role_id;
+      }
+      for (const item of items) {
+        const amount = Number(item.amount) || 0;
+        const quantity = Number(item.quantity) || 1;
+        const itemType = item.type === "product" ? "product" : "service";
+        let hsnCodeId;
+        let taxCategoryId;
+        let hsnCode;
+        let category = item.category;
+        const serviceId = item.serviceId;
+        const productId = item.productId;
+        if (serviceId && vendorId) {
+          const vendorSvcs = await query(
+            `SELECT vs.*, sc.tax_category_id, sc.hsn_code_id, sc.category_id, sc.category_name
+             FROM vendor_services vs
+             LEFT JOIN service_catalog sc ON sc.id = vs.service_id
+             WHERE vs.id = $1::uuid LIMIT 1`,
+            [serviceId]
+          ).catch(() => ({ rows: [] }));
+          if (vendorSvcs.rows?.length > 0) {
+            const row = vendorSvcs.rows[0];
+            taxCategoryId = row.tax_category_id;
+            hsnCodeId = row.hsn_code_id;
+            if (!category) category = row.category_name || row.category_id || row.category;
+          }
+          if (!taxCategoryId && !hsnCodeId) {
+            const catalogRows = await query(
+              `SELECT tax_category_id, hsn_code_id, category_id, category_name FROM service_catalog WHERE id = $1::uuid LIMIT 1`,
+              [serviceId]
+            ).catch(() => ({ rows: [] }));
+            if (catalogRows.rows?.length > 0) {
+              const row = catalogRows.rows[0];
+              taxCategoryId = row.tax_category_id;
+              hsnCodeId = row.hsn_code_id;
+              if (!category) category = row.category_name || row.category_id;
+            }
+          }
+          if (!hsnCode && !hsnCodeId && !taxCategoryId) {
+            const services = await select("services", { id: serviceId }).catch(() => []);
+            if (services.length > 0) {
+              hsnCode = services[0].hsn_code;
+              if (!category) category = services[0].category;
+            }
+          }
         }
+        if (productId && vendorId && !hsnCodeId && !taxCategoryId) {
+          const products = await select("products", { id: productId }).catch(() => []);
+          if (products.length > 0 && products[0].hsn_code) {
+            hsnCode = products[0].hsn_code;
+          }
+        }
+        taxItems.push({
+          id: item.id || serviceId || productId || `item-${Math.random().toString(36).slice(2)}`,
+          type: itemType,
+          amount,
+          quantity,
+          hsnCode: hsnCode || item.hsnCode,
+          hsnCodeId,
+          taxCategoryId,
+          category,
+          serviceStyle: item.serviceStyle,
+          roleId: item.roleId || vendorRoleId
+        });
+      }
+      const taxResult = await taxCalculationService2.calculateTax({
+        items: taxItems,
+        customerLocation: customerLocationObj,
+        vendorLocation: vendorLocationObj,
+        vendorId,
+        serviceType: taxItems[0]?.category,
+        category: taxItems[0]?.category
       });
+      const itemResults = taxResult.items.map((t) => ({
+        id: t.itemId,
+        amount: t.baseAmount,
+        taxRate: t.gstRate,
+        igst: t.igstAmount,
+        cgst: t.cgstAmount,
+        sgst: t.sgstAmount,
+        totalWithTax: t.totalAmount
+      }));
       return c.json({
         success: true,
         items: itemResults,
-        totalAmount,
-        totalTax,
-        totalCGST,
-        totalSGST,
-        totalIGST,
-        grandTotal: totalAmount + totalTax,
-        isInterState,
+        totalAmount: taxResult.subtotal,
+        totalTax: taxResult.totalTax,
+        totalCGST: taxResult.totalCGST,
+        totalSGST: taxResult.totalSGST,
+        totalIGST: taxResult.totalIGST,
+        grandTotal: taxResult.grandTotal,
+        isInterState: taxResult.isInterstate,
         customerState,
-        vendorState
+        vendorState,
+        breakdown: taxResult.hsnSummary
       });
     } catch (error) {
       console.error("Error calculating tax:", error);
@@ -199426,9 +202007,9 @@ function registerSupportCrmEndpoints(app3) {
         created_at: (/* @__PURE__ */ new Date()).toISOString()
       });
       try {
-        const { select: select26 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
+        const { select: select25 } = (init_rds_connection(), __toCommonJS(rds_connection_exports));
         const { publishToSNS: publishToSNS2 } = (init_aws_clients(), __toCommonJS(aws_clients_exports));
-        const settings = await select26("platform_settings", {
+        const settings = await select25("platform_settings", {
           setting_key: "support:team:contact"
         });
         if (settings.length > 0) {
@@ -200682,19 +203263,22 @@ function registerLocationSharingEndpoints(app3) {
   const stopHandler = new StopLocationSharingHandler();
   const getHandler = new GetSharedLocationHandler();
   app3.post("/location/start-sharing", async (c) => {
-    const event = createApiGatewayEvent33(c.req);
+    const body = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEvent33(c.req, body);
     const context = createLambdaContext35();
     const result = await startHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/location/update", async (c) => {
-    const event = createApiGatewayEvent33(c.req);
+    const body = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEvent33(c.req, body);
     const context = createLambdaContext35();
     const result = await updateHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/location/stop-sharing", async (c) => {
-    const event = createApiGatewayEvent33(c.req);
+    const body = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEvent33(c.req, body);
     const context = createLambdaContext35();
     const result = await stopHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -200707,14 +203291,14 @@ function registerLocationSharingEndpoints(app3) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-function createApiGatewayEvent33(req) {
+function createApiGatewayEvent33(req, body) {
   return {
     httpMethod: req.method,
     path: req.url,
     pathParameters: {},
     queryStringParameters: {},
     headers: Object.fromEntries(req.headers.entries()),
-    body: req.body ? JSON.stringify(req.body) : void 0,
+    body: body !== void 0 ? JSON.stringify(body) : void 0,
     requestContext: {
       requestId: `req-${Date.now()}`
     }
@@ -202551,10 +205135,10 @@ var GetSettlementStatsHandler = class extends BaseHandler {
         stats = await query(`
           SELECT 
             COUNT(*) as total_settlements,
-            COUNT(*) FILTER (WHERE settlement_status = 'pending') as pending_settlements,
-            COUNT(*) FILTER (WHERE settlement_status = 'completed' OR settlement_status = 'processed') as processed_settlements,
-            COALESCE(SUM(net_amount) FILTER (WHERE settlement_status = 'completed' OR settlement_status = 'processed'), 0) as total_paid,
-            COALESCE(SUM(net_amount) FILTER (WHERE settlement_status = 'pending'), 0) as pending_amount
+            COUNT(*) FILTER (WHERE COALESCE(settlement_status, status) IN ('pending', 'processing')) as pending_settlements,
+            COUNT(*) FILTER (WHERE COALESCE(settlement_status, status) IN ('completed', 'processed')) as processed_settlements,
+            COALESCE(SUM(COALESCE(net_amount, vendor_amount, total_amount)) FILTER (WHERE COALESCE(settlement_status, status) IN ('completed', 'processed')), 0) as total_paid,
+            COALESCE(SUM(COALESCE(net_amount, vendor_amount, total_amount)) FILTER (WHERE COALESCE(settlement_status, status) IN ('pending', 'processing')), 0) as pending_amount
           FROM settlements
         `);
       } catch {
@@ -202564,7 +205148,7 @@ var GetSettlementStatsHandler = class extends BaseHandler {
               COUNT(*) as total_settlements,
               0 as pending_settlements,
               COUNT(*) as processed_settlements,
-              COALESCE(SUM(net_amount), 0) as total_paid,
+              COALESCE(SUM(COALESCE(net_amount, vendor_amount, total_amount)), 0) as total_paid,
               0 as pending_amount
             FROM settlements
           `);
@@ -202578,7 +205162,23 @@ var GetSettlementStatsHandler = class extends BaseHandler {
           }] };
         }
       }
-      return this.success({ success: true, stats: stats.rows[0] });
+      const s = stats.rows[0] || {};
+      const pendingAmount = parseFloat(s.pending_amount || "0");
+      const pendingCount = parseInt(s.pending_settlements || "0", 10);
+      const completedCount = parseInt(s.processed_settlements || "0", 10);
+      return this.success({
+        success: true,
+        stats: s,
+        // Top-level keys for frontend Finance Dashboard & Settlement tabs
+        pending_amount: pendingAmount,
+        pendingAmount,
+        pending_count: pendingCount,
+        pendingCount,
+        completed_count: completedCount,
+        completedCount,
+        total_paid: parseFloat(s.total_paid || "0"),
+        total_settlements: parseInt(s.total_settlements || "0", 10)
+      });
     } catch (error) {
       return this.success({
         success: true,
@@ -202588,7 +205188,15 @@ var GetSettlementStatsHandler = class extends BaseHandler {
           processed_settlements: "0",
           total_paid: "0",
           pending_amount: "0"
-        }
+        },
+        pending_amount: 0,
+        pendingAmount: 0,
+        pending_count: 0,
+        pendingCount: 0,
+        completed_count: 0,
+        completedCount: 0,
+        total_paid: 0,
+        total_settlements: 0
       });
     }
   }
@@ -203045,8 +205653,13 @@ var GetTaxFlexibleRulesHandler = class extends BaseHandler {
           calculationMethod: r.gst_type === "fixed" ? "fixed" : "percentage",
           priority: Number(r.priority) ?? 100,
           isActive: r.enabled !== false,
+          tax_category_id: r.tax_category_id ?? null,
+          role_id: r.role_id ?? null,
+          service_style: r.service_style ?? null,
           conditions: {
+            categoryIds: r.tax_category_id ? [r.tax_category_id] : void 0,
             serviceTypes: r.service_style ? [r.service_style] : void 0,
+            vendorRoles: r.role_id ? [r.role_id] : void 0,
             minAmount: r.min_amount != null ? parseFloat(r.min_amount) : void 0,
             maxAmount: r.max_amount != null ? parseFloat(r.max_amount) : void 0,
             states: [r.customer_state, r.vendor_state].filter(Boolean),
@@ -203069,11 +205682,17 @@ var GetVendorRolesHandler = class extends BaseHandler {
   async handle(context) {
     try {
       const roles = await query(`
-        SELECT * FROM roles
-        WHERE category = 'vendor' OR category IS NULL
-        ORDER BY display_order ASC, name ASC
+        SELECT id, name, display_name, description
+        FROM roles
+        WHERE is_active = true
+        ORDER BY name ASC
       `);
-      return this.success({ success: true, roles: roles.rows });
+      const rows = Array.isArray(roles) ? roles : roles.rows || [];
+      const normalized = rows.map((r) => ({
+        id: r.id,
+        name: r.display_name ?? r.name ?? r.id
+      }));
+      return this.success({ success: true, roles: normalized });
     } catch (error) {
       return this.error(error.message || "Failed to fetch vendor roles", 500);
     }
@@ -203686,24 +206305,64 @@ function registerAdminComprehensiveEndpoints(app3) {
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
+  const customerWindowToHours = {
+    "48_plus": 48,
+    "24_plus": 24,
+    "24_48": 24,
+    "12_plus": 12,
+    "12_24": 12,
+    "6_plus": 6,
+    "6_12": 6,
+    "under_24_no_show": 0,
+    "under_12_no_show": 0,
+    "under_6_no_show": 0,
+    after_checkin: 0,
+    did_not_join_video: 0
+  };
   const mapRefundTierBodyToDb = (body) => {
     const vendorTypes = Array.isArray(body.vendorTypes) ? body.vendorTypes : body.vendor_types ? Array.isArray(body.vendor_types) ? body.vendor_types : [] : [];
     const serviceLocationMap = { at_home: "home", at_center: "clinic", both: "both", tele: "tele", all: "all" };
     const rawLoc = body.serviceLocation ?? body.service_location ?? "all";
     const service_location = serviceLocationMap[String(rawLoc)] ?? (["home", "clinic", "both", "tele", "all"].includes(String(rawLoc)) ? String(rawLoc) : "all");
-    const hoursBeforeService = Number(body.hoursBeforeService ?? body.hours_before_service ?? 24);
-    const refundPercentage = Number(body.refundPercentage ?? body.refund_percentage ?? 75);
+    const cancelledBy = body.cancelledBy ?? body.cancelled_by ?? null;
+    const cancellationWindow = body.cancellationWindow ?? body.cancellation_window ?? null;
+    const vendorCancellationReason = body.vendorCancellationReason ?? body.vendor_cancellation_reason ?? null;
+    let hoursBeforeService = Number(body.hoursBeforeService ?? body.hours_before_service ?? 24);
+    if (cancelledBy === "pet_parent" && cancellationWindow && customerWindowToHours[cancellationWindow] !== void 0) {
+      hoursBeforeService = customerWindowToHours[cancellationWindow];
+    }
     const cancellationFee = Number(body.cancellationFee ?? body.cancellation_fee ?? 0);
-    return {
+    const maxPartial = body.maxPartialRefundPercentage ?? body.max_partial_refund_percentage;
+    const out = {
       name: body.name ?? "",
       vendor_types: vendorTypes,
       service_location,
       hours_before_service: Number.isFinite(hoursBeforeService) ? hoursBeforeService : 24,
-      refund_percentage: Number.isFinite(refundPercentage) ? Math.min(100, Math.max(0, refundPercentage)) : 75,
+      // Preserve 0%: avoid || 75 fallback which treats 0 as falsy
+      refund_percentage: (body.refundPercentage ?? body.refund_percentage) != null && Number.isFinite(Number(body.refundPercentage ?? body.refund_percentage)) ? Math.min(100, Math.max(0, Number(body.refundPercentage ?? body.refund_percentage))) : 75,
       cancellation_fee: Number.isFinite(cancellationFee) ? Math.max(0, cancellationFee) : 0,
       is_active: body.isActive !== false && body.is_active !== false,
       tier_level: Number(body.tierLevel ?? body.tier_level ?? 0) || 0
     };
+    if ("maxPartialRefundPercentage" in body || "max_partial_refund_percentage" in body) {
+      out.max_partial_refund_percentage = maxPartial != null && Number.isFinite(Number(maxPartial)) ? Math.min(100, Math.max(0, Number(maxPartial))) : null;
+    }
+    if (body.serviceCategory !== void 0 || body.service_category !== void 0) out.service_category = body.serviceCategory ?? body.service_category ?? null;
+    if (body.serviceFormat !== void 0 || body.service_format !== void 0) out.service_format = body.serviceFormat ?? body.service_format ?? null;
+    if (cancelledBy !== void 0 && cancelledBy !== null) {
+      const v = String(cancelledBy).toLowerCase();
+      out.cancelled_by = ["pet_parent", "provider"].includes(v) ? v : null;
+    }
+    if (cancellationWindow !== void 0 && cancellationWindow !== null) out.cancellation_window = String(cancellationWindow);
+    if (vendorCancellationReason !== void 0 && vendorCancellationReason !== null) out.vendor_cancellation_reason = String(vendorCancellationReason).toLowerCase();
+    const hoursOp = body.hoursOperator ?? body.hours_operator ?? null;
+    const hoursThr = body.hoursThreshold ?? body.hours_threshold ?? null;
+    if (hoursOp !== void 0 && hoursOp !== null) {
+      const v = String(hoursOp).toLowerCase();
+      out.hours_operator = ["gte", "lte", "gt", "lt"].includes(v) ? v : null;
+    }
+    if (hoursThr !== void 0 && hoursThr !== null) out.hours_threshold = Number.isFinite(Number(hoursThr)) ? Number(hoursThr) : null;
+    return out;
   };
   app3.post("/admin/vendor-settings/refund-tiers", async (c) => {
     try {
@@ -203754,6 +206413,111 @@ function registerAdminComprehensiveEndpoints(app3) {
     const context = createLambdaContext38();
     const result = await handler2.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+  app3.post("/admin/tax/flexible/rules", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const serviceStyle = body.conditions?.serviceTypes?.[0] ?? body.service_style ?? null;
+      const taxCategoryId = body.conditions?.categoryIds?.[0] ?? body.tax_category_id ?? body.conditions?.taxCategoryId ?? null;
+      const roleId = body.conditions?.vendorRoles?.[0] ?? body.role_id ?? null;
+      const ruleData = {
+        rule_name: body.name ?? "Tax Rule",
+        description: body.description ?? null,
+        enabled: body.isActive !== false,
+        priority: body.priority ?? 100,
+        gst_rate: body.rate ?? 18,
+        gst_type: body.calculationMethod === "fixed" ? "fixed" : "percentage",
+        role_id: roleId || null,
+        service_style: serviceStyle || null,
+        category: body.conditions?.category ?? null,
+        tax_category_id: taxCategoryId || null,
+        min_amount: body.conditions?.minAmount ?? null,
+        max_amount: body.conditions?.maxAmount ?? null,
+        created_at: (/* @__PURE__ */ new Date()).toISOString(),
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      const inserted = await insert("gst_rules", ruleData);
+      const r = Array.isArray(inserted) ? inserted[0] : inserted;
+      return c.json({
+        success: true,
+        rule: {
+          id: r.id,
+          name: r.rule_name,
+          description: r.description,
+          taxType: "gst",
+          rate: parseFloat(r.gst_rate) ?? 18,
+          calculationMethod: r.gst_type === "fixed" ? "fixed" : "percentage",
+          priority: Number(r.priority) ?? 100,
+          isActive: r.enabled !== false,
+          conditions: {
+            transactionType: "both",
+            categoryIds: r.tax_category_id ? [r.tax_category_id] : void 0,
+            serviceTypes: r.service_style ? [r.service_style] : void 0,
+            vendorRoles: r.role_id ? [r.role_id] : void 0
+          },
+          createdAt: r.created_at,
+          updatedAt: r.updated_at
+        }
+      });
+    } catch (error) {
+      console.error("Error creating flexible tax rule:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  app3.put("/admin/tax/flexible/rules/:id", async (c) => {
+    try {
+      const id = c.req.param("id");
+      const body = await c.req.json().catch(() => ({}));
+      const updateData = { updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+      if (body.name !== void 0) updateData.rule_name = body.name;
+      if (body.description !== void 0) updateData.description = body.description;
+      if (body.isActive !== void 0) updateData.enabled = body.isActive;
+      if (body.priority !== void 0) updateData.priority = body.priority;
+      if (body.rate !== void 0) updateData.gst_rate = body.rate;
+      if (body.calculationMethod !== void 0) updateData.gst_type = body.calculationMethod === "fixed" ? "fixed" : "percentage";
+      const catId = body.conditions?.categoryIds?.[0] ?? body.tax_category_id ?? body.conditions?.taxCategoryId;
+      if (catId !== void 0) updateData.tax_category_id = catId || null;
+      const svcStyle = body.conditions?.serviceTypes?.[0] ?? body.service_style;
+      if (svcStyle !== void 0) updateData.service_style = svcStyle || null;
+      const roleId = body.conditions?.vendorRoles?.[0] ?? body.role_id;
+      if (roleId !== void 0) updateData.role_id = roleId || null;
+      const updated = await update("gst_rules", { id }, updateData);
+      const r = Array.isArray(updated) ? updated[0] : updated;
+      return c.json({
+        success: true,
+        rule: {
+          id: r.id,
+          name: r.rule_name,
+          description: r.description,
+          taxType: "gst",
+          rate: parseFloat(r.gst_rate) ?? 18,
+          calculationMethod: r.gst_type === "fixed" ? "fixed" : "percentage",
+          priority: Number(r.priority) ?? 100,
+          isActive: r.enabled !== false,
+          conditions: {
+            transactionType: "both",
+            categoryIds: r.tax_category_id ? [r.tax_category_id] : void 0,
+            serviceTypes: r.service_style ? [r.service_style] : void 0,
+            vendorRoles: r.role_id ? [r.role_id] : void 0
+          },
+          createdAt: r.created_at,
+          updatedAt: r.updated_at
+        }
+      });
+    } catch (error) {
+      console.error("Error updating flexible tax rule:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+  app3.delete("/admin/tax/flexible/rules/:id", async (c) => {
+    try {
+      const id = c.req.param("id");
+      await update("gst_rules", { id }, { enabled: false, updated_at: (/* @__PURE__ */ new Date()).toISOString() });
+      return c.json({ success: true, message: "Tax rule deleted" });
+    } catch (error) {
+      console.error("Error deleting flexible tax rule:", error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
   });
   app3.get("/admin/vendor-roles", async (c) => {
     const handler2 = new GetVendorRolesHandler();
@@ -211205,6 +213969,8 @@ function registerVendorBankAccountEndpoints(app3) {
   app3.get("/vendor/:vendorId/bank-accounts", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      const resolvedVendorId = vendor?.id ?? vendorId;
       const schemaCheck = await query(`
         SELECT 
           EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as table_exists,
@@ -211222,7 +213988,7 @@ function registerVendorBankAccountEndpoints(app3) {
         `SELECT * FROM ${tableName} 
          WHERE vendor_id = $1 
          ORDER BY is_primary DESC, created_at DESC`,
-        [vendorId]
+        [resolvedVendorId]
       );
       return c.json({
         success: true,
@@ -211307,8 +214073,38 @@ function registerVendorBankAccountEndpoints(app3) {
         `SELECT id FROM ${tableName} WHERE vendor_id = $1 AND account_number = $2`,
         [actualVendorId, accountNumber]
       );
+      const updateData = {
+        account_holder_name: accountHolderName,
+        account_number: accountNumber.replace(/\s/g, ""),
+        ifsc_code: ifscCode.toUpperCase(),
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (schema.table_exists) {
+        updateData.verification_status = "pending";
+      } else {
+        updateData.is_verified = false;
+      }
+      if (schema.has_bank_name && bankName) {
+        updateData.bank_name = bankName;
+      }
+      if (schema.has_branch_name && branchName) {
+        updateData.branch_name = branchName;
+      }
+      if (schema.has_account_type) {
+        updateData.account_type = accountType || "savings";
+      }
       if (existing.rows.length > 0) {
-        return c.json({ error: "This account is already added" }, 409);
+        const existingId = existing.rows[0].id;
+        await update(tableName, { id: existingId, vendor_id: actualVendorId }, updateData);
+        const updated = await query(
+          `SELECT * FROM ${tableName} WHERE id = $1 AND vendor_id = $2`,
+          [existingId, actualVendorId]
+        );
+        return c.json({
+          success: true,
+          account: updated.rows?.[0] ?? existing.rows[0],
+          message: "Bank account updated successfully"
+        });
       }
       const existingAccounts = await query(
         `SELECT id FROM ${tableName} WHERE vendor_id = $1`,
@@ -211318,7 +214114,7 @@ function registerVendorBankAccountEndpoints(app3) {
       const insertData = {
         vendor_id: actualVendorId,
         account_holder_name: accountHolderName,
-        account_number: accountNumber,
+        account_number: accountNumber.replace(/\s/g, ""),
         ifsc_code: ifscCode.toUpperCase(),
         is_primary: isPrimary,
         verification_status: "pending"
@@ -211348,7 +214144,8 @@ function registerVendorBankAccountEndpoints(app3) {
   app3.post("/vendor/:vendorId/bank-accounts/:accountId/verify", async (c) => {
     try {
       const { vendorId, accountId } = c.req.param();
-      const accounts = await select("vendor_bank_accounts", { id: accountId, vendor_id: vendorId });
+      const resolvedVendorIdForSelect = (await resolveVendorById(vendorId))?.id ?? vendorId;
+      const accounts = await select("vendor_bank_accounts", { id: accountId, vendor_id: resolvedVendorIdForSelect });
       if (accounts.length === 0) {
         return c.json({ error: "Bank account not found" }, 404);
       }
@@ -211399,11 +214196,19 @@ function registerVendorBankAccountEndpoints(app3) {
         verification_status: "verified",
         verified_at: (/* @__PURE__ */ new Date()).toISOString()
       });
+      const resolvedVendorId = resolvedVendorIdForSelect;
+      try {
+        await query(
+          `UPDATE vendors SET bank_verified = true, updated_at = NOW() WHERE id = $1`,
+          [resolvedVendorId]
+        );
+      } catch (_) {
+      }
       console.log(`\u2705 Bank account ${accountId} verified (strict check passed)`);
       return c.json({
         success: true,
         valid: true,
-        message: "Bank account verified successfully."
+        message: "Bank account verified successfully. You will receive automatic payouts as per your tier."
       });
     } catch (error) {
       console.error("Error initiating verification:", error);
@@ -211413,7 +214218,8 @@ function registerVendorBankAccountEndpoints(app3) {
   app3.post("/vendor/:vendorId/bank-accounts/:accountId/set-primary", async (c) => {
     try {
       const { vendorId, accountId } = c.req.param();
-      const accounts = await select("vendor_bank_accounts", { id: accountId, vendor_id: vendorId });
+      const resolvedVendorId = (await resolveVendorById(vendorId))?.id ?? vendorId;
+      const accounts = await select("vendor_bank_accounts", { id: accountId, vendor_id: resolvedVendorId });
       if (accounts.length === 0) {
         return c.json({ error: "Bank account not found" }, 404);
       }
@@ -211422,7 +214228,7 @@ function registerVendorBankAccountEndpoints(app3) {
       }
       await query(
         `UPDATE vendor_bank_accounts SET is_primary = false WHERE vendor_id = $1`,
-        [vendorId]
+        [resolvedVendorId]
       );
       await update("vendor_bank_accounts", { id: accountId }, {
         is_primary: true
@@ -211439,13 +214245,14 @@ function registerVendorBankAccountEndpoints(app3) {
   app3.delete("/vendor/:vendorId/bank-accounts/:accountId", async (c) => {
     try {
       const { vendorId, accountId } = c.req.param();
-      const accounts = await select("vendor_bank_accounts", { id: accountId, vendor_id: vendorId });
+      const resolvedVendorId = (await resolveVendorById(vendorId))?.id ?? vendorId;
+      const accounts = await select("vendor_bank_accounts", { id: accountId, vendor_id: resolvedVendorId });
       if (accounts.length === 0) {
         return c.json({ error: "Bank account not found" }, 404);
       }
       const allAccounts = await query(
         `SELECT id FROM vendor_bank_accounts WHERE vendor_id = $1`,
-        [vendorId]
+        [resolvedVendorId]
       );
       if (allAccounts.rows.length === 1) {
         return c.json({ error: "Cannot remove the only bank account" }, 400);
@@ -211454,8 +214261,8 @@ function registerVendorBankAccountEndpoints(app3) {
         return c.json({ error: "Cannot remove primary account. Set another account as primary first." }, 400);
       }
       await query(
-        `DELETE FROM vendor_bank_accounts WHERE id = $1`,
-        [accountId]
+        `DELETE FROM vendor_bank_accounts WHERE id = $1 AND vendor_id = $2`,
+        [accountId, resolvedVendorId]
       );
       return c.json({
         success: true,
@@ -223102,12 +225909,160 @@ function getCategoryDisplayName(categoryId) {
   };
   return categoryNames[categoryId] || categoryId;
 }
+var CATEGORY_TO_SPEC = {
+  veterinary: "veterinary",
+  grooming: "grooming",
+  training: "training",
+  walking: "walking",
+  diagnostic: "veterinary",
+  diagnostics: "veterinary",
+  pharmacy: "veterinary",
+  emergency: "veterinary",
+  wellness: "wellness",
+  specialty: "veterinary",
+  boarding: "boarding",
+  nutrition: "wellness",
+  behavioral: "behavioral",
+  behaviour: "behavioral"
+};
+var ROLE_EXPANSIONS = {
+  sitter: ["sitter", "pet_sitter"],
+  pet_sitter: ["sitter", "pet_sitter"],
+  boarding: ["boarding", "pet_boarder", "pet_daycare", "pet_sitter", "pet_boarding"],
+  pet_boarding: ["boarding", "pet_boarder", "pet_daycare", "pet_sitter", "pet_boarding"],
+  pet_boarding_daycare: ["boarding", "pet_boarder", "pet_daycare", "pet_sitter", "pet_boarding"],
+  pet_boarder: ["boarding", "pet_boarder", "pet_daycare"],
+  pet_daycare: ["boarding", "pet_daycare", "pet_sitter"],
+  walker: ["walker", "pet_walker", "dog_walker"],
+  pet_walker: ["walker", "pet_walker", "dog_walker"],
+  vet_solo: ["vet_solo", "vet", "veterinarian", "vet_clinic"],
+  vet_clinic: ["vet_clinic", "veterinary_clinic", "vet", "veterinarian"],
+  veterinarian: ["vet", "veterinarian", "vet_clinic", "vet_solo"],
+  groomer_solo: ["groomer", "pet_groomer", "groomer_center", "groomer_solo"],
+  groomer_center: ["groomer", "pet_groomer", "groomer_center", "groomer_solo"],
+  pet_groomer: ["groomer", "pet_groomer", "groomer_center", "groomer_solo"],
+  trainer_solo: ["trainer", "pet_trainer", "trainer_center", "trainer_solo"],
+  trainer_center: ["trainer", "pet_trainer", "trainer_center", "trainer_solo"],
+  pet_trainer: ["trainer", "pet_trainer", "trainer_center", "trainer_solo"],
+  resort: ["resort", "pet_resort"],
+  pet_resort: ["resort", "pet_resort"],
+  sunset: ["sunset", "pet_sunset_services"],
+  pet_sunset_services: ["sunset", "pet_sunset_services"],
+  nutritionist: ["nutritionist", "pet_nutritionist", "nutritionist_center"],
+  nutritionist_center: ["nutritionist", "pet_nutritionist", "nutritionist_center"],
+  pet_nutritionist: ["nutritionist", "pet_nutritionist", "nutritionist_center"]
+};
+var ROLE_DISPLAY_TO_CODE = {
+  "pet sitter": "sitter",
+  "pet_sitter": "sitter",
+  "pet walker": "walker",
+  "pet_walker": "walker",
+  "pet resort": "resort",
+  "pet_resort": "resort",
+  "pet boarding": "pet_boarding",
+  "pet_boarding": "pet_boarding",
+  "pet boarding & daycare": "pet_boarding_daycare",
+  "pet_boarding_daycare": "pet_boarding_daycare",
+  "boarding": "boarding",
+  "pet_boarder": "pet_boarder",
+  "pet_daycare": "pet_daycare",
+  "sunset care": "sunset",
+  "pet_sunset_services": "sunset",
+  "trainer (center)": "trainer_center",
+  "trainer (solo)": "trainer_solo",
+  "trainer_center": "trainer_center",
+  "trainer_solo": "trainer_solo",
+  "veterinarian (solo)": "vet_solo",
+  "veterinary clinic": "vet_clinic",
+  "vet_solo": "vet_solo",
+  "vet_clinic": "vet_clinic",
+  "veterinarian": "vet_solo",
+  "vet": "vet_solo",
+  "groomer (center)": "groomer_center",
+  "groomer (solo)": "groomer_solo",
+  "groomer_center": "groomer_center",
+  "groomer_solo": "groomer_solo",
+  "groomer_(center)": "groomer_center",
+  "groomer_(solo)": "groomer_solo",
+  "pet groomer": "pet_groomer",
+  "pet_groomer": "pet_groomer",
+  "grooming center": "groomer_center",
+  "nutritionist (center)": "nutritionist_center",
+  "nutritionist (solo)": "nutritionist",
+  "nutritionist_center": "nutritionist_center",
+  "nutritionist": "nutritionist",
+  "nutritionist_(center)": "nutritionist_center",
+  "nutritionist_(solo)": "nutritionist",
+  "pet nutritionist": "pet_nutritionist",
+  "pet_nutritionist": "pet_nutritionist"
+};
+function normalizeRoleForApi(r) {
+  const s = (r || "").toString().trim().toLowerCase().replace(/\s+/g, "_");
+  return ROLE_DISPLAY_TO_CODE[s] ?? ROLE_DISPLAY_TO_CODE[(r || "").toString().trim().toLowerCase()] ?? s;
+}
+function expandRoleIdsForOverlap(roleIds) {
+  const seen = /* @__PURE__ */ new Set();
+  for (const r of roleIds) {
+    const norm = normalizeRoleForApi(r);
+    if (!norm) continue;
+    seen.add(norm);
+    const expanded = ROLE_EXPANSIONS[norm];
+    if (expanded) expanded.forEach((x) => seen.add(x));
+  }
+  return Array.from(seen);
+}
 function registerSpecializationMasterEndpoints(app3) {
   app3.get("/admin/specializations", async (c) => {
     try {
       const categoryId = c.req.query("categoryId");
+      const roleIdsRaw = c.req.query("roleIds");
       const includeSymptoms = c.req.query("includeSymptoms") === "true";
       const includeInactive = c.req.query("includeInactive") === "true";
+      const roleIds = roleIdsRaw && typeof roleIdsRaw === "string" && roleIdsRaw.trim() ? roleIdsRaw.split(",").map((r) => r.trim()).filter(Boolean) : [];
+      const expandedRoleIds = roleIds.length > 0 ? expandRoleIdsForOverlap(roleIds) : [];
+      console.log("[SPEC-MASTER] GET /admin/specializations", { categoryId: categoryId ?? "(none)", roleIdsRaw: roleIdsRaw ?? "(none)", roleIds, expandedRoleIds });
+      let effectiveCategoryId = null;
+      let categoriesFromRoles = [];
+      if (!categoryId && expandedRoleIds.length > 0) {
+        try {
+          const catResult = await query(
+            `SELECT DISTINCT category_id FROM service_catalog
+             WHERE status = 'active' AND category_id IS NOT NULL AND category_id != ''
+               AND applicable_roles && $1::text[]`,
+            [expandedRoleIds]
+          );
+          categoriesFromRoles = (catResult.rows || []).map((r) => r.category_id).filter(Boolean);
+          categoriesFromRoles = [...new Set(categoriesFromRoles.map(
+            (cid) => CATEGORY_TO_SPEC[(cid || "").toLowerCase()] || cid
+          ))];
+        } catch (e) {
+          console.warn("[SPEC-MASTER] Could not get categories from service_catalog:", e.message);
+        }
+      } else if (categoryId) {
+        const raw2 = categoryId.trim();
+        const bySlug = CATEGORY_TO_SPEC[raw2.toLowerCase()] ?? raw2;
+        const looksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw2);
+        if (looksLikeUuid || !CATEGORY_TO_SPEC[raw2.toLowerCase()]) {
+          try {
+            const resolved = await query(
+              `SELECT category_id FROM service_categories WHERE id::text = $1 OR category_id = $2 LIMIT 1`,
+              [raw2, raw2]
+            );
+            if (resolved.rows?.length > 0 && resolved.rows[0].category_id) {
+              const slug = String(resolved.rows[0].category_id).trim();
+              effectiveCategoryId = CATEGORY_TO_SPEC[slug.toLowerCase()] || slug;
+            } else {
+              effectiveCategoryId = bySlug;
+            }
+          } catch (e) {
+            console.warn("[SPEC-MASTER] Resolve categoryId from service_categories:", e.message);
+            effectiveCategoryId = bySlug;
+          }
+        } else {
+          effectiveCategoryId = bySlug;
+        }
+      }
+      console.log("[SPEC-MASTER] Resolved", { effectiveCategoryId, categoriesFromRoles });
       let sqlQuery = `
         SELECT 
           sm.*,
@@ -223119,12 +226074,40 @@ function registerSpecializationMasterEndpoints(app3) {
       if (!includeInactive) {
         sqlQuery += ` AND sm.is_active = true`;
       }
-      if (categoryId) {
-        params.push(categoryId);
-        sqlQuery += ` AND sm.category_id = $${params.length}`;
+      if (effectiveCategoryId) {
+        params.push(effectiveCategoryId);
+        sqlQuery += ` AND (sm.category_id = $${params.length} OR LOWER(sm.category_id) = LOWER($${params.length}))`;
+      } else if (categoriesFromRoles.length > 0) {
+        params.push(categoriesFromRoles);
+        sqlQuery += ` AND (sm.category_id = ANY($${params.length}::text[]) OR EXISTS (SELECT 1 FROM unnest($${params.length}::text[]) AS x WHERE LOWER(sm.category_id) = LOWER(x)))`;
+      }
+      if (expandedRoleIds.length > 0) {
+        params.push(expandedRoleIds);
+        sqlQuery += ` AND (sm.applicable_roles = '{}' OR sm.applicable_roles IS NULL OR array_length(sm.applicable_roles, 1) IS NULL OR sm.applicable_roles && $${params.length}::text[])`;
       }
       sqlQuery += ` ORDER BY sm.category_id, sm.display_order, sm.name`;
-      const result = await query(sqlQuery, params);
+      let result = await query(sqlQuery, params);
+      console.log("[SPEC-MASTER] Query result", { effectiveCategoryId, categoriesFromRoles: categoriesFromRoles.length, expandedRoleIdsCount: expandedRoleIds.length, rowCount: result.rows.length });
+      if (result.rows.length === 0 && expandedRoleIds.length > 0 && (effectiveCategoryId || categoriesFromRoles.length > 0)) {
+        let fallbackQuery = `
+          SELECT sm.*, (SELECT COUNT(*) FROM specialization_symptoms ss WHERE ss.specialization_id = sm.specialization_id AND ss.is_active = true) as symptom_count
+          FROM specialization_master sm WHERE sm.is_active = true
+        `;
+        const fallbackParams = [];
+        if (effectiveCategoryId) {
+          fallbackParams.push(effectiveCategoryId);
+          fallbackQuery += ` AND (sm.category_id = $${fallbackParams.length} OR LOWER(sm.category_id) = LOWER($${fallbackParams.length}))`;
+        } else if (categoriesFromRoles.length > 0) {
+          fallbackParams.push(categoriesFromRoles);
+          fallbackQuery += ` AND (sm.category_id = ANY($${fallbackParams.length}::text[]) OR EXISTS (SELECT 1 FROM unnest($${fallbackParams.length}::text[]) AS x WHERE LOWER(sm.category_id) = LOWER(x)))`;
+        }
+        fallbackQuery += ` ORDER BY sm.category_id, sm.display_order, sm.name`;
+        const fallbackResult = await query(fallbackQuery, fallbackParams);
+        if (fallbackResult.rows.length > 0) {
+          console.log("[SPEC-MASTER] Fallback (no role filter) returned", fallbackResult.rows.length, "rows");
+          result = fallbackResult;
+        }
+      }
       let specializations = result.rows.map((row) => ({
         id: row.id,
         specializationId: row.specialization_id,
@@ -223179,6 +226162,7 @@ function registerSpecializationMasterEndpoints(app3) {
       return c.json({
         success: true,
         data: specializations,
+        specializations,
         byCategory,
         total: specializations.length
       });
@@ -223727,8 +226711,9 @@ function registerSpecializationMasterEndpoints(app3) {
            WHERE sm.is_active = true
              AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
              AND sm.category_id = ANY($1::text[])
+             AND (sm.applicable_roles = '{}' OR sm.applicable_roles && $2::text[])
            ORDER BY sm.display_order, sm.name`,
-          [categoriesFromServices]
+          [categoriesFromServices, roleNames]
         );
         rows = smResult.rows || [];
         if (rows.length > 0) {
@@ -223744,8 +226729,9 @@ function registerSpecializationMasterEndpoints(app3) {
              WHERE sm.is_active = true
                AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
                AND sm.category_id = ANY($1::text[])
+               AND (sm.applicable_roles = '{}' OR sm.applicable_roles && $2::text[])
              ORDER BY sm.display_order, sm.name`,
-            [categoriesForRole]
+            [categoriesForRole, roleNames]
           );
           rows = result.rows || [];
         }

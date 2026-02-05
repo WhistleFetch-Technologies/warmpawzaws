@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import {
   Receipt, Search, Filter, Download, Calendar, TrendingUp,
-  FileText, DollarSign, AlertCircle, Clock, Check, Eye
+  FileText, IndianRupee, AlertCircle, Clock, Check, Eye
 } from 'lucide-react';
 
 interface GSTSummary {
@@ -192,7 +192,7 @@ export default function GSTDashboard() {
                 <div className="bg-white rounded-xl border border-slate-100 p-5">
                   <div className="flex items-center gap-3 mb-3">
                     <div className="p-3 bg-blue-100 rounded-lg">
-                      <DollarSign className="w-5 h-5 text-blue-600" />
+                      <IndianRupee className="w-5 h-5 text-blue-600" />
                     </div>
                     <p className="text-sm text-slate-500">Total Sales</p>
                   </div>

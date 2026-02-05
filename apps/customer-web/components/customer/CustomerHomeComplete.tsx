@@ -1453,14 +1453,13 @@ export function CustomerHomeComplete({
           </div>
         )}
 
-        {/* ✅ Enhanced Search Bar */}
+        {/* Universal search bar - top of landing */}
         <div className="px-4 mb-3">
           <EnhancedSearchBar
             placeholder="Search services, products, vets, groomers..."
             customerId={phone}
             onResultSelect={(result) => {
               console.log('Search result selected:', result);
-              // Navigate based on result type and category
               if (result.type === 'service' || result.category) {
                 const serviceNavigationMap: Record<string, string> = {
                   'veterinary': 'vet',
@@ -1486,14 +1485,12 @@ export function CustomerHomeComplete({
                   'sunset': 'sunset',
                   'mating': 'mating-dating-hub'
                 };
-                
                 const category = result.category || result.data?.serviceType || result.data?.category || '';
                 const targetScreen = serviceNavigationMap[category.toLowerCase()] || 'services';
                 onNavigate?.(targetScreen);
               } else if (result.type === 'product') {
                 onNavigate?.('shop');
               } else if (result.type === 'staff' || result.type === 'vendor' || result.type === 'center') {
-                // Navigate to relevant service page
                 const serviceType = result.data?.serviceType || result.data?.services?.[0] || 'vet';
                 onNavigate?.(serviceType);
               }
@@ -1501,29 +1498,10 @@ export function CustomerHomeComplete({
           />
         </div>
 
-        {/* Phase 3: For you section - Book again + Deals */}
-        <ForYouSection
-          phone={phone}
-          hotDeals={displayHotDeals}
-          banners={dynamicBanners}
-          onNavigate={onNavigate}
-        />
-
-        {/* ✅ Trending Problems Section - Compact */}
-        <div className="px-4 mb-3">
-          <TrendingProblems
-            onProblemSelect={(problemId, title) => {
-              // Navigate to services by problem
-              onNavigate?.('services_by_problem', { problemId, problemTitle: title });
-            }}
-            limit={3}
-          />
-        </div>
-
-        {/* ✅ Problem Grid Navigation - Compact Slider */}
+        {/* What's your pet needs? - directly below search (clean landing) */}
         <div className="mb-4 w-full overflow-hidden">
           <div className="px-4 flex items-center justify-between mb-2">
-            <h2 className="text-gray-900 text-sm font-semibold">What's Your Pet's Need?</h2>
+            <h2 className="text-gray-900 text-sm font-semibold">What&apos;s your pet needs?</h2>
             <button 
               onClick={() => onNavigate?.('problem_grid')}
               className="text-[11px] text-[#FF8C42] font-medium"
@@ -1533,14 +1511,13 @@ export function CustomerHomeComplete({
           </div>
           <ProblemGridNavigation
             onProblemSelect={(problemId, problem) => {
-              // Navigate to services by problem
               onNavigate?.('services_by_problem', { 
                 problemId, 
                 problemTitle: problem?.title || (problem as any)?.name || 'Service',
                 roleId: (problem as any)?.roleId || (problem as any)?.vendorType
               });
             }}
-            showTrending={true}
+            showTrending={false}
             compact={true}
           />
         </div>
@@ -1986,6 +1963,25 @@ export function CustomerHomeComplete({
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        {/* Discover more: For you & Trending - lower on page so landing stays clean */}
+        <div className="mb-6 mx-4 p-4 rounded-2xl bg-gray-50/80 border border-gray-100">
+          <h2 className="text-gray-500 text-xs font-medium uppercase tracking-wider mb-4">Discover more</h2>
+          <ForYouSection
+            phone={phone}
+            hotDeals={displayHotDeals}
+            banners={dynamicBanners}
+            onNavigate={onNavigate}
+          />
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <TrendingProblems
+              onProblemSelect={(problemId, title) => {
+                onNavigate?.('services_by_problem', { problemId, problemTitle: title });
+              }}
+              limit={5}
+            />
           </div>
         </div>
 

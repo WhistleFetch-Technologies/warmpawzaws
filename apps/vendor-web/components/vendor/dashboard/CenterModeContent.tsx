@@ -1,7 +1,9 @@
 'use client';
 
 import React from 'react';
-import { Building2, Calendar, DollarSign, Users } from 'lucide-react';
+import { Building2, Calendar, Users, icons } from 'lucide-react';
+
+const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
 
 interface CenterModeContentProps {
   session: any;
@@ -37,7 +39,7 @@ export function CenterModeContent({
           <div className="text-xs text-gray-500">Today's Bookings</div>
         </div>
         <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
-          <DollarSign className="w-5 h-5 text-orange-600 mb-0" />
+          <IndianRupee className="w-5 h-5 text-orange-600 mb-0" />
           <div className="text-2xl font-bold text-gray-900">₹0</div>
           <div className="text-xs text-gray-500">Today's Revenue</div>
         </div>

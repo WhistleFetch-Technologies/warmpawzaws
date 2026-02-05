@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, Edit, Trash2, Eye, Users, Package, Tag, Layout, DollarSign, Clock, AlertCircle } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, Eye, Users, Package, Tag, Layout, IndianRupee, Clock, AlertCircle } from 'lucide-react';
 import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { StatusBadge } from './StatusBadge';
@@ -25,6 +25,8 @@ interface Service {
   specializationIds?: string[];
   metadata?: Record<string, unknown>;
   isPackage?: boolean;
+  taxCategoryId?: string;
+  hsnCodeId?: string;
 }
 
 export type FilterMissing = 'none' | 'roles' | 'specialization' | 'style' | 'price' | 'duration';
@@ -103,6 +105,8 @@ export function ServiceCatalogTab() {
         specializationIds: s.specialization_ids || s.specializationIds || [],
         metadata: s.metadata || {},
         isPackage: !!(s.metadata?.isPackage ?? s.isPackage),
+        taxCategoryId: s.tax_category_id,
+        hsnCodeId: s.hsn_code_id,
       }));
       
       console.log('🔍 [ServiceCatalogTab] Mapped services:', mappedServices.length);
@@ -319,7 +323,7 @@ export function ServiceCatalogTab() {
             filterMissing === 'price' ? 'border-amber-500 bg-amber-50' : 'border-gray-200 bg-white hover:border-gray-300'
           }`}
         >
-          <DollarSign className="w-4 h-4 text-amber-600" />
+          <IndianRupee className="w-4 h-4 text-amber-600" />
           <span>Missing price: {analytics.missingPrice}</span>
         </button>
         <button

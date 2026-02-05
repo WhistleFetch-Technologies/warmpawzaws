@@ -34,7 +34,7 @@ import {
   Clock,
   LogOut,
   TrendingUp,
-  DollarSign,
+  IndianRupee,
   Package,
   LayoutDashboard,
   Megaphone,
@@ -57,7 +57,6 @@ import {
   Globe,
   Download as DownloadIcon,
   CalendarCheck,
-  DollarSignIcon,
   Database,
   Briefcase
 } from 'lucide-react';
@@ -458,7 +457,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
 
                 <button className="flex flex-col items-center gap-3 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
                   <div className="p-0 bg-red-100 rounded-lg">
-                    <DollarSign className="w-5 h-5 text-red-600" />
+                    <IndianRupee className="w-5 h-5 text-red-600" />
                   </div>
                   <div className="text-center">
                     <p className="text-xs">Payment</p>
@@ -537,7 +536,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
             <AccordionItem value="reservation" className="bg-white rounded-lg border">
               <AccordionTrigger className="px-4 py-0 hover:no-underline">
                 <div className="flex items-center gap-3">
-                  <DollarSign className="w-4 h-4" />
+                  <IndianRupee className="w-4 h-4" />
                   <span>Reservation & Payment Type</span>
                 </div>
               </AccordionTrigger>

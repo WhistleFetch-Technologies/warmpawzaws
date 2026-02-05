@@ -22,7 +22,7 @@ import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 import { createHmac, randomUUID } from 'crypto';
-import { getRazorpayConfig, getRazorpayAuthHeader, razorpayRequest } from '../utils/razorpay-client';
+import { getRazorpayConfig, getRazorpayAuthHeader, getRazorpayClient, razorpayRequest } from '../utils/razorpay-client';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { DEFAULT_COMMISSION_RATE } from '../lib/constants/commission';
@@ -988,9 +988,46 @@ export function registerRazorpayEndpoints(app: Hono) {
         }, 400);
       }
 
-      // Format validation passed for all three. Do NOT return valid: true –
-      // we have not verified that name/account match the bank; that requires
-      // Razorpay Fund Account Validation (penny drop / name match).
+      // When RazorpayX is configured (RAZORPAY_X_ACCOUNT_NUMBER + credentials in AWS Secrets), use Razorpay Fund Account Validation API
+      try {
+        const client = getRazorpayClient();
+        const result = await client.validateBankAccount({
+          account_number,
+          ifsc: ifsc_code,
+          beneficiary_name,
+          contact_phone: body?.contact,
+          contact_email: body?.email,
+          reference_id: body?.reference_id,
+        });
+        if (result.valid) {
+          return c.json({
+            success: true,
+            valid: true,
+            bank_details: {
+              bank: ifscData.BANK || '',
+              branch: ifscData.BRANCH || '',
+              city: ifscData.CITY || '',
+              state: ifscData.STATE || '',
+              ifsc: ifsc_code,
+            },
+            account_number_masked: account_number.replace(/\d(?=\d{4})/g, '*'),
+            validationId: result.validationId,
+            message: 'Bank account verified via Razorpay.',
+          });
+        }
+        if (result.error) {
+          return c.json({
+            success: false,
+            valid: false,
+            error: result.error,
+            details: result.error,
+          }, 400);
+        }
+      } catch (apiErr: any) {
+        console.warn('[verify-bank-account] Razorpay validation API not used:', apiErr?.message);
+      }
+
+      // Format-only response when RazorpayX validation not configured or API unavailable
       return c.json({
         success: true,
         valid: false,
@@ -1002,7 +1039,7 @@ export function registerRazorpayEndpoints(app: Hono) {
           ifsc: ifsc_code,
         },
         account_number_masked: account_number.replace(/\d(?=\d{4})/g, '*'),
-        message: 'Format validation passed for name, IFSC, and account number. Verification (name + account + IFSC match) requires Razorpay Fund Account Validation; this endpoint cannot confirm account holder or account number.',
+        message: 'Format validation passed. For full verification, configure RazorpayX (RAZORPAY_X_ACCOUNT_NUMBER) and allowlist IPs in RazorpayX Dashboard.',
       });
     } catch (error: any) {
       console.error('Error verifying bank account:', error);

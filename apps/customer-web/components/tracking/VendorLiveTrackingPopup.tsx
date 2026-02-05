@@ -2,20 +2,20 @@
 
 /**
  * VendorLiveTrackingPopup - Customer-side live tracking component
- * 
+ *
  * Shows as a popup on customer home screen when vendor is on the way
  * Features:
  * - Live GPS tracking of vendor location
  * - Real-time ETA updates
- * - Google Maps integration
+ * - Google Maps JavaScript API with Tracker map style
  * - Vendor/Staff details (phone, qualifications, profile)
  * - Appointment purpose and details
  * - Auto-dismisses when vendor arrives
  * - Mobile-optimized design
  */
 
-import { useState, useEffect, useRef } from 'react';
-import { X, MapPin, Clock, Navigation, Phone, MessageCircle, User, GraduationCap, Calendar, FileText } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { X, MapPin, Clock, Navigation, Phone, User, GraduationCap, Calendar, FileText } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 interface VendorLiveTrackingPopupProps {
@@ -83,24 +83,28 @@ export function VendorLiveTrackingPopup({
   vendorPhoto
 }: VendorLiveTrackingPopupProps) {
   const [trackingStatus, setTrackingStatus] = useState<TrackingStatus | null>(null);
-  const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string | null>(null);
+  const [googleMapsConfig, setGoogleMapsConfig] = useState<{ apiKey: string; mapId?: string } | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [bookingDetails, setBookingDetails] = useState<any>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<any>(null);
+  const directionsRendererRef = useRef<any>(null);
 
-  // Fetch Google Maps API key
+  // Fetch Google Maps config (apiKey + mapId for Tracker style)
   useEffect(() => {
-    const fetchApiKey = async () => {
+    const fetchConfig = async () => {
       try {
         const response = await apiClient.get('/config/google-maps-key') as any;
-        if (response?.apiKey || response?.key) {
-          setGoogleMapsApiKey(response.apiKey || response.key);
+        const apiKey = response?.apiKey || response?.key;
+        if (apiKey) {
+          setGoogleMapsConfig({ apiKey, mapId: response?.mapId });
         }
       } catch (error) {
-        console.warn('Could not fetch Google Maps API key:', error);
+        console.warn('Could not fetch Google Maps config:', error);
       }
     };
-    fetchApiKey();
+    fetchConfig();
   }, []);
 
   // Load booking details on mount
@@ -164,6 +168,95 @@ export function VendorLiveTrackingPopup({
       }
     };
   }, [trackingSessionId, bookingId, vendorName, onVendorArrived]);
+
+  // Load Google Maps JS script
+  const loadGoogleMaps = useCallback((apiKey: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if (window.google?.maps) {
+        resolve();
+        return;
+      }
+      if (document.querySelector('script[src*="maps.googleapis.com"]')) {
+        const check = setInterval(() => {
+          if (window.google?.maps) {
+            clearInterval(check);
+            resolve();
+          }
+        }, 100);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load Google Maps'));
+      document.head.appendChild(script);
+    });
+  }, []);
+
+  // Initialize map and show directions (Maps JavaScript API with mapId for Tracker style)
+  useEffect(() => {
+    const origin = trackingStatus?.currentLocation;
+    if (!googleMapsConfig?.apiKey || !origin || !mapRef.current || !customerAddress) return;
+
+    let mounted = true;
+    const initMap = async () => {
+      try {
+        await loadGoogleMaps(googleMapsConfig.apiKey);
+        if (!mounted || !mapRef.current || !window.google?.maps) return;
+
+        const center = { lat: origin.latitude, lng: origin.longitude };
+        const mapOptions: Record<string, unknown> = {
+          center,
+          zoom: 14,
+          mapTypeControl: false,
+          fullscreenControl: true,
+          streetViewControl: false,
+          zoomControl: true,
+        };
+        if (googleMapsConfig.mapId) {
+          mapOptions.mapId = googleMapsConfig.mapId;
+        }
+        const map = new window.google.maps.Map(mapRef.current, mapOptions);
+        mapInstanceRef.current = map;
+
+        const directionsService = new window.google.maps.DirectionsService();
+        const directionsRenderer = new window.google.maps.DirectionsRenderer({
+          map,
+          suppressMarkers: false,
+        });
+        directionsRendererRef.current = directionsRenderer;
+
+        directionsService.route(
+          {
+            origin: { lat: origin.latitude, lng: origin.longitude },
+            destination: customerAddress,
+            travelMode: window.google.maps.TravelMode.DRIVING,
+          },
+          (result: any, status: string) => {
+            if (!mounted || !directionsRendererRef.current) return;
+            if (status === window.google.maps.DirectionsStatus.OK && result) {
+              directionsRendererRef.current.setDirections(result);
+            }
+          }
+        );
+      } catch (err) {
+        console.warn('Error initializing tracking map:', err);
+      }
+    };
+    initMap();
+    return () => {
+      mounted = false;
+      if (directionsRendererRef.current) {
+        directionsRendererRef.current.setMap(null);
+        directionsRendererRef.current = null;
+      }
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current = null;
+      }
+    };
+  }, [googleMapsConfig?.apiKey, googleMapsConfig?.mapId, trackingStatus?.currentLocation?.latitude, trackingStatus?.currentLocation?.longitude, customerAddress, loadGoogleMaps]);
 
   const formatETA = (minutes?: number) => {
     if (!minutes) return 'Calculating...';
@@ -239,18 +332,10 @@ export function VendorLiveTrackingPopup({
 
         {/* Main Content Area */}
         <div className="flex-1 overflow-y-auto">
-          {/* Tracking Map/Status */}
+          {/* Tracking Map (Maps JavaScript API with Tracker map style) */}
           <div className="relative bg-gray-100 min-h-[200px] sm:min-h-[300px]">
-            {googleMapsApiKey && trackingStatus?.currentLocation ? (
-              <iframe
-                width="100%"
-                height="100%"
-                style={{ border: 0, minHeight: '200px' }}
-                src={`https://www.google.com/maps/embed/v1/directions?key=${googleMapsApiKey}&origin=${trackingStatus.currentLocation.latitude},${trackingStatus.currentLocation.longitude}&destination=${encodeURIComponent(customerAddress)}&mode=driving`}
-                allowFullScreen
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-              />
+            {googleMapsConfig && trackingStatus?.currentLocation ? (
+              <div ref={mapRef} className="w-full h-full min-h-[200px] sm:min-h-[300px]" />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
                 <div className="text-center p-6">

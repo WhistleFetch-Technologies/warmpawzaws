@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { ChevronRight, CreditCard, Settings as SettingsIcon, User, LogOut } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ChevronRight, CreditCard, Settings as SettingsIcon, User } from 'lucide-react';
 import { VendorPaymentSettings } from './VendorPaymentSettings';
 import { VendorGeneralSettings } from './VendorGeneralSettings';
 import { VendorProfileSettings } from './VendorProfileSettings';
@@ -10,12 +10,20 @@ interface VendorSettingsScreenProps {
   vendorId: string;
   vendorData?: any;
   onBack: () => void;
+  /** Initial tab when opened from URL (e.g. ?tab=bank → payment) */
+  initialTab?: 'general' | 'payment' | 'profile';
 }
 
 type SettingsTab = 'general' | 'payment' | 'profile';
 
-export function VendorSettingsScreen({ vendorId, vendorData, onBack }: VendorSettingsScreenProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+export function VendorSettingsScreen({ vendorId, vendorData, onBack, initialTab }: VendorSettingsScreenProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab || 'general');
+
+  useEffect(() => {
+    if (initialTab && ['general', 'payment', 'profile'].includes(initialTab)) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   return (
     <div className="fixed inset-0 bg-gray-50 z-20 overflow-y-auto pb-24">

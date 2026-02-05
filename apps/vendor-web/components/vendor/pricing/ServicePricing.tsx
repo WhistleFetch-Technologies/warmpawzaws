@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { DollarSign, Save, RefreshCw } from 'lucide-react';
+import { IndianRupee, Save, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { CapabilityGate } from '../CapabilityGate';
 
@@ -161,7 +161,7 @@ export function ServicePricing({ vendorId, serviceId, onBack }: ServicePricingPr
         {/* Services List */}
         {services.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
-            <DollarSign className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+            <IndianRupee className="w-12 h-12 mx-auto text-gray-400 mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">No services found</h3>
             <p className="text-gray-500">Add services to manage their pricing</p>
           </div>

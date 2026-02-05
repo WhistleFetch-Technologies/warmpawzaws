@@ -15,7 +15,7 @@ import {
   Trash2,
   Star,
   Clock,
-  DollarSign,
+  IndianRupee,
   Upload,
   Camera,
   Check,
@@ -339,7 +339,7 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
                   <p className="text-xs text-green-700">Completed</p>
                 </div>
                 <div className="text-center p-2 bg-orange-50 rounded-lg">
-                  <DollarSign className="w-4 h-4 mx-auto mb-1 text-[#FF8C42]" />
+                  <IndianRupee className="w-4 h-4 mx-auto mb-1 text-[#FF8C42]" />
                   <p className="text-lg font-bold text-gray-900">₹{staffMember.consultationFee || 0}</p>
                   <p className="text-xs text-gray-600">Fee</p>
                 </div>

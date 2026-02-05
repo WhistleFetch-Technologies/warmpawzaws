@@ -21,6 +21,7 @@ import { Hono } from 'hono';
 import { select, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { resolveVendorId } from '../utils/vendor-resolve';
 
 export function registerAnalyticsEndpoints(app: Hono) {
   /**
@@ -29,7 +30,8 @@ export function registerAnalyticsEndpoints(app: Hono) {
    */
   app.get("/analytics/vendor/:vendorId/dashboard", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param('vendorId');
+      const vendorId = await resolveVendorId(paramVendorId);
       const period = c.req.query('period') || 'all'; // all, today, week, month, year
 
       // Get vendor
@@ -284,7 +286,8 @@ export function registerAnalyticsEndpoints(app: Hono) {
    */
   app.get("/analytics/vendor/:vendorId/revenue", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param('vendorId');
+      const vendorId = await resolveVendorId(paramVendorId);
       const startDate = c.req.query('startDate');
       const endDate = c.req.query('endDate');
 
@@ -530,9 +533,9 @@ export function registerAnalyticsEndpoints(app: Hono) {
                FROM bookings WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'`).catch(() => ({ rows: [{ total: 0, completed: 0, gmv: 0, completed_gmv: 0 }] })),
         query(`SELECT 
                 COALESCE(SUM(amount), 0) as total_revenue,
-                COALESCE(SUM(platform_fee), 0) as commission
+                COALESCE(SUM(COALESCE(platform_fee, commission_amount)), 0) as commission
                FROM payments 
-               WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days' AND status = 'success'`).catch(() => ({ rows: [{ total_revenue: 0, commission: 0 }] })),
+               WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days' AND payment_status IN ('completed', 'success')`).catch(() => ({ rows: [{ total_revenue: 0, commission: 0 }] })),
         query(`SELECT 
                 COUNT(*) as total,
                 COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days') as new_customers
@@ -589,10 +592,10 @@ export function registerAnalyticsEndpoints(app: Hono) {
       const revenueData = await query(
         `SELECT DATE_TRUNC('day', created_at) as date, 
                 COALESCE(SUM(amount), 0) as revenue,
-                COALESCE(SUM(platform_fee), 0) as commission,
+                COALESCE(SUM(COALESCE(platform_fee, commission_amount)), 0) as commission,
                 COUNT(*) as count
          FROM payments 
-         WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days' AND status = 'success'
+         WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days' AND payment_status IN ('completed', 'success')
          GROUP BY DATE_TRUNC('day', created_at)
          ORDER BY date`
       ).catch(() => ({ rows: [] }));

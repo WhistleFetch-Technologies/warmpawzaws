@@ -19,10 +19,12 @@ import {
   GraduationCap,
   Home,
   Camera,
-  DollarSign,
   Truck,
-  BarChart3
+  BarChart3,
+  icons
 } from 'lucide-react';
+
+const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
 import { Button } from './button';
 
 export type EmptyStateType = 
@@ -62,7 +64,7 @@ const iconMap: Record<EmptyStateType, React.ReactNode> = {
   prescriptions: <FileText className="w-12 h-12 text-gray-300" />,
   customers: <Users className="w-12 h-12 text-gray-300" />,
   reviews: <Star className="w-12 h-12 text-gray-300" />,
-  earnings: <DollarSign className="w-12 h-12 text-gray-300" />,
+  earnings: <IndianRupee className="w-12 h-12 text-gray-300" />,
   delivery: <Truck className="w-12 h-12 text-gray-300" />,
   analytics: <BarChart3 className="w-12 h-12 text-gray-300" />,
   gallery: <Camera className="w-12 h-12 text-gray-300" />,

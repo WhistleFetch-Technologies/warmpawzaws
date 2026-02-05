@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { 
-  DollarSign, TrendingUp, Percent, Calculator, 
-  ArrowRight, IndianRupee, PiggyBank, Wallet, Clock
+  IndianRupee, TrendingUp, Percent, Calculator, 
+  ArrowRight, PiggyBank, Wallet, Clock
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
@@ -125,7 +125,7 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
         <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-orange-100 rounded-xl">
-              <DollarSign className="w-6 h-6 text-orange-600" />
+              <IndianRupee className="w-6 h-6 text-orange-600" />
             </div>
             <div>
               <p className="text-sm text-slate-500">Commission Paid</p>

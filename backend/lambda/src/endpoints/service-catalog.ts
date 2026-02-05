@@ -1286,6 +1286,9 @@ export function registerServiceCatalogEndpoints(app: Hono) {
       if (body.metadata !== undefined) updateData.metadata = body.metadata;
       const displayOrder = body.display_order ?? body.displayOrder;
       if (displayOrder !== undefined) updateData.display_order = Number(displayOrder);
+      if (v(body.tax_category_id, body.taxCategoryId) !== undefined) updateData.tax_category_id = v(body.tax_category_id, body.taxCategoryId) || null;
+      if (v(body.hsn_code_id, body.hsnCodeId) !== undefined) updateData.hsn_code_id = v(body.hsn_code_id, body.hsnCodeId) || null;
+
       const specIds = Array.isArray(body.specialization_ids) ? body.specialization_ids : (Array.isArray(body.specializationIds) ? body.specializationIds : undefined);
       if (specIds !== undefined) {
         updateData.specialization_ids = specIds;

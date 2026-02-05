@@ -405,9 +405,10 @@ class CreateRoleHandler extends BaseHandler {
       }
 
       // Phase 1: Response returns canonical serviceStyles only; labels separate
-      const serviceStyles = getCanonicalServiceStyles(roleConfig);
+      // Use distinct name to avoid TDZ: body.serviceStyles is used above; do not shadow with same name
+      const canonicalServiceStyles = getCanonicalServiceStyles(roleConfig);
       const serviceStylesLabels = Object.fromEntries(
-        serviceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
+        canonicalServiceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
       );
 
       return this.success({
@@ -419,7 +420,7 @@ class CreateRoleHandler extends BaseHandler {
           roleName: newRole[0].display_name || newRole[0].name,
           roleCode: newRole[0].name,
           vendorTypes: roleConfig.vendorTypes || [],
-          serviceStyles,
+          serviceStyles: canonicalServiceStyles,
           serviceStylesLabels,
           pricingControl: roleConfig.pricingControl || {
             canControlPrice: false,
@@ -563,9 +564,10 @@ class UpdateRoleHandler extends BaseHandler {
         : [];
 
       // Phase 1: Return canonical codes only; labels separate (same as GetRoleByIdHandler)
-      const serviceStyles = getCanonicalServiceStyles(roleConfig);
+      // Use distinct var name to avoid TDZ: body.serviceStyles shadows until we compute canonical
+      const canonicalServiceStyles = getCanonicalServiceStyles(roleConfig);
       const serviceStylesLabels = Object.fromEntries(
-        serviceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
+        canonicalServiceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
       );
 
       return this.success({
@@ -577,7 +579,7 @@ class UpdateRoleHandler extends BaseHandler {
           roleName: updatedRole[0].display_name || updatedRole[0].name,
           roleCode: updatedRole[0].name,
           vendorTypes: normalizedVendorTypes,
-          serviceStyles,
+          serviceStyles: canonicalServiceStyles,
           serviceStylesLabels,
           pricingControl: roleConfig.pricingControl || {
             canControlPrice: false,

@@ -17,6 +17,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { resolveVendorId } from '../utils/vendor-resolve';
 
 // ============================================================================
 // GET /vendor/analytics/dashboard - Dashboard analytics overview
@@ -25,13 +26,15 @@ import { isValidUUID } from '../types/entities';
 class GetDashboardAnalyticsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || 
-                      context.event.queryStringParameters?.vendorId ||
-                      context.userId;
+      const paramVendorId = context.event.pathParameters?.vendorId || 
+                            context.event.queryStringParameters?.vendorId ||
+                            context.userId;
 
-      if (!vendorId) {
+      if (!paramVendorId) {
         return this.error('Vendor ID is required', 401);
       }
+
+      const vendorId = await resolveVendorId(paramVendorId);
 
       // Handle test IDs - return empty analytics FIRST before any queries
       if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
@@ -243,13 +246,15 @@ class GetDashboardAnalyticsHandler extends BaseHandler {
 class GetRevenueAnalyticsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || 
-                      context.event.queryStringParameters?.vendorId ||
-                      context.userId;
+      const paramVendorId = context.event.pathParameters?.vendorId || 
+                            context.event.queryStringParameters?.vendorId ||
+                            context.userId;
 
-      if (!vendorId) {
+      if (!paramVendorId) {
         return this.error('Vendor ID is required', 401);
       }
+
+      const vendorId = await resolveVendorId(paramVendorId);
 
       // Handle test IDs - return empty analytics
       if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
@@ -376,13 +381,15 @@ class GetRevenueAnalyticsHandler extends BaseHandler {
 class GetBookingAnalyticsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || 
-                      context.event.queryStringParameters?.vendorId ||
-                      context.userId;
+      const paramVendorId = context.event.pathParameters?.vendorId || 
+                            context.event.queryStringParameters?.vendorId ||
+                            context.userId;
 
-      if (!vendorId) {
+      if (!paramVendorId) {
         return this.error('Vendor ID is required', 401);
       }
+
+      const vendorId = await resolveVendorId(paramVendorId);
 
       const startDate = context.event.queryStringParameters?.startDate || 
                        new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -497,12 +504,15 @@ class GetBookingAnalyticsHandler extends BaseHandler {
 class GetStaffPerformanceHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.event.pathParameters?.vendorId ||
-                      context.event.queryStringParameters?.vendorId;
+      const paramVendorId = context.event.pathParameters?.vendorId ||
+                            context.event.queryStringParameters?.vendorId;
 
-      if (!vendorId) {
+      if (!paramVendorId) {
         return this.error('Vendor ID is required', 400);
       }
+
+      // Resolve identity id → vendor id so staff-performance works when app sends identity id
+      const vendorId = await resolveVendorId(paramVendorId);
 
       const period = (context.event.queryStringParameters?.period || 'month') as string;
       const now = new Date();
@@ -592,13 +602,15 @@ class GetStaffPerformanceHandler extends BaseHandler {
 class GetSalesAnalyticsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || 
-                      context.event.queryStringParameters?.vendorId ||
-                      context.userId;
+      const paramVendorId = context.event.pathParameters?.vendorId || 
+                            context.event.queryStringParameters?.vendorId ||
+                            context.userId;
 
-      if (!vendorId) {
+      if (!paramVendorId) {
         return this.error('Vendor ID is required', 401);
       }
+
+      const vendorId = await resolveVendorId(paramVendorId);
 
       // Handle test IDs - return empty analytics instead of error
       if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
@@ -758,13 +770,15 @@ class GetSalesAnalyticsHandler extends BaseHandler {
 class GetProductPerformanceHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || 
-                      context.event.queryStringParameters?.vendorId ||
-                      context.userId;
+      const paramVendorId = context.event.pathParameters?.vendorId || 
+                            context.event.queryStringParameters?.vendorId ||
+                            context.userId;
 
-      if (!vendorId) {
+      if (!paramVendorId) {
         return this.error('Vendor ID is required', 401);
       }
+
+      const vendorId = await resolveVendorId(paramVendorId);
 
       const period = context.event.queryStringParameters?.period || 'month';
       const limit = parseInt(context.event.queryStringParameters?.limit || '10', 10);

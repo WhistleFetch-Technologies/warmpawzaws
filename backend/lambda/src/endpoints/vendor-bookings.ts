@@ -600,8 +600,17 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         }
       }
 
+      // Package purchase (when booking is a package session) - fetch in parallel with others
+      const packagePurchaseId = (booking as any).package_purchase_id;
+      const packagePurchasePromise = packagePurchaseId
+        ? query(
+            'SELECT id, package_name, total_sessions, remaining_sessions, unlimited_usage FROM package_purchases WHERE id = $1',
+            [packagePurchaseId]
+          ).then((r: any) => r.rows?.[0] || null).catch(() => null)
+        : Promise.resolve(null);
+
       // Fetch related data in parallel (service can be from services or service_catalog)
-      const [customer, service, catalogService, pet, vendor, prescriptions, activities] = await Promise.all([
+      const [customer, service, catalogService, pet, vendor, prescriptions, activities, packagePurchase] = await Promise.all([
         // Customer info
         booking.customer_id
           ? select('customers', { id: booking.customer_id }).catch(() => [])
@@ -636,6 +645,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
            ORDER BY created_at DESC`,
           [bookingId]
         ).catch(() => ({ rows: [] })),
+        packagePurchasePromise,
       ]);
 
       // Build enriched booking response
@@ -755,7 +765,23 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         // Multi-service: list of services and total duration
         selectedServices: parseSelectedServices(booking.selected_services),
         totalDurationMinutes: booking.total_duration_minutes != null ? Number(booking.total_duration_minutes) : undefined,
-        
+
+        // Package session: when booking is part of a package (E2E Section 5 & 9)
+        isPackageSession: Boolean((booking as any).is_package_session ?? (booking as any).is_package),
+        packagePurchaseId: (booking as any).package_purchase_id || null,
+        packageSessionNumber: (booking as any).package_session_number != null ? Number((booking as any).package_session_number) : null,
+        packageName: packagePurchase?.package_name || null,
+        packageTotalSessions: packagePurchase?.total_sessions != null ? Number(packagePurchase.total_sessions) : null,
+        packageRemainingSessions: packagePurchase?.remaining_sessions != null ? Number(packagePurchase.remaining_sessions) : null,
+        packageUnlimitedUsage: Boolean(packagePurchase?.unlimited_usage),
+        // Snake_case for frontend compatibility
+        is_package_session: Boolean((booking as any).is_package_session ?? (booking as any).is_package),
+        package_purchase_id: (booking as any).package_purchase_id || null,
+        package_session_number: (booking as any).package_session_number != null ? Number((booking as any).package_session_number) : null,
+        package_name: packagePurchase?.package_name || null,
+        package_total_sessions: packagePurchase?.total_sessions != null ? Number(packagePurchase.total_sessions) : null,
+        package_remaining_sessions: packagePurchase?.remaining_sessions != null ? Number(packagePurchase.remaining_sessions) : null,
+
         // Timestamps
         createdAt: booking.created_at,
         updatedAt: booking.updated_at,

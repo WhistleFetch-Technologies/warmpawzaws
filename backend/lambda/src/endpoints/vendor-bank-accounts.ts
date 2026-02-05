@@ -14,16 +14,21 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
+import { resolveVendorById } from './vendor-profile';
 
 export function registerVendorBankAccountEndpoints(app: Hono) {
 
   /**
    * GET /vendor/:vendorId/bank-accounts
    * List all bank accounts for a vendor
+   * ✅ Resolve identity id to vendors.id so list matches stored rows
    */
   app.get("/vendor/:vendorId/bank-accounts", async (c) => {
     try {
       const { vendorId } = c.req.param();
+
+      const vendor = await resolveVendorById(vendorId);
+      const resolvedVendorId = vendor?.id ?? vendorId;
 
       // ✅ FIX: Check which table exists (vendor_bank_accounts or vendor_bank_details)
       const schemaCheck = await query(`
@@ -46,7 +51,7 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
         `SELECT * FROM ${tableName} 
          WHERE vendor_id = $1 
          ORDER BY is_primary DESC, created_at DESC`,
-        [vendorId]
+        [resolvedVendorId]
       );
 
       return c.json({
@@ -156,8 +161,40 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
         [actualVendorId, accountNumber]
       );
 
+      const updateData: any = {
+        account_holder_name: accountHolderName,
+        account_number: accountNumber.replace(/\s/g, ''),
+        ifsc_code: ifscCode.toUpperCase(),
+        updated_at: new Date().toISOString(),
+      };
+      if (schema.table_exists) {
+        updateData.verification_status = 'pending';
+      } else {
+        updateData.is_verified = false;
+      }
+      if (schema.has_bank_name && bankName) {
+        updateData.bank_name = bankName;
+      }
+      if (schema.has_branch_name && branchName) {
+        updateData.branch_name = branchName;
+      }
+      if (schema.has_account_type) {
+        updateData.account_type = accountType || 'savings';
+      }
+
       if (existing.rows.length > 0) {
-        return c.json({ error: 'This account is already added' }, 409);
+        // Update existing account so "Save & Verify" and changing account details work
+        const existingId = existing.rows[0].id;
+        await update(tableName, { id: existingId, vendor_id: actualVendorId }, updateData);
+        const updated = await query(
+          `SELECT * FROM ${tableName} WHERE id = $1 AND vendor_id = $2`,
+          [existingId, actualVendorId]
+        );
+        return c.json({
+          success: true,
+          account: updated.rows?.[0] ?? existing.rows[0],
+          message: 'Bank account updated successfully',
+        });
       }
 
       // Check if this is the first account (use actualVendorId)
@@ -171,7 +208,7 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
       const insertData: any = {
         vendor_id: actualVendorId,
         account_holder_name: accountHolderName,
-        account_number: accountNumber,
+        account_number: accountNumber.replace(/\s/g, ''),
         ifsc_code: ifscCode.toUpperCase(),
         is_primary: isPrimary,
         verification_status: 'pending',
@@ -211,8 +248,9 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
   app.post("/vendor/:vendorId/bank-accounts/:accountId/verify", async (c) => {
     try {
       const { vendorId, accountId } = c.req.param();
+      const resolvedVendorIdForSelect = (await resolveVendorById(vendorId))?.id ?? vendorId;
 
-      const accounts = await select('vendor_bank_accounts', { id: accountId, vendor_id: vendorId });
+      const accounts = await select('vendor_bank_accounts', { id: accountId, vendor_id: resolvedVendorIdForSelect });
       if (accounts.length === 0) {
         return c.json({ error: 'Bank account not found' }, 404);
       }
@@ -270,12 +308,19 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
         verification_status: 'verified',
         verified_at: new Date().toISOString(),
       });
+      const resolvedVendorId = resolvedVendorIdForSelect;
+      try {
+        await query(
+          `UPDATE vendors SET bank_verified = true, updated_at = NOW() WHERE id = $1`,
+          [resolvedVendorId]
+        );
+      } catch (_) {}
       console.log(`✅ Bank account ${accountId} verified (strict check passed)`);
 
       return c.json({
         success: true,
         valid: true,
-        message: 'Bank account verified successfully.',
+        message: 'Bank account verified successfully. You will receive automatic payouts as per your tier.',
       });
     } catch (error: any) {
       console.error('Error initiating verification:', error);
@@ -290,9 +335,10 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
   app.post("/vendor/:vendorId/bank-accounts/:accountId/set-primary", async (c) => {
     try {
       const { vendorId, accountId } = c.req.param();
+      const resolvedVendorId = (await resolveVendorById(vendorId))?.id ?? vendorId;
 
       // Check if account exists and is verified
-      const accounts = await select('vendor_bank_accounts', { id: accountId, vendor_id: vendorId });
+      const accounts = await select('vendor_bank_accounts', { id: accountId, vendor_id: resolvedVendorId });
       if (accounts.length === 0) {
         return c.json({ error: 'Bank account not found' }, 404);
       }
@@ -304,7 +350,7 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
       // Remove primary from all other accounts
       await query(
         `UPDATE vendor_bank_accounts SET is_primary = false WHERE vendor_id = $1`,
-        [vendorId]
+        [resolvedVendorId]
       );
 
       // Set this account as primary
@@ -329,9 +375,10 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
   app.delete("/vendor/:vendorId/bank-accounts/:accountId", async (c) => {
     try {
       const { vendorId, accountId } = c.req.param();
+      const resolvedVendorId = (await resolveVendorById(vendorId))?.id ?? vendorId;
 
       // Check if account exists
-      const accounts = await select('vendor_bank_accounts', { id: accountId, vendor_id: vendorId });
+      const accounts = await select('vendor_bank_accounts', { id: accountId, vendor_id: resolvedVendorId });
       if (accounts.length === 0) {
         return c.json({ error: 'Bank account not found' }, 404);
       }
@@ -339,7 +386,7 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
       // Check if it's the only account
       const allAccounts = await query(
         `SELECT id FROM vendor_bank_accounts WHERE vendor_id = $1`,
-        [vendorId]
+        [resolvedVendorId]
       );
 
       if (allAccounts.rows.length === 1) {
@@ -351,10 +398,10 @@ export function registerVendorBankAccountEndpoints(app: Hono) {
         return c.json({ error: 'Cannot remove primary account. Set another account as primary first.' }, 400);
       }
 
-      // Delete account
+      // Delete account (use resolved vendor id for consistency; row already matched by accountId)
       await query(
-        `DELETE FROM vendor_bank_accounts WHERE id = $1`,
-        [accountId]
+        `DELETE FROM vendor_bank_accounts WHERE id = $1 AND vendor_id = $2`,
+        [accountId, resolvedVendorId]
       );
 
       return c.json({

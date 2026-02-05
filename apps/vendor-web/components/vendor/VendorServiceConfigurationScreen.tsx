@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Plus, Save, Check, AlertCircle, Clock, DollarSign, Info, Package, ChevronDown, ChevronUp, X, Edit, Trash2, Search, Stethoscope, Scissors, Heart, Activity, Sparkles, GraduationCap, Home, Phone, Syringe, Pill, FileText, Camera, MapPin, Dog, Cat, Users } from 'lucide-react';
+import { ArrowLeft, Plus, Save, Check, AlertCircle, Clock, IndianRupee, Info, Package, ChevronDown, ChevronUp, X, Edit, Trash2, Search, Stethoscope, Scissors, Heart, Activity, Sparkles, GraduationCap, Home, Phone, Syringe, Pill, FileText, Camera, MapPin, Dog, Cat, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -924,6 +924,7 @@ export function VendorServiceConfigurationScreen({
         serviceStyle,
         category: categoryName,
         categoryName,
+        publishStatus: 'draft',
         ...packageData
       }) as any;
 
@@ -941,9 +942,10 @@ export function VendorServiceConfigurationScreen({
         console.error('❌ Failed to add custom service:', data);
         toast.error(data?.error || 'Failed to add custom service');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error adding custom service:', error);
-      toast.error('Error adding custom service');
+      const message = error?.message || error?.originalError?.error || 'Error adding custom service';
+      toast.error(typeof message === 'string' ? message : 'Error adding custom service');
       throw error;
     }
   };
@@ -1297,51 +1299,7 @@ export function VendorServiceConfigurationScreen({
             </div>
           )}
 
-          {/* Add Custom Service Button - Available for ALL at_center vendors */}
-          {serviceStyle === 'at_center' && (
-            <div className="mt-3">
-              <Button
-                onClick={() => setShowAddCustomDialog(true)}
-                variant="outline"
-                className="w-full border-2 border-dashed border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
-                disabled={false} // Always enabled for single services
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Create Custom Service
-              </Button>
-              
-              {/* TASK 3: Custom Package Button with Restriction */}
-              <div className="relative mt-2 group">
-                <Button
-                  onClick={() => {
-                    // Only allow package creation in centre context
-                    if (vendorData?.centres && vendorData.centres.length > 0) {
-                      // Navigate to centre selection or package creation
-                      toast.info('Please create packages from the Centre Management section');
-                    } else {
-                      // Show tooltip explaining restriction
-                      toast.error('Custom packages can only be created for centre-based services');
-                    }
-                  }}
-                  variant="outline"
-                  className="w-full border-2 border-dashed border-purple-500 text-purple-600 hover:bg-purple-50 opacity-50 cursor-not-allowed"
-                  disabled={true}
-                >
-                  <Package className="w-4 h-4 mr-2" />
-                  Create Custom Package
-                </Button>
-                
-                {/* Tooltip */}
-                <div className="hidden group-hover:block absolute bottom-full left-0 right-0 mb-2 z-10">
-                  <div className="bg-gray-900 text-white text-xs rounded-lg p-3 shadow-lg">
-                    <p className="font-semibold mb-1">⚠️ Centre Context Required</p>
-                    <p>Custom packages can only be created for centre-based services. Please go to Centre Management to create packages.</p>
-                    <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-gray-900"></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Custom services/packages are managed via Service Management → "Manage Custom Services" */}
         </div>
 
         {/* Info Banner */}

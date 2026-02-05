@@ -7,7 +7,7 @@
  */
 
 import React from 'react';
-import { Calendar, Clock, TrendingUp, Star, DollarSign, CheckCircle2, Package, Video, Home } from 'lucide-react';
+import { Calendar, Clock, TrendingUp, Star, IndianRupee, CheckCircle2, Package, Video, Home } from 'lucide-react';
 import { LucideIcon } from 'lucide-react';
 
 interface StatCard {

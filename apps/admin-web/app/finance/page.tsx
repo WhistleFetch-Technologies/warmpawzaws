@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import {
-	DollarSign,
+	IndianRupee,
 	TrendingUp,
 	Receipt,
 	FileText,
@@ -132,7 +132,7 @@ export default function FinanceManagement() {
 
 	const tabs = [
 		{ id: "dashboard", label: "Dashboard", icon: BarChart3 },
-		{ id: "fee-config", label: "Fee Configuration", icon: DollarSign },
+		{ id: "fee-config", label: "Fee Configuration", icon: IndianRupee },
 		{ id: "payment-policies", label: "Payment Policies", icon: CreditCard },
 		{ id: "refund-policies", label: "Refund Policies", icon: RotateCcw },
 		{
@@ -256,7 +256,7 @@ export default function FinanceManagement() {
 										{loadingStats ? (
 											<RefreshCw className="w-5 h-5 text-gray-400 animate-spin" />
 										) : (
-											<DollarSign className="w-5 h-5 text-blue-500" />
+											<IndianRupee className="w-5 h-5 text-blue-500" />
 										)}
 									</div>
 									<div className="text-2xl font-semibold text-gray-900">
@@ -426,7 +426,7 @@ export default function FinanceManagement() {
 										}}
 										className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 text-left"
 									>
-										<DollarSign className="w-8 h-8 text-green-500 mb-2" />
+										<IndianRupee className="w-8 h-8 text-green-500 mb-2" />
 										<p className="font-semibold text-gray-900">Revenue Report</p>
 										<p className="text-sm text-gray-500">Monthly revenue breakdown</p>
 									</button>

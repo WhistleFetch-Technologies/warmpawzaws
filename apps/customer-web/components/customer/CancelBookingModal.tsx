@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { LoadingState } from '@/components/ui/states';
-import { AlertTriangle, DollarSign, Info, XCircle } from 'lucide-react';
+import { AlertTriangle, IndianRupee, Info, XCircle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 

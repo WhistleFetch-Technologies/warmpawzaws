@@ -17,6 +17,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query, select, update, insert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { resolveVendorId as resolveVendorIdFromUtils } from '../utils/vendor-resolve';
 
 // ============================================================================
 // PHASE 12: POST-APPROVAL SETUP
@@ -24,9 +25,13 @@ import { isValidUUID } from '../types/entities';
 
 class GetVendorSetupStatusHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const vendorId = context.event.pathParameters?.vendorId;
-    if (!vendorId) {
+    const param = context.event.pathParameters?.vendorId;
+    if (!param) {
       return this.error('Vendor ID is required', 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error('Vendor not found', 404);
     }
     const vendors = await select('vendors', { id: vendorId });
     if (vendors.length === 0) {
@@ -46,9 +51,13 @@ class GetVendorSetupStatusHandler extends BaseHandler {
 
 class CompleteVendorSetupHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const vendorId = context.event.pathParameters?.vendorId;
-    if (!vendorId) {
+    const param = context.event.pathParameters?.vendorId;
+    if (!param) {
       return this.error('Vendor ID is required', 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error('Vendor not found', 404);
     }
     await update('vendors', { id: vendorId }, {
       setup_completed: true,
@@ -61,9 +70,13 @@ class CompleteVendorSetupHandler extends BaseHandler {
 
 class GetVendorAvailabilityHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const vendorId = context.event.pathParameters?.vendorId;
-    if (!vendorId) {
+    const param = context.event.pathParameters?.vendorId;
+    if (!param) {
       return this.error('Vendor ID is required', 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error('Vendor not found', 404);
     }
     
     try {
@@ -120,11 +133,15 @@ class GetVendorAvailabilityHandler extends BaseHandler {
 
 class UpdateVendorAvailabilityHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const vendorId = context.event.pathParameters?.vendorId;
+    const param = context.event.pathParameters?.vendorId;
     const body = this.parseBody(context.event);
     
-    if (!vendorId) {
+    if (!param) {
       return this.error('Vendor ID is required', 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error('Vendor not found', 404);
     }
     
     try {
@@ -216,7 +233,7 @@ class UpdateVendorAvailabilityHandler extends BaseHandler {
  * Resolve vendorId to a UUID when it's a slug (e.g. "center-1") or other identifier.
  * Tries: 1) direct UUID lookup, 2) metadata->>'slug', 3) slugified business_name.
  */
-async function resolveVendorId(vendorId: string): Promise<string | null> {
+async function resolveVendorIdBySlug(vendorId: string): Promise<string | null> {
   if (!vendorId) return null;
   if (isValidUUID(vendorId)) return vendorId;
   try {
@@ -233,6 +250,16 @@ async function resolveVendorId(vendorId: string): Promise<string | null> {
   }
 }
 
+/** Resolve path vendorId (identity id, UUID, or slug) to vendors.id; auto-creates vendor row for new vendors. */
+async function resolveVendorIdParam(param: string | undefined): Promise<string | null> {
+  if (!param?.trim()) return null;
+  const fromUtils = await resolveVendorIdFromUtils(param.trim());
+  const vendors = await select('vendors', { id: fromUtils });
+  if (vendors.length > 0) return fromUtils;
+  if (!isValidUUID(param)) return resolveVendorIdBySlug(param);
+  return null;
+}
+
 class GetAvailableServicesHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const vendorIdParam = context.event.pathParameters?.vendorId;
@@ -240,7 +267,7 @@ class GetAvailableServicesHandler extends BaseHandler {
       return this.error('Vendor ID is required', 400);
     }
 
-    const vendorId = await resolveVendorId(vendorIdParam);
+    const vendorId = await resolveVendorIdParam(vendorIdParam);
     if (!vendorId) {
       return this.error('Vendor not found', 404);
     }
@@ -277,10 +304,14 @@ class GetAvailableServicesHandler extends BaseHandler {
 
 class SelectVendorServicesHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const vendorId = context.event.pathParameters?.vendorId;
+    const param = context.event.pathParameters?.vendorId;
     const body = this.parseBody(context.event);
-    if (!vendorId || !body.serviceIds) {
+    if (!param || !body.serviceIds) {
       return this.error('Vendor ID and service IDs are required', 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error('Vendor not found', 404);
     }
     // Store selected services
     for (const serviceId of body.serviceIds) {
@@ -336,9 +367,13 @@ class ConfigureVendorServicesHandler extends BaseHandler {
 
 class GetVendorStatusHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const vendorId = context.event.pathParameters?.vendorId;
-    if (!vendorId) {
+    const param = context.event.pathParameters?.vendorId;
+    if (!param) {
       return this.error('Vendor ID is required', 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error('Vendor not found', 404);
     }
     const vendors = await select('vendors', { id: vendorId });
     if (vendors.length === 0) {
@@ -351,9 +386,13 @@ class GetVendorStatusHandler extends BaseHandler {
 
 class GetSoloProviderInfoHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const vendorId = context.event.pathParameters?.vendorId;
-    if (!vendorId) {
+    const param = context.event.pathParameters?.vendorId;
+    if (!param) {
       return this.error('Vendor ID is required', 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error('Vendor not found', 404);
     }
     const vendors = await select('vendors', { id: vendorId });
     if (vendors.length === 0) {
@@ -372,9 +411,13 @@ class GetSoloProviderInfoHandler extends BaseHandler {
 
 class GetCenterStatsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const vendorId = context.event.pathParameters?.vendorId;
-    if (!vendorId) {
+    const param = context.event.pathParameters?.vendorId;
+    if (!param) {
       return this.error('Vendor ID is required', 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error('Vendor not found', 404);
     }
     const today = new Date().toISOString().split('T')[0];
     const bookings = await select('bookings', {
@@ -393,10 +436,14 @@ class GetCenterStatsHandler extends BaseHandler {
 
 class GetStaffStatsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const vendorId = context.event.pathParameters?.vendorId;
+    const param = context.event.pathParameters?.vendorId;
     const staffId = context.event.pathParameters?.staffId;
-    if (!vendorId || !staffId) {
+    if (!param || !staffId) {
       return this.error('Vendor ID and Staff ID are required', 400);
+    }
+    const vendorId = await resolveVendorIdParam(param);
+    if (!vendorId) {
+      return this.error('Vendor not found', 404);
     }
     const bookings = await select('bookings', {
       vendor_id: vendorId,

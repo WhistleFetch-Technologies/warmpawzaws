@@ -89,6 +89,15 @@ interface Booking {
   customer_longitude?: string;
   address_id?: string;
   
+  // Package session (when booking is part of a package – E2E Section 5 & 9)
+  isPackageSession?: boolean;
+  packagePurchaseId?: string;
+  packageName?: string;
+  packageRemainingSessions?: number;
+  packageTotalSessions?: number;
+  packageSessionNumber?: number;
+  packageUnlimitedUsage?: boolean;
+
   // Allow any additional properties from API
   [key: string]: any;
 }
@@ -204,12 +213,24 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         staffId: rawBooking.staffId || rawBooking.staff_id,
         // For lab/diagnostics: allow upload report
         serviceCategory: rawBooking.serviceCategory,
+        notes: rawBooking.notes,
+        serviceId: rawBooking.serviceId || rawBooking.service_id,
+        // Backend tells us if this is a diagnostics lab booking (not vet consultation)
+        isDiagnosticsBooking: historyData?.data?.isDiagnosticsBooking ?? historyData?.isDiagnosticsBooking,
         // ✅ Home service GPS: customer/delivery coordinates for tracking destination
         latitude: rawBooking.latitude,
         longitude: rawBooking.longitude,
         delivery_latitude: rawBooking.delivery_latitude,
         delivery_longitude: rawBooking.delivery_longitude,
         address_id: rawBooking.address_id,
+        // Package session (E2E Section 5 & 9 – package usage in booking flow)
+        isPackageSession: rawBooking.isPackageSession ?? rawBooking.is_package_session ?? false,
+        packagePurchaseId: rawBooking.packagePurchaseId ?? rawBooking.package_purchase_id,
+        packageName: rawBooking.packageName ?? rawBooking.package_name,
+        packageRemainingSessions: rawBooking.packageRemainingSessions ?? rawBooking.package_remaining_sessions,
+        packageTotalSessions: rawBooking.packageTotalSessions ?? rawBooking.package_total_sessions,
+        packageSessionNumber: rawBooking.packageSessionNumber ?? rawBooking.package_session_number,
+        packageUnlimitedUsage: rawBooking.packageUnlimitedUsage ?? rawBooking.package_unlimited_usage,
       };
       
       setBooking(mappedBooking);
@@ -236,7 +257,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             medicalRecordData: h.medical_record_data, // Include medical record data for display
           };
         }
-        // Handle prescriptions
+        // Handle prescriptions (vet consultation only - never for diagnostics bookings)
         if (h.type === 'prescription') {
           return {
             id: h.id || `history_${h.type}_${h.timestamp}`,
@@ -244,7 +265,18 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             description: h.description || `Prescription created${h.prescription_data?.diagnosis ? ` - Diagnosis: ${h.prescription_data.diagnosis}` : ''}`,
             timestamp: h.created_at || h.timestamp,
             actor: h.actor || 'System',
-            prescriptionData: h.prescription_data, // Include prescription data for history display
+            prescriptionData: h.prescription_data,
+          };
+        }
+        // Handle diagnostic reports (lab reports uploaded for diagnostics bookings)
+        if (h.type === 'diagnostic_report') {
+          return {
+            id: h.id || `history_${h.type}_${h.timestamp}`,
+            type: 'diagnostic_report',
+            description: h.description || 'Lab report uploaded',
+            timestamp: h.created_at || h.timestamp,
+            actor: h.actor || 'Lab',
+            diagnosticReportData: h.diagnostic_report_data,
           };
         }
         // Handle status changes
@@ -339,13 +371,17 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     );
   })();
 
-  // Lab/diagnostics booking: show Upload Report when booking is lab/diagnostics AND vendor can upload reports
+  // Lab/diagnostics booking: customer booked lab tests → order → report upload. NOT mixed with vet visit.
   const isDiagnosticsBooking = (() => {
     if (!booking) return false;
+    if (booking.isDiagnosticsBooking === true) return true; // Backend truth
     const svcCat = (booking.serviceCategory || '').toString().toLowerCase();
     const svcName = (booking.serviceName || '').toString().toLowerCase();
+    const notesStr = typeof booking.notes === 'string' ? booking.notes : JSON.stringify(booking.notes || booking.specialInstructions || '');
+    const hasTestsInNotes = notesStr && (notesStr.includes('"tests"') || notesStr.includes('"test_name"') || notesStr.includes('"testName"'));
     const cap = propCapabilities ?? vendorData?.capabilities ?? [];
-    const isLabOrDiagnostics = svcCat === 'diagnostics' || /lab|diagnostic/.test(svcName);
+    const isLabOrDiagnostics = hasTestsInNotes || svcCat === 'diagnostics' || /lab|diagnostic/.test(svcName) ||
+      (booking.serviceId || '').toString().toLowerCase() === 'diagnostics';
     const canUploadReports = Array.isArray(cap)
       ? cap.some((c: string) => /diagnostic_lab|diagnostic_results|diagnostics/i.test(String(c)))
       : cap && typeof cap === 'object' && !!(cap.diagnostics || cap.diagnostic_results || cap.diagnostic_lab);
@@ -419,6 +455,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const mapRef = useRef<HTMLDivElement>(null); // ✅ NEW: Map container ref
   const mapInstanceRef = useRef<any>(null); // ✅ NEW: Google Maps instance
   const routePolylineRef = useRef<any>(null); // ✅ NEW: Route polyline
+  const mapStyleIdRef = useRef<string | null>(null); // Tracker map style ID from config
 
   const handleStartVideoCall = async (e?: React.MouseEvent) => {
     e?.preventDefault();
@@ -670,6 +707,16 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       return;
     }
 
+    // Fetch mapId (Tracker style) if not yet loaded
+    if (!mapStyleIdRef.current) {
+      try {
+        const config = await apiClient.get('/config/google-maps-key') as any;
+        if (config?.mapId) mapStyleIdRef.current = config.mapId;
+      } catch {
+        // use default or no style
+      }
+    }
+
     try {
       const center = destinationLocation 
         ? {
@@ -678,14 +725,20 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           }
         : currentLocation;
 
-      const map = new window.google.maps.Map(mapRef.current, {
+      // Apply Tracker map style (mapId) when available for consistent branding
+      const mapId = mapStyleIdRef.current || undefined;
+      const mapOptions: Record<string, unknown> = {
         center,
         zoom: 14,
         mapTypeControl: false,
         fullscreenControl: true,
         streetViewControl: false,
         zoomControl: true,
-      });
+      };
+      if (mapId) {
+        mapOptions.mapId = mapId;
+      }
+      const map = new window.google.maps.Map(mapRef.current, mapOptions as google.maps.MapOptions);
 
       mapInstanceRef.current = map;
 
@@ -749,7 +802,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     }
   };
 
-  // ✅ Load Google Maps script
+  // ✅ Load Google Maps script and optionally store mapId for Tracker style
   const loadGoogleMaps = (): Promise<void> => {
     return new Promise((resolve, reject) => {
       if (window.google?.maps) {
@@ -759,18 +812,22 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
 
       const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
       if (!apiKey) {
-        // Try to get from backend
+        // Try to get from backend (returns apiKey + mapId for Tracker style)
         apiClient.get('/config/google-maps-key').then((response: any) => {
           const key = response?.apiKey || response?.key;
           if (!key) {
             reject(new Error('Google Maps API key not configured'));
             return;
           }
+          if (response?.mapId) mapStyleIdRef.current = response.mapId;
           loadMapsScript(key, resolve, reject);
         }).catch(() => {
           reject(new Error('Google Maps API key not available'));
         });
       } else {
+        apiClient.get('/config/google-maps-key').then((r: any) => {
+          if (r?.mapId) mapStyleIdRef.current = r.mapId;
+        }).catch(() => {});
         loadMapsScript(apiKey, resolve, reject);
       }
     });
@@ -885,8 +942,9 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const getActivityIcon = (type: string) => {
     switch (type) {
       case 'status_change': return CheckCircle2;
-      case 'prescription': return Pill; // ✅ CRITICAL FIX: Use Pill icon for prescriptions
-      case 'medical_record': return FileText; // ✅ NEW: Use FileText icon for medical records/documents
+      case 'prescription': return Pill;
+      case 'medical_record': return FileText;
+      case 'diagnostic_report': return FileText; // Lab report (diagnostics bookings)
       case 'chat': return MessageSquare;
       case 'note': return FileText;
       case 'follow_up': return RefreshCw;
@@ -1168,6 +1226,26 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     <p className="text-sm text-gray-500">Service</p>
                     <p className="font-medium text-gray-900">{booking.serviceName}</p>
                   </div>
+
+                  {/* Package session: show package name, session X of Y, remaining (E2E Section 5 & 9) */}
+                  {(booking.isPackageSession || booking.packagePurchaseId || booking.packageName) && (
+                    <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 space-y-1">
+                      <p className="text-sm font-medium text-amber-800">Package booking</p>
+                      {booking.packageName && (
+                        <p className="text-sm text-gray-900">{booking.packageName}</p>
+                      )}
+                      {(booking.packageSessionNumber != null && booking.packageTotalSessions != null) && (
+                        <p className="text-sm text-gray-700">
+                          Session {booking.packageSessionNumber} of {booking.packageTotalSessions}
+                        </p>
+                      )}
+                      {(booking.packageRemainingSessions != null || booking.packageUnlimitedUsage) && (
+                        <p className="text-xs text-gray-600">
+                          Remaining: {booking.packageUnlimitedUsage ? 'Unlimited' : `${booking.packageRemainingSessions ?? 0} sessions`}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   
                   {/* Display Special Instructions if any */}
                   {booking.specialInstructions && (
@@ -1207,8 +1285,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   </div>
                 </div>
 
-                {/* Create Prescription (Vet Summary) - post appointment: visible in details view for vet/nutritionist */}
-                {isVetOrNutritionist && booking.status !== 'cancelled' && (
+                {/* Create Prescription (Vet Summary) - ONLY for vet consultation (clinic/tele/home). NOT for diagnostics lab bookings. */}
+                {isVetOrNutritionist && !isDiagnosticsBooking && booking.status !== 'cancelled' && (
                   <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
                     <p className="text-sm text-purple-700 font-medium mb-2">Consultation Summary (Prescription)</p>
                     <p className="text-xs text-purple-600 mb-3">Add diagnosis, medicines, and notes. Saved to history for future vets and pet medical records.</p>
@@ -1243,6 +1321,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                             <Pill className="w-4 h-4 text-green-600" />
                           ) : activity.type === 'medical_record' ? (
                             <FileText className="w-4 h-4 text-blue-600" />
+                          ) : activity.type === 'diagnostic_report' ? (
+                            <FileText className="w-4 h-4 text-amber-600" />
                           ) : (
                             <IconComponent className="w-4 h-4 text-gray-600" />
                           )}
@@ -1275,7 +1355,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                               )}
                             </div>
                           )}
-                          {/* ✅ Prescription line item: details + View A4 */}
+                          {/* Prescription line item: details + View A4 (vet consultation only) */}
                           {activity.type === 'prescription' && (activity as any).prescriptionData && (
                             <div className="mt-2 p-2 bg-green-50 rounded-lg flex flex-wrap items-center justify-between gap-2">
                               <div>
@@ -1302,6 +1382,28 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                               </button>
                             </div>
                           )}
+                          {/* Lab report line item (diagnostics bookings only) */}
+                          {activity.type === 'diagnostic_report' && (activity as any).diagnosticReportData && (
+                            <div className="mt-2 p-2 bg-amber-50 rounded-lg flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <p className="text-xs text-amber-700 font-medium">Lab Report</p>
+                                {(activity as any).diagnosticReportData.test_name && (
+                                  <p className="text-xs text-gray-600 mt-1">{(activity as any).diagnosticReportData.test_name}</p>
+                                )}
+                              </div>
+                              {(activity as any).diagnosticReportData.report_url && (
+                                <a
+                                  href={(activity as any).diagnosticReportData.report_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1 px-2 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200"
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  View Report
+                                </a>
+                              )}
+                            </div>
+                          )}
                           <p className="text-xs text-gray-500 mt-1">
                             {new Date(activity.timestamp).toLocaleString('en-IN')} • {activity.actor}
                           </p>
@@ -1315,8 +1417,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
 
             {activeTab === 'prescriptions' && (
               <div className="p-4 space-y-3">
-                {/* Single prescription = Consultation Summary only (all medicines in one) */}
-                {isVetOrNutritionist && booking.status !== 'cancelled' && (
+                {/* Single prescription = Consultation Summary only. NOT for diagnostics lab bookings. */}
+                {isVetOrNutritionist && !isDiagnosticsBooking && booking.status !== 'cancelled' && (
                   <button
                     onClick={() => setShowVetSummaryModal(true)}
                     className="w-full py-3 px-4 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl font-medium flex items-center justify-center gap-2 hover:from-purple-700 hover:to-purple-800 transition-all shadow-lg"
@@ -1328,11 +1430,23 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
 
                 {prescriptions.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
-                    <Pill className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                    <p>No prescriptions yet</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Add a prescription using the button above
-                    </p>
+                    {isDiagnosticsBooking ? (
+                      <>
+                        <FileText className="w-12 h-12 mx-auto mb-2 text-blue-300" />
+                        <p>Lab test order</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Upload reports in the Details tab. Reports appear in History.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <Pill className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                        <p>No prescriptions yet</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Add a prescription using the button above
+                        </p>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <>
@@ -1544,8 +1658,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               )}
             </div>
             
-            {/* Prescription + Medical History (Vet/Nutritionist only); single prescription = Consultation Summary only */}
-            {isVetOrNutritionist && booking.status !== 'cancelled' && (
+            {/* Prescription + Medical History (vet consultation); Lab Report Upload (diagnostics) */}
+            {((isVetOrNutritionist && !isDiagnosticsBooking) || isDiagnosticsBooking) && booking.status !== 'cancelled' && (
               <div className="space-y-2">
                 <div className="flex gap-2">
                   <button
@@ -1555,15 +1669,18 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     <FileText className="w-4 h-4" />
                     Medical History
                   </button>
-                  <button
-                    onClick={() => setShowVetSummaryModal(true)}
-                    className="flex-1 py-3 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 rounded-xl font-medium flex items-center justify-center gap-2"
-                  >
-                    <Stethoscope className="w-4 h-4" />
-                    Consultation Summary (Prescription)
-                  </button>
+                  {/* Consultation Summary: ONLY for vet consultation, NOT for diagnostics lab orders */}
+                  {isVetOrNutritionist && !isDiagnosticsBooking && (
+                    <button
+                      onClick={() => setShowVetSummaryModal(true)}
+                      className="flex-1 py-3 bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 rounded-xl font-medium flex items-center justify-center gap-2"
+                    >
+                      <Stethoscope className="w-4 h-4" />
+                      Consultation Summary (Prescription)
+                    </button>
+                  )}
                 </div>
-                {/* Lab/diagnostics: Upload Report so customer can view/download and add to medical history */}
+                {/* Lab/diagnostics: Upload Report so customer can view/download */}
                 {isDiagnosticsBooking && (
                   <button
                     onClick={() => setShowReportUploadModal(true)}

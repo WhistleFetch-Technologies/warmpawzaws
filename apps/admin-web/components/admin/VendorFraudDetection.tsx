@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Shield, AlertTriangle, CheckCircle, XCircle, 
-  TrendingDown, DollarSign, UserX, Activity,
+  TrendingDown, IndianRupee, UserX, Activity,
   Eye, Ban, AlertCircle, Zap
 } from 'lucide-react';
 import { Card, Badge, Button } from '@warmpawz/ui';

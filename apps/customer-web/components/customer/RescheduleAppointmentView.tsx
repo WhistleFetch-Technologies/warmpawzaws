@@ -107,6 +107,7 @@ export function RescheduleAppointmentView({
       }}
       selectedStaffId={appointment.staffId}
       vendorRoleId={appointment.vendorRoleId}
+      serviceStyle={appointment.serviceStyle === 'at_home' || appointment.serviceStyle === 'tele' ? appointment.serviceStyle : 'at_center'}
       onBack={onBack}
       onSelectSlot={handleReschedule}
     />

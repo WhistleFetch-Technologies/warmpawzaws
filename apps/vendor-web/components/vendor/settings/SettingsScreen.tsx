@@ -10,7 +10,6 @@ import {
   ChevronRight,
   Settings,
   CreditCard,
-  Clock,
   MapPin,
   FileText,
   ArrowLeft
@@ -74,15 +73,6 @@ export function SettingsScreen({ vendorId, onBack, onNavigate }: SettingsScreenP
     {
       title: 'Business Settings',
       items: [
-        { 
-          id: 'availability', 
-          label: 'Availability', 
-          description: 'Working hours and schedule',
-          icon: Clock, 
-          screen: 'Availability',
-          iconBg: 'bg-orange-100',
-          iconColor: 'text-orange-600'
-        },
         { 
           id: 'service-area', 
           label: 'Service Area', 

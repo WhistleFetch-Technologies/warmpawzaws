@@ -177,7 +177,13 @@ function normalizeTier(row: any): RefundTier {
     hoursOperator,
     hoursThreshold: hoursThreshold != null && Number.isFinite(Number(hoursThreshold)) ? Number(hoursThreshold) : undefined,
     hoursBeforeService,
-    refundPercentage: Number(row.refund_percentage ?? row.refundPercentage ?? 75) || 75,
+    refundPercentage: (() => {
+      const rp = row.refund_percentage ?? row.refundPercentage;
+      if (rp != null && rp !== '' && Number.isFinite(Number(rp))) {
+        return Math.min(100, Math.max(0, Number(rp)));
+      }
+      return 75;
+    })(),
     maxPartialRefundPercentage: maxPartial !== undefined && maxPartial !== null && Number.isFinite(Number(maxPartial)) ? Number(maxPartial) : undefined,
     cancellationFee: Number(row.cancellation_fee ?? row.cancellationFee ?? 0) || 0,
     isActive: row.is_active ?? row.isActive !== false,
@@ -275,7 +281,7 @@ export function RefundPoliciesSection() {
       hoursOperator: undefined,
       hoursThreshold: undefined,
       hoursBeforeService: 24,
-      refundPercentage: 75,
+      refundPercentage: 100,
       cancellationFee: 0,
       isActive: true,
     };
@@ -321,6 +327,7 @@ export function RefundPoliciesSection() {
     const useCustom = editingTier.cancelledBy === 'pet_parent' && editingTier.useCustomRule && editingTier.hoursOperator != null && Number.isFinite(editingTier.hoursThreshold);
     const payload = {
       ...editingTier,
+      maxPartialRefundPercentage: null, // Removed: use Refund % for partial (e.g. 50%) instead
       hoursBeforeService: editingTier.cancelledBy === 'pet_parent' && !useCustom && editingTier.cancellationWindow
         ? hoursFromCustomerWindow(editingTier.cancellationWindow)
         : (useCustom ? editingTier.hoursThreshold : editingTier.hoursBeforeService) ?? editingTier.hoursBeforeService,
@@ -467,12 +474,6 @@ export function RefundPoliciesSection() {
                         {SERVICE_LOCATION_OPTIONS.find((o) => o.value === tier.serviceLocation)?.label ?? tier.serviceLocation}
                       </span>
                     </div>
-                    {tier.maxPartialRefundPercentage != null && (
-                      <div>
-                        <span className="text-gray-500">Max partial %:</span>
-                        <span className="ml-2 font-medium">{tier.maxPartialRefundPercentage}%</span>
-                      </div>
-                    )}
                     {tier.cancelledBy && (
                       <div>
                         <span className="text-gray-500">Who cancels:</span>
@@ -759,36 +760,16 @@ export function RefundPoliciesSection() {
                     max={100}
                     value={Number.isFinite(editingTier.refundPercentage) ? editingTier.refundPercentage : ''}
                     onChange={(e) => {
-                      const v = parseFloat(e.target.value);
-                      setEditingTier({
-                        ...editingTier,
-                        refundPercentage: Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 75,
-                      });
-                    }}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Max Partial Refund % (optional)</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    max={100}
-                    placeholder="e.g. 50 for doorstep"
-                    value={editingTier.maxPartialRefundPercentage != null ? editingTier.maxPartialRefundPercentage : ''}
-                    onChange={(e) => {
                       const raw = e.target.value;
-                      if (raw === '') {
-                        setEditingTier({ ...editingTier, maxPartialRefundPercentage: undefined });
-                        return;
-                      }
                       const v = parseFloat(raw);
+                      // Allow 0 explicitly; use previous value when clearing (empty string)
                       setEditingTier({
                         ...editingTier,
-                        maxPartialRefundPercentage: Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : undefined,
+                        refundPercentage: raw === '' ? editingTier.refundPercentage : (Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : editingTier.refundPercentage),
                       });
                     }}
                   />
-                  <p className="text-xs text-gray-500">Cap on partial refund (e.g. 50% for travel deduction)</p>
+                  <p className="text-xs text-gray-500">0–100%. Use 0% for no refund (cancellation fee only); 50% for partial refund.</p>
                 </div>
                 <div className="space-y-2">
                   <Label>Cancellation Fee (₹)</Label>

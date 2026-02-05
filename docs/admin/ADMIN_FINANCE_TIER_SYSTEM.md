@@ -1,5 +1,11 @@
 # Tier System – Admin Guide
 
+## Single source of truth (Settlement & Payout period)
+
+**Settlement period** and **payout period** are defined **only** in the Tier System (Finance & Logistics → Tier Management). The field **Payout Period (days)** on each tier is the single source of truth. All other screens (Schedule Settings, Settlement Rules, Payment Gateway) must not define a separate “settlement period” or “payout period”; they either derive from tier or override only for specific conditions (e.g. Settlement Rules). See `reports/SETTLEMENT_PAYOUT_SINGLE_SOURCE_OF_TRUTH_REPORT.md` for the full audit and elimination list.
+
+---
+
 ## What is the Tier System?
 
 The Tier System defines **vendor subscription tiers** (e.g. Basic, Pro, Enterprise). Each tier has a **commission rate**, **payout period**, **subscription cost** (monthly/yearly, optional 6/12 month discounts), **features**, and **roles** (which vendor types can use this tier). Tiers drive how much commission the platform takes and how often vendors get paid.

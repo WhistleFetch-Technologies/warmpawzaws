@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { DollarSign, RefreshCw, AlertCircle } from 'lucide-react';
+import { IndianRupee, RefreshCw, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -51,7 +51,7 @@ export function SettlementError({ error, onRetry, onContactSupport }: Settlement
       <CardHeader>
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-            <DollarSign className="w-5 h-5 text-purple-600" />
+            <IndianRupee className="w-5 h-5 text-purple-600" />
           </div>
           <div>
             <CardTitle className="text-purple-900">{details.title}</CardTitle>

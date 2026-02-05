@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { 
-  ArrowLeft, Shield, Clock, DollarSign, RefreshCw, 
+  ArrowLeft, Shield, Clock, IndianRupee, RefreshCw, 
   AlertTriangle, CheckCircle, XCircle, Calendar,
   FileText, HelpCircle, ChevronRight, Send, Truck,
   RotateCcw, CreditCard, Percent, Info, Star
@@ -486,7 +486,7 @@ export function VendorPolicyManagement({ vendorId, onBack, onClose }: VendorPoli
           <>
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <DollarSign className="w-5 h-5 text-[#FF8C42]" />
+                <IndianRupee className="w-5 h-5 text-[#FF8C42]" />
                 Refund Policy Details
               </h3>
 

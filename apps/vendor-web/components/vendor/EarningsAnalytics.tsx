@@ -10,7 +10,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { 
-  TrendingUp, DollarSign, Calendar, Package, Clock,
+  TrendingUp, IndianRupee, Calendar, Package, Clock,
   ChevronLeft, RefreshCw, Download, TrendingDown
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -169,7 +169,7 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white rounded-xl p-4 border border-gray-200">
                   <div className="flex items-center gap-2 mb-2 text-gray-600">
-                    <DollarSign className="w-4 h-4" />
+                    <IndianRupee className="w-4 h-4" />
                     <span className="text-xs">Total Revenue</span>
                   </div>
                   <p className="text-xl font-semibold text-gray-900">
@@ -204,7 +204,7 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
 
               <div className="bg-white rounded-xl p-4 border border-gray-200">
                 <div className="flex items-center gap-2 mb-2 text-gray-600">
-                  <DollarSign className="w-4 h-4" />
+                  <IndianRupee className="w-4 h-4" />
                   <span className="text-xs">Avg. per Booking</span>
                 </div>
                 <p className="text-2xl font-semibold text-gray-900">
@@ -251,7 +251,7 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
           </>
         ) : (
           <div className="text-center py-20">
-            <DollarSign className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <IndianRupee className="w-12 h-12 text-gray-300 mx-auto mb-3" />
             <p className="text-gray-500">No earnings data available</p>
           </div>
         )}

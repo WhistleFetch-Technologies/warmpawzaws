@@ -17,6 +17,7 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
+import { getRazorpayClient } from '../utils/razorpay-client';
 import { publishNotification, sendToSQS } from '../utils/aws-clients';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -269,7 +270,13 @@ class VerifyBankAccountHandler extends BaseHandler {
 class ProcessSettlementHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
-    const { vendor_id, booking_ids, amount } = body;
+    const { vendor_id, booking_ids, amount, settlementId, settlementIds } = body;
+
+    // Admin flow: process by settlement ID(s) from settlements table → Razorpay Payouts API → verified bank
+    const ids: string[] = settlementId ? [settlementId] : (Array.isArray(settlementIds) ? settlementIds : []);
+    if (ids.length > 0) {
+      return this.handleProcessBySettlementIds(ids);
+    }
 
     this.validateRequired(body, ['vendor_id']);
 
@@ -445,6 +452,139 @@ class ProcessSettlementHandler extends BaseHandler {
       return 10.0;
     }
   }
+
+  /**
+   * Process settlement(s) by ID from settlements table: load settlement, get verified bank,
+   * create payout, call Razorpay Payouts API, update status/failure_reason.
+   */
+  private async handleProcessBySettlementIds(settlementIds: string[]): Promise<HandlerResponse> {
+    const results: { id: string; success: boolean; payoutId?: string; error?: string }[] = [];
+    const razorpayClient = getRazorpayClient();
+
+    for (const sid of settlementIds) {
+      if (!sid || !isValidUUID(sid)) {
+        results.push({ id: sid, success: false, error: 'Invalid settlement ID' });
+        continue;
+      }
+      try {
+        const res = await query(
+          `SELECT * FROM settlements WHERE id = $1::uuid LIMIT 1`,
+          [sid]
+        );
+        const rows = (res as any).rows || [];
+        if (rows.length === 0) {
+          results.push({ id: sid, success: false, error: 'Settlement not found' });
+          continue;
+        }
+        const row = rows[0] as any;
+        const vendorId = row.vendor_id;
+        const amount = parseFloat(row.net_amount ?? row.vendor_amount ?? '0');
+        if (amount <= 0) {
+          results.push({ id: sid, success: false, error: 'Invalid amount' });
+          continue;
+        }
+        const status = row.settlement_status ?? row.status ?? '';
+        if (status !== 'pending' && status !== 'failed') {
+          results.push({ id: sid, success: false, error: `Settlement not processable (status: ${status})` });
+          continue;
+        }
+
+        let bank: { account_number: string; ifsc_code?: string; account_holder_name?: string };
+        let bankDetails: any[] = [];
+        try {
+          const hasTable = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as ex`);
+          if ((hasTable as any).rows?.[0]?.ex) {
+            const acc = await query(
+              `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 AND is_verified = true ORDER BY is_primary DESC LIMIT 1`,
+              [vendorId]
+            );
+            bankDetails = (acc as any).rows || [];
+          }
+        } catch (_) {}
+        if (bankDetails.length === 0) {
+          const details = await select('vendor_bank_details', { vendor_id: vendorId }).catch(() => []);
+          bankDetails = Array.isArray(details) ? details : [];
+        }
+        if (bankDetails.length === 0) {
+          results.push({ id: sid, success: false, error: 'Vendor bank details not found' });
+          continue;
+        }
+        const b = bankDetails[0] as any;
+        const accountNumber = String(b.account_number ?? b.accountNumber ?? '').trim();
+        const ifscCode = String(b.ifsc_code ?? b.ifsc ?? '').trim().toUpperCase();
+        const accountHolder = String(b.account_holder_name ?? b.account_holder ?? '').trim();
+        if (!accountNumber || !ifscCode || !accountHolder) {
+          results.push({ id: sid, success: false, error: 'Incomplete bank details' });
+          continue;
+        }
+        bank = { account_number: accountNumber, ifsc_code: ifscCode, account_holder_name: accountHolder };
+
+        const payoutInsert = await insert('payouts', {
+          vendor_id: vendorId,
+          amount,
+          settlement_id: sid,
+          bank_account_number: bank.account_number,
+          ifsc_code: bank.ifsc_code,
+          account_holder_name: bank.account_holder_name,
+          payout_status: 'pending',
+        });
+        const payoutId = (payoutInsert as any[])?.[0]?.id;
+
+        try {
+          const payoutResponse = await razorpayClient.payouts.create({
+            account_number: bank.account_number,
+            fund_account: {
+              account_type: 'bank_account',
+              bank_account: {
+                name: bank.account_holder_name,
+                ifsc: bank.ifsc_code,
+                account_number: bank.account_number,
+              },
+            },
+            amount: Math.round(amount * 100),
+            currency: 'INR',
+            mode: 'IMPS',
+            purpose: 'payout',
+            queue_if_low_balance: true,
+            reference_id: `PAYOUT-${payoutId || sid}`,
+          });
+          await query(
+            `UPDATE payouts SET payout_status = $1, razorpay_payout_id = $2 WHERE id = $3::uuid`,
+            ['processing', payoutResponse.id, payoutId]
+          );
+          await query(
+            `UPDATE settlements SET settlement_status = $1 WHERE id = $2::uuid`,
+            ['processing', sid]
+          ).catch(() => {});
+          results.push({ id: sid, success: true, payoutId });
+        } catch (rpErr: any) {
+          const msg = rpErr?.message ?? rpErr?.error?.description ?? 'Razorpay payout failed';
+          if (payoutId) {
+            await query(
+              `UPDATE payouts SET payout_status = $1, failure_reason = $2 WHERE id = $3::uuid`,
+              ['failed', msg, payoutId]
+            );
+          }
+          await query(
+            `UPDATE settlements SET settlement_status = $1, failure_reason = $2 WHERE id = $3::uuid`,
+            ['failed', msg, sid]
+          ).catch(() => {});
+          results.push({ id: sid, success: false, error: msg });
+        }
+      } catch (err: any) {
+        results.push({ id: sid, success: false, error: err?.message ?? 'Processing failed' });
+      }
+    }
+
+    const processed = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+    return this.success({
+      message: `Processed ${processed}, failed ${failed}`,
+      processed,
+      failed,
+      results,
+    });
+  }
 }
 
 class GetSettlementStatusHandler extends BaseHandler {
@@ -591,7 +731,8 @@ class GetVendorSettlementsHandler extends BaseHandler {
 
 class AutoSettlementHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    // Get platform settlement frequency
+    // How long after settlement creation we wait before processing with gateway (days).
+    // Vendor payout period is defined per tier in Finance → Tier Management (single source of truth).
     const settings = await select('platform_settings', { setting_key: 'settlement_frequency_days' });
     const settlementFrequency = parseInt(settings[0]?.setting_value || '7');
 

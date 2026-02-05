@@ -11,7 +11,7 @@ import {
   Database, 
   Calendar, 
   FileText, 
-  DollarSign, 
+  IndianRupee, 
   Package, 
   Wallet, 
   UserCog, 
@@ -138,7 +138,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
       onClick: () => onNavigate('content')
     },
     { 
-      icon: DollarSign, 
+      icon: IndianRupee, 
       label: 'Payment & Refund', 
       id: 'payment-refund',
       onClick: () => onNavigate('payment-refund')

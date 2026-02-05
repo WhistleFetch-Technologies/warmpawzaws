@@ -1101,6 +1101,19 @@ class GetBookingHistoryHandlerEnhanced extends BaseHandlerEnhanced {
     const customerId = booking.customer_id;
     const bookingCreatedAt = booking.created_at;
 
+    // ✅ CRITICAL: Detect diagnostics lab booking vs vet consultation (clinic/tele/home)
+    // Diagnostics: customer booked lab tests → order created → report upload. NOT mixed with vet visit.
+    const isDiagnosticsBooking = (() => {
+      const notesStr = typeof booking.notes === 'string' ? booking.notes : JSON.stringify(booking.notes || '');
+      const svcId = String(booking.service_id || '').toLowerCase();
+      const svcType = String(booking.service_type || booking.service_style || '').toLowerCase();
+      return (
+        (notesStr && (notesStr.includes('"tests"') || notesStr.includes('"test_name"') || notesStr.includes('"testName"'))) ||
+        svcId === 'diagnostics' ||
+        /diagnostic|lab.?test/i.test(svcType)
+      );
+    })();
+
     // Get status history (check if table exists)
     let history: Array<Record<string, unknown>> = [];
     try {
@@ -1131,63 +1144,114 @@ class GetBookingHistoryHandlerEnhanced extends BaseHandlerEnhanced {
       history = [];
     }
 
-    // ✅ CRITICAL FIX: Add prescriptions to booking history
+    // ✅ CRITICAL: Prescriptions ONLY for vet consultation (clinic/tele/home). NEVER for diagnostics lab bookings.
+    // Diagnostics flow: create tests → publish → customer books → lab uploads report to diagnostic_reports.
     let prescriptions: Array<Record<string, unknown>> = [];
-    try {
-      const prescriptionsResult = await query(
-        `SELECT 
-          p.id,
-          p.booking_id,
-          p.medications,
-          p.instructions,
-          p.diagnosis,
-          p.prescription_date,
-          p.follow_up_date,
-          p.created_at,
-          p.created_by,
-          p.created_by_role,
-          v.business_name as vendor_name,
-          s.name as staff_name
-        FROM prescriptions p
-        LEFT JOIN vendors v ON v.id = p.vendor_id
-        LEFT JOIN staff s ON s.id = p.staff_id
-        WHERE p.booking_id = $1
-        ORDER BY p.created_at ASC`,
-        [bookingId]
-      );
-      
-      // Format prescriptions as history entries
-      prescriptions = prescriptionsResult.rows.map((presc: any) => ({
-        id: `prescription_${presc.id}`,
-        type: 'prescription',
-        booking_id: bookingId,
-        description: `Prescription created${presc.diagnosis ? ` - Diagnosis: ${presc.diagnosis}` : ''}`,
-        actor: presc.staff_name || presc.vendor_name || 'Vendor',
-        actor_type: presc.created_by_role || 'vendor',
-        timestamp: presc.created_at,
-        created_at: presc.created_at,
-        prescription_data: {
-          id: presc.id,
-          medications: presc.medications,
-          instructions: presc.instructions,
-          diagnosis: presc.diagnosis,
-          prescription_date: presc.prescription_date,
-          follow_up_date: presc.follow_up_date,
-        },
-      }));
-    } catch (error: unknown) {
-      const err = error as any;
-      console.warn('[Booking History] Error querying prescriptions:', err?.message || error);
-      prescriptions = [];
+    if (!isDiagnosticsBooking) {
+      try {
+        const prescriptionsResult = await query(
+          `SELECT 
+            p.id,
+            p.booking_id,
+            p.medications,
+            p.instructions,
+            p.diagnosis,
+            p.prescription_date,
+            p.follow_up_date,
+            p.created_at,
+            p.created_by,
+            p.created_by_role,
+            v.business_name as vendor_name,
+            s.name as staff_name
+          FROM prescriptions p
+          LEFT JOIN vendors v ON v.id = p.vendor_id
+          LEFT JOIN staff s ON s.id = p.staff_id
+          WHERE p.booking_id = $1
+          ORDER BY p.created_at ASC`,
+          [bookingId]
+        );
+        prescriptions = prescriptionsResult.rows.map((presc: any) => ({
+          id: `prescription_${presc.id}`,
+          type: 'prescription',
+          booking_id: bookingId,
+          description: `Prescription created${presc.diagnosis ? ` - Diagnosis: ${presc.diagnosis}` : ''}`,
+          actor: presc.staff_name || presc.vendor_name || 'Vendor',
+          actor_type: presc.created_by_role || 'vendor',
+          timestamp: presc.created_at,
+          created_at: presc.created_at,
+          prescription_data: {
+            id: presc.id,
+            medications: presc.medications,
+            instructions: presc.instructions,
+            diagnosis: presc.diagnosis,
+            prescription_date: presc.prescription_date,
+            follow_up_date: presc.follow_up_date,
+          },
+        }));
+      } catch (error: unknown) {
+        const err = error as any;
+        console.warn('[Booking History] Error querying prescriptions:', err?.message || error);
+        prescriptions = [];
+      }
+    } else {
+      console.log(`[Booking History] Skipping prescriptions for diagnostics booking ${bookingId}`);
     }
 
-    // ✅ FIX: Add medical records (including customer-uploaded documents) to booking history
-    // Query includes:
-    // 1. Records with booking_id matching this booking
-    // 2. Records for the same pet_id (customer-uploaded documents may not have booking_id)
+    // ✅ Diagnostics bookings: Include diagnostic_reports (lab reports uploaded by vendor)
+    let diagnosticReports: Array<Record<string, unknown>> = [];
+    if (isDiagnosticsBooking) {
+      try {
+        const tableCheck = await query(
+          `SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = 'diagnostic_reports'
+          )`
+        );
+        if (tableCheck.rows[0]?.exists) {
+          const drCols = await query(
+            `SELECT column_name FROM information_schema.columns 
+             WHERE table_schema = 'public' AND table_name = 'diagnostic_reports'`
+          );
+          const hasBookingId = drCols.rows.some((r: any) => r.column_name === 'booking_id');
+          const hasDiagnosticBookingId = drCols.rows.some((r: any) => r.column_name === 'diagnostic_booking_id');
+          const idCol = hasBookingId ? 'booking_id' : hasDiagnosticBookingId ? 'diagnostic_booking_id' : null;
+          if (idCol) {
+            const { rows: drRows } = await query(
+              `SELECT * FROM diagnostic_reports WHERE ${idCol} = $1 ORDER BY created_at ASC`,
+              [bookingId]
+            );
+            diagnosticReports = drRows.map((r: any) => ({
+              id: `diagnostic_report_${r.id}`,
+              type: 'diagnostic_report',
+              booking_id: bookingId,
+              description: `Lab report uploaded${r.test_name ? ` - ${r.test_name}` : ''}`,
+              actor: r.vendor_id ? 'Lab' : 'Vendor',
+              actor_type: 'vendor',
+              timestamp: r.created_at,
+              created_at: r.created_at,
+              diagnostic_report_data: {
+                id: r.id,
+                test_name: r.test_name,
+                report_url: r.report_url || r.report_file_url,
+                summary: r.summary,
+                findings: r.findings,
+                status: r.status,
+              },
+            }));
+          }
+        }
+      } catch (err: any) {
+        console.warn('[Booking History] Error querying diagnostic_reports:', err?.message);
+      }
+    }
+
+    // ✅ FIX: Add medical records to booking history.
+    // Vet consultation: booking_id OR pet_id (handwritten prescriptions, consultation uploads).
+    // Diagnostics: ONLY booking_id – do NOT mix vet consultation docs (handwritten, etc.) into lab test view.
     let medicalRecords: Array<Record<string, unknown>> = [];
     try {
-      if (!petId) {
+      const restrictToBookingOnly = isDiagnosticsBooking; // Diagnostics: only records for this order
+      if (!petId || restrictToBookingOnly) {
         console.warn('[Booking History] Booking missing pet_id, cannot query medical records by pet');
         // Still try to get records by booking_id only
         const medicalRecordsResult = await query(
@@ -1287,8 +1351,8 @@ class GetBookingHistoryHandlerEnhanced extends BaseHandlerEnhanced {
       medicalRecords = [];
     }
 
-    // Combine status history, prescriptions, and medical records, sort by timestamp
-    const combinedHistory = [...history, ...prescriptions, ...medicalRecords].sort((a: any, b: any) => {
+    // Combine: status history + (prescriptions for vet consultation) OR (diagnostic_reports for diagnostics) + medical records
+    const combinedHistory = [...history, ...prescriptions, ...diagnosticReports, ...medicalRecords].sort((a: any, b: any) => {
       const aTime = new Date(a.created_at || a.timestamp || 0).getTime();
       const bTime = new Date(b.created_at || b.timestamp || 0).getTime();
       return aTime - bTime;
@@ -1297,8 +1361,10 @@ class GetBookingHistoryHandlerEnhanced extends BaseHandlerEnhanced {
     return this.success({
       booking: bookings[0],
       history: combinedHistory,
-      prescriptions: prescriptions, // Also return separately for easy access
-      medicalRecords: medicalRecords, // Also return separately for easy access
+      prescriptions,
+      medicalRecords,
+      diagnosticReports,
+      isDiagnosticsBooking, // Frontend uses this to hide prescription creation and show report upload
     }, requestId);
   }
 }

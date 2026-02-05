@@ -5,7 +5,7 @@ import { apiClient } from '@/lib/api-client';
 import {
   Store, Search, Filter, ChevronDown, Check, X, AlertCircle,
   Clock, Eye, Edit, Ban, Phone, Mail, MapPin, Star, Package,
-  DollarSign, TrendingUp, MoreVertical
+  IndianRupee, TrendingUp, MoreVertical
 } from 'lucide-react';
 
 interface Vendor {
@@ -412,7 +412,7 @@ export default function VendorManagement() {
                   <p className="text-sm text-slate-500">Orders</p>
                 </div>
                 <div className="p-4 bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl text-center">
-                  <DollarSign className="w-6 h-6 mx-auto text-orange-600 mb-2" />
+                  <IndianRupee className="w-6 h-6 mx-auto text-orange-600 mb-2" />
                   <p className="text-2xl font-bold text-slate-900">₹{(selectedVendor.total_revenue || 0).toLocaleString()}</p>
                   <p className="text-sm text-slate-500">Revenue</p>
                 </div>

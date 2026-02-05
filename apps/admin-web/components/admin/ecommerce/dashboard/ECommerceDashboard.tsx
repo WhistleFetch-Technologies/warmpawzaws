@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Store, Package, ShoppingCart, DollarSign, TrendingUp, AlertCircle,
+  Store, Package, ShoppingCart, IndianRupee, TrendingUp, AlertCircle,
   Eye, ArrowUp, ArrowDown, Users, Truck, FileText, Tag, CreditCard,
   CheckCircle, Clock, XCircle, RefreshCcw, BarChart3, Settings
 } from 'lucide-react';
@@ -69,7 +69,7 @@ export function ECommerceDashboard({
       value: `₹${(analytics?.totalGMV || analytics?.totalRevenue || 0).toLocaleString()}`,
       change: '+18.5%',
       trend: 'up',
-      icon: DollarSign,
+      icon: IndianRupee,
       gradient: 'from-emerald-500 to-teal-500',
     },
     {

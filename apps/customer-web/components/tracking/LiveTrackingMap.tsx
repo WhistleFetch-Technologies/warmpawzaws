@@ -48,27 +48,62 @@ export function LiveTrackingMap({
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
   const [lastError, setLastError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectAttempts = useRef(0);
 
-  // Initialize SSE connection for live tracking
+  // Load tracking from GET /tracking/booking/:bookingId (shared by initial load and polling)
+  const loadTrackingFromApi = async () => {
+    try {
+      const response = await apiClient.get<any>(`/tracking/booking/${bookingId}`);
+      if (response.success && response.tracking) {
+        const t = response.tracking;
+        setTrackingData(prev => ({
+          ...prev,
+          status: t.status || 'inactive',
+          currentLocation: t.currentLocation || t.current_location || null,
+          route: t.route || [],
+          staffName: t.staffName || t.staff_name || walkerName,
+          staffPhone: t.staffPhone || t.staff_phone || walkerPhone,
+          eta: t.eta,
+          startTime: t.startTime || t.tracking_started_at,
+          totalDistance: t.totalDistance ?? (t.distance_traveled_km != null ? t.distance_traveled_km * 1000 : undefined),
+        }));
+        setLastError(null);
+        if (t.status === 'completed' || t.status === 'cancelled') {
+          setConnectionStatus('disconnected');
+        }
+      }
+    } catch (error) {
+      console.error('[LiveTracking] Failed to load tracking data:', error);
+    }
+  };
+
+  // Initialize: try SSE (backend may not have stream), then fallback to polling GET /tracking/booking/:bookingId
   useEffect(() => {
+    const apiBase = getApiBaseUrl();
+    // Backend gps-tracking.ts uses /tracking/* not /gps-tracking/*; stream endpoint may not exist — fallback to polling
+    const sseUrl = `${apiBase.replace(/\/+$/, '')}/tracking/booking/${bookingId}/stream`;
+
+    const startPolling = () => {
+      if (pollIntervalRef.current) return;
+      setConnectionStatus('connected');
+      setLastError(null);
+      loadTrackingFromApi();
+      pollIntervalRef.current = setInterval(loadTrackingFromApi, 5000);
+    };
+
     const connectToSSE = () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
+        eventSourceRef.current = null;
       }
-
       setConnectionStatus('connecting');
       setLastError(null);
-
-      const apiBase = getApiBaseUrl();
-      const sseUrl = `${apiBase}/gps-tracking/booking/${bookingId}/stream`;
-
       try {
         const eventSource = new EventSource(sseUrl);
         eventSourceRef.current = eventSource;
 
         eventSource.onopen = () => {
-          console.log('[LiveTracking] SSE connection opened');
           setConnectionStatus('connected');
           reconnectAttempts.current = 0;
         };
@@ -76,15 +111,11 @@ export function LiveTrackingMap({
         eventSource.addEventListener('location', (event: MessageEvent) => {
           try {
             const data = JSON.parse(event.data);
-            console.log('[LiveTracking] Location update:', data);
-            
-            // Handle both old format (direct lat/lng) and new format (tracking object)
             const tracking = data.tracking || data;
             const currentLocation = tracking.current_location || {
               latitude: tracking.latitude || data.latitude,
               longitude: tracking.longitude || data.longitude,
             };
-            
             setTrackingData(prev => ({
               ...prev,
               status: tracking.status || 'active',
@@ -92,99 +123,65 @@ export function LiveTrackingMap({
                 latitude: currentLocation.latitude || currentLocation.lat,
                 longitude: currentLocation.longitude || currentLocation.lng,
               } : prev.currentLocation,
-              route: tracking.route || (currentLocation ? [
-                ...prev.route,
-                { 
-                  latitude: currentLocation.latitude || currentLocation.lat, 
-                  longitude: currentLocation.longitude || currentLocation.lng, 
-                  timestamp: tracking.current_location?.timestamp || data.timestamp || new Date().toISOString()
-                }
-              ] : prev.route),
+              route: tracking.route || (currentLocation ? [...prev.route, {
+                latitude: currentLocation.latitude || currentLocation.lat,
+                longitude: currentLocation.longitude || currentLocation.lng,
+                timestamp: tracking.current_location?.timestamp || data.timestamp || new Date().toISOString(),
+              }] : prev.route),
               eta: tracking.eta_minutes ? `${tracking.eta_minutes} min` : tracking.eta || prev.eta,
               staffName: tracking.staff_name || prev.staffName,
               staffPhone: tracking.staff_phone || prev.staffPhone,
-              totalDistance: tracking.distance_traveled_km ? tracking.distance_traveled_km * 1000 : prev.totalDistance,
+              totalDistance: tracking.distance_traveled_km != null ? tracking.distance_traveled_km * 1000 : prev.totalDistance,
               lastUpdate: tracking.current_location?.timestamp || data.timestamp || new Date().toISOString(),
             }));
-          } catch (error) {
-            console.error('[LiveTracking] Failed to parse location data:', error);
+          } catch (err) {
+            console.error('[LiveTracking] Parse location:', err);
           }
         });
 
         eventSource.addEventListener('status', (event: MessageEvent) => {
           try {
             const data = JSON.parse(event.data);
-            console.log('[LiveTracking] Status update:', data);
-            
-            setTrackingData(prev => ({
-              ...prev,
-              status: data.status,
-              totalDistance: data.totalDistance,
-            }));
-
+            setTrackingData(prev => ({ ...prev, status: data.status, totalDistance: data.totalDistance }));
             if (data.status === 'completed') {
               eventSource.close();
               setConnectionStatus('disconnected');
             }
-          } catch (error) {
-            console.error('[LiveTracking] Failed to parse status data:', error);
+          } catch (err) {
+            console.error('[LiveTracking] Parse status:', err);
           }
         });
 
-        eventSource.onerror = (error) => {
-          console.error('[LiveTracking] SSE error:', error);
-          setConnectionStatus('error');
-          
+        eventSource.onerror = () => {
           eventSource.close();
           eventSourceRef.current = null;
-
-          // Attempt reconnection with exponential backoff
-          if (reconnectAttempts.current < 5) {
-            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
+          if (reconnectAttempts.current < 1) {
             reconnectAttempts.current++;
-            setLastError(`Connection lost. Reconnecting in ${delay / 1000}s...`);
-            
-            setTimeout(connectToSSE, delay);
+            setTimeout(connectToSSE, 2000);
           } else {
-            setLastError('Connection failed. Please refresh to try again.');
+            // Backend has no SSE stream — use polling (GET /tracking/booking/:bookingId)
+            setConnectionStatus('connected');
+            setLastError(null);
+            startPolling();
           }
         };
-      } catch (error) {
-        console.error('[LiveTracking] Failed to create SSE connection:', error);
-        setConnectionStatus('error');
-        setLastError('Failed to connect to tracking service');
+      } catch (err) {
+        console.warn('[LiveTracking] SSE not available, using polling', err);
+        startPolling();
       }
     };
 
-    // Load initial tracking data
-    const loadInitialData = async () => {
-      try {
-        const response = await apiClient.get<any>(`/tracking/booking/${bookingId}`);
-        if (response.success && response.tracking) {
-          setTrackingData(prev => ({
-            ...prev,
-            status: response.tracking.status || 'inactive',
-            currentLocation: response.tracking.currentLocation || null,
-            route: response.tracking.route || [],
-            staffName: response.tracking.staffName || walkerName,
-            staffPhone: response.tracking.staffPhone || walkerPhone,
-            eta: response.tracking.eta,
-            startTime: response.tracking.startTime,
-            totalDistance: response.tracking.totalDistance,
-          }));
-        }
-      } catch (error) {
-        console.error('[LiveTracking] Failed to load initial data:', error);
-      }
-    };
-
-    loadInitialData();
+    loadTrackingFromApi();
     connectToSSE();
 
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
+      }
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
       }
     };
   }, [bookingId, walkerName, walkerPhone]);

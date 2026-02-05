@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   CreditCard, Search, Download, CheckCircle, Clock, AlertCircle,
-  DollarSign, TrendingUp, Store, Calendar, Eye, Send, RefreshCcw,
+  IndianRupee, TrendingUp, Store, Calendar, Eye, Send, RefreshCcw,
   FileText, Banknote, ArrowRight
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -121,7 +121,7 @@ export function SettlementsDashboard() {
         <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 shadow-lg">
-              <DollarSign className="w-6 h-6 text-white" />
+              <IndianRupee className="w-6 h-6 text-white" />
             </div>
           </div>
           <p className="text-sm text-slate-500">Total Settled</p>

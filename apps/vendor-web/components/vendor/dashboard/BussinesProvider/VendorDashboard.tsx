@@ -51,9 +51,11 @@ import {
   CheckCircle2,
   User,
   X,
-  DollarSign,
-  ClipboardList
+  ClipboardList,
+  icons
 } from 'lucide-react';
+
+const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
 import { Badge } from '../../../ui/badge';
 import { VendorNotificationModal } from '../../VendorNotificationModal';
 import { Dashboardstats, DashboardWarnings, NotificationItem, ScheduleItem, VendorDashboardProps, WatchlistItem } from '../types';
@@ -72,9 +74,6 @@ const AppointmentDetailModal = lazy(() =>
 );
 const VendorAnalytics = lazy(() =>
   import('../../VendorAnalytics').then((m) => ({ default: m.VendorAnalytics }))
-);
-const VendorSettingsScreen = lazy(() =>
-  import('../../VendorSettingsScreen').then((m) => ({ default: m.VendorSettingsScreen }))
 );
 const ChatWidget = lazy(() =>
   import('../../../customer/ChatWidget').then((m) => ({ default: m.ChatWidget }))
@@ -855,7 +854,7 @@ export function VendorDashboard({
                       className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
                       title="Manage Pricing"
                     >
-                      <DollarSign className="w-6 h-6 text-green-600 mb-1" />
+                      <IndianRupee className="w-6 h-6 text-green-600 mb-1" />
                       <span className="text-xs font-medium text-gray-900">Pricing</span>
                     </button>
                   )}
@@ -1508,10 +1507,7 @@ export function VendorDashboard({
             </button>
 
             <button
-              onClick={() => {
-                setActiveBottomTab('settings');
-                // onNavigateToFacilityManagement?.(); // Using internal settings now
-              }}
+              onClick={() => router.push('/settings')}
               className={`flex flex-col items-center gap-1 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
                 }`}
             >
@@ -1652,16 +1648,7 @@ export function VendorDashboard({
         </div>
       )}
 
-      {/* Vendor Settings */}
-      {activeBottomTab === 'settings' && (
-        <Suspense fallback={<div className="p-8 text-center text-gray-500">Loading settings...</div>}>
-          <VendorSettingsScreen
-            vendorId={vendorId}
-            vendorData={vendor || vendorData}
-            onBack={() => setActiveBottomTab('home')}
-          />
-        </Suspense>
-      )}
+      {/* Vendor Settings - navigates to /settings (mobile-optimized VendorSettingsScreen) */}
 
       {/* AI Support Chat Widget for Vendors */}
       <Suspense fallback={null}>

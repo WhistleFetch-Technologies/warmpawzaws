@@ -269,10 +269,34 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const bookingsStatsParams = vendorIds.length === 1 ? [today, statsParam1] : [today, statsParam1, statsParam2];
       const bookingsStats = await query(bookingsStatsQuery, bookingsStatsParams).catch(() => ({ rows: [{ today_bookings: '0', pending_bookings: '0', completed_today: '0' }] }));
 
+      // Prefer vendor_earnings (source of truth) when available; fallback to bookings
+      const hasVendorEarnings = await query(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_earnings') as ex`
+      ).then((r) => r.rows[0]?.ex).catch(() => false);
+
+      let earningsFromTable = { earnings: '0', pending_settlement: '0' };
+      if (hasVendorEarnings) {
+        const veRes = await query(
+          `SELECT 
+             COALESCE(SUM(amount), 0) as earnings,
+             COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_settlement
+           FROM vendor_earnings
+           WHERE vendor_id = $1`,
+          [resolvedVendorId]
+        ).catch(() => ({ rows: [{ earnings: '0', pending_settlement: '0' }] }));
+        earningsFromTable = veRes.rows[0] || earningsFromTable;
+      }
+
       const earningsQuery = vendorIds.length === 1
-        ? `SELECT COALESCE(SUM(total_amount), 0) as earnings, COALESCE(SUM(CASE WHEN status = 'completed' AND settlement_status != 'settled' THEN total_amount ELSE 0 END), 0) as pending_settlement FROM bookings WHERE vendor_id = $1 AND status = 'completed'`
-        : `SELECT COALESCE(SUM(total_amount), 0) as earnings, COALESCE(SUM(CASE WHEN status = 'completed' AND settlement_status != 'settled' THEN total_amount ELSE 0 END), 0) as pending_settlement FROM bookings WHERE (vendor_id = $1 OR vendor_id = $2) AND status = 'completed'`;
+        ? `SELECT COALESCE(SUM(total_amount), 0) as earnings, COALESCE(SUM(CASE WHEN status = 'completed' AND (settlement_status IS NULL OR settlement_status != 'settled') THEN total_amount ELSE 0 END), 0) as pending_settlement FROM bookings WHERE vendor_id = $1 AND status = 'completed'`
+        : `SELECT COALESCE(SUM(total_amount), 0) as earnings, COALESCE(SUM(CASE WHEN status = 'completed' AND (settlement_status IS NULL OR settlement_status != 'settled') THEN total_amount ELSE 0 END), 0) as pending_settlement FROM bookings WHERE (vendor_id = $1 OR vendor_id = $2) AND status = 'completed'`;
       const earningsStats = await query(earningsQuery, vendorIds).catch(() => ({ rows: [{ earnings: '0', pending_settlement: '0' }] }));
+      const earningsFromBookings = earningsStats.rows[0] || { earnings: '0', pending_settlement: '0' };
+
+      // Use vendor_earnings when available for consistency with earnings API and payout flow
+      const earnings = hasVendorEarnings
+        ? { earnings: earningsFromTable.earnings, pending_settlement: earningsFromTable.pending_settlement }
+        : earningsFromBookings;
 
       const ratingQuery = vendorIds.length === 1
         ? `SELECT COALESCE(AVG(rating), 4.8) as rating, COUNT(*) as total_reviews FROM reviews WHERE vendor_id = $1 AND is_approved = true`
@@ -280,7 +304,6 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const ratingStats = await query(ratingQuery, vendorIds).catch(() => ({ rows: [{ rating: '4.8', total_reviews: '0' }] }));
 
       const stats = bookingsStats.rows[0];
-      const earnings = earningsStats.rows[0];
       const rating = ratingStats.rows[0];
 
       // ✅ FIX: Get bookings for display (vendor_id IN resolved/param), include service_catalog for center/clinic service names
@@ -383,11 +406,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const vendorId = await resolveVendorId(paramVendorId);
       console.log(`📊 [ANALYTICS] Fetching analytics for vendor: ${paramVendorId} (resolved: ${vendorId}), period: ${period}`);
 
-      // Get vendor by resolved id
+      // Get vendor by resolved id; if no vendor row (e.g. new vendor / identity-only), return empty analytics instead of 404
       const vendors = await select('vendors', { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({ error: 'Vendor not found' }, 404);
-      }
+      const hasVendorRow = vendors.length > 0;
 
       // Calculate period start
       const now = new Date();
@@ -409,6 +430,40 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         case 'all':
           periodStart = new Date(0);
           break;
+      }
+
+      if (!hasVendorRow) {
+        const emptyOverview = {
+          totalEarnings: 0,
+          avgBookingValue: 0,
+          totalBookings: 0,
+          completed: 0,
+          uniqueCustomers: 0,
+          returningCustomers: 0,
+          avgRating: 'N/A',
+          reviewCount: 0,
+          completionRate: 0,
+          cancellationRate: 0,
+          customerRetentionRate: 0,
+        };
+        return c.json({
+          success: true,
+          analytics: {
+            totalBookings: 0,
+            completed: 0,
+            cancelled: 0,
+            pending: 0,
+            confirmed: 0,
+            totalRevenue: 0,
+            averageBookingValue: 0,
+            completionRate: 0,
+            cancellationRate: 0,
+            rating: 0,
+            totalReviews: 0,
+            overview: emptyOverview,
+          },
+          period,
+        });
       }
 
       // Get bookings (use resolved vendor id)
@@ -450,13 +505,40 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const rating = reviews.rows.length > 0
         ? reviews.rows.reduce((sum: number, r: any) => sum + parseFloat(r.rating || '0'), 0) / reviews.rows.length
         : 0;
+      const ratingRounded = parseFloat(rating.toFixed(1));
+      const totalReviews = reviews.rows.length;
+
+      // Unique and returning customers (from bookings in period)
+      const customerIds = (bookings.rows as any[]).map((b: any) => b.customer_id).filter(Boolean);
+      const uniqueSet = new Set(customerIds);
+      const uniqueCustomers = uniqueSet.size;
+      const countByCustomer: Record<string, number> = {};
+      customerIds.forEach((id: string) => { countByCustomer[id] = (countByCustomer[id] || 0) + 1; });
+      const returningCustomers = Object.values(countByCustomer).filter((c: number) => c > 1).length;
+      const customerRetentionRate = uniqueCustomers > 0 ? (returningCustomers / uniqueCustomers) * 100 : 0;
+
+      // Overview shape expected by vendor Analytics/Performance tab
+      const overview = {
+        totalEarnings: analytics.totalRevenue,
+        avgBookingValue: analytics.averageBookingValue,
+        totalBookings: analytics.totalBookings,
+        completed: analytics.completed,
+        uniqueCustomers,
+        returningCustomers,
+        avgRating: totalReviews > 0 ? ratingRounded : 'N/A',
+        reviewCount: totalReviews,
+        completionRate: analytics.completionRate,
+        cancellationRate: analytics.cancellationRate,
+        customerRetentionRate,
+      };
 
       return c.json({
         success: true,
         analytics: {
           ...analytics,
-          rating: parseFloat(rating.toFixed(1)),
-          totalReviews: reviews.rows.length,
+          rating: ratingRounded,
+          totalReviews,
+          overview,
         },
         period,
       });
@@ -687,55 +769,111 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           break;
       }
 
-      // Get completed bookings with customer info as transactions (use resolved vendor id)
-      const transactionsQuery = `
-        SELECT 
-          b.id,
-          b.booking_date as date,
-          b.completed_at as created_at,
-          s.name as service_name,
-          COALESCE(s.name, b.service_name, 'Service') as service,
-          c.full_name as customer_name,
-          c.phone as customer_phone,
-          b.total_amount as amount,
-          b.status,
-          CASE 
-            WHEN b.status = 'completed' THEN 'completed'
-            WHEN b.status = 'cancelled' THEN 'cancelled'
-            ELSE 'pending'
-          END as transaction_status,
-          'booking' as type
-        FROM bookings b
-        LEFT JOIN services s ON b.service_id = s.id
-        LEFT JOIN customers c ON b.customer_id = c.id
-        WHERE b.vendor_id = $1
-          AND b.status IN ('completed', 'confirmed', 'pending', 'cancelled')
-          ${period !== 'lifetime' ? 'AND b.created_at >= $3' : ''}
-        ORDER BY b.created_at DESC
-        LIMIT $2
-      `;
+      // Prefer vendor_earnings (source of truth for earnings) when available
+      const hasVendorEarnings = await query(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_earnings') as ex`
+      ).then((r) => r.rows[0]?.ex).catch(() => false);
 
-      const result = await query(
-        transactionsQuery,
-        period === 'lifetime' ? [vendorId, limit] : [vendorId, limit, startDate.toISOString()]
-      ).catch(() => ({ rows: [] }));
+      let transactions: any[] = [];
+      if (hasVendorEarnings) {
+        const veQuery = `
+          SELECT 
+            ve.id,
+            ve.realized_at as created_at,
+            b.booking_date as date,
+            COALESCE(sc.display_name, sc.service_name, s.name, vs.service_name, 'Service') as service_name,
+            c.full_name as customer_name,
+            ve.amount,
+            ve.status,
+            'booking' as type
+          FROM vendor_earnings ve
+          LEFT JOIN bookings b ON ve.booking_id = b.id
+          LEFT JOIN service_catalog sc ON b.service_id = sc.id
+          LEFT JOIN services s ON b.service_id = s.id
+          LEFT JOIN vendor_services vs ON b.service_id = vs.id
+          LEFT JOIN customers c ON b.customer_id = c.id
+          WHERE ve.vendor_id = $1
+            ${period !== 'lifetime' ? 'AND ve.realized_at >= $3' : ''}
+          ORDER BY ve.realized_at DESC
+          LIMIT $2
+        `;
+        const veResult = await query(
+          veQuery,
+          period === 'lifetime' ? [vendorId, limit] : [vendorId, limit, startDate.toISOString()]
+        ).catch(() => ({ rows: [] }));
+        const veRows = veResult.rows || [];
+        transactions = veRows.map((t: any) => {
+          const svcName = t.service_name || t.service || 'Service';
+          return {
+            id: t.id,
+            date: t.date || t.created_at,
+            createdAt: t.created_at,
+            created_at: t.created_at,
+            serviceName: svcName,
+            service: svcName,
+            customerName: t.customer_name || 'Customer',
+            customer: t.customer_name || 'Customer',
+            amount: parseFloat(t.amount || '0'),
+            price: parseFloat(t.amount || '0'),
+            status: t.status || 'completed',
+            type: t.type || 'booking',
+            description: `Booking - ${svcName}`,
+          };
+        });
+      }
 
-      const rows = result.rows || [];
-
-      // Transform to frontend expected format
-      const transactions = rows.map((t: any) => ({
-        id: t.id,
-        date: t.date || t.created_at,
-        createdAt: t.created_at,
-        serviceName: t.service_name || t.service || 'Service',
-        service: t.service_name || t.service || 'Service',
-        customerName: t.customer_name || 'Customer',
-        customer: t.customer_name || 'Customer',
-        amount: parseFloat(t.amount || '0'),
-        price: parseFloat(t.amount || '0'),
-        status: t.transaction_status || t.status || 'completed',
-        type: t.type || 'booking',
-      }));
+      if (transactions.length === 0) {
+        // Fallback to bookings
+        const transactionsQuery = `
+          SELECT 
+            b.id,
+            b.booking_date as date,
+            b.completed_at as created_at,
+            s.name as service_name,
+            COALESCE(s.name, b.service_name, 'Service') as service,
+            c.full_name as customer_name,
+            c.phone as customer_phone,
+            b.total_amount as amount,
+            b.status,
+            CASE 
+              WHEN b.status = 'completed' THEN 'completed'
+              WHEN b.status = 'cancelled' THEN 'cancelled'
+              ELSE 'pending'
+            END as transaction_status,
+            'booking' as type
+          FROM bookings b
+          LEFT JOIN services s ON b.service_id = s.id
+          LEFT JOIN customers c ON b.customer_id = c.id
+          WHERE b.vendor_id = $1
+            AND b.status IN ('completed', 'confirmed', 'pending', 'cancelled')
+            ${period !== 'lifetime' ? 'AND b.created_at >= $3' : ''}
+          ORDER BY b.created_at DESC
+          LIMIT $2
+        `;
+        const result = await query(
+          transactionsQuery,
+          period === 'lifetime' ? [vendorId, limit] : [vendorId, limit, startDate.toISOString()]
+        ).catch(() => ({ rows: [] }));
+        const rows = result.rows || [];
+        transactions = rows.map((t: any) => {
+          const svcName = t.service_name || t.service || 'Service';
+          return {
+            id: t.id,
+            date: t.date || t.created_at,
+            createdAt: t.created_at,
+            created_at: t.created_at,
+            serviceName: svcName,
+            service: svcName,
+            customerName: t.customer_name || 'Customer',
+            customer: t.customer_name || 'Customer',
+            amount: parseFloat(t.amount || '0'),
+            price: parseFloat(t.amount || '0'),
+            status: t.transaction_status || t.status || 'completed',
+            type: t.type || 'booking',
+            description: `Booking - ${svcName}`,
+          };
+        });
+      }
 
       return c.json({
         success: true,
@@ -933,22 +1071,32 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       const settlements = Array.isArray(settlementsResult) ? settlementsResult : settlementsResult.rows || [];
 
-      // Get summary - align with admin: pending_amount, completed_amount, processing_amount (same calculation as admin per vendor)
-      const summaryResult = await query(
-        `SELECT 
-           COUNT(*) FILTER (WHERE status = 'pending') as pending_count,
-           COUNT(*) FILTER (WHERE status = 'processing') as processing_count,
-           COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
-           COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'pending'), 0) as pending_amount,
-           COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'processing'), 0) as processing_amount,
-           COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'completed'), 0) as completed_amount,
-           COALESCE(SUM(tier_deduction_amount), 0) as total_tier_deductions
-         FROM settlements
-         WHERE vendor_id = $1`,
-        [vendorId]
-      ).catch(() => ({ rows: [{}] }));
+      // Get summary - align with admin: pending_amount, completed_amount, processing_amount
+      // Include vendor_earnings pending so "Available for payout" matches request validation
+      const [summaryResult, earningsPendingResult] = await Promise.all([
+        query(
+          `SELECT 
+             COUNT(*) FILTER (WHERE status = 'pending') as pending_count,
+             COUNT(*) FILTER (WHERE status = 'processing') as processing_count,
+             COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
+             COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'pending'), 0) as pending_amount,
+             COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'processing'), 0) as processing_amount,
+             COALESCE(SUM(COALESCE(vendor_amount, net_amount)) FILTER (WHERE status = 'completed'), 0) as completed_amount,
+             COALESCE(SUM(tier_deduction_amount), 0) as total_tier_deductions
+           FROM settlements
+           WHERE vendor_id = $1`,
+          [vendorId]
+        ).catch(() => ({ rows: [{}] })),
+        query(
+          `SELECT COALESCE(SUM(amount), 0) as pending FROM vendor_earnings WHERE vendor_id = $1 AND status = 'pending'`,
+          [vendorId]
+        ).catch(() => ({ rows: [{ pending: '0' }] })),
+      ]);
 
       const summary = Array.isArray(summaryResult) ? summaryResult[0] : (summaryResult.rows || [{}])[0];
+      const earningsPending = parseFloat(earningsPendingResult.rows?.[0]?.pending || '0');
+      const settlementsPending = parseFloat(summary.pending_amount || '0');
+      const totalPendingAmount = settlementsPending + earningsPending;
 
       return c.json({
         success: true,
@@ -985,7 +1133,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           processing: parseInt(summary.processing_count || '0'),
           completed: parseInt(summary.completed_count || '0'),
           totalSettled: parseFloat(summary.completed_amount ?? summary.total_settled ?? '0'),
-          pendingAmount: parseFloat(summary.pending_amount || '0'),
+          pendingAmount: totalPendingAmount,
           processingAmount: parseFloat(summary.processing_amount || '0'),
           completedAmount: parseFloat(summary.completed_amount || '0'),
           totalTierDeductions: parseFloat(summary.total_tier_deductions || '0'),

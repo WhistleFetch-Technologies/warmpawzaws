@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { 
   Check, X, AlertCircle, Info, MapPin, Building2, Radio, Lock, Sparkles,
-  Package, DollarSign, Clock, FileText, Tag, Users, Navigation
+  Package, IndianRupee, Clock, FileText, Tag, Users, Navigation
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -372,7 +372,7 @@ export function ServicePublishForm({
             <div>
               <Label>Price (₹) *</Label>
               <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <IndianRupee className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <Input
                   type="number"
                   value={formData.price}

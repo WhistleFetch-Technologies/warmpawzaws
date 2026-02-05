@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger, Card } from '@warmpawz/ui';
 import { 
-  DollarSign, 
+  IndianRupee, 
   CreditCard, 
   Receipt, 
   Calendar, 
@@ -82,7 +82,7 @@ export function FinanceDashboard() {
                   <span className="hidden sm:inline">Settlements</span>
                 </TabsTrigger>
                 <TabsTrigger value="payouts" className="flex items-center gap-2">
-                  <DollarSign className="w-4 h-4" />
+                  <IndianRupee className="w-4 h-4" />
                   <span className="hidden sm:inline">Payouts</span>
                 </TabsTrigger>
                 <TabsTrigger value="taxes" className="flex items-center gap-2">
@@ -105,7 +105,7 @@ export function FinanceDashboard() {
                   <Card className="p-6">
                     <div className="flex items-center justify-between mb-4">
                       <div className="bg-blue-500 text-white p-3 rounded-lg">
-                        <DollarSign className="w-5 h-5" />
+                        <IndianRupee className="w-5 h-5" />
                       </div>
                     </div>
                     <h3 className="text-2xl font-bold mb-1">₹0</h3>

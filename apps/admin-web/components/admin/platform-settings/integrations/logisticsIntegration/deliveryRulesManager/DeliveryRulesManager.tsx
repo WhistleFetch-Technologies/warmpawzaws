@@ -32,7 +32,7 @@ import {
 	Package,
 	MapPin,
 	Zap,
-	DollarSign,
+	IndianRupee,
 	AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";

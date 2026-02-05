@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Activity, TrendingUp, Users, Package, DollarSign, Calendar, Loader2 } from 'lucide-react';
+import { Activity, TrendingUp, Users, Package, IndianRupee, Calendar, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 interface OperationsStats {
@@ -93,7 +93,7 @@ export function AdminOperationsDashboard() {
 
         <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
           <div className="flex items-center gap-3 mb-0">
-            <DollarSign className="w-4 h-4 text-gray-400" />
+            <IndianRupee className="w-4 h-4 text-gray-400" />
             <p className="text-sm text-gray-600">Total Revenue</p>
           </div>
           <p className="text-2xl font-bold text-gray-900">₹{stats.totalRevenue.toLocaleString()}</p>
@@ -117,7 +117,7 @@ export function AdminOperationsDashboard() {
 
         <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
           <div className="flex items-center gap-3 mb-0">
-            <DollarSign className="w-4 h-4 text-gray-400" />
+            <IndianRupee className="w-4 h-4 text-gray-400" />
             <p className="text-sm text-gray-600">Pending Payouts</p>
           </div>
           <p className="text-2xl font-bold text-orange-600">₹{stats.pendingPayouts.toLocaleString()}</p>

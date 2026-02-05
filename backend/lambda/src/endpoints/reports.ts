@@ -19,6 +19,7 @@ import { Hono } from 'hono';
 import { select, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { resolveVendorId } from '../utils/vendor-resolve';
 
 function getDateRange(dateRange: string): { startDate: string; endDate: string } {
   const endDate = new Date();
@@ -461,7 +462,8 @@ export function registerReportEndpoints(app: Hono) {
    */
   app.get("/vendor/:vendorId/reports", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param('vendorId');
+      const vendorId = await resolveVendorId(paramVendorId);
       const reportType = c.req.query('reportType') || 'all';
       const dateRange = c.req.query('dateRange') || '30d';
 
@@ -613,7 +615,9 @@ export function registerReportEndpoints(app: Hono) {
    */
   app.get("/vendor/:vendorId/reports/:reportId/data", async (c) => {
     try {
-      const { vendorId, reportId } = c.req.param();
+      const paramVendorId = c.req.param('vendorId');
+      const vendorId = await resolveVendorId(paramVendorId);
+      const reportId = c.req.param('reportId');
 
       // Get the saved report
       const reports = await select('vendor_reports', { id: reportId, vendor_id: vendorId });

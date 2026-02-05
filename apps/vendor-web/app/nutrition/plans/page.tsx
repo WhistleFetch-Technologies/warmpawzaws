@@ -44,9 +44,9 @@ export default function MealPlansPage() {
         router.push('/');
         return;
       }
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/nutrition/meal-plans`);
-      if (response.success || response.plans) {
-        setPlans(response.plans || []);
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/nutritionist/meal-plans`);
+      if (response.success || response.mealPlans || response.plans) {
+        setPlans(response.mealPlans || response.plans || []);
       }
     } catch (error: any) {
       console.error('Error loading meal plans:', error);
@@ -86,7 +86,7 @@ export default function MealPlansPage() {
     try {
       const vendorId = localStorage.getItem('vendorId');
       if (!vendorId) return;
-      await apiClient.delete(`/vendor/${vendorId}/nutrition/meal-plans/${planId}`);
+      await apiClient.delete(`/vendor/${vendorId}/nutritionist/meal-plans/${planId}`);
       loadPlans();
     } catch (error: any) {
       alert(error.message || 'Failed to delete meal plan');

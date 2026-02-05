@@ -15,8 +15,16 @@ interface SmartTimeSlotSelectionProps {
   };
   selectedStaffId?: string;
   vendorRoleId?: string;
+  /** at_home | at_center | tele — must match backend service_styles for slot filtering */
+  serviceStyle?: string;
   onBack: () => void;
   onSelectSlot: (date: string, time: string) => void;
+}
+
+function normalizeServiceStyle(style: string | undefined): 'at_home' | 'at_center' | 'tele' {
+  const s = (style || '').toLowerCase();
+  if (s === 'at_home' || s === 'tele') return s;
+  return 'at_center';
 }
 
 export function SmartTimeSlotSelection({
@@ -26,6 +34,7 @@ export function SmartTimeSlotSelection({
   selectedService,
   selectedStaffId,
   vendorRoleId,
+  serviceStyle: serviceStyleProp,
   onBack,
   onSelectSlot
 }: SmartTimeSlotSelectionProps) {
@@ -33,20 +42,32 @@ export function SmartTimeSlotSelection({
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const serviceStyle = normalizeServiceStyle(serviceStyleProp ?? serviceType);
+  const totalDuration = Math.max(15, selectedService?.duration ?? 30);
 
   useEffect(() => {
     if (selectedDate) {
       loadAvailableSlots(selectedDate);
     }
-  }, [selectedDate, vendorId, selectedStaffId]);
+  }, [selectedDate, vendorId, selectedStaffId, serviceStyle, totalDuration]);
 
   const loadAvailableSlots = async (date: string) => {
     setLoading(true);
     try {
-      const data = await apiClient.get<{ slots?: string[] }>(
-        `/vendor/${vendorId}/availability?date=${date}&staffId=${selectedStaffId || ''}`
+      const params = new URLSearchParams({
+        date,
+        serviceStyle,
+        totalDuration: String(totalDuration),
+      });
+      if (selectedStaffId) params.set('staffId', selectedStaffId);
+      const data = await apiClient.get<{ slots?: Array<{ time: string; available?: boolean; booked?: boolean }> }>(
+        `/customer/vendor/${vendorId}/available-slots?${params}`
       );
-      setAvailableSlots(data.slots || []);
+      const slots = data?.slots ?? [];
+      const available = Array.isArray(slots)
+        ? slots.filter((s) => s && (s.available !== false)).map((s) => (typeof s === 'string' ? s : s.time))
+        : [];
+      setAvailableSlots(available);
     } catch (error) {
       console.error('Error loading available slots:', error);
       setAvailableSlots([]);

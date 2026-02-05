@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Search, Bell, MessageSquare, User, Plus, RefreshCw, TrendingUp, 
-  AlertTriangle, Shield, BarChart3, Calendar, DollarSign, FileText, 
+  AlertTriangle, Shield, BarChart3, Calendar, IndianRupee, FileText, 
   Send, Download, Check, X, Eye, Phone, Grid3x3, Package, Megaphone, 
   HeadphonesIcon, ClipboardList, Newspaper, PawPrint, Wallet, Users, Settings, MessageCircle, CheckCircle, Globe, ShoppingCart, UserX
 } from 'lucide-react';

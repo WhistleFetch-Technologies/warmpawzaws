@@ -8,7 +8,7 @@ import {
 	TrendingUp,
 	Clock,
 	Percent,
-	DollarSign,
+	IndianRupee,
 } from "lucide-react";
 
 import {
@@ -305,7 +305,7 @@ export function PricingRulesEngine() {
 								) : rule.type === "discount" ? (
 									<Percent className="w-5 h-5" />
 								) : (
-									<DollarSign className="w-5 h-5" />
+									<IndianRupee className="w-5 h-5" />
 								)}
 							</div>
 							<div>

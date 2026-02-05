@@ -615,6 +615,8 @@ export function UniversalPaymentPage({
         items: [{
           id: serviceId || productId || 'item',
           type: type === 'booking' ? 'service' : 'product',
+          serviceId: type === 'booking' ? serviceId : undefined,
+          productId: type === 'order' ? productId : undefined,
           amount: baseAmount,
           quantity,
           category: category || 'pet_services',

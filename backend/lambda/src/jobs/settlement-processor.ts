@@ -361,22 +361,28 @@ async function executeSettlement(settlementId: string, settlement: SettlementMes
 
   } catch (error: any) {
     console.error('Error executing settlement:', error);
-    
-    // Update settlement status to failed
+
+    const errMsg = error?.message || String(error);
+
+    // Update settlement status to failed (failure_reason for admin Finance & Logistics)
     await update('settlements', { id: settlementId }, {
       status: 'failed',
-      error_message: error.message,
+      failure_reason: errMsg,
       failed_at: new Date().toISOString(),
-    });
+    } as any);
 
     // Log settlement failure
-    await insert('settlement_logs', {
-      settlement_id: settlementId,
-      action: 'transfer_failed',
-      error_message: error.message,
-      status: 'failed',
-      created_at: new Date().toISOString(),
-    });
+    try {
+      await insert('settlement_logs', {
+        settlement_id: settlementId,
+        action: 'transfer_failed',
+        error_message: errMsg,
+        status: 'failed',
+        created_at: new Date().toISOString(),
+      } as any);
+    } catch (logErr) {
+      console.warn('Could not insert settlement_logs:', logErr);
+    }
 
     throw error; // Re-throw to trigger DLQ
   }

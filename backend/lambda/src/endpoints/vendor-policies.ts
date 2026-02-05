@@ -79,15 +79,24 @@ export function registerVendorPoliciesEndpoints(app: Hono) {
         []
       ).catch(() => ({ rows: [] }));
 
-      // Get payout policy
+      // Get payout policy (legacy table for other fields if needed)
       const payoutPolicies = await query(
-        `SELECT * FROM payout_policies
-         WHERE is_active = true
-         ORDER BY policy_key`,
+        `SELECT * FROM payout_policies WHERE is_active = true ORDER BY policy_key`,
         []
       ).catch(() => ({ rows: [] }));
 
-      // Get tier info
+      // Single source of truth: hold/payout period from vendor's tier (vendor_tiers.payout_period_days)
+      const tierRow = await query(
+        `SELECT vt.payout_period_days, v.tier, v.commission_percentage
+         FROM vendors v
+         LEFT JOIN vendor_tiers vt ON vt.is_active = true AND (TRIM(LOWER(v.tier)) = TRIM(LOWER(vt.tier_name)))
+         WHERE v.id = $1`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+      const payoutPeriodDays = tierRow.rows?.[0]?.payout_period_days != null
+        ? Number(tierRow.rows[0].payout_period_days)
+        : 7;
+
       const tierInfo = await query(
         `SELECT tier, commission_percentage FROM vendors WHERE id = $1`,
         [vendorId]
@@ -122,7 +131,7 @@ export function registerVendorPoliciesEndpoints(app: Hono) {
           },
           payout: {
             policies: payoutPolicies.rows || [],
-            holdPeriodDays: payoutPolicies.rows[0]?.hold_period_days || 7,
+            holdPeriodDays: payoutPeriodDays,
           },
         },
       });

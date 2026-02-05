@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { 
-  BarChart3, TrendingUp, TrendingDown, DollarSign, ShoppingCart, 
+  BarChart3, TrendingUp, TrendingDown, IndianRupee, ShoppingCart, 
   Package, Users, Calendar, ArrowUp, ArrowDown, Eye
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -82,7 +82,7 @@ export function SellerAnalytics({ sellerId }: SellerAnalyticsProps) {
         <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-xl shadow-lg">
-              <DollarSign className="w-6 h-6 text-white" />
+              <IndianRupee className="w-6 h-6 text-white" />
             </div>
             {(analytics?.revenue?.change || 0) >= 0 ? (
               <span className="flex items-center gap-1 text-sm font-medium text-emerald-600">

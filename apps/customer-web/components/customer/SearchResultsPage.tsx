@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Star, MapPin, DollarSign, Filter, X, Award, Briefcase } from 'lucide-react';
+import { Star, MapPin, IndianRupee, Filter, X, Award, Briefcase } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -143,7 +143,7 @@ export function SearchResultsPage() {
               {/* Price */}
               {data.price && (
                 <div className="flex items-center gap-2 text-gray-600">
-                  <DollarSign className="w-4 h-4" />
+                  <IndianRupee className="w-4 h-4" />
                   <span className="text-sm">₹{data.price}</span>
                 </div>
               )}

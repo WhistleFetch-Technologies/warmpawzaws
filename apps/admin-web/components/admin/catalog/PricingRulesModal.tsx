@@ -1,6 +1,6 @@
 'use client';
 
-import { X, DollarSign, Percent, Calendar } from 'lucide-react';
+import { X, IndianRupee, Percent, Calendar } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
@@ -64,7 +64,7 @@ export function PricingRulesModal({
         <div className="flex items-center justify-between p-0 border-b sticky top-0 bg-white">
           <div className="flex items-center gap-3">
             <div className="p-0 bg-green-100 rounded-lg">
-              <DollarSign className="w-5 h-5 text-green-600" />
+              <IndianRupee className="w-5 h-5 text-green-600" />
             </div>
             <h3 className="text-lg font-semibold text-gray-900">Pricing Rules</h3>
           </div>

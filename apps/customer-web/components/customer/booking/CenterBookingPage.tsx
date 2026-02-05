@@ -59,15 +59,24 @@ export function CenterBookingPage({
   };
 
   const fetchAvailableSlots = async () => {
+    if (!selectedDate || !vendorId) return;
     try {
-      const response = await apiClient.get<{ slots: any[] }>(
-        `/vendor/${vendorId}/available-slots?date=${selectedDate}`
+      const params = new URLSearchParams({
+        date: selectedDate,
+        serviceStyle: 'at_center',
+        totalDuration: '30',
+      });
+      const response = await apiClient.get<{ slots: Array<{ time: string; available?: boolean }> }>(
+        `/customer/vendor/${vendorId}/available-slots?${params}`
       );
-      if (response.slots) {
-        setAvailableSlots(response.slots);
-      }
+      const slots = response?.slots ?? [];
+      const list = Array.isArray(slots)
+        ? slots.map((s) => (typeof s === 'object' && s?.time ? s : { time: String(s), available: true }))
+        : [];
+      setAvailableSlots(list);
     } catch (err) {
       console.error('Error fetching available slots:', err);
+      setAvailableSlots([]);
     }
   };
 

@@ -1,161 +1,149 @@
 {
-  "app\\onboarding\\page.tsx -> @/components/vendor/VendorApp": {
+  "app/onboarding/page.tsx -> @/components/vendor/VendorApp": {
     "id": 33595,
     "files": [
-      "static/chunks/vendors-4031b236361191d2.js",
-      "static/chunks/7581-324446d671923e2b.js",
-      "static/chunks/6444-1e1d6c9db8fbdfdb.js",
-      "static/chunks/988-ff70161957c8edfd.js",
-      "static/chunks/459-8df89d7d77401ac4.js",
-      "static/chunks/5651-3af9b00ddb1fffd3.js",
-      "static/chunks/1974-e98c2ae2cded5b6d.js",
-      "static/chunks/3595.61ff673e48ac510b.js",
+      "static/chunks/vendors-2f10ba56ea0738dd.js",
+      "static/chunks/3644-79449c3588c6ac0c.js",
+      "static/chunks/1316-a6d99d61d86ad47d.js",
+      "static/chunks/459-0cbed20cc2c3f3ca.js",
+      "static/chunks/988-2f6459c5565999db.js",
+      "static/chunks/5651-ad61071f4cebac29.js",
+      "static/chunks/1974-bb313d0f42ee2aa3.js",
+      "static/chunks/3595.d9e043c14797e5d6.js",
       "static/chunks/3080.c218439f0a270ca6.js"
     ]
   },
-  "app\\page.tsx -> @/components/vendor/VendorApp": {
+  "app/page.tsx -> @/components/vendor/VendorApp": {
     "id": 33595,
     "files": [
-      "static/chunks/vendors-4031b236361191d2.js",
-      "static/chunks/7581-324446d671923e2b.js",
-      "static/chunks/6444-1e1d6c9db8fbdfdb.js",
-      "static/chunks/988-ff70161957c8edfd.js",
-      "static/chunks/459-8df89d7d77401ac4.js",
-      "static/chunks/5651-3af9b00ddb1fffd3.js",
-      "static/chunks/1974-e98c2ae2cded5b6d.js",
-      "static/chunks/3595.61ff673e48ac510b.js"
+      "static/chunks/vendors-2f10ba56ea0738dd.js",
+      "static/chunks/3644-79449c3588c6ac0c.js",
+      "static/chunks/1316-a6d99d61d86ad47d.js",
+      "static/chunks/459-0cbed20cc2c3f3ca.js",
+      "static/chunks/988-2f6459c5565999db.js",
+      "static/chunks/5651-ad61071f4cebac29.js",
+      "static/chunks/1974-bb313d0f42ee2aa3.js",
+      "static/chunks/3595.d9e043c14797e5d6.js"
     ]
   },
-  "components\\vendor\\AppointmentDetailModal.tsx -> ./PrescriptionDocument": {
+  "components/vendor/AppointmentDetailModal.tsx -> ./PrescriptionDocument": {
     "id": 75796,
     "files": []
   },
-  "components\\vendor\\ChimeVideoCall.tsx -> amazon-chime-sdk-js": {
+  "components/vendor/ChimeVideoCall.tsx -> amazon-chime-sdk-js": {
     "id": 60220,
     "files": [
       "static/chunks/a21357db.c77fe3995c86c454.js",
-      "static/chunks/vendors-4031b236361191d2.js"
+      "static/chunks/vendors-2f10ba56ea0738dd.js"
     ]
   },
-  "components\\vendor\\PrescriptionDocument.tsx -> html2canvas": {
+  "components/vendor/PrescriptionDocument.tsx -> html2canvas": {
     "id": 24457,
     "files": [
       "static/chunks/ad2866b8.1fd5edbd6b1bba26.js"
     ]
   },
-  "components\\vendor\\PrescriptionDocument.tsx -> jspdf": {
+  "components/vendor/PrescriptionDocument.tsx -> jspdf": {
     "id": 53375,
     "files": [
       "static/chunks/2f0b94e8.452a2d27023d71da.js",
       "static/chunks/164f4fb6.f796b9d9dfb31ec0.js",
-      "static/chunks/vendors-4031b236361191d2.js"
+      "static/chunks/vendors-2f10ba56ea0738dd.js"
     ]
   },
-  "components\\vendor\\PrescriptionHistoryModal.tsx -> ./PrescriptionDocument": {
+  "components/vendor/PrescriptionHistoryModal.tsx -> ./PrescriptionDocument": {
     "id": 75796,
     "files": []
   },
-  "components\\vendor\\VendorAnalytics.tsx -> ./VendorEarningsSettlementDashboard": {
+  "components/vendor/VendorAnalytics.tsx -> ./VendorEarningsSettlementDashboard": {
     "id": 98770,
     "files": [
-      "static/chunks/vendors-4031b236361191d2.js",
-      "static/chunks/8770-5953eac7e6933fba.js"
+      "static/chunks/vendors-2f10ba56ea0738dd.js",
+      "static/chunks/8770-1632ae46cab8db6e.js"
     ]
   },
-  "components\\vendor\\VendorCustomServiceCreationEnhanced.tsx -> @/components/vendor/SpecializationSelector": {
+  "components/vendor/VendorCustomServiceCreationEnhanced.tsx -> @/components/vendor/SpecializationSelector": {
     "id": 7813,
     "files": [
-      "static/chunks/vendors-4031b236361191d2.js",
-      "static/chunks/7813.2b0fc7496fd01e49.js"
+      "static/chunks/vendors-2f10ba56ea0738dd.js",
+      "static/chunks/7813.4f7ce965b6b21705.js"
     ]
   },
-  "components\\vendor\\VendorLandingPage.tsx -> ./dashboard/BussinesProvider/VendorDashboard": {
+  "components/vendor/VendorLandingPage.tsx -> ./dashboard/BussinesProvider/VendorDashboard": {
     "id": 43859,
     "files": [
-      "static/chunks/vendors-4031b236361191d2.js",
-      "static/chunks/3859.568162b7f76704ef.js"
+      "static/chunks/vendors-2f10ba56ea0738dd.js",
+      "static/chunks/3859.5c9229459e9559fb.js"
     ]
   },
-  "components\\vendor\\VendorServiceCatalogView.tsx -> @/lib/service-catalogs": {
+  "components/vendor/VendorServiceCatalogView.tsx -> @/lib/service-catalogs": {
     "id": 44453,
     "files": []
   },
-  "components\\vendor\\dashboard\\BussinesProvider\\VendorDashboard.tsx -> ../../../communication/CommunicationHub": {
+  "components/vendor/dashboard/BussinesProvider/VendorDashboard.tsx -> ../../../communication/CommunicationHub": {
     "id": 40594,
     "files": []
   },
-  "components\\vendor\\dashboard\\BussinesProvider\\VendorDashboard.tsx -> ../../../customer/ChatWidget": {
+  "components/vendor/dashboard/BussinesProvider/VendorDashboard.tsx -> ../../../customer/ChatWidget": {
     "id": 42752,
     "files": [
-      "static/chunks/vendors-4031b236361191d2.js",
       "static/chunks/2752.419f3a6414cb887f.js"
     ]
   },
-  "components\\vendor\\dashboard\\BussinesProvider\\VendorDashboard.tsx -> ../../AppointmentDetailModal": {
+  "components/vendor/dashboard/BussinesProvider/VendorDashboard.tsx -> ../../AppointmentDetailModal": {
     "id": 19289,
     "files": []
   },
-  "components\\vendor\\dashboard\\BussinesProvider\\VendorDashboard.tsx -> ../../VendorAnalytics": {
+  "components/vendor/dashboard/BussinesProvider/VendorDashboard.tsx -> ../../VendorAnalytics": {
     "id": 77061,
     "files": [
-      "static/chunks/vendors-4031b236361191d2.js",
-      "static/chunks/7061-60f5134065459949.js"
+      "static/chunks/7061-e1aabb6cafbd49f9.js"
     ]
   },
-  "components\\vendor\\dashboard\\BussinesProvider\\VendorDashboard.tsx -> ../../VendorSettingsScreen": {
-    "id": 98442,
-    "files": [
-      "static/chunks/vendors-4031b236361191d2.js",
-      "static/chunks/8442.b8a2da8afb688428.js"
-    ]
-  },
-  "components\\vendor\\dashboard\\BussinesProvider\\VendorDashboard.tsx -> ../../appointments/PendingReportsPanel": {
+  "components/vendor/dashboard/BussinesProvider/VendorDashboard.tsx -> ../../appointments/PendingReportsPanel": {
     "id": 91482,
     "files": [
-      "static/chunks/vendors-4031b236361191d2.js",
       "static/chunks/1482.590bafea8ecd25e7.js"
     ]
   },
-  "components\\vendor\\dashboard\\BussinesProvider\\VendorDashboard.tsx -> ../../pharmacy/PharmacyOrderAlerts": {
+  "components/vendor/dashboard/BussinesProvider/VendorDashboard.tsx -> ../../pharmacy/PharmacyOrderAlerts": {
     "id": 93191,
     "files": [
-      "static/chunks/vendors-4031b236361191d2.js",
-      "static/chunks/3191.53fca5440af337a0.js"
+      "static/chunks/vendors-2f10ba56ea0738dd.js",
+      "static/chunks/3191.c4c6b51e20f2a743.js"
     ]
   },
-  "components\\vendor\\dashboard\\BussinesProvider\\VendorDashboard.tsx -> ../Soloprovider/SoloProviderDashboard": {
+  "components/vendor/dashboard/BussinesProvider/VendorDashboard.tsx -> ../Soloprovider/SoloProviderDashboard": {
     "id": 9531,
     "files": [
-      "static/chunks/vendors-4031b236361191d2.js",
-      "static/chunks/7061-60f5134065459949.js",
-      "static/chunks/8442.b8a2da8afb688428.js",
-      "static/chunks/9531.23616e52044f4ec7.js"
+      "static/chunks/7061-e1aabb6cafbd49f9.js",
+      "static/chunks/9531.adef9e996a7be4b0.js"
     ]
   },
-  "node_modules\\@aws-sdk\\util-user-agent-browser\\dist-es\\createUserAgentStringParsingProvider.js -> bowser": {
+  "node_modules/@aws-sdk/util-user-agent-browser/dist-es/createUserAgentStringParsingProvider.js -> bowser": {
     "id": null,
     "files": []
   },
-  "node_modules\\@smithy\\core\\dist-es\\submodules\\protocols\\HttpProtocol.js -> @smithy/core/event-streams": {
+  "node_modules/@smithy/core/dist-es/submodules/protocols/HttpProtocol.js -> @smithy/core/event-streams": {
     "id": 13719,
     "files": [
-      "static/chunks/vendors-4031b236361191d2.js"
+      "static/chunks/vendors-2f10ba56ea0738dd.js"
     ]
   },
-  "node_modules\\jspdf\\dist\\jspdf.es.min.js -> canvg": {
+  "node_modules/jspdf/dist/jspdf.es.min.js -> canvg": {
     "id": 12396,
     "files": [
       "static/chunks/bc98253f.5b0f4fe717c5b99c.js",
-      "static/chunks/vendors-4031b236361191d2.js"
+      "static/chunks/vendors-2f10ba56ea0738dd.js"
     ]
   },
-  "node_modules\\jspdf\\dist\\jspdf.es.min.js -> dompurify": {
+  "node_modules/jspdf/dist/jspdf.es.min.js -> dompurify": {
     "id": 18848,
     "files": [
-      "static/chunks/vendors-4031b236361191d2.js"
+      "static/chunks/vendors-2f10ba56ea0738dd.js"
     ]
   },
-  "node_modules\\jspdf\\dist\\jspdf.es.min.js -> html2canvas": {
+  "node_modules/jspdf/dist/jspdf.es.min.js -> html2canvas": {
     "id": 24457,
     "files": [
       "static/chunks/ad2866b8.1fd5edbd6b1bba26.js"

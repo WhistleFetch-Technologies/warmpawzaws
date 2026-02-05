@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Users, DollarSign, TrendingUp, Loader2 } from 'lucide-react';
+import { Users, IndianRupee, TrendingUp, Loader2 } from 'lucide-react';
 
 interface OverviewStats {
   totalUsers: number;
@@ -57,7 +57,7 @@ export function OverviewTab() {
         </div>
         <div className="bg-white rounded-lg border-2 border-gray-200 p-4">
           <div className="flex items-center gap-3 mb-0">
-            <DollarSign className="w-5 h-5 text-orange-600" />
+            <IndianRupee className="w-5 h-5 text-orange-600" />
             <span className="text-sm text-gray-600">Revenue</span>
           </div>
           <div className="text-2xl font-bold text-gray-900">${stats.totalRevenue.toLocaleString()}</div>

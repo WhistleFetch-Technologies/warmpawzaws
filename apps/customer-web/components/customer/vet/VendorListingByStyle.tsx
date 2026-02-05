@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { ArrowLeft, Star, MapPin, Video, Home, Building2, ChevronRight, Search, Loader2, Shield, SlidersHorizontal, X, TrendingUp, DollarSign } from 'lucide-react';
+import { ArrowLeft, Star, MapPin, Video, Home, Building2, ChevronRight, Search, Loader2, Shield, SlidersHorizontal, X, TrendingUp, IndianRupee } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -399,7 +399,7 @@ export function VendorListingByStyle({
             { id: 'relevance' as SortType, label: 'Relevance', icon: TrendingUp },
             { id: 'rating' as SortType, label: 'Top Rated', icon: Star },
             { id: 'distance' as SortType, label: 'Nearest', icon: MapPin },
-            { id: 'price' as SortType, label: 'Lowest Price', icon: DollarSign },
+            { id: 'price' as SortType, label: 'Lowest Price', icon: IndianRupee },
           ].map((filter) => (
             <button
               key={filter.id}

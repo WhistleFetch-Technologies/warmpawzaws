@@ -44,7 +44,8 @@ interface HSNCode {
   id: string;
   code: string;
   description: string;
-  category: string;
+  category?: string;
+  categoryId?: string;
   gstRate: number;
   cgst?: number;
   sgst?: number;
@@ -56,10 +57,12 @@ interface HSNCode {
 
 interface TaxCategory {
   id: string;
-  name: string;
+  name?: string;
+  category_name?: string;
   description: string;
-  defaultGSTRate: number;
-  applicableServices: string[];
+  defaultGSTRate?: number;
+  tax_rate?: number;
+  applicableServices?: string[];
   isActive: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -91,8 +94,39 @@ export function GSTConfigurationManagement() {
         apiClient.get<any>('/admin/finance/gst/tax-categories'),
       ]);
 
-      setHsnCodes(hsnData.data?.hsnCodes ?? hsnData.hsnCodes ?? hsnData.codes ?? []);
-      setTaxCategories(categoryData.data?.categories ?? categoryData.data?.taxCategories ?? categoryData.categories ?? categoryData.taxCategories ?? []);
+      const rawHsn = hsnData.data?.hsnCodes ?? hsnData.hsnCodes ?? hsnData.codes ?? [];
+      setHsnCodes(
+        Array.isArray(rawHsn)
+          ? rawHsn.map((r: any) => ({
+              id: r.id,
+              code: r.hsn_code ?? r.code,
+              description: r.description ?? '',
+              category: r.tax_category_name ?? r.category,
+              categoryId: r.category_id ?? r.categoryId,
+              gstRate: r.gst_rate ?? r.gstRate ?? 0,
+              isActive: r.is_active !== false,
+              createdAt: r.created_at,
+              updatedAt: r.updated_at,
+            }))
+          : []
+      );
+      const rawCat = categoryData.data?.categories ?? categoryData.data?.taxCategories ?? categoryData.categories ?? categoryData.taxCategories ?? [];
+      setTaxCategories(
+        Array.isArray(rawCat)
+          ? rawCat.map((c: any) => ({
+              id: c.id,
+              name: c.name ?? c.category_name,
+              category_name: c.category_name ?? c.name,
+              description: c.description ?? '',
+              defaultGSTRate: c.tax_rate ?? c.defaultGSTRate ?? 0,
+              tax_rate: c.tax_rate ?? c.defaultGSTRate,
+              applicableServices: c.applicableServices ?? c.applicable_services ?? [],
+              isActive: c.is_active !== false,
+              createdAt: c.created_at,
+              updatedAt: c.updated_at,
+            }))
+          : []
+      );
     } catch (error) {
       console.error('Error loading GST data:', error);
       toast.error('Failed to load GST configuration');
@@ -105,11 +139,18 @@ export function GSTConfigurationManagement() {
     if (!editingHSN) return;
     setSaving(true);
     try {
+      const payload = {
+        code: editingHSN.code,
+        description: editingHSN.description,
+        gstRate: editingHSN.gstRate,
+        isActive: editingHSN.isActive,
+        categoryId: editingHSN.categoryId || null,
+      };
       if (editingHSN.id) {
-        await apiClient.put(`/admin/finance/gst/hsn-codes/${editingHSN.id}`, editingHSN);
+        await apiClient.put(`/admin/finance/gst/hsn-codes/${editingHSN.id}`, payload);
         toast.success('HSN code updated successfully');
       } else {
-        await apiClient.post('/admin/finance/gst/hsn-codes', editingHSN);
+        await apiClient.post('/admin/finance/gst/hsn-codes', payload);
         toast.success('HSN code created successfully');
       }
       setShowHSNModal(false);
@@ -159,6 +200,14 @@ export function GSTConfigurationManagement() {
 
   const safeHsnCodes = hsnCodes ?? [];
   const safeTaxCategories = taxCategories ?? [];
+
+  const getCategoryName = (hsn: HSNCode) => {
+    if (hsn.categoryId) {
+      const cat = safeTaxCategories.find((c) => c.id === hsn.categoryId);
+      return cat?.name ?? cat?.category_name ?? hsn.category ?? '—';
+    }
+    return hsn.category ?? '—';
+  };
   const filteredHSN = safeHsnCodes.filter(
     (hsn) =>
       (hsn.code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -259,6 +308,7 @@ export function GSTConfigurationManagement() {
                   code: '',
                   description: '',
                   category: '',
+                  categoryId: undefined,
                   gstRate: 0,
                   isActive: true,
                 });
@@ -296,7 +346,7 @@ export function GSTConfigurationManagement() {
                     <TableRow key={hsn.id}>
                       <TableCell className="font-medium">{hsn.code}</TableCell>
                       <TableCell>{hsn.description}</TableCell>
-                      <TableCell>{hsn.category}</TableCell>
+                      <TableCell>{getCategoryName(hsn)}</TableCell>
                       <TableCell>{hsn.gstRate}%</TableCell>
                       <TableCell>
                         <Badge variant={hsn.isActive ? 'default' : 'outline'}>
@@ -428,12 +478,26 @@ export function GSTConfigurationManagement() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Category</Label>
-                <Input
-                  value={editingHSN.category}
-                  onChange={(e) => setEditingHSN({ ...editingHSN, category: e.target.value })}
-                  placeholder="e.g., Pet Food"
-                />
+                <Label>Tax Category</Label>
+                <select
+                  value={editingHSN.categoryId || ''}
+                  onChange={(e) =>
+                    setEditingHSN({
+                      ...editingHSN,
+                      categoryId: e.target.value || undefined,
+                      category: safeTaxCategories.find((c) => c.id === e.target.value)?.name ?? safeTaxCategories.find((c) => c.id === e.target.value)?.category_name ?? '',
+                    })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-[#FF8C42] focus:border-[#FF8C42]"
+                >
+                  <option value="">— Select Tax Category —</option>
+                  {safeTaxCategories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name ?? cat.category_name ?? cat.id}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500">Link to GST Configuration tax category</p>
               </div>
               <div className="space-y-2">
                 <Label>GST Rate (%)</Label>

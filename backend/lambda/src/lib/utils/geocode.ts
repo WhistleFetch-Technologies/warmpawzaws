@@ -43,7 +43,7 @@ export async function geocodeAddress(address: string): Promise<GeocodeResult | n
   try {
     const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(trimmed)}&key=${apiKey}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s to avoid Lambda timeout
     const response = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
 

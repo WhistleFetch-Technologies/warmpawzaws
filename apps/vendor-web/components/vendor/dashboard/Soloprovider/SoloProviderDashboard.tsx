@@ -43,14 +43,16 @@ import {
   MapPin,
   CheckCircle2,
   X,
-  DollarSign,
   Briefcase,
   ClipboardList,
   Badge,
   Navigation,
   Map,
   Radio,
+  icons
 } from 'lucide-react';
+
+const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
 
 import { toast } from 'sonner';
 import { AppointmentCard } from '@/components/shared/AppointmentCard';
@@ -58,7 +60,6 @@ import { VendorNotificationModal } from '../../VendorNotificationModal';
 import { AppointmentDetailModal } from '../../AppointmentDetailModal';
 import { CommunicationHub } from '@/components/communication/CommunicationHub';
 import { VendorAnalytics } from '../../VendorAnalytics';
-import { VendorSettingsScreen } from '../../VendorSettingsScreen';
 import { AIChatBot } from '@/components/customer/AIChatBot';
 import { CapabilityDebugOverlay } from '../../CapabilityDebugOverlay';
 import { useVendorCapabilities } from '@/hooks/useVendorCapabilities';
@@ -899,7 +900,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
             </button>
 
             <button
-              onClick={() => setActiveBottomTab('settings')}
+              onClick={() => router.push('/settings')}
               className={`flex flex-col items-center gap-1 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
                 }`}
             >
@@ -1040,14 +1041,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         </div>
       )}
 
-      {/* Vendor Settings */}
-      {activeBottomTab === 'settings' && (
-        <VendorSettingsScreen
-          vendorId={vendorId}
-          vendorData={vendor || vendorData}
-          onBack={() => setActiveBottomTab('home')}
-        />
-      )}
+      {/* Vendor Settings - navigates to /settings (mobile-optimized VendorSettingsScreen) */}
 
       {/* AI Support Bot */}
       <AIChatBot

@@ -8,7 +8,7 @@ import {
   Search, 
   Filter, 
   Globe, 
-  DollarSign,
+  IndianRupee,
   Edit,
   Trash2,
   Eye,
@@ -201,7 +201,7 @@ export function RegionalPackageList({ regionId, onRefresh }: RegionalPackageList
                     : 0}
                 </p>
               </div>
-              <DollarSign className="w-8 h-8 text-purple-600" />
+              <IndianRupee className="w-8 h-8 text-purple-600" />
             </div>
           </div>
         </div>

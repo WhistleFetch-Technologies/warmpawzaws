@@ -21,7 +21,7 @@ import {
   Download, Calendar, TrendingUp, TrendingDown, Users,
   Store, CreditCard, Package, FileText, Filter, RefreshCw,
   Loader2, ChevronRight, BarChart3, PieChart, LineChart,
-  ArrowUpRight, ArrowDownRight, DollarSign, Clock
+  ArrowUpRight, ArrowDownRight, IndianRupee, Clock
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -74,7 +74,7 @@ export default function ReportsPage() {
   });
 
   const REPORT_TYPES: { id: ReportType; label: string; icon: React.ReactNode; description: string }[] = [
-    { id: 'revenue', label: 'Revenue Report', icon: <DollarSign className="w-5 h-5" />, description: 'Revenue breakdown by service, vendor, and time' },
+    { id: 'revenue', label: 'Revenue Report', icon: <IndianRupee className="w-5 h-5" />, description: 'Revenue breakdown by service, vendor, and time' },
     { id: 'vendors', label: 'Vendor Performance', icon: <Store className="w-5 h-5" />, description: 'Vendor ratings, earnings, and activity' },
     { id: 'customers', label: 'Customer Analytics', icon: <Users className="w-5 h-5" />, description: 'Customer acquisition, retention, and behavior' },
     { id: 'bookings', label: 'Booking Trends', icon: <Package className="w-5 h-5" />, description: 'Booking patterns and completion rates' },

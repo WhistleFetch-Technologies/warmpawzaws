@@ -21,7 +21,7 @@ import {
   Dog,
   Cat,
   Calendar,
-  DollarSign,
+  IndianRupee,
   MapPin,
   Info
 } from 'lucide-react';
@@ -275,7 +275,7 @@ export default function AdoptionPage() {
                   </div>
                 )}
                 <div className="flex items-center gap-2 text-sm">
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
+                  <IndianRupee className="h-4 w-4 text-muted-foreground" />
                   <span>
                     {pet.adoption_fee > 0 ? `₹${pet.adoption_fee} fee` : 'Free adoption'}
                   </span>

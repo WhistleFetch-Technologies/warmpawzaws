@@ -15,7 +15,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Package, Calendar, Check, Clock, TrendingUp, ChevronRight, Info, Star, Users, DollarSign } from 'lucide-react';
+import { Package, Calendar, Check, Clock, TrendingUp, ChevronRight, Info, Star, Users, IndianRupee } from 'lucide-react';
 
 interface PackageItem {
   id: string;

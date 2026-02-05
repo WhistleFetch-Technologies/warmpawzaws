@@ -7,7 +7,7 @@ import {
   ShoppingCart,
   Package,
   Users,
-  DollarSign,
+  IndianRupee,
   ArrowUp,
   ArrowDown,
   Calendar,
@@ -160,7 +160,7 @@ export function ECommerceAnalytics() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-4">
               <div className="p-3 bg-green-50 rounded-lg">
-                <DollarSign className="w-6 h-6 text-green-600" />
+                <IndianRupee className="w-6 h-6 text-green-600" />
               </div>
               <div
                 className={`flex items-center gap-1 text-sm ${

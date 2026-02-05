@@ -39,6 +39,8 @@ interface EnhancedBankAccountFormProps {
   onCancel?: () => void;
   submitLabel?: string;
   showVerification?: boolean;
+  /** When provided, Verify button calls this (vendor verify on saved data) instead of /razorpay/verify-bank-account */
+  onVerifyFromSaved?: () => Promise<void>;
 }
 
 export function EnhancedBankAccountForm({
@@ -47,6 +49,7 @@ export function EnhancedBankAccountForm({
   onCancel,
   submitLabel = 'Save Bank Account',
   showVerification = true,
+  onVerifyFromSaved,
 }: EnhancedBankAccountFormProps) {
   const [formData, setFormData] = useState({
     account_holder_name: initialData?.account_holder_name || '',
@@ -138,22 +141,28 @@ export function EnhancedBankAccountForm({
 
     setVerifyingAccount(true);
     try {
-      const response = await apiClient.post<{
-        success: boolean;
-        valid: boolean;
-        bank_details?: any;
-      }>('/razorpay/verify-bank-account', {
-        account_number: formData.account_number,
-        ifsc_code: formData.ifsc_code.toUpperCase(),
-        beneficiary_name: formData.account_holder_name,
-      });
-
-      if (response.success && response.valid) {
+      if (onVerifyFromSaved) {
+        // Use vendor verify endpoint (works on saved data - save first if needed)
+        await onVerifyFromSaved();
         setAccountVerified(true);
-        toast.success('Bank account details verified');
       } else {
-        setAccountVerified(false);
-        toast.error('Bank account verification failed');
+        const response = await apiClient.post<{
+          success: boolean;
+          valid: boolean;
+          bank_details?: any;
+        }>('/razorpay/verify-bank-account', {
+          account_number: formData.account_number,
+          ifsc_code: formData.ifsc_code.toUpperCase(),
+          beneficiary_name: formData.account_holder_name,
+        });
+
+        if (response.success && response.valid) {
+          setAccountVerified(true);
+          toast.success('Bank account details verified');
+        } else {
+          setAccountVerified(false);
+          toast.error('Bank account verification failed');
+        }
       }
     } catch (error: any) {
       console.error('Error verifying bank account:', error);

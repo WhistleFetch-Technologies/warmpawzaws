@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { 
-  TrendingUp, TrendingDown, DollarSign, ShoppingCart, Users, 
+  TrendingUp, TrendingDown, IndianRupee, ShoppingCart, Users, 
   Activity, AlertCircle, Shield, BarChart3, PieChart, Calendar,
   ArrowUpRight, ArrowDownRight, Zap, Target, Award
 } from 'lucide-react';
@@ -154,7 +154,7 @@ export function VendorInsightsDashboard() {
               </div>
             </div>
             <div className="p-3 bg-green-200 rounded-xl">
-              <DollarSign className="w-6 h-6 text-green-700" />
+              <IndianRupee className="w-6 h-6 text-green-700" />
             </div>
           </div>
         </Card>

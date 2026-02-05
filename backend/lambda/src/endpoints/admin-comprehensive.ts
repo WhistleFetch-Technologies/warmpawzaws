@@ -1602,21 +1602,21 @@ class GetSettlementStatsHandler extends BaseHandler {
         stats = await query(`
           SELECT 
             COUNT(*) as total_settlements,
-            COUNT(*) FILTER (WHERE settlement_status = 'pending') as pending_settlements,
-            COUNT(*) FILTER (WHERE settlement_status = 'completed' OR settlement_status = 'processed') as processed_settlements,
-            COALESCE(SUM(net_amount) FILTER (WHERE settlement_status = 'completed' OR settlement_status = 'processed'), 0) as total_paid,
-            COALESCE(SUM(net_amount) FILTER (WHERE settlement_status = 'pending'), 0) as pending_amount
+            COUNT(*) FILTER (WHERE COALESCE(settlement_status, status) IN ('pending', 'processing')) as pending_settlements,
+            COUNT(*) FILTER (WHERE COALESCE(settlement_status, status) IN ('completed', 'processed')) as processed_settlements,
+            COALESCE(SUM(COALESCE(net_amount, vendor_amount, total_amount)) FILTER (WHERE COALESCE(settlement_status, status) IN ('completed', 'processed')), 0) as total_paid,
+            COALESCE(SUM(COALESCE(net_amount, vendor_amount, total_amount)) FILTER (WHERE COALESCE(settlement_status, status) IN ('pending', 'processing')), 0) as pending_amount
           FROM settlements
         `);
       } catch {
-        // Try without status column
+        // Try without status filter (schema may differ)
         try {
           stats = await query(`
             SELECT 
               COUNT(*) as total_settlements,
               0 as pending_settlements,
               COUNT(*) as processed_settlements,
-              COALESCE(SUM(net_amount), 0) as total_paid,
+              COALESCE(SUM(COALESCE(net_amount, vendor_amount, total_amount)), 0) as total_paid,
               0 as pending_amount
             FROM settlements
           `);
@@ -1632,18 +1632,42 @@ class GetSettlementStatsHandler extends BaseHandler {
         }
       }
 
-      return this.success({ success: true, stats: stats.rows[0] });
+      const s = stats.rows[0] || {};
+      const pendingAmount = parseFloat(s.pending_amount || '0');
+      const pendingCount = parseInt(s.pending_settlements || '0', 10);
+      const completedCount = parseInt(s.processed_settlements || '0', 10);
+      return this.success({
+        success: true,
+        stats: s,
+        // Top-level keys for frontend Finance Dashboard & Settlement tabs
+        pending_amount: pendingAmount,
+        pendingAmount,
+        pending_count: pendingCount,
+        pendingCount,
+        completed_count: completedCount,
+        completedCount,
+        total_paid: parseFloat(s.total_paid || '0'),
+        total_settlements: parseInt(s.total_settlements || '0', 10),
+      });
     } catch (error: any) {
       // Return default stats on any error
-      return this.success({ 
-        success: true, 
+      return this.success({
+        success: true,
         stats: {
           total_settlements: '0',
           pending_settlements: '0',
           processed_settlements: '0',
           total_paid: '0',
           pending_amount: '0'
-        }
+        },
+        pending_amount: 0,
+        pendingAmount: 0,
+        pending_count: 0,
+        pendingCount: 0,
+        completed_count: 0,
+        completedCount: 0,
+        total_paid: 0,
+        total_settlements: 0,
       });
     }
   }
@@ -2171,8 +2195,13 @@ class GetTaxFlexibleRulesHandler extends BaseHandler {
           calculationMethod: (r.gst_type === 'fixed' ? 'fixed' : 'percentage') as any,
           priority: Number(r.priority) ?? 100,
           isActive: r.enabled !== false,
+          tax_category_id: r.tax_category_id ?? null,
+          role_id: r.role_id ?? null,
+          service_style: r.service_style ?? null,
           conditions: {
+            categoryIds: r.tax_category_id ? [r.tax_category_id] : undefined,
             serviceTypes: r.service_style ? [r.service_style] : undefined,
+            vendorRoles: r.role_id ? [r.role_id] : undefined,
             minAmount: r.min_amount != null ? parseFloat(r.min_amount) : undefined,
             maxAmount: r.max_amount != null ? parseFloat(r.max_amount) : undefined,
             states: [r.customer_state, r.vendor_state].filter(Boolean),
@@ -2199,13 +2228,20 @@ class GetTaxFlexibleRulesHandler extends BaseHandler {
 class GetVendorRolesHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
+      // roles table: id, name, display_name, description, is_active (no category/display_order)
       const roles = await query(`
-        SELECT * FROM roles
-        WHERE category = 'vendor' OR category IS NULL
-        ORDER BY display_order ASC, name ASC
+        SELECT id, name, display_name, description
+        FROM roles
+        WHERE is_active = true
+        ORDER BY name ASC
       `);
-
-      return this.success({ success: true,  roles: roles.rows  });
+      const rows = Array.isArray(roles) ? roles : (roles as any).rows || [];
+      // Normalize for dropdown: id (UUID) for value, display_name or name for label
+      const normalized = rows.map((r: any) => ({
+        id: r.id,
+        name: r.display_name ?? r.name ?? r.id,
+      }));
+      return this.success({ success: true, roles: normalized });
     } catch (error: any) {
       return this.error(error.message || 'Failed to fetch vendor roles', 500);
     }
@@ -2946,7 +2982,6 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     if (cancelledBy === 'pet_parent' && cancellationWindow && customerWindowToHours[cancellationWindow] !== undefined) {
       hoursBeforeService = customerWindowToHours[cancellationWindow];
     }
-    const refundPercentage = Number(body.refundPercentage ?? body.refund_percentage ?? 75);
     const cancellationFee = Number(body.cancellationFee ?? body.cancellation_fee ?? 0);
     const maxPartial = body.maxPartialRefundPercentage ?? body.max_partial_refund_percentage;
     const out: Record<string, unknown> = {
@@ -2954,12 +2989,18 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       vendor_types: vendorTypes,
       service_location,
       hours_before_service: Number.isFinite(hoursBeforeService) ? hoursBeforeService : 24,
-      refund_percentage: Number.isFinite(refundPercentage) ? Math.min(100, Math.max(0, refundPercentage)) : 75,
+      // Preserve 0%: avoid || 75 fallback which treats 0 as falsy
+      refund_percentage: (body.refundPercentage ?? body.refund_percentage) != null && Number.isFinite(Number(body.refundPercentage ?? body.refund_percentage))
+        ? Math.min(100, Math.max(0, Number(body.refundPercentage ?? body.refund_percentage)))
+        : 75,
       cancellation_fee: Number.isFinite(cancellationFee) ? Math.max(0, cancellationFee) : 0,
       is_active: body.isActive !== false && body.is_active !== false,
       tier_level: Number(body.tierLevel ?? body.tier_level ?? 0) || 0,
     };
-    if (maxPartial !== undefined && maxPartial !== null) out.max_partial_refund_percentage = Number.isFinite(Number(maxPartial)) ? Math.min(100, Math.max(0, Number(maxPartial))) : null;
+    // Max partial refund removed from UI (use Refund % for partial e.g. 50%). Clear when null sent.
+    if ('maxPartialRefundPercentage' in body || 'max_partial_refund_percentage' in body) {
+      out.max_partial_refund_percentage = maxPartial != null && Number.isFinite(Number(maxPartial)) ? Math.min(100, Math.max(0, Number(maxPartial))) : null;
+    }
     if (body.serviceCategory !== undefined || body.service_category !== undefined) out.service_category = body.serviceCategory ?? body.service_category ?? null;
     if (body.serviceFormat !== undefined || body.service_format !== undefined) out.service_format = body.serviceFormat ?? body.service_format ?? null;
     if (cancelledBy !== undefined && cancelledBy !== null) {
@@ -3033,6 +3074,114 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     const context = createLambdaContext();
     const result = await handler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.post('/admin/tax/flexible/rules', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const serviceStyle = body.conditions?.serviceTypes?.[0] ?? body.service_style ?? null;
+      const taxCategoryId = body.conditions?.categoryIds?.[0] ?? body.tax_category_id ?? body.conditions?.taxCategoryId ?? null;
+      const roleId = body.conditions?.vendorRoles?.[0] ?? body.role_id ?? null;
+      const ruleData = {
+        rule_name: body.name ?? 'Tax Rule',
+        description: body.description ?? null,
+        enabled: body.isActive !== false,
+        priority: body.priority ?? 100,
+        gst_rate: body.rate ?? 18,
+        gst_type: body.calculationMethod === 'fixed' ? 'fixed' : 'percentage',
+        role_id: roleId || null,
+        service_style: serviceStyle || null,
+        category: body.conditions?.category ?? null,
+        tax_category_id: taxCategoryId || null,
+        min_amount: body.conditions?.minAmount ?? null,
+        max_amount: body.conditions?.maxAmount ?? null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const inserted = await insert('gst_rules', ruleData);
+      const r = Array.isArray(inserted) ? inserted[0] : inserted;
+      return c.json({
+        success: true,
+        rule: {
+          id: r.id,
+          name: r.rule_name,
+          description: r.description,
+          taxType: 'gst',
+          rate: parseFloat(r.gst_rate) ?? 18,
+          calculationMethod: r.gst_type === 'fixed' ? 'fixed' : 'percentage',
+          priority: Number(r.priority) ?? 100,
+          isActive: r.enabled !== false,
+          conditions: {
+            transactionType: 'both',
+            categoryIds: r.tax_category_id ? [r.tax_category_id] : undefined,
+            serviceTypes: r.service_style ? [r.service_style] : undefined,
+            vendorRoles: r.role_id ? [r.role_id] : undefined,
+          },
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error creating flexible tax rule:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.put('/admin/tax/flexible/rules/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      const body = await c.req.json().catch(() => ({}));
+      const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (body.name !== undefined) updateData.rule_name = body.name;
+      if (body.description !== undefined) updateData.description = body.description;
+      if (body.isActive !== undefined) updateData.enabled = body.isActive;
+      if (body.priority !== undefined) updateData.priority = body.priority;
+      if (body.rate !== undefined) updateData.gst_rate = body.rate;
+      if (body.calculationMethod !== undefined) updateData.gst_type = body.calculationMethod === 'fixed' ? 'fixed' : 'percentage';
+      const catId = body.conditions?.categoryIds?.[0] ?? body.tax_category_id ?? body.conditions?.taxCategoryId;
+      if (catId !== undefined) updateData.tax_category_id = catId || null;
+      const svcStyle = body.conditions?.serviceTypes?.[0] ?? body.service_style;
+      if (svcStyle !== undefined) updateData.service_style = svcStyle || null;
+      const roleId = body.conditions?.vendorRoles?.[0] ?? body.role_id;
+      if (roleId !== undefined) updateData.role_id = roleId || null;
+      const updated = await update('gst_rules', { id }, updateData);
+      const r = Array.isArray(updated) ? updated[0] : updated;
+      return c.json({
+        success: true,
+        rule: {
+          id: r.id,
+          name: r.rule_name,
+          description: r.description,
+          taxType: 'gst',
+          rate: parseFloat(r.gst_rate) ?? 18,
+          calculationMethod: r.gst_type === 'fixed' ? 'fixed' : 'percentage',
+          priority: Number(r.priority) ?? 100,
+          isActive: r.enabled !== false,
+          conditions: {
+            transactionType: 'both',
+            categoryIds: r.tax_category_id ? [r.tax_category_id] : undefined,
+            serviceTypes: r.service_style ? [r.service_style] : undefined,
+            vendorRoles: r.role_id ? [r.role_id] : undefined,
+          },
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error updating flexible tax rule:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.delete('/admin/tax/flexible/rules/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      await update('gst_rules', { id }, { enabled: false, updated_at: new Date().toISOString() });
+      return c.json({ success: true, message: 'Tax rule deleted' });
+    } catch (error: any) {
+      console.error('Error deleting flexible tax rule:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
   });
 
   // Vendor Roles

@@ -23,6 +23,54 @@ import { getSnsClient } from '../utils/sns-client';
 import { PublishCommand } from '@aws-sdk/client-sns';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { resolveVendorId } from '../utils/vendor-resolve';
+
+/**
+ * Resolve vendorId (may be vendor_identity id) to vendors.id for bank-details and settlements.
+ * If vendor not in vendors table but identity exists and is approved, resolves by phone or auto-creates vendor row.
+ */
+async function resolveOrCreateVendorIdForBank(vendorId: string): Promise<{ actualVendorId: string } | { error: string; status: number }> {
+  const existingVendor = await select('vendors', { id: vendorId });
+  if (existingVendor.length > 0) return { actualVendorId: vendorId };
+
+  const identities = await select('vendor_identity', { id: vendorId });
+  if (identities.length === 0) return { error: 'Vendor not found', status: 404 };
+
+  const identity = identities[0];
+  if (identity.onboarding_status !== 'APPROVED' && identity.onboarding_status !== 'ACTIVATED') {
+    return { error: 'Vendor not approved or activated', status: 403 };
+  }
+
+  const vendorByPhone = await select('vendors', { phone: identity.phone });
+  if (vendorByPhone.length > 0) {
+    console.log(`[BankDetails] Resolved vendorId ${vendorId} to vendor ${vendorByPhone[0].id} (by phone)`);
+    return { actualVendorId: vendorByPhone[0].id };
+  }
+
+  const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
+  const application = applications.length > 0 ? applications[0] : null;
+  const payload = (application?.application_payload as Record<string, unknown>) || {};
+  console.log(`[BankDetails] Auto-creating vendor record for approved vendor ${vendorId}`);
+  await insert('vendors', {
+    id: vendorId,
+    phone: identity.phone,
+    email: (payload.email as string) || `vendor-${identity.phone}@warmpawz.app`,
+    business_name: (payload.businessName as string) || (payload.business_name as string) || `Vendor ${identity.phone}`,
+    owner_name: (payload.contactPersonName as string) || (payload.ownerName as string) || 'Vendor Owner',
+    role_id: identity.selected_role_id,
+    category: 'general',
+    address: (payload.address as string) || 'Not specified',
+    city: (payload.city as string) || 'Not specified',
+    state: (payload.state as string) || 'Not specified',
+    pincode: (payload.pin as string) || (payload.pincode as string) || '',
+    status: 'active',
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  console.log(`[BankDetails] Created vendor record for ${vendorId}`);
+  return { actualVendorId: vendorId };
+}
 
 export function registerSettlementEndpoints(app: Hono) {
   /**
@@ -153,66 +201,62 @@ export function registerSettlementEndpoints(app: Hono) {
 
   /**
    * GET /settlements/policy
-   * Get settlement policy for vendors to see
-   * This is the same policy for ALL vendors
+   * Get settlement policy for vendors to see.
+   * Single source of truth: payout/hold period comes from default tier (vendor_tiers), not platform_settings.
    * ✅ CRITICAL: This must be BEFORE /settlements/:id to avoid matching "policy" as an ID
    */
   app.get("/settlements/policy", async (c) => {
     try {
-      // Get payout rules from platform settings
+      // Single source of truth: default tier defines payout period (hold period)
+      const defaultTierResult = await query(`
+        SELECT payout_period_days, commission_rate, tier_name, display_name
+        FROM vendor_tiers
+        WHERE is_active = true
+        ORDER BY is_default DESC NULLS LAST, tier_level ASC
+        LIMIT 1
+      `).catch(() => ({ rows: [] }));
+      const defaultTier = defaultTierResult.rows?.[0];
+      const payoutPeriodDays = defaultTier?.payout_period_days != null
+        ? Number(defaultTier.payout_period_days)
+        : 7;
+
+      // Non-period settings still from payout_rules (min amount, auto, default commission for display)
       const payoutRules = await select('platform_settings', { setting_key: 'admin:settings:payout_rules' });
       const rules = payoutRules.length > 0
         ? (payoutRules[0].setting_value as any)
         : {
-            holdPeriodDays: 7,
             minimumPayout: 1000,
             autoPayout: true,
             defaultCommission: 10,
           };
-      
-      // Get settlement schedule
+
+      // Schedule: when the job runs (no period - period is from tier)
       const scheduleSettings = await query(`
-        SELECT * FROM platform_settings 
-        WHERE setting_key LIKE 'admin:finance:settlement%' 
+        SELECT * FROM platform_settings
+        WHERE setting_key LIKE 'admin:finance:settlement%'
         LIMIT 1
       `).catch(() => ({ rows: [] }));
-      
-      const schedule = scheduleSettings.rows.length > 0 
-        ? scheduleSettings.rows[0].setting_value 
-        : {
-            scheduleType: 'weekly',
-            settlementPeriodDays: rules.holdPeriodDays,
-            minPayoutAmount: rules.minimumPayout,
-          };
-      
+      const rawSchedule = scheduleSettings.rows?.length > 0 ? scheduleSettings.rows[0].setting_value : null;
+      const schedule = rawSchedule
+        ? (typeof rawSchedule === 'string' ? JSON.parse(rawSchedule) : rawSchedule)
+        : { scheduleType: 'weekly', minPayoutAmount: rules.minimumPayout };
+      // Ensure schedule exposes period from tier (read-only)
+      const settlementSchedule = { ...schedule, settlementPeriodDays: payoutPeriodDays };
+
       return c.json({
         success: true,
         policy: {
-          // Hold period - how long earnings are held before settlement
-          holdPeriodDays: rules.holdPeriodDays || 7,
-          
-          // Minimum amount required for payout
-          minimumPayoutAmount: rules.minimumPayout || 1000,
-          
-          // Platform commission percentage (based on tier, but default shown)
-          defaultCommissionRate: rules.defaultCommission || 10,
-          
-          // Whether auto-payout is enabled
+          holdPeriodDays: payoutPeriodDays,
+          payoutPeriodDays,
+          minimumPayoutAmount: rules.minimumPayout ?? 1000,
+          defaultCommissionRate: rules.defaultCommission ?? 10,
           autoPayoutEnabled: rules.autoPayout !== false,
-          
-          // Settlement schedule
-          settlementSchedule: typeof schedule === 'string' ? JSON.parse(schedule) : schedule,
-          
-          // Bank verification requirement
+          settlementSchedule,
           bankVerificationRequired: true,
-          
-          // Razorpay integration info
           paymentProcessor: 'Razorpay',
-          
-          // Policy description for vendors
-          description: `Earnings are held for ${rules.holdPeriodDays || 7} days before becoming eligible for settlement. ` +
-            `Minimum payout amount is ₹${rules.minimumPayout || 1000}. ` +
-            `Platform commission is deducted based on your tier (default ${rules.defaultCommission || 10}%). ` +
+          description: `Earnings are held for ${payoutPeriodDays} days (per your tier) before becoming eligible for settlement. ` +
+            `Minimum payout amount is ₹${rules.minimumPayout ?? 1000}. ` +
+            `Platform commission is deducted based on your tier (default ${rules.defaultCommission ?? 10}%). ` +
             `Bank account must be verified via Razorpay to receive payouts.`,
         },
       });
@@ -222,6 +266,7 @@ export function registerSettlementEndpoints(app: Hono) {
         success: true,
         policy: {
           holdPeriodDays: 7,
+          payoutPeriodDays: 7,
           minimumPayoutAmount: 1000,
           defaultCommissionRate: 10,
           autoPayoutEnabled: true,
@@ -297,31 +342,32 @@ export function registerSettlementEndpoints(app: Hono) {
       }
 
       try {
-        // Get payout rules from platform settings
-      const settings = await select('platform_settings', { setting_key: 'admin:settings:payout_rules' });
-      const rules = settings.length > 0
-        ? (settings[0].setting_value as any)
-        : {
-            holdPeriodDays: 7,
-            minimumPayout: 1000,
-            autoPayout: true,
-            defaultCommission: 10,
-          };
+        // Non-period settings from platform (min payout, auto, default commission). Period = tier only (single source of truth).
+        const settings = await select('platform_settings', { setting_key: 'admin:settings:payout_rules' });
+        const rules = settings.length > 0
+          ? (settings[0].setting_value as any)
+          : {
+              minimumPayout: 1000,
+              autoPayout: true,
+              defaultCommission: 10,
+            };
 
-      const holdPeriodMs = rules.holdPeriodDays * 24 * 60 * 60 * 1000;
-      const cutoffDate = new Date(Date.now() - holdPeriodMs);
+        // Single source of truth: eligibility by vendor tier payout_period_days (vendor_tiers)
+        // Each booking is eligible when completed_at < NOW() - (that vendor's tier payout_period_days)
+        const eligibleBookings = await query(
+          `SELECT b.*, v.commission_percentage, v.tier
+           FROM bookings b
+           INNER JOIN vendors v ON b.vendor_id = v.id
+           LEFT JOIN vendor_tiers vt ON vt.is_active = true AND (TRIM(LOWER(v.tier)) = TRIM(LOWER(vt.tier_name)))
+           WHERE b.status = 'completed'
+             AND b.settled_at IS NULL
+             AND b.completed_at < (NOW() - (COALESCE(vt.payout_period_days, 7) * INTERVAL '1 day'))
+           ORDER BY b.completed_at ASC`
+        );
 
-      // Get eligible bookings (completed, past hold period, not settled)
-      const eligibleBookings = await query(
-        `SELECT b.*, v.commission_percentage, v.tier
-         FROM bookings b
-         INNER JOIN vendors v ON b.vendor_id = v.id
-         WHERE b.status = 'completed'
-         AND b.completed_at < $1
-         AND b.settled_at IS NULL
-         ORDER BY b.completed_at ASC`,
-        [cutoffDate]
-      );
+      // Penalty cutoff: use 7 days so penalties are processed after a short hold (independent of tier)
+      const penaltyCutoffDays = 7;
+      const penaltyCutoff = new Date(Date.now() - penaltyCutoffDays * 24 * 60 * 60 * 1000);
 
       // Get vendor no-show and cancellation penalties
       const vendorPenalties = await query(
@@ -337,7 +383,7 @@ export function registerSettlementEndpoints(app: Hono) {
          AND b.created_at < $1
          AND b.penalty_processed IS NOT TRUE
          ORDER BY b.created_at ASC`,
-        [cutoffDate]
+        [penaltyCutoff]
       ).catch(() => ({ rows: [] }));
 
       // Get cancellation policy for penalty percentages
@@ -456,29 +502,26 @@ export function registerSettlementEndpoints(app: Hono) {
           continue;
         }
 
-        // Create settlement record with penalty deductions
+        // Period window: use today and (today - max tier period) for display; actual eligibility was per-tier
+        const periodEnd = new Date();
+        const periodStart = new Date(periodEnd);
+        periodStart.setDate(periodStart.getDate() - 7); // fallback for display
+
+        // Create settlement record (only base columns for backward compatibility; penalty already applied to net_amount)
         const settlementRecord = await insert('settlements', {
           vendor_id: vendorId,
           total_amount: settlement.totalAmount,
           commission_amount: settlement.commissionAmount,
-          penalty_deductions: settlement.penaltyDeductions || 0,
           net_amount: settlement.netAmount,
           settlement_status: rules.autoPayout ? 'processing' : 'pending',
-          settlement_period_start: cutoffDate.toISOString().split('T')[0],
-          settlement_period_end: new Date().toISOString().split('T')[0],
+          settlement_period_start: periodStart.toISOString().split('T')[0],
+          settlement_period_end: periodEnd.toISOString().split('T')[0],
           payment_ids: settlement.bookingIds,
-          metadata: JSON.stringify({
-            penaltyDeductions: settlement.penaltyDeductions || 0,
-            penaltyReason: settlement.penaltyDeductions > 0 ? 'Vendor cancellation/no-show penalties' : null,
-          }),
         });
 
-        // Mark bookings as settled
+        // Mark bookings as settled (only settled_at for backward compatibility; settlement_status may not exist on bookings)
         await query(
-          `UPDATE bookings
-           SET settled_at = NOW(),
-               settlement_status = 'settled'
-           WHERE id = ANY($1)`,
+          `UPDATE bookings SET settled_at = NOW() WHERE id = ANY($1)`,
           [settlement.bookingIds]
         );
 
@@ -570,13 +613,15 @@ export function registerSettlementEndpoints(app: Hono) {
   /**
    * POST /settlements/request
    * Request a payout (vendor-initiated). Requires verified bank account.
+   * Supports on-demand payout from vendor_earnings (bypasses settlement cycle).
+   * Immediately triggers Razorpay payout when funds available.
    */
   app.post("/settlements/request", async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { vendorId, amount } = body;
+      const { vendorId: paramVendorId, amount } = body;
 
-      if (!vendorId) {
+      if (!paramVendorId) {
         return c.json({ success: false, error: 'vendorId is required' }, 400);
       }
 
@@ -584,6 +629,9 @@ export function registerSettlementEndpoints(app: Hono) {
       if (isNaN(requestAmount) || requestAmount <= 0) {
         return c.json({ success: false, error: 'Valid amount is required' }, 400);
       }
+
+      // Resolve vendor_identity id -> vendors.id
+      const vendorId = await resolveVendorId(paramVendorId);
 
       // Check vendor has verified bank account
       let bankDetails: any[] = [];
@@ -609,32 +657,149 @@ export function registerSettlementEndpoints(app: Hono) {
         return c.json({ success: false, error: 'Bank account must be verified before requesting payout. Verify in Settings.' }, 400);
       }
 
-      // Get pending amount from settlements (status or settlement_status depending on schema)
-      const pendingRes = await query(
-        `SELECT COALESCE(SUM(COALESCE(net_amount, vendor_amount)), 0) as pending FROM settlements WHERE vendor_id = $1 AND (status = 'pending' OR settlement_status = 'pending')`,
-        [vendorId]
-      ).catch(() => ({ rows: [{ pending: '0' }] }));
-      const pendingAmount = parseFloat(pendingRes.rows[0]?.pending || '0');
-      if (requestAmount > pendingAmount) {
-        return c.json({ success: false, error: `Amount exceeds available (₹${pendingAmount.toFixed(0)})` }, 400);
+      // Get pending amount from BOTH settlements and vendor_earnings (align with frontend "Available for payout")
+      const [settlementsPendingRes, earningsPendingRes] = await Promise.all([
+        query(
+          `SELECT COALESCE(SUM(COALESCE(net_amount, vendor_amount)), 0) as pending FROM settlements WHERE vendor_id = $1 AND (status = 'pending' OR settlement_status = 'pending')`,
+          [vendorId]
+        ).catch(() => ({ rows: [{ pending: '0' }] })),
+        query(
+          `SELECT COALESCE(SUM(amount), 0) as pending FROM vendor_earnings WHERE vendor_id = $1 AND status = 'pending'`,
+          [vendorId]
+        ).catch(() => ({ rows: [{ pending: '0' }] })),
+      ]);
+      const settlementsPending = parseFloat(settlementsPendingRes.rows[0]?.pending || '0');
+      const earningsPending = parseFloat(earningsPendingRes.rows[0]?.pending || '0');
+      const availableAmount = settlementsPending + earningsPending;
+      if (requestAmount > availableAmount) {
+        return c.json({ success: false, error: `Amount exceeds available (₹${availableAmount.toFixed(0)})` }, 400);
       }
 
-      // Create payout request record (bank details required by schema)
-      const payout = await insert('payouts', {
+      // Determine actual payout amount: settlements can be paid as-is; earnings require full-record allocation
+      let actualPayoutAmount = requestAmount;
+      if (earningsPending >= requestAmount && settlementsPending === 0) {
+        const records = await query(
+          `SELECT id, amount FROM vendor_earnings WHERE vendor_id = $1 AND status = 'pending' ORDER BY realized_at ASC`,
+          [vendorId]
+        ).catch(() => ({ rows: [] }));
+        let allocatable = 0;
+        for (const r of records.rows) {
+          const amt = parseFloat(r.amount || '0');
+          if (allocatable + amt <= requestAmount) allocatable += amt;
+          else break;
+        }
+        if (allocatable > 0 && allocatable < requestAmount) {
+          actualPayoutAmount = allocatable; // Pay full-record sum only
+        }
+      }
+
+      // Create payout record
+      const payoutInsert = await insert('payouts', {
         vendor_id: vendorId,
-        amount: requestAmount,
-        payout_status: 'pending',
+        amount: actualPayoutAmount,
+        payout_status: 'processing',
         bank_account_number: bank.account_number,
         ifsc_code: bank.ifsc_code,
         account_holder_name: bank.account_holder_name,
         payment_ids: [],
       }).catch(() => null);
+      const payoutId = payoutInsert?.[0]?.id;
 
-      return c.json({
-        success: true,
-        message: 'Payout request submitted',
-        payoutId: payout?.[0]?.id,
-      });
+      // Immediately trigger Razorpay payout (wire with Razorpay Marketplace API)
+      try {
+        const razorpayClient = await getRazorpayClient();
+        const payoutResponse = await razorpayClient.payouts.create({
+          account_number: bank.account_number,
+          fund_account: {
+            account_type: 'bank_account',
+            bank_account: {
+              name: bank.account_holder_name,
+              ifsc: bank.ifsc_code,
+              account_number: bank.account_number,
+            },
+          },
+          amount: Math.round(actualPayoutAmount * 100), // paise
+          currency: 'INR',
+          mode: 'IMPS',
+          purpose: 'payout',
+          queue_if_low_balance: true,
+          reference_id: `PAYOUT-${payoutId || Date.now()}`,
+        });
+
+        if (payoutId) {
+          await update('payouts', { id: payoutId }, {
+            razorpay_payout_id: payoutResponse.id,
+            payout_status: 'processing',
+          });
+        }
+
+        // Mark settlements and vendor_earnings: allocate to actualPayoutAmount
+        let remainingToAllocate = actualPayoutAmount;
+
+        // First allocate from settlements (full records only - can't partially pay a settlement)
+        if (settlementsPending > 0 && remainingToAllocate > 0) {
+          const settlementRows = await query(
+            `SELECT id, COALESCE(net_amount, vendor_amount) as amt FROM settlements WHERE vendor_id = $1 AND (status = 'pending' OR settlement_status = 'pending') ORDER BY created_at ASC`,
+            [vendorId]
+          ).catch(() => ({ rows: [] }));
+          for (const row of settlementRows.rows) {
+            if (remainingToAllocate <= 0) break;
+            const amt = parseFloat(row.amt || '0');
+            if (amt <= 0) continue;
+            if (amt <= remainingToAllocate) {
+              remainingToAllocate -= amt;
+              await query(
+                `UPDATE settlements SET status = 'processing', settlement_status = 'processing' WHERE id = $1`,
+                [row.id]
+              ).catch(() => {});
+            }
+          }
+        }
+
+        // Then allocate from vendor_earnings (FIFO, full records only)
+        if (earningsPending > 0 && remainingToAllocate > 0) {
+          const toMark = await query(
+            `SELECT id, amount FROM vendor_earnings WHERE vendor_id = $1 AND status = 'pending' ORDER BY realized_at ASC`,
+            [vendorId]
+          ).catch(() => ({ rows: [] }));
+          let allocated = 0;
+          for (const row of toMark.rows) {
+            const amt = parseFloat(row.amount || '0');
+            if (amt <= 0) continue;
+            if (allocated + amt > remainingToAllocate) break; // only mark full records
+            allocated += amt;
+            await query(
+              `UPDATE vendor_earnings SET status = 'paid_out', paid_out_at = NOW() WHERE id = $1`,
+              [row.id]
+            ).catch(() => {});
+          }
+        }
+
+        return c.json({
+          success: true,
+          message: 'Payout initiated successfully. Funds will reach your bank within 1–2 business days.',
+          payoutId,
+          razorpayPayoutId: payoutResponse.id,
+        });
+      } catch (razorpayError: any) {
+        const isNotFound = razorpayError?.message?.includes('not found') || razorpayError?.message?.includes('404') || razorpayError?.statusCode === 404;
+        if (payoutId) {
+          await update('payouts', { id: payoutId }, {
+            payout_status: isNotFound ? 'pending' : 'failed',
+            failure_reason: razorpayError?.message || 'Razorpay API error',
+          });
+        }
+        if (isNotFound) {
+          return c.json({
+            success: true,
+            message: 'Payout request recorded. RazorpayX payout API is not available for this account; your request will be processed manually or when RazorpayX is configured.',
+            payoutId,
+            razorpayPayoutId: null,
+          });
+        }
+        const msg = razorpayError?.message || 'Razorpay payout failed';
+        return c.json({ success: false, error: msg }, 500);
+      }
     } catch (error: any) {
       console.error('Error requesting settlement:', error);
       return c.json({ success: false, error: error.message }, 500);
@@ -895,10 +1060,15 @@ export function registerSettlementEndpoints(app: Hono) {
   /**
    * PUT /vendor/:vendorId/bank-details
    * Update vendor bank details (Settings page uses PUT)
+   * ✅ Resolves vendor_identity id → vendors.id so save works when app sends identity id
    */
   app.put("/vendor/:vendorId/bank-details", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      const resolved = await resolveOrCreateVendorIdForBank(paramVendorId);
+      if ('error' in resolved) return c.json({ error: resolved.error }, resolved.status);
+      const vendorId = resolved.actualVendorId;
+
       const bankData = await c.req.json().catch(() => ({}));
       const accountNumber = bankData.accountNumber ?? bankData.account_number;
       const ifscCode = bankData.ifscCode ?? bankData.ifsc_code;
@@ -940,10 +1110,15 @@ export function registerSettlementEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/bank-details
    * Add/update vendor bank details
+   * ✅ Resolves vendor_identity id → vendors.id so save works when app sends identity id
    */
   app.post("/vendor/:vendorId/bank-details", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      const resolved = await resolveOrCreateVendorIdForBank(paramVendorId);
+      if ('error' in resolved) return c.json({ error: resolved.error }, resolved.status);
+      const vendorId = resolved.actualVendorId;
+
       const bankData = await c.req.json();
       const {
         accountNumber,
@@ -956,28 +1131,24 @@ export function registerSettlementEndpoints(app: Hono) {
         return c.json({ error: 'accountNumber, ifscCode, and accountHolderName are required' }, 400);
       }
 
-      // Check if exists
       const existing = await select('vendor_bank_details', { vendor_id: vendorId });
-
       let bankDetails;
       if (existing.length > 0) {
-        // Update
         const updated = await update('vendor_bank_details',
           { vendor_id: vendorId },
           {
             account_number: accountNumber,
-            ifsc_code: ifscCode,
+            ifsc_code: (ifscCode || '').toString().toUpperCase(),
             account_holder_name: accountHolderName,
             bank_name: bankName || null,
           }
         );
         bankDetails = updated[0];
       } else {
-        // Create
         const created = await insert('vendor_bank_details', {
           vendor_id: vendorId,
           account_number: accountNumber,
-          ifsc_code: ifscCode,
+          ifsc_code: (ifscCode || '').toString().toUpperCase(),
           account_holder_name: accountHolderName,
           bank_name: bankName || null,
         });
@@ -1004,10 +1175,9 @@ export function registerSettlementEndpoints(app: Hono) {
    */
   app.get("/vendor/:vendorId/bank-details", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
 
-      // Handle test IDs - return empty bank details
-      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+      if (paramVendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramVendorId)) {
         return c.json({
           success: true,
           bankDetails: null,
@@ -1015,57 +1185,10 @@ export function registerSettlementEndpoints(app: Hono) {
         });
       }
 
-      // ✅ CRITICAL FIX: Resolve vendor ID - check vendor_identity if not in vendors table
-      let actualVendorId = vendorId;
-      const existingVendor = await select('vendors', { id: vendorId });
-      
-      if (existingVendor.length === 0) {
-        console.log(`[BankDetails] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-        const identities = await select('vendor_identity', { id: vendorId });
-        
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === 'APPROVED' || identity.onboarding_status === 'ACTIVATED') {
-            // Check if vendor exists by phone (might have different ID)
-            const vendorByPhone = await select('vendors', { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              actualVendorId = vendorByPhone[0].id;
-              console.log(`[BankDetails] Found existing vendor by phone: ${actualVendorId}`);
-            } else {
-              // Auto-create vendor record from onboarding application
-              const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              
-              console.log(`[BankDetails] Auto-creating vendor record for approved vendor ${vendorId}`);
-              await insert('vendors', {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
-                role_id: identity.selected_role_id,
-                category: 'general',
-                address: payload.address || 'Not specified',
-                city: payload.city || 'Not specified',
-                state: payload.state || 'Not specified',
-                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
-                status: 'active',
-                is_active: true,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              });
-              console.log(`[BankDetails] Created vendor record for ${vendorId}`);
-            }
-          } else {
-            return c.json({ error: 'Vendor not approved or activated' }, 403);
-          }
-        } else {
-          return c.json({ error: 'Vendor not found' }, 404);
-        }
-      }
+      const resolved = await resolveOrCreateVendorIdForBank(paramVendorId);
+      if ('error' in resolved) return c.json({ error: resolved.error }, resolved.status);
+      const actualVendorId = resolved.actualVendorId;
 
-      // ✅ FIX: Check both vendor_bank_accounts (newer) and vendor_bank_details (older) tables
       let bankDetails: any[] = [];
       
       // First, try vendor_bank_accounts (newer table, supports multiple accounts)
@@ -1131,8 +1254,9 @@ export function registerSettlementEndpoints(app: Hono) {
   });
 
   /**
-   * Helper function to create payout. Uses only verified bank accounts:
-   * prefers vendor_bank_accounts (is_verified = true), then vendor_bank_details.
+   * Helper: create payout and optionally trigger RazorpayX payout for automatic disbursal.
+   * Uses verified bank from vendor_bank_accounts (is_verified) or vendor_bank_details (is_verified), or vendors.bank_verified.
+   * When RAZORPAY_X_ACCOUNT_NUMBER is set, calls Razorpay Composite Payout API so vendor receives money automatically.
    */
   async function createPayout(settlementId: string, vendorId: string, amount: number) {
     let bankDetails: any[] = [];
@@ -1147,7 +1271,18 @@ export function registerSettlementEndpoints(app: Hono) {
       }
     } catch (_) {}
     if (bankDetails.length === 0) {
-      bankDetails = await select('vendor_bank_details', { vendor_id: vendorId });
+      const hasVerified = await query(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vendor_bank_details' AND column_name = 'is_verified') as ex`
+      ).catch(() => ({ rows: [{ ex: false }] }));
+      if (hasVerified.rows?.[0]?.ex) {
+        const vbd = await query(
+          `SELECT * FROM vendor_bank_details WHERE vendor_id = $1 AND is_verified = true LIMIT 1`,
+          [vendorId]
+        ).catch(() => ({ rows: [] }));
+        bankDetails = vbd.rows || [];
+      } else {
+        bankDetails = await select('vendor_bank_details', { vendor_id: vendorId }).catch(() => []);
+      }
     }
     if (bankDetails.length === 0) {
       console.warn(`Vendor ${vendorId} has no bank details, skipping payout`);
@@ -1159,17 +1294,70 @@ export function registerSettlementEndpoints(app: Hono) {
       console.warn(`Vendor ${vendorId} bank not verified, skipping auto payout`);
       return;
     }
+    const accountNumber = String(bank.account_number || '').replace(/\s/g, '');
+    const ifscCode = String(bank.ifsc_code || bank.ifsc || '').toUpperCase().trim();
+    const accountHolder = String(bank.account_holder_name || bank.account_holder || bank.beneficiary_name || 'Vendor').trim();
+    if (!accountNumber || !ifscCode || !accountHolder) {
+      console.warn(`Vendor ${vendorId} bank record incomplete, skipping payout`);
+      return;
+    }
 
-    // Create payout record
-    await insert('payouts', {
+    const payoutRecord = await insert('payouts', {
       vendor_id: vendorId,
       amount: amount,
       settlement_id: settlementId,
-      bank_account_number: bank.account_number,
-      ifsc_code: bank.ifsc_code,
-      account_holder_name: bank.account_holder_name,
+      bank_account_number: accountNumber,
+      ifsc_code: ifscCode,
+      account_holder_name: accountHolder,
       payout_status: 'pending',
     });
+    const payoutId = payoutRecord[0]?.id;
+    if (!payoutId) return;
+
+    const razorpayXAccountNumber = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
+    if (!razorpayXAccountNumber) {
+      return;
+    }
+    let vendorPhone = '0000000000';
+    try {
+      const v = await query(`SELECT phone FROM vendors WHERE id = $1 LIMIT 1`, [vendorId]);
+      if (v?.rows?.[0]?.phone) vendorPhone = String(v.rows[0].phone).replace(/\D/g, '').slice(-10) || vendorPhone;
+    } catch (_) {}
+    const razorpayClient = getRazorpayClient();
+    const compositeBody = {
+      account_number: razorpayXAccountNumber,
+      amount: Math.round(amount * 100),
+      currency: 'INR',
+      mode: 'IMPS',
+      purpose: 'payout',
+      fund_account: {
+        account_type: 'bank_account',
+        bank_account: { name: accountHolder, ifsc: ifscCode, account_number: accountNumber },
+        contact: {
+          name: accountHolder,
+          email: `vendor-${vendorId}@payout.warmpawz.com`,
+          contact: vendorPhone,
+          type: 'vendor',
+          reference_id: `vendor-${vendorId}`,
+        },
+      },
+      queue_if_low_balance: true,
+      reference_id: `PAYOUT-${payoutId}`.slice(0, 40),
+    };
+    try {
+      const payoutResponse = await razorpayClient.payouts.create(compositeBody, payoutId);
+      await query(
+        `UPDATE payouts SET payout_status = $1, razorpay_payout_id = $2 WHERE id = $3::uuid`,
+        ['processing', payoutResponse?.id ?? null, payoutId]
+      );
+    } catch (rpErr: any) {
+      const msg = rpErr?.message ?? rpErr?.error?.description ?? 'Razorpay payout failed';
+      console.warn(`[createPayout] Razorpay error for vendor ${vendorId}:`, msg);
+      await query(
+        `UPDATE payouts SET payout_status = $1, failure_reason = $2 WHERE id = $3::uuid`,
+        ['failed', msg, payoutId]
+      ).catch(() => {});
+    }
   }
 }
 

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Package, ShoppingCart, TrendingUp, AlertCircle, 
-  DollarSign, Eye, Percent, ArrowUp, ArrowDown, Clock,
+  IndianRupee, Eye, Percent, ArrowUp, ArrowDown, Clock,
   CheckCircle, XCircle, Truck, RefreshCcw
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -75,7 +75,7 @@ export function SellerDashboard({ sellerId, sellerName }: SellerDashboardProps) 
       value: `₹${(analytics?.totalRevenue || 0).toLocaleString()}`,
       change: '+12.5%',
       trend: 'up',
-      icon: DollarSign,
+      icon: IndianRupee,
       gradient: 'from-emerald-500 to-teal-500',
       bgLight: 'bg-emerald-50'
     },

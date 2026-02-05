@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   TrendingUp,
-  DollarSign,
+  IndianRupee,
   Users,
   Calendar,
   Filter,
@@ -38,10 +38,13 @@ import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 interface Settlement {
   id: string;
   vendorName: string;
+  vendorRole?: string | null;
+  businessType?: string | null;
   amount: number;
   commission: number;
-  status: 'Due' | 'Pending' | 'Paid';
+  status: 'Due' | 'Pending' | 'Paid' | 'Failed';
   date: string;
+  failure_reason?: string;
 }
 
 interface AnalyticsData {
@@ -62,18 +65,56 @@ export function SettlementDashboard() {
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(loadData, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [settlementsData, analyticsData] = await Promise.all([
-        apiClient.get<any>('/admin/payments/settlements'),
-        apiClient.get<any>('/admin/payments/analytics'),
+      // Use /admin/finance/settlements (same as SettlementsTab) so data is connected and consistent
+      const [settlementsData, analyticsData, summaryData] = await Promise.all([
+        apiClient.get<any>('/admin/finance/settlements').catch(() => ({ success: false, settlements: [] })),
+        apiClient.get<any>('/admin/payments/analytics').catch(() => null),
+        apiClient.get<any>('/settlements/summary').catch(() => null),
       ]);
 
-      setSettlements(Array.isArray(settlementsData?.data?.settlements) ? settlementsData.data.settlements : (settlementsData?.settlements ?? []));
-      setAnalytics(analyticsData?.data?.analytics ?? analyticsData?.analytics ?? null);
+      const raw = (settlementsData as any)?.settlements ?? (settlementsData as any)?.data?.settlements ?? [];
+      const list = Array.isArray(raw) ? raw : [];
+      const statusMap: Record<string, 'Due' | 'Pending' | 'Paid' | 'Failed'> = {
+        pending: 'Pending',
+        processing: 'Pending',
+        completed: 'Paid',
+        processed: 'Paid',
+        paid: 'Paid',
+        failed: 'Failed',
+      };
+      setSettlements(list.map((s: any) => ({
+        id: s.id,
+        vendorName: s.vendorName ?? s.vendor_name ?? 'Unknown',
+        vendorRole: s.vendor_role ?? null,
+        businessType: s.business_type ?? null,
+        amount: Number(s.amount ?? s.vendor_amount ?? s.net_amount ?? 0),
+        commission: Number(s.commission ?? s.commission_amount ?? 0),
+        status: statusMap[String(s.status ?? s.settlement_status ?? '').toLowerCase()] ?? 'Pending',
+        date: s.date ?? s.created_at ?? s.period_start ?? '',
+        failure_reason: s.failure_reason,
+      })));
+      const analytics = analyticsData?.data?.analytics ?? analyticsData?.analytics ?? null;
+      if (analytics) {
+        setAnalytics(analytics);
+      } else if (summaryData) {
+        const sum = (summaryData as any)?.summary ?? summaryData;
+        const completed = Number(sum?.completedAmount ?? sum?.completed_amount ?? 0);
+        const pending = Number(sum?.pendingAmount ?? sum?.pending_amount ?? 0);
+        setAnalytics({
+          totalRevenue: completed + pending,
+          totalCommission: 0,
+          vendorPayout: completed,
+          revenueByTier: {},
+          topVendors: [],
+        });
+      }
     } catch (error) {
       console.error('Error loading data:', error);
       toast.error('Failed to load settlement data');
@@ -107,12 +148,14 @@ export function SettlementDashboard() {
     Due: settlements.filter((s) => s.status === 'Due').length,
     Pending: settlements.filter((s) => s.status === 'Pending').length,
     Paid: settlements.filter((s) => s.status === 'Paid').length,
+    Failed: settlements.filter((s) => s.status === 'Failed').length,
   };
 
   const pieData = [
     { name: 'Due', value: statusCounts.Due },
     { name: 'Pending', value: statusCounts.Pending },
     { name: 'Paid', value: statusCounts.Paid },
+    ...(statusCounts.Failed > 0 ? [{ name: 'Failed', value: statusCounts.Failed }] : []),
   ];
 
   return (
@@ -127,7 +170,7 @@ export function SettlementDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <IndianRupee className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -209,16 +252,18 @@ export function SettlementDashboard() {
                   className="flex items-center justify-between p-3 border rounded-lg"
                 >
                   <div>
-                    <p className="font-medium">{settlement.vendorName}</p>
-                    <p className="text-sm text-gray-500">₹{settlement.amount.toLocaleString()}</p>
+                    <p className="font-medium">{settlement.vendorName ?? 'Unknown'}</p>
+                    <p className="text-sm text-gray-500">₹{(settlement.amount ?? 0).toLocaleString()}</p>
                   </div>
                   <Badge
                     variant={
                       settlement.status === 'Paid'
                         ? 'default'
-                        : settlement.status === 'Pending'
-                          ? 'secondary'
-                          : 'outline'
+                        : settlement.status === 'Failed'
+                          ? 'destructive'
+                          : settlement.status === 'Pending'
+                            ? 'secondary'
+                            : 'outline'
                     }
                   >
                     {settlement.status}
@@ -252,6 +297,7 @@ export function SettlementDashboard() {
             <TableHeader>
               <TableRow>
                 <TableHead>Vendor</TableHead>
+                <TableHead>Role / Business type</TableHead>
                 <TableHead>Amount</TableHead>
                 <TableHead>Commission</TableHead>
                 <TableHead>Status</TableHead>
@@ -262,32 +308,49 @@ export function SettlementDashboard() {
             <TableBody>
               {settlements.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                  <TableCell colSpan={7} className="text-center py-8 text-gray-500">
                     No settlements found
                   </TableCell>
                 </TableRow>
               ) : (
                 settlements.map((settlement) => (
                   <TableRow key={settlement.id}>
-                    <TableCell className="font-medium">{settlement.vendorName}</TableCell>
-                    <TableCell>₹{settlement.amount.toLocaleString()}</TableCell>
-                    <TableCell>₹{settlement.commission.toLocaleString()}</TableCell>
+                    <TableCell className="font-medium">{settlement.vendorName ?? 'Unknown'}</TableCell>
+                    <TableCell>
+                      {settlement.vendorRole || settlement.businessType ? (
+                        <>
+                          {settlement.vendorRole && <p className="text-sm font-medium">{settlement.vendorRole}</p>}
+                          {settlement.businessType && <p className="text-xs text-gray-500">{settlement.businessType}</p>}
+                        </>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>₹{(settlement.amount ?? 0).toLocaleString()}</TableCell>
+                    <TableCell>₹{(settlement.commission ?? 0).toLocaleString()}</TableCell>
                     <TableCell>
                       <Badge
                         variant={
                           settlement.status === 'Paid'
                             ? 'default'
-                            : settlement.status === 'Pending'
-                              ? 'secondary'
-                              : 'outline'
+                            : settlement.status === 'Failed'
+                              ? 'destructive'
+                              : settlement.status === 'Pending'
+                                ? 'secondary'
+                                : 'outline'
                         }
                       >
                         {settlement.status}
                       </Badge>
+                      {settlement.failure_reason && (
+                        <p className="text-xs text-red-600 mt-1 max-w-[200px] truncate" title={settlement.failure_reason}>
+                          {settlement.failure_reason}
+                        </p>
+                      )}
                     </TableCell>
-                    <TableCell>{new Date(settlement.date).toLocaleDateString()}</TableCell>
+                    <TableCell>{settlement.date ? new Date(settlement.date).toLocaleDateString() : '—'}</TableCell>
                     <TableCell>
-                      {settlement.status !== 'Paid' && (
+                      {settlement.status !== 'Paid' && settlement.status !== 'Failed' && !String(settlement.id).startsWith('ve-') && (
                         <Button
                           size="sm"
                           onClick={() => handleProcessSettlement(settlement.id)}

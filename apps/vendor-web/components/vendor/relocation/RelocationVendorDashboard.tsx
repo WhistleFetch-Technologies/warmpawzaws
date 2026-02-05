@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, Truck, MapPin, Calendar, DollarSign, Edit, Trash2, CheckCircle2, Clock, Users } from 'lucide-react';
+import { Plus, Truck, MapPin, Calendar, IndianRupee, Edit, Trash2, CheckCircle2, Clock, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -180,7 +180,7 @@ export function RelocationVendorDashboard({ vendorId, vendorData, onBack }: Relo
         <div className="flex gap-2 mb-6 border-b">
           {[
             { id: 'overview', label: 'Overview', icon: Truck },
-            { id: 'quotes', label: 'Quotes', icon: DollarSign },
+            { id: 'quotes', label: 'Quotes', icon: IndianRupee },
             { id: 'bookings', label: 'Bookings', icon: Calendar },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -206,7 +206,7 @@ export function RelocationVendorDashboard({ vendorId, vendorData, onBack }: Relo
             <h2 className="text-xl font-bold text-gray-900">Relocation Quotes</h2>
             {quotes.length === 0 ? (
               <Card className="p-12 text-center">
-                <DollarSign className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <IndianRupee className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-gray-900 mb-2">No Quotes</h3>
                 <p className="text-gray-600">Quotes will appear here</p>
               </Card>
@@ -235,7 +235,7 @@ export function RelocationVendorDashboard({ vendorId, vendorData, onBack }: Relo
                             <span>Pets: {quote.petCount}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <DollarSign className="w-4 h-4" />
+                            <IndianRupee className="w-4 h-4" />
                             <span className="font-semibold">Estimated: ₹{quote.estimatedPrice?.toLocaleString()}</span>
                           </div>
                         </div>
@@ -301,7 +301,7 @@ export function RelocationVendorDashboard({ vendorId, vendorData, onBack }: Relo
                           </div>
                           {booking.totalAmount && (
                             <div className="flex items-center gap-2">
-                              <DollarSign className="w-4 h-4" />
+                              <IndianRupee className="w-4 h-4" />
                               <span>Total: ₹{booking.totalAmount.toLocaleString()}</span>
                             </div>
                           )}

@@ -4,6 +4,8 @@ import { X, Package } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
+import { useTaxCategories } from '@/hooks/useTaxCategories';
+import { useHSNCodes } from '@/hooks/useHSNCodes';
 import { EnhancedModal } from '../shared/EnhancedModal';
 import { EnhancedButton } from '../shared/EnhancedButton';
 
@@ -48,6 +50,8 @@ interface Service {
   duration?: number;
   applicableRoles?: string[];
   specializationIds?: string[];
+  taxCategoryId?: string;
+  hsnCodeId?: string;
 }
 
 interface AddServiceModalProps {
@@ -72,6 +76,8 @@ export function AddServiceModal({
   const [roles, setRoles] = useState<any[]>([]);
   const [specializationsByCategory, setSpecializationsByCategory] = useState<{ specializationId: string; name: string; displayName: string }[]>([]);
   const [loadingSpecializations, setLoadingSpecializations] = useState(false);
+  const { taxCategories } = useTaxCategories({ isActive: true });
+  const { hsnCodes } = useHSNCodes({ isActive: true });
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -84,6 +90,8 @@ export function AddServiceModal({
     status: 'active' as 'active' | 'inactive' | 'draft',
     applicableRoles: [] as string[],
     specializationIds: [] as string[],
+    taxCategoryId: '' as string,
+    hsnCodeId: '' as string,
   });
 
   useEffect(() => {
@@ -108,6 +116,8 @@ export function AddServiceModal({
           status: (service.status && service.status !== 'pending' ? service.status : 'active') as 'active' | 'inactive' | 'draft',
           applicableRoles: [...new Set(rawRoles.filter(Boolean))],
           specializationIds: Array.isArray(specIds) ? specIds : [],
+          taxCategoryId: (service as any).taxCategoryId ?? (service as any).tax_category_id ?? '',
+          hsnCodeId: (service as any).hsnCodeId ?? (service as any).hsn_code_id ?? '',
         });
       } else {
         setFormData({
@@ -122,6 +132,8 @@ export function AddServiceModal({
           status: 'active',
           applicableRoles: [],
           specializationIds: [],
+          taxCategoryId: '',
+          hsnCodeId: '',
         });
       }
     }
@@ -251,6 +263,8 @@ export function AddServiceModal({
           status: formData.status,
           applicable_roles: formData.applicableRoles,
           specialization_ids: formData.specializationIds,
+          tax_category_id: formData.taxCategoryId || undefined,
+          hsn_code_id: formData.hsnCodeId || undefined,
         });
         alert('Service updated successfully!');
       } else {
@@ -285,6 +299,8 @@ export function AddServiceModal({
         status: 'active',
         applicableRoles: [],
         specializationIds: [],
+        taxCategoryId: '',
+        hsnCodeId: '',
       });
     } catch (error: any) {
       console.error('Error saving service:', error);
@@ -461,26 +477,39 @@ export function AddServiceModal({
                 <div className="grid grid-cols-2 gap-4 mb-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      GST Inclusion <span className="text-red-500">*</span>
+                      Tax Category
                     </label>
-                    <select className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white">
-                      <option value="">Select GST option</option>
-                      <option value="inclusive">Inclusive</option>
-                      <option value="exclusive">Exclusive</option>
+                    <select
+                      value={formData.taxCategoryId}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('taxCategoryId', e.target.value)}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white"
+                    >
+                      <option value="">— Select —</option>
+                      {taxCategories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.category_name ?? c.id}
+                        </option>
+                      ))}
                     </select>
+                    <p className="text-xs text-gray-500 mt-1">From GST Configuration</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      GST Rate (%)
+                      HSN Code
                     </label>
-                    <select className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white">
-                      <option value="">Select GST rate</option>
-                      <option value="0">0%</option>
-                      <option value="5">5%</option>
-                      <option value="12">12%</option>
-                      <option value="18">18%</option>
-                      <option value="28">28%</option>
+                    <select
+                      value={formData.hsnCodeId}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleChange('hsnCodeId', e.target.value)}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white"
+                    >
+                      <option value="">— Select —</option>
+                      {hsnCodes.map((h) => (
+                        <option key={h.id} value={h.id}>
+                          {h.hsn_code} — {h.description || h.gst_rate + '%'}
+                        </option>
+                      ))}
                     </select>
+                    <p className="text-xs text-gray-500 mt-1">Overrides Tax Category rate when set</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

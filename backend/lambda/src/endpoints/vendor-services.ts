@@ -22,6 +22,7 @@ import { select, insert, update, query } from '../database/rds-connection';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
 import { extractEntityIds, normalizeDbRow, buildVendorResponse } from '../utils/entity-extractor';
 import { isValidUUID, normalizeVendorService } from '../types/entities';
+import { resolveVendorById } from './vendor-profile';
 
 /**
  * Map role IDs/names to service catalog applicable_roles (must match service-catalog.ts)
@@ -84,23 +85,21 @@ const roleMappings: Record<string, string[]> = {
 
 /**
  * Resolve request vendorId to actual vendor id (vendors table).
- * When vendorId is a vendor_identity id and there is an existing vendor with the same phone,
- * add-from-catalog creates the service under that vendor. GET/PUT must use the same resolved id
- * so list and update work. This helper does NOT create vendors (only add-from-catalog does).
+ * Uses shared resolveVendorById so identity id, application id, vendor_id fallbacks and
+ * auto-create work for both new and existing vendors.
+ * Returns null when vendor cannot be resolved (not found or not approved).
  */
-async function resolveVendorId(paramVendorId: string): Promise<string> {
-  const existingVendor = await select('vendors', { id: paramVendorId });
-  if (existingVendor.length > 0) return paramVendorId;
-  const identities = await select('vendor_identity', { id: paramVendorId });
-  if (identities.length === 0) return paramVendorId;
-  const identity = identities[0];
-  if (identity.onboarding_status !== 'APPROVED' && identity.onboarding_status !== 'ACTIVATED') return paramVendorId;
-  const vendorByPhone = await select('vendors', { phone: identity.phone });
-  if (vendorByPhone.length > 0) {
-    console.log(`[VendorServices] Resolved vendorId ${paramVendorId} to actual vendor ${vendorByPhone[0].id} (by phone)`);
-    return vendorByPhone[0].id;
+async function resolveVendorId(paramVendorId: string): Promise<string | null> {
+  const trimmed = (paramVendorId || '').trim();
+  if (!trimmed) return null;
+  const vendor = await resolveVendorById(trimmed);
+  if (vendor?.id) {
+    if (vendor.id !== trimmed) {
+      console.log(`[VendorServices] Resolved vendorId ${trimmed} to actual vendor ${vendor.id}`);
+    }
+    return vendor.id;
   }
-  return paramVendorId;
+  return null;
 }
 
 export function registerVendorServicesEndpoints(app: Hono) {
@@ -112,7 +111,13 @@ export function registerVendorServicesEndpoints(app: Hono) {
   app.get("/vendor/:vendorId/services", async (c) => {
     try {
       const { vendorId: paramVendorId } = c.req.param();
+      if (!(paramVendorId || '').trim()) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
       const vendorId = await resolveVendorId(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
       const customOnly = c.req.query('custom') === 'true'; // ✅ Support custom=true filter
 
       // Handle test IDs - return empty services
@@ -500,10 +505,14 @@ export function registerVendorServicesEndpoints(app: Hono) {
    */
   app.get("/vendor/:vendorId/services/enabled", async (c) => {
     try {
-      const { vendorId } = c.req.param();
-      
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+
       console.log(`[VendorServices] Fetching enabled services for vendor ${vendorId}...`);
-      
+
       // Get all enabled services for this vendor
       const result = await query(
         `SELECT 
@@ -568,6 +577,9 @@ export function registerVendorServicesEndpoints(app: Hono) {
     try {
       const { vendorId: paramVendorId, serviceStyle } = c.req.param();
       const vendorId = await resolveVendorId(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
 
       if (!['at_home', 'at_center', 'tele'].includes(serviceStyle)) {
         return c.json({ error: 'Invalid service style' }, 400);
@@ -851,65 +863,26 @@ export function registerVendorServicesEndpoints(app: Hono) {
    */
   app.post("/vendor/:vendorId/services", async (c) => {
     try {
-      const { vendorId } = c.req.param();
-      
+      const { vendorId: paramVendorId } = c.req.param();
+      const trimmedId = (paramVendorId || '').trim();
+      if (!trimmedId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
+
+      // Resolve vendor (identity id, application id, or vendors.id) so new and existing vendors work
+      const vendor = await resolveVendorById(trimmedId);
+      if (!vendor?.id) {
+        return c.json({ error: 'Vendor identity not found' }, 404);
+      }
+      const actualVendorId = vendor.id;
+
       // Check if vendor has services or custom_services capability
-      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
-                                     await checkVendorCapability(vendorId, 'custom_services');
+      const hasServicesCapability = await checkVendorCapability(actualVendorId, 'services') ||
+                                     await checkVendorCapability(actualVendorId, 'custom_services');
       if (!hasServicesCapability) {
         return c.json({ error: 'Vendor does not have services capability' }, 403);
       }
-      
-      // CRITICAL: Ensure we use the correct vendor ID from vendors table
-      // If vendor only exists in vendor_identity (approved), we need to find or create the vendor record
-      let actualVendorId = vendorId;
-      const existingVendor = await select('vendors', { id: vendorId });
-      if (existingVendor.length === 0) {
-        console.log(`[VendorServices] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-        const identities = await select('vendor_identity', { id: vendorId });
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === 'APPROVED' || identity.onboarding_status === 'ACTIVATED') {
-            // Check if vendor exists by phone (there might be an existing vendor with different ID)
-            const vendorByPhone = await select('vendors', { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              actualVendorId = vendorByPhone[0].id;
-              console.log(`[VendorServices] Found existing vendor by phone: ${actualVendorId}`);
-            } else {
-              // Get application data for vendor details
-              const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              
-              // Create vendors record
-              console.log(`[VendorServices] Auto-creating vendor record for approved vendor ${vendorId}`);
-              const newVendor = await insert('vendors', {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
-                role_id: identity.selected_role_id,
-                category: 'general',
-                address: payload.address || 'Not specified',
-                city: payload.city || 'Not specified',
-                state: payload.state || 'Not specified',
-                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
-                status: 'active',
-                is_active: true,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              });
-              console.log(`[VendorServices] Created vendor record for ${vendorId}`);
-            }
-          } else {
-            return c.json({ error: 'Vendor not approved or activated' }, 403);
-          }
-        } else {
-          return c.json({ error: 'Vendor identity not found' }, 404);
-        }
-      }
-      
+
       const serviceData = await c.req.json();
       const {
         serviceId,
@@ -938,16 +911,9 @@ export function registerVendorServicesEndpoints(app: Hono) {
       }
 
       // ✅ PHASE 0.4: Validate serviceStyle against role configuration
-      // Get vendor with role to check allowed service styles
-      let vendorForValidation: any[] = [];
-      if (existingVendor.length > 0) {
-        vendorForValidation = existingVendor;
-      } else {
-        // If vendor was auto-created or resolved, get it again
-        const resolvedVendor = await select('vendors', { id: actualVendorId });
-        vendorForValidation = resolvedVendor;
-      }
-      
+      // Get vendor with role to check allowed service styles (vendor already resolved above)
+      const vendorForValidation: any[] = vendor ? [vendor] : await select('vendors', { id: actualVendorId });
+
       if (vendorForValidation.length > 0 && vendorForValidation[0].role_id) {
         try {
           const roles = await select('roles', { id: vendorForValidation[0].role_id });
@@ -1131,6 +1097,9 @@ export function registerVendorServicesEndpoints(app: Hono) {
     try {
       const { vendorId: paramVendorId, serviceId } = c.req.param();
       const vendorId = await resolveVendorId(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
       
       // Check if vendor has services or custom_services capability
       const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
@@ -1436,65 +1405,26 @@ export function registerVendorServicesEndpoints(app: Hono) {
    */
   app.post("/vendor/:vendorId/services/add-from-catalog", async (c) => {
     try {
-      const { vendorId } = c.req.param();
-      
-      // ✅ CRITICAL FIX: Ensure vendor exists in vendors table before inserting
-      // If vendor only exists in vendor_identity (approved), we need to find or create the vendor record
-      let actualVendorId = vendorId;
-      const existingVendor = await select('vendors', { id: vendorId });
-      if (existingVendor.length === 0) {
-        console.log(`[VendorServices] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-        const identities = await select('vendor_identity', { id: vendorId });
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === 'APPROVED' || identity.onboarding_status === 'ACTIVATED') {
-            // Check if vendor exists by phone (there might be an existing vendor with different ID)
-            const vendorByPhone = await select('vendors', { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              actualVendorId = vendorByPhone[0].id;
-              console.log(`[VendorServices] Found existing vendor by phone: ${actualVendorId}`);
-            } else {
-              // Get application data for vendor details
-              const applications = await select('vendor_onboarding_applications', { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              
-              // Create vendors record
-              console.log(`[VendorServices] Auto-creating vendor record for approved vendor ${vendorId}`);
-              const newVendor = await insert('vendors', {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || 'Vendor Owner',
-                role_id: identity.selected_role_id,
-                category: 'general',
-                address: payload.address || 'Not specified',
-                city: payload.city || 'Not specified',
-                state: payload.state || 'Not specified',
-                pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
-                status: 'active',
-                is_active: true,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              });
-              console.log(`[VendorServices] Created vendor record for ${vendorId}`);
-            }
-          } else {
-            return c.json({ error: 'Vendor not approved or activated' }, 403);
-          }
-        } else {
-          return c.json({ error: 'Vendor identity not found' }, 404);
-        }
+      const { vendorId: paramVendorId } = c.req.param();
+      const trimmedId = (paramVendorId || '').trim();
+      if (!trimmedId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
       }
-      
+
+      // Resolve vendor (identity id, application id, or vendors.id) so new and existing vendors work
+      const vendor = await resolveVendorById(trimmedId);
+      if (!vendor?.id) {
+        return c.json({ error: 'Vendor identity not found' }, 404);
+      }
+      const actualVendorId = vendor.id;
+
       // Check if vendor has services capability (use actualVendorId)
-      const hasServicesCapability = await checkVendorCapability(actualVendorId, 'services') || 
+      const hasServicesCapability = await checkVendorCapability(actualVendorId, 'services') ||
                                      await checkVendorCapability(actualVendorId, 'custom_services');
       if (!hasServicesCapability) {
         return c.json({ error: 'Vendor does not have services capability' }, 403);
       }
-      
+
       const body = await c.req.json();
       const {
         catalogServiceId,
@@ -1626,12 +1556,18 @@ export function registerVendorServicesEndpoints(app: Hono) {
   app.post("/vendor/:vendorId/services/custom", async (c) => {
     try {
       const { vendorId: paramVendorId } = c.req.param();
+      if (!(paramVendorId || '').trim()) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
       // Resolve identity ID to vendor ID (same as GET /vendor/:vendorId/services) so requests
       // using JWT identity id succeed when vendor row is keyed by vendor id or matched by phone.
       const vendorId = await resolveVendorId(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
 
       // Check if vendor has services or custom_services capability
-      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
+      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') ||
                                      await checkVendorCapability(vendorId, 'custom_services');
       if (!hasServicesCapability) {
         return c.json({ error: 'Vendor does not have services capability' }, 403);
@@ -1767,14 +1703,24 @@ export function registerVendorServicesEndpoints(app: Hono) {
         is_active: true,
       });
 
-      const requestedPublishStatus = serviceData.publishStatus || 'pending_approval';
+      const requestedPublishStatus = serviceData.publishStatus || 'draft';
       const effectivePublishStatus = requestedPublishStatus === 'published' ? 'pending_approval' : requestedPublishStatus;
+      // DB constraint allows: draft, published, auto_published, pending_approval (migration 544). If DB is not yet migrated, fallback to draft.
+      const allowedPublishStatuses = ['draft', 'published', 'auto_published', 'pending_approval'];
+      const publishStatusForDb = allowedPublishStatuses.includes(effectivePublishStatus) ? effectivePublishStatus : 'draft';
       const isEnabled = effectivePublishStatus === 'published';
+
+      // Duration: for packages use sessionDuration from packageDetails when present
+      const durationFromDetails = packageDetails && typeof packageDetails === 'object'
+        ? Number(packageDetails.sessionDuration ?? packageDetails.duration ?? duration)
+        : Number(duration);
+      const safeDurationMinutes = Math.max(5, Math.min(1440, (durationFromDetails || duration || 30) || 30));
 
       // Build metadata for packages and/or specializations (360°: custom service linked to specializations for discovery)
       const metadata: Record<string, unknown> = {};
       if (isPackageService && packageDetails && typeof packageDetails === 'object') {
         metadata.isPackage = true;
+        metadata.packageType = serviceData.packageType || undefined;
         metadata.packageDetails = packageDetails;
       }
       if (effectiveSpecIds.length > 0) {
@@ -1792,10 +1738,10 @@ export function registerVendorServicesEndpoints(app: Hono) {
         service_style: effectiveServiceStyle,
         price: effectivePriceNum,
         custom_price: effectivePriceNum,
-        duration_minutes: duration || 30,
-        custom_duration: duration || 30,
+        duration_minutes: safeDurationMinutes,
+        custom_duration: safeDurationMinutes,
         is_enabled: isEnabled,
-        publish_status: effectivePublishStatus,
+        publish_status: publishStatusForDb,
         is_custom_service: true,
         submitted_for_approval_at: effectivePublishStatus === 'pending_approval' ? new Date().toISOString() : null,
       };
@@ -1807,14 +1753,20 @@ export function registerVendorServicesEndpoints(app: Hono) {
       return c.json({
         success: true,
         service: vendorService[0],
-        message: effectivePublishStatus === 'draft' 
-          ? 'Custom service saved as draft' 
+        message: effectivePublishStatus === 'draft'
+          ? 'Custom service saved as draft'
           : 'Custom service submitted for admin approval',
         publishStatus: effectivePublishStatus,
       });
     } catch (error: any) {
       console.error('Error creating custom service:', error);
-      return c.json({ error: error.message }, 500);
+      const message = error?.message || (typeof error === 'string' ? error : 'Failed to create custom service');
+      const isConstraint = message.includes('pending_approval') || message.includes('check constraint') || message.includes('violates check');
+      return c.json({
+        error: isConstraint
+          ? 'Custom service could not be saved. Please ensure database migration 544 (vendor_services publish_status) has been applied.'
+          : message,
+      }, 500);
     }
   });
 
@@ -1826,9 +1778,13 @@ export function registerVendorServicesEndpoints(app: Hono) {
    */
   app.post("/vendor/:vendorId/services/bulk-update", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
       
-      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
+      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') ||
                                      await checkVendorCapability(vendorId, 'custom_services') ||
                                      await checkVendorCapability(vendorId, 'booking');
       if (!hasServicesCapability) {
@@ -1998,9 +1954,13 @@ export function registerVendorServicesEndpoints(app: Hono) {
    */
   app.post("/vendor/:vendorId/services/bulk-publish", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
       
-      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
+      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') ||
                                      await checkVendorCapability(vendorId, 'custom_services');
       if (!hasServicesCapability) {
         return c.json({ error: 'Vendor does not have services capability' }, 403);
@@ -2061,10 +2021,14 @@ export function registerVendorServicesEndpoints(app: Hono) {
     }
     
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
+      const vendorId = await resolveVendorId(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
       
       // Check if vendor has services or custom_services capability
-      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
+      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') ||
                                      await checkVendorCapability(vendorId, 'custom_services');
       if (!hasServicesCapability) {
         return c.json({ error: 'Vendor does not have services capability' }, 403);
@@ -2264,9 +2228,12 @@ export function registerVendorServicesEndpoints(app: Hono) {
     try {
       const { vendorId: paramVendorId, serviceId } = c.req.param();
       const vendorId = await resolveVendorId(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
       
       // Check if vendor has services or custom_services capability
-      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
+      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') ||
                                      await checkVendorCapability(vendorId, 'custom_services');
       if (!hasServicesCapability) {
         return c.json({ error: 'Vendor does not have services capability' }, 403);
@@ -2296,9 +2263,12 @@ export function registerVendorServicesEndpoints(app: Hono) {
     try {
       const { vendorId: paramVendorId, serviceId } = c.req.param();
       const vendorId = await resolveVendorId(paramVendorId);
+      if (vendorId === null) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
       
       // Check if vendor has services capability
-      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') || 
+      const hasServicesCapability = await checkVendorCapability(vendorId, 'services') ||
                                      await checkVendorCapability(vendorId, 'custom_services');
       if (!hasServicesCapability) {
         return c.json({ error: 'Vendor does not have services capability' }, 403);

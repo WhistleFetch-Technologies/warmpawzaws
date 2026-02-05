@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Building2, Plus, Edit2, Trash2, Loader2, Save, X, Users, DollarSign } from 'lucide-react';
+import { Building2, Plus, Edit2, Trash2, Loader2, Save, X, Users, IndianRupee } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 interface EnterpriseClient {
@@ -278,7 +278,7 @@ export function EnterpriseLogicTab() {
                 </div>
                 <div className="p-0 bg-gray-50 rounded-lg">
                   <div className="flex items-center gap-3 mb-0">
-                    <DollarSign className="w-4 h-4 text-gray-400" />
+                    <IndianRupee className="w-4 h-4 text-gray-400" />
                     <p className="text-xs text-gray-600">Monthly Budget</p>
                   </div>
                   <p className="font-semibold text-gray-900">₹{client.monthlyBudget.toLocaleString()}</p>

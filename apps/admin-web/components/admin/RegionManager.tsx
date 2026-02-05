@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { MapPin, Plus, Edit2, Trash2, Loader2, Save, X, Globe, DollarSign, Clock } from 'lucide-react';
+import { MapPin, Plus, Edit2, Trash2, Loader2, Save, X, Globe, IndianRupee, Clock } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 interface Region {
@@ -266,7 +266,7 @@ export function RegionManager() {
 
             <div className="space-y-2 mb-4">
               <div className="flex items-center gap-3 text-sm">
-                <DollarSign className="w-4 h-4 text-gray-400" />
+                <IndianRupee className="w-4 h-4 text-gray-400" />
                 <span className="text-gray-600">
                   {region.currency.symbol} {region.currency.code} • Tax: {region.business.taxRate}%
                 </span>

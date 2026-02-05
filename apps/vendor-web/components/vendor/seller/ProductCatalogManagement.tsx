@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Plus, Search, Filter, Edit2, Trash2, Eye, Package,
-  Grid, List, ChevronDown, X, Upload, DollarSign, Tag,
+  Grid, List, ChevronDown, X, Upload, IndianRupee, Tag,
   Check, AlertCircle, Image as ImageIcon, MapPin
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -576,7 +576,7 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
           {/* Pricing */}
           <div className="space-y-4">
             <h3 className="font-semibold text-slate-900 flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-orange-500" />
+              <IndianRupee className="w-5 h-5 text-orange-500" />
               Pricing & Inventory
             </h3>
             

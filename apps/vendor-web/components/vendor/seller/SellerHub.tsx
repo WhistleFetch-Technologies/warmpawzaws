@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
   LayoutDashboard, Package, ShoppingCart, BarChart3, Settings,
-  Tag, Image as ImageIcon, FileText, DollarSign, Bell, Menu, X,
+  Tag, Image as ImageIcon, FileText, IndianRupee, Bell, Menu, X,
   Store, LogOut, User, HelpCircle, Boxes, TrendingUp
 } from 'lucide-react';
 import { SellerDashboard } from './SellerDashboard';
@@ -49,7 +49,7 @@ export function SellerHub({ vendorData, onLogout, onBack }: SellerHubProps) {
     { id: 'inventory', label: 'Inventory', icon: Boxes, description: 'Stock management' },
     { id: 'orders', label: 'Orders', icon: ShoppingCart, description: 'Order processing' },
     { id: 'invoices', label: 'GST Invoices', icon: FileText, description: 'Tax invoices' },
-    { id: 'commission', label: 'Commission', icon: DollarSign, description: 'Earnings & fees' },
+    { id: 'commission', label: 'Commission', icon: IndianRupee, description: 'Earnings & fees' },
     { id: 'promotions', label: 'Promotions', icon: Tag, description: 'Offers & discounts' },
     { id: 'banners', label: 'Banners', icon: ImageIcon, description: 'Marketing assets' },
     { id: 'analytics', label: 'Analytics', icon: BarChart3, description: 'Performance data' },

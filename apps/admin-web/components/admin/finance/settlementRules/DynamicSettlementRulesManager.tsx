@@ -19,7 +19,7 @@ import {
   Trash2,
   Save,
   AlertCircle,
-  DollarSign,
+  IndianRupee,
   Calendar,
   TrendingUp,
   X,
@@ -278,7 +278,7 @@ export function DynamicSettlementRulesManager() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Settlement Period (days)</Label>
+                  <Label>Settlement Period (days) – override</Label>
                   <Input
                     type="number"
                     value={editingRule.settlement.periodDays}
@@ -292,6 +292,7 @@ export function DynamicSettlementRulesManager() {
                       })
                     }
                   />
+                  <p className="text-xs text-gray-500">Defaults to vendor&apos;s tier (Tier Management). This rule overrides for matching conditions.</p>
                 </div>
               </div>
 

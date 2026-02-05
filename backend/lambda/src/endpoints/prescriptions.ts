@@ -57,6 +57,20 @@ export function registerPrescriptionEndpoints(app: Hono) {
         const bookings = await select('bookings', { id: bookingId });
         if (bookings.length > 0) {
           const b = bookings[0] as any;
+          // ✅ CRITICAL: Do NOT allow prescriptions for diagnostics lab bookings. Use diagnostic_reports for lab results.
+          const notesStr = typeof b.notes === 'string' ? b.notes : JSON.stringify(b.notes || '');
+          const svcId = String(b.service_id || '').toLowerCase();
+          const isDiagnosticsBooking = (
+            (notesStr && (notesStr.includes('"tests"') || notesStr.includes('"test_name"'))) ||
+            svcId === 'diagnostics' ||
+            /diagnostic|lab.?test/i.test(String(b.service_type || b.service_style || ''))
+          );
+          if (isDiagnosticsBooking) {
+            return c.json({
+              error: 'Prescriptions cannot be created for lab test orders. Use the Upload Lab Report flow for diagnostics.',
+              code: 'DIAGNOSTICS_BOOKING_NO_PRESCRIPTION',
+            }, 400);
+          }
           if ((!customerId || !isValidUUID(customerId)) && b.customer_id) {
             prescriptionData.customerId = b.customer_id;
             console.log(`[Prescription] Resolved customerId from booking ${bookingId}: ${prescriptionData.customerId}`);

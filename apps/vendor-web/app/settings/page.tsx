@@ -2,13 +2,16 @@
 
 export const dynamic = 'force-dynamic';
 
-import { VendorSettingsPage } from '@/components/vendor/VendorSettingsPage';
+import { VendorSettingsScreen } from '@/components/vendor/VendorSettingsScreen';
 import { useEffect, useState, Suspense } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 function SettingsContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [vendorId, setVendorId] = useState<string | null>(null);
+  const tabParam = searchParams?.get('tab');
+  const initialTab = tabParam === 'bank' ? 'payment' : undefined;
 
   useEffect(() => {
     const storedVendorId = localStorage.getItem('vendorId');
@@ -34,7 +37,15 @@ function SettingsContent() {
     );
   }
 
-  return <VendorSettingsPage vendorId={vendorId} onBack={() => router.back()} />;
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <VendorSettingsScreen
+        vendorId={vendorId}
+        onBack={() => router.back()}
+        initialTab={initialTab}
+      />
+    </div>
+  );
 }
 
 export default function SettingsPage() {

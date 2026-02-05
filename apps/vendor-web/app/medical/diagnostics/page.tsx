@@ -21,7 +21,7 @@ import {
   Plus, 
   Search, 
   Clock,
-  DollarSign,
+  IndianRupee,
   TestTube,
   Beaker,
   FileText,

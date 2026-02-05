@@ -22,6 +22,8 @@
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
+import { resolveVendorById } from './vendor-profile';
+import { resolveVendorId } from '../utils/vendor-resolve';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
@@ -373,7 +375,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    */
   app.get("/vendor/:vendorId/ambulance/vehicles", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const vendorId = await resolveVendorId(c.req.param('vendorId'));
       
       // Check if vendor has ambulance capability
       const hasAmbulanceCapability = await checkVendorCapability(vendorId, 'ambulance');
@@ -400,7 +402,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    */
   app.post("/vendor/:vendorId/ambulance/vehicles", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const vendorId = await resolveVendorId(c.req.param('vendorId'));
       
       // Check if vendor has ambulance capability
       const hasAmbulanceCapability = await checkVendorCapability(vendorId, 'ambulance');
@@ -436,7 +438,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    */
   app.put("/vendor/:vendorId/ambulance/vehicles/:vehicleId", async (c) => {
     try {
-      const { vendorId, vehicleId } = c.req.param();
+      const p = c.req.param();
+      const vendorId = await resolveVendorId(p.vendorId);
+      const vehicleId = p.vehicleId;
       
       // Check if vendor has ambulance capability
       const hasAmbulanceCapability = await checkVendorCapability(vendorId, 'ambulance');
@@ -482,7 +486,10 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    */
   app.get("/vendor/:vendorId/diagnostics/tests", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const vendorId = await resolveVendorId(c.req.param('vendorId'));
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) return c.json({ error: 'Vendor not found' }, 404);
+      const actualVendorId = vendor.id;
       const publishedOnly = c.req.query('publishedOnly') === 'true';
 
       // Check if vendor has diagnostics capability (include diagnostic_lab for vet clinics; 'diagnostic lab' with space for admin-stored display name)
@@ -495,7 +502,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         return c.json({ error: 'Vendor does not have diagnostics capability' }, 403);
       }
 
-      const filter: Record<string, any> = { vendor_id: vendorId };
+      // ✅ FIX: Use actualVendorId (resolved vendors.id) - POST saves with actualVendorId, so GET must query same.
+      // Raw vendorId can be vendor_identity.id for old vendors; diagnostic_tests.vendor_id = vendors.id.
+      const filter: Record<string, any> = { vendor_id: actualVendorId };
       if (publishedOnly) {
         filter.is_available = true;
       }
@@ -643,6 +652,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   app.post("/vendor/:vendorId/diagnostics/tests", async (c) => {
     try {
       const { vendorId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) return c.json({ error: 'Vendor not found' }, 404);
+      const actualVendorId = vendor.id;
 
       const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostic_results') ||
                                        await checkVendorCapability(vendorId, 'diagnostics') ||
@@ -663,7 +675,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           ? (testData.otherCategoryName || testData.other_category_name)
           : (testData.category || testData.test_category);
         const test = await insert('diagnostic_tests', {
-          vendor_id: vendorId,
+          vendor_id: actualVendorId,
           test_name: testData.testName || testData.test_name || testData.name,
           test_code: testData.testCode || testData.test_code,
           category: categoryVal,
@@ -697,7 +709,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               ? (testData.otherCategoryName || testData.other_category_name)
               : (testData.category || testData.test_category);
             const testCore = await insert('diagnostic_tests', {
-              vendor_id: vendorId,
+              vendor_id: actualVendorId,
               test_name: testData.testName || testData.test_name || testData.name,
               test_category: categoryVal,
               description: testData.description,
@@ -722,7 +734,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
                 ? (testData.otherCategoryName || testData.other_category_name)
                 : (testData.category || testData.test_category);
               const testMin = await insert('diagnostic_tests', {
-                vendor_id: vendorId,
+                vendor_id: actualVendorId,
                 test_name: testData.testName || testData.test_name || testData.name,
                 test_category: catVal,
                 price: testData.price ?? 0,
@@ -752,6 +764,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   app.put("/vendor/:vendorId/diagnostics/tests/:testId", async (c) => {
     try {
       const { vendorId, testId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) return c.json({ error: 'Vendor not found' }, 404);
+      const actualVendorId = vendor.id;
       
       // Check if vendor has diagnostics capability (try multiple capability names)
       const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostic_results') ||
@@ -830,12 +845,12 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       try {
         const updateFields = { ...coreUpdateFields, ...extendedUpdateFields };
         const updated = await update('diagnostic_tests',
-          { id: testId },
+          { id: testId, vendor_id: actualVendorId },
           updateFields
         );
         
         if (updated.length === 0) {
-          return c.json({ error: 'Test not found' }, 404);
+          return c.json({ error: 'Test not found or access denied' }, 404);
         }
         
         return c.json({ success: true, test: updated[0], message: 'Test updated successfully' });
@@ -845,12 +860,12 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           console.warn('⚠️ Extended columns not found, retrying with core columns only. Run migration 503 to add missing columns.');
           
           const updatedCore = await update('diagnostic_tests',
-            { id: testId },
+            { id: testId, vendor_id: actualVendorId },
             coreUpdateFields
           );
           
           if (updatedCore.length === 0) {
-            return c.json({ error: 'Test not found' }, 404);
+            return c.json({ error: 'Test not found or access denied' }, 404);
           }
           
           return c.json({ 
@@ -1009,7 +1024,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    */
   app.get("/vendor/:vendorId/pharmacy/medicines", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const vendorId = await resolveVendorId(c.req.param('vendorId'));
       
       // Handle test IDs - return empty medicines
       if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
@@ -1054,7 +1069,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    */
   app.post("/vendor/:vendorId/pharmacy/medicines", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const vendorId = await resolveVendorId(c.req.param('vendorId'));
       
       // Check if vendor has pharmacy capability
       const hasPharmacyCapability = await checkVendorCapability(vendorId, 'pharmacy');
@@ -1096,7 +1111,8 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    */
   app.get("/vendor/:vendorId/nutritionist/meal-plans", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param('vendorId');
+      const vendorId = await resolveVendorId(paramVendorId);
       
       // Check if vendor has meal_plans capability
       const hasMealPlansCapability = await checkVendorCapability(vendorId, 'meal_plans');
@@ -1104,12 +1120,21 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         return c.json({ error: 'Vendor does not have meal plans capability' }, 403);
       }
       
-      const mealPlans = await select('meal_plans',
+      const rows = await select('meal_plans',
         { vendor_id: vendorId },
         { orderBy: 'created_at', orderDirection: 'DESC' }
       );
-      
-      return c.json({ success: true, mealPlans, total: mealPlans.length });
+      const mealPlans = (rows || []).map((r: any) => ({
+        ...r,
+        name: r.plan_name || r.name,
+        pet_types: (() => {
+          try {
+            const d = typeof r.dietary_requirements === 'string' ? JSON.parse(r.dietary_requirements) : r.dietary_requirements;
+            return d?.pet_types || d?.petTypes || ['Dog', 'Cat'];
+          } catch { return ['Dog', 'Cat']; }
+        })(),
+      }));
+      return c.json({ success: true, mealPlans, plans: mealPlans, total: mealPlans.length });
     } catch (error: any) {
       console.error('Error fetching meal plans:', error);
       return c.json({ error: error.message }, 500);
@@ -1120,10 +1145,19 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    * POST /vendor/:vendorId/nutritionist/meal-plans
    * Create a new meal plan
    * Requires 'meal_plans' capability
+   * Resolves vendorId to fix meal_plans_vendor_id_fkey FK violation
    */
   app.post("/vendor/:vendorId/nutritionist/meal-plans", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param('vendorId');
+      const vendorId = await resolveVendorId(paramVendorId);
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({
+          error: 'Vendor not found',
+          hint: 'The vendor ID may be invalid. Please ensure you are logged in with a valid vendor account.',
+        }, 404);
+      }
       
       // Check if vendor has meal_plans capability
       const hasMealPlansCapability = await checkVendorCapability(vendorId, 'meal_plans');
@@ -1132,19 +1166,104 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       }
       
       const mealPlanData = await c.req.json();
+      const planName = mealPlanData.planName || mealPlanData.plan_name || mealPlanData.name || 'Meal Plan';
+      const durationDays = mealPlanData.duration_days ?? mealPlanData.durationDays ?? 7;
+      const price = mealPlanData.price ?? mealPlanData.pricePerWeek ?? 0;
       
       const mealPlan = await insert('meal_plans', {
         vendor_id: vendorId,
-        plan_name: mealPlanData.planName || mealPlanData.plan_name || mealPlanData.name,
-        description: mealPlanData.description,
-        meals: mealPlanData.meals || [],
-        nutritional_goals: mealPlanData.nutritionalGoals || mealPlanData.nutritional_goals || {},
+        plan_name: planName,
+        description: mealPlanData.description || null,
+        duration_days: durationDays,
+        price,
+        meals_per_day: mealPlanData.meals_per_day ?? mealPlanData.mealsPerDay ?? 2,
+        dietary_requirements: JSON.stringify({
+          pet_types: mealPlanData.pet_types || mealPlanData.petTypes || ['Dog', 'Cat'],
+          meals: mealPlanData.meals || [],
+          nutritional_goals: mealPlanData.nutritionalGoals || mealPlanData.nutritional_goals || {},
+        }),
         is_active: mealPlanData.isActive !== false,
       });
       
       return c.json({ success: true, mealPlan: mealPlan[0], message: 'Meal plan created successfully' });
     } catch (error: any) {
       console.error('Error creating meal plan:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/nutritionist/meal-plans/:planId
+   * Update a meal plan
+   */
+  app.put("/vendor/:vendorId/nutritionist/meal-plans/:planId", async (c) => {
+    try {
+      const paramVendorId = c.req.param('vendorId');
+      const vendorId = await resolveVendorId(paramVendorId);
+      const { planId } = c.req.param();
+      const mealPlanData = await c.req.json();
+      
+      const check = await query(
+        `SELECT id FROM meal_plans WHERE id = $1 AND vendor_id = $2`,
+        [planId, vendorId]
+      );
+      if (!check.rows?.length) {
+        return c.json({ error: 'Meal plan not found' }, 404);
+      }
+      
+      const planName = mealPlanData.planName ?? mealPlanData.plan_name ?? mealPlanData.name;
+      const durationDays = mealPlanData.duration_days ?? mealPlanData.durationDays;
+      const price = mealPlanData.price;
+      const mealsPerDay = mealPlanData.meals_per_day ?? mealPlanData.mealsPerDay;
+      const description = mealPlanData.description;
+      const isActive = mealPlanData.isActive;
+      const petTypes = mealPlanData.pet_types ?? mealPlanData.petTypes;
+      
+      const updates: string[] = [];
+      const params: any[] = [];
+      let idx = 1;
+      if (planName != null) { updates.push(`plan_name = $${idx}`); params.push(planName); idx++; }
+      if (description != null) { updates.push(`description = $${idx}`); params.push(description); idx++; }
+      if (durationDays != null) { updates.push(`duration_days = $${idx}`); params.push(durationDays); idx++; }
+      if (price != null) { updates.push(`price = $${idx}`); params.push(price); idx++; }
+      if (mealsPerDay != null) { updates.push(`meals_per_day = $${idx}`); params.push(mealsPerDay); idx++; }
+      if (isActive !== undefined) { updates.push(`is_active = $${idx}`); params.push(isActive); idx++; }
+      if (petTypes != null) {
+        updates.push(`dietary_requirements = $${idx}::jsonb`);
+        params.push(JSON.stringify({ pet_types: petTypes }));
+        idx++;
+      }
+      if (updates.length === 0) {
+        return c.json({ success: true, message: 'No changes' });
+      }
+      params.push(planId, vendorId);
+      await query(
+        `UPDATE meal_plans SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${idx} AND vendor_id = $${idx + 1}`,
+        params
+      );
+      return c.json({ success: true, message: 'Meal plan updated' });
+    } catch (error: any) {
+      console.error('Error updating meal plan:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/:vendorId/nutritionist/meal-plans/:planId
+   * Delete a meal plan
+   */
+  app.delete("/vendor/:vendorId/nutritionist/meal-plans/:planId", async (c) => {
+    try {
+      const paramVendorId = c.req.param('vendorId');
+      const vendorId = await resolveVendorId(paramVendorId);
+      const { planId } = c.req.param();
+      const del = await query(`DELETE FROM meal_plans WHERE id = $1 AND vendor_id = $2 RETURNING id`, [planId, vendorId]);
+      if (!del.rows?.length) {
+        return c.json({ error: 'Meal plan not found' }, 404);
+      }
+      return c.json({ success: true, message: 'Meal plan deleted' });
+    } catch (error: any) {
+      console.error('Error deleting meal plan:', error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -1410,10 +1529,12 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * GET /vendor/:vendorId/meal-products
    * Get meal products for a nutritionist vendor (merged from products + meal_plans for consistent list)
+   * Resolves vendorId (identity id → vendors id) for correct vendor lookup
    */
   app.get("/vendor/:vendorId/meal-products", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param('vendorId');
+      const vendorId = await resolveVendorId(paramVendorId);
       const list: any[] = [];
 
       // 1) Products table (meal_plan / nutrition / food); fallback if category column missing
@@ -1518,10 +1639,19 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * POST /vendor/:vendorId/meal-products
    * Create a meal product for a nutritionist vendor (products or meal_plans; metadata optional)
+   * Resolves vendorId (identity id → vendors id) to fix meal_plans_vendor_id_fkey FK violation
    */
   app.post("/vendor/:vendorId/meal-products", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const paramVendorId = c.req.param('vendorId');
+      const vendorId = await resolveVendorId(paramVendorId);
+      const vendors = await select('vendors', { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({
+          error: 'Vendor not found',
+          hint: 'The vendor ID may be invalid or the vendor record does not exist. Please ensure you are logged in with a valid vendor account.',
+        }, 404);
+      }
       const data = await c.req.json();
       const dietaryPayload = {
         petTypes: data.petTypes || ['Dog', 'Cat'],
@@ -1590,7 +1720,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    */
   app.put("/vendor/:vendorId/meal-products/:productId", async (c) => {
     try {
-      const { vendorId, productId } = c.req.param();
+      const paramVendorId = c.req.param('vendorId');
+      const vendorId = await resolveVendorId(paramVendorId);
+      const { productId } = c.req.param();
       const data = await c.req.json();
       const meta = data.metadata || {};
       const dietaryPayload = {
@@ -1679,7 +1811,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    */
   app.delete("/vendor/:vendorId/meal-products/:productId", async (c) => {
     try {
-      const { vendorId, productId } = c.req.param();
+      const paramVendorId = c.req.param('vendorId');
+      const vendorId = await resolveVendorId(paramVendorId);
+      const { productId } = c.req.param();
       let del = await query(`DELETE FROM products WHERE id = $1 AND vendor_id = $2 RETURNING id`, [productId, vendorId]);
       if (del.rows?.length === 0) {
         del = await query(`DELETE FROM meal_plans WHERE id = $1 AND vendor_id = $2 RETURNING id`, [productId, vendorId]);

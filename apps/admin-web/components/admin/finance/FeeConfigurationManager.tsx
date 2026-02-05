@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  DollarSign, Save, Loader2, RefreshCw, Info, 
+  IndianRupee, Save, Loader2, RefreshCw, Info, 
   Percent, CreditCard, Truck, Package, Settings,
   AlertCircle, CheckCircle2, ChevronDown, ChevronUp
 } from 'lucide-react';
@@ -169,7 +169,7 @@ export function FeeConfigurationManager() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-green-100 rounded-xl">
-            <DollarSign className="w-6 h-6 text-green-600" />
+            <IndianRupee className="w-6 h-6 text-green-600" />
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Fee Configuration</h1>

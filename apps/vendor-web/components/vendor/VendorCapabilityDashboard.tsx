@@ -3088,7 +3088,7 @@ function SettingsSection({ vendorId }: { vendorId: string }) {
         </div>
       </div>
       <button 
-        onClick={() => router.push('/operations/settings')}
+        onClick={() => router.push('/settings')}
         className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
       >
         Open Settings

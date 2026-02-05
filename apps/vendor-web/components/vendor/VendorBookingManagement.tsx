@@ -522,6 +522,14 @@ export function VendorBookingManagement({
       // Extract bank account info (bankDetails from GET /vendor/:id/bank-details)
       const bankAccount = bankData?.bankDetails || bankData?.bankAccount || bankData?.bank || bankData?.data;
       
+      const policy = policyData?.policy ?? policyData;
+      const payoutDays = policy?.holdPeriodDays ?? policy?.payoutPeriodDays ?? 7;
+      const payoutScheduleText =
+        policy?.description ||
+        policyData?.schedule ||
+        policyData?.payoutSchedule ||
+        `Earnings are held for ${payoutDays} days (per your tier) before becoming eligible for settlement. Minimum payout and schedule are set by Finance.`;
+
       setPayoutsData({
         availableForPayout: summary.availableForPayout || summary.available || summary.pendingAmount || 0,
         pending: summary.pending || summary.holdAmount || summary.onHold || 0,
@@ -533,7 +541,7 @@ export function VendorBookingManagement({
           verified: bankAccount.verified || bankAccount.isVerified || false,
         } : null,
         payoutHistory,
-        payoutSchedule: policyData?.schedule || policyData?.payoutSchedule || 'Payouts are processed every Friday. Earnings from completed bookings are held for 48 hours before becoming available.',
+        payoutSchedule: payoutScheduleText,
       });
       
       console.log('✅ [VENDOR-UI] Payouts data loaded successfully');

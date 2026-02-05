@@ -197,39 +197,76 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         }
       }
 
-      // Get service details for tax calculation
+      // Get service details for tax calculation - 360 mapping: vendor_services → service_catalog → tax
       const serviceId = booking.service_id;
       let serviceHsnCode = null;
+      let serviceHsnCodeId = null;
+      let serviceTaxCategoryId = null;
       let serviceCategory = null;
       let serviceStyle = booking.service_style;
 
       if (serviceId) {
-        const services = await select('services', { id: serviceId });
-        if (services.length > 0) {
-          serviceHsnCode = services[0].hsn_code;
-          serviceCategory = services[0].category;
+        // 1. Try vendor_services (booking.service_id is often vendor_services.id)
+        const vendorSvcs = await query(
+          `SELECT vs.*, sc.tax_category_id, sc.hsn_code_id, sc.category_id, sc.category_name
+           FROM vendor_services vs
+           LEFT JOIN service_catalog sc ON sc.id = vs.service_id
+           WHERE vs.id = $1::uuid LIMIT 1`,
+          [serviceId]
+        ).catch(() => ({ rows: [] }));
+        if (vendorSvcs.rows?.length > 0) {
+          const row = vendorSvcs.rows[0];
+          serviceTaxCategoryId = row.tax_category_id;
+          serviceHsnCodeId = row.hsn_code_id;
+          serviceCategory = row.category_name || row.category_id || row.category;
+        }
+        // 2. Try service_catalog directly (booking.service_id may be catalog id)
+        if (!serviceTaxCategoryId && !serviceHsnCodeId) {
+          const catalogRows = await query(
+            `SELECT tax_category_id, hsn_code_id, category_id, category_name FROM service_catalog WHERE id = $1::uuid LIMIT 1`,
+            [serviceId]
+          ).catch(() => ({ rows: [] }));
+          if (catalogRows.rows?.length > 0) {
+            const row = catalogRows.rows[0];
+            serviceTaxCategoryId = row.tax_category_id;
+            serviceHsnCodeId = row.hsn_code_id;
+            if (!serviceCategory) serviceCategory = row.category_name || row.category_id;
+          }
+        }
+        // 3. Fallback: legacy services table
+        if (!serviceHsnCode && !serviceHsnCodeId && !serviceTaxCategoryId) {
+          const services = await select('services', { id: serviceId });
+          if (services.length > 0) {
+            serviceHsnCode = services[0].hsn_code;
+            if (!serviceCategory) serviceCategory = services[0].category;
+          }
         }
       }
 
-      // Calculate tax using tax calculation service
+      const vendorRow = booking.vendor_id ? await select('vendors', { id: booking.vendor_id }) : [];
+      const roleId = vendorRow.length > 0 ? vendorRow[0]?.role_id : undefined;
+
+      // Calculate tax using tax calculation service (GST Config → Tax Rules → 18%)
       try {
         const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
         const taxResult = await taxCalculationService.calculateTax({
           items: [{
             id: serviceId || booking.id,
             type: 'service',
-            hsnCode: serviceHsnCode,
+            hsnCode: serviceHsnCode || undefined,
+            hsnCodeId: serviceHsnCodeId || undefined,
+            taxCategoryId: serviceTaxCategoryId || undefined,
             amount: amount,
             quantity: 1,
-            category: serviceCategory,
-            serviceStyle: serviceStyle,
-            roleId: booking.vendor_id ? (await select('vendors', { id: booking.vendor_id }))[0]?.role_id : undefined,
+            category: serviceCategory || undefined,
+            serviceStyle: serviceStyle || undefined,
+            roleId,
           }],
           customerLocation,
           vendorLocation,
           vendorId: booking.vendor_id || undefined,
-          serviceType: serviceCategory,
-          category: serviceCategory,
+          serviceType: serviceCategory || undefined,
+          category: serviceCategory || undefined,
         });
 
         taxBreakdown = taxResult;

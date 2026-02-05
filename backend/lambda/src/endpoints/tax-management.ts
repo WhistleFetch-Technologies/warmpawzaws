@@ -111,6 +111,7 @@ class CreateTaxRuleHandler extends BaseHandler {
         role_id,
         service_style,
         category,
+        tax_category_id,
         min_amount,
         max_amount,
         customer_state,
@@ -144,6 +145,7 @@ class CreateTaxRuleHandler extends BaseHandler {
       if (role_id) insertData.role_id = role_id;
       if (service_style) insertData.service_style = service_style;
       if (category) insertData.category = category;
+      if (tax_category_id) insertData.tax_category_id = tax_category_id;
       if (min_amount !== undefined) insertData.min_amount = parseFloat(min_amount);
       if (max_amount !== undefined) insertData.max_amount = parseFloat(max_amount);
       if (customer_state) insertData.customer_state = customer_state;
@@ -186,6 +188,7 @@ class UpdateTaxRuleHandler extends BaseHandler {
       if (body.role_id !== undefined) updateData.role_id = body.role_id;
       if (body.service_style !== undefined) updateData.service_style = body.service_style;
       if (body.category !== undefined) updateData.category = body.category;
+      if (body.tax_category_id !== undefined) updateData.tax_category_id = body.tax_category_id || null;
       if (body.min_amount !== undefined) updateData.min_amount = parseFloat(body.min_amount);
       if (body.max_amount !== undefined) updateData.max_amount = parseFloat(body.max_amount);
       if (body.customer_state !== undefined) updateData.customer_state = body.customer_state;
@@ -273,7 +276,7 @@ class CreateHSNCodeHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       const body = this.parseBody(context.event);
-      const { hsn_code, description, gst_rate, is_active = true } = body;
+      const { hsn_code, description, gst_rate, is_active = true, category_id } = body;
 
       if (!hsn_code || gst_rate === undefined) {
         return this.error('hsn_code and gst_rate are required', 400);
@@ -283,12 +286,15 @@ class CreateHSNCodeHandler extends BaseHandler {
         return this.error('gst_rate must be between 0 and 100', 400);
       }
 
-      const result = await insert('hsn_codes', {
+      const insertPayload: any = {
         hsn_code,
         description,
         gst_rate: parseFloat(gst_rate),
         is_active,
-      });
+      };
+      if (category_id) insertPayload.category_id = category_id;
+
+      const result = await insert('hsn_codes', insertPayload);
 
       const hsnCode = Array.isArray(result) ? result[0] : result;
 
@@ -325,6 +331,7 @@ class UpdateHSNCodeHandler extends BaseHandler {
         updateData.gst_rate = parseFloat(body.gst_rate);
       }
       if (body.is_active !== undefined) updateData.is_active = body.is_active;
+      if (body.category_id !== undefined) updateData.category_id = body.category_id || null;
 
       const result = await update('hsn_codes', { id: codeId }, updateData);
       const hsnCode = Array.isArray(result) ? result[0] : result;
@@ -702,6 +709,7 @@ export function registerTaxManagementEndpoints(app: Hono) {
   /**
    * POST /tax/calculate
    * Public endpoint for calculating tax on items (for customer checkout)
+   * Uses TaxCalculationService with 360° mapping: serviceId/productId → catalog → HSN/TaxCategory
    */
   app.post('/tax/calculate', async (c) => {
     try {
@@ -715,93 +723,162 @@ export function registerTaxManagementEndpoints(app: Hono) {
       // Get customer and vendor locations if not provided
       let customerState = customerLocation?.state;
       let vendorState = vendorLocation?.state;
+      let customerLocationObj: { state: string; city?: string; pincode?: string } | undefined;
+      let vendorLocationObj: { state: string; city?: string } | undefined;
 
       if (!customerState && customerId) {
-        const { select } = await import('../database/rds-connection');
         const customers = await select('customers', { id: customerId });
         if (customers.length > 0 && customers[0].address) {
           const addr = typeof customers[0].address === 'string'
             ? JSON.parse(customers[0].address)
             : customers[0].address;
           customerState = addr?.state;
+          if (addr?.state) {
+            customerLocationObj = { state: addr.state, city: addr.city, pincode: addr.pincode };
+          }
         }
+      } else if (customerLocation?.state) {
+        customerLocationObj = customerLocation;
       }
 
       if (!vendorState && vendorId) {
-        const { select } = await import('../database/rds-connection');
         const vendors = await select('vendors', { id: vendorId });
         if (vendors.length > 0 && vendors[0].address) {
           const addr = typeof vendors[0].address === 'string'
             ? JSON.parse(vendors[0].address)
             : vendors[0].address;
           vendorState = addr?.state;
+          if (addr?.state) {
+            vendorLocationObj = { state: addr.state, city: addr.city };
+          }
         }
+      } else if (vendorLocation?.state) {
+        vendorLocationObj = vendorLocation;
       }
 
-      // Determine if inter-state (IGST) or intra-state (CGST+SGST)
-      const isInterState = customerState && vendorState && customerState !== vendorState;
+      // Resolve each item: serviceId/productId → hsnCodeId, taxCategoryId
+      const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
 
-      // Default GST rate for pet services
-      const defaultRate = 18;
+      const taxItems: Array<{
+        id: string;
+        type: 'product' | 'service';
+        amount: number;
+        quantity?: number;
+        hsnCode?: string;
+        hsnCodeId?: string;
+        taxCategoryId?: string;
+        category?: string;
+        serviceStyle?: string;
+        roleId?: string;
+      }> = [];
 
-      // Calculate tax for each item
-      let totalAmount = 0;
-      let totalTax = 0;
-      let totalCGST = 0;
-      let totalSGST = 0;
-      let totalIGST = 0;
+      let vendorRoleId: string | undefined;
+      if (vendorId) {
+        const v = await select('vendors', { id: vendorId });
+        if (v.length > 0) vendorRoleId = v[0].role_id;
+      }
 
-      const itemResults = items.map((item: any) => {
-        const amount = item.amount || 0;
-        const quantity = item.quantity || 1;
-        const itemTotal = amount * quantity;
-        
-        // Get item-specific tax rate from HSN code or use default
-        const taxRate = item.taxRate || defaultRate;
-        const itemTax = (itemTotal * taxRate) / 100;
+      for (const item of items) {
+        const amount = Number(item.amount) || 0;
+        const quantity = Number(item.quantity) || 1;
+        const itemType = (item.type === 'product' ? 'product' : 'service') as 'product' | 'service';
+        let hsnCodeId: string | undefined;
+        let taxCategoryId: string | undefined;
+        let hsnCode: string | undefined;
+        let category = item.category;
 
-        totalAmount += itemTotal;
-        totalTax += itemTax;
+        const serviceId = item.serviceId;
+        const productId = item.productId;
 
-        if (isInterState) {
-          totalIGST += itemTax;
-          return {
-            id: item.id,
-            amount: itemTotal,
-            taxRate,
-            igst: itemTax,
-            cgst: 0,
-            sgst: 0,
-            totalWithTax: itemTotal + itemTax,
-          };
-        } else {
-          const halfTax = itemTax / 2;
-          totalCGST += halfTax;
-          totalSGST += halfTax;
-          return {
-            id: item.id,
-            amount: itemTotal,
-            taxRate,
-            igst: 0,
-            cgst: halfTax,
-            sgst: halfTax,
-            totalWithTax: itemTotal + itemTax,
-          };
+        if (serviceId && vendorId) {
+          // 360 mapping: vendor_services → service_catalog → tax_category_id, hsn_code_id
+          const vendorSvcs = await query(
+            `SELECT vs.*, sc.tax_category_id, sc.hsn_code_id, sc.category_id, sc.category_name
+             FROM vendor_services vs
+             LEFT JOIN service_catalog sc ON sc.id = vs.service_id
+             WHERE vs.id = $1::uuid LIMIT 1`,
+            [serviceId]
+          ).catch(() => ({ rows: [] }));
+          if (vendorSvcs.rows?.length > 0) {
+            const row = vendorSvcs.rows[0];
+            taxCategoryId = row.tax_category_id;
+            hsnCodeId = row.hsn_code_id;
+            if (!category) category = row.category_name || row.category_id || row.category;
+          }
+          if (!taxCategoryId && !hsnCodeId) {
+            const catalogRows = await query(
+              `SELECT tax_category_id, hsn_code_id, category_id, category_name FROM service_catalog WHERE id = $1::uuid LIMIT 1`,
+              [serviceId]
+            ).catch(() => ({ rows: [] }));
+            if (catalogRows.rows?.length > 0) {
+              const row = catalogRows.rows[0];
+              taxCategoryId = row.tax_category_id;
+              hsnCodeId = row.hsn_code_id;
+              if (!category) category = row.category_name || row.category_id;
+            }
+          }
+          if (!hsnCode && !hsnCodeId && !taxCategoryId) {
+            const services = await select('services', { id: serviceId }).catch(() => []);
+            if (services.length > 0) {
+              hsnCode = services[0].hsn_code;
+              if (!category) category = services[0].category;
+            }
+          }
         }
+
+        if (productId && vendorId && !hsnCodeId && !taxCategoryId) {
+          const products = await select('products', { id: productId }).catch(() => []);
+          if (products.length > 0 && products[0].hsn_code) {
+            hsnCode = products[0].hsn_code;
+          }
+        }
+
+        taxItems.push({
+          id: item.id || serviceId || productId || `item-${Math.random().toString(36).slice(2)}`,
+          type: itemType,
+          amount,
+          quantity,
+          hsnCode: hsnCode || item.hsnCode,
+          hsnCodeId,
+          taxCategoryId,
+          category,
+          serviceStyle: item.serviceStyle,
+          roleId: item.roleId || vendorRoleId,
+        });
+      }
+
+      const taxResult = await taxCalculationService.calculateTax({
+        items: taxItems,
+        customerLocation: customerLocationObj,
+        vendorLocation: vendorLocationObj,
+        vendorId,
+        serviceType: taxItems[0]?.category,
+        category: taxItems[0]?.category,
       });
+
+      const itemResults = taxResult.items.map((t) => ({
+        id: t.itemId,
+        amount: t.baseAmount,
+        taxRate: t.gstRate,
+        igst: t.igstAmount,
+        cgst: t.cgstAmount,
+        sgst: t.sgstAmount,
+        totalWithTax: t.totalAmount,
+      }));
 
       return c.json({
         success: true,
         items: itemResults,
-        totalAmount,
-        totalTax,
-        totalCGST,
-        totalSGST,
-        totalIGST,
-        grandTotal: totalAmount + totalTax,
-        isInterState,
+        totalAmount: taxResult.subtotal,
+        totalTax: taxResult.totalTax,
+        totalCGST: taxResult.totalCGST,
+        totalSGST: taxResult.totalSGST,
+        totalIGST: taxResult.totalIGST,
+        grandTotal: taxResult.grandTotal,
+        isInterState: taxResult.isInterstate,
         customerState,
         vendorState,
+        breakdown: taxResult.hsnSummary,
       });
     } catch (error: any) {
       console.error('Error calculating tax:', error);

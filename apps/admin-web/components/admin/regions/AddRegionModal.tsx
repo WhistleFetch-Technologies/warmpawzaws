@@ -194,7 +194,7 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
                       value={formData.currencySymbol}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, currencySymbol: e.target.value }))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                      placeholder="$"
+                      placeholder="₹"
                     />
                   </div>
                 </div>

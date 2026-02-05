@@ -181,33 +181,40 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
    * 2. Environment variable - fallback
    * 3. Secrets Manager - requires VPC endpoint (may timeout)
    */
-  // Cache for Google Maps API key (in-memory, per Lambda instance)
+  // Cache for Google Maps config (in-memory, per Lambda instance)
   let cachedGoogleMapsKey: string | null = null;
+  let cachedMapId: string | null | undefined = undefined; // undefined = not yet fetched
   let cacheExpiry: number = 0;
   const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+  // Default Tracker map style ID (from Google Cloud Console Map Styles - Light Tracker style)
+  const DEFAULT_MAP_STYLE_ID = '91ba2b86f2fafdb672497f7c';
+
   app.get("/config/google-maps-key", async (c) => {
     try {
-      console.log('[CONFIG] Fetching Google Maps API key...');
+      console.log('[CONFIG] Fetching Google Maps config...');
       
       // Check cache first
       if (cachedGoogleMapsKey && Date.now() < cacheExpiry) {
-        console.log('[CONFIG] Returning cached API key');
-        return c.json({ apiKey: cachedGoogleMapsKey });
+        const response: Record<string, string> = { apiKey: cachedGoogleMapsKey };
+        if (cachedMapId) response.mapId = cachedMapId;
+        return c.json(response);
       }
 
       let apiKey: string | null = null;
+      let mapId: string | null = null;
 
       // 1. Try database first (platform_settings table)
       try {
-        console.log('[CONFIG] Checking database for Google Maps API key...');
-        const settings = await select('platform_settings', { setting_key: 'google_maps_api_key' });
-        if (settings.length > 0 && settings[0].setting_value) {
-          const value = settings[0].setting_value;
+        const keySettings = await select('platform_settings', { setting_key: 'google_maps_api_key' });
+        if (keySettings.length > 0 && keySettings[0].setting_value) {
+          const value = keySettings[0].setting_value;
           apiKey = typeof value === 'string' ? value : (value as any).apiKey || (value as any).key || null;
-          if (apiKey) {
-            console.log('[CONFIG] Found API key in database');
-          }
+        }
+        const mapIdSettings = await select('platform_settings', { setting_key: 'google_maps_map_id' });
+        if (mapIdSettings.length > 0 && mapIdSettings[0].setting_value) {
+          const val = mapIdSettings[0].setting_value;
+          mapId = typeof val === 'string' ? val : (val as any)?.mapId || (val as any)?.map_id || null;
         }
       } catch (dbError) {
         console.warn('[CONFIG] Database lookup failed:', dbError);
@@ -216,49 +223,57 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       // 2. Try environment variable
       if (!apiKey) {
         apiKey = process.env.GOOGLE_MAPS_API_KEY || null;
-        if (apiKey) {
-          console.log('[CONFIG] Found API key in environment variable');
+      }
+      if (!mapId) {
+        mapId = process.env.GOOGLE_MAPS_MAP_ID || null;
+      }
+
+      // 3. Try Secrets Manager (google-maps JSON or google-maps/api-key)
+      if (!apiKey || !mapId) {
+        try {
+          const secretJson = await getSecretJson<{ apiKey?: string; api_key?: string; mapId?: string; map_id?: string }>('google-maps');
+          if (secretJson) {
+            if (!apiKey && secretJson.apiKey) apiKey = secretJson.apiKey;
+            if (!apiKey && secretJson.api_key) apiKey = secretJson.api_key;
+            if (!mapId && secretJson.mapId) mapId = secretJson.mapId;
+            if (!mapId && secretJson.map_id) mapId = secretJson.map_id;
+          }
+        } catch {
+          // ignore
+        }
+        if (!apiKey) {
+          try {
+            const keyPromise = getSecret('google-maps/api-key');
+            const timeoutPromise = new Promise<null>((_, reject) =>
+              setTimeout(() => reject(new Error('timeout')), 5000)
+            );
+            apiKey = await Promise.race([keyPromise, timeoutPromise]) as string | null;
+          } catch {
+            // ignore
+          }
         }
       }
 
-      // 3. Try Secrets Manager with short timeout (may not work without VPC endpoint)
-      if (!apiKey) {
-        try {
-          console.log('[CONFIG] Checking Secrets Manager...');
-          // Use Promise.race to add a 5-second timeout
-          const secretPromise = getSecret('google-maps/api-key');
-          const timeoutPromise = new Promise<null>((_, reject) => 
-            setTimeout(() => reject(new Error('Secrets Manager timeout')), 5000)
-          );
-          
-          apiKey = await Promise.race([secretPromise, timeoutPromise]) as string | null;
-          if (apiKey) {
-            console.log('[CONFIG] Found API key in Secrets Manager');
-          }
-        } catch (smError: any) {
-          console.warn('[CONFIG] Secrets Manager access failed (expected if no VPC endpoint):', smError.message);
-        }
+      // Use default Tracker map style when no mapId configured
+      if (!mapId) {
+        mapId = DEFAULT_MAP_STYLE_ID;
       }
 
       // Validate API key format
       if (apiKey) {
-        // Validate that it's not a project number (all digits)
         if (/^\d+$/.test(apiKey)) {
-          console.error('[CONFIG] Invalid API Key: Looks like a project number, not an API key');
           return c.json({ 
             error: 'Invalid API key: Please use a Google Maps API key (starts with AIza...), not a project number' 
           }, 500);
         }
 
-        // Cache the key
         cachedGoogleMapsKey = apiKey;
+        cachedMapId = mapId;
         cacheExpiry = Date.now() + CACHE_TTL_MS;
         
-        console.log('[CONFIG] Returning API key to client:', `${apiKey.substring(0, 10)}...`);
-        return c.json({ apiKey });
+        return c.json({ apiKey, mapId });
       }
 
-      // No API key found anywhere
       console.warn('[CONFIG] Google Maps API key not found in any source');
       return c.json({ 
         error: 'Google Maps API key not configured',
@@ -266,7 +281,7 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
       }, 404);
 
     } catch (error: any) {
-      console.error('[CONFIG] Error fetching Google Maps API key:', error);
+      console.error('[CONFIG] Error fetching Google Maps config:', error);
       return c.json({ 
         error: error.message || 'Failed to fetch Google Maps API key',
         details: error.name || 'Unknown error'

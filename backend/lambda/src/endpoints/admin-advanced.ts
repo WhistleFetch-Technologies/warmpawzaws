@@ -19,6 +19,7 @@ import { randomUUID } from 'crypto';
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, update, insert, deleteRows } from '../database/rds-connection';
+import { getRazorpayClient } from '../utils/razorpay-client';
 import { getErrorMessage, createSafeErrorResponse, ErrorStatusCode } from '../utils/error-serialization';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
@@ -1891,7 +1892,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/catalog/services', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status, applicableRoles, categoryName, subCategoryName, specializationIds, specialization_ids } = body;
+      const { name, code, description, categoryId, subCategoryId, price, duration, serviceType, status, applicableRoles, categoryName, subCategoryName, specializationIds, specialization_ids, tax_category_id, taxCategoryId, hsn_code_id, hsnCodeId } = body;
+      const taxCategoryIdVal = tax_category_id ?? taxCategoryId ?? null;
+      const hsnCodeIdVal = hsn_code_id ?? hsnCodeId ?? null;
       const specializationIdsArr = Array.isArray(specializationIds) ? specializationIds : (Array.isArray(specialization_ids) ? specialization_ids : []);
 
       if (!name || !price) {
@@ -1935,7 +1938,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       }
 
       // Create in service_catalog table
-      const newService = await insert('service_catalog', {
+      const insertPayload: Record<string, unknown> = {
         service_id: serviceId,
         service_name: name,
         display_name: name,
@@ -1954,7 +1957,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         specialization_ids: specializationIdsArr,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      });
+      };
+      if (taxCategoryIdVal) insertPayload.tax_category_id = taxCategoryIdVal;
+      if (hsnCodeIdVal) insertPayload.hsn_code_id = hsnCodeIdVal;
+
+      const newService = await insert('service_catalog', insertPayload);
 
       return c.json({
         success: true,
@@ -1991,6 +1998,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.applicableRoles !== undefined) updateData.applicable_roles = Array.isArray(body.applicableRoles) ? body.applicableRoles : [];
       if (body.service_style !== undefined) updateData.service_style = body.service_style;
       if (body.serviceStyle !== undefined) updateData.service_style = body.serviceStyle;
+      if (body.tax_category_id !== undefined) updateData.tax_category_id = body.tax_category_id || null;
+      if (body.taxCategoryId !== undefined) updateData.tax_category_id = body.taxCategoryId || null;
+      if (body.hsn_code_id !== undefined) updateData.hsn_code_id = body.hsn_code_id || null;
+      if (body.hsnCodeId !== undefined) updateData.hsn_code_id = body.hsnCodeId || null;
 
       if (updateData.applicable_roles && updateData.applicable_roles.length > 0) {
         const validation = await validateApplicableRolesAgainstActiveRoles(updateData.applicable_roles);
@@ -2454,8 +2465,52 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   // Finance Endpoints
   app.get('/admin/finance/settlements', async (c) => {
     try {
-      const settlements = await query('SELECT * FROM settlements ORDER BY created_at DESC LIMIT 50');
-      return c.json({ success: true, settlements: settlements.rows });
+      const result = await query(`
+        SELECT s.*,
+               COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
+               COALESCE(v.phone, vi.phone) as vendor_phone,
+               r.name as vendor_role,
+               COALESCE(v.category, vi.vendor_type, '') as business_type
+        FROM settlements s
+        LEFT JOIN vendors v ON s.vendor_id = v.id
+        LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
+        LEFT JOIN roles r ON v.role_id = r.id
+        ORDER BY s.created_at DESC
+        LIMIT 100
+      `);
+      const rows = result.rows || [];
+      const settlements = rows.map((s: any) => {
+        const status = s.status || s.settlement_status || 'pending';
+        const amount = parseFloat(s.vendor_amount ?? s.net_amount ?? s.total_amount ?? '0');
+        const commission = parseFloat(s.commission_amount ?? '0');
+        const periodStart = s.settlement_period_start || s.period_start || s.created_at;
+        const periodEnd = s.settlement_period_end || s.period_end || s.completed_at || s.created_at;
+        const periodStr = periodStart && periodEnd
+          ? `${new Date(periodStart).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })} – ${new Date(periodEnd).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}`
+          : (s.created_at ? new Date(s.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : '—');
+        return {
+          id: s.id,
+          vendor_id: s.vendor_id,
+          vendorName: s.vendor_name || s.business_name || 'Unknown',
+          vendor_name: s.vendor_name || s.business_name || 'Unknown',
+          vendor_role: s.vendor_role || null,
+          business_type: s.business_type || null,
+          amount,
+          commission,
+          total_amount: parseFloat(s.total_amount ?? '0'),
+          status,
+          failure_reason: s.failure_reason || s.error_message || null,
+          period: periodStr,
+          period_start: periodStart,
+          period_end: periodEnd,
+          currency: s.currency || 'INR',
+          razorpay_transfer_id: s.razorpay_transfer_id,
+          created_at: s.created_at,
+          completed_at: s.completed_at,
+          failed_at: s.failed_at,
+        };
+      });
+      return c.json({ success: true, settlements });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -2464,10 +2519,71 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/finance/settlement-schedule', async (c) => {
     try {
-      const schedule = await query('SELECT * FROM settlement_schedules ORDER BY created_at DESC');
-      return c.json({ success: true, schedule: schedule.rows });
+      const scheduleRows = await query('SELECT * FROM settlement_schedules ORDER BY created_at DESC').then((r: any) => r.rows || []);
+      // Single source of truth: settlement period comes from default tier only (read-only)
+      const defaultTier = await query(`
+        SELECT payout_period_days FROM vendor_tiers WHERE is_active = true ORDER BY is_default DESC NULLS LAST, tier_level ASC LIMIT 1
+      `).then((r: any) => r.rows?.[0]).catch(() => null);
+      const settlementPeriodDays = defaultTier?.payout_period_days != null ? Number(defaultTier.payout_period_days) : 7;
+      const stored = await query(`
+        SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:finance:settlement-schedule' LIMIT 1
+      `).then((r: any) => r.rows?.[0]?.setting_value).catch(() => null);
+      const saved = stored ? (typeof stored === 'string' ? JSON.parse(stored) : stored) : {};
+      const settings = {
+        enabled: saved.enabled !== false,
+        scheduleType: saved.scheduleType || 'weekly',
+        scheduleDay: saved.scheduleDay ?? 1,
+        scheduleTime: saved.scheduleTime || '09:00',
+        settlementPeriodDays,
+        autoProcess: saved.autoProcess !== false,
+        minPayoutAmount: saved.minPayoutAmount ?? 100,
+        timezone: saved.timezone || 'Asia/Kolkata',
+        lastProcessedAt: saved.lastProcessedAt ?? null,
+        nextProcessAt: saved.nextProcessAt ?? null,
+      };
+      return c.json({ success: true, schedule: scheduleRows, settings });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.post('/admin/finance/settlement-schedule', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const { enabled, scheduleType, scheduleDay, scheduleTime, autoProcess, minPayoutAmount, timezone } = body;
+      // Do not persist settlementPeriodDays - it is read-only from default tier (single source of truth)
+      const toStore = {
+        enabled: enabled !== false,
+        scheduleType: scheduleType || 'weekly',
+        scheduleDay: scheduleDay ?? 1,
+        scheduleTime: scheduleTime || '09:00',
+        autoProcess: autoProcess !== false,
+        minPayoutAmount: minPayoutAmount ?? 100,
+        timezone: timezone || 'Asia/Kolkata',
+      };
+      const existing = await query(`
+        SELECT id, setting_value FROM platform_settings WHERE setting_key = 'admin:finance:settlement-schedule' LIMIT 1
+      `).then((r: any) => r.rows);
+      if (existing?.length > 0) {
+        await update('platform_settings', { id: existing[0].id }, { setting_value: toStore, updated_at: new Date().toISOString() });
+      } else {
+        await insert('platform_settings', {
+          setting_key: 'admin:finance:settlement-schedule',
+          setting_value: toStore,
+          setting_type: 'object',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
+      const defaultTier = await query(`
+        SELECT payout_period_days FROM vendor_tiers WHERE is_active = true ORDER BY is_default DESC NULLS LAST, tier_level ASC LIMIT 1
+      `).then((r: any) => r.rows?.[0]).catch(() => null);
+      const settlementPeriodDays = defaultTier?.payout_period_days != null ? Number(defaultTier.payout_period_days) : 7;
+      const settings = { ...toStore, settlementPeriodDays, lastProcessedAt: null, nextProcessAt: null };
+      return c.json({ success: true, settings });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Failed to save settlement schedule', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
@@ -2475,20 +2591,33 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.get('/admin/finance/settlement-rules', async (c) => {
     try {
       // Check if settlement_rules table exists, fallback to querying from settings
-      const rules = await query('SELECT * FROM settlement_rules ORDER BY created_at DESC').catch(async () => {
-        // Fallback: check admin_settings for settlement rules
+      const rules = await query('SELECT * FROM settlement_rules ORDER BY priority ASC, created_at DESC').catch(async () => {
         try {
           const settings = await query(`
-            SELECT setting_value 
-            FROM admin_settings 
-            WHERE setting_category = 'settlement' AND setting_key = 'rules'
+            SELECT setting_value FROM admin_settings WHERE setting_category = 'settlement' AND setting_key = 'rules'
           `);
           return { rows: settings.rows.length > 0 ? JSON.parse(settings.rows[0].setting_value) : [] };
         } catch {
           return { rows: [] };
         }
       });
-      return c.json({ success: true, rules: rules.rows || [] });
+      const rows = rules.rows || [];
+      const normalized = rows.map((r: any) => {
+        const actions = typeof r.actions === 'string' ? (r.actions ? JSON.parse(r.actions) : {}) : (r.actions || {});
+        const conditions = typeof r.conditions === 'string' ? (r.conditions ? JSON.parse(r.conditions) : {}) : (r.conditions || {});
+        const settlement = actions.settlement || { periodDays: 7, minPayoutAmount: 100, autoProcess: true };
+        return {
+          id: r.id,
+          name: r.rule_name || r.name,
+          priority: r.priority ?? 1,
+          enabled: r.is_active !== false,
+          conditions,
+          settlement: { periodDays: settlement.periodDays ?? 7, minPayoutAmount: settlement.minPayoutAmount ?? 100, autoProcess: settlement.autoProcess !== false, commissionRate: settlement.commissionRate, holdPeriodDays: settlement.holdPeriodDays },
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+        };
+      });
+      return c.json({ success: true, rules: normalized });
     } catch (error: unknown) {
       console.error('Error fetching settlement rules:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to fetch settlement rules', 500);
@@ -2499,22 +2628,25 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/finance/settlement-rules', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { name, description, ruleType, conditions, actions, isActive, priority } = body;
+      const { name, description, ruleType, conditions, actions, settlement, isActive, priority } = body;
 
-      if (!name || !ruleType) {
-        return c.json({ success: false, error: 'Rule name and type are required' }, 400);
+      if (!name) {
+        return c.json({ success: false, error: 'Rule name is required' }, 400);
       }
+
+      const mergedActions = { ...(typeof actions === 'object' && actions !== null ? actions : {}), ...(settlement ? { settlement } : {}) };
+      const ruleTypeVal = ruleType || 'settlement';
 
       // Try to insert into settlement_rules table if it exists
       try {
         const newRule = await insert('settlement_rules', {
           rule_name: name,
           description: description || '',
-          rule_type: ruleType,
+          rule_type: ruleTypeVal,
           conditions: JSON.stringify(conditions || {}),
-          actions: JSON.stringify(actions || {}),
+          actions: JSON.stringify(mergedActions),
           is_active: isActive !== false,
-          priority: priority || 1,
+          priority: priority ?? 1,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
@@ -2541,11 +2673,12 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             id: `rule-${Date.now()}`,
             name,
             description,
-            ruleType,
+            ruleType: ruleTypeVal,
             conditions: conditions || {},
-            actions: actions || {},
+            actions: mergedActions,
+            settlement,
             isActive: isActive !== false,
-            priority: priority || 1,
+            priority: priority ?? 1,
             createdAt: new Date().toISOString(),
           };
 
@@ -2590,11 +2723,15 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const ruleId = c.req.param('id');
       const body = await c.req.json().catch(() => ({}));
-      const { name, description, ruleType, conditions, actions, isActive, priority } = body;
+      const { name, description, ruleType, conditions, actions, settlement, isActive, priority } = body;
 
       if (!ruleId) {
         return c.json({ success: false, error: 'Rule ID is required' }, 400);
       }
+
+      const mergedActions = settlement != null
+        ? { ...(typeof actions === 'object' && actions !== null ? actions : {}), settlement }
+        : (typeof actions === 'object' && actions !== null ? actions : undefined);
 
       try {
         const updated = await update(
@@ -2605,7 +2742,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             ...(description !== undefined && { description }),
             ...(ruleType && { rule_type: ruleType }),
             ...(conditions && { conditions: JSON.stringify(conditions) }),
-            ...(actions && { actions: JSON.stringify(actions) }),
+            ...(mergedActions && { actions: JSON.stringify(mergedActions) }),
             ...(isActive !== undefined && { is_active: isActive }),
             ...(priority !== undefined && { priority }),
             updated_at: new Date().toISOString(),
@@ -2974,8 +3111,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/finance/gst/hsn-codes', async (c) => {
     try {
-      const codes = await query('SELECT * FROM hsn_codes ORDER BY hsn_code ASC');
-      return c.json({ success: true, codes: codes.rows });
+      const codes = await query(
+        `SELECT hc.*, tc.category_name as tax_category_name 
+         FROM hsn_codes hc 
+         LEFT JOIN tax_categories tc ON hc.category_id = tc.id 
+         ORDER BY COALESCE(hc.hsn_code, hc.code) ASC`
+      );
+      return c.json({ success: true, codes: codes.rows, hsnCodes: codes.rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -2985,19 +3127,22 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/finance/gst/hsn-codes', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { code, description, gstRate, category, cgst, sgst, igst, isActive } = body;
+      const { code, description, gstRate, category, categoryId, cgst, sgst, igst, isActive } = body;
 
       if (!code || !gstRate) {
         return c.json({ success: false, error: 'HSN code and GST rate are required' }, 400);
       }
 
-      const newCode = await insert('hsn_codes', {
+      const insertPayload: Record<string, unknown> = {
         hsn_code: code,
         description: description || '',
         gst_rate: parseFloat(gstRate),
         is_active: isActive !== false,
         created_at: new Date().toISOString(),
-      });
+      };
+      if (categoryId) insertPayload.category_id = categoryId;
+
+      const newCode = await insert('hsn_codes', insertPayload);
 
       return c.json({
         success: true,
@@ -3020,6 +3165,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.description !== undefined) updateData.description = body.description;
       if (body.gstRate !== undefined) updateData.gst_rate = parseFloat(body.gstRate);
       if (body.isActive !== undefined) updateData.is_active = body.isActive;
+      if (body.categoryId !== undefined) updateData.category_id = body.categoryId || null;
 
       const updated = await update('hsn_codes', { id }, updateData);
 
@@ -3119,8 +3265,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.post('/admin/finance/process-settlements', async (c) => {
     try {
-      // Placeholder - should process settlements
-      return c.json({ success: true, message: 'Settlements processed' });
+      // Schedule Settings "Process Now" in the UI calls POST /settlements/calculate-daily directly.
+      // This endpoint is kept for backwards compatibility; respond with guidance.
+      return c.json({
+        success: true,
+        message: 'Use POST /settlements/calculate-daily to run settlement calculation (Schedule Settings → Process Now does this). Then process payouts from Payout Management.',
+        processed: 0,
+      });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -3916,14 +4067,96 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/payments/analytics', async (c) => {
     try {
-      const analytics = await query(`
-        SELECT 
-          COUNT(*) as total_payments,
-          SUM(amount) as total_amount,
-          COUNT(*) FILTER (WHERE payment_status = 'completed' OR payment_status = 'success') as successful
-        FROM payments
-      `);
-      return c.json({ success: true, analytics: analytics.rows[0] });
+      // Primary: vendor_earnings (revenue, commission, payouts from completed bookings)
+      let veResult: { rows: any[] } = { rows: [] };
+      try {
+        veResult = await query(`
+          SELECT 
+            COALESCE(SUM(total_amount), 0) as total_revenue,
+            COALESCE(SUM(commission_amount), 0) as total_commission,
+            COALESCE(SUM(amount) FILTER (WHERE status IN ('settled', 'paid_out')), 0) as vendor_payout,
+            COALESCE(SUM(amount) FILTER (WHERE status = 'pending'), 0) as pending_amount,
+            COUNT(*) FILTER (WHERE status = 'pending') as pending_count
+          FROM vendor_earnings
+        `);
+      } catch {
+        // vendor_earnings table may not exist
+      }
+      const ve = veResult.rows?.[0] || {};
+      let totalRevenue = parseFloat(ve.total_revenue ?? '0');
+      let totalCommission = parseFloat(ve.total_commission ?? '0');
+      let vendorPayout = parseFloat(ve.vendor_payout ?? '0');
+      let pendingAmount = parseFloat(ve.pending_amount ?? '0');
+      let pendingCount = parseInt(ve.pending_count ?? '0', 10);
+
+      // Fallback: payments + bookings when vendor_earnings is empty
+      if (totalRevenue === 0 && totalCommission === 0) {
+        try {
+          const payResult = await query(`
+            SELECT 
+              COALESCE(SUM(amount), 0) as total_revenue,
+              COALESCE(SUM(COALESCE(platform_fee, commission_amount)), 0) as commission,
+              COUNT(*) as cnt
+            FROM payments 
+            WHERE payment_status IN ('completed', 'success') AND created_at >= CURRENT_DATE - INTERVAL '90 days'
+          `);
+          const pr = payResult.rows?.[0];
+          if (pr && parseInt(pr.cnt ?? '0', 10) > 0) {
+            totalRevenue = parseFloat(pr.total_revenue ?? '0');
+            totalCommission = parseFloat(pr.commission ?? '0') || totalRevenue * 0.02;
+          }
+        } catch { /* ignore */ }
+        try {
+          const bookResult = await query(`
+            SELECT COALESCE(SUM(total_amount), 0) as gmv
+            FROM bookings 
+            WHERE status = 'completed' AND created_at >= CURRENT_DATE - INTERVAL '90 days'
+          `);
+          const br = bookResult.rows?.[0];
+          if (br && totalRevenue === 0) {
+            const gmv = parseFloat(br.gmv ?? '0');
+            if (gmv > 0) {
+              totalRevenue = gmv;
+              totalCommission = totalCommission || gmv * 0.02;
+            }
+          }
+        } catch { /* ignore */ }
+      }
+
+      // Enrich from settlements if available (completed payouts may be there)
+      let setResult: { rows: any[] } = { rows: [] };
+      try {
+        setResult = await query(`
+          SELECT 
+            COALESCE(SUM(COALESCE(vendor_amount, net_amount)), 0) FILTER (WHERE COALESCE(status, settlement_status) IN ('completed', 'processed')) as settled_amount,
+            COALESCE(SUM(COALESCE(vendor_amount, net_amount)), 0) FILTER (WHERE COALESCE(status, settlement_status) IN ('pending', 'processing')) as settlements_pending,
+            COUNT(*) FILTER (WHERE COALESCE(status, settlement_status) IN ('pending', 'processing')) as settlements_pending_count
+          FROM settlements
+        `);
+      } catch {
+        // settlements may use different column names
+      }
+      const setRow = setResult.rows?.[0];
+      const settledFromTable = parseFloat(setRow?.settled_amount ?? '0');
+      vendorPayout = vendorPayout > 0 ? vendorPayout : settledFromTable;
+      pendingAmount = pendingAmount || parseFloat(setRow?.settlements_pending ?? '0');
+      if (pendingCount === 0) pendingCount = parseInt(setRow?.settlements_pending_count ?? '0', 10);
+
+      return c.json({
+        success: true,
+        analytics: {
+          totalRevenue,
+          totalCommission,
+          vendorPayout,
+          pendingAmount,
+          pendingCount,
+          total_payments: 0,
+          total_amount: totalRevenue,
+          successful: 0,
+          revenueByTier: {},
+          topVendors: [],
+        },
+      });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -4198,11 +4431,84 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/payments/settlements', async (c) => {
     try {
-      // Try vendor_settlements table first, fallback to payouts table
-      const settlements = await query('SELECT * FROM vendor_settlements ORDER BY created_at DESC LIMIT 50').catch(async () => {
-        return await query('SELECT * FROM payouts ORDER BY created_at DESC LIMIT 50').catch(() => ({ rows: [] }));
-      });
-      return c.json({ success: true, settlements: settlements.rows });
+      const statusMap: Record<string, string> = {
+        pending: 'Pending',
+        processing: 'Pending',
+        completed: 'Paid',
+        failed: 'Failed',
+      };
+      const settlements: any[] = [];
+
+      // 1. From settlements table (vendor_identity via vi.vendor_id = s.vendor_id for correct name)
+      try {
+        const result = await query(`
+          SELECT s.*,
+                 COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name
+          FROM settlements s
+          LEFT JOIN vendors v ON s.vendor_id = v.id
+          LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
+          ORDER BY s.created_at DESC
+          LIMIT 100
+        `);
+        const rows = result.rows || [];
+        for (const s of rows) {
+          const rawStatus = s.status || s.settlement_status || 'pending';
+          settlements.push({
+            id: s.id,
+            vendorId: s.vendor_id,
+            vendorName: s.vendor_name || 'Unknown',
+            vendor_name: s.vendor_name || 'Unknown',
+            amount: parseFloat(s.vendor_amount ?? s.net_amount ?? s.total_amount ?? '0'),
+            commission: parseFloat(s.commission_amount ?? '0'),
+            status: statusMap[rawStatus] || 'Pending',
+            failure_reason: s.failure_reason || s.error_message || null,
+            date: s.created_at || s.completed_at,
+            source: 'settlement',
+          });
+        }
+      } catch {
+        // settlements table may not exist
+      }
+
+      // 2. From vendor_earnings: pending earnings (Due / upcoming)
+      if (settlements.length < 100) {
+        try {
+          const veResult = await query(`
+            SELECT v.id as vendor_id, v.business_name as vendor_name,
+                   SUM(ve.amount) as amount,
+                   SUM(ve.commission_amount) as commission_amount,
+                   MAX(ve.realized_at) as date
+            FROM vendor_earnings ve
+            JOIN vendors v ON ve.vendor_id = v.id
+            WHERE ve.status = 'pending'
+            GROUP BY v.id, v.business_name
+            HAVING SUM(ve.amount) > 0
+            ORDER BY MAX(ve.realized_at) DESC
+            LIMIT 50
+          `);
+          const veRows = veResult.rows || [];
+          const existingVendorIds = new Set(settlements.map((s) => String(s.vendorId)));
+          for (const row of veRows) {
+            if (existingVendorIds.has(String(row.vendor_id))) continue; // already in settlements
+            settlements.push({
+              id: `ve-${row.vendor_id}`,
+              vendorId: row.vendor_id,
+              vendorName: row.vendor_name || 'Vendor',
+              vendor_name: row.vendor_name || 'Vendor',
+              amount: parseFloat(row.amount ?? '0'),
+              commission: parseFloat(row.commission_amount ?? '0'),
+              status: 'Due',
+              failure_reason: null,
+              date: row.date,
+              source: 'vendor_earnings',
+            });
+          }
+        } catch {
+          // vendor_earnings may not exist
+        }
+      }
+
+      return c.json({ success: true, settlements, data: { settlements } });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -4488,11 +4794,112 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/payouts', async (c) => {
     try {
-      const payouts = await query('SELECT * FROM payouts ORDER BY created_at DESC LIMIT 50');
-      const rows = (payouts.rows || []).map((row: Record<string, unknown>) => ({
-        ...row,
-        status: row.payout_status ?? row.status ?? 'pending',
-      }));
+      const payouts = await query(`
+        SELECT p.*,
+               COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
+               COALESCE(v.phone, vi.phone) as vendor_phone,
+               r.name as vendor_role,
+               COALESCE(v.category, vi.vendor_type, '') as business_type,
+               to_char(p.created_at AT TIME ZONE 'UTC', 'Mon YYYY') as period
+        FROM payouts p
+        LEFT JOIN vendors v ON p.vendor_id = v.id
+        LEFT JOIN vendor_identity vi ON vi.vendor_id = p.vendor_id
+        LEFT JOIN roles r ON v.role_id = r.id
+        ORDER BY p.created_at DESC
+        LIMIT 50
+      `);
+      const rows = (payouts.rows || []).map((row: Record<string, unknown>) => {
+        const raw = row.payout_status ?? row.status ?? 'pending';
+        const status = (typeof raw === 'string' && raw.trim()) ? raw.trim().toLowerCase() : 'pending';
+        const periodVal = row.period ?? (row.created_at
+          ? new Date(row.created_at as string).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+          : null);
+        const vendorName = row.vendor_name ?? row.business_name ?? 'Vendor';
+        const vendorPhone = row.vendor_phone ?? null;
+        return {
+          ...row,
+          vendor_name: vendorName,
+          vendorName,
+          vendor_phone: vendorPhone,
+          vendorPhone,
+          vendor_role: row.vendor_role ?? null,
+          business_type: row.business_type ?? null,
+          period: periodVal ?? '—',
+          status,
+          payout_status: status,
+          source: 'payout',
+        };
+      });
+
+      // Connect pending/processing settlements so Payout Management shows them (support both settlement_status and status column names)
+      try {
+        let pending: { rows: any[] };
+        try {
+          pending = await query(`
+            SELECT s.id, s.vendor_id, s.total_amount, s.commission_amount, s.net_amount,
+                   s.settlement_status, s.created_at,
+                   COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
+                   COALESCE(v.phone, vi.phone) as vendor_phone,
+                   r.name as vendor_role,
+                   COALESCE(v.category, vi.vendor_type, '') as business_type
+            FROM settlements s
+            LEFT JOIN vendors v ON s.vendor_id = v.id
+            LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
+            LEFT JOIN roles r ON v.role_id = r.id
+            WHERE s.settlement_status IN ('pending', 'processing')
+            ORDER BY s.created_at DESC
+            LIMIT 50
+          `);
+        } catch {
+          pending = await query(`
+            SELECT s.id, s.vendor_id, s.total_amount, s.commission_amount, s.net_amount,
+                   s.status as settlement_status, s.created_at,
+                   COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
+                   COALESCE(v.phone, vi.phone) as vendor_phone,
+                   r.name as vendor_role,
+                   COALESCE(v.category, vi.vendor_type, '') as business_type
+            FROM settlements s
+            LEFT JOIN vendors v ON s.vendor_id = v.id
+            LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
+            LEFT JOIN roles r ON v.role_id = r.id
+            WHERE s.status IN ('pending', 'processing')
+            ORDER BY s.created_at DESC
+            LIMIT 50
+          `);
+        }
+        const periodFmt = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : '—';
+        for (const s of pending.rows || []) {
+          const amt = parseFloat((s as any).net_amount ?? (s as any).total_amount ?? '0');
+          if (amt <= 0) continue;
+          const vendorName = (s as any).vendor_name ?? 'Vendor';
+          const rawSt = (s as any).settlement_status ?? (s as any).status ?? 'pending';
+          const st = (typeof rawSt === 'string' && rawSt.trim()) ? rawSt.trim().toLowerCase() : 'pending';
+          rows.push({
+            id: `settlement-${(s as any).id}`,
+            payout_id: null,
+            vendor_id: (s as any).vendor_id,
+            vendor_name: vendorName,
+            vendorName: vendorName,
+            vendor_phone: (s as any).vendor_phone ?? null,
+            vendorPhone: (s as any).vendor_phone ?? null,
+            vendor_role: (s as any).vendor_role ?? null,
+            business_type: (s as any).business_type ?? null,
+            amount: amt,
+            net_amount: amt,
+            netAmount: amt,
+            commission: parseFloat((s as any).commission_amount ?? '0'),
+            period: periodFmt((s as any).created_at),
+            status: st === 'processing' ? 'processing' : 'pending',
+            payout_status: st === 'processing' ? 'processing' : 'pending',
+            source: 'settlement',
+            settlement_id: (s as any).id,
+            created_at: (s as any).created_at,
+          } as any);
+        }
+      } catch {
+        // settlements table may not exist or have different schema
+      }
+
       return c.json({ success: true, payouts: rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
@@ -4502,33 +4909,234 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/payouts/stats', async (c) => {
     try {
-      const stats = await query(`
-        SELECT 
-          COUNT(*) as total_payouts,
-          COALESCE(SUM(amount), 0) as total_amount,
-          COUNT(*) FILTER (WHERE payout_status = 'pending') as pending_count,
-          COUNT(*) FILTER (WHERE payout_status = 'processing') as processing_count,
-          COUNT(*) FILTER (WHERE payout_status = 'completed') as completed_count,
-          COALESCE(SUM(amount) FILTER (WHERE payout_status = 'pending'), 0) as pending_amount,
-          COALESCE(SUM(amount) FILTER (WHERE payout_status = 'processing'), 0) as processing_amount,
-          COALESCE(SUM(amount) FILTER (WHERE payout_status = 'completed'), 0) as completed_amount
-        FROM payouts
-      `);
+      let stats: { rows: any[] };
+      try {
+        stats = await query(`
+          SELECT 
+            COUNT(*) as total_payouts,
+            COALESCE(SUM(amount), 0) as total_amount,
+            COUNT(*) FILTER (WHERE payout_status IN ('scheduled', 'pending')) as pending_count,
+            COUNT(*) FILTER (WHERE payout_status = 'processing') as processing_count,
+            COUNT(*) FILTER (WHERE payout_status = 'completed') as completed_count,
+            COALESCE(SUM(amount) FILTER (WHERE payout_status IN ('scheduled', 'pending')), 0) as pending_amount,
+            COALESCE(SUM(amount) FILTER (WHERE payout_status = 'processing'), 0) as processing_amount,
+            COALESCE(SUM(amount) FILTER (WHERE payout_status = 'completed'), 0) as completed_amount
+          FROM payouts
+        `);
+      } catch {
+        stats = await query(`
+          SELECT 
+            COUNT(*) as total_payouts,
+            COALESCE(SUM(amount), 0) as total_amount,
+            COUNT(*) FILTER (WHERE status IN ('scheduled', 'pending')) as pending_count,
+            COUNT(*) FILTER (WHERE status = 'processing') as processing_count,
+            COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
+            COALESCE(SUM(amount) FILTER (WHERE status IN ('scheduled', 'pending')), 0) as pending_amount,
+            COALESCE(SUM(amount) FILTER (WHERE status = 'processing'), 0) as processing_amount,
+            COALESCE(SUM(amount) FILTER (WHERE status = 'completed'), 0) as completed_amount
+          FROM payouts
+        `);
+      }
       const row = stats.rows[0] || {};
+      let pendingCount = parseInt(row.pending_count as string, 10) || 0;
+      let pendingAmount = parseFloat(row.pending_amount as string) || 0;
+      let processingCount = parseInt(row.processing_count as string, 10) || 0;
+      let processingAmount = parseFloat(row.processing_amount as string) || 0;
+      try {
+        let settlementStats: { rows: any[] };
+        try {
+          settlementStats = await query(`
+            SELECT 
+              COUNT(*) FILTER (WHERE settlement_status = 'pending') as pending_cnt,
+              COALESCE(SUM(net_amount) FILTER (WHERE settlement_status = 'pending'), 0) as pending_amt,
+              COUNT(*) FILTER (WHERE settlement_status = 'processing') as processing_cnt,
+              COALESCE(SUM(net_amount) FILTER (WHERE settlement_status = 'processing'), 0) as processing_amt
+            FROM settlements
+            WHERE settlement_status IN ('pending', 'processing')
+          `);
+        } catch {
+          settlementStats = await query(`
+            SELECT 
+              COUNT(*) FILTER (WHERE status = 'pending') as pending_cnt,
+              COALESCE(SUM(net_amount) FILTER (WHERE status = 'pending'), 0) as pending_amt,
+              COUNT(*) FILTER (WHERE status = 'processing') as processing_cnt,
+              COALESCE(SUM(net_amount) FILTER (WHERE status = 'processing'), 0) as processing_amt
+            FROM settlements
+            WHERE status IN ('pending', 'processing')
+          `);
+        }
+        const s = settlementStats.rows[0];
+        if (s) {
+          pendingCount += parseInt(s.pending_cnt as string, 10) || 0;
+          pendingAmount += parseFloat(s.pending_amt as string) || 0;
+          processingCount += parseInt(s.processing_cnt as string, 10) || 0;
+          processingAmount += parseFloat(s.processing_amt as string) || 0;
+        }
+      } catch {
+        // settlements table may not exist or different schema
+      }
       return c.json({
         success: true,
         stats: {
-          pendingCount: parseInt(row.pending_count as string, 10) || 0,
-          processingCount: parseInt(row.processing_count as string, 10) || 0,
+          pendingCount,
+          processingCount,
           completedCount: parseInt(row.completed_count as string, 10) || 0,
-          pendingAmount: parseFloat(row.pending_amount as string) || 0,
-          processingAmount: parseFloat(row.processing_amount as string) || 0,
+          pendingAmount,
+          processingAmount,
           completedAmount: parseFloat(row.completed_amount as string) || 0,
         },
       });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.post('/admin/payouts/:id/process', async (c) => {
+    const payoutId = c.req.param('id');
+    try {
+      if (!payoutId || !isValidUUID(payoutId)) {
+        return c.json({ success: false, error: 'Invalid payout ID' }, 400);
+      }
+      const payouts = await query(
+        `SELECT * FROM payouts WHERE id = $1 LIMIT 1`,
+        [payoutId]
+      );
+      const payout = (payouts.rows || [])[0] as any;
+      if (!payout) {
+        return c.json({ success: false, error: 'Payout not found' }, 404);
+      }
+      const status = payout.payout_status ?? payout.status ?? '';
+      const allowedForProcess = ['pending', 'scheduled', 'failed'];
+      if (!allowedForProcess.includes(status)) {
+        return c.json({ success: false, error: `Payout cannot be processed (status: ${status}). Use only for pending, scheduled, or failed (retry after fixing bank).` }, 400);
+      }
+      const vendorId = payout.vendor_id;
+      const amount = parseFloat(payout.amount ?? '0');
+      if (amount <= 0) {
+        return c.json({ success: false, error: 'Invalid payout amount' }, 400);
+      }
+      let accountNumber: string;
+      let ifscCode: string;
+      let accountHolder: string;
+      if (payout.bank_account_number && payout.ifsc_code && payout.account_holder_name) {
+        accountNumber = String(payout.bank_account_number);
+        ifscCode = String(payout.ifsc_code);
+        accountHolder = String(payout.account_holder_name);
+      } else {
+        let bankDetails: any[] = [];
+        try {
+          const schemaCheck = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as ex`);
+          if (schemaCheck.rows[0]?.ex) {
+            const acc = await query(
+              `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 AND is_verified = true ORDER BY is_primary DESC LIMIT 1`,
+              [vendorId]
+            );
+            bankDetails = (acc.rows || []).map((r: any) => ({
+              account_number: r.account_number,
+              ifsc_code: r.ifsc_code ?? r.ifsc,
+              account_holder_name: r.account_holder_name ?? r.account_holder,
+            }));
+          }
+        } catch {
+          // ignore
+        }
+        if (bankDetails.length === 0) {
+          const details = await select('vendor_bank_details', { vendor_id: vendorId }).catch(() => []);
+          bankDetails = Array.isArray(details) ? details : [];
+        }
+        if (bankDetails.length === 0) {
+          return c.json({ success: false, error: 'Vendor bank details not found. Ask vendor to add bank account.' }, 404);
+        }
+        const bank = bankDetails[0] as any;
+        accountNumber = String(bank.account_number ?? bank.accountNumber ?? '').trim();
+        ifscCode = String(bank.ifsc_code ?? bank.ifsc ?? '').trim().toUpperCase();
+        accountHolder = String(bank.account_holder_name ?? bank.account_holder ?? '').trim();
+      }
+      if (!accountNumber || !ifscCode || !accountHolder) {
+        return c.json({ success: false, error: 'Incomplete bank details (account number, IFSC, or holder name missing)' }, 400);
+      }
+      const razorpayXAccountNumber = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
+      if (!razorpayXAccountNumber) {
+        return c.json({
+          success: false,
+          error: 'RazorpayX payout source account not configured. Set RAZORPAY_X_ACCOUNT_NUMBER (your RazorpayX Current Account / Customer Identifier from x.razorpay.com → Banking).',
+        }, 503);
+      }
+      let vendorPhone = '0000000000';
+      try {
+        const v = await query(`SELECT phone FROM vendors WHERE id = $1 LIMIT 1`, [vendorId]);
+        if (v?.rows?.[0]?.phone) vendorPhone = String(v.rows[0].phone).replace(/\D/g, '').slice(-10) || vendorPhone;
+      } catch {
+        // ignore
+      }
+      let payoutResponse: { id: string };
+      const compositeBody = {
+        account_number: String(razorpayXAccountNumber).trim(),
+        amount: Math.round(amount * 100),
+        currency: 'INR',
+        mode: 'IMPS',
+        purpose: 'payout',
+        fund_account: {
+          account_type: 'bank_account',
+          bank_account: {
+            name: accountHolder,
+            ifsc: ifscCode,
+            account_number: accountNumber,
+          },
+          contact: {
+            name: accountHolder,
+            email: `vendor-${vendorId}@payout.warmpawz.com`,
+            contact: vendorPhone,
+            type: 'vendor',
+            reference_id: `vendor-${vendorId}`,
+          },
+        },
+        queue_if_low_balance: true,
+        reference_id: `PAYOUT-${payoutId}`.slice(0, 40),
+      };
+      try {
+        payoutResponse = await razorpayClient.payouts.create(compositeBody, payoutId);
+      } catch (razorpayError: any) {
+        const rawMsg = razorpayError?.message ?? razorpayError?.error?.description ?? 'Razorpay payout failed';
+        const isNotFound = /not found|404|url was not found/i.test(String(rawMsg));
+        const msg = isNotFound
+          ? 'RazorpayX Payouts API is not available for this account. Enable RazorpayX, allowlist IPs in RazorpayX Dashboard, and ensure payout mode is configured.'
+          : rawMsg;
+        console.error('[admin/payouts/process] Razorpay error:', rawMsg);
+        try {
+          await query(
+            `UPDATE payouts SET payout_status = $1, failure_reason = $2 WHERE id = $3::uuid`,
+            ['failed', msg, payoutId]
+          );
+        } catch {
+          // ignore update failure
+        }
+        const status = isNotFound ? 503 : 500;
+        return c.json({ success: false, error: msg }, status);
+      }
+      try {
+        await query(
+          `UPDATE payouts SET payout_status = $1, razorpay_payout_id = $2 WHERE id = $3::uuid`,
+          ['processing', payoutResponse.id, payoutId]
+        );
+      } catch (updateErr: any) {
+        console.error('[admin/payouts/process] Update payouts error:', updateErr?.message);
+        return c.json({
+          success: false,
+          error: 'Payout sent to Razorpay but failed to update local record. Check payout status in Razorpay dashboard.',
+        }, 500);
+      }
+      return c.json({
+        success: true,
+        message: 'Payout initiated successfully',
+        payoutId,
+        razorpayPayoutId: payoutResponse.id,
+      });
+    } catch (error: any) {
+      console.error('Error processing payout:', error);
+      const msg = error?.message ?? (typeof error === 'string' ? error : 'Failed to process payout');
+      return c.json({ success: false, error: msg }, 500);
     }
   });
 

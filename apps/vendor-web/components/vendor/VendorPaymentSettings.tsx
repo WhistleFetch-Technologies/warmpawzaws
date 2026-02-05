@@ -124,7 +124,7 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
     ifsc_code: string;
     bank_name: string;
     branch_name: string;
-  }) => {
+  }, options?: { verifyAfterSave?: boolean }) => {
     // Use formData from enhanced form if provided, otherwise use state
     const dataToSave = formData || bankData;
     
@@ -155,7 +155,23 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
       }) as any;
 
       if (response && response.success) {
-        toast.success('Bank account details saved successfully! Verification pending.');
+        if (options?.verifyAfterSave) {
+          setVerifying(true);
+          try {
+            const verifyRes = await apiClient.post(`/vendor/${vendorId}/bank-account/verify`, {}) as any;
+            if (verifyRes && verifyRes.success) {
+              toast.success('Bank account saved and verified successfully!');
+            } else {
+              toast.success('Bank account saved. Verification pending.');
+            }
+          } catch (verifyErr: any) {
+            toast.success('Bank account saved. Verification could not be completed.');
+          } finally {
+            setVerifying(false);
+          }
+        } else {
+          toast.success('Bank account details saved successfully! Verification pending.');
+        }
         await loadBankAccount();
       } else {
         throw new Error(response?.message || 'Failed to save bank account');
@@ -175,7 +191,7 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
       const response = await apiClient.post(`/vendor/${vendorId}/bank-account/verify`, {}) as any;
       
       if (response && response.success) {
-        toast.success('Bank account verification initiated. Our team will review and verify your account.');
+        toast.success('Bank account verified successfully. Name, IFSC, and account number validated.');
         await loadBankAccount();
       } else {
         throw new Error(response?.message || 'Failed to initiate verification');
@@ -334,10 +350,11 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
               <EnhancedBankAccountForm
                 initialData={bankData}
                 onSubmit={async (data) => {
-                  await handleSaveBankAccount(data);
+                  await handleSaveBankAccount(data, { verifyAfterSave: true });
                 }}
-                submitLabel={bankStatus.exists ? 'Update Bank Account' : 'Save Bank Account'}
+                submitLabel={bankStatus.exists ? 'Update & Verify' : 'Save & Verify'}
                 showVerification={true}
+                onVerifyFromSaved={handleVerifyBankAccount}
               />
             ) : (
               <div className="space-y-4">

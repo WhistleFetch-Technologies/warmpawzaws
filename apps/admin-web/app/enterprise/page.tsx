@@ -6,7 +6,7 @@ import { Card, Button } from "@warmpawz/ui";
 import {
 	Briefcase,
 	TrendingUp,
-	DollarSign,
+	IndianRupee,
 	Users,
 	Building2,
 	ArrowUp,
@@ -218,7 +218,7 @@ export default function EnterpriseRevenue() {
 								<Card className="p-6">
 									<div className="flex items-center justify-between mb-4">
 										<div className="p-2 bg-green-100 rounded-lg">
-											<DollarSign className="w-5 h-5 text-green-600" />
+											<IndianRupee className="w-5 h-5 text-green-600" />
 										</div>
 										{stats && stats.growthRate > 0 ? (
 											<div className="flex items-center text-green-600 text-sm">

@@ -8,7 +8,7 @@ import {
   X, 
   AlertCircle, 
   Clock, 
-  DollarSign, 
+  IndianRupee, 
   Package,
   FileText,
   CheckCircle,
@@ -414,9 +414,13 @@ export function VendorCustomServiceCreation({
         console.error('❌ Failed to create custom service:', data);
         toast.error(data?.error || 'Failed to create custom service');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error creating custom service:', error);
-      toast.error('Error creating custom service');
+      const message =
+        (typeof error?.originalError?.error === 'string' && error.originalError.error) ||
+        error?.message ||
+        'Error creating custom service';
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -659,7 +663,7 @@ export function VendorCustomServiceCreation({
                   <span>{service.duration} mins</span>
                 </div>
                 <div className="flex items-center gap-2 text-gray-600">
-                  <DollarSign className="w-4 h-4 text-[#FF8C42]" />
+                  <IndianRupee className="w-4 h-4 text-[#FF8C42]" />
                   <span>
                     {service.isPackage ? 'Package' : `₹${service.price}`}
                   </span>
@@ -920,7 +924,7 @@ export function VendorCustomServiceCreation({
                               {micro.commonDuration}m
                             </span>
                             <span className="flex items-center gap-1">
-                              <DollarSign className="w-3 h-3" />
+                              <IndianRupee className="w-3 h-3" />
                               {micro.priceRange ? `₹${micro.priceRange.min}-₹${micro.priceRange.max}` : 'Price not set'}
                             </span>
                           </div>

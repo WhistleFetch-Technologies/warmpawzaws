@@ -1,6 +1,6 @@
 'use client';
 
-import { X, Package, DollarSign, Clock, MapPin } from 'lucide-react';
+import { X, Package, IndianRupee, Clock, MapPin } from 'lucide-react';
 import { Button } from '@warmpawz/ui';
 import { StatusBadge } from './StatusBadge';
 
@@ -56,7 +56,7 @@ export function ServicePreviewModal({
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center gap-3 mb-0">
-                <DollarSign className="w-4 h-4 text-gray-400" />
+                <IndianRupee className="w-4 h-4 text-gray-400" />
                 <span className="text-sm text-gray-600">Price</span>
               </div>
               <p className="text-2xl font-bold text-gray-900">₹{service.price}</p>

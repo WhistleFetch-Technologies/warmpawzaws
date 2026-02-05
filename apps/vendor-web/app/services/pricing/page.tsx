@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, DollarSign, Edit2, Save, TrendingUp, Filter } from 'lucide-react';
+import { ArrowLeft, IndianRupee, Edit2, Save, TrendingUp, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -273,7 +273,7 @@ export default function PricingPage() {
         {/* Pricing Table */}
         {filteredPricing.length === 0 ? (
           <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
-            <DollarSign className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <IndianRupee className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">No services found</h3>
             <p className="text-gray-500">
               {searchQuery || filterStyle !== 'all' || filterCategory !== 'all'

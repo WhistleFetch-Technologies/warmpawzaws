@@ -25,7 +25,7 @@ import {
 import {
   TrendingUp,
   TrendingDown,
-  DollarSign,
+  IndianRupee,
   Users,
   ShoppingCart,
   Package,
@@ -48,7 +48,6 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  IndianRupee,
   AlertTriangle,
   Headphones,
 } from 'lucide-react';
@@ -237,7 +236,7 @@ export default function AnalyticsPage() {
       title: 'Total GMV',
       value: `₹${(safeKpiData.totalGMV / 1000).toFixed(0)}K`,
       change: 12.5,
-      icon: <DollarSign className="w-5 h-5" />,
+      icon: <IndianRupee className="w-5 h-5" />,
       color: 'bg-green-500',
     },
     {

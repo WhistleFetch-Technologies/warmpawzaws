@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   ArrowLeft,
   TrendingUp,
-  DollarSign,
+  IndianRupee,
   Users,
   Calendar,
   Star,
@@ -91,10 +91,27 @@ export function VendorAnalytics({ vendorId, vendorData, onBack, onClose }: Vendo
       // Load vendor analytics
       const analyticsRes = await apiClient.get<{ data?: { analytics?: any }; analytics?: any }>(`/vendor/${vendorId}/analytics?period=${period}`) as { data?: { analytics?: any }; analytics?: any };
 
-      if (analyticsRes?.data?.analytics) {
-        setAnalytics(analyticsRes.data.analytics);
-      } else if (analyticsRes?.analytics) {
-        setAnalytics(analyticsRes.analytics);
+      let raw = analyticsRes?.data?.analytics ?? analyticsRes?.analytics;
+      if (raw) {
+        if (!raw.overview && (raw.totalRevenue !== undefined || raw.totalBookings !== undefined)) {
+          raw = {
+            ...raw,
+            overview: {
+              totalEarnings: raw.totalRevenue ?? 0,
+              avgBookingValue: raw.averageBookingValue ?? 0,
+              totalBookings: raw.totalBookings ?? 0,
+              completed: raw.completed ?? 0,
+              uniqueCustomers: raw.uniqueCustomers ?? 0,
+              returningCustomers: raw.returningCustomers ?? 0,
+              avgRating: raw.totalReviews > 0 ? raw.rating : 'N/A',
+              reviewCount: raw.totalReviews ?? 0,
+              completionRate: raw.completionRate ?? 0,
+              cancellationRate: raw.cancellationRate ?? 0,
+              customerRetentionRate: raw.customerRetentionRate ?? 0,
+            },
+          };
+        }
+        setAnalytics(raw);
       }
 
       // Load staff performance (non-blocking; 404 or failure leaves list empty)
@@ -260,7 +277,7 @@ export function VendorAnalytics({ vendorId, vendorData, onBack, onClose }: Vendo
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-white rounded-xl p-4 border border-gray-200">
                 <div className="flex items-center gap-2 mb-2">
-                  <DollarSign className="w-5 h-5 text-green-600" />
+                  <IndianRupee className="w-5 h-5 text-green-600" />
                   <span className="text-xs text-gray-600">Total Earnings</span>
                 </div>
                 <p className="text-2xl text-gray-900">

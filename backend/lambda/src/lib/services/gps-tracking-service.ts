@@ -110,8 +110,8 @@ class GPSTrackingServiceImpl {
       const booking = bookings[0];
       const customerId = booking.customer_id;
 
-      // Calculate initial ETA
-      const eta = await this.calculateETA(startLocation, destinationLocation);
+      // Calculate initial ETA (skip polyline on start to avoid Lambda timeout / 503)
+      const eta = await this.calculateETA(startLocation, destinationLocation, true);
 
       // Create tracking session
       const session = await insert('gps_tracking_sessions', {
@@ -133,12 +133,16 @@ class GPSTrackingServiceImpl {
         created_at: new Date().toISOString(),
       });
 
-      // Update booking status
-      await update('bookings', { id: bookingId }, {
-        status: 'in_transit',
-        vendor_started_at: new Date().toISOString(),
-        estimated_arrival_time: new Date(Date.now() + eta.etaMinutes * 60 * 1000).toISOString(),
-      });
+      // Update booking status (non-critical; wrap to avoid 503 if columns missing)
+      try {
+        await update('bookings', { id: bookingId }, {
+          status: 'in_transit',
+          vendor_started_at: new Date().toISOString(),
+          estimated_arrival_time: new Date(Date.now() + eta.etaMinutes * 60 * 1000).toISOString(),
+        });
+      } catch (updateErr) {
+        console.warn('[GPS] Booking status update failed (non-fatal):', (updateErr as Error).message);
+      }
 
       // Get vendor name for notification
       const vendors = await select('vendors', { id: vendorId });
@@ -403,9 +407,10 @@ class GPSTrackingServiceImpl {
   /**
    * Calculate ETA using Google Maps Distance Matrix API
    * Uses GOOGLE_MAPS_API_KEY from env (set from Secrets Manager at deploy) or fetches from Secrets Manager at runtime
+   * @param skipPolyline - When true, skips Directions API call to save time (e.g. on session start)
    */
-  async calculateETA(origin: Location, destination: Location): Promise<ETAResult> {
-    const FETCH_TIMEOUT_MS = 6000; // 6s so Lambda does not timeout (503)
+  async calculateETA(origin: Location, destination: Location, skipPolyline = false): Promise<ETAResult> {
+    const FETCH_TIMEOUT_MS = 5000; // 5s to avoid Lambda timeout (503)
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -430,11 +435,12 @@ class GPSTrackingServiceImpl {
             const durationInTraffic = element.duration_in_traffic?.value || element.duration?.value || 0;
             const distance = element.distance?.value || 0;
 
-            // Get route polyline with timeout so we don't block Lambda
+            // Get route polyline only when needed (skip on start to avoid 503 timeout)
             let routePolyline: string | undefined;
+            if (!skipPolyline) {
             try {
               const polyController = new AbortController();
-              const polyTimeout = setTimeout(() => polyController.abort(), 4000);
+              const polyTimeout = setTimeout(() => polyController.abort(), 2000);
               const directionsResponse = await fetch(
                 `https://maps.googleapis.com/maps/api/directions/json?` +
                 `origin=${origin.latitude},${origin.longitude}` +
@@ -450,6 +456,7 @@ class GPSTrackingServiceImpl {
               }
             } catch (e) {
               console.warn('Could not get route polyline:', e);
+            }
             }
 
             return {

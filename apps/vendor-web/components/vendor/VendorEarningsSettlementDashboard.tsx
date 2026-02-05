@@ -11,18 +11,33 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { 
-  DollarSign, TrendingUp, Award, CreditCard, 
+  TrendingUp, Award, CreditCard, 
   CheckCircle, Clock, XCircle, Download, 
   ArrowUp, Info, Star, Zap, Crown,
   Calendar, RefreshCw, ArrowLeft, ChevronRight,
-  Wallet, PiggyBank, ArrowDownLeft, ArrowUpRight
+  Wallet, PiggyBank, ArrowDownLeft, ArrowUpRight,
+  icons
 } from 'lucide-react';
+
+const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
 import { Button } from '@/components/ui/button';
 
 interface VendorEarningsSettlementDashboardProps {
   vendorId: string;
   /** When provided (e.g. embedded in Reporting), back button calls this instead of router.push('/') */
   onBack?: () => void;
+}
+
+interface TierDefinition {
+  name: string;
+  displayName?: string;
+  commissionRate: number;
+  features: string[];
+  payoutPeriodDays?: number;
+  payoutCycleLabel?: string;
+  monthlyCost?: number;
+  yearlyCost?: number;
+  tierLevel?: number;
 }
 
 interface TierInfo {
@@ -32,7 +47,9 @@ interface TierInfo {
   features: string[];
   canUpgrade: boolean;
   nextTier?: string;
+  payoutPeriodDays?: number;
   payoutCycleLabel?: string;
+  allTiers?: TierDefinition[];
   upgradeTiers?: Array<{ name: string; displayName?: string; commissionRate: number; monthlyCost: number; yearlyCost: number; features: string[]; termsAndConditions?: string; requiresTermsAcceptance?: boolean }>;
   upgradeRequirements?: {
     upgradeCost: number;
@@ -191,11 +208,32 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
         // Check if API returned alternate shape {name, eligible, requirements, progress}
         const hasAltShape = 'eligible' in t || 'progress' in t;
         
+        // Normalize allTiers: ensure payoutCycleLabel and features/benefits per tier
+        const normalizedAllTiers: TierDefinition[] | undefined = Array.isArray(t.allTiers)
+          ? t.allTiers.map((tier: any) => {
+              const payoutDays = tier.payoutPeriodDays ?? tier.payout_period_days ?? 7;
+              return {
+                name: tier.name ?? tier.tier_name ?? '',
+                displayName: tier.displayName ?? tier.display_name ?? tier.name ?? tier.tier_name,
+                commissionRate: safeNumber(tier.commissionRate ?? tier.commission_rate, 0),
+                features: Array.isArray(tier.features) ? tier.features : (Array.isArray(tier.benefits) ? tier.benefits : []),
+                payoutPeriodDays: payoutDays,
+                payoutCycleLabel: typeof tier.payoutCycleLabel === 'string' ? tier.payoutCycleLabel : (payoutDays === 1 ? 'Daily' : payoutDays === 7 ? 'Weekly' : `Every ${payoutDays} days`),
+                monthlyCost: tier.monthlyCost ?? tier.monthly_cost,
+                yearlyCost: tier.yearlyCost ?? tier.yearly_cost,
+                tierLevel: tier.tierLevel ?? tier.tier_level,
+              };
+            })
+          : undefined;
+
+        const payoutDays = safeNumber(t.payoutPeriodDays ?? t.payout_period_days, 7);
         setTierInfo({
           current: safeString(t.current ?? t.tier_name ?? t.tierName, defaultTierInfo.current),
           name: safeString(t.name ?? t.tier_name ?? t.tierName ?? t.current ?? t.displayName, defaultTierInfo.name),
           commissionRate: safeNumber(t.commissionRate ?? t.commission_rate ?? t.commission, defaultTierInfo.commissionRate),
+          payoutPeriodDays: payoutDays,
           payoutCycleLabel: typeof t.payoutCycleLabel === 'string' ? t.payoutCycleLabel : undefined,
+          allTiers: normalizedAllTiers,
           upgradeTiers: Array.isArray(t.upgradeTiers) ? t.upgradeTiers : undefined,
           features: Array.isArray(t.features) ? t.features : 
                    (Array.isArray(t.benefits) ? t.benefits : defaultTierInfo.features),
@@ -320,8 +358,19 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
     }
   };
 
+  /** Next settlement date based on vendor's tier payout_period_days (from admin tier config) */
+  const getNextSettlementDate = (): string => {
+    const payoutDays = tierInfo?.payoutPeriodDays ?? 7;
+    const nextDate = new Date(Date.now() + payoutDays * 24 * 60 * 60 * 1000);
+    return nextDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  };
+
   const handleRequestPayout = async () => {
-    const availableAmount = analytics?.pendingAmount || 0;
+    // Align with backend: available = settlements pending + vendor_earnings pending
+    const availableAmount = Math.max(
+      analytics?.pendingAmount ?? 0,
+      earnings?.pendingSettlement ?? 0
+    );
     if (availableAmount <= 0) {
       alert('No amount available for payout');
       return;
@@ -472,6 +521,12 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
       default: return <Clock className="w-5 h-5 text-gray-600" />;
     }
   };
+
+  // Unified available-for-payout amount (settlements + vendor_earnings pending)
+  const availableForPayout = Math.max(
+    analytics?.pendingAmount ?? 0,
+    earnings?.pendingSettlement ?? 0
+  );
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -647,7 +702,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
         <div className="flex overflow-x-auto bg-white border-b border-gray-200 rounded-t-xl -mx-4 px-4">
           {[
             { id: 'overview', label: 'Overview', icon: TrendingUp },
-            { id: 'earnings', label: 'Earnings', icon: DollarSign },
+            { id: 'earnings', label: 'Earnings', icon: IndianRupee },
             { id: 'settlements', label: 'Settlements', icon: Wallet },
             { id: 'tier', label: 'Tier Benefits', icon: Crown }
           ].map((tab) => (
@@ -676,7 +731,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                 <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-3">
                   <div className="flex items-center justify-between mb-1">
                     <p className="text-[10px] text-green-600 font-medium">Total Revenue</p>
-                    <DollarSign className="w-4 h-4 text-green-500" />
+                    <IndianRupee className="w-4 h-4 text-green-500" />
                   </div>
                   <p className="text-lg font-bold text-green-700">₹{(analytics?.totalRevenue || 0).toLocaleString()}</p>
                   <p className="text-[10px] text-green-600">All time earnings</p>
@@ -696,14 +751,14 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                     <p className="text-[10px] text-orange-600 font-medium">Pending Payout</p>
                     <PiggyBank className="w-4 h-4 text-orange-500" />
                   </div>
-                  <p className="text-lg font-bold text-orange-700">₹{(analytics?.pendingAmount || 0).toLocaleString()}</p>
-                  {(analytics?.pendingAmount || 0) > 0 && (
+                  <p className="text-lg font-bold text-orange-700">₹{availableForPayout.toLocaleString()}</p>
+                  {availableForPayout > 0 && (
                     <button
                       onClick={handleRequestPayout}
                       disabled={requestingPayout}
                       className="text-orange-700 text-[10px] font-medium hover:underline"
                     >
-                      {requestingPayout ? 'Requesting...' : 'Request Payout →'}
+                      {requestingPayout ? 'Requesting...' : `Request Payout →`}
                     </button>
                   )}
                 </div>
@@ -732,7 +787,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                           <div className="flex items-center gap-2">
                             {txn.type === 'booking' ? <ArrowDownLeft className="w-3.5 h-3.5 text-green-600" /> : 
                              txn.type === 'settlement' ? <ArrowUpRight className="w-3.5 h-3.5 text-blue-600" /> :
-                             <DollarSign className="w-3.5 h-3.5 text-gray-600" />}
+                             <IndianRupee className="w-3.5 h-3.5 text-gray-600" />}
                             <div>
                               <p className="text-xs font-medium text-gray-900">{txn.description}</p>
                               <p className="text-[10px] text-gray-500">{new Date(txn.created_at).toLocaleDateString()}</p>
@@ -873,10 +928,10 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-orange-600">Pending Settlement</p>
-                    <p className="text-3xl font-bold text-orange-700">₹{(earnings?.pendingSettlement || 0).toLocaleString()}</p>
+                    <p className="text-3xl font-bold text-orange-700">₹{availableForPayout.toLocaleString()}</p>
                     <p className="text-xs text-orange-600 mt-1">Available for payout request</p>
                   </div>
-                  {(earnings?.pendingSettlement || 0) > 0 && (
+                  {availableForPayout > 0 && (
                     <Button 
                       onClick={handleRequestPayout}
                       disabled={requestingPayout}
@@ -893,7 +948,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                 <h3 className="font-semibold text-gray-900 mb-4">Transaction History</h3>
                 {(transactions ?? []).length === 0 ? (
                   <div className="text-center py-8 bg-gray-50 rounded-xl">
-                    <DollarSign className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                    <IndianRupee className="w-12 h-12 text-gray-300 mx-auto mb-2" />
                     <p className="text-gray-500">No transactions yet</p>
                   </div>
                 ) : (
@@ -946,7 +1001,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                 </div>
                 <div className="bg-yellow-50 rounded-xl p-4">
                   <p className="text-sm text-yellow-600">Pending</p>
-                  <p className="text-2xl font-bold text-yellow-700">₹{(analytics?.pendingAmount || 0).toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-yellow-700">₹{availableForPayout.toLocaleString()}</p>
                 </div>
                 <div className="bg-blue-50 rounded-xl p-4">
                   <p className="text-sm text-blue-600">Processing</p>
@@ -955,7 +1010,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                 <div className="bg-orange-50 rounded-xl p-4">
                   <p className="text-sm text-orange-600">Next Settlement</p>
                   <p className="text-lg font-bold text-orange-700">
-                    {new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                    {getNextSettlementDate()}
                   </p>
                 </div>
               </div>
@@ -1014,7 +1069,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                                 <p className="font-medium text-gray-700">₹{(settlement.grossAmount ?? settlement.gross_amount ?? settlement.amount ?? 0).toLocaleString()}</p>
                               </div>
                               <div>
-                                <p className="text-sm text-gray-500">Commission ({((settlement.commissionRate || 0.15) * 100).toFixed(0)}%)</p>
+                                <p className="text-sm text-gray-500">Commission ({typeof settlement.commissionRate === 'number' && settlement.commissionRate > 1 ? (settlement.commissionRate || 0).toFixed(0) : ((settlement.commissionRate ?? 0.15) * 100).toFixed(0)}%)</p>
                                 <p className="font-medium text-red-600">-₹{(settlement.commission_amount || 0).toLocaleString()}</p>
                               </div>
                               <div>
@@ -1068,160 +1123,149 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
             </div>
           )}
 
-          {/* TIER BENEFITS TAB */}
+          {/* TIER BENEFITS TAB - Current tier at top, then other tiers in rectangle boxes */}
           {activeTab === 'tier' && (
             <div className="space-y-6">
-              <p className="text-gray-600">Compare tier benefits and upgrade to unlock lower commission rates and premium features.</p>
+              <p className="text-gray-600 text-sm">Compare tier benefits and upgrade to unlock lower commission rates and premium features.</p>
               
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                {/* Bronze Tier */}
-                <div className={`border-2 rounded-2xl p-6 ${tierInfo?.current?.toLowerCase() === 'bronze' ? 'border-amber-500 ring-2 ring-amber-200' : 'border-gray-200'}`}>
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <Star className="w-6 h-6 text-amber-700" />
-                      <h3 className="font-bold text-gray-900">Bronze</h3>
-                    </div>
-                    {tierInfo?.current?.toLowerCase() === 'bronze' && (
-                      <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full">Current</span>
-                    )}
-                  </div>
-                  
-                  <p className="text-3xl font-bold text-gray-900 mb-1">15%</p>
-                  <p className="text-sm text-gray-600 mb-4">Commission</p>
-                  
-                  <ul className="space-y-2">
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-amber-600" /> Basic listing
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-amber-600" /> Standard support
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-amber-600" /> Weekly settlements
-                    </li>
-                  </ul>
-                </div>
+              {(() => {
+                // Single source of truth: tiers come from API (Finance → Tier Management). No hardcoded fallback.
+                const tiers = tierInfo?.allTiers && tierInfo.allTiers.length > 0
+                  ? tierInfo.allTiers
+                  : tierInfo?.name || tierInfo?.current
+                    ? [{
+                        name: tierInfo.current ?? tierInfo.name,
+                        displayName: tierInfo.name ?? tierInfo.current,
+                        commissionRate: tierInfo.commissionRate ?? 0,
+                        features: tierInfo.features ?? [],
+                        monthlyCost: 0,
+                        yearlyCost: 0,
+                        tierLevel: 1,
+                        payoutPeriodDays: tierInfo.payoutPeriodDays ?? 7,
+                        payoutCycleLabel: tierInfo.payoutCycleLabel ?? (tierInfo.payoutPeriodDays === 1 ? 'Daily' : tierInfo.payoutPeriodDays === 7 ? 'Weekly' : `Every ${tierInfo.payoutPeriodDays ?? 7} days`),
+                      }]
+                    : [];
+                const currentName = (tierInfo?.current ?? tierInfo?.name ?? '').toLowerCase();
+                const currentIdx = tiers.findIndex((t) => String(t.name).toLowerCase() === currentName);
+                const currentTier = currentIdx >= 0 ? tiers[currentIdx] : tiers[0];
+                const currentLevel = currentIdx >= 0 ? (tiers[currentIdx]?.tierLevel ?? currentIdx + 1) : 1;
+                const otherTiers = tiers.filter((_, i) => i !== currentIdx);
 
-                {/* Silver Tier */}
-                <div className={`border-2 rounded-2xl p-6 ${tierInfo?.current?.toLowerCase() === 'silver' ? 'border-gray-400 ring-2 ring-gray-200' : 'border-gray-200'}`}>
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <Zap className="w-6 h-6 text-gray-400" />
-                      <h3 className="font-bold text-gray-900">Silver</h3>
-                    </div>
-                    {tierInfo?.current?.toLowerCase() === 'silver' && (
-                      <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-full">Current</span>
-                    )}
-                  </div>
-                  
-                  <p className="text-3xl font-bold text-gray-900 mb-1">12%</p>
-                  <p className="text-sm text-gray-600 mb-4">Commission</p>
-                  
-                  <ul className="space-y-2 mb-4">
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-gray-500" /> Priority listing
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-gray-500" /> Priority support
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-gray-500" /> Bi-weekly settlements
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-gray-500" /> Analytics dashboard
-                    </li>
-                  </ul>
-                  
-                  {tierInfo?.current?.toLowerCase() === 'bronze' && (
-                    <Button onClick={handleTierUpgradeClick} className="w-full bg-gray-600 hover:bg-gray-700">
-                      Upgrade - ₹5,000
-                    </Button>
-                  )}
-                </div>
+                const formatCommission = (rate: number) =>
+                  typeof rate === 'number' && rate <= 1 ? rate * 100 : rate;
 
-                {/* Gold Tier */}
-                <div className={`border-2 rounded-2xl p-6 ${tierInfo?.current?.toLowerCase() === 'gold' ? 'border-yellow-500 ring-2 ring-yellow-200' : 'border-gray-200'}`}>
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <Award className="w-6 h-6 text-yellow-500" />
-                      <h3 className="font-bold text-gray-900">Gold</h3>
+                if (tiers.length === 0) {
+                  return (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800">
+                      <p className="font-medium">Tier information is not available.</p>
+                      <p className="text-sm mt-1">Tiers are configured in Finance → Tier Management. Please refresh the page or contact support.</p>
                     </div>
-                    {tierInfo?.current?.toLowerCase() === 'gold' && (
-                      <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded-full">Current</span>
-                    )}
-                  </div>
-                  
-                  <p className="text-3xl font-bold text-gray-900 mb-1">10%</p>
-                  <p className="text-sm text-gray-600 mb-4">Commission</p>
-                  
-                  <ul className="space-y-2 mb-4">
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-yellow-500" /> Featured listing
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-yellow-500" /> Dedicated support
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-yellow-500" /> Weekly settlements
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-yellow-500" /> Advanced analytics
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-yellow-500" /> Marketing support
-                    </li>
-                  </ul>
-                  
-                  {tierInfo?.current?.toLowerCase() === 'silver' && (
-                    <Button onClick={handleTierUpgrade} className="w-full bg-yellow-600 hover:bg-yellow-700">
-                      Upgrade - ₹10,000
-                    </Button>
-                  )}
-                </div>
+                  );
+                }
 
-                {/* Platinum Tier */}
-                <div className={`border-2 rounded-2xl p-6 ${tierInfo?.current?.toLowerCase() === 'platinum' ? 'border-purple-500 ring-2 ring-purple-200' : 'border-gray-200'}`}>
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <Crown className="w-6 h-6 text-purple-500" />
-                      <h3 className="font-bold text-gray-900">Platinum</h3>
+                return (
+                  <div className="space-y-6">
+                    {/* YOUR CURRENT TIER - Prominent card at top */}
+                    <div className="border-2 border-orange-400 bg-orange-50/50 rounded-lg p-5 shadow-sm">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="px-2 py-1 bg-orange-500 text-white text-xs font-bold rounded uppercase">Your Current Tier</span>
+                      </div>
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 flex items-center justify-center rounded-lg bg-orange-100">
+                            {getTierIcon(currentTier.name)}
+                          </div>
+                          <div>
+                            <h3 className="text-xl font-bold text-gray-900">{currentTier.displayName ?? currentTier.name}</h3>
+                            <p className="text-2xl font-bold text-orange-600">{formatCommission(currentTier.commissionRate ?? 0)}% Commission</p>
+                            <p className="text-xs text-gray-600 mt-1"><span className="font-medium text-gray-700">Payout schedule:</span> {tierInfo?.payoutCycleLabel ?? currentTier.payoutCycleLabel ?? 'Weekly'} payouts</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 pt-4 border-t border-orange-200">
+                        <p className="text-sm font-semibold text-gray-700 mb-2">Benefits</p>
+                        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                          {(currentTier.features ?? []).map((f, i) => (
+                            <li key={i} className="flex items-center gap-2 text-sm text-gray-700">
+                              <CheckCircle className="w-4 h-4 flex-shrink-0 text-green-600" />
+                              <span>{f}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     </div>
-                    {tierInfo?.current?.toLowerCase() === 'platinum' && (
-                      <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-full">Current</span>
-                    )}
+
+                    {/* OTHER TIERS - Full-width cards, text fits inside frame */}
+                    <div className="w-full min-w-0">
+                      <p className="text-sm font-semibold text-gray-700 mb-3">Other Tiers</p>
+                      <div className="grid grid-cols-1 gap-4 w-full min-w-0">
+                        {otherTiers.map((tier, idx) => {
+                          const tierLevel = tier.tierLevel ?? idx + 1;
+                          const isNextUpgrade = tierLevel === currentLevel + 1 && tierInfo?.canUpgrade;
+                          const upgradeCost = tier.monthlyCost ?? tier.yearlyCost ?? 0;
+                          const tierDisplayName = tier.displayName ?? tier.name;
+                          const payoutLabel = tier.payoutCycleLabel ?? (tier.payoutPeriodDays === 1 ? 'Daily' : tier.payoutPeriodDays === 7 ? 'Weekly' : tier.payoutPeriodDays ? `Every ${tier.payoutPeriodDays} days` : 'Weekly');
+                          const benefits = tier.features ?? [];
+
+                          return (
+                            <div
+                              key={tier.name}
+                              className="w-full min-w-0 border-2 border-gray-200 rounded-lg p-4 flex flex-col bg-white max-h-[320px] overflow-hidden"
+                            >
+                              <div className="flex items-start gap-3 mb-2 shrink-0">
+                                <div className="w-10 h-10 flex items-center justify-center rounded-lg bg-gray-100 shrink-0 flex-shrink-0">
+                                  {getTierIcon(tier.name)}
+                                </div>
+                                <div className="min-w-0 flex-1 overflow-hidden">
+                                  <h3 className="font-bold text-gray-900 text-base break-words">{tierDisplayName}</h3>
+                                  <p className="text-base font-bold text-gray-900 mt-0.5">
+                                    <span>{formatCommission(tier.commissionRate ?? 0)}%</span>
+                                    <span className="font-normal text-gray-700 ml-1">Commission</span>
+                                  </p>
+                                  <p className="text-xs text-gray-600 mt-1 break-words">
+                                    <span className="font-medium text-gray-700">Payout schedule:</span>{' '}
+                                    <span>{payoutLabel} payouts</span>
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="mt-3 pt-3 border-t border-gray-200 flex-1 min-h-0 flex flex-col overflow-hidden">
+                                <p className="text-sm font-semibold text-gray-700 mb-1.5 shrink-0">Benefits</p>
+                                <ul className="space-y-1 overflow-y-auto flex-1 min-h-0 pr-1 text-xs text-gray-700 break-words">
+                                  {benefits.map((f, i) => (
+                                    <li key={i} className="flex items-center gap-2">
+                                      <CheckCircle className="w-3.5 h-3.5 flex-shrink-0 text-gray-500" />
+                                      <span>{f}</span>
+                                    </li>
+                                  ))}
+                                  {benefits.length === 0 && (
+                                    <li className="text-gray-500 italic">No benefits configured</li>
+                                  )}
+                                </ul>
+                              </div>
+                              {isNextUpgrade && (
+                                <Button
+                                  onClick={handleTierUpgradeClick}
+                                  size="sm"
+                                  className="w-full shrink-0 mt-3 text-xs min-h-9 py-2 whitespace-normal leading-tight"
+                                >
+                                  {upgradeCost > 0 ? (
+                                    <>
+                                      <span className="block">Upgrade</span>
+                                      <span className="block font-semibold">₹{Number(upgradeCost).toLocaleString()}</span>
+                                    </>
+                                  ) : (
+                                    'Upgrade'
+                                  )}
+                                </Button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
-                  
-                  <p className="text-3xl font-bold text-gray-900 mb-1">8%</p>
-                  <p className="text-sm text-gray-600 mb-4">Commission</p>
-                  
-                  <ul className="space-y-2 mb-4">
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-purple-500" /> Premium listing
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-purple-500" /> 24/7 VIP support
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-purple-500" /> Daily settlements
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-purple-500" /> Custom analytics
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-purple-500" /> Custom branding
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-gray-700">
-                      <CheckCircle className="w-4 h-4 text-purple-500" /> API access
-                    </li>
-                  </ul>
-                  
-                  {tierInfo?.current?.toLowerCase() === 'gold' && (
-                    <Button onClick={handleTierUpgradeClick} className="w-full bg-purple-600 hover:bg-purple-700">
-                      Upgrade - ₹25,000
-                    </Button>
-                  )}
-                </div>
-              </div>
+                );
+              })()}
             </div>
           )}
         </div>

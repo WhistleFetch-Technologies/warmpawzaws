@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { 
-  Calendar, Clock, User, Phone, MapPin, DollarSign,
+  Calendar, Clock, User, Phone, MapPin, IndianRupee,
   Check, X, AlertCircle, ChevronRight, PawPrint
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -243,7 +243,7 @@ function BookingRequestCard({ booking, onAccept, onDecline }: BookingRequestCard
         )}
         
         <DetailItem
-          icon={<DollarSign className="w-4 h-4 text-gray-400" />}
+          icon={<IndianRupee className="w-4 h-4 text-gray-400" />}
           label="Amount"
           value={`₹${booking.totalAmount || booking.price}`}
         />

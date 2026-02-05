@@ -20,7 +20,7 @@ import {
   Calendar,
   MapPin,
   Users,
-  DollarSign,
+  IndianRupee,
   Clock,
   Star
 } from 'lucide-react';

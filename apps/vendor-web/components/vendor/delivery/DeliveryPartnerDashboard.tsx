@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   Navigation, Package, MapPin, Phone, Clock, CheckCircle, 
-  ArrowRight, Camera, DollarSign, TrendingUp, Loader2,
+  ArrowRight, Camera, IndianRupee, TrendingUp, Loader2,
   ChevronRight, AlertCircle, Play, Pause, Volume2
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -432,7 +432,7 @@ export function DeliveryPartnerDashboard({
         {activeTab === 'earnings' && (
           <div className="space-y-4">
             <div className="bg-white rounded-2xl shadow-sm p-6 text-center">
-              <DollarSign className="w-12 h-12 mx-auto mb-3 text-green-500" />
+              <IndianRupee className="w-12 h-12 mx-auto mb-3 text-green-500" />
               <p className="text-3xl font-bold text-gray-900">₹{earnings.totalEarnings}</p>
               <p className="text-sm text-gray-500">Today's Earnings</p>
             </div>

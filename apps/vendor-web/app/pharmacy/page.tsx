@@ -20,7 +20,7 @@ import {
   Search, 
   Package,
   AlertTriangle,
-  DollarSign,
+  IndianRupee,
   TrendingUp,
   Archive
 } from 'lucide-react';
@@ -172,7 +172,7 @@ export default function PharmacyPage() {
         </Card>
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
-            <DollarSign className="h-10 w-10 text-green-500" />
+            <IndianRupee className="h-10 w-10 text-green-500" />
             <div>
               <p className="text-sm text-muted-foreground">Inventory Value</p>
               <p className="text-2xl font-bold">₹{stats.totalValue.toLocaleString()}</p>

@@ -191,6 +191,22 @@ export function registerTierSystemEndpoints(app: Hono) {
         : (TIER_CONFIG_FALLBACK[currentTierName]?.commission ?? 0);
       const payoutDays = currentTierRow?.payout_period_days ?? 7;
 
+      // allTiers: all active tiers from vendor_tiers for Tier Benefits display (Finance & Logistics config)
+      const allTiers = dbTiers.map((t: any) => {
+        const payoutDays = t.payout_period_days ?? 7;
+        return {
+          name: t.tier_name,
+          displayName: t.display_name || t.tier_name,
+          commissionRate: parseFloat(t.commission_rate || '0'),
+          features: Array.isArray(t.features) ? t.features : (t.features ? [t.features] : []),
+          payoutPeriodDays: payoutDays,
+          payoutCycleLabel: payoutDays === 1 ? 'Daily' : payoutDays === 7 ? 'Weekly' : `Every ${payoutDays} days`,
+          monthlyCost: parseFloat(t.monthly_cost || '0'),
+          yearlyCost: parseFloat(t.yearly_cost || '0'),
+          tierLevel: t.tier_level ?? 0,
+        };
+      });
+
       return c.json({
         success: true,
         tier: {
@@ -207,6 +223,7 @@ export function registerTierSystemEndpoints(app: Hono) {
           next_tier: nextTierName,
           eligible: !!nextTierRow,
           canUpgrade: !!nextTierRow,
+          allTiers,
           upgradeTiers: upgradeTiers.map((t: any) => ({
             name: t.tier_name,
             displayName: t.display_name,

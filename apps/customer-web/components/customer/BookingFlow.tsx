@@ -362,20 +362,30 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
   const [commuteInfo, setCommuteInfo] = useState<{ time: number; distance: number; arrival: string; bufferTime?: number; totalTime?: number } | null>(null);
 
   const loadTimeSlots = async () => {
+    if (!service?.vendor_id || !selectedDate) return;
     try {
+      const serviceStyle = (service?.service_style === 'at_home' || service?.service_style === 'tele')
+        ? service.service_style
+        : 'at_center';
+      const totalDuration = Math.max(15, service?.duration ?? 30);
+      const params = new URLSearchParams({
+        date: selectedDate,
+        serviceStyle,
+        totalDuration: String(totalDuration),
+      });
       const response = await apiClient.get<any>(
-        `/vendors/${service?.vendor_id}/availability?date=${selectedDate}&service_id=${serviceId}`
+        `/customer/vendor/${service.vendor_id}/available-slots?${params}`
       );
-      if (response.slots) {
-        setTimeSlots(response.slots);
-      }
-      
+      const slots = response?.slots ?? [];
+      setTimeSlots(Array.isArray(slots) ? slots : []);
+
       // For home services, also load available staff with commute time
       if (service?.service_style === 'at_home' && selectedDate && selectedTime) {
         await loadAvailableStaff();
       }
     } catch (err) {
       console.error('Error loading time slots:', err);
+      setTimeSlots([]);
     }
   };
 

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import {
   ShoppingCart, Search, Filter, Eye, Truck, Package, Clock,
   CheckCircle, XCircle, RefreshCcw, MapPin, Phone, User,
-  FileText, Download, Calendar, DollarSign, Store
+  FileText, Download, Calendar, IndianRupee, Store
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
