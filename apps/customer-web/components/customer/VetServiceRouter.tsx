@@ -184,20 +184,22 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         }
       }
       
-      // Try 3: Direct vendors endpoint
+      // Try 3: Fallback to /customer/vendors/search (GET /customer/vendors does not exist)
       if (servicesData.length === 0) {
         try {
-          const vendorsEndpoint = `/customer/vendors?category=vet`;
+          const vendorsEndpoint = `/customer/vendors/search?roleId=veterinarian&limit=50`;
           const vendorsData = await apiClient.get<any>(vendorsEndpoint);
-          console.log('🔵 [VetServiceRouter] vendors endpoint response:', vendorsData);
+          console.log('🔵 [VetServiceRouter] vendors/search fallback response:', vendorsData);
           
           if (Array.isArray(vendorsData)) {
             servicesData = vendorsData;
           } else if (vendorsData?.vendors && Array.isArray(vendorsData.vendors)) {
             servicesData = vendorsData.vendors;
+          } else if (vendorsData?.results && Array.isArray(vendorsData.results)) {
+            servicesData = vendorsData.results;
           }
         } catch (err) {
-          console.warn('⚠️ [VetServiceRouter] vendors endpoint failed:', err);
+          console.warn('⚠️ [VetServiceRouter] vendors/search fallback failed:', err);
         }
       }
       

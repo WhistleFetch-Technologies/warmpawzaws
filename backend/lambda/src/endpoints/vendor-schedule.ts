@@ -1470,6 +1470,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         await query(`ALTER TABLE vendor_availability_v2 ADD COLUMN IF NOT EXISTS service_styles TEXT[] DEFAULT '{}'`).catch(() => {});
         await query(`ALTER TABLE vendor_availability_v2 ADD COLUMN IF NOT EXISTS location_data JSONB`).catch(() => {});
         await query(`ALTER TABLE vendor_availability_v2 ADD COLUMN IF NOT EXISTS buffer_time INTEGER DEFAULT 15`).catch(() => {});
+        await query(`ALTER TABLE vendor_availability_v2 ADD COLUMN IF NOT EXISTS lead_time_by_style JSONB`).catch(() => {});
         // max_capacity column already exists per schema check
       } catch (alterErr: any) {
         console.log('[AVAILABILITY] Column migration note:', alterErr.message);
@@ -1490,6 +1491,8 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       for (const slot of slots) {
         const serviceStyles = slot.serviceStyles || slot.service_styles || ['at_center'];
         const locationData = slot.locationData || slot.location_data || null;
+        // Lead time per service style (e.g. at_home: 45 travel, at_center: 15 prep, tele: 5 setup); replaces single buffer_time
+        const leadTimeByStyle = slot.leadTimeByStyle || slot.lead_time_by_style || null;
         let startTime = slot.timeWindowStart || slot.time_window_start || slot.startTime;
         let endTime = slot.timeWindowEnd || slot.time_window_end || slot.endTime;
         
@@ -1560,28 +1563,28 @@ export function registerVendorScheduleEndpoints(app: Hono) {
           }
           
           // Use correct column names for the vendor_availability_v2 table
-          // Table has: service_type (not service_style), is_available (not is_enabled)
-          // Also has both start_time/end_time AND time_window_start/time_window_end
+          // lead_time_by_style: per-style lead time (at_home=travel, at_center=prep, tele=setup); buffer_time deprecated
           const result = await query(
             `INSERT INTO vendor_availability_v2 (
               vendor_id, day_of_week, 
               start_time, end_time,
               time_window_start, time_window_end,
               service_styles, service_type, 
-              location_data, buffer_time, max_capacity, is_available
-            ) VALUES ($1, $2, $3::TIME, $4::TIME, $5::TIME, $6::TIME, $7, $8, $9, $10, $11, $12)
+              location_data, buffer_time, lead_time_by_style, max_capacity, is_available
+            ) VALUES ($1, $2, $3::TIME, $4::TIME, $5::TIME, $6::TIME, $7, $8, $9, $10, $11, $12, $13)
             RETURNING id`,
             [
-              finalVendorId, // ✅ FIX: Use finalVendorId instead of vendorId
+              finalVendorId,
               slot.dayOfWeek ?? slot.day_of_week,
               normalizedStartTime,
               normalizedEndTime,
-              normalizedStartTime, // Also populate time_window_start for backwards compat
-              normalizedEndTime,   // Also populate time_window_end for backwards compat
+              normalizedStartTime,
+              normalizedEndTime,
               serviceStyles,
-              serviceStyles[0] || 'at_center', // service_type for backwards compat
+              serviceStyles[0] || 'at_center',
               locationData ? JSON.stringify(locationData) : null,
-              slot.bufferTime ?? slot.buffer_time ?? 15,
+              null, // buffer_time deprecated; use lead_time_by_style per style
+              leadTimeByStyle ? JSON.stringify(leadTimeByStyle) : null,
               slot.maxCapacity ?? slot.max_capacity ?? 1,
               slot.isEnabled ?? slot.is_enabled ?? true,
             ]
@@ -1634,6 +1637,18 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       }
       const actualVendorId = vendor.id;
 
+      // Allowed service styles from role (solo vs business) for slot creation UI
+      let allowedServiceStyles: string[] = [];
+      try {
+        const roles = await select('roles', { id: vendor.role_id });
+        if (roles.length > 0) {
+          const roleConfig = roles[0].config || {};
+          const vendorType = (vendor as any).vendor_type === 'solo' ? 'solo' : 'business';
+          allowedServiceStyles = roleConfig?.serviceStyles?.[vendorType] || roleConfig?.serviceStyles?.selected || [];
+          if (!Array.isArray(allowedServiceStyles)) allowedServiceStyles = [];
+        }
+      } catch (_) { /* ignore */ }
+
       // Get availability slots (use is_available column, not is_enabled)
       const slotsResult = await query(
         `SELECT * FROM vendor_availability_v2
@@ -1675,20 +1690,27 @@ export function registerVendorScheduleEndpoints(app: Hono) {
 
       return c.json({
         success: true,
+        allowedServiceStyles: allowedServiceStyles.length > 0 ? allowedServiceStyles : ['at_center', 'at_home', 'tele'],
         availability: {
-          slots: slotsResult.rows.map((s: any) => ({
-            id: s.id,
-            dayOfWeek: s.day_of_week,
-            startTime: s.time_window_start || s.start_time,
-            endTime: s.time_window_end || s.end_time,
-            serviceStyles: s.service_styles || (s.service_type ? [s.service_type] : ['at_center']),
-            locationData: typeof s.location_data === 'string' 
-              ? JSON.parse(s.location_data) 
-              : s.location_data,
-            bufferTime: s.buffer_time || s.buffer_time_minutes || 15,
-            maxCapacity: s.max_capacity || 1,
-            isEnabled: s.is_available ?? s.is_enabled ?? true,
-          })),
+          slots: slotsResult.rows.map((s: any) => {
+            const leadTimeByStyle = s.lead_time_by_style != null
+              ? (typeof s.lead_time_by_style === 'string' ? JSON.parse(s.lead_time_by_style) : s.lead_time_by_style)
+              : null;
+            return {
+              id: s.id,
+              dayOfWeek: s.day_of_week,
+              startTime: s.time_window_start || s.start_time,
+              endTime: s.time_window_end || s.end_time,
+              serviceStyles: s.service_styles || (s.service_type ? [s.service_type] : ['at_center']),
+              locationData: typeof s.location_data === 'string'
+                ? JSON.parse(s.location_data)
+                : s.location_data,
+              leadTimeByStyle: leadTimeByStyle || undefined,
+              bufferTime: leadTimeByStyle ? undefined : (s.buffer_time || s.buffer_time_minutes || 15),
+              maxCapacity: s.max_capacity || 1,
+              isEnabled: s.is_available ?? s.is_enabled ?? true,
+            };
+          }),
           breaks: breaksResult.rows.map((b: any) => ({
             id: b.id,
             dayOfWeek: b.day_of_week,

@@ -81,7 +81,18 @@ export async function resolveVendorById(vendorId: string): Promise<any | null> {
       ).catch(() => ({ rows: [] }));
       if (viaApp.rows?.length > 0) identities = viaApp.rows;
     }
-    if (identities.length === 0) return null;
+    // Fallback: resolve staff id to vendor (customer flows may pass staff.id for at_home/tele)
+    if (identities.length === 0) {
+      const staffRows = await query(
+        `SELECT s.vendor_id FROM staff s WHERE s.id::text = $1 LIMIT 1`,
+        [trimmedId]
+      ).catch(() => ({ rows: [] }));
+      if (staffRows.rows?.length > 0 && staffRows.rows[0].vendor_id) {
+        const linked = await select('vendors', { id: staffRows.rows[0].vendor_id });
+        if (linked.length > 0) return linked[0];
+      }
+      return null;
+    }
   }
 
   const identity = identities[0];

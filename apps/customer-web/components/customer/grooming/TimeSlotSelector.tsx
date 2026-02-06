@@ -56,18 +56,30 @@ export function TimeSlotSelector({
     try {
       setLoadingSlots(true);
       setVendorOffline(false);
-      
-      const response = await apiClient.get<{ available: boolean; slots: string[] }>(
-        `/vendor/${vendorId}/available-slots?date=${date}&serviceStyle=${serviceStyle}`
-      );
-      
-      if (response.available === false) {
-        setVendorOffline(true);
+
+      // Customer available-slots: advanced schedule only (vendor_availability_v2), dynamic payload
+      const params = new URLSearchParams({
+        date,
+        serviceStyle: serviceStyle || 'at_center',
+        totalDuration: String(Math.max(15, serviceDuration || 30)),
+      });
+      const response = await apiClient.get<{
+        success?: boolean;
+        slots?: Array<{ time: string; available?: boolean; booked?: boolean; slotDuration?: number; bufferMinutes?: number; serviceStyles?: string[] } | string>;
+        availabilityMeta?: Record<string, unknown>;
+        message?: string;
+      }>(`/customer/vendor/${vendorId}/available-slots?${params}`);
+
+      if (!response?.success || !response.slots?.length) {
+        if (response?.message) setVendorOffline(true);
         setSlots([]);
         return;
       }
 
-      const normalizedSlots = (response.slots || []).map((s: string) => s.split(' - ')[0]);
+      // Normalize: slots are objects { time, available, ... } or legacy strings
+      const normalizedSlots = (response.slots || []).map((s) =>
+        typeof s === 'string' ? s.split(' - ')[0]?.trim() || s : (s as { time: string }).time || ''
+      ).filter(Boolean);
       setSlots(normalizedSlots);
     } catch (error) {
       console.error('Error loading slots:', error);

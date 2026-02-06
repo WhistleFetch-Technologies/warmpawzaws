@@ -105,14 +105,15 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         }
       }
       
-      // Try 3: vendors by category
+      // Try 3: Fallback to /customer/vendors/search (GET /customer/vendors does not exist)
       if (groomerServices.length === 0) {
         try {
-          const vendorsData = await apiClient.get<any>(`/customer/vendors?category=grooming`);
+          const vendorsData = await apiClient.get<any>(`/customer/vendors/search?roleId=pet_groomer&limit=50`);
           if (Array.isArray(vendorsData)) groomerServices = vendorsData;
           else if (vendorsData?.vendors) groomerServices = vendorsData.vendors;
+          else if (vendorsData?.results) groomerServices = vendorsData.results;
         } catch (err) {
-          console.warn('⚠️ [GroomingServiceRouter] vendors endpoint failed:', err);
+          console.warn('⚠️ [GroomingServiceRouter] vendors/search fallback failed:', err);
         }
       }
       

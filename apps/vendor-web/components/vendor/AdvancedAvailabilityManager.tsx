@@ -13,7 +13,7 @@
  * - Go Offline slider (solo providers only)
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { 
   ArrowLeft, Save, Clock, Plus, X, Copy, Calendar, 
@@ -33,6 +33,9 @@ interface AdvancedAvailabilityManagerProps {
   onBack: () => void;
 }
 
+/** Lead time (minutes) per service style: at_home = travel to customer, at_center = prep, tele = setup */
+export type LeadTimeByStyle = Partial<Record<'at_center' | 'at_home' | 'tele', number>>;
+
 interface TimeSlot {
   id?: string;
   startTime: string;
@@ -44,7 +47,10 @@ interface TimeSlot {
     lng?: number;
     placeId?: string;
   };
-  bufferTime: number;
+  /** @deprecated Use leadTimeByStyle per style instead */
+  bufferTime?: number;
+  /** Lead time (min) per service style - e.g. at_home: 45 (travel), at_center: 15, tele: 5 */
+  leadTimeByStyle?: LeadTimeByStyle;
   maxCapacity: number;
   isEnabled: boolean;
 }
@@ -76,10 +82,17 @@ interface Holiday {
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const ALL_SERVICE_STYLES = [
-  { id: 'at_center', label: 'At Center', icon: '🏥' },
-  { id: 'at_home', label: 'At Home', icon: '🏠' },
-  { id: 'tele', label: 'Tele/Video', icon: '📹' },
+  { id: 'at_center', label: 'At Center', icon: '🏥', leadLabel: 'Prep time (min)' },
+  { id: 'at_home', label: 'At Home', icon: '🏠', leadLabel: 'Travel time (min)' },
+  { id: 'tele', label: 'Tele/Video', icon: '📹', leadLabel: 'Setup time (min)' },
 ] as const;
+
+/** Default lead times per style when creating a new slot */
+const DEFAULT_LEAD_TIME_BY_STYLE: LeadTimeByStyle = {
+  at_home: 45,
+  at_center: 15,
+  tele: 5,
+};
 
 const BREAK_TYPES = [
   { id: 'lunch', label: 'Lunch Break', icon: '🍽️' },
@@ -225,8 +238,11 @@ export function AdvancedAvailabilityManager({
           styles = ['at_home'];
           console.log('[AVAILABILITY] No styles found, defaulting to at_home');
         }
-        
-        setAllowedServiceStyles(styles as any);
+        // Only update state if content changed (avoids re-triggering init effect and flicker)
+        setAllowedServiceStyles(prev => {
+          const same = prev.length === styles.length && styles.every((s, i) => prev[i] === s);
+          return same ? prev : (styles as ('at_center' | 'at_home' | 'tele')[]);
+        });
       } catch (error) {
         console.warn('Failed to load allowed service styles:', error);
         // Fallback based on role
@@ -237,7 +253,10 @@ export function AdvancedAvailabilityManager({
         } else {
           fallbackStyles = ['at_home', 'at_center', 'tele'];
         }
-        setAllowedServiceStyles(fallbackStyles as any);
+        setAllowedServiceStyles(prev => {
+          const same = prev.length === fallbackStyles.length && fallbackStyles.every((s, i) => prev[i] === s);
+          return same ? prev : (fallbackStyles as ('at_center' | 'at_home' | 'tele')[]);
+        });
       }
     };
     
@@ -261,41 +280,42 @@ export function AdvancedAvailabilityManager({
       // Load availability slots
       try {
         const availRes = await apiClient.get(`/vendor/${vendorId}/availability`) as any;
-        if (availRes?.success && availRes?.availability?.slots) {
-          const loadedSchedule: DaySchedule[] = DAYS.map((_, idx) => ({
-            dayOfWeek: idx,
-            slots: [],
-          }));
-          
-          // Group slots by day
-          availRes.availability.slots.forEach((slot: any) => {
-            const dayIdx = slot.day_of_week ?? slot.dayOfWeek;
-            if (dayIdx >= 0 && dayIdx <= 6) {
-              // Filter service styles to only include allowed ones
-              const slotStyles = slot.service_styles || slot.serviceStyles || [];
-              let filteredStyles = slotStyles.filter((s: string) => allowedServiceStyles.includes(s as any));
-              
-              // ✅ FIX: Remove at_center from existing slots if vendor is solo
-              if (isSoloVendor(vendorData)) {
-                filteredStyles = filteredStyles.filter((s: string) => s !== 'at_center');
+        if (availRes?.success) {
+          // Do NOT set allowedServiceStyles from API here — it causes a dependency loop:
+          // setAllowedServiceStyles → effect re-runs → setSchedule(empty) → load again → flicker.
+          // Allowed styles are already set by loadAllowedServiceStyles effect (vendorData / services).
+          if (availRes?.availability?.slots) {
+            const loadedSchedule: DaySchedule[] = DAYS.map((_, idx) => ({
+              dayOfWeek: idx,
+              slots: [],
+            }));
+
+            availRes.availability.slots.forEach((slot: any) => {
+              const dayIdx = slot.day_of_week ?? slot.dayOfWeek;
+              if (dayIdx >= 0 && dayIdx <= 6) {
+                const slotStyles = slot.service_styles || slot.serviceStyles || [];
+                let filteredStyles = slotStyles.filter((s: string) => allowedServiceStyles.includes(s as any));
+                if (isSoloVendor(vendorData)) {
+                  filteredStyles = filteredStyles.filter((s: string) => s !== 'at_center');
+                }
+                const defaultStyles = filteredStyles.length > 0 ? filteredStyles : getDefaultServiceStyle();
+                const leadTimeByStyle = slot.leadTimeByStyle || slot.lead_time_by_style || undefined;
+                loadedSchedule[dayIdx].slots.push({
+                  id: slot.id,
+                  startTime: slot.time_window_start || slot.startTime || '09:00',
+                  endTime: slot.time_window_end || slot.endTime || '17:00',
+                  serviceStyles: defaultStyles,
+                  locationData: slot.location_data || slot.locationData,
+                  bufferTime: leadTimeByStyle ? undefined : (slot.buffer_time ?? slot.bufferTime ?? 15),
+                  leadTimeByStyle: leadTimeByStyle || undefined,
+                  maxCapacity: slot.max_capacity ?? slot.maxCapacity ?? 1,
+                  isEnabled: slot.is_enabled ?? slot.isEnabled ?? true,
+                });
               }
-              
-              const defaultStyles = filteredStyles.length > 0 ? filteredStyles : getDefaultServiceStyle();
-              
-              loadedSchedule[dayIdx].slots.push({
-                id: slot.id,
-                startTime: slot.time_window_start || slot.startTime || '09:00',
-                endTime: slot.time_window_end || slot.endTime || '17:00',
-                serviceStyles: defaultStyles,
-                locationData: slot.location_data || slot.locationData,
-                bufferTime: slot.buffer_time ?? slot.bufferTime ?? 15,
-                maxCapacity: slot.max_capacity ?? slot.maxCapacity ?? 1,
-                isEnabled: slot.is_enabled ?? slot.isEnabled ?? true,
-              });
-            }
-          });
-          
-          setSchedule(loadedSchedule);
+            });
+
+            setSchedule(loadedSchedule);
+          }
         }
       } catch (e) {
         console.warn('Failed to load availability:', e);
@@ -344,21 +364,22 @@ export function AdvancedAvailabilityManager({
     }
   }, [vendorId, allowedServiceStyles, getDefaultServiceStyle]);
 
+  // Track vendorId so we only clear schedule when vendor changes (prevents flicker on re-run)
+  const lastVendorIdRef = useRef<string | null>(null);
+
   // Initialize empty schedule and load data (depends on allowedServiceStyles)
   useEffect(() => {
     const emptySchedule: DaySchedule[] = DAYS.map((_, idx) => ({
       dayOfWeek: idx,
       slots: [],
     }));
-    setSchedule(emptySchedule);
-    
-    // ✅ DEBUG: Log vendorId to verify it's correct
-    console.log('[AVAILABILITY] Component mounted with vendorId:', vendorId);
-    console.log('[AVAILABILITY] vendorData:', vendorData);
-    console.log('[AVAILABILITY] roleName:', roleName);
-    console.log('[AVAILABILITY] allowedServiceStyles:', allowedServiceStyles);
-    
-    // Only load availability data after allowedServiceStyles is determined
+    // Only clear schedule when vendorId actually changed; otherwise we get flicker when
+    // effect re-runs due to allowedServiceStyles or loadAvailabilityData identity change
+    if (lastVendorIdRef.current !== vendorId) {
+      lastVendorIdRef.current = vendorId;
+      setSchedule(emptySchedule);
+    }
+
     if (allowedServiceStyles.length > 0) {
       loadAvailabilityData();
     }
@@ -380,7 +401,7 @@ export function AdvancedAvailabilityManager({
         endTime: '17:00',
         serviceStyles: defaultServiceStyles,
         locationData: initialLocationData,
-        bufferTime: 15,
+        leadTimeByStyle: { ...DEFAULT_LEAD_TIME_BY_STYLE },
         maxCapacity: 1,
         isEnabled: true,
       });
@@ -666,7 +687,7 @@ export function AdvancedAvailabilityManager({
               timeWindowEnd: slot.endTime,
               serviceStyles: slot.serviceStyles,
               locationData: slot.locationData,
-              bufferTime: slot.bufferTime,
+              leadTimeByStyle: slot.leadTimeByStyle || undefined,
               maxCapacity: slot.maxCapacity,
               isEnabled: slot.isEnabled,
             });
@@ -876,9 +897,10 @@ export function AdvancedAvailabilityManager({
                       />
                     </div>
 
-                    {/* Service Styles - Only show allowed styles */}
+                    {/* Service Styles - Only role-allowed styles (solo vs business) */}
                     <div className="mb-4">
-                      <p className="text-sm text-gray-600 mb-2">Service Styles</p>
+                      <p className="text-sm text-gray-600 mb-1">Service styles for this slot</p>
+                      <p className="text-xs text-gray-500 mb-2">Only your role&apos;s allowed styles are shown</p>
                       <div className="flex flex-wrap gap-2">
                         {SERVICE_STYLES.length > 0 ? (
                           SERVICE_STYLES.map(style => (
@@ -910,51 +932,89 @@ export function AdvancedAvailabilityManager({
                     {isSoloProvider && 
                      slot.serviceStyles.includes('at_home') && 
                      !roleName?.toLowerCase().includes('walker') && (
-                      <div className="mb-4">
-                        <p className="text-sm text-gray-600 mb-2 flex items-center gap-1">
-                          <MapPin className="w-4 h-4" />
-                          Service Location
-                        </p>
-                        <EnhancedAddressAutocomplete
-                          value={slot.locationData?.address || ''}
-                          onChange={(address, components) => {
-                            updateSlot(slotIdx, {
-                              locationData: {
-                                address,
-                                lat: components?.lat ?? components?.coordinates?.lat,
-                                lng: components?.lng ?? components?.coordinates?.lng,
-                                placeId: components?.placeId,
-                              },
-                            });
-                          }}
-                          placeholder="Search for your service location..."
-                          className="w-full"
-                        />
+                      <div className="mb-4 space-y-3">
+                        <div>
+                          <p className="text-sm text-gray-600 mb-2 flex items-center gap-1">
+                            <MapPin className="w-4 h-4" />
+                            Service Location
+                          </p>
+                          <EnhancedAddressAutocomplete
+                            value={slot.locationData?.address || ''}
+                            onChange={(address, components) => {
+                              updateSlot(slotIdx, {
+                                locationData: {
+                                  ...slot.locationData,
+                                  address,
+                                  lat: components?.lat ?? components?.coordinates?.lat,
+                                  lng: components?.lng ?? components?.coordinates?.lng,
+                                  placeId: components?.placeId,
+                                },
+                              });
+                            }}
+                            placeholder="Search for your service location..."
+                            className="w-full"
+                          />
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600 mb-1">Service radius (km) — max distance you travel</p>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={50}
+                            value={(slot.locationData as any)?.serviceRadiusKm ?? 7}
+                            onChange={(e) => updateSlot(slotIdx, {
+                              locationData: { ...slot.locationData, serviceRadiusKm: parseInt(e.target.value, 10) || 7 },
+                            })}
+                            className="h-9 w-24"
+                          />
+                        </div>
                       </div>
                     )}
 
-                    {/* Buffer & Capacity */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-gray-600 mb-1">Buffer (min)</p>
-                        <Input
-                          type="number"
-                          min={0}
-                          max={60}
-                          value={slot.bufferTime}
-                          onChange={(e) => updateSlot(slotIdx, { bufferTime: parseInt(e.target.value) || 0 })}
-                        />
+                    {/* Lead time (min) per service style - only for styles allowed in this slot */}
+                    <div className="mb-4">
+                      <p className="text-sm text-gray-600 mb-2">Lead time (min) per style</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {SERVICE_STYLES.filter(style => slot.serviceStyles.includes(style.id as any)).map(style => (
+                          <div key={style.id}>
+                            <label className="text-xs text-gray-500 block mb-1">
+                              {style.icon} {style.label} — {style.leadLabel}
+                            </label>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={120}
+                              value={slot.leadTimeByStyle?.[style.id as keyof LeadTimeByStyle] ?? DEFAULT_LEAD_TIME_BY_STYLE[style.id as keyof LeadTimeByStyle] ?? 15}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value, 10);
+                                if (isNaN(val)) return;
+                                updateSlot(slotIdx, {
+                                  leadTimeByStyle: {
+                                    ...(slot.leadTimeByStyle || {}),
+                                    [style.id]: val,
+                                  },
+                                });
+                              }}
+                              className="h-9"
+                            />
+                          </div>
+                        ))}
+                        {slot.serviceStyles.length === 0 && (
+                          <p className="text-sm text-gray-500 col-span-2">Select at least one service style above to set lead time.</p>
+                        )}
                       </div>
-                      <div>
-                        <p className="text-sm text-gray-600 mb-1">Max Capacity</p>
-                        <Input
-                          type="number"
-                          min={1}
-                          max={50}
-                          value={slot.maxCapacity}
-                          onChange={(e) => updateSlot(slotIdx, { maxCapacity: parseInt(e.target.value) || 1 })}
-                        />
-                      </div>
+                    </div>
+
+                    {/* Max Capacity */}
+                    <div>
+                      <p className="text-sm text-gray-600 mb-1">Max Capacity</p>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={slot.maxCapacity}
+                        onChange={(e) => updateSlot(slotIdx, { maxCapacity: parseInt(e.target.value) || 1 })}
+                      />
                     </div>
                   </div>
                 ))}

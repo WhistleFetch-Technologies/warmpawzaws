@@ -138,14 +138,15 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         }
       }
       
-      // Try 3: vendors by category
+      // Try 3: Fallback to /customer/vendors/search (GET /customer/vendors does not exist)
       if (trainerServices.length === 0) {
         try {
-          const vendorsData = await apiClient.get<any>(`/customer/vendors?category=training`);
+          const vendorsData = await apiClient.get<any>(`/customer/vendors/search?roleId=pet_trainer&limit=50`);
           if (Array.isArray(vendorsData)) trainerServices = vendorsData;
           else if (vendorsData?.vendors) trainerServices = vendorsData.vendors;
+          else if (vendorsData?.results) trainerServices = vendorsData.results;
         } catch (err) {
-          console.warn('⚠️ [TrainingServiceRouter] vendors endpoint failed:', err);
+          console.warn('⚠️ [TrainingServiceRouter] vendors/search fallback failed:', err);
         }
       }
       
