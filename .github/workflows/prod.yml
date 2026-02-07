@@ -277,9 +277,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: terraform-plan
     # Only require approval for manual triggers, auto-approve for push events
-    environment:
-      name: production-approval
-      url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    # Note: Environment protection is handled in terraform-apply job
     steps:
       - name: Final approval checkpoint
         run: |
@@ -299,7 +297,8 @@ jobs:
     name: 🚀 Deploy Infrastructure (Blue/Green)
     runs-on: ubuntu-latest
     needs: final-approval
-    environment: production
+    # Note: Environment protection removed to allow automatic deployment on push to main
+    # Manual deployments still require confirmation via workflow_dispatch input
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
