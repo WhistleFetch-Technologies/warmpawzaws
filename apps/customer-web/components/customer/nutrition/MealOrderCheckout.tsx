@@ -62,8 +62,11 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       const planData = (planRes as any)?.mealPlan || planRes;
       if (planData) setMealPlan(planData);
       const profile = (profileRes as any)?.profile || (profileRes as any)?.customer || profileRes;
-      const cid = profile?.id || (profileRes as any)?.id;
-      if (cid) setCustomerId(cid);
+      const cid =
+        profile?.id ||
+        (profileRes as any)?.id ||
+        (profileRes as any)?.customer?.id;
+      if (cid) setCustomerId(String(cid));
       setPets((petsRes as any)?.pets || []);
 
       let addrList = (addrRes as any)?.addresses || [];
@@ -111,8 +114,12 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerId || !mealPlan?.id || !preview) {
-      toast.error('Missing customer or plan details');
+    if (!mealPlan?.id || !preview) {
+      toast.error('Missing meal plan or price details');
+      return;
+    }
+    if (!customerId && !phone) {
+      toast.error('Missing customer details. Please refresh and try again.');
       return;
     }
     const deliveryAddress = buildDeliveryAddress();
@@ -141,7 +148,8 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       }
 
       const createRes = await apiClient.post<any>('/meal/orders/create', {
-        customerId,
+        customerId: customerId || undefined,
+        customerPhone: customerId ? undefined : phone,
         mealPlanId: mealPlan.id,
         petId: petId || undefined,
         quantity,

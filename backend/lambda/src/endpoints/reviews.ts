@@ -59,7 +59,7 @@ export function registerReviewEndpoints(app: Hono) {
         return c.json({ error: 'Review already submitted for this booking' }, 400);
       }
 
-      // Create review
+      // Create review (is_approved so discovery/rating queries show it)
       const reviewResult = await insert('reviews', {
         booking_id: bookingId,
         customer_id: customerId || booking.customer_id,
@@ -68,6 +68,7 @@ export function registerReviewEndpoints(app: Hono) {
         rating,
         review: review?.trim() || null,
         created_at: new Date().toISOString(),
+        is_approved: true,
       });
 
       // Update booking to mark as reviewed

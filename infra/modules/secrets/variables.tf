@@ -18,6 +18,14 @@ variable "razorpay_key_secret" {
   sensitive   = true
 }
 
+# RazorpayX Current Account (payout source). Optional; can also be set in secret JSON via Console/CLI.
+variable "razorpay_x_account_number" {
+  description = "RazorpayX Current Account number (Customer Identifier) for Payouts API - source account for vendor payouts"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 # Google Maps
 variable "google_maps_api_key" {
   description = "Google Maps API Key"

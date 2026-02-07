@@ -952,16 +952,27 @@ export function UniversalPaymentPage({
 
         // Format address for API (can be string or object with coordinates)
         let addressValue: string | undefined = undefined;
+        let addressCity: string | undefined;
+        let addressState: string | undefined;
+        let addressPincode: string | undefined;
+        let addressLat: number | undefined;
+        let addressLng: number | undefined;
         if (serviceStyle === 'at_home' && (selectedAddress || address)) {
           const addr = selectedAddress || address;
           if (typeof addr === 'string') {
             addressValue = addr;
           } else if (addr?.addressLine1 || addr?.address) {
-            // Format address as string
             const addrLine = addr.addressLine1 || addr.address || '';
             const city = addr.city || '';
             const pincode = addr.pincode || '';
             addressValue = `${addrLine}${city ? `, ${city}` : ''}${pincode ? ` - ${pincode}` : ''}`;
+            addressCity = addr.city;
+            addressState = addr.state;
+            addressPincode = addr.pincode;
+            if (typeof addr.latitude === 'number' && typeof addr.longitude === 'number') {
+              addressLat = addr.latitude;
+              addressLng = addr.longitude;
+            }
           }
         }
 
@@ -1060,7 +1071,7 @@ export function UniversalPaymentPage({
           ? (timeMatch[3] !== undefined ? `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}:${timeMatch[3]}` : `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`)
           : bookingTime;
 
-        const bookingPayload = {
+        const bookingPayload: Record<string, unknown> = {
           customerId: resolvedCustomerId, // ✅ Required UUID (resolved above)
           vendorId: vendorId, // ✅ Required UUID
           serviceId: finalServiceId, // ✅ Required UUID (resolved above)
@@ -1087,6 +1098,12 @@ export function UniversalPaymentPage({
               }))
             : undefined,
         };
+        // ✅ at_home: pass city, state, pincode, latitude, longitude for commute and backend (CreateBookingRequestSchema)
+        if (addressCity !== undefined) bookingPayload.city = addressCity;
+        if (addressState !== undefined) bookingPayload.state = addressState;
+        if (addressPincode !== undefined) bookingPayload.pincode = addressPincode;
+        if (addressLat !== undefined) bookingPayload.latitude = addressLat;
+        if (addressLng !== undefined) bookingPayload.longitude = addressLng;
         
         console.log('📋 Creating booking with validated payload:', {
           ...bookingPayload,
@@ -1419,7 +1436,7 @@ export function UniversalPaymentPage({
         
         // Generate OTP for eligible bookings
         const otpCode = type === 'booking' && serviceStyle !== 'tele' 
-          ? await generateBookingOTP(currentBookingId || '') 
+          ? await generateBookingOTP(currentBookingId || '', customerId) 
           : undefined;
         
         toast.success(type === 'booking' ? 'Booking confirmed!' : 'Order confirmed!');
@@ -1508,7 +1525,7 @@ export function UniversalPaymentPage({
             let otpCode: string | undefined = undefined;
             if (type === 'booking' && serviceStyle !== 'tele') {
               try {
-                otpCode = await generateBookingOTP(currentBookingId || '');
+                otpCode = await generateBookingOTP(currentBookingId || '', customerId);
                 console.log('✅ [OTP] Generated successfully');
               } catch (otpErr) {
                 console.warn('⚠️ [OTP] Failed to generate:', otpErr);
@@ -1584,7 +1601,7 @@ export function UniversalPaymentPage({
     }
   };
 
-  const generateBookingOTP = async (bookingId: string): Promise<string | undefined> => {
+  const generateBookingOTP = async (bookingId: string, customerIdParam?: string): Promise<string | undefined> => {
     // Only generate OTP for home and center services
     if (serviceStyle === 'tele' || serviceStyle === 'ecom') {
       return undefined;
@@ -1594,6 +1611,7 @@ export function UniversalPaymentPage({
       const otpRes = await apiClient.post<any>('/bookings/generate-otp', {
         bookingId,
         serviceStyle,
+        customerId: customerIdParam || customerId || undefined,
       });
       
       if (otpRes.success && otpRes.otp) {

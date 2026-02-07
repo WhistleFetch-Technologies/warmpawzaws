@@ -118358,6 +118358,1652 @@ var init_sns_client = __esm({
   }
 });
 
+// src/handler/base-handler.ts
+var BaseHandler;
+var init_base_handler = __esm({
+  "src/handler/base-handler.ts"() {
+    "use strict";
+    init_rds_connection();
+    BaseHandler = class {
+      /**
+       * Wrapper that provides common functionality
+       */
+      async execute(event, lambdaContext) {
+        const startTime = Date.now();
+        try {
+          const body = this.parseBody(event);
+          const headers = this.getHeaders(event);
+          const handlerContext = {
+            event,
+            context: lambdaContext,
+            userId: this.extractUserId(event),
+            userRole: this.extractUserRole(event)
+          };
+          const response = await this.handle(handlerContext);
+          const duration = Date.now() - startTime;
+          this.logRequest(event, response, duration);
+          return {
+            statusCode: response.statusCode,
+            body: response.body,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+              "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+              "Access-Control-Allow-Headers": "Content-Type,Authorization",
+              ...response.headers
+            }
+          };
+        } catch (error) {
+          return this.handleError(error, event, lambdaContext);
+        }
+      }
+      /**
+       * Parse request body
+       */
+      parseBody(event) {
+        if (!event.body) return {};
+        try {
+          const rawBody = "isBase64Encoded" in event && event.isBase64Encoded && event.body ? Buffer.from(event.body, "base64").toString() : event.body;
+          return rawBody ? JSON.parse(rawBody) : {};
+        } catch (error) {
+          throw new Error("Invalid JSON in request body");
+        }
+      }
+      /**
+       * Get request headers
+       */
+      getHeaders(event) {
+        return event.headers || {};
+      }
+      /**
+       * Extract user ID from request (from Cognito JWT or Authorization header)
+       */
+      extractUserId(event) {
+        const authorizerClaims = event?.requestContext?.authorizer?.claims;
+        if (authorizerClaims?.sub) {
+          return authorizerClaims.sub;
+        }
+        const authHeader = event.headers?.Authorization || event.headers?.authorization;
+        if (authHeader) {
+          try {
+            const token = authHeader.replace("Bearer ", "");
+            const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
+            return payload.sub;
+          } catch {
+          }
+        }
+        return void 0;
+      }
+      /**
+       * Extract user role from request
+       */
+      extractUserRole(event) {
+        const authorizerClaims = event?.requestContext?.authorizer?.claims;
+        if (authorizerClaims?.["cognito:groups"]) {
+          const groups = authorizerClaims["cognito:groups"];
+          return Array.isArray(groups) ? groups[0] : groups;
+        }
+        return void 0;
+      }
+      /**
+       * Log request for monitoring
+       */
+      logRequest(event, response, duration) {
+        const method = event.httpMethod || event.requestContext?.http?.method || "UNKNOWN";
+        const path = event.path || event.rawPath || "/";
+        console.log(JSON.stringify({
+          method,
+          path,
+          statusCode: response.statusCode,
+          duration,
+          requestId: event.requestContext?.requestId
+        }));
+      }
+      /**
+       * Handle errors consistently
+       */
+      handleError(error, event, context) {
+        const method = event.httpMethod || event.requestContext?.http?.method || "UNKNOWN";
+        const path = event.path || event.rawPath || "/";
+        const { captureException: captureException2 } = (init_error_tracking(), __toCommonJS(error_tracking_exports));
+        captureException2(error instanceof Error ? error : new Error(String(error)), {
+          path,
+          method,
+          requestId: context.awsRequestId || "unknown",
+          statusCode: error.statusCode || 500
+        });
+        console.error("Handler error:", {
+          error: error.message,
+          stack: error.stack,
+          path,
+          method,
+          requestId: context.awsRequestId || "unknown"
+        });
+        const statusCode = error.statusCode || 500;
+        const message2 = error.message || "Internal server error";
+        return {
+          statusCode,
+          body: JSON.stringify({
+            error: message2,
+            requestId: context.awsRequestId || "unknown"
+          }),
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*"
+          }
+        };
+      }
+      /**
+       * Create success response
+       */
+      success(data, statusCode = 200) {
+        return {
+          statusCode,
+          body: JSON.stringify(data)
+        };
+      }
+      /**
+       * Create error response
+       */
+      error(message2, statusCode = 400) {
+        return {
+          statusCode,
+          body: JSON.stringify({ error: message2 })
+        };
+      }
+      /**
+       * Validate required fields
+       */
+      validateRequired(data, fields) {
+        const missing = fields.filter((field) => !data[field]);
+        if (missing.length > 0) {
+          throw new Error(`Missing required fields: ${missing.join(", ")}`);
+        }
+      }
+      /**
+       * Check database health
+       */
+      async checkDatabase() {
+        try {
+          await query("SELECT 1");
+          return true;
+        } catch {
+          return false;
+        }
+      }
+    };
+  }
+});
+
+// src/utils/secrets-manager.ts
+var secrets_manager_exports = {};
+__export(secrets_manager_exports, {
+  getSecret: () => getSecret,
+  getSecretJson: () => getSecretJson,
+  putSecret: () => putSecret,
+  putSecretJson: () => putSecretJson
+});
+async function getSecret(secretName) {
+  try {
+    const fullSecretName = `warmpawz/${STAGE}/${secretName}`;
+    const command = new import_client_secrets_manager2.GetSecretValueCommand({ SecretId: fullSecretName });
+    const response = await secretsClient2.send(command);
+    if (!response.SecretString) {
+      console.warn(`[SECRETS] Secret ${fullSecretName} exists but has no value`);
+      return null;
+    }
+    return response.SecretString;
+  } catch (error) {
+    if (error.name === "ResourceNotFoundException") {
+      console.warn(`[SECRETS] Secret warmpawz/${STAGE}/${secretName} not found`);
+      return null;
+    }
+    console.error(`[SECRETS] Error fetching secret ${secretName}:`, error);
+    throw error;
+  }
+}
+async function getSecretJson(secretName) {
+  const secretString = await getSecret(secretName);
+  if (!secretString) {
+    return null;
+  }
+  try {
+    return JSON.parse(secretString);
+  } catch (error) {
+    console.error(`[SECRETS] Error parsing JSON secret ${secretName}:`, error);
+    throw new Error(`Failed to parse secret ${secretName} as JSON`);
+  }
+}
+async function putSecret(secretName, secretValue, description) {
+  const fullSecretName = `warmpawz/${STAGE}/${secretName}`;
+  try {
+    const describeCommand = new import_client_secrets_manager2.DescribeSecretCommand({ SecretId: fullSecretName });
+    try {
+      await secretsClient2.send(describeCommand);
+      const updateCommand = new import_client_secrets_manager2.PutSecretValueCommand({
+        SecretId: fullSecretName,
+        SecretString: secretValue
+      });
+      await secretsClient2.send(updateCommand);
+      console.log(`[SECRETS] Updated secret ${fullSecretName}`);
+    } catch (error) {
+      if (error.name === "ResourceNotFoundException") {
+        const createCommand = new import_client_secrets_manager2.CreateSecretCommand({
+          Name: fullSecretName,
+          SecretString: secretValue,
+          Description: description || `Warmpawz ${STAGE} ${secretName}`
+        });
+        await secretsClient2.send(createCommand);
+        console.log(`[SECRETS] Created secret ${fullSecretName}`);
+      } else {
+        throw error;
+      }
+    }
+  } catch (error) {
+    console.error(`[SECRETS] Error storing secret ${secretName}:`, error);
+    throw error;
+  }
+}
+async function putSecretJson(secretName, secretValue, description) {
+  const secretString = JSON.stringify(secretValue);
+  await putSecret(secretName, secretString, description);
+}
+var import_client_secrets_manager2, secretsClient2, STAGE;
+var init_secrets_manager = __esm({
+  "src/utils/secrets-manager.ts"() {
+    "use strict";
+    import_client_secrets_manager2 = require("@aws-sdk/client-secrets-manager");
+    secretsClient2 = new import_client_secrets_manager2.SecretsManagerClient({
+      region: process.env.AWS_REGION || "ap-south-1"
+    });
+    STAGE = "development";
+  }
+});
+
+// src/utils/razorpay-client.ts
+var razorpay_client_exports = {};
+__export(razorpay_client_exports, {
+  getRazorpayAuthHeader: () => getRazorpayAuthHeader,
+  getRazorpayClient: () => getRazorpayClient,
+  getRazorpayConfig: () => getRazorpayConfig,
+  razorpayRequest: () => razorpayRequest
+});
+async function getRazorpayConfig() {
+  try {
+    const secretConfig = await Promise.race([
+      getSecretJson("razorpay"),
+      new Promise(
+        (_, reject) => setTimeout(() => reject(new Error("Secrets Manager timeout")), 5e3)
+        // 5s timeout
+      )
+    ]).catch((error) => {
+      if (error.message === "Secrets Manager timeout") {
+        console.warn("[RAZORPAY-CONFIG] Secrets Manager timeout, using fallback");
+        return null;
+      }
+      throw error;
+    });
+    if (secretConfig && secretConfig.keyId && secretConfig.keySecret) {
+      console.log("[RAZORPAY-CONFIG] Loaded from AWS Secrets Manager");
+      const xAccount = secretConfig.razorpayXAccountNumber || secretConfig.xAccountNumber || "";
+      return {
+        keyId: secretConfig.keyId,
+        keySecret: secretConfig.keySecret,
+        webhookSecret: secretConfig.webhookSecret || "",
+        razorpayXAccountNumber: xAccount?.trim() || void 0
+      };
+    }
+  } catch (error) {
+    console.warn("[RAZORPAY-CONFIG] Failed to load from Secrets Manager, trying fallback:", error.message);
+  }
+  try {
+    const integrations = await select("platform_integrations", {
+      integration_name: "razorpay"
+    });
+    if (integrations.length > 0 && integrations[0].integration_config) {
+      const config = integrations[0].integration_config;
+      if (config.keyId && config.keySecret) {
+        console.log("[RAZORPAY-CONFIG] Loaded from database");
+        const xAccount = config.razorpayXAccountNumber || config.xAccountNumber || "";
+        return {
+          keyId: config.keyId,
+          keySecret: config.keySecret,
+          webhookSecret: config.webhookSecret || "",
+          razorpayXAccountNumber: xAccount?.trim() || void 0
+        };
+      }
+    }
+  } catch (error) {
+    console.warn("[RAZORPAY-CONFIG] Failed to load from database, trying env vars:", error.message);
+  }
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  if (keyId && keySecret) {
+    console.log("[RAZORPAY-CONFIG] Loaded from environment variables");
+    return {
+      keyId,
+      keySecret,
+      webhookSecret: webhookSecret || ""
+    };
+  }
+  throw new Error("Razorpay not configured. Please configure in AWS Secrets Manager, Platform Settings, or environment variables.");
+}
+async function getRazorpayAuthHeader() {
+  const config = await getRazorpayConfig();
+  const auth = Buffer.from(`${config.keyId}:${config.keySecret}`).toString("base64");
+  return `Basic ${auth}`;
+}
+async function razorpayRequest(endpoint, method = "GET", body, timeoutMs = 2e4, extraHeaders) {
+  const authHeader = await getRazorpayAuthHeader();
+  const url = `https://api.razorpay.com/v1${endpoint}`;
+  console.log(`[RAZORPAY-REQUEST] ${method} ${endpoint} (timeout: ${timeoutMs}ms)`);
+  const headers = {
+    "Authorization": authHeader,
+    "Content-Type": "application/json",
+    ...extraHeaders
+  };
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    console.warn(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`);
+    controller.abort();
+  }, timeoutMs);
+  try {
+    const startTime = Date.now();
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : void 0,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    const duration = Date.now() - startTime;
+    console.log(`[RAZORPAY-REQUEST] Response received in ${duration}ms for ${endpoint}`);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      const errorMsg = error?.error?.description || response.statusText || "Unknown error";
+      console.error(`[RAZORPAY-REQUEST] API error (${response.status}): ${errorMsg}`);
+      throw new Error(`Razorpay API error: ${errorMsg}`);
+    }
+    const result = await response.json();
+    console.log(`[RAZORPAY-REQUEST] Success for ${endpoint}`);
+    return result;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === "AbortError" || error.message?.includes("aborted")) {
+      console.error(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`);
+      throw new Error(`Razorpay API request timeout after ${timeoutMs}ms`);
+    }
+    console.error(`[RAZORPAY-REQUEST] Error for ${endpoint}:`, error.message);
+    throw error;
+  }
+}
+function getRazorpayClient() {
+  const payments = {
+    async refund(params) {
+      const { payment_id, amount } = params;
+      return razorpayRequest(`/payments/${payment_id}/refund`, "POST", amount ? { amount } : void 0);
+    }
+  };
+  const payouts = {
+    /** Create payout (Composite API: pass account_number + fund_account with contact + bank_account). Optional idempotencyKey. */
+    async create(body, idempotencyKey) {
+      const extraHeaders = {};
+      if (idempotencyKey) extraHeaders["X-Payout-Idempotency"] = idempotencyKey;
+      return razorpayRequest("/payouts", "POST", body, 2e4, Object.keys(extraHeaders).length ? extraHeaders : void 0);
+    }
+  };
+  const validateBankAccount = async (params) => {
+    const sourceAccount = await getRazorpayXAccountNumber();
+    if (!sourceAccount?.trim()) {
+      return { valid: false, error: "RazorpayX source account not configured (razorpayXAccountNumber in secret or RAZORPAY_X_ACCOUNT_NUMBER)" };
+    }
+    const ref = params.reference_id || `val-${Date.now()}`;
+    const body = {
+      source_account_number: sourceAccount,
+      validation_type: "optimized",
+      reference_id: ref.slice(0, 40),
+      fund_account: {
+        account_type: "bank_account",
+        bank_account: {
+          name: params.beneficiary_name,
+          ifsc: params.ifsc.toUpperCase(),
+          account_number: String(params.account_number).replace(/\s/g, "")
+        }
+      },
+      contact: {
+        name: params.beneficiary_name,
+        email: params.contact_email || `vendor-${ref}@validation.warmpawz.com`,
+        contact: (params.contact_phone || "0000000000").replace(/\D/g, "").slice(-10) || "0000000000",
+        type: "vendor",
+        reference_id: ref.slice(0, 40)
+      }
+    };
+    try {
+      const res = await razorpayRequest("/fund_accounts/validations", "POST", body, 15e3);
+      const status = res?.status;
+      const validationId = res?.id;
+      if (status === "completed") return { valid: true, validationId };
+      if (status === "failed") return { valid: false, error: res?.status_details?.description || "Validation failed", validationId };
+      return { valid: false, error: status === "created" ? "Validation initiated; check RazorpayX dashboard for result" : "Validation incomplete", validationId };
+    } catch (e) {
+      const msg = e?.message || "Validation API error";
+      return { valid: false, error: msg };
+    }
+  };
+  const getRazorpayXAccountNumber = async () => {
+    try {
+      const config = await getRazorpayConfig();
+      if (config.razorpayXAccountNumber) return config.razorpayXAccountNumber.trim();
+    } catch (_) {
+    }
+    const env = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
+    return env || null;
+  };
+  return {
+    request: razorpayRequest,
+    getConfig: getRazorpayConfig,
+    getAuthHeader: getRazorpayAuthHeader,
+    getRazorpayXAccountNumber,
+    payments,
+    payouts,
+    validateBankAccount
+  };
+}
+var init_razorpay_client = __esm({
+  "src/utils/razorpay-client.ts"() {
+    "use strict";
+    init_rds_connection();
+    init_secrets_manager();
+  }
+});
+
+// src/lib/constants/commission.ts
+var DEFAULT_COMMISSION_RATE;
+var init_commission = __esm({
+  "src/lib/constants/commission.ts"() {
+    "use strict";
+    DEFAULT_COMMISSION_RATE = 10;
+  }
+});
+
+// src/utils/aws-clients.ts
+var aws_clients_exports = {};
+__export(aws_clients_exports, {
+  generateS3Key: () => generateS3Key,
+  getBucketName: () => getBucketName,
+  getFromS3: () => getFromS3,
+  getQueueUrl: () => getQueueUrl,
+  getTopicArn: () => getTopicArn,
+  publishNotification: () => publishNotification2,
+  publishToSNS: () => publishToSNS,
+  queueBookingEvent: () => queueBookingEvent,
+  queuePaymentEvent: () => queuePaymentEvent,
+  queueSearchIndexUpdate: () => queueSearchIndexUpdate,
+  queueSettlement: () => queueSettlement,
+  sendToSQS: () => sendToSQS,
+  uploadToS3: () => uploadToS3
+});
+async function publishToSNS(topicName, message2, attributes) {
+  const topicArn = SNS_TOPICS[topicName];
+  if (!topicArn) {
+    console.warn(`SNS topic not configured: ${topicName}`);
+    console.log(`[SNS Mock] Publishing to ${topicName}:`, message2);
+    return { messageId: `mock-${Date.now()}` };
+  }
+  try {
+    const command = new import_client_sns3.PublishCommand({
+      TopicArn: topicArn,
+      Message: JSON.stringify(message2),
+      MessageAttributes: attributes ? Object.entries(attributes).reduce((acc, [key, value]) => {
+        acc[key] = { DataType: "String", StringValue: String(value) };
+        return acc;
+      }, {}) : void 0
+    });
+    const response = await snsClient2.send(command);
+    console.log(`SNS message published to ${topicName}: ${response.MessageId}`);
+    return { messageId: response.MessageId || "" };
+  } catch (error) {
+    console.error(`Error publishing to SNS ${topicName}:`, error);
+    throw error;
+  }
+}
+async function publishNotification2(targetType, targetId, notification) {
+  const topic = targetType === "vendor" ? "vendor-notifications" : targetType === "customer" ? "customer-notifications" : "platform-notifications";
+  await publishToSNS(topic, {
+    target_type: targetType,
+    target_id: targetId,
+    ...notification,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+}
+async function sendToSQS(queueName, message2, options) {
+  const queueUrl = SQS_QUEUES[queueName];
+  if (!queueUrl) {
+    console.warn(`SQS queue not configured: ${queueName}`);
+    console.log(`[SQS Mock] Sending to ${queueName}:`, message2);
+    return { messageId: `mock-${Date.now()}` };
+  }
+  try {
+    const command = new import_client_sqs.SendMessageCommand({
+      QueueUrl: queueUrl,
+      MessageBody: JSON.stringify(message2),
+      DelaySeconds: options?.delaySeconds,
+      MessageGroupId: options?.messageGroupId,
+      MessageDeduplicationId: options?.deduplicationId
+    });
+    const response = await sqsClient.send(command);
+    console.log(`SQS message sent to ${queueName}: ${response.MessageId}`);
+    return { messageId: response.MessageId || "" };
+  } catch (error) {
+    console.error(`Error sending to SQS ${queueName}:`, error);
+    throw error;
+  }
+}
+async function queueBookingEvent(event, bookingId, data) {
+  await sendToSQS("booking-queue", {
+    event,
+    booking_id: bookingId,
+    ...data,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+}
+async function queuePaymentEvent(event, paymentId, data) {
+  await sendToSQS("payment-queue", {
+    event,
+    payment_id: paymentId,
+    ...data,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+}
+async function queueSettlement(vendorId, amount, bookingIds) {
+  await sendToSQS("settlement-queue", {
+    vendor_id: vendorId,
+    amount,
+    booking_ids: bookingIds,
+    scheduled_at: (/* @__PURE__ */ new Date()).toISOString()
+  });
+}
+async function queueSearchIndexUpdate(entity, action, entityId, data) {
+  await sendToSQS("search-index-queue", {
+    entity,
+    action,
+    entity_id: entityId,
+    data,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+}
+async function uploadToS3(bucketName, key, body, contentType) {
+  const bucket = S3_BUCKETS[bucketName];
+  try {
+    const command = new import_client_s3.PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: body,
+      ContentType: contentType
+    });
+    await s3Client.send(command);
+    const url = `https://${bucket}.s3.${AWS_REGION}.amazonaws.com/${key}`;
+    console.log(`File uploaded to S3: ${url}`);
+    return { url };
+  } catch (error) {
+    console.error(`Error uploading to S3 ${bucket}:`, error);
+    throw error;
+  }
+}
+async function getFromS3(bucketName, key) {
+  const bucket = S3_BUCKETS[bucketName];
+  try {
+    const command = new import_client_s3.GetObjectCommand({
+      Bucket: bucket,
+      Key: key
+    });
+    const response = await s3Client.send(command);
+    const body = await response.Body?.transformToByteArray();
+    return Buffer.from(body || []);
+  } catch (error) {
+    console.error(`Error getting from S3 ${bucket}/${key}:`, error);
+    throw error;
+  }
+}
+function generateS3Key(type, entityId, filename) {
+  const timestamp = Date.now();
+  const sanitizedFilename = filename.replace(/[^a-zA-Z0-9.-]/g, "_");
+  return `${type}/${entityId}/${timestamp}-${sanitizedFilename}`;
+}
+function getTopicArn(topicName) {
+  return SNS_TOPICS[topicName];
+}
+function getQueueUrl(queueName) {
+  return SQS_QUEUES[queueName];
+}
+function getBucketName(bucketType) {
+  return S3_BUCKETS[bucketType];
+}
+var import_client_sns3, import_client_sqs, import_client_s3, AWS_REGION, SNS_TOPICS, SQS_QUEUES, S3_BUCKETS, snsClient2, sqsClient, s3Client;
+var init_aws_clients = __esm({
+  "src/utils/aws-clients.ts"() {
+    "use strict";
+    import_client_sns3 = require("@aws-sdk/client-sns");
+    import_client_sqs = require("@aws-sdk/client-sqs");
+    import_client_s3 = require("@aws-sdk/client-s3");
+    AWS_REGION = process.env.AWS_REGION || "ap-south-1";
+    SNS_TOPICS = {
+      "vendor-notifications": process.env.SNS_VENDOR_NOTIFICATIONS_ARN || "",
+      "customer-notifications": process.env.SNS_CUSTOMER_NOTIFICATIONS_ARN || "",
+      "platform-notifications": process.env.SNS_PLATFORM_NOTIFICATIONS_ARN || "",
+      "booking-events": process.env.SNS_BOOKING_EVENTS_ARN || "",
+      "payment-events": process.env.SNS_PAYMENT_EVENTS_ARN || ""
+    };
+    SQS_QUEUES = {
+      "notification-queue": process.env.SQS_NOTIFICATION_QUEUE_URL || "",
+      "booking-queue": process.env.SQS_BOOKING_QUEUE_URL || "",
+      "payment-queue": process.env.SQS_PAYMENT_QUEUE_URL || "",
+      "settlement-queue": process.env.SQS_SETTLEMENT_QUEUE_URL || "",
+      "search-index-queue": process.env.SQS_SEARCH_INDEX_QUEUE_URL || ""
+    };
+    S3_BUCKETS = {
+      "documents": process.env.S3_DOCUMENTS_BUCKET || "warmpawz-documents",
+      "uploads": process.env.S3_UPLOADS_BUCKET || "warmpawz-uploads",
+      "media": process.env.S3_MEDIA_BUCKET || "warmpawz-media"
+    };
+    snsClient2 = new import_client_sns3.SNSClient({ region: AWS_REGION });
+    sqsClient = new import_client_sqs.SQSClient({ region: AWS_REGION });
+    s3Client = new import_client_s3.S3Client({ region: AWS_REGION });
+  }
+});
+
+// src/utils/sqs-client.ts
+var sqs_client_exports = {};
+__export(sqs_client_exports, {
+  sendToAnalyticsQueue: () => sendToAnalyticsQueue,
+  sendToEmailQueue: () => sendToEmailQueue,
+  sendToNotificationQueue: () => sendToNotificationQueue,
+  sendToSettlementQueue: () => sendToSettlementQueue,
+  sendToSmsQueue: () => sendToSmsQueue
+});
+async function sendToNotificationQueue(message2) {
+  if (!QUEUE_URLS.notificationQueue) {
+    console.warn("Notification queue URL not configured");
+    return;
+  }
+  await sqsClient2.send(
+    new import_client_sqs2.SendMessageCommand({
+      QueueUrl: QUEUE_URLS.notificationQueue,
+      MessageBody: JSON.stringify(message2)
+    })
+  );
+}
+async function sendToEmailQueue(message2) {
+  if (!QUEUE_URLS.emailQueue) {
+    console.warn("Email queue URL not configured");
+    return;
+  }
+  await sqsClient2.send(
+    new import_client_sqs2.SendMessageCommand({
+      QueueUrl: QUEUE_URLS.emailQueue,
+      MessageBody: JSON.stringify(message2)
+    })
+  );
+}
+async function sendToSmsQueue(message2) {
+  if (!QUEUE_URLS.smsQueue) {
+    console.warn("SMS queue URL not configured");
+    return;
+  }
+  await sqsClient2.send(
+    new import_client_sqs2.SendMessageCommand({
+      QueueUrl: QUEUE_URLS.smsQueue,
+      MessageBody: JSON.stringify(message2)
+    })
+  );
+}
+async function sendToAnalyticsQueue(message2) {
+  if (!QUEUE_URLS.analyticsQueue) {
+    console.warn("Analytics queue URL not configured");
+    return;
+  }
+  await sqsClient2.send(
+    new import_client_sqs2.SendMessageCommand({
+      QueueUrl: QUEUE_URLS.analyticsQueue,
+      MessageBody: JSON.stringify(message2)
+    })
+  );
+}
+async function sendToSettlementQueue(message2) {
+  if (!QUEUE_URLS.settlementQueue) {
+    console.warn("Settlement queue URL not configured");
+    return;
+  }
+  await sqsClient2.send(
+    new import_client_sqs2.SendMessageCommand({
+      QueueUrl: QUEUE_URLS.settlementQueue,
+      MessageBody: JSON.stringify(message2)
+    })
+  );
+}
+var import_client_sqs2, sqsClient2, QUEUE_URLS;
+var init_sqs_client = __esm({
+  "src/utils/sqs-client.ts"() {
+    "use strict";
+    import_client_sqs2 = require("@aws-sdk/client-sqs");
+    sqsClient2 = new import_client_sqs2.SQSClient({
+      region: process.env.AWS_REGION || "ap-south-1"
+    });
+    QUEUE_URLS = {
+      notificationQueue: process.env.NOTIFICATION_QUEUE_URL,
+      emailQueue: process.env.EMAIL_QUEUE_URL,
+      smsQueue: process.env.SMS_QUEUE_URL,
+      analyticsQueue: process.env.ANALYTICS_QUEUE_URL,
+      settlementQueue: process.env.SETTLEMENT_QUEUE_URL
+    };
+  }
+});
+
+// src/endpoints/razorpay.ts
+var razorpay_exports = {};
+__export(razorpay_exports, {
+  getVendorTierCommission: () => getVendorTierCommission,
+  registerRazorpayEndpoints: () => registerRazorpayEndpoints,
+  validateBankAccountStrict: () => validateBankAccountStrict
+});
+async function validateBankAccountStrict(account_number, ifsc_code, beneficiary_name) {
+  const account = account_number != null ? String(account_number).replace(/\s/g, "") : "";
+  const ifsc = ifsc_code != null ? String(ifsc_code).trim().toUpperCase() : "";
+  const name = beneficiary_name != null ? String(beneficiary_name).trim() : "";
+  if (!account || !ifsc || !name) {
+    return { valid: false, error: "account_number, ifsc_code, and beneficiary_name are required", details: "All three parameters must be provided." };
+  }
+  if (name.length < 2 || name.length > 100) {
+    return { valid: false, error: "Invalid beneficiary name", details: "Beneficiary name must be between 2 and 100 characters." };
+  }
+  if (!/[\p{L}\p{N}]/u.test(name)) {
+    return { valid: false, error: "Invalid beneficiary name", details: "Beneficiary name must contain at least one letter or number." };
+  }
+  if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) {
+    return { valid: false, error: "Invalid IFSC code", details: "IFSC must be 11 characters (e.g. HDFC0001234)." };
+  }
+  const ifscResponse = await fetch(`https://ifsc.razorpay.com/${ifsc}`);
+  if (!ifscResponse.ok) {
+    return { valid: false, error: "Invalid IFSC code", details: "IFSC code not found in bank database." };
+  }
+  const ifscData = await ifscResponse.json();
+  if (!/^\d{9,18}$/.test(account)) {
+    return { valid: false, error: "Invalid account number", details: "Account number must be 9\u201318 digits." };
+  }
+  return {
+    valid: false,
+    bank_details: { bank: ifscData.BANK || "", branch: ifscData.BRANCH || "", city: ifscData.CITY || "", state: ifscData.STATE || "", ifsc },
+    account_number_masked: account.replace(/\d(?=\d{4})/g, "*"),
+    message: "Format validation passed. Verification (name + account + IFSC match) requires Razorpay Fund Account Validation."
+  };
+}
+function registerRazorpayEndpoints(app3) {
+  const createOrderHandler = new CreateRazorpayOrderHandler();
+  const verifyHandler = new VerifyPaymentHandler();
+  const webhookHandler = new RazorpayWebhookHandler();
+  const settlementHandler = new MarketplaceSettlementHandler();
+  const refundHandler = new ProcessRefundHandler();
+  app3.get("/razorpay/offers", async (c) => {
+    try {
+      const amount = parseFloat(c.req.query("amount") || "0");
+      return c.json({
+        success: true,
+        offers: [],
+        message: "No offers available at this time",
+        amount
+      });
+    } catch (error) {
+      console.error("Error fetching Razorpay offers:", error);
+      return c.json({
+        success: true,
+        offers: [],
+        message: "Could not fetch offers"
+      });
+    }
+  });
+  app3.post("/razorpay/create-order", async (c) => {
+    const handlerPromise = (async () => {
+      try {
+        const requestBody = await c.req.json().catch(() => ({}));
+        console.log("\u{1F4E5} [RAZORPAY-CREATE-ORDER] Raw request body from Hono:", JSON.stringify(requestBody));
+        const event = createApiGatewayEventWithBody2(c.req, requestBody);
+        const context = createLambdaContext3();
+        const result = await createOrderHandler.execute(event, context);
+        let responseBody;
+        try {
+          responseBody = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+        } catch (parseError) {
+          console.error("[RAZORPAY-CREATE-ORDER] Failed to parse result body:", parseError);
+          responseBody = { error: "Invalid response format", message: result.body || "Unknown error" };
+        }
+        return c.json(responseBody, result.statusCode);
+      } catch (error) {
+        console.error("\u274C [RAZORPAY-CREATE-ORDER] Unhandled error:", error);
+        console.error("\u274C [RAZORPAY-CREATE-ORDER] Error stack:", error?.stack);
+        const errorMessage = error?.message || "Internal server error";
+        const statusCode = error?.statusCode || (errorMessage.includes("Missing required") ? 400 : 500);
+        return c.json({
+          error: errorMessage,
+          message: errorMessage
+        }, statusCode);
+      }
+    })();
+    try {
+      return await Promise.race([
+        handlerPromise,
+        new Promise(
+          (_, reject) => setTimeout(() => reject(new Error("Request timeout - operation took too long")), 25e3)
+          // 25s timeout
+        )
+      ]);
+    } catch (timeoutError) {
+      console.error("\u274C [RAZORPAY-CREATE-ORDER] Request timeout:", timeoutError.message);
+      return c.json({
+        error: "Request timeout",
+        message: "The payment request took too long to process. Please try again."
+      }, 504);
+    }
+  });
+  app3.post("/razorpay/verify-payment", async (c) => {
+    const requestBody = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEventWithBody2(c.req, requestBody);
+    const context = createLambdaContext3();
+    const result = await verifyHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+  app3.post("/razorpay/webhook", async (c) => {
+    const requestBody = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEventWithBody2(c.req, requestBody);
+    const context = createLambdaContext3();
+    const result = await webhookHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+  app3.post("/razorpay/marketplace/settlement", async (c) => {
+    const requestBody = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEventWithBody2(c.req, requestBody);
+    const context = createLambdaContext3();
+    const result = await settlementHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+  app3.post("/razorpay/refund", async (c) => {
+    const requestBody = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEventWithBody2(c.req, requestBody);
+    const context = createLambdaContext3();
+    const result = await refundHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+  app3.get("/razorpay/ifsc/:ifscCode", async (c) => {
+    try {
+      const { ifscCode } = c.req.param();
+      if (!ifscCode || !/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(ifscCode)) {
+        return c.json({
+          error: "Invalid IFSC code format. Must be 11 characters (e.g., HDFC0001234)"
+        }, 400);
+      }
+      const response = await fetch(`https://ifsc.razorpay.com/${ifscCode.toUpperCase()}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          return c.json({
+            error: "IFSC code not found",
+            ifsc: ifscCode.toUpperCase()
+          }, 404);
+        }
+        throw new Error(`IFSC lookup failed: ${response.statusText}`);
+      }
+      const bankData = await response.json();
+      return c.json({
+        success: true,
+        ifsc: bankData.IFSC || ifscCode.toUpperCase(),
+        bank: bankData.BANK || "",
+        branch: bankData.BRANCH || "",
+        address: bankData.ADDRESS || "",
+        city: bankData.CITY || "",
+        district: bankData.DISTRICT || "",
+        state: bankData.STATE || "",
+        contact: bankData.CONTACT || "",
+        imps: bankData.IMPS === true,
+        neft: bankData.NEFT === true,
+        rtgs: bankData.RTGS === true,
+        upi: bankData.UPI === true,
+        micr: bankData.MICR || ""
+      });
+    } catch (error) {
+      console.error("Error looking up IFSC code:", error);
+      return c.json({
+        error: error.message || "Failed to lookup IFSC code"
+      }, 500);
+    }
+  });
+  app3.post("/razorpay/verify-bank-account", async (c) => {
+    try {
+      const body = await c.req.json();
+      const account_number = body?.account_number != null ? String(body.account_number).replace(/\s/g, "") : "";
+      const ifsc_code = body?.ifsc_code != null ? String(body.ifsc_code).trim().toUpperCase() : "";
+      const beneficiary_name = body?.beneficiary_name != null ? String(body.beneficiary_name).trim() : "";
+      if (!account_number || !ifsc_code || !beneficiary_name) {
+        return c.json({
+          success: false,
+          valid: false,
+          error: "account_number, ifsc_code, and beneficiary_name are required",
+          details: "All three parameters must be provided for verification."
+        }, 400);
+      }
+      if (beneficiary_name.length < 2 || beneficiary_name.length > 100) {
+        return c.json({
+          success: false,
+          valid: false,
+          error: "Invalid beneficiary name",
+          details: "Beneficiary name must be between 2 and 100 characters."
+        }, 400);
+      }
+      if (!/[\p{L}\p{N}]/u.test(beneficiary_name)) {
+        return c.json({
+          success: false,
+          valid: false,
+          error: "Invalid beneficiary name",
+          details: "Beneficiary name must contain at least one letter or number."
+        }, 400);
+      }
+      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc_code)) {
+        return c.json({
+          success: false,
+          valid: false,
+          error: "Invalid IFSC code",
+          details: "IFSC must be 11 characters (e.g. HDFC0001234)."
+        }, 400);
+      }
+      const ifscResponse = await fetch(`https://ifsc.razorpay.com/${ifsc_code}`);
+      if (!ifscResponse.ok) {
+        return c.json({
+          success: false,
+          valid: false,
+          error: "Invalid IFSC code",
+          details: "IFSC code not found in bank database."
+        }, 400);
+      }
+      const ifscData = await ifscResponse.json();
+      if (!/^\d{9,18}$/.test(account_number)) {
+        return c.json({
+          success: false,
+          valid: false,
+          error: "Invalid account number",
+          details: "Account number must be 9\u201318 digits."
+        }, 400);
+      }
+      try {
+        const client2 = getRazorpayClient();
+        const result = await client2.validateBankAccount({
+          account_number,
+          ifsc: ifsc_code,
+          beneficiary_name,
+          contact_phone: body?.contact,
+          contact_email: body?.email,
+          reference_id: body?.reference_id
+        });
+        if (result.valid) {
+          return c.json({
+            success: true,
+            valid: true,
+            bank_details: {
+              bank: ifscData.BANK || "",
+              branch: ifscData.BRANCH || "",
+              city: ifscData.CITY || "",
+              state: ifscData.STATE || "",
+              ifsc: ifsc_code
+            },
+            account_number_masked: account_number.replace(/\d(?=\d{4})/g, "*"),
+            validationId: result.validationId,
+            message: "Bank account verified via Razorpay."
+          });
+        }
+        if (result.error) {
+          return c.json({
+            success: false,
+            valid: false,
+            error: result.error,
+            details: result.error
+          }, 400);
+        }
+      } catch (apiErr) {
+        console.warn("[verify-bank-account] Razorpay validation API not used:", apiErr?.message);
+      }
+      return c.json({
+        success: true,
+        valid: false,
+        bank_details: {
+          bank: ifscData.BANK || "",
+          branch: ifscData.BRANCH || "",
+          city: ifscData.CITY || "",
+          state: ifscData.STATE || "",
+          ifsc: ifsc_code
+        },
+        account_number_masked: account_number.replace(/\d(?=\d{4})/g, "*"),
+        message: "Format validation passed. For full verification, configure RazorpayX (RAZORPAY_X_ACCOUNT_NUMBER) and allowlist IPs in RazorpayX Dashboard."
+      });
+    } catch (error) {
+      console.error("Error verifying bank account:", error);
+      return c.json({
+        success: false,
+        valid: false,
+        error: error.message || "Failed to verify bank account"
+      }, 500);
+    }
+  });
+}
+function createApiGatewayEventWithBody2(req, parsedBody) {
+  return {
+    httpMethod: req.method,
+    path: req.url,
+    headers: req.headers,
+    body: parsedBody ? JSON.stringify(parsedBody) : null,
+    pathParameters: req.param() || {},
+    queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
+    requestContext: {
+      requestId: (0, import_crypto11.randomUUID)()
+    }
+  };
+}
+function createLambdaContext3() {
+  return {
+    requestId: (0, import_crypto11.randomUUID)(),
+    functionName: "razorpay-handler",
+    functionVersion: "$LATEST"
+  };
+}
+async function getVendorTierCommission(vendorId) {
+  try {
+    const result = await query(`
+      WITH vendor_tier_info AS (
+        -- First, try active subscription
+        SELECT vt.commission_rate, 1 as priority
+        FROM vendor_tier_subscriptions vts
+        JOIN vendor_tiers vt ON vts.tier_id = vt.id
+        WHERE vts.vendor_id = $1
+          AND vts.status = 'active'
+          AND vts.expires_at > NOW()
+        ORDER BY vts.created_at DESC
+        LIMIT 1
+        
+        UNION ALL
+        
+        -- Second, try vendor's current tier
+        SELECT vt.commission_rate, 2 as priority
+        FROM vendors v
+        JOIN vendor_tiers vt ON v.tier = vt.tier_name
+        WHERE v.id = $1
+          AND vt.is_active = true
+        LIMIT 1
+        
+        UNION ALL
+        
+        -- Third, get default tier
+        SELECT commission_rate, 3 as priority
+        FROM vendor_tiers
+        WHERE (is_default = true OR tier_name = 'Bronze')
+          AND is_active = true
+        ORDER BY is_default DESC, tier_level ASC
+        LIMIT 1
+      )
+      SELECT commission_rate
+      FROM vendor_tier_info
+      ORDER BY priority ASC
+      LIMIT 1
+    `, [vendorId]);
+    const rows = Array.isArray(result) ? result : result.rows || [];
+    if (rows.length > 0 && rows[0].commission_rate) {
+      return parseFloat(rows[0].commission_rate);
+    }
+    return DEFAULT_COMMISSION_RATE;
+  } catch (error) {
+    console.error("Error getting vendor tier commission:", error);
+    return DEFAULT_COMMISSION_RATE;
+  }
+}
+var import_crypto11, CreateRazorpayOrderHandler, VerifyPaymentHandler, RazorpayWebhookHandler, MarketplaceSettlementHandler, ProcessRefundHandler;
+var init_razorpay = __esm({
+  "src/endpoints/razorpay.ts"() {
+    "use strict";
+    init_base_handler();
+    init_rds_connection();
+    import_crypto11 = require("crypto");
+    init_razorpay_client();
+    init_commission();
+    CreateRazorpayOrderHandler = class extends BaseHandler {
+      async handle(context) {
+        try {
+          const body = this.parseBody(context.event);
+          const { bookingId, orderId: pharmacyOrderId, amount, currency = "INR", customerId, vendorId, type } = body;
+          const isPharmacyOrder = type === "pharmacy_order";
+          const isDiagnosticsOrder = type === "diagnostics";
+          if (isPharmacyOrder) {
+            if (!pharmacyOrderId || amount == null) {
+              return this.error("orderId and amount are required for pharmacy_order", 400);
+            }
+          } else if (isDiagnosticsOrder) {
+            const missing = ["amount", "customerId", "vendorId"].filter((f) => !body[f]);
+            if (missing.length > 0) {
+              return this.error(`Missing required fields for diagnostics order: ${missing.join(", ")}`, 400);
+            }
+          } else {
+            const missing = ["bookingId", "amount"].filter((f) => !body[f]);
+            if (missing.length > 0) {
+              return this.error(`Missing required fields: ${missing.join(", ")}`, 400);
+            }
+          }
+          console.log("[RAZORPAY-CREATE-ORDER] Starting order creation:", { type: type || "booking", bookingId, pharmacyOrderId, amount, customerId });
+          let config;
+          try {
+            config = await getRazorpayConfig();
+            console.log("[RAZORPAY-CREATE-ORDER] \u2705 Config loaded successfully");
+          } catch (error) {
+            console.error("[RAZORPAY-CREATE-ORDER] \u274C Failed to load Razorpay config:", error.message);
+            return this.error("Payment gateway configuration error. Please configure Razorpay in Platform Settings or environment variables.", 500);
+          }
+          if (!config || !config.keyId || !config.keySecret) {
+            console.error("[RAZORPAY-CREATE-ORDER] \u274C Razorpay config invalid");
+            return this.error("Payment gateway configuration error", 500);
+          }
+          let booking;
+          let vendor;
+          let receipt;
+          let notes;
+          let customerIdFinal;
+          let vendorIdFinal;
+          if (isPharmacyOrder) {
+            const orderResult = await Promise.race([
+              select("pharmacy_orders", { id: pharmacyOrderId }),
+              new Promise((_, reject) => setTimeout(() => reject(new Error("Query timeout")), 5e3))
+            ]);
+            if (!orderResult || orderResult.length === 0) {
+              return this.error("Pharmacy order not found", 404);
+            }
+            const order = orderResult[0];
+            if (order.status !== "invoice_generated") {
+              return this.error("Order is not in invoice state. Please wait for pharmacy to send invoice.", 400);
+            }
+            customerIdFinal = customerId || order.customer_id;
+            vendorIdFinal = order.pharmacy_id;
+            const vendorResult = await select("vendors", { id: vendorIdFinal });
+            vendor = vendorResult.length > 0 ? vendorResult[0] : null;
+            const shortId = String(pharmacyOrderId).replace(/-/g, "").substring(0, 32);
+            receipt = `po_${shortId}`;
+            notes = { pharmacyOrderId: String(pharmacyOrderId), customerId: customerIdFinal, vendorId: vendorIdFinal };
+          } else if (isDiagnosticsOrder) {
+            customerIdFinal = customerId;
+            vendorIdFinal = vendorId;
+            const vendorResult = await Promise.race([
+              select("vendors", { id: vendorIdFinal }),
+              new Promise((_, reject) => setTimeout(() => reject(new Error("Vendor query timeout")), 5e3))
+            ]);
+            vendor = vendorResult.length > 0 ? vendorResult[0] : null;
+            const shortId = String(Date.now()).replace(/-/g, "").substring(0, 32);
+            receipt = `diag_${shortId}`;
+            notes = { type: "diagnostics", customerId: customerIdFinal, vendorId: vendorIdFinal };
+          } else {
+            const bookingResult = await Promise.race([
+              select("bookings", { id: bookingId }),
+              new Promise((_, reject) => setTimeout(() => reject(new Error("Booking query timeout")), 5e3))
+            ]);
+            if (!bookingResult || bookingResult.length === 0) {
+              return this.error("Booking not found", 404);
+            }
+            booking = bookingResult[0];
+            const vendorPromise = select("vendors", { id: booking.vendor_id });
+            const vendorResult = await Promise.race([
+              vendorPromise,
+              new Promise((_, reject) => setTimeout(() => reject(new Error("Vendor query timeout")), 5e3))
+            ]);
+            vendor = vendorResult.length > 0 ? vendorResult[0] : null;
+            customerIdFinal = customerId || booking.customer_id;
+            vendorIdFinal = booking.vendor_id;
+            const shortBookingId = bookingId.replace(/-/g, "").substring(0, 32);
+            receipt = `bk_${shortBookingId}`;
+            notes = { bookingId, customerId: customerIdFinal, vendorId: vendorIdFinal };
+          }
+          const orderData = {
+            amount: Math.round(Number(amount) * 100),
+            currency,
+            receipt,
+            notes
+          };
+          if (vendor?.razorpay_account_id && vendor.bank_verified) {
+            let tierCommission = DEFAULT_COMMISSION_RATE;
+            try {
+              tierCommission = await Promise.race([
+                getVendorTierCommission(vendorIdFinal),
+                new Promise((resolve) => setTimeout(() => resolve(DEFAULT_COMMISSION_RATE), 2e3))
+              ]);
+            } catch (error) {
+              tierCommission = DEFAULT_COMMISSION_RATE;
+            }
+            const amt = Number(amount);
+            const commissionAmount = Math.round(amt * tierCommission / 100 * 100);
+            const vendorShare = Math.round(amt * 100) - commissionAmount;
+            const transferNotes = isPharmacyOrder ? { pharmacy_order_id: String(pharmacyOrderId), vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() } : isDiagnosticsOrder ? { type: "diagnostics", vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() } : { booking_id: bookingId, vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() };
+            orderData.transfers = [
+              {
+                account: vendor.razorpay_account_id,
+                amount: vendorShare,
+                currency,
+                notes: transferNotes,
+                on_hold: false
+              }
+            ];
+          }
+          const razorpayOrder = await razorpayRequest("/orders", "POST", orderData, 2e4);
+          if (!razorpayOrder || !razorpayOrder.id) {
+            console.error("[RAZORPAY-CREATE-ORDER] Invalid Razorpay response:", razorpayOrder);
+            return this.error("Failed to create payment order", 500);
+          }
+          if (isPharmacyOrder) {
+            await query(
+              `INSERT INTO payments (booking_id, pharmacy_order_id, customer_id, vendor_id, razorpay_order_id, amount, currency, payment_method, payment_status)
+           VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8)`,
+              [pharmacyOrderId, customerIdFinal, vendorIdFinal, razorpayOrder.id, Number(amount), currency, "razorpay", "pending"]
+            );
+          } else if (isDiagnosticsOrder) {
+          } else {
+            await insert("payments", {
+              booking_id: bookingId,
+              customer_id: customerIdFinal,
+              vendor_id: vendorIdFinal,
+              razorpay_order_id: razorpayOrder.id,
+              amount: Number(amount),
+              currency,
+              payment_method: "razorpay",
+              payment_status: "pending"
+            });
+          }
+          return this.success({
+            orderId: razorpayOrder.id,
+            amount: razorpayOrder.amount / 100,
+            currency: razorpayOrder.currency,
+            keyId: config.keyId
+          });
+        } catch (error) {
+          console.error("[RAZORPAY-CREATE-ORDER] Error:", error);
+          const errorMessage = error?.message || "Failed to create payment order";
+          if (errorMessage.includes("timeout")) {
+            return this.error("Payment gateway request timed out. Please try again.", 504);
+          }
+          return this.error(errorMessage, 500);
+        }
+      }
+    };
+    VerifyPaymentHandler = class extends BaseHandler {
+      async handle(context) {
+        try {
+          const body = this.parseBody(context.event);
+          const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = body;
+          if (!razorpay_order_id) {
+            return this.error("razorpay_order_id is required", 400);
+          }
+          if (!razorpay_payment_id) {
+            return this.error("razorpay_payment_id is required", 400);
+          }
+          if (!razorpay_signature) {
+            return this.error("razorpay_signature is required", 400);
+          }
+          const config = await getRazorpayConfig();
+          if (!config || !config.keySecret) {
+            console.error("[PAYMENT-VERIFY] Razorpay configuration missing or invalid");
+            return this.error("Payment gateway configuration error. Please contact support.", 500);
+          }
+          const text = `${razorpay_order_id}|${razorpay_payment_id}`;
+          const generatedSignature = (0, import_crypto11.createHmac)("sha256", config.keySecret).update(text).digest("hex");
+          if (generatedSignature !== razorpay_signature) {
+            console.error("[PAYMENT-VERIFY] Signature mismatch:", {
+              orderId: razorpay_order_id,
+              paymentId: razorpay_payment_id,
+              received: razorpay_signature.substring(0, 10) + "...",
+              generated: generatedSignature.substring(0, 10) + "..."
+            });
+            return this.error("Invalid payment signature. Please ensure payment details are correct.", 400);
+          }
+          const payments = await select("payments", { razorpay_order_id });
+          if (payments.length === 0) {
+            try {
+              const razorpayOrder = await razorpayRequest(`/orders/${razorpay_order_id}`, "GET", void 0, 1e4);
+              const notes = razorpayOrder?.notes || {};
+              const orderType = typeof notes === "object" && notes !== null ? notes.type || notes.orderType : void 0;
+              if (orderType === "diagnostics") {
+                console.log("[PAYMENT-VERIFY] Diagnostics order verified (no pre-inserted payment row), returning success");
+                return this.success({
+                  message: "Payment verified successfully",
+                  paymentId: razorpay_payment_id,
+                  orderId: razorpay_order_id
+                });
+              }
+            } catch (fetchErr) {
+              console.warn("[PAYMENT-VERIFY] Could not fetch Razorpay order for diagnostics check:", fetchErr?.message);
+            }
+            console.error("[PAYMENT-VERIFY] Payment record not found for order:", razorpay_order_id);
+            return this.error("Payment record not found. Please contact support with your order ID.", 404);
+          }
+          await update(
+            "payments",
+            { razorpay_order_id },
+            {
+              razorpay_payment_id,
+              payment_status: "completed",
+              completed_at: /* @__PURE__ */ new Date()
+            }
+          );
+          const payment = payments[0];
+          const pharmacyOrderId = payment.pharmacy_order_id;
+          if (pharmacyOrderId) {
+            await update("pharmacy_orders", { id: pharmacyOrderId }, {
+              payment_status: "paid",
+              razorpay_payment_id,
+              status: "payment_confirmed",
+              updated_at: (/* @__PURE__ */ new Date()).toISOString()
+            });
+            const deliveryOtp = Math.floor(1e3 + Math.random() * 9e3).toString();
+            const existing = await select("delivery_tracking", { pharmacy_order_id: pharmacyOrderId });
+            if (existing.length === 0) {
+              await insert("delivery_tracking", {
+                pharmacy_order_id: pharmacyOrderId,
+                status: "assigned",
+                delivery_otp: deliveryOtp,
+                assigned_at: (/* @__PURE__ */ new Date()).toISOString()
+              });
+            }
+          } else if (payment.booking_id) {
+            await update(
+              "bookings",
+              { id: payment.booking_id },
+              {
+                payment_status: "paid",
+                status: "confirmed",
+                updated_at: (/* @__PURE__ */ new Date()).toISOString()
+              }
+            );
+            try {
+              const vendors = await select("vendors", { id: payment.vendor_id });
+              const vendor = vendors.length > 0 ? vendors[0] : null;
+              if (vendor?.razorpay_account_id && vendor.bank_verified) {
+                const { sendToSQS: sendToSQS2 } = await Promise.resolve().then(() => (init_aws_clients(), aws_clients_exports));
+                await sendToSQS2("settlement-queue", {
+                  type: "auto_settle_booking",
+                  bookingId: payment.booking_id,
+                  vendorId: payment.vendor_id,
+                  paymentId: payment.id
+                });
+              }
+            } catch (error) {
+              console.error("Failed to queue automatic settlement:", error);
+            }
+            try {
+              const { publishPaymentProcessed: publishPaymentProcessed2 } = await Promise.resolve().then(() => (init_sns_client(), sns_client_exports));
+              await publishPaymentProcessed2({
+                paymentId: razorpay_payment_id,
+                bookingId: payment.booking_id,
+                amount: payment.amount,
+                status: "completed"
+              });
+            } catch (error) {
+              console.error("Failed to publish payment processed event:", error);
+            }
+          }
+          return this.success({
+            message: "Payment verified successfully",
+            paymentId: razorpay_payment_id,
+            orderId: razorpay_order_id
+          });
+        } catch (error) {
+          console.error("[PAYMENT-VERIFY] Verification error:", error);
+          if (error.message) {
+            return this.error(`Payment verification failed: ${error.message}`, 500);
+          }
+          return this.error("Payment verification failed. Please try again or contact support.", 500);
+        }
+      }
+    };
+    RazorpayWebhookHandler = class extends BaseHandler {
+      async handle(context) {
+        const body = this.parseBody(context.event);
+        const headers = this.getHeaders(context.event);
+        const webhookSignature = headers["x-razorpay-signature"];
+        let config;
+        try {
+          config = await getRazorpayConfig();
+        } catch (error) {
+          if (error.message?.includes("not configured")) {
+            return this.error("Razorpay not configured. Please configure in Platform Settings.", 400);
+          }
+          throw error;
+        }
+        if (!config || !config.keyId || !config.webhookSecret) {
+          return this.error("Razorpay not configured. Please configure in Platform Settings.", 400);
+        }
+        const payload = JSON.stringify(body);
+        const expectedSignature = (0, import_crypto11.createHmac)("sha256", config.webhookSecret).update(payload).digest("hex");
+        if (webhookSignature !== expectedSignature) {
+          return this.error("Invalid webhook signature", 401);
+        }
+        const event = body.event;
+        const payload_data = body.payload;
+        if (event === "payment.captured") {
+          const payment = payload_data.payment.entity;
+          await update(
+            "payments",
+            { razorpay_payment_id: payment.id },
+            {
+              payment_status: "completed",
+              completed_at: /* @__PURE__ */ new Date()
+            }
+          );
+          const payments = await select("payments", { razorpay_payment_id: payment.id });
+          if (payments.length > 0) {
+            const paymentRecord = payments[0];
+            await update(
+              "bookings",
+              { id: paymentRecord.booking_id },
+              { payment_status: "paid" }
+            );
+            try {
+              const vendors = await select("vendors", { id: paymentRecord.vendor_id });
+              const vendor = vendors.length > 0 ? vendors[0] : null;
+              if (vendor?.razorpay_account_id && vendor.bank_verified) {
+                const { sendToSQS: sendToSQS2 } = await Promise.resolve().then(() => (init_aws_clients(), aws_clients_exports));
+                await sendToSQS2("settlement-queue", {
+                  type: "auto_settle_booking",
+                  bookingId: paymentRecord.booking_id,
+                  vendorId: paymentRecord.vendor_id,
+                  paymentId: paymentRecord.id
+                });
+              }
+            } catch (error) {
+              console.error("Failed to queue automatic settlement from webhook:", error);
+            }
+          }
+        } else if (event === "payment.failed") {
+          const payment = payload_data.payment.entity;
+          await update(
+            "payments",
+            { razorpay_payment_id: payment.id },
+            {
+              payment_status: "failed",
+              failure_reason: payment.error_description || "Payment failed"
+            }
+          );
+        } else if (event === "refund.created") {
+          const refund = payload_data.refund.entity;
+          await insert("refunds", {
+            payment_id: refund.payment_id,
+            refund_id: refund.id,
+            amount: refund.amount / 100,
+            // Convert from paise
+            status: refund.status,
+            reason: refund.notes?.reason || null
+          });
+        }
+        return this.success({ message: "Webhook processed" });
+      }
+    };
+    MarketplaceSettlementHandler = class extends BaseHandler {
+      async handle(context) {
+        const body = this.parseBody(context.event);
+        const { bookingId } = body;
+        if (!bookingId) {
+          return this.error("Booking ID is required", 400);
+        }
+        const bookings = await select("bookings", { id: bookingId });
+        if (bookings.length === 0) {
+          return this.error("Booking not found", 404);
+        }
+        const booking = bookings[0];
+        if (booking.status !== "completed") {
+          return this.error("Booking must be completed to settle", 400);
+        }
+        if (booking.settlement_status === "settled") {
+          return this.success({ message: "Already settled" });
+        }
+        const vendorId = booking.vendor_id;
+        const amount = parseFloat(booking.total_amount) || 0;
+        const commissionRate = await getVendorTierCommission(vendorId);
+        const commissionAmount = amount * commissionRate / 100;
+        const vendorShare = amount - commissionAmount;
+        const settlementData = {
+          vendor_id: vendorId,
+          booking_id: bookingId,
+          total_amount: amount,
+          commission_rate: commissionRate,
+          commission_amount: commissionAmount,
+          net_amount: vendorShare,
+          settlement_status: "processing",
+          settlement_period_start: (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
+          settlement_period_end: (/* @__PURE__ */ new Date()).toISOString().split("T")[0]
+        };
+        const settlements = await insert("settlements", settlementData);
+        const settlement = settlements[0];
+        const vendors = await select("vendors", { id: vendorId });
+        if (vendors.length === 0) {
+          return this.error("Vendor not found", 404);
+        }
+        const vendor = vendors[0];
+        let transferId = null;
+        let settlementStatus = "processing";
+        if (vendor.razorpay_account_id && vendor.bank_verified) {
+          try {
+            const payments = await select("payments", { booking_id: bookingId, payment_status: "completed" });
+            if (payments.length > 0 && payments[0].razorpay_payment_id) {
+              const transfer = await razorpayRequest("/transfers", "POST", {
+                account: vendor.razorpay_account_id,
+                amount: Math.round(vendorShare * 100),
+                // Convert to paise
+                currency: "INR",
+                linked_account_notes: {
+                  booking_id: bookingId,
+                  settlement_id: settlement.id
+                },
+                notes: {
+                  vendor_id: vendorId,
+                  booking_id: bookingId,
+                  settlement_date: (/* @__PURE__ */ new Date()).toISOString()
+                },
+                on_hold: false,
+                on_hold_until: null
+              });
+              transferId = transfer.id;
+              settlementStatus = transfer.status === "processed" ? "completed" : "processing";
+              await update("settlements", { id: settlement.id }, {
+                razorpay_transfer_id: transferId,
+                settlement_status: settlementStatus
+              });
+            } else {
+              console.warn(`No completed payment found for booking ${bookingId}, settlement queued for manual processing`);
+            }
+          } catch (error) {
+            console.error("Error initiating Razorpay Route transfer:", error);
+            settlementStatus = "pending";
+            await update("settlements", { id: settlement.id }, {
+              settlement_status: "pending",
+              settlement_notes: `Route transfer failed: ${error.message}`
+            });
+          }
+        } else {
+          settlementStatus = "pending";
+          await update("settlements", { id: settlement.id }, {
+            settlement_status: "pending",
+            settlement_notes: vendor.razorpay_account_id ? "Bank account not verified" : "Linked account not configured"
+          });
+        }
+        await update(
+          "bookings",
+          { id: bookingId },
+          {
+            settlement_status: settlementStatus,
+            settlement_id: settlement.id
+          }
+        );
+        if (settlementStatus === "processing" || settlementStatus === "pending") {
+          try {
+            const { sendToSettlementQueue: sendToSettlementQueue2 } = await Promise.resolve().then(() => (init_sqs_client(), sqs_client_exports));
+            await sendToSettlementQueue2({
+              settlementId: settlement.id,
+              bookingId,
+              vendorId,
+              amount: vendorShare
+            });
+          } catch (error) {
+            console.error("Failed to send to settlement queue:", error);
+          }
+        }
+        return this.success({
+          settlementId: settlement.id,
+          totalAmount: amount,
+          commissionAmount,
+          vendorShare,
+          status: "processing"
+        });
+      }
+    };
+    ProcessRefundHandler = class extends BaseHandler {
+      async handle(context) {
+        const body = this.parseBody(context.event);
+        const { paymentId, amount, reason } = body;
+        this.validateRequired(body, ["paymentId", "amount"]);
+        const config = await getRazorpayConfig();
+        const payments = await select("payments", { razorpay_payment_id: paymentId });
+        if (payments.length === 0) {
+          return this.error("Payment not found", 404);
+        }
+        const payment = payments[0];
+        const refund = await razorpayRequest(
+          `/payments/${paymentId}/refund`,
+          "POST",
+          {
+            amount: Math.round(amount * 100),
+            // Convert to paise
+            notes: {
+              reason: reason || "Customer request"
+            }
+          }
+        );
+        await insert("refunds", {
+          payment_id: payment.id,
+          refund_id: refund.id,
+          amount,
+          status: refund.status,
+          reason: reason || null
+        });
+        await update(
+          "bookings",
+          { id: payment.booking_id },
+          { payment_status: "refunded" }
+        );
+        return this.success({
+          refundId: refund.id,
+          amount: refund.amount / 100,
+          status: refund.status
+        });
+      }
+    };
+  }
+});
+
 // src/utils/sms-service.ts
 var sms_service_exports = {};
 __export(sms_service_exports, {
@@ -119019,183 +120665,6 @@ var require_customers = __commonJS({
         pets: zod_1.z.array(exports2.PetSchema)
       })
     });
-  }
-});
-
-// src/handler/base-handler.ts
-var BaseHandler;
-var init_base_handler = __esm({
-  "src/handler/base-handler.ts"() {
-    "use strict";
-    init_rds_connection();
-    BaseHandler = class {
-      /**
-       * Wrapper that provides common functionality
-       */
-      async execute(event, lambdaContext) {
-        const startTime = Date.now();
-        try {
-          const body = this.parseBody(event);
-          const headers = this.getHeaders(event);
-          const handlerContext = {
-            event,
-            context: lambdaContext,
-            userId: this.extractUserId(event),
-            userRole: this.extractUserRole(event)
-          };
-          const response = await this.handle(handlerContext);
-          const duration = Date.now() - startTime;
-          this.logRequest(event, response, duration);
-          return {
-            statusCode: response.statusCode,
-            body: response.body,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-              "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-              "Access-Control-Allow-Headers": "Content-Type,Authorization",
-              ...response.headers
-            }
-          };
-        } catch (error) {
-          return this.handleError(error, event, lambdaContext);
-        }
-      }
-      /**
-       * Parse request body
-       */
-      parseBody(event) {
-        if (!event.body) return {};
-        try {
-          const rawBody = "isBase64Encoded" in event && event.isBase64Encoded && event.body ? Buffer.from(event.body, "base64").toString() : event.body;
-          return rawBody ? JSON.parse(rawBody) : {};
-        } catch (error) {
-          throw new Error("Invalid JSON in request body");
-        }
-      }
-      /**
-       * Get request headers
-       */
-      getHeaders(event) {
-        return event.headers || {};
-      }
-      /**
-       * Extract user ID from request (from Cognito JWT or Authorization header)
-       */
-      extractUserId(event) {
-        const authorizerClaims = event?.requestContext?.authorizer?.claims;
-        if (authorizerClaims?.sub) {
-          return authorizerClaims.sub;
-        }
-        const authHeader = event.headers?.Authorization || event.headers?.authorization;
-        if (authHeader) {
-          try {
-            const token = authHeader.replace("Bearer ", "");
-            const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
-            return payload.sub;
-          } catch {
-          }
-        }
-        return void 0;
-      }
-      /**
-       * Extract user role from request
-       */
-      extractUserRole(event) {
-        const authorizerClaims = event?.requestContext?.authorizer?.claims;
-        if (authorizerClaims?.["cognito:groups"]) {
-          const groups = authorizerClaims["cognito:groups"];
-          return Array.isArray(groups) ? groups[0] : groups;
-        }
-        return void 0;
-      }
-      /**
-       * Log request for monitoring
-       */
-      logRequest(event, response, duration) {
-        const method = event.httpMethod || event.requestContext?.http?.method || "UNKNOWN";
-        const path = event.path || event.rawPath || "/";
-        console.log(JSON.stringify({
-          method,
-          path,
-          statusCode: response.statusCode,
-          duration,
-          requestId: event.requestContext?.requestId
-        }));
-      }
-      /**
-       * Handle errors consistently
-       */
-      handleError(error, event, context) {
-        const method = event.httpMethod || event.requestContext?.http?.method || "UNKNOWN";
-        const path = event.path || event.rawPath || "/";
-        const { captureException: captureException2 } = (init_error_tracking(), __toCommonJS(error_tracking_exports));
-        captureException2(error instanceof Error ? error : new Error(String(error)), {
-          path,
-          method,
-          requestId: context.awsRequestId || "unknown",
-          statusCode: error.statusCode || 500
-        });
-        console.error("Handler error:", {
-          error: error.message,
-          stack: error.stack,
-          path,
-          method,
-          requestId: context.awsRequestId || "unknown"
-        });
-        const statusCode = error.statusCode || 500;
-        const message2 = error.message || "Internal server error";
-        return {
-          statusCode,
-          body: JSON.stringify({
-            error: message2,
-            requestId: context.awsRequestId || "unknown"
-          }),
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*"
-          }
-        };
-      }
-      /**
-       * Create success response
-       */
-      success(data, statusCode = 200) {
-        return {
-          statusCode,
-          body: JSON.stringify(data)
-        };
-      }
-      /**
-       * Create error response
-       */
-      error(message2, statusCode = 400) {
-        return {
-          statusCode,
-          body: JSON.stringify({ error: message2 })
-        };
-      }
-      /**
-       * Validate required fields
-       */
-      validateRequired(data, fields) {
-        const missing = fields.filter((field) => !data[field]);
-        if (missing.length > 0) {
-          throw new Error(`Missing required fields: ${missing.join(", ")}`);
-        }
-      }
-      /**
-       * Check database health
-       */
-      async checkDatabase() {
-        try {
-          await query("SELECT 1");
-          return true;
-        } catch {
-          return false;
-        }
-      }
-    };
   }
 });
 
@@ -120246,19 +121715,19 @@ __export(push_notification_service_exports, {
   sendVendorOnWay: () => sendVendorOnWay,
   sendVideoCallReminder: () => sendVideoCallReminder
 });
-var import_client_sns3, AWS_REGION, PLATFORM_APP_ARNS, FCM_SERVER_KEY, snsClient2, NOTIFICATION_TEMPLATES, PushNotificationServiceImpl, pushNotificationService, sendEventNotification, sendVideoCallReminder, sendPharmacyBroadcast, sendVendorOnWay, sendRatingRequest, scheduleNotification;
+var import_client_sns5, AWS_REGION2, PLATFORM_APP_ARNS, FCM_SERVER_KEY, snsClient3, NOTIFICATION_TEMPLATES, PushNotificationServiceImpl, pushNotificationService, sendEventNotification, sendVideoCallReminder, sendPharmacyBroadcast, sendVendorOnWay, sendRatingRequest, scheduleNotification;
 var init_push_notification_service = __esm({
   "src/lib/services/push-notification-service.ts"() {
     "use strict";
-    import_client_sns3 = require("@aws-sdk/client-sns");
+    import_client_sns5 = require("@aws-sdk/client-sns");
     init_rds_connection();
-    AWS_REGION = process.env.AWS_REGION || "ap-south-1";
+    AWS_REGION2 = process.env.AWS_REGION || "ap-south-1";
     PLATFORM_APP_ARNS = {
       android: process.env.SNS_PLATFORM_APP_ANDROID_ARN || "",
       ios: process.env.SNS_PLATFORM_APP_IOS_ARN || ""
     };
     FCM_SERVER_KEY = process.env.FCM_SERVER_KEY || "";
-    snsClient2 = new import_client_sns3.SNSClient({ region: AWS_REGION });
+    snsClient3 = new import_client_sns5.SNSClient({ region: AWS_REGION2 });
     NOTIFICATION_TEMPLATES = {
       // Booking Events
       booking_created: {
@@ -120661,7 +122130,7 @@ var init_push_notification_service = __esm({
                 data: payload.data
               })
             };
-            await snsClient2.send(new import_client_sns3.PublishCommand({
+            await snsClient3.send(new import_client_sns5.PublishCommand({
               TargetArn: endpointArn,
               Message: JSON.stringify(message2),
               MessageStructure: "json"
@@ -120721,7 +122190,7 @@ var init_push_notification_service = __esm({
                 ...payload.data
               })
             };
-            await snsClient2.send(new import_client_sns3.PublishCommand({
+            await snsClient3.send(new import_client_sns5.PublishCommand({
               TargetArn: endpointArn,
               Message: JSON.stringify(message2),
               MessageStructure: "json"
@@ -120739,7 +122208,7 @@ var init_push_notification_service = __esm({
       async getOrCreateEndpoint(token, platform) {
         const platformArn = PLATFORM_APP_ARNS[platform];
         try {
-          const response = await snsClient2.send(new import_client_sns3.CreatePlatformEndpointCommand({
+          const response = await snsClient3.send(new import_client_sns5.CreatePlatformEndpointCommand({
             PlatformApplicationArn: platformArn,
             Token: token
           }));
@@ -120754,7 +122223,7 @@ var init_push_notification_service = __esm({
       }
       async sendSMS(phone, title, body) {
         try {
-          await snsClient2.send(new import_client_sns3.PublishCommand({
+          await snsClient3.send(new import_client_sns5.PublishCommand({
             PhoneNumber: phone.startsWith("+") ? phone : `+91${phone}`,
             Message: `${title}: ${body}`,
             MessageAttributes: {
@@ -120797,91 +122266,6 @@ var init_push_notification_service = __esm({
     sendVendorOnWay = (customerId, bookingId, vendorName, etaMinutes, trackingUrl) => pushNotificationService.sendVendorOnWay(customerId, bookingId, vendorName, etaMinutes, trackingUrl);
     sendRatingRequest = (customerId, bookingId, vendorName, serviceName) => pushNotificationService.sendRatingRequest(customerId, bookingId, vendorName, serviceName);
     scheduleNotification = (recipient, payload, scheduledAt, relatedId) => pushNotificationService.scheduleNotification(recipient, payload, scheduledAt, relatedId);
-  }
-});
-
-// src/utils/secrets-manager.ts
-var secrets_manager_exports = {};
-__export(secrets_manager_exports, {
-  getSecret: () => getSecret,
-  getSecretJson: () => getSecretJson,
-  putSecret: () => putSecret,
-  putSecretJson: () => putSecretJson
-});
-async function getSecret(secretName) {
-  try {
-    const fullSecretName = `warmpawz/${STAGE}/${secretName}`;
-    const command = new import_client_secrets_manager3.GetSecretValueCommand({ SecretId: fullSecretName });
-    const response = await secretsClient2.send(command);
-    if (!response.SecretString) {
-      console.warn(`[SECRETS] Secret ${fullSecretName} exists but has no value`);
-      return null;
-    }
-    return response.SecretString;
-  } catch (error) {
-    if (error.name === "ResourceNotFoundException") {
-      console.warn(`[SECRETS] Secret warmpawz/${STAGE}/${secretName} not found`);
-      return null;
-    }
-    console.error(`[SECRETS] Error fetching secret ${secretName}:`, error);
-    throw error;
-  }
-}
-async function getSecretJson(secretName) {
-  const secretString = await getSecret(secretName);
-  if (!secretString) {
-    return null;
-  }
-  try {
-    return JSON.parse(secretString);
-  } catch (error) {
-    console.error(`[SECRETS] Error parsing JSON secret ${secretName}:`, error);
-    throw new Error(`Failed to parse secret ${secretName} as JSON`);
-  }
-}
-async function putSecret(secretName, secretValue, description) {
-  const fullSecretName = `warmpawz/${STAGE}/${secretName}`;
-  try {
-    const describeCommand = new import_client_secrets_manager3.DescribeSecretCommand({ SecretId: fullSecretName });
-    try {
-      await secretsClient2.send(describeCommand);
-      const updateCommand = new import_client_secrets_manager3.PutSecretValueCommand({
-        SecretId: fullSecretName,
-        SecretString: secretValue
-      });
-      await secretsClient2.send(updateCommand);
-      console.log(`[SECRETS] Updated secret ${fullSecretName}`);
-    } catch (error) {
-      if (error.name === "ResourceNotFoundException") {
-        const createCommand = new import_client_secrets_manager3.CreateSecretCommand({
-          Name: fullSecretName,
-          SecretString: secretValue,
-          Description: description || `Warmpawz ${STAGE} ${secretName}`
-        });
-        await secretsClient2.send(createCommand);
-        console.log(`[SECRETS] Created secret ${fullSecretName}`);
-      } else {
-        throw error;
-      }
-    }
-  } catch (error) {
-    console.error(`[SECRETS] Error storing secret ${secretName}:`, error);
-    throw error;
-  }
-}
-async function putSecretJson(secretName, secretValue, description) {
-  const secretString = JSON.stringify(secretValue);
-  await putSecret(secretName, secretString, description);
-}
-var import_client_secrets_manager3, secretsClient2, STAGE;
-var init_secrets_manager = __esm({
-  "src/utils/secrets-manager.ts"() {
-    "use strict";
-    import_client_secrets_manager3 = require("@aws-sdk/client-secrets-manager");
-    secretsClient2 = new import_client_secrets_manager3.SecretsManagerClient({
-      region: process.env.AWS_REGION || "ap-south-1"
-    });
-    STAGE = "development";
   }
 });
 
@@ -121345,7 +122729,7 @@ async function deliverWebhook(webhook, payload) {
   const body = JSON.stringify(payload);
   let signature;
   if (webhook.secret) {
-    signature = import_crypto17.default.createHmac("sha256", webhook.secret).update(body).digest("hex");
+    signature = import_crypto18.default.createHmac("sha256", webhook.secret).update(body).digest("hex");
   }
   const headers = {
     "Content-Type": "application/json",
@@ -121356,7 +122740,7 @@ async function deliverWebhook(webhook, payload) {
   if (signature) {
     headers["X-Webhook-Signature"] = `sha256=${signature}`;
   }
-  const eventId = (0, import_crypto16.randomUUID)();
+  const eventId = (0, import_crypto17.randomUUID)();
   await insert("webhook_events", {
     id: eventId,
     webhook_id: webhook.id,
@@ -121523,14 +122907,14 @@ function setupWebhookRoutes(app3) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-var import_crypto16, import_crypto17, ListWebhooksHandler, CreateWebhookHandler, GetWebhookHandler, UpdateWebhookHandler, DeleteWebhookHandler, TestWebhookHandler, GetWebhookEventsHandler;
+var import_crypto17, import_crypto18, ListWebhooksHandler, CreateWebhookHandler, GetWebhookHandler, UpdateWebhookHandler, DeleteWebhookHandler, TestWebhookHandler, GetWebhookEventsHandler;
 var init_webhooks = __esm({
   "src/endpoints/webhooks.ts"() {
     "use strict";
-    import_crypto16 = require("crypto");
+    import_crypto17 = require("crypto");
     init_base_handler();
     init_rds_connection();
-    import_crypto17 = __toESM(require("crypto"));
+    import_crypto18 = __toESM(require("crypto"));
     ListWebhooksHandler = class extends BaseHandler {
       async handle(context) {
         try {
@@ -121559,7 +122943,7 @@ var init_webhooks = __esm({
         }
         try {
           const webhook = await insert("webhooks", {
-            id: (0, import_crypto16.randomUUID)(),
+            id: (0, import_crypto17.randomUUID)(),
             name,
             url,
             events: JSON.stringify(events),
@@ -121807,7 +123191,7 @@ function registerAdminEndpoints(app3) {
       return c.json({ error: authResult.error }, 401);
     }
     const event = createApiGatewayEvent7(c.req);
-    const context = createLambdaContext8();
+    const context = createLambdaContext9();
     const result = await statsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -121818,7 +123202,7 @@ function registerAdminEndpoints(app3) {
     }
     const event = createApiGatewayEvent7(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext8();
+    const context = createLambdaContext9();
     const result = await approveHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -121829,7 +123213,7 @@ function registerAdminEndpoints(app3) {
     }
     const event = createApiGatewayEvent7(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext8();
+    const context = createLambdaContext9();
     const result = await rejectHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -121888,7 +123272,7 @@ function registerAdminEndpoints(app3) {
       return c.json({ error: authResult.error }, 401);
     }
     const event = createApiGatewayEvent7(c.req);
-    const context = createLambdaContext8();
+    const context = createLambdaContext9();
     const result = await listHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -121898,7 +123282,7 @@ function registerAdminEndpoints(app3) {
       return c.json({ error: authResult.error }, 401);
     }
     const event = createApiGatewayEvent7(c.req);
-    const context = createLambdaContext8();
+    const context = createLambdaContext9();
     const result = await listHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -122380,22 +123764,22 @@ function createApiGatewayEvent7(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto18.randomUUID)()
+      requestId: (0, import_crypto19.randomUUID)()
     }
   };
 }
-function createLambdaContext8() {
+function createLambdaContext9() {
   return {
-    requestId: (0, import_crypto18.randomUUID)(),
+    requestId: (0, import_crypto19.randomUUID)(),
     functionName: "admin-handler",
     functionVersion: "$LATEST"
   };
 }
-var import_crypto18, VendorStatsHandler2, ApproveVendorHandler, RejectVendorHandler, ListVendorsHandler;
+var import_crypto19, VendorStatsHandler2, ApproveVendorHandler, RejectVendorHandler, ListVendorsHandler;
 var init_admin = __esm({
   "src/endpoints/admin.ts"() {
     "use strict";
-    import_crypto18 = require("crypto");
+    import_crypto19 = require("crypto");
     init_base_handler();
     init_rds_connection();
     VendorStatsHandler2 = class extends BaseHandler {
@@ -123302,1390 +124686,6 @@ var init_opensearch_client = __esm({
           related_specializations: { type: "keyword" },
           icon: { type: "keyword" }
         }
-      }
-    };
-  }
-});
-
-// src/utils/razorpay-client.ts
-var razorpay_client_exports = {};
-__export(razorpay_client_exports, {
-  getRazorpayAuthHeader: () => getRazorpayAuthHeader,
-  getRazorpayClient: () => getRazorpayClient,
-  getRazorpayConfig: () => getRazorpayConfig,
-  razorpayRequest: () => razorpayRequest
-});
-async function getRazorpayConfig() {
-  try {
-    const secretConfig = await Promise.race([
-      getSecretJson("razorpay"),
-      new Promise(
-        (_, reject) => setTimeout(() => reject(new Error("Secrets Manager timeout")), 5e3)
-        // 5s timeout
-      )
-    ]).catch((error) => {
-      if (error.message === "Secrets Manager timeout") {
-        console.warn("[RAZORPAY-CONFIG] Secrets Manager timeout, using fallback");
-        return null;
-      }
-      throw error;
-    });
-    if (secretConfig && secretConfig.keyId && secretConfig.keySecret) {
-      console.log("[RAZORPAY-CONFIG] Loaded from AWS Secrets Manager");
-      const xAccount = secretConfig.razorpayXAccountNumber || secretConfig.xAccountNumber || "";
-      return {
-        keyId: secretConfig.keyId,
-        keySecret: secretConfig.keySecret,
-        webhookSecret: secretConfig.webhookSecret || "",
-        razorpayXAccountNumber: xAccount?.trim() || void 0
-      };
-    }
-  } catch (error) {
-    console.warn("[RAZORPAY-CONFIG] Failed to load from Secrets Manager, trying fallback:", error.message);
-  }
-  try {
-    const integrations = await select("platform_integrations", {
-      integration_name: "razorpay"
-    });
-    if (integrations.length > 0 && integrations[0].integration_config) {
-      const config = integrations[0].integration_config;
-      if (config.keyId && config.keySecret) {
-        console.log("[RAZORPAY-CONFIG] Loaded from database");
-        const xAccount = config.razorpayXAccountNumber || config.xAccountNumber || "";
-        return {
-          keyId: config.keyId,
-          keySecret: config.keySecret,
-          webhookSecret: config.webhookSecret || "",
-          razorpayXAccountNumber: xAccount?.trim() || void 0
-        };
-      }
-    }
-  } catch (error) {
-    console.warn("[RAZORPAY-CONFIG] Failed to load from database, trying env vars:", error.message);
-  }
-  const keyId = process.env.RAZORPAY_KEY_ID;
-  const keySecret = process.env.RAZORPAY_KEY_SECRET;
-  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-  if (keyId && keySecret) {
-    console.log("[RAZORPAY-CONFIG] Loaded from environment variables");
-    return {
-      keyId,
-      keySecret,
-      webhookSecret: webhookSecret || ""
-    };
-  }
-  throw new Error("Razorpay not configured. Please configure in AWS Secrets Manager, Platform Settings, or environment variables.");
-}
-async function getRazorpayAuthHeader() {
-  const config = await getRazorpayConfig();
-  const auth = Buffer.from(`${config.keyId}:${config.keySecret}`).toString("base64");
-  return `Basic ${auth}`;
-}
-async function razorpayRequest(endpoint, method = "GET", body, timeoutMs = 2e4, extraHeaders) {
-  const authHeader = await getRazorpayAuthHeader();
-  const url = `https://api.razorpay.com/v1${endpoint}`;
-  console.log(`[RAZORPAY-REQUEST] ${method} ${endpoint} (timeout: ${timeoutMs}ms)`);
-  const headers = {
-    "Authorization": authHeader,
-    "Content-Type": "application/json",
-    ...extraHeaders
-  };
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    console.warn(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`);
-    controller.abort();
-  }, timeoutMs);
-  try {
-    const startTime = Date.now();
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : void 0,
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    const duration = Date.now() - startTime;
-    console.log(`[RAZORPAY-REQUEST] Response received in ${duration}ms for ${endpoint}`);
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      const errorMsg = error?.error?.description || response.statusText || "Unknown error";
-      console.error(`[RAZORPAY-REQUEST] API error (${response.status}): ${errorMsg}`);
-      throw new Error(`Razorpay API error: ${errorMsg}`);
-    }
-    const result = await response.json();
-    console.log(`[RAZORPAY-REQUEST] Success for ${endpoint}`);
-    return result;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error.name === "AbortError" || error.message?.includes("aborted")) {
-      console.error(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`);
-      throw new Error(`Razorpay API request timeout after ${timeoutMs}ms`);
-    }
-    console.error(`[RAZORPAY-REQUEST] Error for ${endpoint}:`, error.message);
-    throw error;
-  }
-}
-function getRazorpayClient() {
-  const payments = {
-    async refund(params) {
-      const { payment_id, amount } = params;
-      return razorpayRequest(`/payments/${payment_id}/refund`, "POST", amount ? { amount } : void 0);
-    }
-  };
-  const payouts = {
-    /** Create payout (Composite API: pass account_number + fund_account with contact + bank_account). Optional idempotencyKey. */
-    async create(body, idempotencyKey) {
-      const extraHeaders = {};
-      if (idempotencyKey) extraHeaders["X-Payout-Idempotency"] = idempotencyKey;
-      return razorpayRequest("/payouts", "POST", body, 2e4, Object.keys(extraHeaders).length ? extraHeaders : void 0);
-    }
-  };
-  const validateBankAccount = async (params) => {
-    const sourceAccount = await getRazorpayXAccountNumber();
-    if (!sourceAccount?.trim()) {
-      return { valid: false, error: "RazorpayX source account not configured (razorpayXAccountNumber in secret or RAZORPAY_X_ACCOUNT_NUMBER)" };
-    }
-    const ref = params.reference_id || `val-${Date.now()}`;
-    const body = {
-      source_account_number: sourceAccount,
-      validation_type: "optimized",
-      reference_id: ref.slice(0, 40),
-      fund_account: {
-        account_type: "bank_account",
-        bank_account: {
-          name: params.beneficiary_name,
-          ifsc: params.ifsc.toUpperCase(),
-          account_number: String(params.account_number).replace(/\s/g, "")
-        }
-      },
-      contact: {
-        name: params.beneficiary_name,
-        email: params.contact_email || `vendor-${ref}@validation.warmpawz.com`,
-        contact: (params.contact_phone || "0000000000").replace(/\D/g, "").slice(-10) || "0000000000",
-        type: "vendor",
-        reference_id: ref.slice(0, 40)
-      }
-    };
-    try {
-      const res = await razorpayRequest("/fund_accounts/validations", "POST", body, 15e3);
-      const status = res?.status;
-      const validationId = res?.id;
-      if (status === "completed") return { valid: true, validationId };
-      if (status === "failed") return { valid: false, error: res?.status_details?.description || "Validation failed", validationId };
-      return { valid: false, error: status === "created" ? "Validation initiated; check RazorpayX dashboard for result" : "Validation incomplete", validationId };
-    } catch (e) {
-      const msg = e?.message || "Validation API error";
-      return { valid: false, error: msg };
-    }
-  };
-  const getRazorpayXAccountNumber = async () => {
-    try {
-      const config = await getRazorpayConfig();
-      if (config.razorpayXAccountNumber) return config.razorpayXAccountNumber.trim();
-    } catch (_) {
-    }
-    const env = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
-    return env || null;
-  };
-  return {
-    request: razorpayRequest,
-    getConfig: getRazorpayConfig,
-    getAuthHeader: getRazorpayAuthHeader,
-    getRazorpayXAccountNumber,
-    payments,
-    payouts,
-    validateBankAccount
-  };
-}
-var init_razorpay_client = __esm({
-  "src/utils/razorpay-client.ts"() {
-    "use strict";
-    init_rds_connection();
-    init_secrets_manager();
-  }
-});
-
-// src/lib/constants/commission.ts
-var DEFAULT_COMMISSION_RATE;
-var init_commission = __esm({
-  "src/lib/constants/commission.ts"() {
-    "use strict";
-    DEFAULT_COMMISSION_RATE = 10;
-  }
-});
-
-// src/utils/aws-clients.ts
-var aws_clients_exports = {};
-__export(aws_clients_exports, {
-  generateS3Key: () => generateS3Key,
-  getBucketName: () => getBucketName,
-  getFromS3: () => getFromS3,
-  getQueueUrl: () => getQueueUrl,
-  getTopicArn: () => getTopicArn,
-  publishNotification: () => publishNotification2,
-  publishToSNS: () => publishToSNS,
-  queueBookingEvent: () => queueBookingEvent,
-  queuePaymentEvent: () => queuePaymentEvent,
-  queueSearchIndexUpdate: () => queueSearchIndexUpdate,
-  queueSettlement: () => queueSettlement,
-  sendToSQS: () => sendToSQS,
-  uploadToS3: () => uploadToS3
-});
-async function publishToSNS(topicName, message2, attributes) {
-  const topicArn = SNS_TOPICS[topicName];
-  if (!topicArn) {
-    console.warn(`SNS topic not configured: ${topicName}`);
-    console.log(`[SNS Mock] Publishing to ${topicName}:`, message2);
-    return { messageId: `mock-${Date.now()}` };
-  }
-  try {
-    const command = new import_client_sns4.PublishCommand({
-      TopicArn: topicArn,
-      Message: JSON.stringify(message2),
-      MessageAttributes: attributes ? Object.entries(attributes).reduce((acc, [key, value]) => {
-        acc[key] = { DataType: "String", StringValue: String(value) };
-        return acc;
-      }, {}) : void 0
-    });
-    const response = await snsClient3.send(command);
-    console.log(`SNS message published to ${topicName}: ${response.MessageId}`);
-    return { messageId: response.MessageId || "" };
-  } catch (error) {
-    console.error(`Error publishing to SNS ${topicName}:`, error);
-    throw error;
-  }
-}
-async function publishNotification2(targetType, targetId, notification) {
-  const topic = targetType === "vendor" ? "vendor-notifications" : targetType === "customer" ? "customer-notifications" : "platform-notifications";
-  await publishToSNS(topic, {
-    target_type: targetType,
-    target_id: targetId,
-    ...notification,
-    timestamp: (/* @__PURE__ */ new Date()).toISOString()
-  });
-}
-async function sendToSQS(queueName, message2, options) {
-  const queueUrl = SQS_QUEUES[queueName];
-  if (!queueUrl) {
-    console.warn(`SQS queue not configured: ${queueName}`);
-    console.log(`[SQS Mock] Sending to ${queueName}:`, message2);
-    return { messageId: `mock-${Date.now()}` };
-  }
-  try {
-    const command = new import_client_sqs.SendMessageCommand({
-      QueueUrl: queueUrl,
-      MessageBody: JSON.stringify(message2),
-      DelaySeconds: options?.delaySeconds,
-      MessageGroupId: options?.messageGroupId,
-      MessageDeduplicationId: options?.deduplicationId
-    });
-    const response = await sqsClient.send(command);
-    console.log(`SQS message sent to ${queueName}: ${response.MessageId}`);
-    return { messageId: response.MessageId || "" };
-  } catch (error) {
-    console.error(`Error sending to SQS ${queueName}:`, error);
-    throw error;
-  }
-}
-async function queueBookingEvent(event, bookingId, data) {
-  await sendToSQS("booking-queue", {
-    event,
-    booking_id: bookingId,
-    ...data,
-    timestamp: (/* @__PURE__ */ new Date()).toISOString()
-  });
-}
-async function queuePaymentEvent(event, paymentId, data) {
-  await sendToSQS("payment-queue", {
-    event,
-    payment_id: paymentId,
-    ...data,
-    timestamp: (/* @__PURE__ */ new Date()).toISOString()
-  });
-}
-async function queueSettlement(vendorId, amount, bookingIds) {
-  await sendToSQS("settlement-queue", {
-    vendor_id: vendorId,
-    amount,
-    booking_ids: bookingIds,
-    scheduled_at: (/* @__PURE__ */ new Date()).toISOString()
-  });
-}
-async function queueSearchIndexUpdate(entity, action, entityId, data) {
-  await sendToSQS("search-index-queue", {
-    entity,
-    action,
-    entity_id: entityId,
-    data,
-    timestamp: (/* @__PURE__ */ new Date()).toISOString()
-  });
-}
-async function uploadToS3(bucketName, key, body, contentType) {
-  const bucket = S3_BUCKETS[bucketName];
-  try {
-    const command = new import_client_s3.PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      Body: body,
-      ContentType: contentType
-    });
-    await s3Client.send(command);
-    const url = `https://${bucket}.s3.${AWS_REGION2}.amazonaws.com/${key}`;
-    console.log(`File uploaded to S3: ${url}`);
-    return { url };
-  } catch (error) {
-    console.error(`Error uploading to S3 ${bucket}:`, error);
-    throw error;
-  }
-}
-async function getFromS3(bucketName, key) {
-  const bucket = S3_BUCKETS[bucketName];
-  try {
-    const command = new import_client_s3.GetObjectCommand({
-      Bucket: bucket,
-      Key: key
-    });
-    const response = await s3Client.send(command);
-    const body = await response.Body?.transformToByteArray();
-    return Buffer.from(body || []);
-  } catch (error) {
-    console.error(`Error getting from S3 ${bucket}/${key}:`, error);
-    throw error;
-  }
-}
-function generateS3Key(type, entityId, filename) {
-  const timestamp = Date.now();
-  const sanitizedFilename = filename.replace(/[^a-zA-Z0-9.-]/g, "_");
-  return `${type}/${entityId}/${timestamp}-${sanitizedFilename}`;
-}
-function getTopicArn(topicName) {
-  return SNS_TOPICS[topicName];
-}
-function getQueueUrl(queueName) {
-  return SQS_QUEUES[queueName];
-}
-function getBucketName(bucketType) {
-  return S3_BUCKETS[bucketType];
-}
-var import_client_sns4, import_client_sqs, import_client_s3, AWS_REGION2, SNS_TOPICS, SQS_QUEUES, S3_BUCKETS, snsClient3, sqsClient, s3Client;
-var init_aws_clients = __esm({
-  "src/utils/aws-clients.ts"() {
-    "use strict";
-    import_client_sns4 = require("@aws-sdk/client-sns");
-    import_client_sqs = require("@aws-sdk/client-sqs");
-    import_client_s3 = require("@aws-sdk/client-s3");
-    AWS_REGION2 = process.env.AWS_REGION || "ap-south-1";
-    SNS_TOPICS = {
-      "vendor-notifications": process.env.SNS_VENDOR_NOTIFICATIONS_ARN || "",
-      "customer-notifications": process.env.SNS_CUSTOMER_NOTIFICATIONS_ARN || "",
-      "platform-notifications": process.env.SNS_PLATFORM_NOTIFICATIONS_ARN || "",
-      "booking-events": process.env.SNS_BOOKING_EVENTS_ARN || "",
-      "payment-events": process.env.SNS_PAYMENT_EVENTS_ARN || ""
-    };
-    SQS_QUEUES = {
-      "notification-queue": process.env.SQS_NOTIFICATION_QUEUE_URL || "",
-      "booking-queue": process.env.SQS_BOOKING_QUEUE_URL || "",
-      "payment-queue": process.env.SQS_PAYMENT_QUEUE_URL || "",
-      "settlement-queue": process.env.SQS_SETTLEMENT_QUEUE_URL || "",
-      "search-index-queue": process.env.SQS_SEARCH_INDEX_QUEUE_URL || ""
-    };
-    S3_BUCKETS = {
-      "documents": process.env.S3_DOCUMENTS_BUCKET || "warmpawz-documents",
-      "uploads": process.env.S3_UPLOADS_BUCKET || "warmpawz-uploads",
-      "media": process.env.S3_MEDIA_BUCKET || "warmpawz-media"
-    };
-    snsClient3 = new import_client_sns4.SNSClient({ region: AWS_REGION2 });
-    sqsClient = new import_client_sqs.SQSClient({ region: AWS_REGION2 });
-    s3Client = new import_client_s3.S3Client({ region: AWS_REGION2 });
-  }
-});
-
-// src/utils/sqs-client.ts
-var sqs_client_exports = {};
-__export(sqs_client_exports, {
-  sendToAnalyticsQueue: () => sendToAnalyticsQueue,
-  sendToEmailQueue: () => sendToEmailQueue,
-  sendToNotificationQueue: () => sendToNotificationQueue,
-  sendToSettlementQueue: () => sendToSettlementQueue,
-  sendToSmsQueue: () => sendToSmsQueue
-});
-async function sendToNotificationQueue(message2) {
-  if (!QUEUE_URLS.notificationQueue) {
-    console.warn("Notification queue URL not configured");
-    return;
-  }
-  await sqsClient2.send(
-    new import_client_sqs2.SendMessageCommand({
-      QueueUrl: QUEUE_URLS.notificationQueue,
-      MessageBody: JSON.stringify(message2)
-    })
-  );
-}
-async function sendToEmailQueue(message2) {
-  if (!QUEUE_URLS.emailQueue) {
-    console.warn("Email queue URL not configured");
-    return;
-  }
-  await sqsClient2.send(
-    new import_client_sqs2.SendMessageCommand({
-      QueueUrl: QUEUE_URLS.emailQueue,
-      MessageBody: JSON.stringify(message2)
-    })
-  );
-}
-async function sendToSmsQueue(message2) {
-  if (!QUEUE_URLS.smsQueue) {
-    console.warn("SMS queue URL not configured");
-    return;
-  }
-  await sqsClient2.send(
-    new import_client_sqs2.SendMessageCommand({
-      QueueUrl: QUEUE_URLS.smsQueue,
-      MessageBody: JSON.stringify(message2)
-    })
-  );
-}
-async function sendToAnalyticsQueue(message2) {
-  if (!QUEUE_URLS.analyticsQueue) {
-    console.warn("Analytics queue URL not configured");
-    return;
-  }
-  await sqsClient2.send(
-    new import_client_sqs2.SendMessageCommand({
-      QueueUrl: QUEUE_URLS.analyticsQueue,
-      MessageBody: JSON.stringify(message2)
-    })
-  );
-}
-async function sendToSettlementQueue(message2) {
-  if (!QUEUE_URLS.settlementQueue) {
-    console.warn("Settlement queue URL not configured");
-    return;
-  }
-  await sqsClient2.send(
-    new import_client_sqs2.SendMessageCommand({
-      QueueUrl: QUEUE_URLS.settlementQueue,
-      MessageBody: JSON.stringify(message2)
-    })
-  );
-}
-var import_client_sqs2, sqsClient2, QUEUE_URLS;
-var init_sqs_client = __esm({
-  "src/utils/sqs-client.ts"() {
-    "use strict";
-    import_client_sqs2 = require("@aws-sdk/client-sqs");
-    sqsClient2 = new import_client_sqs2.SQSClient({
-      region: process.env.AWS_REGION || "ap-south-1"
-    });
-    QUEUE_URLS = {
-      notificationQueue: process.env.NOTIFICATION_QUEUE_URL,
-      emailQueue: process.env.EMAIL_QUEUE_URL,
-      smsQueue: process.env.SMS_QUEUE_URL,
-      analyticsQueue: process.env.ANALYTICS_QUEUE_URL,
-      settlementQueue: process.env.SETTLEMENT_QUEUE_URL
-    };
-  }
-});
-
-// src/endpoints/razorpay.ts
-var razorpay_exports = {};
-__export(razorpay_exports, {
-  getVendorTierCommission: () => getVendorTierCommission,
-  registerRazorpayEndpoints: () => registerRazorpayEndpoints,
-  validateBankAccountStrict: () => validateBankAccountStrict
-});
-async function validateBankAccountStrict(account_number, ifsc_code, beneficiary_name) {
-  const account = account_number != null ? String(account_number).replace(/\s/g, "") : "";
-  const ifsc = ifsc_code != null ? String(ifsc_code).trim().toUpperCase() : "";
-  const name = beneficiary_name != null ? String(beneficiary_name).trim() : "";
-  if (!account || !ifsc || !name) {
-    return { valid: false, error: "account_number, ifsc_code, and beneficiary_name are required", details: "All three parameters must be provided." };
-  }
-  if (name.length < 2 || name.length > 100) {
-    return { valid: false, error: "Invalid beneficiary name", details: "Beneficiary name must be between 2 and 100 characters." };
-  }
-  if (!/[\p{L}\p{N}]/u.test(name)) {
-    return { valid: false, error: "Invalid beneficiary name", details: "Beneficiary name must contain at least one letter or number." };
-  }
-  if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) {
-    return { valid: false, error: "Invalid IFSC code", details: "IFSC must be 11 characters (e.g. HDFC0001234)." };
-  }
-  const ifscResponse = await fetch(`https://ifsc.razorpay.com/${ifsc}`);
-  if (!ifscResponse.ok) {
-    return { valid: false, error: "Invalid IFSC code", details: "IFSC code not found in bank database." };
-  }
-  const ifscData = await ifscResponse.json();
-  if (!/^\d{9,18}$/.test(account)) {
-    return { valid: false, error: "Invalid account number", details: "Account number must be 9\u201318 digits." };
-  }
-  return {
-    valid: false,
-    bank_details: { bank: ifscData.BANK || "", branch: ifscData.BRANCH || "", city: ifscData.CITY || "", state: ifscData.STATE || "", ifsc },
-    account_number_masked: account.replace(/\d(?=\d{4})/g, "*"),
-    message: "Format validation passed. Verification (name + account + IFSC match) requires Razorpay Fund Account Validation."
-  };
-}
-function registerRazorpayEndpoints(app3) {
-  const createOrderHandler = new CreateRazorpayOrderHandler();
-  const verifyHandler = new VerifyPaymentHandler();
-  const webhookHandler = new RazorpayWebhookHandler();
-  const settlementHandler = new MarketplaceSettlementHandler();
-  const refundHandler = new ProcessRefundHandler();
-  app3.get("/razorpay/offers", async (c) => {
-    try {
-      const amount = parseFloat(c.req.query("amount") || "0");
-      return c.json({
-        success: true,
-        offers: [],
-        message: "No offers available at this time",
-        amount
-      });
-    } catch (error) {
-      console.error("Error fetching Razorpay offers:", error);
-      return c.json({
-        success: true,
-        offers: [],
-        message: "Could not fetch offers"
-      });
-    }
-  });
-  app3.post("/razorpay/create-order", async (c) => {
-    const handlerPromise = (async () => {
-      try {
-        const requestBody = await c.req.json().catch(() => ({}));
-        console.log("\u{1F4E5} [RAZORPAY-CREATE-ORDER] Raw request body from Hono:", JSON.stringify(requestBody));
-        const event = createApiGatewayEventWithBody5(c.req, requestBody);
-        const context = createLambdaContext12();
-        const result = await createOrderHandler.execute(event, context);
-        let responseBody;
-        try {
-          responseBody = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
-        } catch (parseError) {
-          console.error("[RAZORPAY-CREATE-ORDER] Failed to parse result body:", parseError);
-          responseBody = { error: "Invalid response format", message: result.body || "Unknown error" };
-        }
-        return c.json(responseBody, result.statusCode);
-      } catch (error) {
-        console.error("\u274C [RAZORPAY-CREATE-ORDER] Unhandled error:", error);
-        console.error("\u274C [RAZORPAY-CREATE-ORDER] Error stack:", error?.stack);
-        const errorMessage = error?.message || "Internal server error";
-        const statusCode = error?.statusCode || (errorMessage.includes("Missing required") ? 400 : 500);
-        return c.json({
-          error: errorMessage,
-          message: errorMessage
-        }, statusCode);
-      }
-    })();
-    try {
-      return await Promise.race([
-        handlerPromise,
-        new Promise(
-          (_, reject) => setTimeout(() => reject(new Error("Request timeout - operation took too long")), 25e3)
-          // 25s timeout
-        )
-      ]);
-    } catch (timeoutError) {
-      console.error("\u274C [RAZORPAY-CREATE-ORDER] Request timeout:", timeoutError.message);
-      return c.json({
-        error: "Request timeout",
-        message: "The payment request took too long to process. Please try again."
-      }, 504);
-    }
-  });
-  app3.post("/razorpay/verify-payment", async (c) => {
-    const requestBody = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEventWithBody5(c.req, requestBody);
-    const context = createLambdaContext12();
-    const result = await verifyHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
-  });
-  app3.post("/razorpay/webhook", async (c) => {
-    const requestBody = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEventWithBody5(c.req, requestBody);
-    const context = createLambdaContext12();
-    const result = await webhookHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
-  });
-  app3.post("/razorpay/marketplace/settlement", async (c) => {
-    const requestBody = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEventWithBody5(c.req, requestBody);
-    const context = createLambdaContext12();
-    const result = await settlementHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
-  });
-  app3.post("/razorpay/refund", async (c) => {
-    const requestBody = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEventWithBody5(c.req, requestBody);
-    const context = createLambdaContext12();
-    const result = await refundHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
-  });
-  app3.get("/razorpay/ifsc/:ifscCode", async (c) => {
-    try {
-      const { ifscCode } = c.req.param();
-      if (!ifscCode || !/^[A-Z]{4}0[A-Z0-9]{6}$/i.test(ifscCode)) {
-        return c.json({
-          error: "Invalid IFSC code format. Must be 11 characters (e.g., HDFC0001234)"
-        }, 400);
-      }
-      const response = await fetch(`https://ifsc.razorpay.com/${ifscCode.toUpperCase()}`);
-      if (!response.ok) {
-        if (response.status === 404) {
-          return c.json({
-            error: "IFSC code not found",
-            ifsc: ifscCode.toUpperCase()
-          }, 404);
-        }
-        throw new Error(`IFSC lookup failed: ${response.statusText}`);
-      }
-      const bankData = await response.json();
-      return c.json({
-        success: true,
-        ifsc: bankData.IFSC || ifscCode.toUpperCase(),
-        bank: bankData.BANK || "",
-        branch: bankData.BRANCH || "",
-        address: bankData.ADDRESS || "",
-        city: bankData.CITY || "",
-        district: bankData.DISTRICT || "",
-        state: bankData.STATE || "",
-        contact: bankData.CONTACT || "",
-        imps: bankData.IMPS === true,
-        neft: bankData.NEFT === true,
-        rtgs: bankData.RTGS === true,
-        upi: bankData.UPI === true,
-        micr: bankData.MICR || ""
-      });
-    } catch (error) {
-      console.error("Error looking up IFSC code:", error);
-      return c.json({
-        error: error.message || "Failed to lookup IFSC code"
-      }, 500);
-    }
-  });
-  app3.post("/razorpay/verify-bank-account", async (c) => {
-    try {
-      const body = await c.req.json();
-      const account_number = body?.account_number != null ? String(body.account_number).replace(/\s/g, "") : "";
-      const ifsc_code = body?.ifsc_code != null ? String(body.ifsc_code).trim().toUpperCase() : "";
-      const beneficiary_name = body?.beneficiary_name != null ? String(body.beneficiary_name).trim() : "";
-      if (!account_number || !ifsc_code || !beneficiary_name) {
-        return c.json({
-          success: false,
-          valid: false,
-          error: "account_number, ifsc_code, and beneficiary_name are required",
-          details: "All three parameters must be provided for verification."
-        }, 400);
-      }
-      if (beneficiary_name.length < 2 || beneficiary_name.length > 100) {
-        return c.json({
-          success: false,
-          valid: false,
-          error: "Invalid beneficiary name",
-          details: "Beneficiary name must be between 2 and 100 characters."
-        }, 400);
-      }
-      if (!/[\p{L}\p{N}]/u.test(beneficiary_name)) {
-        return c.json({
-          success: false,
-          valid: false,
-          error: "Invalid beneficiary name",
-          details: "Beneficiary name must contain at least one letter or number."
-        }, 400);
-      }
-      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc_code)) {
-        return c.json({
-          success: false,
-          valid: false,
-          error: "Invalid IFSC code",
-          details: "IFSC must be 11 characters (e.g. HDFC0001234)."
-        }, 400);
-      }
-      const ifscResponse = await fetch(`https://ifsc.razorpay.com/${ifsc_code}`);
-      if (!ifscResponse.ok) {
-        return c.json({
-          success: false,
-          valid: false,
-          error: "Invalid IFSC code",
-          details: "IFSC code not found in bank database."
-        }, 400);
-      }
-      const ifscData = await ifscResponse.json();
-      if (!/^\d{9,18}$/.test(account_number)) {
-        return c.json({
-          success: false,
-          valid: false,
-          error: "Invalid account number",
-          details: "Account number must be 9\u201318 digits."
-        }, 400);
-      }
-      try {
-        const client2 = getRazorpayClient();
-        const result = await client2.validateBankAccount({
-          account_number,
-          ifsc: ifsc_code,
-          beneficiary_name,
-          contact_phone: body?.contact,
-          contact_email: body?.email,
-          reference_id: body?.reference_id
-        });
-        if (result.valid) {
-          return c.json({
-            success: true,
-            valid: true,
-            bank_details: {
-              bank: ifscData.BANK || "",
-              branch: ifscData.BRANCH || "",
-              city: ifscData.CITY || "",
-              state: ifscData.STATE || "",
-              ifsc: ifsc_code
-            },
-            account_number_masked: account_number.replace(/\d(?=\d{4})/g, "*"),
-            validationId: result.validationId,
-            message: "Bank account verified via Razorpay."
-          });
-        }
-        if (result.error) {
-          return c.json({
-            success: false,
-            valid: false,
-            error: result.error,
-            details: result.error
-          }, 400);
-        }
-      } catch (apiErr) {
-        console.warn("[verify-bank-account] Razorpay validation API not used:", apiErr?.message);
-      }
-      return c.json({
-        success: true,
-        valid: false,
-        bank_details: {
-          bank: ifscData.BANK || "",
-          branch: ifscData.BRANCH || "",
-          city: ifscData.CITY || "",
-          state: ifscData.STATE || "",
-          ifsc: ifsc_code
-        },
-        account_number_masked: account_number.replace(/\d(?=\d{4})/g, "*"),
-        message: "Format validation passed. For full verification, configure RazorpayX (RAZORPAY_X_ACCOUNT_NUMBER) and allowlist IPs in RazorpayX Dashboard."
-      });
-    } catch (error) {
-      console.error("Error verifying bank account:", error);
-      return c.json({
-        success: false,
-        valid: false,
-        error: error.message || "Failed to verify bank account"
-      }, 500);
-    }
-  });
-}
-function createApiGatewayEventWithBody5(req, parsedBody) {
-  return {
-    httpMethod: req.method,
-    path: req.url,
-    headers: req.headers,
-    body: parsedBody ? JSON.stringify(parsedBody) : null,
-    pathParameters: req.param() || {},
-    queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
-    requestContext: {
-      requestId: (0, import_crypto22.randomUUID)()
-    }
-  };
-}
-function createLambdaContext12() {
-  return {
-    requestId: (0, import_crypto22.randomUUID)(),
-    functionName: "razorpay-handler",
-    functionVersion: "$LATEST"
-  };
-}
-async function getVendorTierCommission(vendorId) {
-  try {
-    const result = await query(`
-      WITH vendor_tier_info AS (
-        -- First, try active subscription
-        SELECT vt.commission_rate, 1 as priority
-        FROM vendor_tier_subscriptions vts
-        JOIN vendor_tiers vt ON vts.tier_id = vt.id
-        WHERE vts.vendor_id = $1
-          AND vts.status = 'active'
-          AND vts.expires_at > NOW()
-        ORDER BY vts.created_at DESC
-        LIMIT 1
-        
-        UNION ALL
-        
-        -- Second, try vendor's current tier
-        SELECT vt.commission_rate, 2 as priority
-        FROM vendors v
-        JOIN vendor_tiers vt ON v.tier = vt.tier_name
-        WHERE v.id = $1
-          AND vt.is_active = true
-        LIMIT 1
-        
-        UNION ALL
-        
-        -- Third, get default tier
-        SELECT commission_rate, 3 as priority
-        FROM vendor_tiers
-        WHERE (is_default = true OR tier_name = 'Bronze')
-          AND is_active = true
-        ORDER BY is_default DESC, tier_level ASC
-        LIMIT 1
-      )
-      SELECT commission_rate
-      FROM vendor_tier_info
-      ORDER BY priority ASC
-      LIMIT 1
-    `, [vendorId]);
-    const rows = Array.isArray(result) ? result : result.rows || [];
-    if (rows.length > 0 && rows[0].commission_rate) {
-      return parseFloat(rows[0].commission_rate);
-    }
-    return DEFAULT_COMMISSION_RATE;
-  } catch (error) {
-    console.error("Error getting vendor tier commission:", error);
-    return DEFAULT_COMMISSION_RATE;
-  }
-}
-var import_crypto22, CreateRazorpayOrderHandler, VerifyPaymentHandler, RazorpayWebhookHandler, MarketplaceSettlementHandler, ProcessRefundHandler;
-var init_razorpay = __esm({
-  "src/endpoints/razorpay.ts"() {
-    "use strict";
-    init_base_handler();
-    init_rds_connection();
-    import_crypto22 = require("crypto");
-    init_razorpay_client();
-    init_commission();
-    CreateRazorpayOrderHandler = class extends BaseHandler {
-      async handle(context) {
-        try {
-          const body = this.parseBody(context.event);
-          const { bookingId, orderId: pharmacyOrderId, amount, currency = "INR", customerId, vendorId, type } = body;
-          const isPharmacyOrder = type === "pharmacy_order";
-          const isDiagnosticsOrder = type === "diagnostics";
-          if (isPharmacyOrder) {
-            if (!pharmacyOrderId || amount == null) {
-              return this.error("orderId and amount are required for pharmacy_order", 400);
-            }
-          } else if (isDiagnosticsOrder) {
-            const missing = ["amount", "customerId", "vendorId"].filter((f) => !body[f]);
-            if (missing.length > 0) {
-              return this.error(`Missing required fields for diagnostics order: ${missing.join(", ")}`, 400);
-            }
-          } else {
-            const missing = ["bookingId", "amount"].filter((f) => !body[f]);
-            if (missing.length > 0) {
-              return this.error(`Missing required fields: ${missing.join(", ")}`, 400);
-            }
-          }
-          console.log("[RAZORPAY-CREATE-ORDER] Starting order creation:", { type: type || "booking", bookingId, pharmacyOrderId, amount, customerId });
-          let config;
-          try {
-            config = await getRazorpayConfig();
-            console.log("[RAZORPAY-CREATE-ORDER] \u2705 Config loaded successfully");
-          } catch (error) {
-            console.error("[RAZORPAY-CREATE-ORDER] \u274C Failed to load Razorpay config:", error.message);
-            return this.error("Payment gateway configuration error. Please configure Razorpay in Platform Settings or environment variables.", 500);
-          }
-          if (!config || !config.keyId || !config.keySecret) {
-            console.error("[RAZORPAY-CREATE-ORDER] \u274C Razorpay config invalid");
-            return this.error("Payment gateway configuration error", 500);
-          }
-          let booking;
-          let vendor;
-          let receipt;
-          let notes;
-          let customerIdFinal;
-          let vendorIdFinal;
-          if (isPharmacyOrder) {
-            const orderResult = await Promise.race([
-              select("pharmacy_orders", { id: pharmacyOrderId }),
-              new Promise((_, reject) => setTimeout(() => reject(new Error("Query timeout")), 5e3))
-            ]);
-            if (!orderResult || orderResult.length === 0) {
-              return this.error("Pharmacy order not found", 404);
-            }
-            const order = orderResult[0];
-            if (order.status !== "invoice_generated") {
-              return this.error("Order is not in invoice state. Please wait for pharmacy to send invoice.", 400);
-            }
-            customerIdFinal = customerId || order.customer_id;
-            vendorIdFinal = order.pharmacy_id;
-            const vendorResult = await select("vendors", { id: vendorIdFinal });
-            vendor = vendorResult.length > 0 ? vendorResult[0] : null;
-            const shortId = String(pharmacyOrderId).replace(/-/g, "").substring(0, 32);
-            receipt = `po_${shortId}`;
-            notes = { pharmacyOrderId: String(pharmacyOrderId), customerId: customerIdFinal, vendorId: vendorIdFinal };
-          } else if (isDiagnosticsOrder) {
-            customerIdFinal = customerId;
-            vendorIdFinal = vendorId;
-            const vendorResult = await Promise.race([
-              select("vendors", { id: vendorIdFinal }),
-              new Promise((_, reject) => setTimeout(() => reject(new Error("Vendor query timeout")), 5e3))
-            ]);
-            vendor = vendorResult.length > 0 ? vendorResult[0] : null;
-            const shortId = String(Date.now()).replace(/-/g, "").substring(0, 32);
-            receipt = `diag_${shortId}`;
-            notes = { type: "diagnostics", customerId: customerIdFinal, vendorId: vendorIdFinal };
-          } else {
-            const bookingResult = await Promise.race([
-              select("bookings", { id: bookingId }),
-              new Promise((_, reject) => setTimeout(() => reject(new Error("Booking query timeout")), 5e3))
-            ]);
-            if (!bookingResult || bookingResult.length === 0) {
-              return this.error("Booking not found", 404);
-            }
-            booking = bookingResult[0];
-            const vendorPromise = select("vendors", { id: booking.vendor_id });
-            const vendorResult = await Promise.race([
-              vendorPromise,
-              new Promise((_, reject) => setTimeout(() => reject(new Error("Vendor query timeout")), 5e3))
-            ]);
-            vendor = vendorResult.length > 0 ? vendorResult[0] : null;
-            customerIdFinal = customerId || booking.customer_id;
-            vendorIdFinal = booking.vendor_id;
-            const shortBookingId = bookingId.replace(/-/g, "").substring(0, 32);
-            receipt = `bk_${shortBookingId}`;
-            notes = { bookingId, customerId: customerIdFinal, vendorId: vendorIdFinal };
-          }
-          const orderData = {
-            amount: Math.round(Number(amount) * 100),
-            currency,
-            receipt,
-            notes
-          };
-          if (vendor?.razorpay_account_id && vendor.bank_verified) {
-            let tierCommission = DEFAULT_COMMISSION_RATE;
-            try {
-              tierCommission = await Promise.race([
-                getVendorTierCommission(vendorIdFinal),
-                new Promise((resolve) => setTimeout(() => resolve(DEFAULT_COMMISSION_RATE), 2e3))
-              ]);
-            } catch (error) {
-              tierCommission = DEFAULT_COMMISSION_RATE;
-            }
-            const amt = Number(amount);
-            const commissionAmount = Math.round(amt * tierCommission / 100 * 100);
-            const vendorShare = Math.round(amt * 100) - commissionAmount;
-            const transferNotes = isPharmacyOrder ? { pharmacy_order_id: String(pharmacyOrderId), vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() } : isDiagnosticsOrder ? { type: "diagnostics", vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() } : { booking_id: bookingId, vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() };
-            orderData.transfers = [
-              {
-                account: vendor.razorpay_account_id,
-                amount: vendorShare,
-                currency,
-                notes: transferNotes,
-                on_hold: false
-              }
-            ];
-          }
-          const razorpayOrder = await razorpayRequest("/orders", "POST", orderData, 2e4);
-          if (!razorpayOrder || !razorpayOrder.id) {
-            console.error("[RAZORPAY-CREATE-ORDER] Invalid Razorpay response:", razorpayOrder);
-            return this.error("Failed to create payment order", 500);
-          }
-          if (isPharmacyOrder) {
-            await query(
-              `INSERT INTO payments (booking_id, pharmacy_order_id, customer_id, vendor_id, razorpay_order_id, amount, currency, payment_method, payment_status)
-           VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8)`,
-              [pharmacyOrderId, customerIdFinal, vendorIdFinal, razorpayOrder.id, Number(amount), currency, "razorpay", "pending"]
-            );
-          } else if (isDiagnosticsOrder) {
-          } else {
-            await insert("payments", {
-              booking_id: bookingId,
-              customer_id: customerIdFinal,
-              vendor_id: vendorIdFinal,
-              razorpay_order_id: razorpayOrder.id,
-              amount: Number(amount),
-              currency,
-              payment_method: "razorpay",
-              payment_status: "pending"
-            });
-          }
-          return this.success({
-            orderId: razorpayOrder.id,
-            amount: razorpayOrder.amount / 100,
-            currency: razorpayOrder.currency,
-            keyId: config.keyId
-          });
-        } catch (error) {
-          console.error("[RAZORPAY-CREATE-ORDER] Error:", error);
-          const errorMessage = error?.message || "Failed to create payment order";
-          if (errorMessage.includes("timeout")) {
-            return this.error("Payment gateway request timed out. Please try again.", 504);
-          }
-          return this.error(errorMessage, 500);
-        }
-      }
-    };
-    VerifyPaymentHandler = class extends BaseHandler {
-      async handle(context) {
-        try {
-          const body = this.parseBody(context.event);
-          const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = body;
-          if (!razorpay_order_id) {
-            return this.error("razorpay_order_id is required", 400);
-          }
-          if (!razorpay_payment_id) {
-            return this.error("razorpay_payment_id is required", 400);
-          }
-          if (!razorpay_signature) {
-            return this.error("razorpay_signature is required", 400);
-          }
-          const config = await getRazorpayConfig();
-          if (!config || !config.keySecret) {
-            console.error("[PAYMENT-VERIFY] Razorpay configuration missing or invalid");
-            return this.error("Payment gateway configuration error. Please contact support.", 500);
-          }
-          const text = `${razorpay_order_id}|${razorpay_payment_id}`;
-          const generatedSignature = (0, import_crypto22.createHmac)("sha256", config.keySecret).update(text).digest("hex");
-          if (generatedSignature !== razorpay_signature) {
-            console.error("[PAYMENT-VERIFY] Signature mismatch:", {
-              orderId: razorpay_order_id,
-              paymentId: razorpay_payment_id,
-              received: razorpay_signature.substring(0, 10) + "...",
-              generated: generatedSignature.substring(0, 10) + "..."
-            });
-            return this.error("Invalid payment signature. Please ensure payment details are correct.", 400);
-          }
-          const payments = await select("payments", { razorpay_order_id });
-          if (payments.length === 0) {
-            try {
-              const razorpayOrder = await razorpayRequest(`/orders/${razorpay_order_id}`, "GET", void 0, 1e4);
-              const notes = razorpayOrder?.notes || {};
-              const orderType = typeof notes === "object" && notes !== null ? notes.type || notes.orderType : void 0;
-              if (orderType === "diagnostics") {
-                console.log("[PAYMENT-VERIFY] Diagnostics order verified (no pre-inserted payment row), returning success");
-                return this.success({
-                  message: "Payment verified successfully",
-                  paymentId: razorpay_payment_id,
-                  orderId: razorpay_order_id
-                });
-              }
-            } catch (fetchErr) {
-              console.warn("[PAYMENT-VERIFY] Could not fetch Razorpay order for diagnostics check:", fetchErr?.message);
-            }
-            console.error("[PAYMENT-VERIFY] Payment record not found for order:", razorpay_order_id);
-            return this.error("Payment record not found. Please contact support with your order ID.", 404);
-          }
-          await update(
-            "payments",
-            { razorpay_order_id },
-            {
-              razorpay_payment_id,
-              payment_status: "completed",
-              completed_at: /* @__PURE__ */ new Date()
-            }
-          );
-          const payment = payments[0];
-          const pharmacyOrderId = payment.pharmacy_order_id;
-          if (pharmacyOrderId) {
-            await update("pharmacy_orders", { id: pharmacyOrderId }, {
-              payment_status: "paid",
-              razorpay_payment_id,
-              status: "payment_confirmed",
-              updated_at: (/* @__PURE__ */ new Date()).toISOString()
-            });
-            const deliveryOtp = Math.floor(1e3 + Math.random() * 9e3).toString();
-            const existing = await select("delivery_tracking", { pharmacy_order_id: pharmacyOrderId });
-            if (existing.length === 0) {
-              await insert("delivery_tracking", {
-                pharmacy_order_id: pharmacyOrderId,
-                status: "assigned",
-                delivery_otp: deliveryOtp,
-                assigned_at: (/* @__PURE__ */ new Date()).toISOString()
-              });
-            }
-          } else if (payment.booking_id) {
-            await update(
-              "bookings",
-              { id: payment.booking_id },
-              {
-                payment_status: "paid",
-                status: "confirmed",
-                updated_at: (/* @__PURE__ */ new Date()).toISOString()
-              }
-            );
-            try {
-              const vendors = await select("vendors", { id: payment.vendor_id });
-              const vendor = vendors.length > 0 ? vendors[0] : null;
-              if (vendor?.razorpay_account_id && vendor.bank_verified) {
-                const { sendToSQS: sendToSQS2 } = await Promise.resolve().then(() => (init_aws_clients(), aws_clients_exports));
-                await sendToSQS2("settlement-queue", {
-                  type: "auto_settle_booking",
-                  bookingId: payment.booking_id,
-                  vendorId: payment.vendor_id,
-                  paymentId: payment.id
-                });
-              }
-            } catch (error) {
-              console.error("Failed to queue automatic settlement:", error);
-            }
-            try {
-              const { publishPaymentProcessed: publishPaymentProcessed2 } = await Promise.resolve().then(() => (init_sns_client(), sns_client_exports));
-              await publishPaymentProcessed2({
-                paymentId: razorpay_payment_id,
-                bookingId: payment.booking_id,
-                amount: payment.amount,
-                status: "completed"
-              });
-            } catch (error) {
-              console.error("Failed to publish payment processed event:", error);
-            }
-          }
-          return this.success({
-            message: "Payment verified successfully",
-            paymentId: razorpay_payment_id,
-            orderId: razorpay_order_id
-          });
-        } catch (error) {
-          console.error("[PAYMENT-VERIFY] Verification error:", error);
-          if (error.message) {
-            return this.error(`Payment verification failed: ${error.message}`, 500);
-          }
-          return this.error("Payment verification failed. Please try again or contact support.", 500);
-        }
-      }
-    };
-    RazorpayWebhookHandler = class extends BaseHandler {
-      async handle(context) {
-        const body = this.parseBody(context.event);
-        const headers = this.getHeaders(context.event);
-        const webhookSignature = headers["x-razorpay-signature"];
-        let config;
-        try {
-          config = await getRazorpayConfig();
-        } catch (error) {
-          if (error.message?.includes("not configured")) {
-            return this.error("Razorpay not configured. Please configure in Platform Settings.", 400);
-          }
-          throw error;
-        }
-        if (!config || !config.keyId || !config.webhookSecret) {
-          return this.error("Razorpay not configured. Please configure in Platform Settings.", 400);
-        }
-        const payload = JSON.stringify(body);
-        const expectedSignature = (0, import_crypto22.createHmac)("sha256", config.webhookSecret).update(payload).digest("hex");
-        if (webhookSignature !== expectedSignature) {
-          return this.error("Invalid webhook signature", 401);
-        }
-        const event = body.event;
-        const payload_data = body.payload;
-        if (event === "payment.captured") {
-          const payment = payload_data.payment.entity;
-          await update(
-            "payments",
-            { razorpay_payment_id: payment.id },
-            {
-              payment_status: "completed",
-              completed_at: /* @__PURE__ */ new Date()
-            }
-          );
-          const payments = await select("payments", { razorpay_payment_id: payment.id });
-          if (payments.length > 0) {
-            const paymentRecord = payments[0];
-            await update(
-              "bookings",
-              { id: paymentRecord.booking_id },
-              { payment_status: "paid" }
-            );
-            try {
-              const vendors = await select("vendors", { id: paymentRecord.vendor_id });
-              const vendor = vendors.length > 0 ? vendors[0] : null;
-              if (vendor?.razorpay_account_id && vendor.bank_verified) {
-                const { sendToSQS: sendToSQS2 } = await Promise.resolve().then(() => (init_aws_clients(), aws_clients_exports));
-                await sendToSQS2("settlement-queue", {
-                  type: "auto_settle_booking",
-                  bookingId: paymentRecord.booking_id,
-                  vendorId: paymentRecord.vendor_id,
-                  paymentId: paymentRecord.id
-                });
-              }
-            } catch (error) {
-              console.error("Failed to queue automatic settlement from webhook:", error);
-            }
-          }
-        } else if (event === "payment.failed") {
-          const payment = payload_data.payment.entity;
-          await update(
-            "payments",
-            { razorpay_payment_id: payment.id },
-            {
-              payment_status: "failed",
-              failure_reason: payment.error_description || "Payment failed"
-            }
-          );
-        } else if (event === "refund.created") {
-          const refund = payload_data.refund.entity;
-          await insert("refunds", {
-            payment_id: refund.payment_id,
-            refund_id: refund.id,
-            amount: refund.amount / 100,
-            // Convert from paise
-            status: refund.status,
-            reason: refund.notes?.reason || null
-          });
-        }
-        return this.success({ message: "Webhook processed" });
-      }
-    };
-    MarketplaceSettlementHandler = class extends BaseHandler {
-      async handle(context) {
-        const body = this.parseBody(context.event);
-        const { bookingId } = body;
-        if (!bookingId) {
-          return this.error("Booking ID is required", 400);
-        }
-        const bookings = await select("bookings", { id: bookingId });
-        if (bookings.length === 0) {
-          return this.error("Booking not found", 404);
-        }
-        const booking = bookings[0];
-        if (booking.status !== "completed") {
-          return this.error("Booking must be completed to settle", 400);
-        }
-        if (booking.settlement_status === "settled") {
-          return this.success({ message: "Already settled" });
-        }
-        const vendorId = booking.vendor_id;
-        const amount = parseFloat(booking.total_amount) || 0;
-        const commissionRate = await getVendorTierCommission(vendorId);
-        const commissionAmount = amount * commissionRate / 100;
-        const vendorShare = amount - commissionAmount;
-        const settlementData = {
-          vendor_id: vendorId,
-          booking_id: bookingId,
-          total_amount: amount,
-          commission_rate: commissionRate,
-          commission_amount: commissionAmount,
-          net_amount: vendorShare,
-          settlement_status: "processing",
-          settlement_period_start: (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
-          settlement_period_end: (/* @__PURE__ */ new Date()).toISOString().split("T")[0]
-        };
-        const settlements = await insert("settlements", settlementData);
-        const settlement = settlements[0];
-        const vendors = await select("vendors", { id: vendorId });
-        if (vendors.length === 0) {
-          return this.error("Vendor not found", 404);
-        }
-        const vendor = vendors[0];
-        let transferId = null;
-        let settlementStatus = "processing";
-        if (vendor.razorpay_account_id && vendor.bank_verified) {
-          try {
-            const payments = await select("payments", { booking_id: bookingId, payment_status: "completed" });
-            if (payments.length > 0 && payments[0].razorpay_payment_id) {
-              const transfer = await razorpayRequest("/transfers", "POST", {
-                account: vendor.razorpay_account_id,
-                amount: Math.round(vendorShare * 100),
-                // Convert to paise
-                currency: "INR",
-                linked_account_notes: {
-                  booking_id: bookingId,
-                  settlement_id: settlement.id
-                },
-                notes: {
-                  vendor_id: vendorId,
-                  booking_id: bookingId,
-                  settlement_date: (/* @__PURE__ */ new Date()).toISOString()
-                },
-                on_hold: false,
-                on_hold_until: null
-              });
-              transferId = transfer.id;
-              settlementStatus = transfer.status === "processed" ? "completed" : "processing";
-              await update("settlements", { id: settlement.id }, {
-                razorpay_transfer_id: transferId,
-                settlement_status: settlementStatus
-              });
-            } else {
-              console.warn(`No completed payment found for booking ${bookingId}, settlement queued for manual processing`);
-            }
-          } catch (error) {
-            console.error("Error initiating Razorpay Route transfer:", error);
-            settlementStatus = "pending";
-            await update("settlements", { id: settlement.id }, {
-              settlement_status: "pending",
-              settlement_notes: `Route transfer failed: ${error.message}`
-            });
-          }
-        } else {
-          settlementStatus = "pending";
-          await update("settlements", { id: settlement.id }, {
-            settlement_status: "pending",
-            settlement_notes: vendor.razorpay_account_id ? "Bank account not verified" : "Linked account not configured"
-          });
-        }
-        await update(
-          "bookings",
-          { id: bookingId },
-          {
-            settlement_status: settlementStatus,
-            settlement_id: settlement.id
-          }
-        );
-        if (settlementStatus === "processing" || settlementStatus === "pending") {
-          try {
-            const { sendToSettlementQueue: sendToSettlementQueue2 } = await Promise.resolve().then(() => (init_sqs_client(), sqs_client_exports));
-            await sendToSettlementQueue2({
-              settlementId: settlement.id,
-              bookingId,
-              vendorId,
-              amount: vendorShare
-            });
-          } catch (error) {
-            console.error("Failed to send to settlement queue:", error);
-          }
-        }
-        return this.success({
-          settlementId: settlement.id,
-          totalAmount: amount,
-          commissionAmount,
-          vendorShare,
-          status: "processing"
-        });
-      }
-    };
-    ProcessRefundHandler = class extends BaseHandler {
-      async handle(context) {
-        const body = this.parseBody(context.event);
-        const { paymentId, amount, reason } = body;
-        this.validateRequired(body, ["paymentId", "amount"]);
-        const config = await getRazorpayConfig();
-        const payments = await select("payments", { razorpay_payment_id: paymentId });
-        if (payments.length === 0) {
-          return this.error("Payment not found", 404);
-        }
-        const payment = payments[0];
-        const refund = await razorpayRequest(
-          `/payments/${paymentId}/refund`,
-          "POST",
-          {
-            amount: Math.round(amount * 100),
-            // Convert to paise
-            notes: {
-              reason: reason || "Customer request"
-            }
-          }
-        );
-        await insert("refunds", {
-          payment_id: payment.id,
-          refund_id: refund.id,
-          amount,
-          status: refund.status,
-          reason: reason || null
-        });
-        await update(
-          "bookings",
-          { id: payment.booking_id },
-          { payment_status: "refunded" }
-        );
-        return this.success({
-          refundId: refund.id,
-          amount: refund.amount / 100,
-          status: refund.status
-        });
       }
     };
   }
@@ -129990,7 +129990,7 @@ function formatTitle(str) {
 }
 
 // src/endpoints/bookings-enhanced.ts
-var import_crypto11 = require("crypto");
+var import_crypto12 = require("crypto");
 init_rds_connection();
 
 // src/utils/idempotency.ts
@@ -130552,6 +130552,8 @@ function parseSelectedServices(raw2) {
 init_rds_connection();
 var PLATFORM_DEFAULTS = {
   discovery_radius_km: 50,
+  discovery_radius_km_tele: 0,
+  // 0 = no distance limit for tele (no travel dependency)
   discovery_max_results: 50,
   discovery_sort_default: "relevance",
   discovery_location_source: "mobile_then_base",
@@ -130737,6 +130739,1302 @@ function computeRefundFromTier(totalAmount, tier, fallbackPercentage = 100, fall
 
 // src/endpoints/bookings-enhanced.ts
 var import_bookings = __toESM(require_bookings());
+
+// src/endpoints/vendor-profile.ts
+init_rds_connection();
+init_sns_client();
+var import_client_sns4 = require("@aws-sdk/client-sns");
+
+// src/utils/capability-filter.ts
+var SERVICE_STYLE_CAPABILITIES = {
+  "at_center": [
+    "cafe_tables",
+    "table_management",
+    "rooms",
+    "room_management",
+    "facility_management",
+    "cctv_access"
+  ],
+  "at_home": [
+    "gps_tracking",
+    "live_location",
+    "distance_pricing"
+  ],
+  "tele": [
+    "tele",
+    "video_calling"
+  ],
+  "delivery": [
+    "delivery",
+    "delivery_partner",
+    "eta_tracking"
+  ]
+};
+function filterCapabilitiesByVendorConfiguration(options) {
+  const { vendorConfiguration, baseCapabilities, capabilityRules } = options;
+  let filtered = [...baseCapabilities];
+  if (vendorConfiguration === "solo") {
+    const soloRules = capabilityRules?.solo;
+    const deniedForSolo = soloRules?.deniedCapabilities || [
+      "staff_management",
+      "staff_create",
+      "staff_schedule",
+      "inventory_manage",
+      "inventory",
+      "custom_services",
+      "custom_packages",
+      "center_profile"
+    ];
+    filtered = filtered.filter((cap) => !deniedForSolo.includes(cap));
+    const soloCapabilities = ["platform_catalog_services", "professional_profile"];
+    soloCapabilities.forEach((cap) => {
+      if (!filtered.includes(cap)) {
+        filtered.push(cap);
+      }
+    });
+  }
+  return filtered;
+}
+function filterCapabilitiesByServiceStyles(selectedServiceStyles, stage1Capabilities, capabilityRules) {
+  if (!capabilityRules?.serviceStyleDependencies) {
+    const defaultDeps = { ...SERVICE_STYLE_CAPABILITIES };
+    return filterByServiceStyleDependencies(
+      selectedServiceStyles,
+      stage1Capabilities,
+      defaultDeps
+    );
+  }
+  const { serviceStyleDependencies } = capabilityRules;
+  const allDependencies = { ...SERVICE_STYLE_CAPABILITIES, ...serviceStyleDependencies };
+  return filterByServiceStyleDependencies(
+    selectedServiceStyles,
+    stage1Capabilities,
+    allDependencies
+  );
+}
+function filterByServiceStyleDependencies(selectedServiceStyles, capabilities, dependencies) {
+  const capabilityToStyles = {};
+  Object.entries(dependencies).forEach(([style, deps]) => {
+    deps.forEach((cap) => {
+      if (!capabilityToStyles[cap]) {
+        capabilityToStyles[cap] = [];
+      }
+      capabilityToStyles[cap].push(style);
+    });
+  });
+  const finalCapabilities = capabilities.filter((cap) => {
+    if (capabilityToStyles[cap]) {
+      const requiredStyles = capabilityToStyles[cap];
+      return requiredStyles.some((style) => selectedServiceStyles.includes(style));
+    }
+    return true;
+  });
+  return finalCapabilities;
+}
+function getEffectiveCapabilities(options) {
+  const stage1Capabilities = filterCapabilitiesByVendorConfiguration(options);
+  const stage2Capabilities = filterCapabilitiesByServiceStyles(
+    options.selectedServiceStyles,
+    stage1Capabilities,
+    options.capabilityRules
+  );
+  return {
+    stage1_solo_business: stage1Capabilities,
+    stage2_service_styles: stage2Capabilities
+    // FINAL
+  };
+}
+
+// src/endpoints/vendor-profile.ts
+var CRITICAL_FIELDS = [
+  "business_name",
+  "owner_name",
+  "gst_number",
+  "pan_number",
+  "registration_number",
+  "address",
+  "city",
+  "state",
+  "pincode",
+  "latitude",
+  "longitude"
+];
+function normalizePhoneForLookup(phone) {
+  if (phone == null || String(phone).trim() === "") return void 0;
+  return String(phone).replace(/\D/g, "");
+}
+async function getVendorIdsForAvailabilityLookup(vendorIdOrResolved) {
+  const vendor = await resolveVendorById(vendorIdOrResolved);
+  if (!vendor || !vendor.id) return [String(vendorIdOrResolved || "")];
+  const ids = [String(vendor.id)];
+  try {
+    const res = await query(
+      `SELECT id FROM vendor_identity WHERE vendor_id::text = $1 OR phone = $2`,
+      [String(vendor.id), vendor.phone || ""]
+    );
+    for (const row of res.rows || []) {
+      if (row?.id) {
+        const s = String(row.id);
+        if (!ids.includes(s)) ids.push(s);
+      }
+    }
+  } catch {
+  }
+  return ids;
+}
+async function getVendorIdentityId(vendorIdOrResolved) {
+  const vendor = await resolveVendorById(vendorIdOrResolved);
+  if (!vendor || !vendor.id) return null;
+  try {
+    const res = await query(
+      `SELECT id FROM vendor_identity WHERE vendor_id::text = $1 OR phone = $2 LIMIT 1`,
+      [String(vendor.id), vendor.phone || ""]
+    );
+    const row = res.rows?.[0];
+    return row?.id ? String(row.id) : null;
+  } catch {
+    return null;
+  }
+}
+async function resolveVendorById(vendorId) {
+  const trimmedId = (vendorId || "").trim();
+  if (!trimmedId) return null;
+  let vendors = await select("vendors", { id: trimmedId });
+  if (vendors.length > 0) return vendors[0];
+  console.log(`[PROFILE] Vendor ${trimmedId} not in vendors table, checking vendor_identity...`);
+  let identities = await select("vendor_identity", { id: trimmedId });
+  if (identities.length === 0) {
+    const byVendorId = await query(
+      `SELECT * FROM vendor_identity WHERE vendor_id = $1 LIMIT 1`,
+      [trimmedId]
+    ).catch(() => ({ rows: [] }));
+    if (byVendorId.rows?.length > 0) {
+      const identity2 = byVendorId.rows[0];
+      const linked = await select("vendors", { id: identity2.vendor_id });
+      if (linked.length > 0) return linked[0];
+    }
+    const byText = await query(
+      `SELECT * FROM vendor_identity WHERE id::text = $1 OR vendor_id::text = $1 LIMIT 1`,
+      [trimmedId]
+    ).catch(() => ({ rows: [] }));
+    if (byText.rows?.length > 0) identities = byText.rows;
+    if (identities.length === 0) {
+      const viaApp = await query(
+        `SELECT vi.* FROM vendor_identity vi
+         INNER JOIN vendor_onboarding_applications voa ON voa.vendor_identity_id = vi.id
+         WHERE voa.id::text = $1 OR voa.vendor_identity_id::text = $1 OR vi.id::text = $1 LIMIT 1`,
+        [trimmedId]
+      ).catch(() => ({ rows: [] }));
+      if (viaApp.rows?.length > 0) identities = viaApp.rows;
+    }
+    if (identities.length === 0) {
+      const staffRows = await query(
+        `SELECT s.vendor_id FROM staff s WHERE s.id::text = $1 LIMIT 1`,
+        [trimmedId]
+      ).catch(() => ({ rows: [] }));
+      if (staffRows.rows?.length > 0 && staffRows.rows[0].vendor_id) {
+        const linked = await select("vendors", { id: staffRows.rows[0].vendor_id });
+        if (linked.length > 0) return linked[0];
+      }
+      return null;
+    }
+  }
+  const identity = identities[0];
+  if (identity.onboarding_status !== "APPROVED" && identity.onboarding_status !== "ACTIVATED") {
+    return null;
+  }
+  const phoneNorm = normalizePhoneForLookup(identity.phone);
+  if (phoneNorm) {
+    const vendorByPhone = await query(
+      `SELECT * FROM vendors WHERE REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE $1 OR phone = $2 LIMIT 1`,
+      [`%${phoneNorm}%`, identity.phone]
+    ).catch(() => ({ rows: [] }));
+    if (vendorByPhone.rows?.length > 0) return vendorByPhone.rows[0];
+  }
+  const vendorByPhoneDirect = await select("vendors", { phone: identity.phone });
+  if (vendorByPhoneDirect.length > 0) return vendorByPhoneDirect[0];
+  const applications = await select("vendor_onboarding_applications", { vendor_identity_id: identity.id });
+  const application = applications.length > 0 ? applications[0] : null;
+  const payload = application?.application_payload || {};
+  const newVendorId = identity.vendor_id || identity.id;
+  console.log(`[PROFILE] Auto-creating vendor record for approved vendor ${identity.id}, using vendor id: ${newVendorId}`);
+  const newVendor = await insert("vendors", {
+    id: newVendorId,
+    phone: identity.phone,
+    email: payload.email || payload.businessEmail || `vendor-${identity.phone}@warmpawz.app`,
+    business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+    owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
+    role_id: identity.selected_role_id,
+    vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
+    category: "general",
+    address: payload.address || "Not specified",
+    city: payload.city || "Not specified",
+    state: payload.state || "Not specified",
+    pincode: payload.pin || payload.pincode || "",
+    status: "active",
+    is_active: true,
+    created_at: (/* @__PURE__ */ new Date()).toISOString(),
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  return newVendor[0];
+}
+async function decodeJwtFromHeader(authHeader) {
+  if (!authHeader) return {};
+  const token = authHeader.replace(/^Bearer\s+/i, "");
+  if (!token) return {};
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return {};
+    const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf-8"));
+    const phone = payload.phone || payload.phone_number || payload["cognito:username"];
+    const userId = payload.userId || payload.sub || payload.user_id;
+    console.log(`\u{1F510} [JWT-DECODE] Extracted phone: ${phone}, userId: ${userId}`);
+    return {
+      phone,
+      userId
+    };
+  } catch (e) {
+    console.warn("Failed to decode JWT:", e);
+    return {};
+  }
+}
+function registerVendorProfileEndpoints(app3) {
+  app3.get("/vendor/profile", async (c) => {
+    try {
+      const authHeader = c.req.header("Authorization");
+      const { phone, userId: vendorIdFromAuth } = await decodeJwtFromHeader(authHeader);
+      console.log(`\u{1F4CA} [PROFILE-GET] Getting profile for phone: ${phone}, vendorId: ${vendorIdFromAuth}`);
+      let vendor = null;
+      let identityData = null;
+      if (vendorIdFromAuth && !vendorIdFromAuth.startsWith("temp_")) {
+        try {
+          const vendors = await select("vendors", { id: vendorIdFromAuth });
+          if (vendors.length > 0) {
+            vendor = vendors[0];
+          }
+        } catch (e) {
+          console.warn(`[PROFILE-GET] Error finding vendor by ID ${vendorIdFromAuth}:`, e);
+        }
+      }
+      if (!vendor && phone) {
+        try {
+          const vendorsByPhone = await select("vendors", { phone });
+          if (vendorsByPhone.length > 0) {
+            vendor = vendorsByPhone[0];
+          }
+        } catch (e) {
+          console.warn(`[PROFILE-GET] Error finding vendor by phone:`, e);
+        }
+      }
+      if (phone) {
+        try {
+          const identitiesResult = await query(
+            `SELECT * FROM vendor_identity WHERE phone = $1 ORDER BY 
+             (CASE WHEN onboarding_status IN ('APPROVED', 'ACTIVATED') THEN 0 ELSE 1 END),
+             updated_at DESC NULLS LAST`,
+            [phone]
+          );
+          const identities = identitiesResult?.rows || [];
+          if (identities.length > 0) {
+            identityData = identities[0];
+            if (!vendor && identityData && typeof identityData.vendor_id === "string") {
+              try {
+                const vendors = await select("vendors", { id: identityData.vendor_id });
+                if (vendors.length > 0) {
+                  vendor = vendors[0];
+                }
+              } catch (e) {
+                console.warn(`[PROFILE-GET] Error finding vendor by identity.vendor_id:`, e);
+              }
+            }
+            if (!vendor && identityData?.vendor_id) {
+              try {
+                const vByPhone = await select("vendors", { phone });
+                if (vByPhone.length > 0) vendor = vByPhone[0];
+              } catch (_e) {
+              }
+            }
+          }
+        } catch (e) {
+          console.warn(`[PROFILE-GET] Error fetching vendor_identity:`, e);
+        }
+      }
+      if (!vendor) {
+        if (identityData) {
+          const identityStatus = identityData.onboarding_status || "INIT";
+          const isApproved = identityStatus === "APPROVED" || identityStatus === "ACTIVATED";
+          console.log(`\u{1F4DD} [PROFILE-GET] Vendor in onboarding, status: ${identityStatus}, isApproved: ${isApproved}`);
+          return c.json({
+            success: true,
+            vendor: {
+              id: identityData.id,
+              phone,
+              status: isApproved ? "active" : identityStatus.toLowerCase(),
+              isActive: isApproved,
+              onboardingStatus: identityStatus
+            },
+            status: isApproved ? "active" : identityStatus === "INIT" ? "new" : identityStatus.toLowerCase(),
+            message: "Vendor in onboarding"
+          });
+        }
+        console.log(`\u26A0\uFE0F [PROFILE-GET] No vendor found for phone: ${phone}`);
+        return c.json({
+          success: true,
+          vendor: null,
+          status: "new",
+          message: "No vendor profile found"
+        });
+      }
+      let applicationData = null;
+      try {
+        let identityForApp = identityData;
+        if (!identityForApp && phone) {
+          const idResult = await query("SELECT * FROM vendor_identity WHERE vendor_id = $1 OR phone = $2 LIMIT 1", [vendor.id, phone]);
+          identityForApp = idResult.rows?.[0];
+        }
+        if (identityForApp?.id) {
+          const apps = await select("vendor_onboarding_applications", { vendor_identity_id: identityForApp.id });
+          if (apps.length > 0) applicationData = apps[0];
+        }
+        if (!applicationData && phone) {
+          const appsResult = await query(
+            "SELECT voa.* FROM vendor_onboarding_applications voa JOIN vendor_identity vi ON vi.id = voa.vendor_identity_id WHERE vi.phone = $1 ORDER BY voa.updated_at DESC LIMIT 1",
+            [phone]
+          );
+          const rows = appsResult.rows;
+          if (rows?.length > 0) applicationData = rows[0];
+        }
+      } catch (e) {
+        console.warn("[PROFILE-GET] Error fetching applications:", e);
+      }
+      let roleInfo = null;
+      try {
+        if (vendor.role_id) {
+          const roles = await select("roles", { id: vendor.role_id });
+          if (roles.length > 0) {
+            roleInfo = roles[0];
+          }
+        }
+      } catch (e) {
+        console.warn("[PROFILE-GET] Error fetching role info:", e);
+      }
+      let uiStatus = "new";
+      if (vendor.is_active) {
+        uiStatus = "active";
+      } else if (vendor.status === "approved") {
+        uiStatus = vendor.setup_completed ? "active" : "approved";
+      } else if (vendor.status === "pending" || vendor.status === "under_review") {
+        uiStatus = "pending";
+      } else if (vendor.status === "rejected") {
+        uiStatus = "rejected";
+      } else if (applicationData?.status) {
+        const appStatus = String(applicationData.status).toLowerCase();
+        uiStatus = appStatus === "approved" ? vendor.is_active ? "active" : "approved" : appStatus;
+      }
+      console.log(`\u2705 [PROFILE-GET] Found vendor: ${vendor.id}, status: ${uiStatus}`);
+      return c.json({
+        success: true,
+        vendor: {
+          id: vendor.id,
+          businessName: vendor.business_name,
+          ownerName: vendor.owner_name,
+          phone: vendor.phone,
+          email: vendor.email,
+          status: uiStatus,
+          isActive: vendor.is_active,
+          setupCompleted: vendor.setup_completed,
+          servicesSetupCompleted: vendor.services_setup_completed,
+          availabilitySetupCompleted: vendor.availability_setup_completed,
+          roleId: vendor.role_id,
+          roleName: roleInfo?.name,
+          vendorType: vendor.vendor_type,
+          serviceStyle: vendor.service_style,
+          applicationId: applicationData?.id,
+          applicationStatus: applicationData?.status,
+          createdAt: vendor.created_at
+        }
+      });
+    } catch (error) {
+      console.error("\u274C [PROFILE-GET] Error:", error);
+      return c.json({ error: "Failed to get vendor profile", details: error.message }, 500);
+    }
+  });
+  app3.post("/vendor/:vendorId/profile/photo", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      console.log(`\u{1F4F8} [PROFILE-PHOTO] Uploading photo for vendor: ${vendorId}`);
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const formData = await c.req.formData();
+      const photo = formData.get("photo");
+      if (!photo) {
+        return c.json({ error: "No photo provided" }, 400);
+      }
+      const { S3Client: S3Client7, PutObjectCommand: PutObjectCommand6, GetObjectCommand: GetObjectCommand5 } = await import("@aws-sdk/client-s3");
+      const { getSignedUrl: getSignedUrl4 } = await import("@aws-sdk/s3-request-presigner");
+      const s3Client6 = new S3Client7({ region: process.env.AWS_REGION || "ap-south-1" });
+      const BUCKET_NAME3 = process.env.S3_UPLOADS_BUCKET || "warmpawz-dev-uploads";
+      const timestamp = Date.now();
+      const ext = photo.name.split(".").pop() || "jpg";
+      const actualVendorId = vendor.id;
+      const fileName = `vendors/${actualVendorId}/profile/photo_${timestamp}.${ext}`;
+      const arrayBuffer = await photo.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      await s3Client6.send(new PutObjectCommand6({
+        Bucket: BUCKET_NAME3,
+        Key: fileName,
+        Body: uint8Array,
+        ContentType: photo.type || "image/jpeg"
+      }));
+      const signedUrl = await getSignedUrl4(
+        s3Client6,
+        new GetObjectCommand5({
+          Bucket: BUCKET_NAME3,
+          Key: fileName
+        }),
+        { expiresIn: 604800 }
+        // 7 days (max for presigned URLs)
+      );
+      await update("vendors", { id: actualVendorId }, {
+        profile_photo_url: signedUrl,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+      console.log(`\u2705 [PROFILE-PHOTO] Photo uploaded successfully for vendor ${actualVendorId}`);
+      return c.json({
+        success: true,
+        photo_url: signedUrl,
+        fileName
+      });
+    } catch (error) {
+      console.error("\u274C [PROFILE-PHOTO] Error uploading photo:", error);
+      return c.json({ error: error.message || "Failed to upload photo" }, 500);
+    }
+  });
+  const profileUpdateHandler = async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const rawUpdates = await c.req.json();
+      console.log(`\u{1F4DD} [PROFILE-UPDATE] Vendor ${vendorId} updating profile`, rawUpdates);
+      const camelToSnakeMap = {
+        businessName: "business_name",
+        ownerName: "owner_name",
+        profilePhotoUrl: "profile_photo_url",
+        isActive: "is_active",
+        setupCompleted: "setup_completed",
+        servicesSetupCompleted: "services_setup_completed",
+        availabilitySetupCompleted: "availability_setup_completed",
+        roleId: "role_id",
+        createdAt: "created_at",
+        updatedAt: "updated_at"
+      };
+      const updates = {};
+      for (const [key, value] of Object.entries(rawUpdates)) {
+        const dbKey = camelToSnakeMap[key] || key;
+        updates[dbKey] = value;
+      }
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const wasApproved = vendor.status === "approved";
+      const previousStatus = vendor.status;
+      let criticalFieldsChanged = false;
+      const changedFields = [];
+      for (const field of CRITICAL_FIELDS) {
+        if (updates[field] !== void 0 && updates[field] !== vendor[field]) {
+          criticalFieldsChanged = true;
+          changedFields.push(field);
+        }
+      }
+      console.log(`\u{1F50D} [PROFILE-UPDATE] Critical fields changed: ${criticalFieldsChanged}`);
+      console.log(`\u{1F4CB} [PROFILE-UPDATE] Changed fields: ${changedFields.join(", ")}`);
+      const schemaResult = await query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'vendors'
+      `);
+      const existingColumns = new Set(schemaResult.rows.map((r) => r.column_name));
+      const safeColumns = [
+        "business_name",
+        "owner_name",
+        "phone",
+        "email",
+        "address",
+        "city",
+        "state",
+        "pincode",
+        "description",
+        "profile_photo_url",
+        "latitude",
+        "longitude",
+        "is_active",
+        "status",
+        "setup_completed",
+        "services_setup_completed",
+        "availability_setup_completed",
+        "metadata",
+        "experience_years",
+        "qualifications",
+        "service_area",
+        "specializations"
+        // ✅ Added for solo provider profile
+      ];
+      const updateData = {};
+      for (const [key, value] of Object.entries(updates)) {
+        if (safeColumns.includes(key) && existingColumns.has(key)) {
+          updateData[key] = value;
+        }
+      }
+      const skippedFields = Object.keys(updates).filter((k) => !existingColumns.has(k) && safeColumns.includes(k));
+      if (skippedFields.length > 0) {
+        console.log(`\u26A0\uFE0F [PROFILE-UPDATE] Skipped non-existent columns: ${skippedFields.join(", ")}`);
+      }
+      if (criticalFieldsChanged && wasApproved) {
+        console.log(`\u26A0\uFE0F [PROFILE-UPDATE] Critical fields changed - requiring re-approval`);
+        updateData.status = "pending";
+        updateData.metadata = {
+          ...vendor.metadata || {},
+          previousStatus,
+          wasApprovedBefore: true,
+          reapprovalReason: `Critical profile fields updated: ${changedFields.join(", ")}`,
+          reapprovalRequestedAt: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        await insert("notifications", {
+          recipient_id: null,
+          // Admin notifications can have null recipient_id
+          recipient_type: "admin",
+          title: "Profile Update Review Required",
+          message: `Approved vendor "${vendor.business_name}" updated their profile. Re-approval required.`,
+          notification_type: "admin_alert",
+          channels: { email: true, sms: false, inApp: true, push: false },
+          is_read: false
+        }).catch((error) => {
+          console.warn("[VENDOR-PROFILE] Error creating notification:", error instanceof Error ? error.message : "Unknown error");
+        });
+        const snsClient4 = getSnsClient();
+        await snsClient4.send(new import_client_sns4.PublishCommand({
+          TopicArn: process.env.ADMIN_ALERT_TOPIC_ARN,
+          Message: JSON.stringify({
+            eventType: "VendorProfileUpdate",
+            vendorId,
+            vendorName: vendor.business_name,
+            changedFields,
+            requiresReapproval: true
+          })
+        })).catch((err) => console.error("SNS notification failed:", err));
+        const updated = await update("vendors", { id: vendor.id }, updateData);
+        return c.json({
+          success: true,
+          message: "Profile updated. Re-approval required for critical changes.",
+          requiresReapproval: true,
+          changedFields,
+          status: "pending",
+          vendor: updated[0]
+        });
+      } else {
+        console.log(`\u2705 [PROFILE-UPDATE] Non-critical fields updated - no re-approval needed`);
+        const updated = await update("vendors", { id: vendor.id }, updateData);
+        return c.json({
+          success: true,
+          message: "Profile updated successfully",
+          requiresReapproval: false,
+          status: vendor.status,
+          vendor: updated[0]
+        });
+      }
+    } catch (error) {
+      console.error("\u274C [PROFILE-UPDATE] Error updating profile:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  };
+  app3.put("/vendor/:vendorId/profile", profileUpdateHandler);
+  app3.post("/vendor/:vendorId/profile", profileUpdateHandler);
+  app3.get("/vendor/:vendorId/profile/edit-check", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const vendor = vendors[0];
+      const isApproved = vendor.status === "approved";
+      return c.json({
+        canEdit: true,
+        // Vendors can always edit
+        currentStatus: vendor.status,
+        warning: isApproved ? "Editing critical profile fields will require admin re-approval" : null,
+        criticalFields: CRITICAL_FIELDS
+      });
+    } catch (error) {
+      console.error("\u274C [PROFILE-UPDATE] Error checking edit status:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/profile", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return c.json({
+          success: true,
+          vendor: {
+            id: vendorId,
+            business_name: "Test Vendor",
+            owner_name: "Test Owner",
+            role: null,
+            capabilities: [],
+            vendorTypes: [],
+            serviceStyles: []
+          }
+        });
+      }
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        const identities = await select("vendor_identity", { id: vendorId });
+        if (identities.length > 0 && identities[0].onboarding_status !== "APPROVED" && identities[0].onboarding_status !== "ACTIVATED") {
+          return c.json({ error: "Vendor not approved or activated" }, 403);
+        }
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      let role = null;
+      let capabilities = [];
+      let roleConfig = {};
+      let vendorConfiguration = null;
+      let selectedServiceStyles = [];
+      let customerService = null;
+      if (vendor.role_id) {
+        try {
+          const roles = await select("roles", { id: vendor.role_id });
+          if (roles.length > 0) {
+            role = roles[0];
+            roleConfig = role.config || {};
+            customerService = role.customer_service || roleConfig?.customer_service || null;
+            const vendorType = vendor.vendor_type;
+            vendorConfiguration = vendorType === "solo" || vendorType === "business" ? vendorType : roleConfig?.vendorConfiguration || null;
+            selectedServiceStyles = roleConfig?.serviceStyles?.selected || [];
+            const permissions = await select("role_permissions", { role_id: vendor.role_id });
+            const baseCapabilities = permissions.map((p) => p.permission_name);
+            if (vendorConfiguration) {
+              const { stage2_service_styles: effectiveCapabilities } = getEffectiveCapabilities({
+                vendorConfiguration,
+                selectedServiceStyles,
+                baseCapabilities,
+                capabilityRules: roleConfig?.capabilityRules
+              });
+              capabilities = effectiveCapabilities;
+            } else {
+              capabilities = baseCapabilities;
+            }
+          }
+        } catch (roleError) {
+          console.warn(`[Vendor Profile] Failed to load role ${vendor.role_id}:`, roleError.message);
+        }
+      }
+      return c.json({
+        success: true,
+        vendor: {
+          ...vendor,
+          // ✅ Explicitly include profile fields (even if null) for solo providers
+          qualifications: vendor.qualifications || null,
+          service_area: vendor.service_area || null,
+          description: vendor.description || null,
+          experience_years: vendor.experience_years ?? null,
+          // Include role info directly in response
+          role: role ? {
+            id: role.id,
+            name: role.name,
+            display_name: role.display_name,
+            description: role.description,
+            config: roleConfig
+          } : null,
+          customer_service: customerService,
+          vendorConfiguration,
+          serviceStyles: selectedServiceStyles,
+          capabilities,
+          // ✅ Filtered capabilities (two-stage)
+          vendorTypes: roleConfig?.vendorTypes || [],
+          profileType: vendorConfiguration === "solo" ? "professional" : "center",
+          allowedServiceStyles: vendorConfiguration ? roleConfig?.serviceStyles?.[vendorConfiguration] || [] : []
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching vendor profile:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/complete", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return c.json({
+          success: true,
+          vendor: {
+            id: vendorId,
+            business_name: "Test Vendor",
+            owner_name: "Test Owner",
+            role: null,
+            capabilities: [],
+            vendorTypes: [],
+            serviceStyles: []
+          },
+          onboardingForm: null,
+          setupStatus: {
+            profileCompleted: false,
+            servicesConfigured: false,
+            availabilitySet: false,
+            paymentSetup: false,
+            isComplete: false
+          }
+        });
+      }
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const vendor = vendors[0];
+      let role = null;
+      let capabilities = [];
+      let roleConfig = {};
+      let onboardingForm = null;
+      if (vendor.role_id) {
+        try {
+          const roles = await select("roles", { id: vendor.role_id });
+          if (roles.length > 0) {
+            role = roles[0];
+            roleConfig = role.config || {};
+            try {
+              const allPermissions = await query(
+                `SELECT role_id, permission_name 
+                 FROM role_permissions 
+                 WHERE role_id = ANY($1::text[])`,
+                [[vendor.role_id]]
+              );
+              capabilities = allPermissions.rows.map((p) => p.permission_name);
+            } catch {
+              const permissions = await select("role_permissions", { role_id: vendor.role_id });
+              capabilities = permissions.map((p) => p.permission_name);
+            }
+            try {
+              const forms = await select("onboarding_forms", { role_id: role.name });
+              if (forms.length > 0) {
+                const fields = typeof forms[0].fields === "string" ? JSON.parse(forms[0].fields) : forms[0].fields || [];
+                onboardingForm = {
+                  fields: fields.filter((f) => f.isActive !== false),
+                  version: forms[0].version || 1
+                };
+              }
+            } catch (formError) {
+              console.warn(`[Vendor Complete] Failed to load onboarding form:`, formError.message);
+            }
+          }
+        } catch (roleError) {
+          console.warn(`[Vendor Complete] Failed to load role ${vendor.role_id}:`, roleError.message);
+        }
+      }
+      return c.json({
+        success: true,
+        vendor: {
+          ...vendor,
+          role: role ? {
+            id: role.id,
+            name: role.name,
+            display_name: role.display_name,
+            description: role.description,
+            config: roleConfig
+          } : null,
+          capabilities,
+          vendorTypes: roleConfig?.vendorTypes || [],
+          serviceStyles: roleConfig?.serviceStyles || [],
+          onboardingForm
+          // Include form if available
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching complete vendor data:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/bank-account", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      const schemaCheck = await query(`
+        SELECT 
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as has_accounts_table,
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_details') as has_details_table
+      `);
+      const schema = schemaCheck.rows[0] || {};
+      let bankAccounts = [];
+      if (schema.has_accounts_table) {
+        try {
+          const accounts = await query(
+            `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 ORDER BY is_primary DESC, created_at DESC LIMIT 1`,
+            [resolvedVendorId]
+          );
+          bankAccounts = accounts.rows;
+        } catch (e) {
+          console.warn("Error querying vendor_bank_accounts:", e);
+        }
+      }
+      if (bankAccounts.length === 0 && schema.has_details_table) {
+        try {
+          bankAccounts = await select("vendor_bank_details", { vendor_id: resolvedVendorId });
+        } catch (e) {
+          console.warn("Error querying vendor_bank_details:", e);
+        }
+      }
+      if (bankAccounts.length === 0) {
+        return c.json({ success: true, bankAccount: null });
+      }
+      const bankAccount = normalizeDbRow(bankAccounts[0]);
+      return c.json({ success: true, bankAccount });
+    } catch (error) {
+      console.error("Error fetching bank account:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/vendor/:vendorId/bank-account", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { account_holder_name, account_number, ifsc_code, bank_name, branch_name } = body;
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      if (!account_holder_name || !account_number || !ifsc_code || !bank_name) {
+        return c.json({ error: "Missing required fields: account_holder_name, account_number, ifsc_code, bank_name" }, 400);
+      }
+      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc_code.toUpperCase())) {
+        return c.json({ error: "Invalid IFSC code format" }, 400);
+      }
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      const existing = await select("vendor_bank_details", { vendor_id: resolvedVendorId });
+      const bankData = {
+        vendor_id: resolvedVendorId,
+        account_holder_name: account_holder_name.trim(),
+        account_number: account_number.replace(/\s/g, ""),
+        ifsc_code: ifsc_code.toUpperCase().trim(),
+        bank_name: bank_name.trim(),
+        branch_name: branch_name?.trim() || null,
+        is_verified: false,
+        // Reset verification status on update
+        verified_at: null,
+        verified_by: null,
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (existing.length > 0) {
+        await update("vendor_bank_details", { vendor_id: resolvedVendorId }, bankData);
+      } else {
+        await insert("vendor_bank_details", bankData);
+      }
+      await query(
+        `UPDATE vendor_setup_completion 
+         SET bank_account_completed = true, 
+             bank_account_completed_at = NOW(),
+             updated_at = NOW()
+         WHERE vendor_id = $1`,
+        [resolvedVendorId]
+      ).catch((error) => {
+        if (error instanceof Error && !error.message.includes("does not exist")) {
+          console.warn("[VENDOR-PROFILE] Unexpected error updating vendor onboarding:", error.message);
+        }
+      });
+      return c.json({ success: true, message: "Bank account saved successfully" });
+    } catch (error) {
+      console.error("Error saving bank account:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/vendor/:vendorId/bank-account/verify", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const resolvedVendorId = vendor.id;
+      const schemaCheck = await query(`
+        SELECT 
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as has_accounts_table,
+          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_details') as has_details_table
+      `);
+      const schema = schemaCheck.rows?.[0] || {};
+      let bankAccounts = [];
+      if (schema.has_accounts_table) {
+        try {
+          const accounts = await query(
+            `SELECT *, 'vendor_bank_accounts' as _source FROM vendor_bank_accounts WHERE vendor_id = $1 ORDER BY is_primary DESC, created_at DESC LIMIT 1`,
+            [resolvedVendorId]
+          );
+          bankAccounts = accounts.rows || [];
+        } catch (e) {
+          console.warn("Error querying vendor_bank_accounts for verify:", e);
+        }
+      }
+      if (bankAccounts.length === 0 && schema.has_details_table) {
+        try {
+          bankAccounts = await select("vendor_bank_details", { vendor_id: resolvedVendorId });
+          if (bankAccounts.length > 0) bankAccounts[0]._source = "vendor_bank_details";
+        } catch (e) {
+          console.warn("Error querying vendor_bank_details for verify:", e);
+        }
+      }
+      if (bankAccounts.length === 0) {
+        return c.json({ error: "Bank account not found. Please add bank account details first." }, 404);
+      }
+      const bank = bankAccounts[0];
+      const accountHolderName = (bank.account_holder_name || "").trim();
+      const accountNumber = (bank.account_number || "").replace(/\s/g, "");
+      const ifscCode = (bank.ifsc_code || "").toUpperCase().trim();
+      const sourceTable = bank._source || (schema.has_accounts_table ? "vendor_bank_accounts" : "vendor_bank_details");
+      if (!accountHolderName || !accountNumber || !ifscCode) {
+        return c.json({
+          success: false,
+          error: "Bank account record missing name, account number, or IFSC. Please complete all fields."
+        }, 400);
+      }
+      const { validateBankAccountStrict: validateBankAccountStrict2 } = await Promise.resolve().then(() => (init_razorpay(), razorpay_exports));
+      const result = await validateBankAccountStrict2(accountNumber, ifscCode, accountHolderName);
+      if (result.error) {
+        return c.json({
+          success: false,
+          error: result.error,
+          details: result.details
+        }, 400);
+      }
+      const verifyPayload = {
+        is_verified: true,
+        verified_at: (/* @__PURE__ */ new Date()).toISOString(),
+        updated_at: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      if (sourceTable === "vendor_bank_accounts" && bank.id) {
+        await update("vendor_bank_accounts", { id: bank.id, vendor_id: resolvedVendorId }, verifyPayload);
+      } else {
+        await update("vendor_bank_details", { vendor_id: resolvedVendorId }, verifyPayload);
+      }
+      return c.json({
+        success: true,
+        message: "Bank account verified successfully. Name, IFSC, and account number validated.",
+        verified: true
+      });
+    } catch (error) {
+      console.error("Error verifying bank account:", error);
+      return c.json({ error: error.message || "Verification failed" }, 500);
+    }
+  });
+  app3.post("/vendor/:vendorId/bank-account/document", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { document_type, document_url } = body;
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      if (!document_type || !document_url) {
+        return c.json({ error: "document_type and document_url are required" }, 400);
+      }
+      return c.json({ success: true, message: "Document uploaded successfully" });
+    } catch (error) {
+      console.error("Error uploading document:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/vendor/:vendorId/settings", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      let vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        console.log(`[SETTINGS] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
+        const identities = await select("vendor_identity", { id: vendorId });
+        if (identities.length > 0) {
+          const identity = identities[0];
+          if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
+            const vendorByPhone = await select("vendors", { phone: identity.phone });
+            if (vendorByPhone.length > 0) {
+              vendors = vendorByPhone;
+              console.log(`[SETTINGS] Found existing vendor by phone: ${vendors[0].id}`);
+            } else {
+              const applications = await select("vendor_onboarding_applications", { vendor_identity_id: vendorId });
+              const application = applications.length > 0 ? applications[0] : null;
+              const payload = application?.application_payload || {};
+              console.log(`[SETTINGS] Auto-creating vendor record for approved vendor ${vendorId}`);
+              const newVendor = await insert("vendors", {
+                id: vendorId,
+                phone: identity.phone,
+                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
+                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+                owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
+                role_id: identity.selected_role_id,
+                vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
+                category: "general",
+                address: payload.address || "Not specified",
+                city: payload.city || "Not specified",
+                state: payload.state || "Not specified",
+                pincode: payload.pin || payload.pincode || "",
+                // Don't use default - require actual pincode
+                status: "active",
+                is_active: true,
+                created_at: (/* @__PURE__ */ new Date()).toISOString(),
+                updated_at: (/* @__PURE__ */ new Date()).toISOString()
+              });
+              vendors = newVendor;
+              console.log(`[SETTINGS] Created vendor record for ${vendorId}`);
+            }
+          } else {
+            return c.json({ error: "Vendor not approved or activated" }, 403);
+          }
+        } else {
+          return c.json({ error: "Vendor not found" }, 404);
+        }
+      }
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const vendor = vendors[0];
+      const settings = {
+        service_radius: vendor.service_radius || null,
+        emergency_contact: vendor.emergency_contact || null,
+        max_dogs_per_walk: vendor.max_dogs_per_walk || null,
+        walk_durations: vendor.walk_durations || [],
+        other_config: vendor.other_config || {}
+      };
+      return c.json({ success: true, settings });
+    } catch (error) {
+      console.error("Error fetching settings:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  const settingsHandler = async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const body = await c.req.json();
+      const { service_radius, emergency_contact, max_dogs_per_walk, walk_durations, other_config } = body;
+      if (!isValidUUID(vendorId)) {
+        return c.json({ error: "Invalid vendor ID" }, 400);
+      }
+      if (emergency_contact) {
+        if (!emergency_contact.name || !emergency_contact.phone) {
+          return c.json({ error: "Emergency contact must have both name and phone" }, 400);
+        }
+        const phoneDigits = emergency_contact.phone.replace(/\D/g, "");
+        if (phoneDigits.length < 10) {
+          return c.json({ error: "Invalid emergency contact phone number" }, 400);
+        }
+      }
+      let vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        console.log(`[SETTINGS-UPDATE] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
+        const identities = await select("vendor_identity", { id: vendorId });
+        if (identities.length > 0) {
+          const identity = identities[0];
+          if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
+            const vendorByPhone = await select("vendors", { phone: identity.phone });
+            if (vendorByPhone.length > 0) {
+              vendors = vendorByPhone;
+              console.log(`[SETTINGS-UPDATE] Found existing vendor by phone: ${vendors[0].id}`);
+            } else {
+              const applications = await select("vendor_onboarding_applications", { vendor_identity_id: vendorId });
+              const application = applications.length > 0 ? applications[0] : null;
+              const payload = application?.application_payload || {};
+              console.log(`[SETTINGS-UPDATE] Auto-creating vendor record for approved vendor ${vendorId}`);
+              const newVendor = await insert("vendors", {
+                id: vendorId,
+                phone: identity.phone,
+                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
+                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
+                owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
+                role_id: identity.selected_role_id,
+                vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
+                category: "general",
+                address: payload.address || "Not specified",
+                city: payload.city || "Not specified",
+                state: payload.state || "Not specified",
+                pincode: payload.pin || payload.pincode || "",
+                // Don't use default - require actual pincode
+                status: "active",
+                is_active: true,
+                created_at: (/* @__PURE__ */ new Date()).toISOString(),
+                updated_at: (/* @__PURE__ */ new Date()).toISOString()
+              });
+              vendors = newVendor;
+              console.log(`[SETTINGS-UPDATE] Created vendor record for ${vendorId}`);
+            }
+          } else {
+            return c.json({ error: "Vendor not approved or activated" }, 403);
+          }
+        } else {
+          return c.json({ error: "Vendor not found" }, 404);
+        }
+      }
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const schemaCheck = await query(`
+        SELECT 
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'service_radius') as has_service_radius,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'emergency_contact') as has_emergency_contact,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'max_dogs_per_walk') as has_max_dogs,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'walk_durations') as has_walk_durations,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'other_config') as has_other_config,
+          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_settings') as has_vendor_settings_table
+      `);
+      const schema = schemaCheck.rows[0] || {};
+      const setClauses = ["updated_at = NOW()"];
+      const params = [];
+      let paramIdx = 1;
+      if (service_radius !== void 0 && schema.has_service_radius) {
+        setClauses.push(`service_radius = $${paramIdx}`);
+        params.push(service_radius);
+        paramIdx++;
+      }
+      if (emergency_contact !== void 0 && schema.has_emergency_contact) {
+        setClauses.push(`emergency_contact = $${paramIdx}::jsonb`);
+        params.push(JSON.stringify(emergency_contact));
+        paramIdx++;
+      }
+      if (max_dogs_per_walk !== void 0 && schema.has_max_dogs) {
+        setClauses.push(`max_dogs_per_walk = $${paramIdx}`);
+        params.push(max_dogs_per_walk);
+        paramIdx++;
+      }
+      if (walk_durations !== void 0 && schema.has_walk_durations) {
+        if (Array.isArray(walk_durations) && walk_durations.length > 0) {
+          setClauses.push(`walk_durations = $${paramIdx}::text[]`);
+          params.push(walk_durations);
+          paramIdx++;
+        } else {
+          setClauses.push(`walk_durations = NULL`);
+        }
+      }
+      if (other_config !== void 0 && schema.has_other_config) {
+        setClauses.push(`other_config = $${paramIdx}::jsonb`);
+        params.push(JSON.stringify(other_config || {}));
+        paramIdx++;
+      }
+      const actualVendorId = vendors[0].id;
+      params.push(actualVendorId);
+      await query(
+        `UPDATE vendors SET ${setClauses.join(", ")} WHERE id = $${paramIdx}`,
+        params
+      );
+      return c.json({ success: true, message: "Settings updated successfully" });
+    } catch (error) {
+      console.error("Error updating settings:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  };
+  app3.put("/vendor/:vendorId/settings", settingsHandler);
+  app3.post("/vendor/:vendorId/settings", settingsHandler);
+  app3.get("/vendor/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return c.json({
+          success: true,
+          vendor: {
+            id: vendorId,
+            business_name: "Test Vendor",
+            owner_name: "Test Owner",
+            role: null,
+            capabilities: []
+          },
+          menu: []
+        });
+      }
+      const vendors = await select("vendors", { id: vendorId });
+      if (vendors.length === 0) {
+        return c.json({ error: "Vendor not found" }, 404);
+      }
+      const vendor = vendors[0];
+      let role = null;
+      let capabilities = [];
+      let roleConfig = {};
+      let isCafe = false;
+      if (vendor.role_id) {
+        try {
+          const roles = await select("roles", { id: vendor.role_id });
+          if (roles.length > 0) {
+            role = roles[0];
+            roleConfig = role.config || {};
+            const permissions = await select("role_permissions", { role_id: vendor.role_id });
+            capabilities = permissions.map((p) => p.permission_name);
+            const roleName = (role.name || "").toLowerCase();
+            isCafe = roleName.includes("cafe") || roleName.includes("restaurant") || capabilities.includes("cafe") || capabilities.includes("cafe_menu");
+          }
+        } catch (roleError) {
+          console.warn(`[Vendor Details] Failed to load role ${vendor.role_id}:`, roleError.message);
+        }
+      }
+      const vendorResponse = {
+        id: vendor.id,
+        business_name: vendor.business_name,
+        owner_name: vendor.owner_name,
+        role_id: vendor.role_id,
+        role: role ? {
+          id: role.id,
+          name: role.name,
+          display_name: role.display_name
+        } : null,
+        capabilities,
+        address: vendor.address,
+        city: vendor.city,
+        state: vendor.state,
+        pincode: vendor.pincode,
+        phone: vendor.phone,
+        email: vendor.email,
+        latitude: vendor.latitude,
+        longitude: vendor.longitude,
+        description: vendor.description || "",
+        operating_hours: vendor.operating_hours ? typeof vendor.operating_hours === "string" ? JSON.parse(vendor.operating_hours) : vendor.operating_hours : null,
+        // Include other vendor fields
+        ...vendor
+      };
+      let menu = [];
+      if (isCafe) {
+        try {
+          const menuItems = await query(
+            `SELECT * FROM cafe_menu_items 
+             WHERE vendor_id = $1 
+             AND is_active = true
+             ORDER BY category, name ASC`,
+            [vendorId]
+          ).catch(() => ({ rows: [] }));
+          menu = menuItems.rows || [];
+        } catch (menuError) {
+          console.warn(`[Vendor Details] Failed to load menu for cafe ${vendorId}:`, menuError.message);
+        }
+      }
+      return c.json({
+        success: true,
+        vendor: vendorResponse,
+        menu
+        // Include menu for cafes
+      });
+    } catch (error) {
+      console.error("Error fetching vendor details:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+}
+
+// src/endpoints/bookings-enhanced.ts
 var MAX_ADVANCE_BOOKING_DAYS = 60;
 var DEFAULT_MIN_NOTICE_HOURS = 1;
 function validateBookingDate(bookingDate, bookingTime, minNoticeHours = DEFAULT_MIN_NOTICE_HOURS) {
@@ -130769,8 +132067,8 @@ function validateBookingDate(bookingDate, bookingTime, minNoticeHours = DEFAULT_
 function generateEventMetadata(requestId) {
   return {
     eventTimestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    eventId: (0, import_crypto11.randomUUID)(),
-    requestId: requestId || (0, import_crypto11.randomUUID)(),
+    eventId: (0, import_crypto12.randomUUID)(),
+    requestId: requestId || (0, import_crypto12.randomUUID)(),
     sourceService: "booking-handler"
   };
 }
@@ -130829,6 +132127,11 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
     } = validationResult.data;
     const amount = amountFromSchema ?? totalAmount;
     const serviceType = rawServiceType === "online" ? "tele" : rawServiceType || "at_vendor";
+    const vendorRow = await resolveVendorById(vendorId);
+    if (!vendorRow || !vendorRow.id) {
+      return this.error("Vendor not found", 404, "VENDOR_NOT_FOUND", void 0, requestId);
+    }
+    const resolvedVendorId = vendorRow.id;
     const roomId = body.roomId || body.room_id;
     const promotionId = body.promotionId || body.promotion_id;
     let totalDurationMinutes = 0;
@@ -130867,16 +132170,16 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
     if (!isUUID && (String(serviceId).toLowerCase() === "diagnostics" || String(serviceId).toLowerCase() === "diagnostic")) {
       const diagResult = await query(
         `SELECT * FROM vendor_services WHERE vendor_id = $1::uuid AND (is_enabled = true OR is_enabled IS NULL) ORDER BY created_at ASC LIMIT 1`,
-        [vendorId]
+        [resolvedVendorId]
       );
       if (diagResult.rows?.length > 0) {
         const row = diagResult.rows[0];
         resolvedServiceId = row.service_id || row.id;
-        console.log(`[BOOKING] Resolved diagnostics serviceId to ${resolvedServiceId} for vendor ${vendorId}`);
+        console.log(`[BOOKING] Resolved diagnostics serviceId to ${resolvedServiceId} for vendor ${resolvedVendorId}`);
       } else {
         const diagTests = await query(
           `SELECT id, price FROM diagnostic_tests WHERE vendor_id = $1::uuid LIMIT 1`,
-          [vendorId]
+          [resolvedVendorId]
         );
         if (diagTests.rows?.length > 0) {
           const test = diagTests.rows[0];
@@ -130891,7 +132194,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
             await query(
               `INSERT INTO vendor_services (vendor_id, service_id, service_name, service_style, publish_status, is_enabled, created_at, updated_at)
                VALUES ($1, $2, 'Lab Tests', 'at_center', 'published', true, NOW(), NOW())`,
-              [vendorId, labServiceId]
+              [resolvedVendorId, labServiceId]
             );
           } catch (insErr) {
             if (!insErr.message?.includes("unique") && insErr.code !== "23505") {
@@ -130899,7 +132202,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
             }
           }
           resolvedServiceId = labServiceId;
-          console.log(`[BOOKING] Diagnostics: created lab service + vendor_service for vendor ${vendorId}`);
+          console.log(`[BOOKING] Diagnostics: created lab service + vendor_service for vendor ${resolvedVendorId}`);
         }
       }
     }
@@ -130907,7 +132210,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
       return this.error("Diagnostics service not found for this vendor. Vendor must have diagnostic tests or services configured.", 404, "NOT_FOUND", void 0, requestId);
     }
     const lookupServiceId = resolvedServiceId;
-    console.log(`[BOOKING] Looking up service ${lookupServiceId} for vendor ${vendorId}`);
+    console.log(`[BOOKING] Looking up service ${lookupServiceId} for vendor ${resolvedVendorId}`);
     let service = null;
     let vendorServicesResult = await query(
       `SELECT * FROM vendor_services 
@@ -130916,7 +132219,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
        AND (is_enabled = true OR is_enabled IS NULL)
        AND publish_status = 'published'
        LIMIT 1`,
-      [lookupServiceId, vendorId]
+      [lookupServiceId, resolvedVendorId]
     );
     if (vendorServicesResult.rows.length > 0) {
       console.log(`[BOOKING] Found vendor_service by service_id (primary lookup)`);
@@ -130929,7 +132232,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
          AND vendor_id = $2::uuid 
          AND (is_enabled = true OR is_enabled IS NULL)
          LIMIT 1`,
-        [lookupServiceId, vendorId]
+        [lookupServiceId, resolvedVendorId]
       );
       if (vendorServicesResult.rows.length > 0) {
         console.log(`[BOOKING] Found vendor_service by service_id (without publish_status check)`);
@@ -130941,7 +132244,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
            WHERE service_id = $1::uuid 
            AND vendor_id = $2::uuid 
            LIMIT 1`,
-          [lookupServiceId, vendorId]
+          [lookupServiceId, resolvedVendorId]
         );
         if (vendorServicesResult.rows.length > 0) {
           console.log(`[BOOKING] Found vendor_service by service_id (no status checks)`);
@@ -130953,7 +132256,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
              WHERE id = $1::uuid 
              AND vendor_id = $2::uuid 
              LIMIT 1`,
-            [lookupServiceId, vendorId]
+            [lookupServiceId, resolvedVendorId]
           );
           if (vendorServiceByIdResult.rows.length > 0) {
             console.log(`[BOOKING] Found vendor_service by id (direct lookup)`);
@@ -130963,7 +132266,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
             console.log(`[BOOKING] Found ${services.length} services in services table`);
             let baseService = services.length > 0 ? services[0] : null;
             if (baseService) {
-              console.error(`[BOOKING] Base service ${serviceId} exists but no vendor_services entry found for vendor ${vendorId}`);
+              console.error(`[BOOKING] Base service ${serviceId} exists but no vendor_services entry found for vendor ${resolvedVendorId}`);
               return this.error("Service not found for this vendor", 404, "NOT_FOUND", void 0, requestId);
             } else {
               console.error(`[BOOKING] Service ${serviceId} not found in services table or vendor_services table`);
@@ -131009,13 +132312,13 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
     }
     let roleId = null;
     try {
-      const vendors = await select("vendors", { id: vendorId });
+      const vendors = await select("vendors", { id: resolvedVendorId });
       if (vendors.length > 0) {
         roleId = vendors[0].role_id || vendors[0].roleId || null;
         if (!roleId) {
           const vendorRoles = await query(
             `SELECT role_id FROM vendor_roles WHERE vendor_id = $1 LIMIT 1`,
-            [vendorId]
+            [resolvedVendorId]
           );
           if (vendorRoles.rows.length > 0) {
             roleId = vendorRoles.rows[0].role_id;
@@ -131070,7 +132373,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
              WHERE vendor_id = $1 AND booking_date = $2 AND booking_time = $3 AND staff_id IS NULL
              AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
              FOR UPDATE NOWAIT`;
-        const lockParams = staffId ? [vendorId, bookingDate, bookingTime, staffId] : [vendorId, bookingDate, bookingTime];
+        const lockParams = staffId ? [resolvedVendorId, bookingDate, bookingTime, staffId] : [resolvedVendorId, bookingDate, bookingTime];
         const { rows: conflictingBookings } = await client2.query(lockQuery, lockParams);
         if (conflictingBookings.length > 0) {
           throw new Error("SLOT_CONFLICT");
@@ -131093,7 +132396,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
               category: service.category || "custom",
               price: service.price || service.custom_price || 0,
               duration_minutes: service.duration_minutes || service.custom_duration || 30,
-              vendor_id: vendorId,
+              vendor_id: resolvedVendorId,
               is_active: true,
               created_at: (/* @__PURE__ */ new Date()).toISOString(),
               updated_at: (/* @__PURE__ */ new Date()).toISOString()
@@ -131127,7 +132430,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
                CASE WHEN vendor_id = $3 THEN 0 ELSE 1 END,
                CASE WHEN service_category = $2 THEN 0 ELSE 1 END
              LIMIT 1`,
-            [customerId, serviceCategory, vendorId]
+            [customerId, serviceCategory, resolvedVendorId]
           );
           const subscriptions = activeSubscriptions.rows || [];
           if (subscriptions.length > 0) {
@@ -131150,7 +132453,8 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
         const calculatedFinalAmount = isSubscriptionBooking ? 0 : calculatedBasePrice;
         const bookingData = {
           customer_id: customerId,
-          vendor_id: vendorId,
+          vendor_id: resolvedVendorId,
+          // Always store canonical vendors.id (resolved from request vendorId)
           service_id: finalServiceId,
           // Use base service UUID for foreign key constraint (references services.id)
           booking_date: bookingDate,
@@ -131231,7 +132535,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
         newValues: {
           status: booking.status,
           customerId,
-          vendorId,
+          vendorId: resolvedVendorId,
           serviceId,
           bookingDate,
           bookingTime
@@ -132496,7 +133800,7 @@ function registerBookingEndpointsEnhanced(app3) {
         pathParameters: {},
         queryStringParameters: Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams),
         requestContext: {
-          requestId: (0, import_crypto11.randomUUID)(),
+          requestId: (0, import_crypto12.randomUUID)(),
           http: {
             method: c.req.method || "POST",
             path: c.req.path
@@ -132506,7 +133810,7 @@ function registerBookingEndpointsEnhanced(app3) {
         rawQueryString: new URL(c.req.url, "http://localhost").search.substring(1),
         isBase64Encoded: false
       };
-      const context = createLambdaContext3();
+      const context = createLambdaContext4();
       const result = await createHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
@@ -132538,13 +133842,13 @@ function registerBookingEndpointsEnhanced(app3) {
             method: c.req.method || "POST",
             path: c.req.path
           },
-          requestId: (0, import_crypto11.randomUUID)()
+          requestId: (0, import_crypto12.randomUUID)()
         },
         rawPath: c.req.path,
         rawQueryString: new URL(c.req.url, "http://localhost").search.substring(1),
         isBase64Encoded: false
       };
-      const context = createLambdaContext3();
+      const context = createLambdaContext4();
       const result = await createHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
@@ -132576,13 +133880,13 @@ function registerBookingEndpointsEnhanced(app3) {
             method: c.req.method || "POST",
             path: c.req.path
           },
-          requestId: (0, import_crypto11.randomUUID)()
+          requestId: (0, import_crypto12.randomUUID)()
         },
         rawPath: c.req.path,
         rawQueryString: new URL(c.req.url, "http://localhost").search.substring(1),
         isBase64Encoded: false
       };
-      const context = createLambdaContext3();
+      const context = createLambdaContext4();
       const result = await createHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
@@ -132614,13 +133918,13 @@ function registerBookingEndpointsEnhanced(app3) {
             method: c.req.method || "POST",
             path: c.req.path
           },
-          requestId: (0, import_crypto11.randomUUID)()
+          requestId: (0, import_crypto12.randomUUID)()
         },
         rawPath: c.req.path,
         rawQueryString: new URL(c.req.url, "http://localhost").search.substring(1),
         isBase64Encoded: false
       };
-      const context = createLambdaContext3();
+      const context = createLambdaContext4();
       const result = await createHandler.execute(event, context);
       return c.json(JSON.parse(result.body), result.statusCode);
     } catch (error) {
@@ -132632,7 +133936,7 @@ function registerBookingEndpointsEnhanced(app3) {
   app3.get("/bookings/:bookingId", async (c) => {
     const event = await createApiGatewayEvent3(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext3();
+    const context = createLambdaContext4();
     const result = await getHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -132640,7 +133944,7 @@ function registerBookingEndpointsEnhanced(app3) {
   app3.get("/customer/bookings/:bookingId", async (c) => {
     const event = await createApiGatewayEvent3(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext3();
+    const context = createLambdaContext4();
     const result = await getHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -132648,7 +133952,7 @@ function registerBookingEndpointsEnhanced(app3) {
   app3.get("/bookings/:bookingId/history", async (c) => {
     const event = await createApiGatewayEvent3(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext3();
+    const context = createLambdaContext4();
     const result = await historyHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -132656,14 +133960,14 @@ function registerBookingEndpointsEnhanced(app3) {
   app3.put("/bookings/:bookingId/status", async (c) => {
     const event = await createApiGatewayEvent3(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext3();
+    const context = createLambdaContext4();
     const result = await updateHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.post("/customer/bookings/refund-preview", async (c) => {
     const event = await createApiGatewayEvent3(c);
-    const context = createLambdaContext3();
+    const context = createLambdaContext4();
     const result = await refundPreviewHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -132754,7 +134058,7 @@ function registerBookingEndpointsEnhanced(app3) {
   app3.post("/bookings/:bookingId/cancel", async (c) => {
     const event = await createApiGatewayEvent3(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext3();
+    const context = createLambdaContext4();
     const result = await cancelHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -132762,13 +134066,13 @@ function registerBookingEndpointsEnhanced(app3) {
   app3.post("/bookings/:bookingId/reschedule", async (c) => {
     const event = await createApiGatewayEvent3(c);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext3();
+    const context = createLambdaContext4();
     const result = await rescheduleHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
 }
-async function createApiGatewayEventWithBody2(c) {
+async function createApiGatewayEventWithBody3(c) {
   const headers = {};
   try {
     if (c.req.raw && c.req.raw.headers) {
@@ -132806,7 +134110,7 @@ async function createApiGatewayEventWithBody2(c) {
         method: c.req.method || "POST",
         path: url.pathname
       },
-      requestId: (0, import_crypto11.randomUUID)()
+      requestId: (0, import_crypto12.randomUUID)()
     },
     headers,
     body: JSON.stringify(body),
@@ -132814,11 +134118,11 @@ async function createApiGatewayEventWithBody2(c) {
   };
 }
 async function createApiGatewayEvent3(c) {
-  return createApiGatewayEventWithBody2(c);
+  return createApiGatewayEventWithBody3(c);
 }
-function createLambdaContext3() {
+function createLambdaContext4() {
   return {
-    requestId: (0, import_crypto11.randomUUID)(),
+    requestId: (0, import_crypto12.randomUUID)(),
     functionName: "booking-handler",
     functionVersion: "$LATEST"
   };
@@ -132940,7 +134244,7 @@ function registerBookingOTPEndpoint(app3) {
 }
 
 // src/endpoints/payments-enhanced.ts
-var import_crypto12 = require("crypto");
+var import_crypto13 = require("crypto");
 init_rds_connection();
 init_audit_log();
 init_sns_client();
@@ -133708,8 +135012,8 @@ var RazorpayWebhookHandlerEnhanced = class extends BaseHandlerEnhanced {
         console.error("[SECURITY] RAZORPAY_WEBHOOK_SECRET not configured");
         return false;
       }
-      const expectedSignature = (0, import_crypto12.createHmac)("sha256", webhookSecret).update(body).digest("hex");
-      return (0, import_crypto12.timingSafeEqual)(
+      const expectedSignature = (0, import_crypto13.createHmac)("sha256", webhookSecret).update(body).digest("hex");
+      return (0, import_crypto13.timingSafeEqual)(
         Buffer.from(signature),
         Buffer.from(expectedSignature)
       );
@@ -133761,8 +135065,8 @@ function registerPaymentEndpointsEnhanced(app3) {
     try {
       const requestBody = await c.req.json().catch(() => ({}));
       console.log("\u{1F4E5} [PAYMENT-CREATE] Raw request body from Hono:", JSON.stringify(requestBody));
-      const event = createApiGatewayEventWithBody3(c.req, requestBody);
-      const context = createLambdaContext4();
+      const event = createApiGatewayEventWithBody4(c.req, requestBody);
+      const context = createLambdaContext5();
       const result = await createHandler.execute(event, context);
       let body;
       try {
@@ -133801,24 +135105,24 @@ function registerPaymentEndpointsEnhanced(app3) {
   });
   app3.post("/payments/create-order", async (c) => {
     const requestBody = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEventWithBody3(c.req, requestBody);
-    const context = createLambdaContext4();
+    const event = createApiGatewayEventWithBody4(c.req, requestBody);
+    const context = createLambdaContext5();
     const result = await createHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.post("/payments/razorpay/webhook", async (c) => {
     const requestBody = await c.req.json().catch(() => ({}));
-    const event = createApiGatewayEventWithBody3(c.req, requestBody);
-    const context = createLambdaContext4();
+    const event = createApiGatewayEventWithBody4(c.req, requestBody);
+    const context = createLambdaContext5();
     const result = await webhookHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
   });
   app3.get("/payments/:paymentId", async (c) => {
-    const event = createApiGatewayEventWithBody3(c.req, null);
+    const event = createApiGatewayEventWithBody4(c.req, null);
     event.pathParameters = { paymentId: c.req.param("paymentId") };
-    const context = createLambdaContext4();
+    const context = createLambdaContext5();
     const result = await getHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -133855,7 +135159,7 @@ function registerPaymentEndpointsEnhanced(app3) {
     }
   });
 }
-function createApiGatewayEventWithBody3(req, parsedBody) {
+function createApiGatewayEventWithBody4(req, parsedBody) {
   return {
     httpMethod: req.method,
     path: req.url,
@@ -133864,13 +135168,13 @@ function createApiGatewayEventWithBody3(req, parsedBody) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto12.randomUUID)()
+      requestId: (0, import_crypto13.randomUUID)()
     }
   };
 }
-function createLambdaContext4() {
+function createLambdaContext5() {
   return {
-    requestId: (0, import_crypto12.randomUUID)(),
+    requestId: (0, import_crypto13.randomUUID)(),
     functionName: "payment-handler",
     functionVersion: "$LATEST"
   };
@@ -133986,7 +135290,7 @@ async function triggerAutoShipment(orderId, orderType) {
 }
 
 // src/endpoints/customer-enhanced.ts
-var import_crypto13 = require("crypto");
+var import_crypto14 = require("crypto");
 init_rds_connection();
 var import_customers = __toESM(require_customers());
 var GetCustomerHandlerEnhanced = class extends BaseHandlerEnhanced {
@@ -134284,7 +135588,7 @@ function registerCustomerEndpointsEnhanced(app3) {
       }
       const event = createApiGatewayEvent4(c.req);
       event.queryStringParameters = Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams);
-      const context = createLambdaContext5();
+      const context = createLambdaContext6();
       try {
         const result = await getByPhoneHandler.execute(event, context);
         const body = JSON.parse(result.body);
@@ -134369,7 +135673,7 @@ function registerCustomerEndpointsEnhanced(app3) {
   app3.get("/customer/:customerId", async (c) => {
     const event = createApiGatewayEvent4(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext5();
+    const context = createLambdaContext6();
     const result = await getHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -134377,7 +135681,7 @@ function registerCustomerEndpointsEnhanced(app3) {
   app3.put("/customer/:customerId", async (c) => {
     const event = createApiGatewayEvent4(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext5();
+    const context = createLambdaContext6();
     const result = await updateHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -134385,7 +135689,7 @@ function registerCustomerEndpointsEnhanced(app3) {
   app3.delete("/customer/:customerId", async (c) => {
     const event = createApiGatewayEvent4(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext5();
+    const context = createLambdaContext6();
     const result = await deactivateHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -134393,7 +135697,7 @@ function registerCustomerEndpointsEnhanced(app3) {
   app3.get("/customer/:customerId/pets", async (c) => {
     const event = createApiGatewayEvent4(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext5();
+    const context = createLambdaContext6();
     const result = await getPetsHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -134401,7 +135705,7 @@ function registerCustomerEndpointsEnhanced(app3) {
   app3.post("/customer/:customerId/pets", async (c) => {
     const event = createApiGatewayEvent4(c.req);
     event.pathParameters = { customerId: c.req.param("customerId") };
-    const context = createLambdaContext5();
+    const context = createLambdaContext6();
     const result = await addPetHandler.execute(event, context);
     const body = JSON.parse(result.body);
     return c.json(body, result.statusCode);
@@ -135511,13 +136815,13 @@ function createApiGatewayEvent4(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto13.randomUUID)()
+      requestId: (0, import_crypto14.randomUUID)()
     }
   };
 }
-function createLambdaContext5() {
+function createLambdaContext6() {
   return {
-    requestId: (0, import_crypto13.randomUUID)(),
+    requestId: (0, import_crypto14.randomUUID)(),
     functionName: "customer-handler",
     functionVersion: "$LATEST"
   };
@@ -135525,7 +136829,7 @@ function createLambdaContext5() {
 
 // src/endpoints/tracking.ts
 init_rds_connection();
-var import_client_secrets_manager2 = require("@aws-sdk/client-secrets-manager");
+var import_client_secrets_manager3 = require("@aws-sdk/client-secrets-manager");
 var REGION = process.env.AWS_REGION || "ap-south-1";
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -135537,10 +136841,10 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 }
 async function getGoogleMapsApiKey() {
   try {
-    const secretsClient3 = new import_client_secrets_manager2.SecretsManagerClient({ region: REGION });
+    const secretsClient3 = new import_client_secrets_manager3.SecretsManagerClient({ region: REGION });
     const secretName = process.env.GOOGLE_MAPS_SECRET_NAME || "warmpawz-google-maps-api-key";
     const secretValue = await secretsClient3.send(
-      new import_client_secrets_manager2.GetSecretValueCommand({ SecretId: secretName })
+      new import_client_secrets_manager3.GetSecretValueCommand({ SecretId: secretName })
     );
     const secret = JSON.parse(secretValue.SecretString);
     return secret.apiKey || secret.api_key || secret.key || null;
@@ -135685,7 +136989,7 @@ function registerTrackingEndpoints(app3) {
 }
 
 // src/endpoints/roles.ts
-var import_crypto14 = require("crypto");
+var import_crypto15 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var CANONICAL_SERVICE_STYLE_CODES = ["at_home", "at_center", "tele"];
@@ -136343,7 +137647,7 @@ function registerRoleEndpoints(app3) {
   const getCapabilitiesHandler = new GetCapabilitiesHandler();
   app3.get("/config/roles", async (c) => {
     const event = createApiGatewayEvent5(c.req);
-    const context = createLambdaContext6();
+    const context = createLambdaContext7();
     const result = await getRolesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -136480,45 +137784,45 @@ function registerRoleEndpoints(app3) {
   app3.get("/config/roles/:roleId", async (c) => {
     const event = createApiGatewayEvent5(c.req);
     event.pathParameters = { roleId: c.req.param("roleId") };
-    const context = createLambdaContext6();
+    const context = createLambdaContext7();
     const result = await getRoleByIdHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/roles", async (c) => {
     const event = createApiGatewayEvent5(c.req);
-    const context = createLambdaContext6();
+    const context = createLambdaContext7();
     const result = await getRolesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/roles", async (c) => {
     const event = createApiGatewayEvent5(c.req);
-    const context = createLambdaContext6();
+    const context = createLambdaContext7();
     const result = await getRolesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/admin/capabilities", async (c) => {
     const event = createApiGatewayEvent5(c.req);
-    const context = createLambdaContext6();
+    const context = createLambdaContext7();
     const result = await getCapabilitiesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/admin/roles", async (c) => {
-    const event = await createApiGatewayEventWithBody4(c);
-    const context = createLambdaContext6();
+    const event = await createApiGatewayEventWithBody5(c);
+    const context = createLambdaContext7();
     const result = await createRoleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.put("/admin/roles/:roleId", async (c) => {
-    const event = await createApiGatewayEventWithBody4(c);
+    const event = await createApiGatewayEventWithBody5(c);
     event.pathParameters = { roleId: c.req.param("roleId") };
-    const context = createLambdaContext6();
+    const context = createLambdaContext7();
     const result = await updateRoleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.delete("/admin/roles/:roleId", async (c) => {
     const event = createApiGatewayEvent5(c.req);
     event.pathParameters = { roleId: c.req.param("roleId") };
-    const context = createLambdaContext6();
+    const context = createLambdaContext7();
     const result = await deleteRoleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -136532,11 +137836,11 @@ function createApiGatewayEvent5(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto14.randomUUID)()
+      requestId: (0, import_crypto15.randomUUID)()
     }
   };
 }
-async function createApiGatewayEventWithBody4(c) {
+async function createApiGatewayEventWithBody5(c) {
   const body = await c.req.json();
   return {
     httpMethod: c.req.method,
@@ -136546,13 +137850,13 @@ async function createApiGatewayEventWithBody4(c) {
     pathParameters: {},
     queryStringParameters: {},
     requestContext: {
-      requestId: (0, import_crypto14.randomUUID)()
+      requestId: (0, import_crypto15.randomUUID)()
     }
   };
 }
-function createLambdaContext6() {
+function createLambdaContext7() {
   return {
-    requestId: (0, import_crypto14.randomUUID)(),
+    requestId: (0, import_crypto15.randomUUID)(),
     functionName: "role-handler",
     functionVersion: "$LATEST"
   };
@@ -138636,111 +139940,9 @@ function registerOnboardingFormManagementEndpoints(app3) {
 }
 
 // src/endpoints/vendor-dashboard.ts
-var import_crypto15 = require("crypto");
+var import_crypto16 = require("crypto");
 init_base_handler();
 init_rds_connection();
-
-// src/utils/capability-filter.ts
-var SERVICE_STYLE_CAPABILITIES = {
-  "at_center": [
-    "cafe_tables",
-    "table_management",
-    "rooms",
-    "room_management",
-    "facility_management",
-    "cctv_access"
-  ],
-  "at_home": [
-    "gps_tracking",
-    "live_location",
-    "distance_pricing"
-  ],
-  "tele": [
-    "tele",
-    "video_calling"
-  ],
-  "delivery": [
-    "delivery",
-    "delivery_partner",
-    "eta_tracking"
-  ]
-};
-function filterCapabilitiesByVendorConfiguration(options) {
-  const { vendorConfiguration, baseCapabilities, capabilityRules } = options;
-  let filtered = [...baseCapabilities];
-  if (vendorConfiguration === "solo") {
-    const soloRules = capabilityRules?.solo;
-    const deniedForSolo = soloRules?.deniedCapabilities || [
-      "staff_management",
-      "staff_create",
-      "staff_schedule",
-      "inventory_manage",
-      "inventory",
-      "custom_services",
-      "custom_packages",
-      "center_profile"
-    ];
-    filtered = filtered.filter((cap) => !deniedForSolo.includes(cap));
-    const soloCapabilities = ["platform_catalog_services", "professional_profile"];
-    soloCapabilities.forEach((cap) => {
-      if (!filtered.includes(cap)) {
-        filtered.push(cap);
-      }
-    });
-  }
-  return filtered;
-}
-function filterCapabilitiesByServiceStyles(selectedServiceStyles, stage1Capabilities, capabilityRules) {
-  if (!capabilityRules?.serviceStyleDependencies) {
-    const defaultDeps = { ...SERVICE_STYLE_CAPABILITIES };
-    return filterByServiceStyleDependencies(
-      selectedServiceStyles,
-      stage1Capabilities,
-      defaultDeps
-    );
-  }
-  const { serviceStyleDependencies } = capabilityRules;
-  const allDependencies = { ...SERVICE_STYLE_CAPABILITIES, ...serviceStyleDependencies };
-  return filterByServiceStyleDependencies(
-    selectedServiceStyles,
-    stage1Capabilities,
-    allDependencies
-  );
-}
-function filterByServiceStyleDependencies(selectedServiceStyles, capabilities, dependencies) {
-  const capabilityToStyles = {};
-  Object.entries(dependencies).forEach(([style, deps]) => {
-    deps.forEach((cap) => {
-      if (!capabilityToStyles[cap]) {
-        capabilityToStyles[cap] = [];
-      }
-      capabilityToStyles[cap].push(style);
-    });
-  });
-  const finalCapabilities = capabilities.filter((cap) => {
-    if (capabilityToStyles[cap]) {
-      const requiredStyles = capabilityToStyles[cap];
-      return requiredStyles.some((style) => selectedServiceStyles.includes(style));
-    }
-    return true;
-  });
-  return finalCapabilities;
-}
-function getEffectiveCapabilities(options) {
-  const stage1Capabilities = filterCapabilitiesByVendorConfiguration(options);
-  const stage2Capabilities = filterCapabilitiesByServiceStyles(
-    options.selectedServiceStyles,
-    stage1Capabilities,
-    options.capabilityRules
-  );
-  return {
-    stage1_solo_business: stage1Capabilities,
-    stage2_service_styles: stage2Capabilities
-    // FINAL
-  };
-}
-
-// src/endpoints/vendor-dashboard.ts
 var VendorDashboardHandler = class extends BaseHandler {
   async handle(context) {
     const vendorId = context.event.pathParameters?.vendorId;
@@ -138938,7 +140140,7 @@ function registerVendorDashboardEndpoints(app3) {
     }
     const event = createApiGatewayEvent6(c.req);
     event.pathParameters = { vendorId };
-    const context = createLambdaContext7();
+    const context = createLambdaContext8();
     const result = await dashboardHandler.execute(event, context);
     const body = result.body ? JSON.parse(result.body) : result;
     const statusCode = result.statusCode || 200;
@@ -139178,14 +140380,14 @@ function registerVendorDashboardEndpoints(app3) {
   app3.get("/vendor/dashboard/:vendorId", async (c) => {
     const event = createApiGatewayEvent6(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext7();
+    const context = createLambdaContext8();
     const result = await dashboardHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/vendor/stats/:vendorId", async (c) => {
     const event = createApiGatewayEvent6(c.req);
     event.pathParameters = { vendorId: c.req.param("vendorId") };
-    const context = createLambdaContext7();
+    const context = createLambdaContext8();
     const result = await statsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -139199,13 +140401,13 @@ function createApiGatewayEvent6(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto15.randomUUID)()
+      requestId: (0, import_crypto16.randomUUID)()
     }
   };
 }
-function createLambdaContext7() {
+function createLambdaContext8() {
   return {
-    requestId: (0, import_crypto15.randomUUID)(),
+    requestId: (0, import_crypto16.randomUUID)(),
     functionName: "vendor-dashboard-handler",
     functionVersion: "$LATEST"
   };
@@ -139890,7 +141092,7 @@ init_admin();
 init_base_handler();
 init_rds_connection();
 var import_client_chime_sdk_meetings = require("@aws-sdk/client-chime-sdk-meetings");
-var import_crypto19 = require("crypto");
+var import_crypto20 = require("crypto");
 function isWithinVideoCallWindow(booking) {
   if (booking.status === "completed") {
     return { allowed: false, reason: "Video call is not allowed after the appointment is completed." };
@@ -140291,7 +141493,7 @@ function registerVideoCallEndpoints(app3) {
   app3.get("/video-call/:bookingId/attendees", async (c) => {
     const event = createApiGatewayEvent8(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext9();
+    const context = createLambdaContext10();
     const result = await getAttendeesHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -140363,14 +141565,14 @@ function registerVideoCallEndpoints(app3) {
   app3.post("/video-call/create-meeting", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEvent8(c.req, body);
-    const context = createLambdaContext9();
+    const context = createLambdaContext10();
     const result = await createHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/video-call/join", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEvent8(c.req, body);
-    const context = createLambdaContext9();
+    const context = createLambdaContext10();
     const result = await joinHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -140378,28 +141580,28 @@ function registerVideoCallEndpoints(app3) {
     const body = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEvent8(c.req, body);
     event.pathParameters = { bookingId: c.req.param("bookingId") || body.bookingId };
-    const context = createLambdaContext9();
+    const context = createLambdaContext10();
     const result = await endHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/video-call/:bookingId", async (c) => {
     const event = createApiGatewayEvent8(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext9();
+    const context = createLambdaContext10();
     const result = await getInfoHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/video-call/create", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const event = createApiGatewayEvent8(c.req, body);
-    const context = createLambdaContext9();
+    const context = createLambdaContext10();
     const result = await createHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/video-call/:bookingId/end", async (c) => {
     const event = createApiGatewayEvent8(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext9();
+    const context = createLambdaContext10();
     const result = await endHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -140413,20 +141615,20 @@ function createApiGatewayEvent8(req, body) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto19.randomUUID)()
+      requestId: (0, import_crypto20.randomUUID)()
     }
   };
 }
-function createLambdaContext9() {
+function createLambdaContext10() {
   return {
-    requestId: (0, import_crypto19.randomUUID)(),
+    requestId: (0, import_crypto20.randomUUID)(),
     functionName: "video-call-handler",
     functionVersion: "$LATEST"
   };
 }
 
 // src/endpoints/package-sessions.ts
-var import_crypto20 = require("crypto");
+var import_crypto21 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var StartSessionHandler = class extends BaseHandler {
@@ -140554,20 +141756,20 @@ function registerPackageSessionEndpoints(app3) {
   const progressHandler = new GetSessionProgressHandler();
   app3.post("/package-sessions/start", async (c) => {
     const event = createApiGatewayEvent9(c.req);
-    const context = createLambdaContext10();
+    const context = createLambdaContext11();
     const result = await startHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.post("/package-sessions/complete", async (c) => {
     const event = createApiGatewayEvent9(c.req);
-    const context = createLambdaContext10();
+    const context = createLambdaContext11();
     const result = await completeHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
   app3.get("/package-sessions/:bookingId/progress", async (c) => {
     const event = createApiGatewayEvent9(c.req);
     event.pathParameters = { bookingId: c.req.param("bookingId") };
-    const context = createLambdaContext10();
+    const context = createLambdaContext11();
     const result = await progressHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -140581,20 +141783,20 @@ function createApiGatewayEvent9(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto20.randomUUID)()
+      requestId: (0, import_crypto21.randomUUID)()
     }
   };
 }
-function createLambdaContext10() {
+function createLambdaContext11() {
   return {
-    requestId: (0, import_crypto20.randomUUID)(),
+    requestId: (0, import_crypto21.randomUUID)(),
     functionName: "package-session-handler",
     functionVersion: "$LATEST"
   };
 }
 
 // src/endpoints/search.ts
-var import_crypto21 = require("crypto");
+var import_crypto22 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var openSearchClient = null;
@@ -140718,7 +141920,7 @@ var UniversalSearchHandler = class extends BaseHandler {
         )
         AND EXISTS (
           SELECT 1 FROM vendor_availability_v2 va 
-          WHERE va.vendor_id = v.id
+          WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
         )
     `;
     const params = [];
@@ -140757,7 +141959,7 @@ var UniversalSearchHandler = class extends BaseHandler {
         AND v.longitude IS NOT NULL
         AND EXISTS (
           SELECT 1 FROM vendor_availability_v2 va 
-          WHERE va.vendor_id = v.id
+          WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
         )
     `;
     const serviceParams = [];
@@ -140808,7 +142010,7 @@ function registerSearchEndpoints(app3) {
   const searchHandler = new UniversalSearchHandler();
   app3.get("/search", async (c) => {
     const event = createApiGatewayEvent10(c.req);
-    const context = createLambdaContext11();
+    const context = createLambdaContext12();
     const result = await searchHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -140822,13 +142024,13 @@ function createApiGatewayEvent10(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto21.randomUUID)()
+      requestId: (0, import_crypto22.randomUUID)()
     }
   };
 }
-function createLambdaContext11() {
+function createLambdaContext12() {
   return {
-    requestId: (0, import_crypto21.randomUUID)(),
+    requestId: (0, import_crypto22.randomUUID)(),
     functionName: "search-handler",
     functionVersion: "$LATEST"
   };
@@ -141772,1137 +142974,6 @@ async function checkVendorCapability(vendorId, capability) {
     console.error("Error checking vendor capability:", error);
     return false;
   }
-}
-
-// src/endpoints/vendor-profile.ts
-init_rds_connection();
-init_sns_client();
-var import_client_sns5 = require("@aws-sdk/client-sns");
-var CRITICAL_FIELDS = [
-  "business_name",
-  "owner_name",
-  "gst_number",
-  "pan_number",
-  "registration_number",
-  "address",
-  "city",
-  "state",
-  "pincode",
-  "latitude",
-  "longitude"
-];
-function normalizePhoneForLookup(phone) {
-  if (phone == null || String(phone).trim() === "") return void 0;
-  return String(phone).replace(/\D/g, "");
-}
-async function resolveVendorById(vendorId) {
-  const trimmedId = (vendorId || "").trim();
-  if (!trimmedId) return null;
-  let vendors = await select("vendors", { id: trimmedId });
-  if (vendors.length > 0) return vendors[0];
-  console.log(`[PROFILE] Vendor ${trimmedId} not in vendors table, checking vendor_identity...`);
-  let identities = await select("vendor_identity", { id: trimmedId });
-  if (identities.length === 0) {
-    const byVendorId = await query(
-      `SELECT * FROM vendor_identity WHERE vendor_id = $1 LIMIT 1`,
-      [trimmedId]
-    ).catch(() => ({ rows: [] }));
-    if (byVendorId.rows?.length > 0) {
-      const identity2 = byVendorId.rows[0];
-      const linked = await select("vendors", { id: identity2.vendor_id });
-      if (linked.length > 0) return linked[0];
-    }
-    const byText = await query(
-      `SELECT * FROM vendor_identity WHERE id::text = $1 OR vendor_id::text = $1 LIMIT 1`,
-      [trimmedId]
-    ).catch(() => ({ rows: [] }));
-    if (byText.rows?.length > 0) identities = byText.rows;
-    if (identities.length === 0) {
-      const viaApp = await query(
-        `SELECT vi.* FROM vendor_identity vi
-         INNER JOIN vendor_onboarding_applications voa ON voa.vendor_identity_id = vi.id
-         WHERE voa.id::text = $1 OR voa.vendor_identity_id::text = $1 OR vi.id::text = $1 LIMIT 1`,
-        [trimmedId]
-      ).catch(() => ({ rows: [] }));
-      if (viaApp.rows?.length > 0) identities = viaApp.rows;
-    }
-    if (identities.length === 0) return null;
-  }
-  const identity = identities[0];
-  if (identity.onboarding_status !== "APPROVED" && identity.onboarding_status !== "ACTIVATED") {
-    return null;
-  }
-  const phoneNorm = normalizePhoneForLookup(identity.phone);
-  if (phoneNorm) {
-    const vendorByPhone = await query(
-      `SELECT * FROM vendors WHERE REPLACE(REPLACE(phone, ' ', ''), '+', '') LIKE $1 OR phone = $2 LIMIT 1`,
-      [`%${phoneNorm}%`, identity.phone]
-    ).catch(() => ({ rows: [] }));
-    if (vendorByPhone.rows?.length > 0) return vendorByPhone.rows[0];
-  }
-  const vendorByPhoneDirect = await select("vendors", { phone: identity.phone });
-  if (vendorByPhoneDirect.length > 0) return vendorByPhoneDirect[0];
-  const applications = await select("vendor_onboarding_applications", { vendor_identity_id: identity.id });
-  const application = applications.length > 0 ? applications[0] : null;
-  const payload = application?.application_payload || {};
-  const newVendorId = identity.vendor_id || identity.id;
-  console.log(`[PROFILE] Auto-creating vendor record for approved vendor ${identity.id}, using vendor id: ${newVendorId}`);
-  const newVendor = await insert("vendors", {
-    id: newVendorId,
-    phone: identity.phone,
-    email: payload.email || payload.businessEmail || `vendor-${identity.phone}@warmpawz.app`,
-    business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-    owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
-    role_id: identity.selected_role_id,
-    vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
-    category: "general",
-    address: payload.address || "Not specified",
-    city: payload.city || "Not specified",
-    state: payload.state || "Not specified",
-    pincode: payload.pin || payload.pincode || "",
-    status: "active",
-    is_active: true,
-    created_at: (/* @__PURE__ */ new Date()).toISOString(),
-    updated_at: (/* @__PURE__ */ new Date()).toISOString()
-  });
-  return newVendor[0];
-}
-async function decodeJwtFromHeader(authHeader) {
-  if (!authHeader) return {};
-  const token = authHeader.replace(/^Bearer\s+/i, "");
-  if (!token) return {};
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return {};
-    const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf-8"));
-    const phone = payload.phone || payload.phone_number || payload["cognito:username"];
-    const userId = payload.userId || payload.sub || payload.user_id;
-    console.log(`\u{1F510} [JWT-DECODE] Extracted phone: ${phone}, userId: ${userId}`);
-    return {
-      phone,
-      userId
-    };
-  } catch (e) {
-    console.warn("Failed to decode JWT:", e);
-    return {};
-  }
-}
-function registerVendorProfileEndpoints(app3) {
-  app3.get("/vendor/profile", async (c) => {
-    try {
-      const authHeader = c.req.header("Authorization");
-      const { phone, userId: vendorIdFromAuth } = await decodeJwtFromHeader(authHeader);
-      console.log(`\u{1F4CA} [PROFILE-GET] Getting profile for phone: ${phone}, vendorId: ${vendorIdFromAuth}`);
-      let vendor = null;
-      let identityData = null;
-      if (vendorIdFromAuth && !vendorIdFromAuth.startsWith("temp_")) {
-        try {
-          const vendors = await select("vendors", { id: vendorIdFromAuth });
-          if (vendors.length > 0) {
-            vendor = vendors[0];
-          }
-        } catch (e) {
-          console.warn(`[PROFILE-GET] Error finding vendor by ID ${vendorIdFromAuth}:`, e);
-        }
-      }
-      if (!vendor && phone) {
-        try {
-          const vendorsByPhone = await select("vendors", { phone });
-          if (vendorsByPhone.length > 0) {
-            vendor = vendorsByPhone[0];
-          }
-        } catch (e) {
-          console.warn(`[PROFILE-GET] Error finding vendor by phone:`, e);
-        }
-      }
-      if (phone) {
-        try {
-          const identities = await select("vendor_identity", { phone });
-          if (identities.length > 0) {
-            identityData = identities[0];
-            if (!vendor && identityData && typeof identityData.vendor_id === "string") {
-              try {
-                const vendors = await select("vendors", { id: identityData.vendor_id });
-                if (vendors.length > 0) {
-                  vendor = vendors[0];
-                }
-              } catch (e) {
-                console.warn(`[PROFILE-GET] Error finding vendor by identity.vendor_id:`, e);
-              }
-            }
-          }
-        } catch (e) {
-          console.warn(`[PROFILE-GET] Error fetching vendor_identity:`, e);
-        }
-      }
-      if (!vendor) {
-        if (identityData) {
-          const identityStatus = identityData.onboarding_status || "INIT";
-          console.log(`\u{1F4DD} [PROFILE-GET] Vendor in onboarding, status: ${identityStatus}`);
-          return c.json({
-            success: true,
-            vendor: {
-              id: identityData.id,
-              phone,
-              status: identityStatus.toLowerCase(),
-              isActive: false,
-              onboardingStatus: identityStatus
-            },
-            status: identityStatus === "APPROVED" ? "approved" : identityStatus === "INIT" ? "new" : identityStatus.toLowerCase(),
-            message: "Vendor in onboarding"
-          });
-        }
-        console.log(`\u26A0\uFE0F [PROFILE-GET] No vendor found for phone: ${phone}`);
-        return c.json({
-          success: true,
-          vendor: null,
-          status: "new",
-          message: "No vendor profile found"
-        });
-      }
-      let applicationData = null;
-      try {
-        const applications = await select("vendor_onboarding_applications", { vendor_id: vendor.id });
-        if (applications.length > 0) {
-          applicationData = applications[0];
-        }
-      } catch (e) {
-        try {
-          const appsByPhone = await query(
-            "SELECT * FROM vendor_onboarding_applications WHERE application_payload->>'phone' = $1 ORDER BY created_at DESC LIMIT 1",
-            [phone]
-          );
-          if (appsByPhone.rows?.length > 0) {
-            applicationData = appsByPhone.rows[0];
-          }
-        } catch (e2) {
-          console.warn("[PROFILE-GET] Error fetching applications:", e2);
-        }
-      }
-      let roleInfo = null;
-      try {
-        if (vendor.role_id) {
-          const roles = await select("roles", { id: vendor.role_id });
-          if (roles.length > 0) {
-            roleInfo = roles[0];
-          }
-        }
-      } catch (e) {
-        console.warn("[PROFILE-GET] Error fetching role info:", e);
-      }
-      let uiStatus = "new";
-      if (vendor.is_active) {
-        uiStatus = "active";
-      } else if (vendor.status === "approved") {
-        uiStatus = vendor.setup_completed ? "active" : "approved";
-      } else if (vendor.status === "pending" || vendor.status === "under_review") {
-        uiStatus = "pending";
-      } else if (vendor.status === "rejected") {
-        uiStatus = "rejected";
-      } else if (applicationData?.status) {
-        uiStatus = applicationData.status;
-      }
-      console.log(`\u2705 [PROFILE-GET] Found vendor: ${vendor.id}, status: ${uiStatus}`);
-      return c.json({
-        success: true,
-        vendor: {
-          id: vendor.id,
-          businessName: vendor.business_name,
-          ownerName: vendor.owner_name,
-          phone: vendor.phone,
-          email: vendor.email,
-          status: uiStatus,
-          isActive: vendor.is_active,
-          setupCompleted: vendor.setup_completed,
-          servicesSetupCompleted: vendor.services_setup_completed,
-          availabilitySetupCompleted: vendor.availability_setup_completed,
-          roleId: vendor.role_id,
-          roleName: roleInfo?.name,
-          vendorType: vendor.vendor_type,
-          serviceStyle: vendor.service_style,
-          applicationId: applicationData?.id,
-          applicationStatus: applicationData?.status,
-          createdAt: vendor.created_at
-        }
-      });
-    } catch (error) {
-      console.error("\u274C [PROFILE-GET] Error:", error);
-      return c.json({ error: "Failed to get vendor profile", details: error.message }, 500);
-    }
-  });
-  app3.post("/vendor/:vendorId/profile/photo", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      console.log(`\u{1F4F8} [PROFILE-PHOTO] Uploading photo for vendor: ${vendorId}`);
-      const vendor = await resolveVendorById(vendorId);
-      if (!vendor) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const formData = await c.req.formData();
-      const photo = formData.get("photo");
-      if (!photo) {
-        return c.json({ error: "No photo provided" }, 400);
-      }
-      const { S3Client: S3Client7, PutObjectCommand: PutObjectCommand6, GetObjectCommand: GetObjectCommand5 } = await import("@aws-sdk/client-s3");
-      const { getSignedUrl: getSignedUrl4 } = await import("@aws-sdk/s3-request-presigner");
-      const s3Client6 = new S3Client7({ region: process.env.AWS_REGION || "ap-south-1" });
-      const BUCKET_NAME3 = process.env.S3_UPLOADS_BUCKET || "warmpawz-dev-uploads";
-      const timestamp = Date.now();
-      const ext = photo.name.split(".").pop() || "jpg";
-      const actualVendorId = vendor.id;
-      const fileName = `vendors/${actualVendorId}/profile/photo_${timestamp}.${ext}`;
-      const arrayBuffer = await photo.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      await s3Client6.send(new PutObjectCommand6({
-        Bucket: BUCKET_NAME3,
-        Key: fileName,
-        Body: uint8Array,
-        ContentType: photo.type || "image/jpeg"
-      }));
-      const signedUrl = await getSignedUrl4(
-        s3Client6,
-        new GetObjectCommand5({
-          Bucket: BUCKET_NAME3,
-          Key: fileName
-        }),
-        { expiresIn: 604800 }
-        // 7 days (max for presigned URLs)
-      );
-      await update("vendors", { id: actualVendorId }, {
-        profile_photo_url: signedUrl,
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      });
-      console.log(`\u2705 [PROFILE-PHOTO] Photo uploaded successfully for vendor ${actualVendorId}`);
-      return c.json({
-        success: true,
-        photo_url: signedUrl,
-        fileName
-      });
-    } catch (error) {
-      console.error("\u274C [PROFILE-PHOTO] Error uploading photo:", error);
-      return c.json({ error: error.message || "Failed to upload photo" }, 500);
-    }
-  });
-  const profileUpdateHandler = async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const rawUpdates = await c.req.json();
-      console.log(`\u{1F4DD} [PROFILE-UPDATE] Vendor ${vendorId} updating profile`, rawUpdates);
-      const camelToSnakeMap = {
-        businessName: "business_name",
-        ownerName: "owner_name",
-        profilePhotoUrl: "profile_photo_url",
-        isActive: "is_active",
-        setupCompleted: "setup_completed",
-        servicesSetupCompleted: "services_setup_completed",
-        availabilitySetupCompleted: "availability_setup_completed",
-        roleId: "role_id",
-        createdAt: "created_at",
-        updatedAt: "updated_at"
-      };
-      const updates = {};
-      for (const [key, value] of Object.entries(rawUpdates)) {
-        const dbKey = camelToSnakeMap[key] || key;
-        updates[dbKey] = value;
-      }
-      const vendor = await resolveVendorById(vendorId);
-      if (!vendor) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const wasApproved = vendor.status === "approved";
-      const previousStatus = vendor.status;
-      let criticalFieldsChanged = false;
-      const changedFields = [];
-      for (const field of CRITICAL_FIELDS) {
-        if (updates[field] !== void 0 && updates[field] !== vendor[field]) {
-          criticalFieldsChanged = true;
-          changedFields.push(field);
-        }
-      }
-      console.log(`\u{1F50D} [PROFILE-UPDATE] Critical fields changed: ${criticalFieldsChanged}`);
-      console.log(`\u{1F4CB} [PROFILE-UPDATE] Changed fields: ${changedFields.join(", ")}`);
-      const schemaResult = await query(`
-        SELECT column_name FROM information_schema.columns 
-        WHERE table_name = 'vendors'
-      `);
-      const existingColumns = new Set(schemaResult.rows.map((r) => r.column_name));
-      const safeColumns = [
-        "business_name",
-        "owner_name",
-        "phone",
-        "email",
-        "address",
-        "city",
-        "state",
-        "pincode",
-        "description",
-        "profile_photo_url",
-        "latitude",
-        "longitude",
-        "is_active",
-        "status",
-        "setup_completed",
-        "services_setup_completed",
-        "availability_setup_completed",
-        "metadata",
-        "experience_years",
-        "qualifications",
-        "service_area",
-        "specializations"
-        // ✅ Added for solo provider profile
-      ];
-      const updateData = {};
-      for (const [key, value] of Object.entries(updates)) {
-        if (safeColumns.includes(key) && existingColumns.has(key)) {
-          updateData[key] = value;
-        }
-      }
-      const skippedFields = Object.keys(updates).filter((k) => !existingColumns.has(k) && safeColumns.includes(k));
-      if (skippedFields.length > 0) {
-        console.log(`\u26A0\uFE0F [PROFILE-UPDATE] Skipped non-existent columns: ${skippedFields.join(", ")}`);
-      }
-      if (criticalFieldsChanged && wasApproved) {
-        console.log(`\u26A0\uFE0F [PROFILE-UPDATE] Critical fields changed - requiring re-approval`);
-        updateData.status = "pending";
-        updateData.metadata = {
-          ...vendor.metadata || {},
-          previousStatus,
-          wasApprovedBefore: true,
-          reapprovalReason: `Critical profile fields updated: ${changedFields.join(", ")}`,
-          reapprovalRequestedAt: (/* @__PURE__ */ new Date()).toISOString()
-        };
-        await insert("notifications", {
-          recipient_id: null,
-          // Admin notifications can have null recipient_id
-          recipient_type: "admin",
-          title: "Profile Update Review Required",
-          message: `Approved vendor "${vendor.business_name}" updated their profile. Re-approval required.`,
-          notification_type: "admin_alert",
-          channels: { email: true, sms: false, inApp: true, push: false },
-          is_read: false
-        }).catch((error) => {
-          console.warn("[VENDOR-PROFILE] Error creating notification:", error instanceof Error ? error.message : "Unknown error");
-        });
-        const snsClient4 = getSnsClient();
-        await snsClient4.send(new import_client_sns5.PublishCommand({
-          TopicArn: process.env.ADMIN_ALERT_TOPIC_ARN,
-          Message: JSON.stringify({
-            eventType: "VendorProfileUpdate",
-            vendorId,
-            vendorName: vendor.business_name,
-            changedFields,
-            requiresReapproval: true
-          })
-        })).catch((err) => console.error("SNS notification failed:", err));
-        const updated = await update("vendors", { id: vendor.id }, updateData);
-        return c.json({
-          success: true,
-          message: "Profile updated. Re-approval required for critical changes.",
-          requiresReapproval: true,
-          changedFields,
-          status: "pending",
-          vendor: updated[0]
-        });
-      } else {
-        console.log(`\u2705 [PROFILE-UPDATE] Non-critical fields updated - no re-approval needed`);
-        const updated = await update("vendors", { id: vendor.id }, updateData);
-        return c.json({
-          success: true,
-          message: "Profile updated successfully",
-          requiresReapproval: false,
-          status: vendor.status,
-          vendor: updated[0]
-        });
-      }
-    } catch (error) {
-      console.error("\u274C [PROFILE-UPDATE] Error updating profile:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  };
-  app3.put("/vendor/:vendorId/profile", profileUpdateHandler);
-  app3.post("/vendor/:vendorId/profile", profileUpdateHandler);
-  app3.get("/vendor/:vendorId/profile/edit-check", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const vendor = vendors[0];
-      const isApproved = vendor.status === "approved";
-      return c.json({
-        canEdit: true,
-        // Vendors can always edit
-        currentStatus: vendor.status,
-        warning: isApproved ? "Editing critical profile fields will require admin re-approval" : null,
-        criticalFields: CRITICAL_FIELDS
-      });
-    } catch (error) {
-      console.error("\u274C [PROFILE-UPDATE] Error checking edit status:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.get("/vendor/:vendorId/profile", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
-        return c.json({
-          success: true,
-          vendor: {
-            id: vendorId,
-            business_name: "Test Vendor",
-            owner_name: "Test Owner",
-            role: null,
-            capabilities: [],
-            vendorTypes: [],
-            serviceStyles: []
-          }
-        });
-      }
-      const vendor = await resolveVendorById(vendorId);
-      if (!vendor) {
-        const identities = await select("vendor_identity", { id: vendorId });
-        if (identities.length > 0 && identities[0].onboarding_status !== "APPROVED" && identities[0].onboarding_status !== "ACTIVATED") {
-          return c.json({ error: "Vendor not approved or activated" }, 403);
-        }
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      let role = null;
-      let capabilities = [];
-      let roleConfig = {};
-      let vendorConfiguration = null;
-      let selectedServiceStyles = [];
-      let customerService = null;
-      if (vendor.role_id) {
-        try {
-          const roles = await select("roles", { id: vendor.role_id });
-          if (roles.length > 0) {
-            role = roles[0];
-            roleConfig = role.config || {};
-            customerService = role.customer_service || roleConfig?.customer_service || null;
-            const vendorType = vendor.vendor_type;
-            vendorConfiguration = vendorType === "solo" || vendorType === "business" ? vendorType : roleConfig?.vendorConfiguration || null;
-            selectedServiceStyles = roleConfig?.serviceStyles?.selected || [];
-            const permissions = await select("role_permissions", { role_id: vendor.role_id });
-            const baseCapabilities = permissions.map((p) => p.permission_name);
-            if (vendorConfiguration) {
-              const { stage2_service_styles: effectiveCapabilities } = getEffectiveCapabilities({
-                vendorConfiguration,
-                selectedServiceStyles,
-                baseCapabilities,
-                capabilityRules: roleConfig?.capabilityRules
-              });
-              capabilities = effectiveCapabilities;
-            } else {
-              capabilities = baseCapabilities;
-            }
-          }
-        } catch (roleError) {
-          console.warn(`[Vendor Profile] Failed to load role ${vendor.role_id}:`, roleError.message);
-        }
-      }
-      return c.json({
-        success: true,
-        vendor: {
-          ...vendor,
-          // ✅ Explicitly include profile fields (even if null) for solo providers
-          qualifications: vendor.qualifications || null,
-          service_area: vendor.service_area || null,
-          description: vendor.description || null,
-          experience_years: vendor.experience_years ?? null,
-          // Include role info directly in response
-          role: role ? {
-            id: role.id,
-            name: role.name,
-            display_name: role.display_name,
-            description: role.description,
-            config: roleConfig
-          } : null,
-          customer_service: customerService,
-          vendorConfiguration,
-          serviceStyles: selectedServiceStyles,
-          capabilities,
-          // ✅ Filtered capabilities (two-stage)
-          vendorTypes: roleConfig?.vendorTypes || [],
-          profileType: vendorConfiguration === "solo" ? "professional" : "center",
-          allowedServiceStyles: vendorConfiguration ? roleConfig?.serviceStyles?.[vendorConfiguration] || [] : []
-        }
-      });
-    } catch (error) {
-      console.error("Error fetching vendor profile:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.get("/vendor/:vendorId/complete", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
-        return c.json({
-          success: true,
-          vendor: {
-            id: vendorId,
-            business_name: "Test Vendor",
-            owner_name: "Test Owner",
-            role: null,
-            capabilities: [],
-            vendorTypes: [],
-            serviceStyles: []
-          },
-          onboardingForm: null,
-          setupStatus: {
-            profileCompleted: false,
-            servicesConfigured: false,
-            availabilitySet: false,
-            paymentSetup: false,
-            isComplete: false
-          }
-        });
-      }
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const vendor = vendors[0];
-      let role = null;
-      let capabilities = [];
-      let roleConfig = {};
-      let onboardingForm = null;
-      if (vendor.role_id) {
-        try {
-          const roles = await select("roles", { id: vendor.role_id });
-          if (roles.length > 0) {
-            role = roles[0];
-            roleConfig = role.config || {};
-            try {
-              const allPermissions = await query(
-                `SELECT role_id, permission_name 
-                 FROM role_permissions 
-                 WHERE role_id = ANY($1::text[])`,
-                [[vendor.role_id]]
-              );
-              capabilities = allPermissions.rows.map((p) => p.permission_name);
-            } catch {
-              const permissions = await select("role_permissions", { role_id: vendor.role_id });
-              capabilities = permissions.map((p) => p.permission_name);
-            }
-            try {
-              const forms = await select("onboarding_forms", { role_id: role.name });
-              if (forms.length > 0) {
-                const fields = typeof forms[0].fields === "string" ? JSON.parse(forms[0].fields) : forms[0].fields || [];
-                onboardingForm = {
-                  fields: fields.filter((f) => f.isActive !== false),
-                  version: forms[0].version || 1
-                };
-              }
-            } catch (formError) {
-              console.warn(`[Vendor Complete] Failed to load onboarding form:`, formError.message);
-            }
-          }
-        } catch (roleError) {
-          console.warn(`[Vendor Complete] Failed to load role ${vendor.role_id}:`, roleError.message);
-        }
-      }
-      return c.json({
-        success: true,
-        vendor: {
-          ...vendor,
-          role: role ? {
-            id: role.id,
-            name: role.name,
-            display_name: role.display_name,
-            description: role.description,
-            config: roleConfig
-          } : null,
-          capabilities,
-          vendorTypes: roleConfig?.vendorTypes || [],
-          serviceStyles: roleConfig?.serviceStyles || [],
-          onboardingForm
-          // Include form if available
-        }
-      });
-    } catch (error) {
-      console.error("Error fetching complete vendor data:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.get("/vendor/:vendorId/bank-account", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      if (!isValidUUID(vendorId)) {
-        return c.json({ error: "Invalid vendor ID" }, 400);
-      }
-      const vendor = await resolveVendorById(vendorId);
-      if (!vendor) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const resolvedVendorId = vendor.id;
-      const schemaCheck = await query(`
-        SELECT 
-          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as has_accounts_table,
-          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_details') as has_details_table
-      `);
-      const schema = schemaCheck.rows[0] || {};
-      let bankAccounts = [];
-      if (schema.has_accounts_table) {
-        try {
-          const accounts = await query(
-            `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 ORDER BY is_primary DESC, created_at DESC LIMIT 1`,
-            [resolvedVendorId]
-          );
-          bankAccounts = accounts.rows;
-        } catch (e) {
-          console.warn("Error querying vendor_bank_accounts:", e);
-        }
-      }
-      if (bankAccounts.length === 0 && schema.has_details_table) {
-        try {
-          bankAccounts = await select("vendor_bank_details", { vendor_id: resolvedVendorId });
-        } catch (e) {
-          console.warn("Error querying vendor_bank_details:", e);
-        }
-      }
-      if (bankAccounts.length === 0) {
-        return c.json({ success: true, bankAccount: null });
-      }
-      const bankAccount = normalizeDbRow(bankAccounts[0]);
-      return c.json({ success: true, bankAccount });
-    } catch (error) {
-      console.error("Error fetching bank account:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.post("/vendor/:vendorId/bank-account", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const body = await c.req.json();
-      const { account_holder_name, account_number, ifsc_code, bank_name, branch_name } = body;
-      if (!isValidUUID(vendorId)) {
-        return c.json({ error: "Invalid vendor ID" }, 400);
-      }
-      if (!account_holder_name || !account_number || !ifsc_code || !bank_name) {
-        return c.json({ error: "Missing required fields: account_holder_name, account_number, ifsc_code, bank_name" }, 400);
-      }
-      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc_code.toUpperCase())) {
-        return c.json({ error: "Invalid IFSC code format" }, 400);
-      }
-      const vendor = await resolveVendorById(vendorId);
-      if (!vendor) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const resolvedVendorId = vendor.id;
-      const existing = await select("vendor_bank_details", { vendor_id: resolvedVendorId });
-      const bankData = {
-        vendor_id: resolvedVendorId,
-        account_holder_name: account_holder_name.trim(),
-        account_number: account_number.replace(/\s/g, ""),
-        ifsc_code: ifsc_code.toUpperCase().trim(),
-        bank_name: bank_name.trim(),
-        branch_name: branch_name?.trim() || null,
-        is_verified: false,
-        // Reset verification status on update
-        verified_at: null,
-        verified_by: null,
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      if (existing.length > 0) {
-        await update("vendor_bank_details", { vendor_id: resolvedVendorId }, bankData);
-      } else {
-        await insert("vendor_bank_details", bankData);
-      }
-      await query(
-        `UPDATE vendor_setup_completion 
-         SET bank_account_completed = true, 
-             bank_account_completed_at = NOW(),
-             updated_at = NOW()
-         WHERE vendor_id = $1`,
-        [resolvedVendorId]
-      ).catch((error) => {
-        if (error instanceof Error && !error.message.includes("does not exist")) {
-          console.warn("[VENDOR-PROFILE] Unexpected error updating vendor onboarding:", error.message);
-        }
-      });
-      return c.json({ success: true, message: "Bank account saved successfully" });
-    } catch (error) {
-      console.error("Error saving bank account:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.post("/vendor/:vendorId/bank-account/verify", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      if (!isValidUUID(vendorId)) {
-        return c.json({ error: "Invalid vendor ID" }, 400);
-      }
-      const vendor = await resolveVendorById(vendorId);
-      if (!vendor) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const resolvedVendorId = vendor.id;
-      const schemaCheck = await query(`
-        SELECT 
-          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as has_accounts_table,
-          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_details') as has_details_table
-      `);
-      const schema = schemaCheck.rows?.[0] || {};
-      let bankAccounts = [];
-      if (schema.has_accounts_table) {
-        try {
-          const accounts = await query(
-            `SELECT *, 'vendor_bank_accounts' as _source FROM vendor_bank_accounts WHERE vendor_id = $1 ORDER BY is_primary DESC, created_at DESC LIMIT 1`,
-            [resolvedVendorId]
-          );
-          bankAccounts = accounts.rows || [];
-        } catch (e) {
-          console.warn("Error querying vendor_bank_accounts for verify:", e);
-        }
-      }
-      if (bankAccounts.length === 0 && schema.has_details_table) {
-        try {
-          bankAccounts = await select("vendor_bank_details", { vendor_id: resolvedVendorId });
-          if (bankAccounts.length > 0) bankAccounts[0]._source = "vendor_bank_details";
-        } catch (e) {
-          console.warn("Error querying vendor_bank_details for verify:", e);
-        }
-      }
-      if (bankAccounts.length === 0) {
-        return c.json({ error: "Bank account not found. Please add bank account details first." }, 404);
-      }
-      const bank = bankAccounts[0];
-      const accountHolderName = (bank.account_holder_name || "").trim();
-      const accountNumber = (bank.account_number || "").replace(/\s/g, "");
-      const ifscCode = (bank.ifsc_code || "").toUpperCase().trim();
-      const sourceTable = bank._source || (schema.has_accounts_table ? "vendor_bank_accounts" : "vendor_bank_details");
-      if (!accountHolderName || !accountNumber || !ifscCode) {
-        return c.json({
-          success: false,
-          error: "Bank account record missing name, account number, or IFSC. Please complete all fields."
-        }, 400);
-      }
-      const { validateBankAccountStrict: validateBankAccountStrict2 } = await Promise.resolve().then(() => (init_razorpay(), razorpay_exports));
-      const result = await validateBankAccountStrict2(accountNumber, ifscCode, accountHolderName);
-      if (result.error) {
-        return c.json({
-          success: false,
-          error: result.error,
-          details: result.details
-        }, 400);
-      }
-      const verifyPayload = {
-        is_verified: true,
-        verified_at: (/* @__PURE__ */ new Date()).toISOString(),
-        updated_at: (/* @__PURE__ */ new Date()).toISOString()
-      };
-      if (sourceTable === "vendor_bank_accounts" && bank.id) {
-        await update("vendor_bank_accounts", { id: bank.id, vendor_id: resolvedVendorId }, verifyPayload);
-      } else {
-        await update("vendor_bank_details", { vendor_id: resolvedVendorId }, verifyPayload);
-      }
-      return c.json({
-        success: true,
-        message: "Bank account verified successfully. Name, IFSC, and account number validated.",
-        verified: true
-      });
-    } catch (error) {
-      console.error("Error verifying bank account:", error);
-      return c.json({ error: error.message || "Verification failed" }, 500);
-    }
-  });
-  app3.post("/vendor/:vendorId/bank-account/document", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const body = await c.req.json();
-      const { document_type, document_url } = body;
-      if (!isValidUUID(vendorId)) {
-        return c.json({ error: "Invalid vendor ID" }, 400);
-      }
-      if (!document_type || !document_url) {
-        return c.json({ error: "document_type and document_url are required" }, 400);
-      }
-      return c.json({ success: true, message: "Document uploaded successfully" });
-    } catch (error) {
-      console.error("Error uploading document:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.get("/vendor/:vendorId/settings", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      if (!isValidUUID(vendorId)) {
-        return c.json({ error: "Invalid vendor ID" }, 400);
-      }
-      let vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        console.log(`[SETTINGS] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-        const identities = await select("vendor_identity", { id: vendorId });
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
-            const vendorByPhone = await select("vendors", { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              vendors = vendorByPhone;
-              console.log(`[SETTINGS] Found existing vendor by phone: ${vendors[0].id}`);
-            } else {
-              const applications = await select("vendor_onboarding_applications", { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              console.log(`[SETTINGS] Auto-creating vendor record for approved vendor ${vendorId}`);
-              const newVendor = await insert("vendors", {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
-                role_id: identity.selected_role_id,
-                vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
-                category: "general",
-                address: payload.address || "Not specified",
-                city: payload.city || "Not specified",
-                state: payload.state || "Not specified",
-                pincode: payload.pin || payload.pincode || "",
-                // Don't use default - require actual pincode
-                status: "active",
-                is_active: true,
-                created_at: (/* @__PURE__ */ new Date()).toISOString(),
-                updated_at: (/* @__PURE__ */ new Date()).toISOString()
-              });
-              vendors = newVendor;
-              console.log(`[SETTINGS] Created vendor record for ${vendorId}`);
-            }
-          } else {
-            return c.json({ error: "Vendor not approved or activated" }, 403);
-          }
-        } else {
-          return c.json({ error: "Vendor not found" }, 404);
-        }
-      }
-      if (vendors.length === 0) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const vendor = vendors[0];
-      const settings = {
-        service_radius: vendor.service_radius || null,
-        emergency_contact: vendor.emergency_contact || null,
-        max_dogs_per_walk: vendor.max_dogs_per_walk || null,
-        walk_durations: vendor.walk_durations || [],
-        other_config: vendor.other_config || {}
-      };
-      return c.json({ success: true, settings });
-    } catch (error) {
-      console.error("Error fetching settings:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  const settingsHandler = async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const body = await c.req.json();
-      const { service_radius, emergency_contact, max_dogs_per_walk, walk_durations, other_config } = body;
-      if (!isValidUUID(vendorId)) {
-        return c.json({ error: "Invalid vendor ID" }, 400);
-      }
-      if (emergency_contact) {
-        if (!emergency_contact.name || !emergency_contact.phone) {
-          return c.json({ error: "Emergency contact must have both name and phone" }, 400);
-        }
-        const phoneDigits = emergency_contact.phone.replace(/\D/g, "");
-        if (phoneDigits.length < 10) {
-          return c.json({ error: "Invalid emergency contact phone number" }, 400);
-        }
-      }
-      let vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        console.log(`[SETTINGS-UPDATE] Vendor ${vendorId} not found in vendors table, checking vendor_identity...`);
-        const identities = await select("vendor_identity", { id: vendorId });
-        if (identities.length > 0) {
-          const identity = identities[0];
-          if (identity.onboarding_status === "APPROVED" || identity.onboarding_status === "ACTIVATED") {
-            const vendorByPhone = await select("vendors", { phone: identity.phone });
-            if (vendorByPhone.length > 0) {
-              vendors = vendorByPhone;
-              console.log(`[SETTINGS-UPDATE] Found existing vendor by phone: ${vendors[0].id}`);
-            } else {
-              const applications = await select("vendor_onboarding_applications", { vendor_identity_id: vendorId });
-              const application = applications.length > 0 ? applications[0] : null;
-              const payload = application?.application_payload || {};
-              console.log(`[SETTINGS-UPDATE] Auto-creating vendor record for approved vendor ${vendorId}`);
-              const newVendor = await insert("vendors", {
-                id: vendorId,
-                phone: identity.phone,
-                email: payload.email || `vendor-${identity.phone}@warmpawz.app`,
-                business_name: payload.businessName || payload.business_name || `Vendor ${identity.phone}`,
-                owner_name: payload.contactPersonName || payload.ownerName || "Vendor Owner",
-                role_id: identity.selected_role_id,
-                vendor_type: identity.vendor_type || payload.vendorType || payload.vendor_type || "business",
-                category: "general",
-                address: payload.address || "Not specified",
-                city: payload.city || "Not specified",
-                state: payload.state || "Not specified",
-                pincode: payload.pin || payload.pincode || "",
-                // Don't use default - require actual pincode
-                status: "active",
-                is_active: true,
-                created_at: (/* @__PURE__ */ new Date()).toISOString(),
-                updated_at: (/* @__PURE__ */ new Date()).toISOString()
-              });
-              vendors = newVendor;
-              console.log(`[SETTINGS-UPDATE] Created vendor record for ${vendorId}`);
-            }
-          } else {
-            return c.json({ error: "Vendor not approved or activated" }, 403);
-          }
-        } else {
-          return c.json({ error: "Vendor not found" }, 404);
-        }
-      }
-      if (vendors.length === 0) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const schemaCheck = await query(`
-        SELECT 
-          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'service_radius') as has_service_radius,
-          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'emergency_contact') as has_emergency_contact,
-          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'max_dogs_per_walk') as has_max_dogs,
-          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'walk_durations') as has_walk_durations,
-          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendors' AND column_name = 'other_config') as has_other_config,
-          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vendor_settings') as has_vendor_settings_table
-      `);
-      const schema = schemaCheck.rows[0] || {};
-      const setClauses = ["updated_at = NOW()"];
-      const params = [];
-      let paramIdx = 1;
-      if (service_radius !== void 0 && schema.has_service_radius) {
-        setClauses.push(`service_radius = $${paramIdx}`);
-        params.push(service_radius);
-        paramIdx++;
-      }
-      if (emergency_contact !== void 0 && schema.has_emergency_contact) {
-        setClauses.push(`emergency_contact = $${paramIdx}::jsonb`);
-        params.push(JSON.stringify(emergency_contact));
-        paramIdx++;
-      }
-      if (max_dogs_per_walk !== void 0 && schema.has_max_dogs) {
-        setClauses.push(`max_dogs_per_walk = $${paramIdx}`);
-        params.push(max_dogs_per_walk);
-        paramIdx++;
-      }
-      if (walk_durations !== void 0 && schema.has_walk_durations) {
-        if (Array.isArray(walk_durations) && walk_durations.length > 0) {
-          setClauses.push(`walk_durations = $${paramIdx}::text[]`);
-          params.push(walk_durations);
-          paramIdx++;
-        } else {
-          setClauses.push(`walk_durations = NULL`);
-        }
-      }
-      if (other_config !== void 0 && schema.has_other_config) {
-        setClauses.push(`other_config = $${paramIdx}::jsonb`);
-        params.push(JSON.stringify(other_config || {}));
-        paramIdx++;
-      }
-      const actualVendorId = vendors[0].id;
-      params.push(actualVendorId);
-      await query(
-        `UPDATE vendors SET ${setClauses.join(", ")} WHERE id = $${paramIdx}`,
-        params
-      );
-      return c.json({ success: true, message: "Settings updated successfully" });
-    } catch (error) {
-      console.error("Error updating settings:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  };
-  app3.put("/vendor/:vendorId/settings", settingsHandler);
-  app3.post("/vendor/:vendorId/settings", settingsHandler);
-  app3.get("/vendor/:vendorId", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      if (vendorId === "test-vendor-id" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
-        return c.json({
-          success: true,
-          vendor: {
-            id: vendorId,
-            business_name: "Test Vendor",
-            owner_name: "Test Owner",
-            role: null,
-            capabilities: []
-          },
-          menu: []
-        });
-      }
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
-        return c.json({ error: "Vendor not found" }, 404);
-      }
-      const vendor = vendors[0];
-      let role = null;
-      let capabilities = [];
-      let roleConfig = {};
-      let isCafe = false;
-      if (vendor.role_id) {
-        try {
-          const roles = await select("roles", { id: vendor.role_id });
-          if (roles.length > 0) {
-            role = roles[0];
-            roleConfig = role.config || {};
-            const permissions = await select("role_permissions", { role_id: vendor.role_id });
-            capabilities = permissions.map((p) => p.permission_name);
-            const roleName = (role.name || "").toLowerCase();
-            isCafe = roleName.includes("cafe") || roleName.includes("restaurant") || capabilities.includes("cafe") || capabilities.includes("cafe_menu");
-          }
-        } catch (roleError) {
-          console.warn(`[Vendor Details] Failed to load role ${vendor.role_id}:`, roleError.message);
-        }
-      }
-      const vendorResponse = {
-        id: vendor.id,
-        business_name: vendor.business_name,
-        owner_name: vendor.owner_name,
-        role_id: vendor.role_id,
-        role: role ? {
-          id: role.id,
-          name: role.name,
-          display_name: role.display_name
-        } : null,
-        capabilities,
-        address: vendor.address,
-        city: vendor.city,
-        state: vendor.state,
-        pincode: vendor.pincode,
-        phone: vendor.phone,
-        email: vendor.email,
-        latitude: vendor.latitude,
-        longitude: vendor.longitude,
-        description: vendor.description || "",
-        operating_hours: vendor.operating_hours ? typeof vendor.operating_hours === "string" ? JSON.parse(vendor.operating_hours) : vendor.operating_hours : null,
-        // Include other vendor fields
-        ...vendor
-      };
-      let menu = [];
-      if (isCafe) {
-        try {
-          const menuItems = await query(
-            `SELECT * FROM cafe_menu_items 
-             WHERE vendor_id = $1 
-             AND is_active = true
-             ORDER BY category, name ASC`,
-            [vendorId]
-          ).catch(() => ({ rows: [] }));
-          menu = menuItems.rows || [];
-        } catch (menuError) {
-          console.warn(`[Vendor Details] Failed to load menu for cafe ${vendorId}:`, menuError.message);
-        }
-      }
-      return c.json({
-        success: true,
-        vendor: vendorResponse,
-        menu
-        // Include menu for cafes
-      });
-    } catch (error) {
-      console.error("Error fetching vendor details:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
 }
 
 // src/utils/vendor-resolve.ts
@@ -147392,7 +147463,8 @@ function registerServiceDiscoveryEndpoints(app3) {
         const targetRolesLower = targetRoles2.map((r) => r.toLowerCase());
         console.log("[discover-services] at_home/tele category=%s roleId=%s targetRoles=%s", category, roleId, JSON.stringify(targetRolesLower));
         const roleIdForRule = category || roleId || targetRoles2[0] || "all";
-        const discoveryRules = await getDiscoveryRules(roleIdForRule, "discover", "at_home", category || void 0);
+        const ruleStyle = serviceStyle === "tele" ? "tele" : "at_home";
+        const discoveryRules = await getDiscoveryRules(roleIdForRule, "discover", ruleStyle, category || void 0);
         const ruleRadiusKm = typeof discoveryRules.discovery_radius_km === "number" ? discoveryRules.discovery_radius_km : 50;
         const ruleMaxResults = typeof discoveryRules.discovery_max_results === "number" ? discoveryRules.discovery_max_results : 50;
         const ruleSortDefault = typeof discoveryRules.discovery_sort_default === "string" ? discoveryRules.discovery_sort_default : "relevance";
@@ -147405,17 +147477,17 @@ function registerServiceDiscoveryEndpoints(app3) {
             )`;
         const vendorParams = targetRolesLower.length > 0 ? targetRolesLower : [];
         const isWalkerCategory = category?.toLowerCase() === "walker" || category?.toLowerCase() === "walking" || targetRolesLower.length > 0 && targetRolesLower.some((r) => ["walker", "walker_solo", "pet_walker", "dog_walker"].includes(r));
-        const existsServiceClause = targetRolesLower.length > 0 ? isWalkerCategory ? ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true)` : ` AND EXISTS (
+        const existsServiceClause = targetRolesLower.length > 0 ? isWalkerCategory ? ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true AND vs.publish_status = 'published')` : ` AND EXISTS (
               SELECT 1 FROM vendor_services vs
               WHERE vs.vendor_id = v.id
                 AND vs.is_enabled = true
-                AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+                AND vs.publish_status = 'published'
             )` : ` AND EXISTS (
               SELECT 1 FROM vendor_services vs
               WHERE vs.vendor_id = v.id
                 AND (vs.service_style = $1 OR vs.service_style IS NULL)
                 AND vs.is_enabled = true
-                AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+                AND vs.publish_status = 'published'
             )`;
         if (targetRolesLower.length === 0) vendorParams.unshift(serviceStyle);
         let vendorQuery2 = `
@@ -147426,7 +147498,7 @@ function registerServiceDiscoveryEndpoints(app3) {
                  v.service_radius,
                  (SELECT MIN(vs.service_radius_km) FROM vendor_services vs
                   WHERE vs.vendor_id = v.id AND vs.is_enabled = true
-                    AND (vs.service_style = 'at_home' OR vs.service_style = 'tele')) AS service_radius_km_min
+                    AND vs.service_style = 'at_home') AS service_radius_km_min_home
           FROM vendors v
           LEFT JOIN roles r ON v.role_id = r.id
           WHERE (v.status = 'approved' OR v.status = 'active')
@@ -147457,14 +147529,14 @@ function registerServiceDiscoveryEndpoints(app3) {
             const today = /* @__PURE__ */ new Date();
             const todayStr = today.toISOString().split("T")[0];
             const nextSlotsResult = await query(
-              `SELECT va.day_of_week, va.time_window_start, va.time_window_end
+              `SELECT va.day_of_week, COALESCE(va.time_window_start, va.start_time) as time_window_start, COALESCE(va.time_window_end, va.end_time) as time_window_end
                FROM vendor_availability_v2 va
-               WHERE va.vendor_id = $1 
-                 AND va.is_enabled = true
-                 AND ($2 = ANY(va.service_styles) OR va.service_style = $2)
-               ORDER BY va.day_of_week ASC, va.time_window_start ASC 
+               WHERE (va.vendor_id = $1 OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
+                 AND COALESCE(va.is_enabled, va.is_available, true) = true
+                 AND ($3 = ANY(COALESCE(va.service_styles, ARRAY[]::text[])) OR va.service_style = $3 OR va.service_type = $3)
+               ORDER BY va.day_of_week ASC, COALESCE(va.time_window_start, va.start_time) ASC 
                LIMIT 1`,
-              [vendor.id, serviceStyle]
+              [vendor.id, vendor.phone || "", serviceStyle]
             );
             if (nextSlotsResult.rows.length > 0) {
               const slot = nextSlotsResult.rows[0];
@@ -147515,9 +147587,21 @@ function registerServiceDiscoveryEndpoints(app3) {
             distanceText = distance < 1 ? `${Math.round(distance * 1e3)}m away` : `${distance.toFixed(1)} km away`;
           }
           const vendorRadius = vendor.service_radius != null ? Number(vendor.service_radius) : null;
-          const serviceRadiusKm = vendor.service_radius_km_min != null ? Number(vendor.service_radius_km_min) : null;
-          const effectiveRadiusKm = vendorRadius ?? serviceRadiusKm ?? ruleRadiusKm ?? 50;
-          const withinRadius = !(latitude && longitude) || distance != null && distance <= effectiveRadiusKm;
+          const serviceRadiusKmHome = vendor.service_radius_km_min_home != null ? Number(vendor.service_radius_km_min_home) : null;
+          let effectiveRadiusKm;
+          let withinRadius;
+          if (serviceStyle === "at_home") {
+            effectiveRadiusKm = vendorRadius ?? serviceRadiusKmHome ?? ruleRadiusKm ?? 50;
+            withinRadius = !(latitude && longitude) || distance != null && distance <= effectiveRadiusKm;
+          } else {
+            const teleRadiusKm = typeof discoveryRules.discovery_radius_km_tele === "number" ? discoveryRules.discovery_radius_km_tele : typeof discoveryRules.discovery_radius_km === "number" ? discoveryRules.discovery_radius_km : 0;
+            if (teleRadiusKm <= 0) {
+              withinRadius = true;
+            } else {
+              effectiveRadiusKm = teleRadiusKm;
+              withinRadius = !(latitude && longitude) || distance != null && distance <= effectiveRadiusKm;
+            }
+          }
           if (!withinRadius) continue;
           let avgRating = 0;
           let totalReviews = 0;
@@ -147653,7 +147737,7 @@ function registerServiceDiscoveryEndpoints(app3) {
       let vendorQuery = `
         SELECT v.*, r.name as role_name, r.display_name as role_display_name,
           COALESCE((SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true), 0) as service_count,
-          COALESCE((SELECT COUNT(*) FROM vendor_availability_v2 va WHERE va.vendor_id = v.id), 0) as availability_count
+          COALESCE((SELECT COUNT(*) FROM vendor_availability_v2 va WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)), 0) as availability_count
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
@@ -147730,11 +147814,11 @@ function registerServiceDiscoveryEndpoints(app3) {
             const dayOfWeek = today.getDay();
             const va2Check = await query(
               `SELECT 1 FROM vendor_availability_v2 
-               WHERE vendor_id = $1 
-                 AND day_of_week = $2 
+               WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
+                 AND day_of_week = $3 
                  AND COALESCE(is_enabled, is_available, true) = true 
                LIMIT 1`,
-              [vendor.id, dayOfWeek]
+              [vendor.id, vendor.phone || "", dayOfWeek]
             );
             isAvailableToday = va2Check.rows.length > 0;
             if (!isAvailableToday) {
@@ -147743,8 +147827,8 @@ function registerServiceDiscoveryEndpoints(app3) {
               );
               if (tableCheck.rows[0]?.exists) {
                 const vssCheck = await query(
-                  `SELECT 1 FROM vendor_schedule_slots WHERE vendor_id = $1 AND day_of_week = $2 AND is_enabled = true LIMIT 1`,
-                  [vendor.id, dayOfWeek]
+                  `SELECT 1 FROM vendor_schedule_slots WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2)) AND day_of_week = $3 AND is_enabled = true LIMIT 1`,
+                  [vendor.id, vendor.phone || "", dayOfWeek]
                 );
                 isAvailableToday = vssCheck.rows.length > 0;
               }
@@ -147795,68 +147879,36 @@ function registerServiceDiscoveryEndpoints(app3) {
             const today = /* @__PURE__ */ new Date();
             const todayStr = today.toISOString().split("T")[0];
             const dayOfWeek = today.getDay();
-            let nextSlotsResult = { rows: [] };
-            try {
-              nextSlotsResult = await query(
-                `SELECT date, start_time, end_time 
-                 FROM vendor_availability_slots 
-                 WHERE vendor_id = $1 
-                   AND date >= $2
-                   AND is_available = true
-                 ORDER BY date ASC, start_time ASC
-                 LIMIT 1`,
-                [vendor.id, todayStr]
-              );
-            } catch (_) {
-            }
-            if (nextSlotsResult.rows.length > 0) {
-              const slot = nextSlotsResult.rows[0];
-              const slotDate = new Date(slot.date);
-              const isToday = slotDate.toISOString().split("T")[0] === todayStr;
-              const isTomorrow = slotDate.toISOString().split("T")[0] === new Date(today.getTime() + 864e5).toISOString().split("T")[0];
-              const timeStr = slot.start_time?.substring(0, 5) || "09:00";
+            const va2Result = await query(
+              `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
+                 FROM vendor_availability_v2
+                 WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
+                   AND COALESCE(is_enabled, is_available, true) = true
+                 ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC
+                 LIMIT 7`,
+              [vendor.id, vendor.phone || ""]
+            ).catch(() => ({ rows: [] }));
+            if (va2Result.rows.length > 0) {
+              const slot = va2Result.rows[0];
+              const targetDay = slot.day_of_week;
+              let daysToAdd = targetDay - dayOfWeek;
+              if (daysToAdd < 0) daysToAdd += 7;
+              const targetDate = new Date(today);
+              targetDate.setDate(targetDate.getDate() + daysToAdd);
+              const timeStr = (slot.start_time || "09:00").toString().substring(0, 5);
               const formattedTime = (/* @__PURE__ */ new Date(`2000-01-01T${timeStr}`)).toLocaleTimeString("en-US", {
                 hour: "numeric",
                 minute: "2-digit",
                 hour12: true
               });
+              const targetStr = targetDate.toISOString().split("T")[0];
+              const isToday = targetStr === todayStr;
+              const isTomorrow = targetStr === new Date(today.getTime() + 864e5).toISOString().split("T")[0];
               nextAvailableSlot = {
-                date: slot.date,
+                date: targetStr,
                 time: timeStr,
-                formattedDisplay: isToday ? `Today ${formattedTime}` : isTomorrow ? `Tomorrow ${formattedTime}` : `${slotDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} ${formattedTime}`
+                formattedDisplay: isToday ? `Today ${formattedTime}` : isTomorrow ? `Tomorrow ${formattedTime}` : `${targetDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} ${formattedTime}`
               };
-            } else {
-              const va2Result = await query(
-                `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
-                 FROM vendor_availability_v2
-                 WHERE vendor_id = $1
-                   AND COALESCE(is_enabled, is_available, true) = true
-                 ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC
-                 LIMIT 7`,
-                [vendor.id]
-              ).catch(() => ({ rows: [] }));
-              if (va2Result.rows.length > 0) {
-                const slot = va2Result.rows[0];
-                const targetDay = slot.day_of_week;
-                let daysToAdd = targetDay - dayOfWeek;
-                if (daysToAdd < 0) daysToAdd += 7;
-                const targetDate = new Date(today);
-                targetDate.setDate(targetDate.getDate() + daysToAdd);
-                const timeStr = (slot.start_time || "09:00").toString().substring(0, 5);
-                const formattedTime = (/* @__PURE__ */ new Date(`2000-01-01T${timeStr}`)).toLocaleTimeString("en-US", {
-                  hour: "numeric",
-                  minute: "2-digit",
-                  hour12: true
-                });
-                const targetStr = targetDate.toISOString().split("T")[0];
-                const isToday = targetStr === todayStr;
-                const isTomorrow = targetStr === new Date(today.getTime() + 864e5).toISOString().split("T")[0];
-                nextAvailableSlot = {
-                  date: targetStr,
-                  time: timeStr,
-                  formattedDisplay: isToday ? `Today ${formattedTime}` : isTomorrow ? `Tomorrow ${formattedTime}` : `${targetDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} ${formattedTime}`
-                };
-              }
             }
           } catch (slotError) {
           }
@@ -147923,9 +147975,16 @@ function registerServiceDiscoveryEndpoints(app3) {
             }
           } catch {
           }
+          let vendorIdentityId = null;
+          try {
+            vendorIdentityId = await getVendorIdentityId(vendor.id);
+          } catch {
+          }
           return {
             id: vendor.id,
             vendorId: vendor.id,
+            vendor_identity_id: vendorIdentityId ?? void 0,
+            vendorIdentityId: vendorIdentityId ?? void 0,
             businessName: vendor.business_name,
             roleId: vendor.role_id,
             roleName: vendor.role_name,
@@ -147988,35 +148047,57 @@ function registerServiceDiscoveryEndpoints(app3) {
           return v.featuredOfferings && v.featuredOfferings.length > 0 && v.featuredOfferings.some((offering) => offering.serviceStyle === "at_center");
         });
       }
+      const discoverRules = await getDiscoveryRules(
+        category || roleId || "all",
+        "discover",
+        serviceStyle || void 0,
+        category || void 0
+      );
+      const discoverRadiusKm = typeof discoverRules.discovery_radius_km === "number" ? discoverRules.discovery_radius_km : 50;
+      const discoverMaxResults = typeof discoverRules.discovery_max_results === "number" ? discoverRules.discovery_max_results : 50;
+      const discoverSortDefault = typeof discoverRules.discovery_sort_default === "string" ? discoverRules.discovery_sort_default : "relevance";
+      if (latitude && longitude) {
+        filteredVendors = filteredVendors.filter(
+          (v) => v.distance == null || v.distance <= discoverRadiusKm
+        );
+      }
       if (minRating) {
         filteredVendors = filteredVendors.filter((v) => v.rating >= parseFloat(minRating));
       }
-      if (sortBy === "distance" && latitude && longitude) {
+      const effectiveSortBy = sortBy || discoverSortDefault;
+      if (effectiveSortBy === "distance" && latitude && longitude) {
         filteredVendors.sort((a, b) => {
           if (a.distance === null) return 1;
           if (b.distance === null) return -1;
           return a.distance - b.distance;
         });
-      } else if (sortBy === "rating") {
+      } else if (effectiveSortBy === "rating") {
         filteredVendors.sort((a, b) => b.rating - a.rating);
-      } else if (sortBy === "price") {
+      } else if (effectiveSortBy === "price") {
         filteredVendors.sort((a, b) => {
           const aPrice = a.featuredOfferings[0]?.price || 0;
           const bPrice = b.featuredOfferings[0]?.price || 0;
           return aPrice - bPrice;
         });
+      } else {
+        filteredVendors.sort((a, b) => {
+          const aScore = (parseFloat(a.rating) || 0) * 10 + (a.totalReviews || 0) * 0.5 + (a.distance != null ? Math.max(0, 50 - a.distance) : 0);
+          const bScore = (parseFloat(b.rating) || 0) * 10 + (b.totalReviews || 0) * 0.5 + (b.distance != null ? Math.max(0, 50 - b.distance) : 0);
+          return bScore - aScore;
+        });
       }
+      const limitedVendors = filteredVendors.slice(0, discoverMaxResults);
       return c.json({
         success: true,
-        vendors: filteredVendors,
-        total: filteredVendors.length,
+        vendors: limitedVendors,
+        total: limitedVendors.length,
         filters: {
           category,
           location,
           minRating,
           availability,
           petType,
-          sortBy,
+          sortBy: effectiveSortBy,
           serviceStyle
         }
       });
@@ -148063,11 +148144,14 @@ function registerServiceDiscoveryEndpoints(app3) {
       if (!date) {
         return c.json({ error: "date parameter is required" }, 400);
       }
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors[0];
+      const resolvedVendorId = vendor.id;
+      const availabilityIds = await getVendorIdsForAvailabilityLookup(resolvedVendorId);
+      const canonicalVendorId = availabilityIds[0] ?? resolvedVendorId;
+      const vendorIdentityIdFromLookup = availabilityIds.length > 1 ? availabilityIds[1] : null;
       const [year2, month, day2] = date.split("-").map(Number);
       const requestedDate = new Date(year2, month - 1, day2);
       const dayOfWeek = requestedDate.getDay();
@@ -148096,7 +148180,7 @@ function registerServiceDiscoveryEndpoints(app3) {
            WHERE vendor_id = $1 AND is_active = true
              AND ($2::date >= start_date AND $2::date <= end_date)
            LIMIT 1`,
-          [vendorId, date]
+          [resolvedVendorId, date]
         ).catch(() => ({ rows: [] }));
         if (holEnhanced.rows.length > 0) {
           isHoliday = true;
@@ -148107,7 +148191,7 @@ function registerServiceDiscoveryEndpoints(app3) {
         try {
           const holLegacy = await query(
             `SELECT 1 FROM vendor_holidays WHERE vendor_id = $1 AND date = $2 LIMIT 1`,
-            [vendorId, date]
+            [resolvedVendorId, date]
           ).catch(() => ({ rows: [] }));
           if (holLegacy.rows.length > 0) isHoliday = true;
         } catch {
@@ -148124,7 +148208,8 @@ function registerServiceDiscoveryEndpoints(app3) {
           success: true,
           slots: [],
           date,
-          vendorId,
+          vendorId: canonicalVendorId,
+          vendorIdentityId: vendorIdentityIdFromLookup ?? void 0,
           serviceStyle,
           staffBased: false,
           message: "Vendor is on holiday or vacation on this date"
@@ -148152,7 +148237,7 @@ function registerServiceDiscoveryEndpoints(app3) {
           AND s.is_active = true
           AND s.mobile_verified = true
         `;
-        const params = [vendorId, date];
+        const params = [resolvedVendorId, date];
         let paramIndex = 3;
         if (staffId) {
           staffQuery += ` AND s.id = $${paramIndex}`;
@@ -148175,7 +148260,7 @@ function registerServiceDiscoveryEndpoints(app3) {
              WHERE vendor_id = $1 
              AND booking_date = $2 
              AND status NOT IN ('cancelled', 'rejected')`,
-            [vendorId, date]
+            [resolvedVendorId, date]
           ).catch(() => ({ rows: [] }));
           const bookedByStaff = {};
           for (const booking of existingBookingsResult.rows) {
@@ -148244,47 +148329,150 @@ function registerServiceDiscoveryEndpoints(app3) {
           });
         }
       }
+      const normalizedServiceStyle = serviceStyle === "at_vendor" || serviceStyle === "at_center" ? "at_center" : serviceStyle;
+      const acceptableStylesForSlot = normalizedServiceStyle === "at_center" ? ["at_center", "at_vendor"] : normalizedServiceStyle === "tele" ? ["tele", "online", "video_consultation"] : [normalizedServiceStyle];
       let va2Slots = [];
       try {
-        console.log(`[SLOTS] Querying vendor_availability_v2: vendorId=${vendorId}, dayOfWeek=${dayOfWeek}, serviceStyle=${serviceStyle}`);
+        console.log(`[SLOTS] Querying vendor_availability_v2: vendorId=${resolvedVendorId}, dayOfWeek=${dayOfWeek}, acceptableStyles=${acceptableStylesForSlot.join(",")}`);
         const va2Result = await query(
           `SELECT id, time_window_start, time_window_end, start_time, end_time,
-                  30 as slot_duration_minutes,
-                  15 as buffer_time_minutes, 
-                  max_capacity, service_styles
+                  COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
+                  COALESCE(buffer_time, buffer_time_minutes, 15) as buffer_time_minutes,
+                  lead_time_by_style, max_capacity, service_styles
            FROM vendor_availability_v2
-           WHERE vendor_id = $1
+           WHERE vendor_id::text = ANY($1::text[])
              AND day_of_week = $2
-             AND $3 = ANY(COALESCE(service_styles, ARRAY[]::text[]))
-             AND COALESCE(is_available, true) = true
+             AND (
+               (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
+               OR COALESCE(service_style, service_type)::text = ANY($3::text[])
+             )
+             AND COALESCE(is_available, is_enabled, true) = true
            ORDER BY COALESCE(time_window_start, start_time)`,
-          [vendorId, dayOfWeek, serviceStyle]
+          [availabilityIds, dayOfWeek, acceptableStylesForSlot]
         );
         va2Slots = va2Result?.rows || [];
-        console.log(`[SLOTS] Found ${va2Slots.length} availability records for day_of_week=${dayOfWeek}, serviceStyle=${serviceStyle}`);
+        console.log(`[SLOTS] Found ${va2Slots.length} availability records for day_of_week=${dayOfWeek}, acceptableStyles=${acceptableStylesForSlot.join(",")}`);
         if (va2Slots.length > 0) {
           console.log(`[SLOTS] First record:`, JSON.stringify(va2Slots[0]));
         }
       } catch (e) {
         console.error(`[SLOTS] Query error:`, e);
         try {
-          const va2ResultAlt = await query(
-            `SELECT id, start_time as time_window_start, end_time as time_window_end,
+          const va2Result006 = await query(
+            `SELECT id, time_window_start, time_window_end,
                     time_window_start as start_time, time_window_end as end_time,
-                    30 as slot_duration_minutes,
-                    15 as buffer_time_minutes,
-                    max_capacity, service_styles
+                    30 as slot_duration_minutes, 15 as buffer_time_minutes,
+                    NULL::jsonb as lead_time_by_style, 1 as max_capacity,
+                    ARRAY[service_style::text] as service_styles
              FROM vendor_availability_v2
-             WHERE vendor_id = $1 AND day_of_week = $2
-               AND $3 = ANY(COALESCE(service_styles, ARRAY[]::text[]))
-               AND COALESCE(is_available, true) = true
-             ORDER BY start_time`,
-            [vendorId, dayOfWeek, serviceStyle]
+             WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
+               AND service_style::text = ANY($3::text[])
+               AND (is_enabled = true OR is_enabled IS NULL)
+             ORDER BY time_window_start`,
+            [availabilityIds, dayOfWeek, acceptableStylesForSlot]
           );
-          va2Slots = va2ResultAlt?.rows || [];
-          console.log(`[SLOTS] Fallback query found ${va2Slots.length} records`);
-        } catch (err) {
-          console.error(`[SLOTS] Fallback query also failed:`, err);
+          va2Slots = va2Result006?.rows || [];
+          console.log(`[SLOTS] 006-schema fallback found ${va2Slots.length} records`);
+        } catch (_) {
+          try {
+            const va2ResultAlt = await query(
+              `SELECT id, start_time as time_window_start, end_time as time_window_end,
+                    start_time, end_time,
+                    COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
+                    COALESCE(buffer_time, buffer_time_minutes, 15) as buffer_time_minutes,
+                    lead_time_by_style, max_capacity, service_styles
+             FROM vendor_availability_v2
+             WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
+               AND (
+                 (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
+                 OR COALESCE(service_style, service_type)::text = ANY($3::text[])
+               )
+               AND COALESCE(is_available, is_enabled, true) = true
+             ORDER BY start_time`,
+              [availabilityIds, dayOfWeek, acceptableStylesForSlot]
+            );
+            va2Slots = va2ResultAlt?.rows || [];
+            console.log(`[SLOTS] Fallback query found ${va2Slots.length} records`);
+          } catch (err2) {
+            const columnMissing = err2?.message && (String(err2.message).includes("service_style") || String(err2.message).includes("service_type") || String(err2.message).includes("service_styles") || /column.*does not exist/i.test(String(err2.message)));
+            if (columnMissing) {
+              try {
+                const va2Minimal = await query(
+                  `SELECT id, start_time as time_window_start, end_time as time_window_end,
+                        start_time, end_time,
+                        30 as slot_duration_minutes, 15 as buffer_time_minutes,
+                        NULL::jsonb as lead_time_by_style, 1 as max_capacity,
+                        ARRAY[service_type::text] as service_styles
+                 FROM vendor_availability_v2
+                 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
+                   AND service_type::text = ANY($3::text[])
+                   AND COALESCE(is_available, is_enabled, true) = true
+                 ORDER BY start_time`,
+                  [availabilityIds, dayOfWeek, acceptableStylesForSlot]
+                );
+                va2Slots = va2Minimal?.rows || [];
+                console.log(`[SLOTS] Minimal (service_type only) query found ${va2Slots.length} records`);
+              } catch (err3) {
+                try {
+                  const va2StylesOnly = await query(
+                    `SELECT id, start_time as time_window_start, end_time as time_window_end,
+                          start_time, end_time,
+                          COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
+                          COALESCE(buffer_time, buffer_time_minutes, 15) as buffer_time_minutes,
+                          lead_time_by_style, max_capacity, service_styles
+                   FROM vendor_availability_v2
+                   WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
+                     AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
+                     AND COALESCE(is_available, is_enabled, true) = true
+                   ORDER BY start_time`,
+                    [availabilityIds, dayOfWeek, acceptableStylesForSlot]
+                  );
+                  va2Slots = va2StylesOnly?.rows || [];
+                  console.log(`[SLOTS] service_styles-only query found ${va2Slots.length} records`);
+                } catch (err4) {
+                  console.error(`[SLOTS] Minimal and service_styles-only queries also failed:`, err3, err4);
+                  try {
+                    const va2Any = await query(
+                      `SELECT id, time_window_start, time_window_end, time_window_start as start_time, time_window_end as end_time,
+                            30 as slot_duration_minutes, 15 as buffer_time_minutes, NULL::jsonb as lead_time_by_style, 1 as max_capacity,
+                            ARRAY[service_style::text] as service_styles
+                     FROM vendor_availability_v2 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2 ORDER BY time_window_start`,
+                      [availabilityIds, dayOfWeek]
+                    ).catch(() => null);
+                    if (va2Any?.rows?.length) {
+                      const filtered = va2Any.rows.filter((r) => {
+                        const style = r.service_styles && r.service_styles[0] || r.service_style || r.service_type;
+                        return style && acceptableStylesForSlot.includes(String(style));
+                      });
+                      va2Slots = filtered;
+                      console.log(`[SLOTS] No-style-filter fallback: ${va2Any.rows.length} rows, ${filtered.length} after style filter`);
+                    }
+                  } catch (err5) {
+                    try {
+                      const va2Any57 = await query(
+                        `SELECT id, start_time as time_window_start, end_time as time_window_end, start_time, end_time,
+                              30 as slot_duration_minutes, 15 as buffer_time_minutes, NULL::jsonb as lead_time_by_style, 1 as max_capacity,
+                              ARRAY[service_type::text] as service_styles
+                       FROM vendor_availability_v2 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2 ORDER BY start_time`,
+                        [availabilityIds, dayOfWeek]
+                      ).catch(() => null);
+                      if (va2Any57?.rows?.length) {
+                        const filtered = va2Any57.rows.filter((r) => {
+                          const style = r.service_styles && r.service_styles[0] || r.service_style || r.service_type;
+                          return style && acceptableStylesForSlot.includes(String(style));
+                        });
+                        va2Slots = filtered;
+                        console.log(`[SLOTS] No-style-filter (057) fallback: ${va2Any57.rows.length} rows, ${filtered.length} after style filter`);
+                      }
+                    } catch (_2) {
+                    }
+                  }
+                }
+              }
+            } else {
+              console.error(`[SLOTS] Fallback query also failed:`, err2);
+            }
+          }
         }
       }
       let breaks = [];
@@ -148293,7 +148481,7 @@ function registerServiceDiscoveryEndpoints(app3) {
           `SELECT start_time, end_time FROM vendor_breaks
            WHERE vendor_id = $1 AND is_active = true
              AND ((is_recurring = true AND day_of_week = $2) OR break_date = $3::date)`,
-          [vendorId, dayOfWeek, date]
+          [resolvedVendorId, dayOfWeek, date]
         ).catch(() => ({ rows: [] }));
         breaks = breakRows.rows.map((r) => ({
           startTime: typeof r.start_time === "string" ? r.start_time.substring(0, 5) : r.start_time,
@@ -148306,6 +148494,21 @@ function registerServiceDiscoveryEndpoints(app3) {
         const [h, m] = s.split(":").map(Number);
         return (h || 0) * 60 + (m || 0);
       };
+      const normalizeBookingTime = (t) => {
+        if (t == null) return "00:00";
+        if (typeof t === "string") {
+          if (t.includes("T")) {
+            const timePart = (t.split("T")[1] || "").substring(0, 5);
+            return timePart.length >= 5 ? timePart : t.substring(0, 5);
+          }
+          return t.substring(0, 5);
+        }
+        if (typeof t.getHours === "function") {
+          const d = t;
+          return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+        }
+        return String(t).substring(0, 5);
+      };
       let existingBookings = [];
       try {
         const bookResult = await query(
@@ -148313,10 +148516,10 @@ function registerServiceDiscoveryEndpoints(app3) {
            FROM bookings
            WHERE vendor_id = $1 AND booking_date = $2
              AND status NOT IN ('cancelled', 'rejected', 'no_show')`,
-          [vendorId, date]
+          [resolvedVendorId, date]
         ).catch(() => ({ rows: [] }));
         existingBookings = bookResult.rows.map((b) => ({
-          booking_time: typeof b.booking_time === "string" ? b.booking_time.substring(0, 5) : b.booking_time,
+          booking_time: normalizeBookingTime(b.booking_time),
           duration_minutes: Number(b.duration_minutes) || 30
         }));
       } catch (_) {
@@ -148328,13 +148531,18 @@ function registerServiceDiscoveryEndpoints(app3) {
           const endTime = row.time_window_end || row.end_time;
           if (!startTime || !endTime) continue;
           const slotDuration = Number(row.slot_duration_minutes) || 30;
-          const bufferMinutes = Number(row.buffer_time ?? row.buffer_time_minutes) || minNoticeMinutes;
+          const leadByStyle = row.lead_time_by_style != null ? typeof row.lead_time_by_style === "string" ? JSON.parse(row.lead_time_by_style) : row.lead_time_by_style : {};
+          const bufferMinutes = leadByStyle && typeof leadByStyle === "object" && (leadByStyle[normalizedServiceStyle] != null || leadByStyle[serviceStyle] != null) ? Number(leadByStyle[normalizedServiceStyle] ?? leadByStyle[serviceStyle]) : Number(row.buffer_time ?? row.buffer_time_minutes) || minNoticeMinutes;
           const maxCapacity = row.max_capacity != null && row.max_capacity !== "" ? parseInt(String(row.max_capacity), 10) : null;
           const winStart = timeToMinutes2(startTime);
           const winEnd = timeToMinutes2(endTime);
           let currentMinutes = winStart;
           while (currentMinutes + slotDuration <= winEnd) {
             const timeStr = `${String(Math.floor(currentMinutes / 60)).padStart(2, "0")}:${String(currentMinutes % 60).padStart(2, "0")}`;
+            if (currentMinutes + totalDuration > winEnd) {
+              currentMinutes += slotDuration;
+              continue;
+            }
             if (isToday) {
               const slotDateTime = new Date(requestedDate);
               slotDateTime.setHours(Math.floor(currentMinutes / 60), currentMinutes % 60, 0, 0);
@@ -148371,104 +148579,41 @@ function registerServiceDiscoveryEndpoints(app3) {
               ).length;
               available = sameStartCount < maxCapacity;
             }
-            slots.push({
+            const slotPayload = {
               time: timeStr,
               available,
-              booked: !available
-            });
+              booked: !available,
+              slotDuration,
+              bufferMinutes,
+              ...Array.isArray(row.service_styles) && row.service_styles.length > 0 && { serviceStyles: row.service_styles },
+              ...row.max_capacity != null && row.max_capacity !== "" && { maxCapacity: parseInt(String(row.max_capacity), 10) }
+            };
+            slots.push(slotPayload);
             currentMinutes += slotDuration;
           }
         }
-        const sortedSlots = slots.sort((a, b) => a.time.localeCompare(b.time));
+        const sortedSlots = slots.sort((a, b) => (a.time || "").localeCompare(b.time || ""));
         return c.json({
           success: true,
           slots: sortedSlots,
           date,
-          vendorId,
-          serviceStyle,
-          staffBased: false
-        });
-      }
-      let vasRows = [];
-      try {
-        const vasResult = await query(
-          `SELECT id, start_time, end_time
-           FROM vendor_availability_slots
-           WHERE vendor_id = $1 AND date = $2 AND is_available = true
-           ORDER BY start_time`,
-          [vendorId, date]
-        ).catch(() => ({ rows: [] }));
-        vasRows = vasResult?.rows ?? [];
-        if (vasRows.length > 0) {
-          console.log(`[SLOTS] Using vendor_availability_slots fallback: ${vasRows.length} rows for vendorId=${vendorId}, date=${date}`);
-        }
-      } catch (e) {
-      }
-      if (vasRows.length > 0) {
-        const slotDuration = 30;
-        const bufferMinutes = minNoticeMinutes;
-        const slots = [];
-        for (const row of vasRows) {
-          const startTime = row.start_time;
-          const endTime = row.end_time;
-          if (!startTime || !endTime) continue;
-          const winStart = timeToMinutes2(startTime);
-          const winEnd = timeToMinutes2(endTime);
-          let currentMinutes = winStart;
-          while (currentMinutes + slotDuration <= winEnd) {
-            const timeStr = `${String(Math.floor(currentMinutes / 60)).padStart(2, "0")}:${String(currentMinutes % 60).padStart(2, "0")}`;
-            if (isToday) {
-              const slotDateTime = new Date(requestedDate);
-              slotDateTime.setHours(Math.floor(currentMinutes / 60), currentMinutes % 60, 0, 0);
-              if (slotDateTime < minBookingTime) {
-                currentMinutes += slotDuration;
-                continue;
-              }
-            }
-            const slotEndMin = currentMinutes + totalDuration;
-            const inBreak = breaks.some((brk) => {
-              const bStart = timeToMinutes2(brk.startTime);
-              const bEnd = timeToMinutes2(brk.endTime);
-              return currentMinutes < bEnd && slotEndMin > bStart;
-            });
-            if (inBreak) {
-              currentMinutes += slotDuration;
-              continue;
-            }
-            const slotEndWithBuffer = currentMinutes + totalDuration + bufferMinutes;
-            const overlapsBooking = existingBookings.some((b) => {
-              const bStart = timeToMinutes2(b.booking_time);
-              const bEnd = bStart + b.duration_minutes + bufferMinutes;
-              return currentMinutes < bEnd && slotEndWithBuffer > bStart;
-            });
-            if (overlapsBooking) {
-              currentMinutes += slotDuration;
-              continue;
-            }
-            slots.push({
-              time: timeStr,
-              available: true,
-              booked: false
-            });
-            currentMinutes += slotDuration;
-          }
-        }
-        const sortedSlots = slots.sort((a, b) => a.time.localeCompare(b.time));
-        return c.json({
-          success: true,
-          slots: sortedSlots,
-          date,
-          vendorId,
+          vendorId: canonicalVendorId,
+          vendorIdentityId: vendorIdentityIdFromLookup ?? void 0,
           serviceStyle,
           staffBased: false,
-          source: "vendor_availability_slots"
+          availabilityMeta: {
+            source: "vendor_availability_v2",
+            slotDurationDefault: 30,
+            bufferMinutesDefault: 15
+          }
         });
       }
       return c.json({
         success: true,
         slots: [],
         date,
-        vendorId,
+        vendorId: canonicalVendorId,
+        vendorIdentityId: vendorIdentityIdFromLookup ?? void 0,
         serviceStyle,
         staffBased: false,
         message: "No advanced availability set for this day and service type. Vendor can set schedule in Advanced Availability."
@@ -148483,10 +148628,11 @@ function registerServiceDiscoveryEndpoints(app3) {
       const { vendorId } = c.req.param();
       const category = c.req.query("category");
       const serviceStyle = c.req.query("serviceStyle");
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: "Vendor not found", success: false }, 404);
       }
+      const resolvedVendorId = vendor.id;
       let servicesQuery = `
         SELECT
           vs.id,
@@ -148513,7 +148659,7 @@ function registerServiceDiscoveryEndpoints(app3) {
           AND vs.is_enabled = true
           AND vs.publish_status = 'published'
       `;
-      const queryParams = [vendorId];
+      const queryParams = [resolvedVendorId];
       if (category) {
         queryParams.push(category);
         servicesQuery += ` AND (LOWER(vs.category) = LOWER($${queryParams.length}) OR LOWER(vs.category) LIKE '%' || LOWER($${queryParams.length}) || '%')`;
@@ -148568,11 +148714,11 @@ function registerServiceDiscoveryEndpoints(app3) {
   app3.get("/customer/vendor/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: "Vendor not found" }, 404);
       }
-      const vendor = vendors[0];
+      const resolvedVendorId = vendor.id;
       const roles = await select("roles", { id: vendor.role_id });
       const role = roles[0];
       const serviceColumns = await query(
@@ -148588,7 +148734,7 @@ function registerServiceDiscoveryEndpoints(app3) {
          AND s.is_active = true
          AND (vs.is_enabled IS NULL OR vs.is_enabled = true)
          ORDER BY s.name`,
-        [vendorId]
+        [resolvedVendorId]
       );
       const reviews = await query(
         `SELECT r.*, c.full_name as customer_name
@@ -148598,7 +148744,7 @@ function registerServiceDiscoveryEndpoints(app3) {
          AND r.is_approved = true
          ORDER BY r.created_at DESC
          LIMIT 20`,
-        [vendorId]
+        [resolvedVendorId]
       );
       const avgRating = reviews.rows.length > 0 ? reviews.rows.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.rows.length : 0;
       const staff = await query(
@@ -148606,7 +148752,7 @@ function registerServiceDiscoveryEndpoints(app3) {
          WHERE s.vendor_id = $1 
          AND s.is_active = true
          ORDER BY s.name`,
-        [vendorId]
+        [resolvedVendorId]
       );
       return c.json({
         success: true,
@@ -148825,11 +148971,13 @@ function registerServiceDiscoveryEndpoints(app3) {
       const roleId = c.req.query("roleId");
       const rules = await getDiscoveryRules(roleId || "all", "discover");
       const defaultRadiusKm = rules.discovery_radius_km ?? 10;
+      const maxResults = typeof rules.discovery_max_results === "number" ? rules.discovery_max_results : 50;
       const radius = c.req.query("radius") ? parseFloat(c.req.query("radius")) : defaultRadiusKm;
       const serviceType = c.req.query("serviceType") || "";
       if (!lat || !lng) {
         return c.json({ error: "lat and lng are required" }, 400);
       }
+      const limitCount = Math.min(100, maxResults);
       const vendors = await query(
         `SELECT v.*, r.name as role_name,
          (6371 * acos(
@@ -148844,8 +148992,8 @@ function registerServiceDiscoveryEndpoints(app3) {
            ${serviceType ? `AND r.name ILIKE $3` : ""}
          HAVING distance_km <= $4
          ORDER BY distance_km ASC
-         LIMIT 50`,
-        serviceType ? [lat, lng, `%${serviceType}%`, radius] : [lat, lng, radius]
+         LIMIT $5`,
+        serviceType ? [lat, lng, `%${serviceType}%`, radius, limitCount] : [lat, lng, null, radius, limitCount]
       );
       return c.json({
         success: true,
@@ -149573,6 +149721,7 @@ function registerServiceDiscoveryEndpoints(app3) {
       if (!serviceStyle) {
         return c.json({ error: "Service style is required (tele, at_home, at_center)", success: false }, 400);
       }
+      const acceptableStyles = serviceStyle === "at_center" ? ["at_center", "at_vendor"] : serviceStyle === "tele" ? ["tele", "online"] : [serviceStyle];
       const customerLat = latitude ? parseFloat(latitude) : null;
       const customerLng = longitude ? parseFloat(longitude) : null;
       const maxDistanceKm = maxDistance ? parseFloat(maxDistance) : null;
@@ -149599,13 +149748,13 @@ function registerServiceDiscoveryEndpoints(app3) {
           INNER JOIN vendor_services vs ON vs.vendor_id = v.id
           WHERE v.status = 'approved' 
             AND v.is_active = true
-            AND vs.service_style = $1
+            AND vs.service_style = ANY($1::text[])
             AND vs.is_enabled = true
             AND vs.publish_status = 'published'
             AND (r.name IS NULL OR r.name NOT LIKE '%_solo')
             AND (v.vendor_type IS NULL OR v.vendor_type != 'solo')
         `;
-        const params = [serviceStyle];
+        const params = [acceptableStyles];
         let paramIndex = 2;
         if (category) {
           const categoryRoles2 = {
@@ -149687,11 +149836,11 @@ function registerServiceDiscoveryEndpoints(app3) {
                 vs.category as category_name
                FROM vendor_services vs
                WHERE vs.vendor_id = $1 
-                 AND vs.service_style = $2
+                 AND vs.service_style = ANY($2::text[])
                  AND vs.is_enabled = true
                  AND vs.publish_status = 'published'
                ORDER BY vs.price ASC`,
-              [vendor.vendor_id, serviceStyle]
+              [vendor.vendor_id, acceptableStyles]
             );
             let distance = null;
             if (customerLat && customerLng && vendor.latitude && vendor.longitude) {
@@ -149751,9 +149900,10 @@ function registerServiceDiscoveryEndpoints(app3) {
         if (minRatingValue !== null && minRatingValue > 0) {
           filteredVendors = filteredVendors.filter((v) => parseFloat(v.rating) >= minRatingValue);
         }
-        if (maxDistanceKm !== null && customerLat && customerLng) {
+        const effectiveMaxKm = maxDistanceKm !== null ? maxDistanceKm : customerLat && customerLng ? radius : null;
+        if (effectiveMaxKm !== null && customerLat && customerLng) {
           filteredVendors = filteredVendors.filter(
-            (v) => v.distance === null || v.distance <= maxDistanceKm
+            (v) => v.distance === null || v.distance <= effectiveMaxKm
           );
         }
         filteredVendors.sort((a, b) => {
@@ -149783,7 +149933,7 @@ function registerServiceDiscoveryEndpoints(app3) {
           total: filteredVendors.length,
           appliedFilters: {
             minRating: minRatingValue,
-            maxDistance: maxDistanceKm,
+            maxDistance: maxDistanceKm ?? (customerLat && customerLng ? effectiveMaxKm : void 0),
             sortBy
           }
         });
@@ -150485,7 +150635,8 @@ function registerReviewEndpoints(app3) {
         staff_id: booking.staff_id,
         rating,
         review: review?.trim() || null,
-        created_at: (/* @__PURE__ */ new Date()).toISOString()
+        created_at: (/* @__PURE__ */ new Date()).toISOString(),
+        is_approved: true
       });
       await update("bookings", { id: bookingId }, {
         has_review: true,
@@ -151894,11 +152045,10 @@ function registerVendorScheduleEndpoints(app3) {
       }
       let vendor;
       try {
-        const vendors = await select("vendors", { id: vendorId });
-        if (vendors.length === 0) {
+        vendor = await resolveVendorById(vendorId);
+        if (!vendor) {
           return c.json({ error: "Vendor not found" }, 404);
         }
-        vendor = vendors[0];
       } catch (error) {
         if (error.message?.includes("invalid input syntax for type uuid")) {
           return c.json({
@@ -151909,6 +152059,7 @@ function registerVendorScheduleEndpoints(app3) {
         }
         throw error;
       }
+      const resolvedVendorId = vendor.id;
       if (!vendor.is_active || vendor.status !== "approved") {
         return c.json({
           success: true,
@@ -151935,6 +152086,7 @@ function registerVendorScheduleEndpoints(app3) {
       const requestedDate = new Date(date);
       const dayOfWeek = requestedDate.getDay();
       let scheduleSlots;
+      const availabilityIds = await getVendorIdsForAvailabilityLookup(resolvedVendorId);
       if (staffId) {
         scheduleSlots = await query(
           `SELECT * FROM staff_schedules
@@ -151949,25 +152101,25 @@ function registerVendorScheduleEndpoints(app3) {
           scheduleSlots = await query(
             `SELECT *, time_window_start as start_time, time_window_end as end_time 
              FROM vendor_availability_v2
-             WHERE vendor_id = $1
+             WHERE vendor_id::text = ANY($1::text[])
              AND day_of_week = $2
              AND (COALESCE(service_style, service_type) = $3 
                   OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
              AND COALESCE(is_enabled, is_available, true) = true
              ORDER BY COALESCE(time_window_start, start_time)`,
-            [vendorId, dayOfWeek, serviceStyle]
+            [availabilityIds, dayOfWeek, serviceStyle]
           );
         } catch (queryErr) {
           if (queryErr.message?.includes("service_style") || queryErr.message?.includes("service_styles")) {
             scheduleSlots = await query(
               `SELECT *, start_time as time_window_start, end_time as time_window_end 
                FROM vendor_availability_v2
-               WHERE vendor_id = $1
+               WHERE vendor_id::text = ANY($1::text[])
                AND day_of_week = $2
                AND (service_type = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
                AND COALESCE(is_available, is_enabled, true) = true
                ORDER BY start_time`,
-              [vendorId, dayOfWeek, serviceStyle]
+              [availabilityIds, dayOfWeek, serviceStyle]
             );
           } else {
             throw queryErr;
@@ -151988,7 +152140,7 @@ function registerVendorScheduleEndpoints(app3) {
          AND booking_date = $2
          AND status NOT IN ('cancelled', 'no_show')
          ${staffId ? "AND staff_id = $3" : ""}`,
-        staffId ? [vendorId, date, staffId] : [vendorId, date]
+        staffId ? [resolvedVendorId, date, staffId] : [resolvedVendorId, date]
       );
       const policies = await query(
         `SELECT * FROM scheduling_policies WHERE is_active = true`
@@ -152059,6 +152211,7 @@ function registerVendorScheduleEndpoints(app3) {
       }
       const vendor = await resolveVendorById(trimmedId);
       const actualVendorId = vendor?.id ?? trimmedId;
+      const availabilityIds = await getVendorIdsForAvailabilityLookup(actualVendorId);
       const scheduleByDay = {};
       for (let i = 0; i < 7; i++) {
         scheduleByDay[i] = [];
@@ -152071,9 +152224,9 @@ function registerVendorScheduleEndpoints(app3) {
                   COALESCE(time_window_end, end_time) AS time_window_end,
                   COALESCE(is_enabled, is_available, true) AS is_enabled
            FROM vendor_availability_v2
-           WHERE vendor_id = $1
+           WHERE vendor_id::text = ANY($1::text[])
            ORDER BY day_of_week, COALESCE(time_window_start, start_time)`,
-          [actualVendorId]
+          [availabilityIds]
         );
       } catch (error) {
         if (error.message?.includes("invalid input syntax for type uuid")) {
@@ -152086,9 +152239,9 @@ function registerVendorScheduleEndpoints(app3) {
                       start_time AS time_window_start, end_time AS time_window_end,
                       is_available AS is_enabled
                FROM vendor_availability_v2
-               WHERE vendor_id = $1
+               WHERE vendor_id::text = ANY($1::text[])
                ORDER BY day_of_week, start_time`,
-              [actualVendorId]
+              [availabilityIds]
             );
           } catch (_) {
             return emptyResponse();
@@ -152119,10 +152272,11 @@ function registerVendorScheduleEndpoints(app3) {
     try {
       const { vendorId } = c.req.param();
       const scheduleData = await c.req.json();
-      const vendors = await select("vendors", { id: vendorId });
-      if (vendors.length === 0) {
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: "Vendor not found" }, 404);
       }
+      const resolvedVendorId = vendor.id;
       const slots = Array.isArray(scheduleData.slots) ? scheduleData.slots : [scheduleData];
       const results = [];
       const validationErrors = [];
@@ -152133,7 +152287,7 @@ function registerVendorScheduleEndpoints(app3) {
         const timeWindowEnd = slot.timeWindowEnd || slot.time_window_end;
         const maxCapacity = slot.maxCapacity || slot.max_capacity || 1;
         const validation = await validateScheduleSlot(
-          vendorId,
+          resolvedVendorId,
           dayOfWeek,
           timeWindowStart,
           timeWindowEnd,
@@ -152166,7 +152320,7 @@ function registerVendorScheduleEndpoints(app3) {
              AND COALESCE(service_style, service_type) = $3
              AND COALESCE(time_window_start, start_time) = $4`,
             [
-              vendorId,
+              resolvedVendorId,
               dayOfWeek,
               serviceStyle,
               timeWindowStart
@@ -152180,7 +152334,7 @@ function registerVendorScheduleEndpoints(app3) {
                AND day_of_week = $2
                AND service_type = $3
                AND start_time = $4`,
-              [vendorId, dayOfWeek, serviceStyle, timeWindowStart]
+              [resolvedVendorId, dayOfWeek, serviceStyle, timeWindowStart]
             );
           }
         }
@@ -152192,7 +152346,7 @@ function registerVendorScheduleEndpoints(app3) {
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              RETURNING *`,
             [
-              vendorId,
+              resolvedVendorId,
               dayOfWeek,
               serviceStyle,
               timeWindowStart,
@@ -152210,7 +152364,7 @@ function registerVendorScheduleEndpoints(app3) {
                VALUES ($1, $2, $3, $4, $5, $6)
                RETURNING *`,
               [
-                vendorId,
+                resolvedVendorId,
                 dayOfWeek,
                 serviceStyle,
                 timeWindowStart,
@@ -153020,6 +153174,8 @@ function registerVendorScheduleEndpoints(app3) {
         });
         await query(`ALTER TABLE vendor_availability_v2 ADD COLUMN IF NOT EXISTS buffer_time INTEGER DEFAULT 15`).catch(() => {
         });
+        await query(`ALTER TABLE vendor_availability_v2 ADD COLUMN IF NOT EXISTS lead_time_by_style JSONB`).catch(() => {
+        });
       } catch (alterErr) {
         console.log("[AVAILABILITY] Column migration note:", alterErr.message);
       }
@@ -153034,6 +153190,7 @@ function registerVendorScheduleEndpoints(app3) {
       for (const slot of slots) {
         const serviceStyles = slot.serviceStyles || slot.service_styles || ["at_center"];
         const locationData = slot.locationData || slot.location_data || null;
+        const leadTimeByStyle = slot.leadTimeByStyle || slot.lead_time_by_style || null;
         let startTime = slot.timeWindowStart || slot.time_window_start || slot.startTime;
         let endTime = slot.timeWindowEnd || slot.time_window_end || slot.endTime;
         if (!startTime || !endTime) {
@@ -153080,34 +153237,58 @@ function registerVendorScheduleEndpoints(app3) {
             insertErrors.push(`Slot day ${slot.dayOfWeek ?? slot.day_of_week}: end_time (${normalizedEndTime}) must be greater than start_time (${normalizedStartTime}). Current values violate the valid_time_range constraint.`);
             continue;
           }
-          const result = await query(
-            `INSERT INTO vendor_availability_v2 (
-              vendor_id, day_of_week, 
-              start_time, end_time,
-              time_window_start, time_window_end,
-              service_styles, service_type, 
-              location_data, buffer_time, max_capacity, is_available
-            ) VALUES ($1, $2, $3::TIME, $4::TIME, $5::TIME, $6::TIME, $7, $8, $9, $10, $11, $12)
-            RETURNING id`,
-            [
-              finalVendorId,
-              // ✅ FIX: Use finalVendorId instead of vendorId
-              slot.dayOfWeek ?? slot.day_of_week,
-              normalizedStartTime,
-              normalizedEndTime,
-              normalizedStartTime,
-              // Also populate time_window_start for backwards compat
-              normalizedEndTime,
-              // Also populate time_window_end for backwards compat
-              serviceStyles,
-              serviceStyles[0] || "at_center",
-              // service_type for backwards compat
-              locationData ? JSON.stringify(locationData) : null,
-              slot.bufferTime ?? slot.buffer_time ?? 15,
-              slot.maxCapacity ?? slot.max_capacity ?? 1,
-              slot.isEnabled ?? slot.is_enabled ?? true
-            ]
-          );
+          const isEnabledVal = slot.isEnabled ?? slot.is_enabled ?? true;
+          let result = { rows: [] };
+          try {
+            result = await query(
+              `INSERT INTO vendor_availability_v2 (
+                vendor_id, day_of_week,
+                start_time, end_time,
+                time_window_start, time_window_end,
+                service_styles, service_type,
+                location_data, buffer_time, lead_time_by_style, max_capacity, is_available
+              ) VALUES ($1, $2, $3::TIME, $4::TIME, $5::TIME, $6::TIME, $7, $8, $9, $10, $11, $12, $13)
+              RETURNING id`,
+              [
+                finalVendorId,
+                slot.dayOfWeek ?? slot.day_of_week,
+                normalizedStartTime,
+                normalizedEndTime,
+                normalizedStartTime,
+                normalizedEndTime,
+                serviceStyles,
+                serviceStyles[0] || "at_center",
+                locationData ? JSON.stringify(locationData) : null,
+                null,
+                leadTimeByStyle ? JSON.stringify(leadTimeByStyle) : null,
+                slot.maxCapacity ?? slot.max_capacity ?? 1,
+                isEnabledVal
+              ]
+            );
+          } catch (insertErr) {
+            const msg = String(insertErr?.message || "");
+            if (msg.includes("is_available") && msg.includes("does not exist")) {
+              result = await query(
+                `INSERT INTO vendor_availability_v2 (
+                  vendor_id, day_of_week,
+                  time_window_start, time_window_end,
+                  service_style, slot_duration_minutes, max_capacity, is_enabled
+                ) VALUES ($1, $2, $3::TIME, $4::TIME, $5, 30, $6, $7)
+                RETURNING id`,
+                [
+                  finalVendorId,
+                  slot.dayOfWeek ?? slot.day_of_week,
+                  normalizedStartTime,
+                  normalizedEndTime,
+                  serviceStyles[0] || "at_center",
+                  slot.maxCapacity ?? slot.max_capacity ?? 1,
+                  isEnabledVal
+                ]
+              );
+            } else {
+              throw insertErr;
+            }
+          }
           if (result.rows.length > 0) {
             insertedSlots.push(result.rows[0]);
           }
@@ -153144,12 +153325,43 @@ function registerVendorScheduleEndpoints(app3) {
         return c.json({ error: "Vendor not found" }, 404);
       }
       const actualVendorId = vendor.id;
-      const slotsResult = await query(
-        `SELECT * FROM vendor_availability_v2
-         WHERE vendor_id = $1 AND (is_available = true OR is_available IS NULL)
-         ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC`,
-        [actualVendorId]
-      ).catch(() => ({ rows: [] }));
+      const availabilityIds = await getVendorIdsForAvailabilityLookup(actualVendorId);
+      let allowedServiceStyles = [];
+      try {
+        const roles = await select("roles", { id: vendor.role_id });
+        if (roles.length > 0) {
+          const roleConfig = roles[0].config || {};
+          const vendorType = vendor.vendor_type === "solo" ? "solo" : "business";
+          allowedServiceStyles = roleConfig?.serviceStyles?.[vendorType] || roleConfig?.serviceStyles?.selected || [];
+          if (!Array.isArray(allowedServiceStyles)) allowedServiceStyles = [];
+        }
+      } catch (_) {
+      }
+      let slotsResult = { rows: [] };
+      try {
+        slotsResult = await query(
+          `SELECT * FROM vendor_availability_v2
+           WHERE vendor_id::text = ANY($1::text[]) AND (COALESCE(is_available, is_enabled, true) = true OR (is_available IS NULL AND is_enabled IS NULL))
+           ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC`,
+          [availabilityIds]
+        );
+      } catch (_) {
+        try {
+          slotsResult = await query(
+            `SELECT * FROM vendor_availability_v2
+             WHERE vendor_id::text = ANY($1::text[]) AND (is_enabled = true OR is_enabled IS NULL)
+             ORDER BY day_of_week ASC, time_window_start ASC`,
+            [availabilityIds]
+          );
+        } catch (_2) {
+          slotsResult = await query(
+            `SELECT * FROM vendor_availability_v2
+             WHERE vendor_id::text = ANY($1::text[]) AND (is_available = true OR is_available IS NULL)
+             ORDER BY day_of_week ASC, start_time ASC`,
+            [availabilityIds]
+          ).catch(() => ({ rows: [] }));
+        }
+      }
       const breaksResult = await query(
         `SELECT * FROM vendor_breaks
          WHERE vendor_id = $1 AND is_active = true
@@ -153178,18 +153390,23 @@ function registerVendorScheduleEndpoints(app3) {
       }
       return c.json({
         success: true,
+        allowedServiceStyles: allowedServiceStyles.length > 0 ? allowedServiceStyles : ["at_center", "at_home", "tele"],
         availability: {
-          slots: slotsResult.rows.map((s) => ({
-            id: s.id,
-            dayOfWeek: s.day_of_week,
-            startTime: s.time_window_start || s.start_time,
-            endTime: s.time_window_end || s.end_time,
-            serviceStyles: s.service_styles || (s.service_type ? [s.service_type] : ["at_center"]),
-            locationData: typeof s.location_data === "string" ? JSON.parse(s.location_data) : s.location_data,
-            bufferTime: s.buffer_time || s.buffer_time_minutes || 15,
-            maxCapacity: s.max_capacity || 1,
-            isEnabled: s.is_available ?? s.is_enabled ?? true
-          })),
+          slots: slotsResult.rows.map((s) => {
+            const leadTimeByStyle = s.lead_time_by_style != null ? typeof s.lead_time_by_style === "string" ? JSON.parse(s.lead_time_by_style) : s.lead_time_by_style : null;
+            return {
+              id: s.id,
+              dayOfWeek: s.day_of_week,
+              startTime: s.time_window_start || s.start_time,
+              endTime: s.time_window_end || s.end_time,
+              serviceStyles: s.service_styles || (s.service_type ? [s.service_type] : ["at_center"]),
+              locationData: typeof s.location_data === "string" ? JSON.parse(s.location_data) : s.location_data,
+              leadTimeByStyle: leadTimeByStyle || void 0,
+              bufferTime: leadTimeByStyle ? void 0 : s.buffer_time || s.buffer_time_minutes || 15,
+              maxCapacity: s.max_capacity || 1,
+              isEnabled: s.is_available ?? s.is_enabled ?? true
+            };
+          }),
           breaks: breaksResult.rows.map((b) => ({
             id: b.id,
             dayOfWeek: b.day_of_week,
@@ -178800,8 +179017,12 @@ function registerCustomerProfileEndpoints(app3) {
         }
       });
     } catch (error) {
+      const msg = error?.message || String(error);
       console.error("Error fetching customer by phone:", error);
-      return c.json({ error: error.message }, 500);
+      if (msg.includes("connection pool") || msg.includes("too many clients") || msg.includes("timeout") || msg.includes("Timeout")) {
+        return c.json({ error: "Service temporarily busy. Please try again in a moment.", code: "SERVICE_BUSY" }, 503);
+      }
+      return c.json({ error: msg }, 500);
     }
   });
   app3.get("/customer/:customerId/search-history", async (c) => {
@@ -185860,6 +186081,58 @@ function registerRefundPolicyEngineEndpoints(app3) {
     const result = await updateRuleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
+  app3.get("/customer/refund-policy", async (c) => {
+    try {
+      const rules = await query(
+        `SELECT * FROM booking_cancellation_rules
+         WHERE vendor_id IS NULL AND service_id IS NULL
+         ORDER BY created_at DESC
+         LIMIT 1`
+      ).catch(() => ({ rows: [] }));
+      const rows = rules.rows || [];
+      if (rows.length > 0) {
+        const rule = rows[0];
+        return c.json({
+          success: true,
+          policy: {
+            cancellationWindowHours: rule.no_refund_before_hours || 0,
+            refundPercentages: [
+              { withinHours: rule.full_refund_before_hours || 24, percentage: 100 },
+              { withinHours: rule.partial_refund_before_hours || 12, percentage: rule.partial_refund_percentage || 50 },
+              { withinHours: rule.no_refund_before_hours || 2, percentage: 0 }
+            ],
+            defaultRefundMethod: "wallet"
+          }
+        });
+      }
+      return c.json({
+        success: true,
+        policy: {
+          cancellationWindowHours: 24,
+          refundPercentages: [
+            { withinHours: 24, percentage: 100 },
+            { withinHours: 12, percentage: 50 },
+            { withinHours: 6, percentage: 25 },
+            { withinHours: 2, percentage: 0 }
+          ],
+          defaultRefundMethod: "wallet"
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching refund policy:", error);
+      return c.json({
+        success: true,
+        policy: {
+          cancellationWindowHours: 24,
+          refundPercentages: [
+            { withinHours: 24, percentage: 100 },
+            { withinHours: 12, percentage: 50 }
+          ],
+          defaultRefundMethod: "wallet"
+        }
+      });
+    }
+  });
   app3.get("/admin/settings/refund-policy", async (c) => {
     try {
       const rules = await query(
@@ -189381,13 +189654,41 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/finance/gst/hsn-codes", async (c) => {
     try {
-      const codes = await query(
-        `SELECT hc.*, tc.category_name as tax_category_name 
-         FROM hsn_codes hc 
-         LEFT JOIN tax_categories tc ON hc.category_id = tc.id 
-         ORDER BY COALESCE(hc.hsn_code, hc.code) ASC`
-      );
-      return c.json({ success: true, codes: codes.rows, hsnCodes: codes.rows });
+      let rows;
+      try {
+        const result = await query(
+          `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at,
+                  tc.category_name as tax_category_name
+           FROM hsn_codes hc
+           LEFT JOIN tax_categories tc ON hc.category_id = tc.id
+           ORDER BY COALESCE(hc.hsn_code, '') ASC`
+        );
+        rows = Array.isArray(result) ? result : result?.rows ?? [];
+      } catch (colError) {
+        const msg = String(colError?.message || colError || "");
+        if (msg.includes("hsn_code") && msg.includes("does not exist")) {
+          const result = await query(
+            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::text as tax_category_name
+             FROM hsn_codes hc ORDER BY COALESCE(hc.code, '') ASC`
+          );
+          rows = Array.isArray(result) ? result : result?.rows ?? [];
+        } else if (msg.includes("category_id") && msg.includes("does not exist")) {
+          const result = await query(
+            `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::text as tax_category_name
+             FROM hsn_codes hc ORDER BY COALESCE(hc.hsn_code, '') ASC`
+          );
+          rows = Array.isArray(result) ? result : result?.rows ?? [];
+        } else if (msg.includes("code") && msg.includes("does not exist")) {
+          const result = await query(
+            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::text as tax_category_name
+             FROM hsn_codes hc ORDER BY COALESCE(hc.code, '') ASC`
+          );
+          rows = Array.isArray(result) ? result : result?.rows ?? [];
+        } else {
+          throw colError;
+        }
+      }
+      return c.json({ success: true, codes: rows, hsnCodes: rows });
     } catch (error) {
       const errorResponse = createSafeErrorResponse(error, "Internal server error", 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
@@ -189408,7 +189709,17 @@ function registerAdminAdvancedEndpoints(app3) {
         created_at: (/* @__PURE__ */ new Date()).toISOString()
       };
       if (categoryId) insertPayload.category_id = categoryId;
-      const newCode = await insert("hsn_codes", insertPayload);
+      let newCode;
+      try {
+        newCode = await insert("hsn_codes", insertPayload);
+      } catch (insErr) {
+        if (categoryId && String(insErr?.message || "").includes("category_id") && String(insErr?.message || "").includes("does not exist")) {
+          delete insertPayload.category_id;
+          newCode = await insert("hsn_codes", insertPayload);
+        } else {
+          throw insErr;
+        }
+      }
       return c.json({
         success: true,
         message: "HSN code created successfully",
@@ -189429,7 +189740,17 @@ function registerAdminAdvancedEndpoints(app3) {
       if (body.gstRate !== void 0) updateData.gst_rate = parseFloat(body.gstRate);
       if (body.isActive !== void 0) updateData.is_active = body.isActive;
       if (body.categoryId !== void 0) updateData.category_id = body.categoryId || null;
-      const updated = await update("hsn_codes", { id }, updateData);
+      let updated;
+      try {
+        updated = await update("hsn_codes", { id }, updateData);
+      } catch (updErr) {
+        if (updateData.category_id !== void 0 && String(updErr?.message || "").includes("category_id") && String(updErr?.message || "").includes("does not exist")) {
+          delete updateData.category_id;
+          updated = await update("hsn_codes", { id }, updateData);
+        } else {
+          throw updErr;
+        }
+      }
       return c.json({
         success: true,
         message: "HSN code updated successfully",
@@ -194048,7 +194369,8 @@ function registerDiscoveryRulesAdminEndpoints(app3) {
   });
   app3.get("/admin/discovery-rules/keys", async (c) => {
     const keys = [
-      { key: "discovery_radius_km", label: "Discovery radius (km)", type: "number", unit: "km" },
+      { key: "discovery_radius_km", label: "Discovery radius (km) \u2013 clinic / home default", type: "number", unit: "km" },
+      { key: "discovery_radius_km_tele", label: "Discovery radius for tele (km); 0 = no limit", type: "number", unit: "km" },
       { key: "discovery_max_results", label: "Max listing count", type: "number", unit: "count" },
       { key: "discovery_sort_default", label: "Default sort", type: "string", unit: "" },
       { key: "discovery_location_source", label: "Location source", type: "string", unit: "" },
@@ -213222,8 +213544,9 @@ function registerMealPlanEndpoints(app3) {
   app3.post("/meal/orders/create", async (c) => {
     try {
       const body = await c.req.json();
-      const {
+      let {
         customerId,
+        customerPhone,
         mealPlanId,
         petId,
         quantity,
@@ -213237,21 +213560,58 @@ function registerMealPlanEndpoints(app3) {
         // 'own' or 'warmpawz'
         razorpayOrderId
       } = body;
-      if (!customerId || !mealPlanId || !deliveryAddress || !scheduledDeliveryDate) {
-        return c.json({ error: "Missing required fields" }, 400);
+      if (!customerId && customerPhone) {
+        const raw2 = String(customerPhone).trim();
+        const cleanPhone = raw2.replace(/\D/g, "").trim() || raw2;
+        const byPhone = await select("customers", { phone: cleanPhone }).catch(() => []);
+        if (byPhone.length > 0) customerId = byPhone[0].id;
+        if (!customerId && cleanPhone.length > 0) {
+          const alt = await select("customers", { phone: raw2 }).catch(() => []);
+          if (alt.length > 0) customerId = alt[0].id;
+        }
+        if (!customerId && cleanPhone.length >= 10) {
+          const without91 = cleanPhone.replace(/^91/, "");
+          if (without91 !== cleanPhone) {
+            const by91 = await select("customers", { phone: without91 }).catch(() => []);
+            if (by91.length > 0) customerId = by91[0].id;
+          }
+          if (!customerId) {
+            const with91 = cleanPhone.length <= 10 ? "91" + cleanPhone : cleanPhone;
+            const byWith91 = await select("customers", { phone: with91 }).catch(() => []);
+            if (byWith91.length > 0) customerId = byWith91[0].id;
+          }
+        }
       }
+      const missing = [];
+      if (!customerId) missing.push("customerId or customerPhone");
+      if (!mealPlanId) missing.push("mealPlanId");
+      if (!deliveryAddress || typeof deliveryAddress !== "object") missing.push("deliveryAddress");
+      if (!scheduledDeliveryDate) missing.push("scheduledDeliveryDate");
+      if (missing.length > 0) {
+        return c.json({ error: "Missing required fields", missing }, 400);
+      }
+      const normalizedAddress = {
+        address: deliveryAddress.address ?? [deliveryAddress.addressLine1, deliveryAddress.addressLine2, deliveryAddress.city, deliveryAddress.state, deliveryAddress.pincode].filter(Boolean).join(", "),
+        lat: deliveryAddress.lat ?? deliveryAddress.latitude ?? 0,
+        lng: deliveryAddress.lng ?? deliveryAddress.longitude ?? 0,
+        landmark: deliveryAddress.landmark ?? "",
+        pincode: deliveryAddress.pincode ?? ""
+      };
       const plans = await select("meal_plans", { id: mealPlanId });
       if (plans.length === 0) {
         return c.json({ error: "Meal plan not found" }, 404);
       }
       const plan = plans[0];
-      const deliveryDate = new Date(scheduledDeliveryDate);
-      const leadTimeMs = plan.lead_time_hours * 60 * 60 * 1e3;
-      if (deliveryDate.getTime() - Date.now() < leadTimeMs) {
-        return c.json({
-          error: `Order must be placed at least ${plan.lead_time_hours} hours in advance`,
-          code: "LEAD_TIME_VIOLATION"
-        }, 400);
+      const leadTimeHours = plan.lead_time_hours != null ? Number(plan.lead_time_hours) : 0;
+      if (leadTimeHours > 0) {
+        const deliveryDate = new Date(scheduledDeliveryDate);
+        const leadTimeMs = leadTimeHours * 60 * 60 * 1e3;
+        if (deliveryDate.getTime() - Date.now() < leadTimeMs) {
+          return c.json({
+            error: `Order must be placed at least ${leadTimeHours} hours in advance`,
+            code: "LEAD_TIME_VIOLATION"
+          }, 400);
+        }
       }
       const subtotal = parseFloat(plan.price_per_meal) * (quantity || 1);
       let deliveryFee = 0;
@@ -213305,9 +213665,9 @@ function registerMealPlanEndpoints(app3) {
         delivery_fee: deliveryFee,
         platform_fee: platformFee + convenienceFee,
         total_amount: totalAmount,
-        delivery_address: JSON.stringify(deliveryAddress),
-        customer_lat: deliveryAddress.lat,
-        customer_lng: deliveryAddress.lng,
+        delivery_address: JSON.stringify(normalizedAddress),
+        customer_lat: normalizedAddress.lat,
+        customer_lng: normalizedAddress.lng,
         scheduled_delivery_date: scheduledDeliveryDate,
         scheduled_delivery_slot: JSON.stringify(scheduledDeliverySlot || {}),
         payment_status: "pending",
@@ -217286,7 +217646,7 @@ async function checkScheduleUpToDate(vendorId) {
     scheduleResult = await query(
       `SELECT DISTINCT day_of_week
        FROM vendor_availability_v2 
-       WHERE vendor_id = $1 
+       WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = (SELECT phone FROM vendors WHERE id = $1)))
          AND COALESCE(is_enabled, is_available, true) = true
        ORDER BY day_of_week`,
       [vendorId]
@@ -217907,7 +218267,7 @@ function registerVendorLiveStatusEndpoints(app3) {
           )
           AND EXISTS (
             SELECT 1 FROM vendor_availability_v2 va 
-            WHERE va.vendor_id = v.id
+            WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
           )
       `;
       const params = [];
@@ -217971,7 +218331,7 @@ function registerVendorLiveStatusEndpoints(app3) {
           )
           AND EXISTS (
             SELECT 1 FROM vendor_availability_v2 va 
-            WHERE va.vendor_id = v.id
+            WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
           )
       `;
       const countParams = [];
@@ -223480,14 +223840,11 @@ var CreateReviewHandler = class extends BaseHandler {
       const [newReview] = await insert("reviews", {
         booking_id: bookingId,
         vendor_id: vendorId,
-        staff_id: staffId || null,
         customer_id: customerId || null,
-        customer_phone: customerPhone,
         rating,
-        review: review || null,
-        tags: tags || [],
-        service_style: serviceStyle || "at_center",
-        status: "published",
+        comment: review || null,
+        service_type: serviceStyle || "at_center",
+        is_published: true,
         created_at: /* @__PURE__ */ new Date(),
         updated_at: /* @__PURE__ */ new Date()
       });
@@ -223516,7 +223873,7 @@ var CreateReviewHandler = class extends BaseHandler {
       const { rows } = await query(
         `SELECT AVG(rating) as avg_rating, COUNT(*) as total_reviews
          FROM reviews 
-         WHERE vendor_id = $1 AND status = 'published'`,
+         WHERE vendor_id = $1 AND is_published = true`,
         [vendorId]
       );
       if (rows.length > 0) {
@@ -223535,7 +223892,7 @@ var CreateReviewHandler = class extends BaseHandler {
       const { rows } = await query(
         `SELECT AVG(rating) as avg_rating, COUNT(*) as total_reviews
          FROM reviews 
-         WHERE staff_id = $1 AND status = 'published'`,
+         WHERE staff_id = $1 AND is_published = true`,
         [staffId]
       );
       if (rows.length > 0) {
@@ -223596,9 +223953,8 @@ var GetVendorReviewsHandler = class extends BaseHandler {
           r.id,
           r.booking_id,
           r.rating,
-          r.review,
-          r.tags,
-          r.service_style,
+          r.comment as review,
+          r.service_type as service_style,
           r.created_at,
           c.full_name as customer_name,
           c.profile_photo_url as customer_photo,
@@ -223607,7 +223963,7 @@ var GetVendorReviewsHandler = class extends BaseHandler {
         LEFT JOIN customers c ON c.id = r.customer_id
         LEFT JOIN bookings b ON b.id = r.booking_id
         LEFT JOIN vendor_services vs ON vs.id = b.service_id
-        WHERE r.vendor_id = $1 AND r.status = 'published'
+        WHERE r.vendor_id = $1 AND r.is_published = true
       `;
       const params = [vendorId];
       if (minRating) {
@@ -223618,13 +223974,13 @@ var GetVendorReviewsHandler = class extends BaseHandler {
       params.push(limit, offset);
       const { rows: reviews } = await query(queryStr, params);
       const { rows: countResult } = await query(
-        `SELECT COUNT(*) as total FROM reviews WHERE vendor_id = $1 AND status = 'published'`,
+        `SELECT COUNT(*) as total FROM reviews WHERE vendor_id = $1 AND is_published = true`,
         [vendorId]
       );
       const { rows: distribution } = await query(
         `SELECT rating, COUNT(*) as count 
          FROM reviews 
-         WHERE vendor_id = $1 AND status = 'published'
+         WHERE vendor_id = $1 AND is_published = true
          GROUP BY rating
          ORDER BY rating DESC`,
         [vendorId]
@@ -223632,7 +223988,7 @@ var GetVendorReviewsHandler = class extends BaseHandler {
       const { rows: avgResult } = await query(
         `SELECT AVG(rating) as average, COUNT(*) as total
          FROM reviews 
-         WHERE vendor_id = $1 AND status = 'published'`,
+         WHERE vendor_id = $1 AND is_published = true`,
         [vendorId]
       );
       return this.success({
@@ -223642,7 +223998,7 @@ var GetVendorReviewsHandler = class extends BaseHandler {
           bookingId: r.booking_id,
           rating: r.rating,
           review: r.review,
-          tags: r.tags || [],
+          tags: [],
           serviceStyle: r.service_style,
           customerName: r.customer_name || "Customer",
           customerPhoto: r.customer_photo,
@@ -225921,6 +226277,9 @@ var CATEGORY_TO_SPEC = {
   wellness: "wellness",
   specialty: "veterinary",
   boarding: "boarding",
+  pet_boarding: "boarding",
+  pet_boarder: "boarding",
+  pet_daycare: "boarding",
   nutrition: "wellness",
   behavioral: "behavioral",
   behaviour: "behavioral"
@@ -225950,7 +226309,24 @@ var ROLE_EXPANSIONS = {
   pet_sunset_services: ["sunset", "pet_sunset_services"],
   nutritionist: ["nutritionist", "pet_nutritionist", "nutritionist_center"],
   nutritionist_center: ["nutritionist", "pet_nutritionist", "nutritionist_center"],
-  pet_nutritionist: ["nutritionist", "pet_nutritionist", "nutritionist_center"]
+  pet_nutritionist: ["nutritionist", "pet_nutritionist", "nutritionist_center"],
+  pet_nutritionist_center: ["nutritionist", "pet_nutritionist", "nutritionist_center"],
+  pet_nutritionist_solo: ["nutritionist", "pet_nutritionist", "nutritionist_center"],
+  // Diagnostics / lab (match vet and diagnostic specs)
+  diagnostics_center: ["diagnostics_center", "diagnostic_center", "vet_clinic", "veterinarian", "vet_solo"],
+  diagnostic_center: ["diagnostics_center", "diagnostic_center", "vet_clinic", "veterinarian"],
+  diagnostics_provider: ["diagnostics_center", "diagnostic_center", "vet_clinic", "veterinarian"],
+  diagnostics_solo: ["diagnostics_center", "diagnostic_center", "vet_clinic", "veterinarian", "vet_solo"],
+  // Behavioral
+  behaviorist_center: ["behaviorist_center", "behaviorist_solo", "pet_behaviorist", "behavioral"],
+  behaviorist_solo: ["behaviorist_solo", "behaviorist_center", "pet_behaviorist", "behavioral"],
+  pet_behaviorist: ["pet_behaviorist", "behaviorist_center", "behaviorist_solo", "behavioral"],
+  // E‑commerce, events, adoption, etc.
+  ecommerce_seller: ["ecommerce_seller", "seller", "shop"],
+  seller: ["seller", "ecommerce_seller", "shop"],
+  event_organizer: ["event_organizer", "events"],
+  adoption_center: ["adoption_center", "pet_adoption_center", "adoption"],
+  pet_adoption_center: ["adoption_center", "pet_adoption_center", "adoption"]
 };
 var ROLE_DISPLAY_TO_CODE = {
   "pet sitter": "sitter",
@@ -225994,7 +226370,29 @@ var ROLE_DISPLAY_TO_CODE = {
   "nutritionist_(center)": "nutritionist_center",
   "nutritionist_(solo)": "nutritionist",
   "pet nutritionist": "pet_nutritionist",
-  "pet_nutritionist": "pet_nutritionist"
+  "pet_nutritionist": "pet_nutritionist",
+  "pet nutritionist (center)": "nutritionist_center",
+  "pet_nutritionist_center": "nutritionist_center",
+  "pet_nutritionist_solo": "nutritionist",
+  "diagnostics center": "diagnostics_center",
+  "diagnostics_center": "diagnostics_center",
+  "diagnostic center": "diagnostics_center",
+  "diagnostic_center": "diagnostics_center",
+  "diagnostics provider": "diagnostics_provider",
+  "diagnostics_solo": "diagnostics_solo",
+  "behaviorist center": "behaviorist_center",
+  "behaviorist_center": "behaviorist_center",
+  "behaviorist (solo)": "behaviorist_solo",
+  "behaviorist_solo": "behaviorist_solo",
+  "pet behaviorist": "pet_behaviorist",
+  "pet_behaviorist": "pet_behaviorist",
+  "e-commerce seller": "ecommerce_seller",
+  "ecommerce_seller": "ecommerce_seller",
+  "event organizer": "event_organizer",
+  "event_organizer": "event_organizer",
+  "pet adoption center": "adoption_center",
+  "adoption_center": "adoption_center",
+  "pet_adoption_center": "adoption_center"
 };
 function normalizeRoleForApi(r) {
   const s = (r || "").toString().trim().toLowerCase().replace(/\s+/g, "_");
@@ -226104,8 +226502,21 @@ function registerSpecializationMasterEndpoints(app3) {
         fallbackQuery += ` ORDER BY sm.category_id, sm.display_order, sm.name`;
         const fallbackResult = await query(fallbackQuery, fallbackParams);
         if (fallbackResult.rows.length > 0) {
-          console.log("[SPEC-MASTER] Fallback (no role filter) returned", fallbackResult.rows.length, "rows");
+          console.log("[SPEC-MASTER] Fallback 1 (category-only) returned", fallbackResult.rows.length, "rows");
           result = fallbackResult;
+        }
+      }
+      if (result.rows.length === 0 && expandedRoleIds.length > 0) {
+        const roleOnlyResult = await query(
+          `SELECT sm.*, (SELECT COUNT(*) FROM specialization_symptoms ss WHERE ss.specialization_id = sm.specialization_id AND ss.is_active = true) as symptom_count
+           FROM specialization_master sm
+           WHERE sm.is_active = true AND (sm.applicable_roles = '{}' OR sm.applicable_roles IS NULL OR array_length(sm.applicable_roles, 1) IS NULL OR sm.applicable_roles && $1::text[])
+           ORDER BY sm.category_id, sm.display_order, sm.name`,
+          [expandedRoleIds]
+        );
+        if (roleOnlyResult.rows.length > 0) {
+          console.log("[SPEC-MASTER] Fallback 2 (role-only) returned", roleOnlyResult.rows.length, "rows");
+          result = roleOnlyResult;
         }
       }
       let specializations = result.rows.map((row) => ({
@@ -227339,6 +227750,7 @@ registerCustomerPhoneConvenienceEndpoints(app2);
 registerCustomerProfileEndpoints(app2);
 registerCustomerBookingHistoryEndpoints(app2);
 registerAddressEndpoints(app2);
+registerRefundPolicyEngineEndpoints(app2);
 registerCustomerEndpointsEnhanced(app2);
 registerGpsTrackingEndpoints(app2);
 registerAdminEndpoints(app2);
@@ -227418,7 +227830,6 @@ registerPushNotificationEndpoints(app2);
 registerCommuteTimeEndpoints(app2);
 registerBookingDetailsEnhancedEndpoints(app2);
 registerRazorpaySettlementEndpoints(app2);
-registerRefundPolicyEngineEndpoints(app2);
 registerBookingEndpointsEnhanced(app2);
 registerBookingOTPEndpoint(app2);
 registerAdminGovernanceEnhancedEndpoints(app2);

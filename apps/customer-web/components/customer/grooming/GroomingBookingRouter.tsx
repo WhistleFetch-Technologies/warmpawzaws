@@ -274,55 +274,10 @@ export function GroomingBookingRouter({
     }
   }, [selectedDate, vendorId, selectedServiceType, selectedServiceIds]);
 
-  // ✅ ENHANCED: Load scheduling policy and validate slots
+  // Scheduling policy and operating-hours are deprecated (replaced by advance availability).
+  // Slots come from GET /customer/vendor/:id/available-slots only; no extra policy/hours APIs.
   const [schedulingPolicy, setSchedulingPolicy] = useState<any>(null);
   const [vendorOperatingHours, setVendorOperatingHours] = useState<any>(null);
-
-  useEffect(() => {
-    if (vendorId) {
-      loadSchedulingPolicy();
-      loadVendorOperatingHours();
-    }
-  }, [vendorId]);
-
-  const loadSchedulingPolicy = async () => {
-    if (!vendorId) return;
-    try {
-      const response = await apiClient.get(`/customer/vendor/${vendorId}/scheduling-policy`) as any;
-      if (response.success || response.policy) {
-        setSchedulingPolicy(response.policy || response);
-      }
-    } catch (error) {
-      // Use default policy if not available
-      setSchedulingPolicy({
-        minimumBookingHoursAhead: 2,
-        maximumBookingDaysAhead: 30,
-        blackoutDates: [],
-        blackoutTimes: []
-      });
-    }
-  };
-
-  const loadVendorOperatingHours = async () => {
-    if (!vendorId) return;
-    try {
-      const response = await apiClient.get(`/customer/vendor/${vendorId}/operating-hours`) as any;
-      if (response.success || response.hours) {
-        setVendorOperatingHours(response.hours || response.operatingHours || response);
-      }
-    } catch (error) {
-      // Use default hours if not available
-      setVendorOperatingHours({
-        monday: { open: '09:00', close: '18:00' },
-        tuesday: { open: '09:00', close: '18:00' },
-        wednesday: { open: '09:00', close: '18:00' },
-        thursday: { open: '09:00', close: '18:00' },
-        friday: { open: '09:00', close: '18:00' },
-        saturday: { open: '09:00', close: '18:00' },
-        sunday: { open: '09:00', close: '18:00' }
-      });
-    }
-  };
 
   const validateSlotAgainstPolicy = (slot: TimeSlot, date: string): boolean => {
     if (!schedulingPolicy) return true; // If no policy, allow all slots

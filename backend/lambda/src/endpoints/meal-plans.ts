@@ -483,8 +483,9 @@ export function registerMealPlanEndpoints(app: Hono) {
   app.post("/meal/orders/create", async (c) => {
     try {
       const body = await c.req.json();
-      const {
+      let {
         customerId,
+        customerPhone,
         mealPlanId,
         petId,
         quantity,
@@ -496,10 +497,47 @@ export function registerMealPlanEndpoints(app: Hono) {
         razorpayOrderId,
       } = body;
 
-      // Validate required fields
-      if (!customerId || !mealPlanId || !deliveryAddress || !scheduledDeliveryDate) {
-        return c.json({ error: 'Missing required fields' }, 400);
+      // Resolve customerId from customerPhone when not provided (e.g. profile shape mismatch on frontend)
+      if (!customerId && customerPhone) {
+        const raw = String(customerPhone).trim();
+        const cleanPhone = raw.replace(/\D/g, '').trim() || raw;
+        const byPhone = await select('customers', { phone: cleanPhone }).catch(() => []);
+        if (byPhone.length > 0) customerId = byPhone[0].id;
+        if (!customerId && cleanPhone.length > 0) {
+          const alt = await select('customers', { phone: raw }).catch(() => []);
+          if (alt.length > 0) customerId = alt[0].id;
+        }
+        // Try without leading 91 (India) so +919876543210 and 9876543210 both match
+        if (!customerId && cleanPhone.length >= 10) {
+          const without91 = cleanPhone.replace(/^91/, '');
+          if (without91 !== cleanPhone) {
+            const by91 = await select('customers', { phone: without91 }).catch(() => []);
+            if (by91.length > 0) customerId = by91[0].id;
+          }
+          if (!customerId) {
+            const with91 = (cleanPhone.length <= 10 ? '91' + cleanPhone : cleanPhone);
+            const byWith91 = await select('customers', { phone: with91 }).catch(() => []);
+            if (byWith91.length > 0) customerId = byWith91[0].id;
+          }
+        }
       }
+
+      // Validate required fields (return explicit missing for debugging)
+      const missing: string[] = [];
+      if (!customerId) missing.push('customerId or customerPhone');
+      if (!mealPlanId) missing.push('mealPlanId');
+      if (!deliveryAddress || typeof deliveryAddress !== 'object') missing.push('deliveryAddress');
+      if (!scheduledDeliveryDate) missing.push('scheduledDeliveryDate');
+      if (missing.length > 0) {
+        return c.json({ error: 'Missing required fields', missing }, 400);
+      }
+      const normalizedAddress = {
+        address: deliveryAddress.address ?? [deliveryAddress.addressLine1, deliveryAddress.addressLine2, deliveryAddress.city, deliveryAddress.state, deliveryAddress.pincode].filter(Boolean).join(', '),
+        lat: deliveryAddress.lat ?? deliveryAddress.latitude ?? 0,
+        lng: deliveryAddress.lng ?? deliveryAddress.longitude ?? 0,
+        landmark: deliveryAddress.landmark ?? '',
+        pincode: deliveryAddress.pincode ?? '',
+      };
 
       // Get meal plan
       const plans = await select('meal_plans', { id: mealPlanId });
@@ -509,14 +547,17 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       const plan = plans[0];
 
-      // Check lead time
-      const deliveryDate = new Date(scheduledDeliveryDate);
-      const leadTimeMs = plan.lead_time_hours * 60 * 60 * 1000;
-      if (deliveryDate.getTime() - Date.now() < leadTimeMs) {
-        return c.json({ 
-          error: `Order must be placed at least ${plan.lead_time_hours} hours in advance`,
-          code: 'LEAD_TIME_VIOLATION'
-        }, 400);
+      // Check lead time (when plan has lead_time_hours set)
+      const leadTimeHours = plan.lead_time_hours != null ? Number(plan.lead_time_hours) : 0;
+      if (leadTimeHours > 0) {
+        const deliveryDate = new Date(scheduledDeliveryDate);
+        const leadTimeMs = leadTimeHours * 60 * 60 * 1000;
+        if (deliveryDate.getTime() - Date.now() < leadTimeMs) {
+          return c.json({
+            error: `Order must be placed at least ${leadTimeHours} hours in advance`,
+            code: 'LEAD_TIME_VIOLATION'
+          }, 400);
+        }
       }
 
       // Calculate totals
@@ -586,9 +627,9 @@ export function registerMealPlanEndpoints(app: Hono) {
         delivery_fee: deliveryFee,
         platform_fee: platformFee + convenienceFee,
         total_amount: totalAmount,
-        delivery_address: JSON.stringify(deliveryAddress),
-        customer_lat: deliveryAddress.lat,
-        customer_lng: deliveryAddress.lng,
+        delivery_address: JSON.stringify(normalizedAddress),
+        customer_lat: normalizedAddress.lat,
+        customer_lng: normalizedAddress.lng,
         scheduled_delivery_date: scheduledDeliveryDate,
         scheduled_delivery_slot: JSON.stringify(scheduledDeliverySlot || {}),
         payment_status: 'pending', // Online only - no COD

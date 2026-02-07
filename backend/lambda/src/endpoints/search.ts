@@ -184,7 +184,7 @@ class UniversalSearchHandler extends BaseHandler {
         )
         AND EXISTS (
           SELECT 1 FROM vendor_availability_v2 va 
-          WHERE va.vendor_id = v.id
+          WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
         )
     `;
 
@@ -233,7 +233,7 @@ class UniversalSearchHandler extends BaseHandler {
         AND v.longitude IS NOT NULL
         AND EXISTS (
           SELECT 1 FROM vendor_availability_v2 va 
-          WHERE va.vendor_id = v.id
+          WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
         )
     `;
 

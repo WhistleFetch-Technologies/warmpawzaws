@@ -313,13 +313,13 @@ export async function checkScheduleUpToDate(vendorId: string): Promise<{
   const currentDayOfWeek = today.getDay();
 
   // Check vendor_availability_v2 for recurring schedule
-  // Handle different column naming conventions in the table
+  // Include vendor_identity.id so slots are found whether stored by vendor_id or vendor_identity_id
   let scheduleResult;
   try {
     scheduleResult = await query(
       `SELECT DISTINCT day_of_week
        FROM vendor_availability_v2 
-       WHERE vendor_id = $1 
+       WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = (SELECT phone FROM vendors WHERE id = $1)))
          AND COALESCE(is_enabled, is_available, true) = true
        ORDER BY day_of_week`,
       [vendorId]
@@ -1214,7 +1214,7 @@ export function registerVendorLiveStatusEndpoints(app: Hono) {
           )
           AND EXISTS (
             SELECT 1 FROM vendor_availability_v2 va 
-            WHERE va.vendor_id = v.id
+            WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
           )
       `;
 
@@ -1300,7 +1300,7 @@ export function registerVendorLiveStatusEndpoints(app: Hono) {
           )
           AND EXISTS (
             SELECT 1 FROM vendor_availability_v2 va 
-            WHERE va.vendor_id = v.id
+            WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
           )
       `;
 

@@ -15,6 +15,50 @@ So for **admin-triggered payouts** (and similar flows), you must set up Razorpay
 
 ---
 
+## Confirmation: What RAZORPAY_X_ACCOUNT_NUMBER is
+
+| Concept | Meaning |
+|--------|--------|
+| **RAZORPAY_X_ACCOUNT_NUMBER** | **Your (platform’s) RazorpayX Current Account** – the **source** account. Money is **debited from this account**. |
+| **Vendor bank account** | Stored per vendor in `vendor_bank_accounts` (verified). Each vendor has **their own** bank account and **their own** settlement amount. |
+| **Each payout** | One transfer: **from** your RazorpayX account **to** one vendor’s verified bank account, for **that vendor’s** settlement amount (in INR). |
+
+So: **one platform source account** (RAZORPAY_X_ACCOUNT_NUMBER) → **many vendor destination accounts**, each with its own amount. Same conditions for automatic disbursal apply to every verified vendor.
+
+---
+
+## Conditions for automatic disbursal (same for all verified vendors)
+
+| Requirement | Notes |
+|-------------|--------|
+| **Vendor has verified bank** | At least one row with `is_verified = true` in `vendor_bank_accounts` (or `vendor_bank_details` with `is_verified`). Primary account is used if multiple are verified. |
+| **RAZORPAY_X_ACCOUNT_NUMBER set** | Lambda env **or** in Razorpay secret as `razorpayXAccountNumber` / `xAccountNumber`. This is **your** RazorpayX source account. If missing, only payout rows are created (status `pending`); admin can process manually later once the account is configured. |
+| **Razorpay API credentials** | `keyId` and `keySecret` (e.g. from AWS Secrets Manager) for the **Composite Payout API**. Same secret can hold `razorpayXAccountNumber`. |
+| **autoPayout enabled** | From `admin:settings:payout_rules` in platform_settings. Default is **true** when not set – so after a settlement is created, the system will try to create a payout and, if RAZORPAY_X_ACCOUNT_NUMBER is set, call Razorpay to transfer money to that vendor’s bank. |
+
+---
+
+## How the whole flow works after you give account details
+
+Once you set **RAZORPAY_X_ACCOUNT_NUMBER** (and the rest of the checklist below), the flow is:
+
+1. **Settlement run**  
+   Admin (or cron) calls **POST /settlements/calculate-daily**. The system finds eligible completed bookings (per vendor tier’s `payout_period_days`), groups by vendor, applies commission and penalties, and creates one **settlement** row per vendor (with that vendor’s `net_amount`).
+
+2. **Auto payout (for each vendor with verified bank)**  
+   If `autoPayout` is true (default), for each new settlement the system:
+   - Finds that vendor’s **verified** bank (from `vendor_bank_accounts`, primary first).
+   - Inserts a **payout** row (vendor_id, amount = that vendor’s settlement net amount, status `pending`).
+   - If **RAZORPAY_X_ACCOUNT_NUMBER** is set: calls Razorpay **Composite Payout API** to transfer **that amount** from **your** RazorpayX account to **that vendor’s** bank account; then updates the payout row to `processing` (and later Razorpay webhooks/status can update to completed/failed).
+   - If RAZORPAY_X_ACCOUNT_NUMBER is **not** set: the payout row stays `pending`; admin can later use **Finance → Payout Management → Process** to trigger the same Razorpay call (once the account is configured).
+
+3. **Admin “Process” (manual)**  
+   In **Admin → Finance → Payout Management**, “Process” on a pending payout does the same Razorpay call: debit from **RAZORPAY_X_ACCOUNT_NUMBER**, credit to that payout’s vendor verified bank, for that payout’s amount.
+
+So after you provide the account details (RazorpayX Customer Identifier as RAZORPAY_X_ACCOUNT_NUMBER, credentials, IP allowlist, and fund the account), **every** eligible vendor with a verified bank gets their **specific** amount transferred from **your** account to **their** account automatically on the next settlement run (and manual Process works the same way).
+
+---
+
 ## 1. RazorpayX setup (what to do in Razorpay)
 
 1. **Enable RazorpayX**
@@ -90,7 +134,20 @@ After this, **Admin → Finance → Payout Management → Process** (and other p
 
 ---
 
-## 4. References
+## 4. Storing account in Secrets Manager and IP allowlist
+
+For step-by-step instructions to store your RazorpayX account (e.g. Whistlefetch Axis account) in AWS Secrets Manager and configure **IP allowlisting** in RazorpayX, see:
+
+**[RazorpayX Account Setup and IP Allowlist](RAZORPAY_X_ACCOUNT_SETUP_AND_IP_ALLOWLIST.md)**
+
+That guide includes:
+- Script: `scripts/setup-razorpay-x-payout-secret.sh` to add `razorpayXAccountNumber` to the existing Razorpay secret.
+- How to find your Lambda’s outbound IP and add it in RazorpayX → My Account & Settings → Developer Controls → Share IP Addresses.
+- Optional Terraform variable `razorpay_x_account_number` to manage the account in code.
+
+---
+
+## 5. References
 
 - [Razorpay Payouts API – Create payout to bank account](https://razorpay.com/docs/api/x/payouts/create/bank-account/)
 - [RazorpayX Dashboard](https://x.razorpay.com/)

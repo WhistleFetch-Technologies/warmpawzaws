@@ -745,8 +745,13 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         }
       });
     } catch (error: any) {
+      const msg = error?.message || String(error);
       console.error('Error fetching customer by phone:', error);
-      return c.json({ error: error.message }, 500);
+      // Return 503 for pool exhaustion/timeout so clients can retry; 500 for other errors
+      if (msg.includes('connection pool') || msg.includes('too many clients') || msg.includes('timeout') || msg.includes('Timeout')) {
+        return c.json({ error: 'Service temporarily busy. Please try again in a moment.', code: 'SERVICE_BUSY' }, 503);
+      }
+      return c.json({ error: msg }, 500);
     }
   });
 

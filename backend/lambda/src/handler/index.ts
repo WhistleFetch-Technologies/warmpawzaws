@@ -391,6 +391,7 @@ registerCustomerPhoneConvenienceEndpoints(app); // /customer/bookings/active, /c
 registerCustomerProfileEndpoints(app); // /customer/profile, /customer/profile/unified/:id, /customer/profile/:id - before /customer/:customerId
 registerCustomerBookingHistoryEndpoints(app); // /customer/bookings/:bookingId, /customer/:customerId/bookings - before /customer/:customerId
 registerAddressEndpoints(app); // /customer/addresses - MUST be before /customer/:customerId to avoid route conflicts
+registerRefundPolicyEngineEndpoints(app); // /customer/refund-policy - MUST be before /customer/:customerId
 // Now register parameterized routes
 registerCustomerEndpointsEnhanced(app); // /customer/:customerId (parameterized - must be last)
 registerGpsTrackingEndpoints(app);
@@ -479,7 +480,6 @@ registerPushNotificationEndpoints(app);
 registerCommuteTimeEndpoints(app);
 registerBookingDetailsEnhancedEndpoints(app);
 registerRazorpaySettlementEndpoints(app);
-registerRefundPolicyEngineEndpoints(app);
 registerBookingEndpointsEnhanced(app); // Moved here to test route order (after refund-policy which works)
 registerBookingOTPEndpoint(app); // Booking OTP generation for home/center services
 registerAdminGovernanceEnhancedEndpoints(app);

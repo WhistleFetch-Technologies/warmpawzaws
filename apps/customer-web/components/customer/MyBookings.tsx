@@ -287,10 +287,10 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
     toast.success('OTP copied to clipboard');
   };
 
-  // ✅ Load refund policy from admin settings
+  // ✅ Load refund policy (customer-facing endpoint; admin route requires admin auth)
   const loadRefundPolicy = async (bookingId: string) => {
     try {
-      const result = await apiClient.get(`/admin/settings/refund-policy`) as any;
+      const result = await apiClient.get(`/customer/refund-policy`) as any;
       setRefundPolicy(result.policy || {
         cancellationWindowHours: 24,
         refundPercentages: [
@@ -354,10 +354,12 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         refundMethod: refundMethod,
       }) as any;
 
+      const payload = result.data ?? result;
       if (result.success) {
         toast.success('Booking cancelled successfully');
-        if (result.refund) {
-          toast.success(`Refund of ₹${result.refund.amount} will be credited to ${refundMethod === 'wallet' ? 'your wallet' : 'original payment method'}`);
+        const refund = payload.refund ?? result.refund;
+        if (refund && typeof refund.amount === 'number') {
+          toast.success(`Refund of ₹${refund.amount} will be credited to ${refundMethod === 'wallet' ? 'your wallet' : 'original payment method'}`);
         }
         setShowCancelModal(null);
         setCancellationReason('');

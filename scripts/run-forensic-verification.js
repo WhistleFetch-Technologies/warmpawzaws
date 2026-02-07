@@ -214,9 +214,11 @@ async function main() {
       serviceStyles: meta.serviceStyles,
     });
   } catch (e) {
-    const is404 = e.message && (e.message.includes('404') || e.message.includes('Not Found'));
-    if (is404) {
-      console.warn('GET /customer/discovery/meta not available. Using fallback role list; revalidation will be limited.');
+    const msg = e.message || '';
+    const is404 = msg.includes('404') || msg.includes('Not Found');
+    const isUnavailable = msg.includes('503') || msg.includes('502') || msg.includes('Service Unavailable') || msg.includes('Bad Gateway');
+    if (is404 || isUnavailable) {
+      console.warn('GET /customer/discovery/meta not available (', msg.slice(0, 80), '). Using fallback role list; revalidation will be limited.');
       meta = { roles: getFallbackRoles(), fromMeta: false };
     } else {
       console.error('Failed to fetch discovery meta:', e.message);

@@ -22,7 +22,7 @@ import { select, query, insert } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
-import { resolveVendorById } from './vendor-profile';
+import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentityId } from './vendor-profile';
 
 /**
  * Calculate distance between two coordinates (Haversine formula)
@@ -583,6 +583,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             )`;
         if (targetRolesLower.length === 0) vendorParams.unshift(serviceStyle);
 
+        // Vendor-defined radius applies only to at_home (travel); tele uses rule-book only, no travel.
         let vendorQuery = `
           SELECT DISTINCT v.id, v.business_name, v.owner_name, v.phone, v.city, v.state,
                  v.latitude, v.longitude, r.name as role_name, r.display_name as role_display_name,
@@ -591,7 +592,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                  v.service_radius,
                  (SELECT MIN(vs.service_radius_km) FROM vendor_services vs
                   WHERE vs.vendor_id = v.id AND vs.is_enabled = true
-                    AND (vs.service_style = 'at_home' OR vs.service_style = 'tele')) AS service_radius_km_min
+                    AND vs.service_style = 'at_home') AS service_radius_km_min_home
           FROM vendors v
           LEFT JOIN roles r ON v.role_id = r.id
           WHERE (v.status = 'approved' OR v.status = 'active')
@@ -626,14 +627,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             const today = new Date();
             const todayStr = today.toISOString().split('T')[0];
             const nextSlotsResult = await query(
-              `SELECT va.day_of_week, va.time_window_start, va.time_window_end
+              `SELECT va.day_of_week, COALESCE(va.time_window_start, va.start_time) as time_window_start, COALESCE(va.time_window_end, va.end_time) as time_window_end
                FROM vendor_availability_v2 va
-               WHERE va.vendor_id = $1 
-                 AND va.is_enabled = true
-                 AND ($2 = ANY(va.service_styles) OR va.service_style = $2)
-               ORDER BY va.day_of_week ASC, va.time_window_start ASC 
+               WHERE (va.vendor_id = $1 OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
+                 AND COALESCE(va.is_enabled, va.is_available, true) = true
+                 AND ($3 = ANY(COALESCE(va.service_styles, ARRAY[]::text[])) OR va.service_style = $3 OR va.service_type = $3)
+               ORDER BY va.day_of_week ASC, COALESCE(va.time_window_start, va.start_time) ASC 
                LIMIT 1`,
-              [vendor.id, serviceStyle]
+              [vendor.id, vendor.phone || '', serviceStyle]
             );
             
             if (nextSlotsResult.rows.length > 0) {
@@ -695,11 +696,26 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             distanceText = distance < 1 ? `${Math.round(distance * 1000)}m away` : `${distance.toFixed(1)} km away`;
           }
 
-          // Rule book + vendor precedence: effectiveRadius = vendor.service_radius ?? service_radius_km ?? rule ?? 50
+          // At_home: vendor-defined radius (travel); rule-book default when vendor not set. Tele: rule-book only (no travel); 0 = no limit.
           const vendorRadius = vendor.service_radius != null ? Number(vendor.service_radius) : null;
-          const serviceRadiusKm = vendor.service_radius_km_min != null ? Number(vendor.service_radius_km_min) : null;
-          const effectiveRadiusKm = (vendorRadius ?? serviceRadiusKm ?? ruleRadiusKm ?? 50);
-          const withinRadius = !(latitude && longitude) || (distance != null && distance <= effectiveRadiusKm);
+          const serviceRadiusKmHome = (vendor as any).service_radius_km_min_home != null ? Number((vendor as any).service_radius_km_min_home) : null;
+          let effectiveRadiusKm: number;
+          let withinRadius: boolean;
+          if (serviceStyle === 'at_home') {
+            effectiveRadiusKm = vendorRadius ?? serviceRadiusKmHome ?? ruleRadiusKm ?? 50;
+            withinRadius = !(latitude && longitude) || (distance != null && distance <= effectiveRadiusKm);
+          } else {
+            // tele: no vendor radius; rule-book only. discovery_radius_km_tele default 0 = no distance limit
+            const teleRadiusKm = typeof discoveryRules.discovery_radius_km_tele === 'number'
+              ? discoveryRules.discovery_radius_km_tele
+              : (typeof discoveryRules.discovery_radius_km === 'number' ? discoveryRules.discovery_radius_km : 0);
+            if (teleRadiusKm <= 0) {
+              withinRadius = true; // no limit
+            } else {
+              effectiveRadiusKm = teleRadiusKm;
+              withinRadius = !(latitude && longitude) || (distance != null && distance <= effectiveRadiusKm);
+            }
+          }
           if (!withinRadius) continue;
 
           // ✅ FIX: Get rating from reviews
@@ -848,7 +864,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let vendorQuery = `
         SELECT v.*, r.name as role_name, r.display_name as role_display_name,
           COALESCE((SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true), 0) as service_count,
-          COALESCE((SELECT COUNT(*) FROM vendor_availability_v2 va WHERE va.vendor_id = v.id), 0) as availability_count
+          COALESCE((SELECT COUNT(*) FROM vendor_availability_v2 va WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)), 0) as availability_count
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
@@ -946,17 +962,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             : 0;
 
           // Check availability - vendor_availability_v2 (canonical) with vendor_schedule_slots fallback
+          // Include vendor_identity.id so slots are found whether stored by vendor_id or vendor_identity_id
           let isAvailableToday = false;
           try {
             const today = new Date();
             const dayOfWeek = today.getDay();
             const va2Check = await query(
               `SELECT 1 FROM vendor_availability_v2 
-               WHERE vendor_id = $1 
-                 AND day_of_week = $2 
+               WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
+                 AND day_of_week = $3 
                  AND COALESCE(is_enabled, is_available, true) = true 
                LIMIT 1`,
-              [vendor.id, dayOfWeek]
+              [vendor.id, vendor.phone || '', dayOfWeek]
             );
             isAvailableToday = va2Check.rows.length > 0;
             if (!isAvailableToday) {
@@ -965,8 +982,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               );
               if (tableCheck.rows[0]?.exists) {
                 const vssCheck = await query(
-                  `SELECT 1 FROM vendor_schedule_slots WHERE vendor_id = $1 AND day_of_week = $2 AND is_enabled = true LIMIT 1`,
-                  [vendor.id, dayOfWeek]
+                  `SELECT 1 FROM vendor_schedule_slots WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2)) AND day_of_week = $3 AND is_enabled = true LIMIT 1`,
+                  [vendor.id, vendor.phone || '', dayOfWeek]
                 );
                 isAvailableToday = vssCheck.rows.length > 0;
               }
@@ -1033,11 +1050,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             const va2Result = await query(
                 `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
                  FROM vendor_availability_v2
-                 WHERE vendor_id = $1
+                 WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
                    AND COALESCE(is_enabled, is_available, true) = true
                  ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC
                  LIMIT 7`,
-                [vendor.id]
+                [vendor.id, vendor.phone || '']
               ).catch(() => ({ rows: [] }));
 
               if (va2Result.rows.length > 0) {
@@ -1149,9 +1166,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             }
           } catch { /* Continue */ }
 
+          let vendorIdentityId: string | null = null;
+          try {
+            vendorIdentityId = await getVendorIdentityId(vendor.id);
+          } catch { /* Continue */ }
+
           return {
             id: vendor.id,
             vendorId: vendor.id,
+            vendor_identity_id: vendorIdentityId ?? undefined,
+            vendorIdentityId: vendorIdentityId ?? undefined,
             businessName: vendor.business_name,
             roleId: vendor.role_id,
             roleName: vendor.role_name,
@@ -1219,39 +1243,68 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         });
       }
 
+      // Rule book: discovery radius (clinic from customer location), max results, default sort
+      const discoverRules = await getDiscoveryRules(
+        category || roleId || 'all',
+        'discover',
+        serviceStyle || undefined,
+        category || undefined
+      );
+      const discoverRadiusKm = typeof discoverRules.discovery_radius_km === 'number' ? discoverRules.discovery_radius_km : 50;
+      const discoverMaxResults = typeof discoverRules.discovery_max_results === 'number' ? discoverRules.discovery_max_results : 50;
+      const discoverSortDefault = typeof discoverRules.discovery_sort_default === 'string' ? discoverRules.discovery_sort_default : 'relevance';
+
+      // Filter by distance when customer location provided (rule-book radius)
+      if (latitude && longitude) {
+        filteredVendors = filteredVendors.filter((v: any) =>
+          v.distance == null || v.distance <= discoverRadiusKm
+        );
+      }
+
       // Filter by rating
       if (minRating) {
         filteredVendors = filteredVendors.filter((v: any) => v.rating >= parseFloat(minRating));
       }
 
-      // Sort
-      if (sortBy === 'distance' && latitude && longitude) {
+      // Sort (use rule-book default when not provided)
+      const effectiveSortBy = sortBy || discoverSortDefault;
+      if (effectiveSortBy === 'distance' && latitude && longitude) {
         filteredVendors.sort((a: any, b: any) => {
           if (a.distance === null) return 1;
           if (b.distance === null) return -1;
           return a.distance - b.distance;
         });
-      } else if (sortBy === 'rating') {
+      } else if (effectiveSortBy === 'rating') {
         filteredVendors.sort((a: any, b: any) => b.rating - a.rating);
-      } else if (sortBy === 'price') {
+      } else if (effectiveSortBy === 'price') {
         filteredVendors.sort((a: any, b: any) => {
           const aPrice = a.featuredOfferings[0]?.price || 0;
           const bPrice = b.featuredOfferings[0]?.price || 0;
           return aPrice - bPrice;
         });
+      } else {
+        // relevance: rating + reviews + distance bonus
+        filteredVendors.sort((a: any, b: any) => {
+          const aScore = (parseFloat(a.rating) || 0) * 10 + (a.totalReviews || 0) * 0.5 + (a.distance != null ? Math.max(0, 50 - a.distance) : 0);
+          const bScore = (parseFloat(b.rating) || 0) * 10 + (b.totalReviews || 0) * 0.5 + (b.distance != null ? Math.max(0, 50 - b.distance) : 0);
+          return bScore - aScore;
+        });
       }
+
+      // Rule book: limit by discovery_max_results
+      const limitedVendors = filteredVendors.slice(0, discoverMaxResults);
 
       return c.json({
         success: true,
-        vendors: filteredVendors,
-        total: filteredVendors.length,
+        vendors: limitedVendors,
+        total: limitedVendors.length,
         filters: {
           category,
           location,
           minRating,
           availability,
           petType,
-          sortBy,
+          sortBy: effectiveSortBy,
           serviceStyle,
         },
       });
@@ -1298,10 +1351,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
   /**
    * GET /customer/vendor/:vendorId/available-slots
-   * Get available time slots for a vendor based on ADVANCED AVAILABILITY only (vendor_availability_v2).
-   * No basic/operating-hours fallback - service booking uses only advanced schedule.
-   * Enforces: (1) past booking window + admin buffer, (2) holidays & breaks, (3) service style per slot,
-   * (4) buffer between bookings, (5) max capacity per slot when defined.
+   * Standard availability API for all service types (vet, grooming, training, walker, etc.).
+   * Query: date (required), serviceStyle (at_center | at_home | tele), totalDuration?, staffId?, serviceIds?.
+   * Response: { success, slots: [{ time, available, booked?, slotDuration?, bufferMinutes?, serviceStyles? }], date, vendorId, serviceStyle, staffBased?, message? }.
+   * Uses vendor_availability_v2 only; supports 006 (time_window_*, service_style, is_enabled) and 057+ (start_time/end_time, service_styles, is_available) schemas.
+   * Enforces: (1) past booking window + admin buffer, (2) holidays & breaks, (3) service style per slot, (4) buffer between bookings, (5) max capacity when defined.
    */
   app.get("/customer/vendor/:vendorId/available-slots", async (c) => {
     try {
@@ -1322,6 +1376,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
       const resolvedVendorId = vendor.id;
+      // getVendorIdsForAvailabilityLookup returns [vendors.id, ...vendor_identity.id(s)] — use for lookup and for response IDs
+      const availabilityIds = await getVendorIdsForAvailabilityLookup(resolvedVendorId);
+      const canonicalVendorId = availabilityIds[0] ?? resolvedVendorId;
+      const vendorIdentityIdFromLookup = availabilityIds.length > 1 ? availabilityIds[1] : null;
 
       // Parse date in local timezone to avoid UTC issues
       // Date format: "YYYY-MM-DD"
@@ -1386,7 +1444,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           success: true,
           slots: [],
           date,
-          vendorId,
+          vendorId: canonicalVendorId,
+          vendorIdentityId: vendorIdentityIdFromLookup ?? undefined,
           serviceStyle,
           staffBased: false,
           message: 'Vendor is on holiday or vacation on this date',
@@ -1543,49 +1602,165 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       }
 
       // ---------- 2) Advanced availability only: vendor_availability_v2 (no basic fallback) ----------
+      // Normalize and expand: at_center also matches at_vendor (legacy); tele matches online (legacy).
+      const normalizedServiceStyle = (serviceStyle === 'at_vendor' || serviceStyle === 'at_center') ? 'at_center' : serviceStyle;
+      const acceptableStylesForSlot: string[] =
+        normalizedServiceStyle === 'at_center' ? ['at_center', 'at_vendor'] :
+        normalizedServiceStyle === 'tele' ? ['tele', 'online', 'video_consultation'] :
+        [normalizedServiceStyle];
       let va2Slots: any[] = [];
       try {
-        // Advanced schedule only (vendor_availability_v2): multiple slots, service_styles, buffer_time
-        console.log(`[SLOTS] Querying vendor_availability_v2: vendorId=${resolvedVendorId}, dayOfWeek=${dayOfWeek}, serviceStyle=${serviceStyle}`);
+        // Match rows where: (1) service_styles array overlaps with acceptable styles, OR (2) legacy service_style/service_type is one of acceptable.
+        // This ensures slots show when vendor set advance availability with at_vendor/online or at_center/tele.
+        console.log(`[SLOTS] Querying vendor_availability_v2: vendorId=${resolvedVendorId}, dayOfWeek=${dayOfWeek}, acceptableStyles=${acceptableStylesForSlot.join(',')}`);
         const va2Result = await query(
           `SELECT id, time_window_start, time_window_end, start_time, end_time,
                   COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
                   COALESCE(buffer_time, buffer_time_minutes, 15) as buffer_time_minutes,
                   lead_time_by_style, max_capacity, service_styles
            FROM vendor_availability_v2
-           WHERE vendor_id = $1
+           WHERE vendor_id::text = ANY($1::text[])
              AND day_of_week = $2
-             AND $3 = ANY(COALESCE(service_styles, ARRAY[]::text[]))
+             AND (
+               (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
+               OR COALESCE(service_style, service_type)::text = ANY($3::text[])
+             )
              AND COALESCE(is_available, is_enabled, true) = true
            ORDER BY COALESCE(time_window_start, start_time)`,
-          [resolvedVendorId, dayOfWeek, serviceStyle]
+          [availabilityIds, dayOfWeek, acceptableStylesForSlot]
         );
         va2Slots = va2Result?.rows || [];
-        console.log(`[SLOTS] Found ${va2Slots.length} availability records for day_of_week=${dayOfWeek}, serviceStyle=${serviceStyle}`);
+        console.log(`[SLOTS] Found ${va2Slots.length} availability records for day_of_week=${dayOfWeek}, acceptableStyles=${acceptableStylesForSlot.join(',')}`);
         if (va2Slots.length > 0) {
           console.log(`[SLOTS] First record:`, JSON.stringify(va2Slots[0]));
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error(`[SLOTS] Query error:`, e);
         try {
-          const va2ResultAlt = await query(
-            `SELECT id, start_time as time_window_start, end_time as time_window_end,
+          // Fallback for 006 schema: time_window_* and service_style only (no start_time/end_time, no service_styles)
+          const va2Result006 = await query(
+            `SELECT id, time_window_start, time_window_end,
                     time_window_start as start_time, time_window_end as end_time,
+                    30 as slot_duration_minutes, 15 as buffer_time_minutes,
+                    NULL::jsonb as lead_time_by_style, 1 as max_capacity,
+                    ARRAY[service_style::text] as service_styles
+             FROM vendor_availability_v2
+             WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
+               AND service_style::text = ANY($3::text[])
+               AND (is_enabled = true OR is_enabled IS NULL)
+             ORDER BY time_window_start`,
+            [availabilityIds, dayOfWeek, acceptableStylesForSlot]
+          );
+          va2Slots = va2Result006?.rows || [];
+          console.log(`[SLOTS] 006-schema fallback found ${va2Slots.length} records`);
+        } catch (_) {
+          // Fallback when time_window_* columns don't exist (e.g. 057 schema: start_time/end_time only)
+          try {
+            const va2ResultAlt = await query(
+            `SELECT id, start_time as time_window_start, end_time as time_window_end,
+                    start_time, end_time,
                     COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
                     COALESCE(buffer_time, buffer_time_minutes, 15) as buffer_time_minutes,
                     lead_time_by_style, max_capacity, service_styles
              FROM vendor_availability_v2
-             WHERE vendor_id = $1 AND day_of_week = $2
-               AND $3 = ANY(COALESCE(service_styles, ARRAY[]::text[]))
+             WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
+               AND (
+                 (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
+                 OR COALESCE(service_style, service_type)::text = ANY($3::text[])
+               )
                AND COALESCE(is_available, is_enabled, true) = true
              ORDER BY start_time`,
-            [resolvedVendorId, dayOfWeek, serviceStyle]
+            [availabilityIds, dayOfWeek, acceptableStylesForSlot]
           );
           va2Slots = va2ResultAlt?.rows || [];
           console.log(`[SLOTS] Fallback query found ${va2Slots.length} records`);
-        } catch (err) {
-          console.error(`[SLOTS] Fallback query also failed:`, err);
+        } catch (err2: any) {
+          const columnMissing = err2?.message && (
+            String(err2.message).includes('service_style') ||
+            String(err2.message).includes('service_type') ||
+            String(err2.message).includes('service_styles') ||
+            /column.*does not exist/i.test(String(err2.message))
+          );
+          if (columnMissing) {
+            try {
+              // Minimal fallback when service_styles/slot_duration_minutes etc. don't exist (e.g. 057: start_time, end_time, service_type only; no service_style column)
+              const va2Minimal = await query(
+                `SELECT id, start_time as time_window_start, end_time as time_window_end,
+                        start_time, end_time,
+                        30 as slot_duration_minutes, 15 as buffer_time_minutes,
+                        NULL::jsonb as lead_time_by_style, 1 as max_capacity,
+                        ARRAY[service_type::text] as service_styles
+                 FROM vendor_availability_v2
+                 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
+                   AND service_type::text = ANY($3::text[])
+                   AND COALESCE(is_available, is_enabled, true) = true
+                 ORDER BY start_time`,
+                [availabilityIds, dayOfWeek, acceptableStylesForSlot]
+              );
+              va2Slots = va2Minimal?.rows || [];
+              console.log(`[SLOTS] Minimal (service_type only) query found ${va2Slots.length} records`);
+            } catch (err3: any) {
+              try {
+                const va2StylesOnly = await query(
+                  `SELECT id, start_time as time_window_start, end_time as time_window_end,
+                          start_time, end_time,
+                          COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
+                          COALESCE(buffer_time, buffer_time_minutes, 15) as buffer_time_minutes,
+                          lead_time_by_style, max_capacity, service_styles
+                   FROM vendor_availability_v2
+                   WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
+                     AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
+                     AND COALESCE(is_available, is_enabled, true) = true
+                   ORDER BY start_time`,
+                  [availabilityIds, dayOfWeek, acceptableStylesForSlot]
+                );
+                va2Slots = va2StylesOnly?.rows || [];
+                console.log(`[SLOTS] service_styles-only query found ${va2Slots.length} records`);
+              } catch (err4) {
+                console.error(`[SLOTS] Minimal and service_styles-only queries also failed:`, err3, err4);
+                // Final fallback: fetch all rows for vendor+day with minimal columns, filter by style in code
+                try {
+                  const va2Any = await query(
+                    `SELECT id, time_window_start, time_window_end, time_window_start as start_time, time_window_end as end_time,
+                            30 as slot_duration_minutes, 15 as buffer_time_minutes, NULL::jsonb as lead_time_by_style, 1 as max_capacity,
+                            ARRAY[service_style::text] as service_styles
+                     FROM vendor_availability_v2 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2 ORDER BY time_window_start`,
+                    [availabilityIds, dayOfWeek]
+                  ).catch(() => null);
+                  if (va2Any?.rows?.length) {
+                    const filtered = va2Any.rows.filter((r: any) => {
+                      const style = (r.service_styles && r.service_styles[0]) || r.service_style || r.service_type;
+                      return style && acceptableStylesForSlot.includes(String(style));
+                    });
+                    va2Slots = filtered;
+                    console.log(`[SLOTS] No-style-filter fallback: ${va2Any.rows.length} rows, ${filtered.length} after style filter`);
+                  }
+                } catch (err5) {
+                  try {
+                    const va2Any57 = await query(
+                      `SELECT id, start_time as time_window_start, end_time as time_window_end, start_time, end_time,
+                              30 as slot_duration_minutes, 15 as buffer_time_minutes, NULL::jsonb as lead_time_by_style, 1 as max_capacity,
+                              ARRAY[service_type::text] as service_styles
+                       FROM vendor_availability_v2 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2 ORDER BY start_time`,
+                      [availabilityIds, dayOfWeek]
+                    ).catch(() => null);
+                    if (va2Any57?.rows?.length) {
+                      const filtered = va2Any57.rows.filter((r: any) => {
+                        const style = (r.service_styles && r.service_styles[0]) || r.service_style || r.service_type;
+                        return style && acceptableStylesForSlot.includes(String(style));
+                      });
+                      va2Slots = filtered;
+                      console.log(`[SLOTS] No-style-filter (057) fallback: ${va2Any57.rows.length} rows, ${filtered.length} after style filter`);
+                    }
+                  } catch (_) {}
+                }
+              }
+            }
+          } else {
+            console.error(`[SLOTS] Fallback query also failed:`, err2);
+          }
         }
+      }
       }
 
       // Breaks for this day
@@ -1610,6 +1785,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       };
 
       // Existing bookings with duration (for buffer overlap and capacity)
+      const normalizeBookingTime = (t: any): string => {
+        if (t == null) return '00:00';
+        if (typeof t === 'string') {
+          if (t.includes('T')) {
+            const timePart = (t.split('T')[1] || '').substring(0, 5);
+            return timePart.length >= 5 ? timePart : t.substring(0, 5);
+          }
+          return t.substring(0, 5);
+        }
+        if (typeof (t as Date).getHours === 'function') {
+          const d = t as Date;
+          return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        }
+        return String(t).substring(0, 5);
+      };
       let existingBookings: { booking_time: string; duration_minutes: number }[] = [];
       try {
         const bookResult = await query(
@@ -1620,7 +1810,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           [resolvedVendorId, date]
         ).catch(() => ({ rows: [] }));
         existingBookings = bookResult.rows.map((b: any) => ({
-          booking_time: typeof b.booking_time === 'string' ? b.booking_time.substring(0, 5) : b.booking_time,
+          booking_time: normalizeBookingTime(b.booking_time),
           duration_minutes: Number(b.duration_minutes) || 30,
         }));
       } catch (_) { /* ignore */ }
@@ -1636,8 +1826,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           const leadByStyle = row.lead_time_by_style != null
             ? (typeof row.lead_time_by_style === 'string' ? JSON.parse(row.lead_time_by_style) : row.lead_time_by_style)
             : {};
-          const bufferMinutes = (leadByStyle && typeof leadByStyle === 'object' && leadByStyle[serviceStyle] != null)
-            ? Number(leadByStyle[serviceStyle])
+          const bufferMinutes = (leadByStyle && typeof leadByStyle === 'object' && (leadByStyle[normalizedServiceStyle] != null || leadByStyle[serviceStyle] != null))
+            ? Number(leadByStyle[normalizedServiceStyle] ?? leadByStyle[serviceStyle])
             : Number(row.buffer_time ?? row.buffer_time_minutes) || minNoticeMinutes;
           const maxCapacity = row.max_capacity != null && row.max_capacity !== '' ? parseInt(String(row.max_capacity), 10) : null;
 
@@ -1647,6 +1837,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
           while (currentMinutes + slotDuration <= winEnd) {
             const timeStr = `${String(Math.floor(currentMinutes / 60)).padStart(2, '0')}:${String(currentMinutes % 60).padStart(2, '0')}`;
+
+            // 0) Slot must fit in window: appointment (totalDuration) must end before window end
+            if (currentMinutes + totalDuration > winEnd) {
+              currentMinutes += slotDuration;
+              continue;
+            }
 
             // 1) Past booking window
             if (isToday) {
@@ -1712,10 +1908,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           success: true,
           slots: sortedSlots,
           date,
-          vendorId,
+          vendorId: canonicalVendorId,
+          vendorIdentityId: vendorIdentityIdFromLookup ?? undefined,
           serviceStyle,
           staffBased: false,
-          // Dynamic meta from advanced schedule (sync with vendor UI and future enhancements)
           availabilityMeta: {
             source: 'vendor_availability_v2',
             slotDurationDefault: 30,
@@ -1729,7 +1925,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         success: true,
         slots: [],
         date,
-        vendorId,
+        vendorId: canonicalVendorId,
+        vendorIdentityId: vendorIdentityIdFromLookup ?? undefined,
         serviceStyle,
         staffBased: false,
         message: 'No advanced availability set for this day and service type. Vendor can set schedule in Advanced Availability.',
@@ -2176,6 +2373,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const roleId = c.req.query('roleId');
       const rules = await getDiscoveryRules(roleId || 'all', 'discover');
       const defaultRadiusKm = rules.discovery_radius_km ?? 10;
+      const maxResults = typeof rules.discovery_max_results === 'number' ? rules.discovery_max_results : 50;
       const radius = c.req.query('radius') ? parseFloat(c.req.query('radius')!) : defaultRadiusKm;
       const serviceType = c.req.query('serviceType') || '';
 
@@ -2183,7 +2381,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         return c.json({ error: 'lat and lng are required' }, 400);
       }
 
-      // Get vendors with location within radius
+      const limitCount = Math.min(100, maxResults);
+      // Get vendors with location within radius (rule-book radius + max_results)
       const vendors = await query(
         `SELECT v.*, r.name as role_name,
          (6371 * acos(
@@ -2198,8 +2397,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
            ${serviceType ? `AND r.name ILIKE $3` : ''}
          HAVING distance_km <= $4
          ORDER BY distance_km ASC
-         LIMIT 50`,
-        serviceType ? [lat, lng, `%${serviceType}%`, radius] : [lat, lng, radius]
+         LIMIT $5`,
+        serviceType ? [lat, lng, `%${serviceType}%`, radius, limitCount] : [lat, lng, null, radius, limitCount]
       );
 
       return c.json({

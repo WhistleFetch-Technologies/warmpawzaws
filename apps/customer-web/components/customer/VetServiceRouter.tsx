@@ -139,13 +139,35 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     try {
       setLoading(true);
       setVetDataError(null);
+
+      // Get customer location for distance/radius: profile lat/lng or geolocation
+      let latitude: string | undefined;
+      let longitude: string | undefined;
+      try {
+        const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
+        const profile = profileRes?.profile || profileRes;
+        if (profile?.latitude != null && profile?.longitude != null) {
+          latitude = String(profile.latitude);
+          longitude = String(profile.longitude);
+        }
+      } catch (_) { /* ignore */ }
+      if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 300000 });
+          });
+          latitude = String(pos.coords.latitude);
+          longitude = String(pos.coords.longitude);
+        } catch (_) { /* ignore */ }
+      }
+      const locationParams = latitude && longitude ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}` : '';
       
       // ✅ FIX: Try multiple endpoints to find vendors
       let servicesData: any[] = [];
       
-      // Try 1: discover-services endpoint
+      // Try 1: discover-services endpoint (with location for distance and radius filtering)
       try {
-        const endpoint = `/customer/discover-services?category=vet`;
+        const endpoint = `/customer/discover-services?category=vet${locationParams}`;
         const data = await apiClient.get<any>(endpoint);
         console.log('🔵 [VetServiceRouter] discover-services response:', data);
         
@@ -168,7 +190,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       // Try 2: If no data, try services/by-style endpoint
       if (servicesData.length === 0) {
         try {
-          const altEndpoint = `/customer/services/by-style?style=tele&category=vet`;
+          const altEndpoint = `/customer/services/by-style?style=tele&category=vet${locationParams}`;
           const altData = await apiClient.get<any>(altEndpoint);
           console.log('🔵 [VetServiceRouter] services/by-style response:', altData);
           
@@ -187,7 +209,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
       // Try 3: Fallback to /customer/vendors/search (GET /customer/vendors does not exist)
       if (servicesData.length === 0) {
         try {
-          const vendorsEndpoint = `/customer/vendors/search?roleId=veterinarian&limit=50`;
+          const vendorsEndpoint = `/customer/vendors/search?roleId=veterinarian&limit=50${locationParams}`;
           const vendorsData = await apiClient.get<any>(vendorsEndpoint);
           console.log('🔵 [VetServiceRouter] vendors/search fallback response:', vendorsData);
           

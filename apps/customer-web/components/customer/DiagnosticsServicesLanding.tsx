@@ -87,10 +87,33 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
   const loadDiagnosticsData = async () => {
     try {
       setLoading(true);
+      let latitude: string | undefined;
+      let longitude: string | undefined;
+      try {
+        const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
+        const profile = profileRes?.profile || profileRes;
+        if (profile?.latitude != null && profile?.longitude != null) {
+          latitude = String(profile.latitude);
+          longitude = String(profile.longitude);
+        }
+      } catch (_) { /* ignore */ }
+      if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 300000 });
+          });
+          latitude = String(pos.coords.latitude);
+          longitude = String(pos.coords.longitude);
+        } catch (_) { /* ignore */ }
+      }
       const params = new URLSearchParams({ maxDistance: distanceFilter.toString() });
       if (selectedFilter === 'home') params.set('serviceStyle', 'at_home');
       if (selectedFilter === 'center') params.set('serviceStyle', 'at_center');
       if (selectedCategory) params.set('category', selectedCategory);
+      if (latitude && longitude) {
+        params.set('lat', latitude);
+        params.set('lng', longitude);
+      }
       const [vendorsRes, categoriesRes, packagesRes] = await Promise.allSettled([
         apiClient.get<any>(`/customer/diagnostics/vendors-with-tests?${params.toString()}`),
         apiClient.get<any>('/public/diagnostics/categories'),

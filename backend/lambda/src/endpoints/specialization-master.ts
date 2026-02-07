@@ -113,6 +113,9 @@ const CATEGORY_TO_SPEC: Record<string, string> = {
   wellness: 'wellness',
   specialty: 'veterinary',
   boarding: 'boarding',
+  pet_boarding: 'boarding',
+  pet_boarder: 'boarding',
+  pet_daycare: 'boarding',
   nutrition: 'wellness',
   behavioral: 'behavioral',
   behaviour: 'behavioral',
@@ -145,6 +148,23 @@ const ROLE_EXPANSIONS: Record<string, string[]> = {
   nutritionist: ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
   nutritionist_center: ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
   pet_nutritionist: ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
+  pet_nutritionist_center: ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
+  pet_nutritionist_solo: ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
+  // Diagnostics / lab (match vet and diagnostic specs)
+  diagnostics_center: ['diagnostics_center', 'diagnostic_center', 'vet_clinic', 'veterinarian', 'vet_solo'],
+  diagnostic_center: ['diagnostics_center', 'diagnostic_center', 'vet_clinic', 'veterinarian'],
+  diagnostics_provider: ['diagnostics_center', 'diagnostic_center', 'vet_clinic', 'veterinarian'],
+  diagnostics_solo: ['diagnostics_center', 'diagnostic_center', 'vet_clinic', 'veterinarian', 'vet_solo'],
+  // Behavioral
+  behaviorist_center: ['behaviorist_center', 'behaviorist_solo', 'pet_behaviorist', 'behavioral'],
+  behaviorist_solo: ['behaviorist_solo', 'behaviorist_center', 'pet_behaviorist', 'behavioral'],
+  pet_behaviorist: ['pet_behaviorist', 'behaviorist_center', 'behaviorist_solo', 'behavioral'],
+  // E‑commerce, events, adoption, etc.
+  ecommerce_seller: ['ecommerce_seller', 'seller', 'shop'],
+  seller: ['seller', 'ecommerce_seller', 'shop'],
+  event_organizer: ['event_organizer', 'events'],
+  adoption_center: ['adoption_center', 'pet_adoption_center', 'adoption'],
+  pet_adoption_center: ['adoption_center', 'pet_adoption_center', 'adoption'],
 };
 
 /** Normalize display names / variants to canonical codes (frontend may send "Pet Sitter" or "Groomer (Center)" etc) */
@@ -166,6 +186,18 @@ const ROLE_DISPLAY_TO_CODE: Record<string, string> = {
   'nutritionist_center': 'nutritionist_center', 'nutritionist': 'nutritionist',
   'nutritionist_(center)': 'nutritionist_center', 'nutritionist_(solo)': 'nutritionist',
   'pet nutritionist': 'pet_nutritionist', 'pet_nutritionist': 'pet_nutritionist',
+  'pet nutritionist (center)': 'nutritionist_center',
+  'pet_nutritionist_center': 'nutritionist_center', 'pet_nutritionist_solo': 'nutritionist',
+  'diagnostics center': 'diagnostics_center', 'diagnostics_center': 'diagnostics_center',
+  'diagnostic center': 'diagnostics_center', 'diagnostic_center': 'diagnostics_center',
+  'diagnostics provider': 'diagnostics_provider', 'diagnostics_solo': 'diagnostics_solo',
+  'behaviorist center': 'behaviorist_center', 'behaviorist_center': 'behaviorist_center',
+  'behaviorist (solo)': 'behaviorist_solo', 'behaviorist_solo': 'behaviorist_solo',
+  'pet behaviorist': 'pet_behaviorist', 'pet_behaviorist': 'pet_behaviorist',
+  'e-commerce seller': 'ecommerce_seller', 'ecommerce_seller': 'ecommerce_seller',
+  'event organizer': 'event_organizer', 'event_organizer': 'event_organizer',
+  'pet adoption center': 'adoption_center', 'adoption_center': 'adoption_center',
+  'pet_adoption_center': 'adoption_center',
 };
 
 function normalizeRoleForApi(r: string): string {
@@ -293,7 +325,7 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
       let result = await query(sqlQuery, params);
       console.log('[SPEC-MASTER] Query result', { effectiveCategoryId, categoriesFromRoles: categoriesFromRoles.length, expandedRoleIdsCount: expandedRoleIds.length, rowCount: result.rows.length });
       
-      // Fallback: when we have a category (or categories from roles) and role filter returned 0, return all specs for that category so UI shows something
+      // Fallback 1: category+role returned 0 → try category-only (all specs for category)
       if (result.rows.length === 0 && expandedRoleIds.length > 0 && (effectiveCategoryId || categoriesFromRoles.length > 0)) {
         let fallbackQuery = `
           SELECT sm.*, (SELECT COUNT(*) FROM specialization_symptoms ss WHERE ss.specialization_id = sm.specialization_id AND ss.is_active = true) as symptom_count
@@ -310,8 +342,22 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
         fallbackQuery += ` ORDER BY sm.category_id, sm.display_order, sm.name`;
         const fallbackResult = await query(fallbackQuery, fallbackParams);
         if (fallbackResult.rows.length > 0) {
-          console.log('[SPEC-MASTER] Fallback (no role filter) returned', fallbackResult.rows.length, 'rows');
+          console.log('[SPEC-MASTER] Fallback 1 (category-only) returned', fallbackResult.rows.length, 'rows');
           result = fallbackResult;
+        }
+      }
+      // Fallback 2: still 0 and we have roles → try role-only (all specs matching roles, any category)
+      if (result.rows.length === 0 && expandedRoleIds.length > 0) {
+        const roleOnlyResult = await query(
+          `SELECT sm.*, (SELECT COUNT(*) FROM specialization_symptoms ss WHERE ss.specialization_id = sm.specialization_id AND ss.is_active = true) as symptom_count
+           FROM specialization_master sm
+           WHERE sm.is_active = true AND (sm.applicable_roles = '{}' OR sm.applicable_roles IS NULL OR array_length(sm.applicable_roles, 1) IS NULL OR sm.applicable_roles && $1::text[])
+           ORDER BY sm.category_id, sm.display_order, sm.name`,
+          [expandedRoleIds]
+        );
+        if (roleOnlyResult.rows.length > 0) {
+          console.log('[SPEC-MASTER] Fallback 2 (role-only) returned', roleOnlyResult.rows.length, 'rows');
+          result = roleOnlyResult;
         }
       }
       

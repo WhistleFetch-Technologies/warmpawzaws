@@ -100,12 +100,28 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
     try {
       setLoading(true);
       // Rule: Home service = only solo with at_home. Use discover-services with serviceStyle=at_home.
-      const locationParams = (() => {
+      const locationParams = await (async (): Promise<string> => {
         try {
           const lat = typeof localStorage !== 'undefined' && localStorage.getItem('customer_latitude');
           const lng = typeof localStorage !== 'undefined' && localStorage.getItem('customer_longitude');
           if (lat && lng) return `&latitude=${lat}&longitude=${lng}`;
         } catch (_) {}
+        if (typeof phone !== 'undefined' && phone) {
+          try {
+            const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
+            const profile = profileRes?.profile || profileRes;
+            if (profile?.latitude != null && profile?.longitude != null)
+              return `&latitude=${encodeURIComponent(String(profile.latitude))}&longitude=${encodeURIComponent(String(profile.longitude))}`;
+          } catch (_) {}
+        }
+        if (typeof navigator !== 'undefined' && navigator.geolocation) {
+          try {
+            const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+              navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 300000 });
+            });
+            return `&latitude=${encodeURIComponent(String(pos.coords.latitude))}&longitude=${encodeURIComponent(String(pos.coords.longitude))}`;
+          } catch (_) {}
+        }
         return '';
       })();
       let walkerList: any[] = [];
@@ -122,8 +138,8 @@ export function WalkerService({ phone, onBack, onNavigate }: WalkerServiceProps)
       } catch (_) {
         // Fallback: vendors/search with serviceStyle=at_home
         try {
-          const params = new URLSearchParams({ roleId: 'pet_walker', serviceStyle: 'at_home', ...(searchQuery && { query: searchQuery }) });
-          const data = await apiClient.get<{ vendors?: any[]; services?: any[]; staff?: any[] }>(`/customer/vendors/search?${params.toString()}`);
+          const params = new URLSearchParams({ roleId: 'pet_walker', serviceStyle: 'at_home', limit: '50', ...(searchQuery && { query: searchQuery }) });
+          const data = await apiClient.get<{ vendors?: any[]; services?: any[]; staff?: any[] }>(`/customer/vendors/search?${params.toString()}${locationParams}`);
           walkerList = data.vendors || data.services || data.staff || [];
         } catch (__) {
           walkerList = [];

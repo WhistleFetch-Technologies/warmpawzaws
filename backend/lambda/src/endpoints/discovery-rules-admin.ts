@@ -77,7 +77,8 @@ export function registerDiscoveryRulesAdminEndpoints(app: Hono) {
    */
   app.get('/admin/discovery-rules/keys', async (c) => {
     const keys = [
-      { key: 'discovery_radius_km', label: 'Discovery radius (km)', type: 'number', unit: 'km' },
+      { key: 'discovery_radius_km', label: 'Discovery radius (km) – clinic / home default', type: 'number', unit: 'km' },
+      { key: 'discovery_radius_km_tele', label: 'Discovery radius for tele (km); 0 = no limit', type: 'number', unit: 'km' },
       { key: 'discovery_max_results', label: 'Max listing count', type: 'number', unit: 'count' },
       { key: 'discovery_sort_default', label: 'Default sort', type: 'string', unit: '' },
       { key: 'discovery_location_source', label: 'Location source', type: 'string', unit: '' },

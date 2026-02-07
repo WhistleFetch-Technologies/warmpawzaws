@@ -417,18 +417,12 @@ export function HomeServiceTrackingManager({
     try {
       stopLocationTracking();
       
-      const response = await apiClient.post<any>(`/vendor/bookings/${bookingId}/complete-session`, {
+      const response = await apiClient.post<any>(`/vendor/bookings/${bookingId}/complete`, {
         vendorId,
-        endOtp: otp,
-        completedAt: new Date().toISOString(),
-        location: currentLocation,
-        routeSummary: bookingData?.isWalkerSession ? {
-          routePoints: sessionState.routePoints,
-          totalDistance: sessionState.totalDistance,
-          duration: sessionDuration,
-          startTime: sessionState.sessionStartedAt,
-          endTime: new Date().toISOString()
-        } : undefined
+        otp: otp || null,
+        notes: bookingData?.isWalkerSession
+          ? `Route: ${sessionState.totalDistance}m, ${sessionDuration}min`
+          : undefined,
       });
 
       if (response.success) {

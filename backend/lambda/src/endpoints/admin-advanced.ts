@@ -3111,13 +3111,43 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/finance/gst/hsn-codes', async (c) => {
     try {
-      const codes = await query(
-        `SELECT hc.*, tc.category_name as tax_category_name 
-         FROM hsn_codes hc 
-         LEFT JOIN tax_categories tc ON hc.category_id = tc.id 
-         ORDER BY COALESCE(hc.hsn_code, hc.code) ASC`
-      );
-      return c.json({ success: true, codes: codes.rows, hsnCodes: codes.rows });
+      let rows: any[];
+      try {
+        // Try with hsn_code only first (001/600 schema). No reference to hc.code so "column hc.code does not exist" is avoided.
+        const result = await query(
+          `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at,
+                  tc.category_name as tax_category_name
+           FROM hsn_codes hc
+           LEFT JOIN tax_categories tc ON hc.category_id = tc.id
+           ORDER BY COALESCE(hc.hsn_code, '') ASC`
+        );
+        rows = Array.isArray(result) ? result : (result as any)?.rows ?? [];
+      } catch (colError: any) {
+        const msg = String(colError?.message || colError || '');
+        if (msg.includes('hsn_code') && msg.includes('does not exist')) {
+          // Table has "code" only (213 schema), no hsn_code column
+          const result = await query(
+            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::text as tax_category_name
+             FROM hsn_codes hc ORDER BY COALESCE(hc.code, '') ASC`
+          );
+          rows = Array.isArray(result) ? result : (result as any)?.rows ?? [];
+        } else if (msg.includes('category_id') && msg.includes('does not exist')) {
+          const result = await query(
+            `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::text as tax_category_name
+             FROM hsn_codes hc ORDER BY COALESCE(hc.hsn_code, '') ASC`
+          );
+          rows = Array.isArray(result) ? result : (result as any)?.rows ?? [];
+        } else if (msg.includes('code') && msg.includes('does not exist')) {
+          const result = await query(
+            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::text as tax_category_name
+             FROM hsn_codes hc ORDER BY COALESCE(hc.code, '') ASC`
+          );
+          rows = Array.isArray(result) ? result : (result as any)?.rows ?? [];
+        } else {
+          throw colError;
+        }
+      }
+      return c.json({ success: true, codes: rows, hsnCodes: rows });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -3142,7 +3172,17 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       };
       if (categoryId) insertPayload.category_id = categoryId;
 
-      const newCode = await insert('hsn_codes', insertPayload);
+      let newCode;
+      try {
+        newCode = await insert('hsn_codes', insertPayload);
+      } catch (insErr: any) {
+        if (categoryId && String(insErr?.message || '').includes('category_id') && String(insErr?.message || '').includes('does not exist')) {
+          delete insertPayload.category_id;
+          newCode = await insert('hsn_codes', insertPayload);
+        } else {
+          throw insErr;
+        }
+      }
 
       return c.json({
         success: true,
@@ -3167,7 +3207,17 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.isActive !== undefined) updateData.is_active = body.isActive;
       if (body.categoryId !== undefined) updateData.category_id = body.categoryId || null;
 
-      const updated = await update('hsn_codes', { id }, updateData);
+      let updated;
+      try {
+        updated = await update('hsn_codes', { id }, updateData);
+      } catch (updErr: any) {
+        if (updateData.category_id !== undefined && String(updErr?.message || '').includes('category_id') && String(updErr?.message || '').includes('does not exist')) {
+          delete updateData.category_id;
+          updated = await update('hsn_codes', { id }, updateData);
+        } else {
+          throw updErr;
+        }
+      }
 
       return c.json({
         success: true,

@@ -18,7 +18,7 @@
 
 import { Hono } from 'hono';
 import { select, query, insert, update } from '../database/rds-connection';
-import { resolveVendorById } from './vendor-profile';
+import { resolveVendorById, getVendorIdsForAvailabilityLookup } from './vendor-profile';
 import { validateScheduleSlot } from '../utils/scheduling-policy-enforcer';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
@@ -72,16 +72,14 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         });
       }
 
-      // Check vendor exists and is active
+      // Resolve vendor (frontend may pass vendor_identity.id)
       let vendor: any;
       try {
-        const vendors = await select('vendors', { id: vendorId });
-        if (vendors.length === 0) {
+        vendor = await resolveVendorById(vendorId);
+        if (!vendor) {
           return c.json({ error: 'Vendor not found' }, 404);
         }
-        vendor = vendors[0];
       } catch (error: any) {
-        // If UUID validation fails, return empty schedule
         if (error.message?.includes('invalid input syntax for type uuid')) {
           return c.json({
             success: true,
@@ -91,6 +89,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         }
         throw error;
       }
+      const resolvedVendorId = vendor.id;
       if (!vendor.is_active || vendor.status !== 'approved') {
         return c.json({
           success: true,
@@ -123,8 +122,9 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       const dayOfWeek = requestedDate.getDay();
 
       // Get vendor schedule slots for this day (use vendor_availability_v2 table)
-      // Handle both service_style and service_type column names (schema migration difference)
+      // Query by vendor_id OR vendor_identity_id so slots are found regardless of which id was used when saving
       let scheduleSlots;
+      const availabilityIds = await getVendorIdsForAvailabilityLookup(resolvedVendorId);
       
       if (staffId) {
         scheduleSlots = await query(
@@ -138,29 +138,28 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       } else {
         // Try with service_style first, then service_type
         try {
-          // ✅ FIX: Check both service_style (single) AND service_styles (array) for migrated slots
           scheduleSlots = await query(
             `SELECT *, time_window_start as start_time, time_window_end as end_time 
              FROM vendor_availability_v2
-             WHERE vendor_id = $1
+             WHERE vendor_id::text = ANY($1::text[])
              AND day_of_week = $2
              AND (COALESCE(service_style, service_type) = $3 
                   OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
              AND COALESCE(is_enabled, is_available, true) = true
              ORDER BY COALESCE(time_window_start, start_time)`,
-            [vendorId, dayOfWeek, serviceStyle]
+            [availabilityIds, dayOfWeek, serviceStyle]
           );
         } catch (queryErr: any) {
           if (queryErr.message?.includes('service_style') || queryErr.message?.includes('service_styles')) {
             scheduleSlots = await query(
               `SELECT *, start_time as time_window_start, end_time as time_window_end 
                FROM vendor_availability_v2
-               WHERE vendor_id = $1
+               WHERE vendor_id::text = ANY($1::text[])
                AND day_of_week = $2
                AND (service_type = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
                AND COALESCE(is_available, is_enabled, true) = true
                ORDER BY start_time`,
-              [vendorId, dayOfWeek, serviceStyle]
+              [availabilityIds, dayOfWeek, serviceStyle]
             );
           } else {
             throw queryErr;
@@ -184,7 +183,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
          AND booking_date = $2
          AND status NOT IN ('cancelled', 'no_show')
          ${staffId ? 'AND staff_id = $3' : ''}`,
-        staffId ? [vendorId, date, staffId] : [vendorId, date]
+        staffId ? [resolvedVendorId, date, staffId] : [resolvedVendorId, date]
       );
 
       // ✅ ENFORCE: Get scheduling policies for validation
@@ -282,11 +281,12 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         return emptyResponse();
       }
 
-      // ✅ Resolve vendor (frontend may pass vendor_identity id; data is stored by vendors.id)
+      // ✅ Resolve vendor (frontend may pass vendor_identity id; data may be stored by vendors.id or vendor_identity.id)
       const vendor = await resolveVendorById(trimmedId);
       const actualVendorId = vendor?.id ?? trimmedId;
+      const availabilityIds = await getVendorIdsForAvailabilityLookup(actualVendorId);
 
-      // ✅ Use vendor_availability_v2 (advance scheduling). Do not reference service_style — schema may have service_type only (migration 057).
+      // ✅ Use vendor_availability_v2; query by vendor_id::text = ANY($1::text[]) so slots are found when stored under either vendors.id or vendor_identity.id
       const scheduleByDay: Record<number, any[]> = {};
       for (let i = 0; i < 7; i++) {
         scheduleByDay[i] = [];
@@ -299,9 +299,9 @@ export function registerVendorScheduleEndpoints(app: Hono) {
                   COALESCE(time_window_end, end_time) AS time_window_end,
                   COALESCE(is_enabled, is_available, true) AS is_enabled
            FROM vendor_availability_v2
-           WHERE vendor_id = $1
+           WHERE vendor_id::text = ANY($1::text[])
            ORDER BY day_of_week, COALESCE(time_window_start, start_time)`,
-          [actualVendorId]
+          [availabilityIds]
         );
       } catch (error: any) {
         if (error.message?.includes('invalid input syntax for type uuid')) {
@@ -314,9 +314,9 @@ export function registerVendorScheduleEndpoints(app: Hono) {
                       start_time AS time_window_start, end_time AS time_window_end,
                       is_available AS is_enabled
                FROM vendor_availability_v2
-               WHERE vendor_id = $1
+               WHERE vendor_id::text = ANY($1::text[])
                ORDER BY day_of_week, start_time`,
-              [actualVendorId]
+              [availabilityIds]
             );
           } catch (_) {
             return emptyResponse();
@@ -356,11 +356,12 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
       const scheduleData = await c.req.json();
 
-      // Verify vendor exists
-      const vendors = await select('vendors', { id: vendorId });
-      if (vendors.length === 0) {
+      // Resolve vendor (frontend may pass vendor_identity.id; use canonical vendors.id for storage)
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
+      const resolvedVendorId = vendor.id;
 
       // Expect array of schedule slots
       const slots = Array.isArray(scheduleData.slots) ? scheduleData.slots : [scheduleData];
@@ -378,7 +379,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
 
         // ✅ ENFORCE: Admin policies, past booking, double booking
         const validation = await validateScheduleSlot(
-          vendorId,
+          resolvedVendorId,
           dayOfWeek,
           timeWindowStart,
           timeWindowEnd,
@@ -420,7 +421,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
              AND COALESCE(service_style, service_type) = $3
              AND COALESCE(time_window_start, start_time) = $4`,
             [
-              vendorId,
+              resolvedVendorId,
               dayOfWeek,
               serviceStyle,
               timeWindowStart,
@@ -435,7 +436,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
                AND day_of_week = $2
                AND service_type = $3
                AND start_time = $4`,
-              [vendorId, dayOfWeek, serviceStyle, timeWindowStart]
+              [resolvedVendorId, dayOfWeek, serviceStyle, timeWindowStart]
             );
           }
         }
@@ -449,7 +450,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              RETURNING *`,
             [
-              vendorId,
+              resolvedVendorId,
               dayOfWeek,
               serviceStyle,
               timeWindowStart,
@@ -468,7 +469,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
                VALUES ($1, $2, $3, $4, $5, $6)
                RETURNING *`,
               [
-                vendorId,
+                resolvedVendorId,
                 dayOfWeek,
                 serviceStyle,
                 timeWindowStart,
@@ -1562,33 +1563,60 @@ export function registerVendorScheduleEndpoints(app: Hono) {
             continue;
           }
           
-          // Use correct column names for the vendor_availability_v2 table
-          // lead_time_by_style: per-style lead time (at_home=travel, at_center=prep, tele=setup); buffer_time deprecated
-          const result = await query(
-            `INSERT INTO vendor_availability_v2 (
-              vendor_id, day_of_week, 
-              start_time, end_time,
-              time_window_start, time_window_end,
-              service_styles, service_type, 
-              location_data, buffer_time, lead_time_by_style, max_capacity, is_available
-            ) VALUES ($1, $2, $3::TIME, $4::TIME, $5::TIME, $6::TIME, $7, $8, $9, $10, $11, $12, $13)
-            RETURNING id`,
-            [
-              finalVendorId,
-              slot.dayOfWeek ?? slot.day_of_week,
-              normalizedStartTime,
-              normalizedEndTime,
-              normalizedStartTime,
-              normalizedEndTime,
-              serviceStyles,
-              serviceStyles[0] || 'at_center',
-              locationData ? JSON.stringify(locationData) : null,
-              null, // buffer_time deprecated; use lead_time_by_style per style
-              leadTimeByStyle ? JSON.stringify(leadTimeByStyle) : null,
-              slot.maxCapacity ?? slot.max_capacity ?? 1,
-              slot.isEnabled ?? slot.is_enabled ?? true,
-            ]
-          );
+          // Use correct column names for the vendor_availability_v2 table (supports both 006 and 057+ schemas)
+          const isEnabledVal = slot.isEnabled ?? slot.is_enabled ?? true;
+          let result: { rows: any[] } = { rows: [] };
+          try {
+            result = await query(
+              `INSERT INTO vendor_availability_v2 (
+                vendor_id, day_of_week,
+                start_time, end_time,
+                time_window_start, time_window_end,
+                service_styles, service_type,
+                location_data, buffer_time, lead_time_by_style, max_capacity, is_available
+              ) VALUES ($1, $2, $3::TIME, $4::TIME, $5::TIME, $6::TIME, $7, $8, $9, $10, $11, $12, $13)
+              RETURNING id`,
+              [
+                finalVendorId,
+                slot.dayOfWeek ?? slot.day_of_week,
+                normalizedStartTime,
+                normalizedEndTime,
+                normalizedStartTime,
+                normalizedEndTime,
+                serviceStyles,
+                serviceStyles[0] || 'at_center',
+                locationData ? JSON.stringify(locationData) : null,
+                null,
+                leadTimeByStyle ? JSON.stringify(leadTimeByStyle) : null,
+                slot.maxCapacity ?? slot.max_capacity ?? 1,
+                isEnabledVal,
+              ]
+            );
+          } catch (insertErr: any) {
+            const msg = String(insertErr?.message || '');
+            if (msg.includes('is_available') && msg.includes('does not exist')) {
+              // 006 schema: table has is_enabled, no is_available; may also have time_window_* and service_style only
+              result = await query(
+                `INSERT INTO vendor_availability_v2 (
+                  vendor_id, day_of_week,
+                  time_window_start, time_window_end,
+                  service_style, slot_duration_minutes, max_capacity, is_enabled
+                ) VALUES ($1, $2, $3::TIME, $4::TIME, $5, 30, $6, $7)
+                RETURNING id`,
+                [
+                  finalVendorId,
+                  slot.dayOfWeek ?? slot.day_of_week,
+                  normalizedStartTime,
+                  normalizedEndTime,
+                  serviceStyles[0] || 'at_center',
+                  slot.maxCapacity ?? slot.max_capacity ?? 1,
+                  isEnabledVal,
+                ]
+              );
+            } else {
+              throw insertErr;
+            }
+          }
           if (result.rows.length > 0) {
             insertedSlots.push(result.rows[0]);
           }
@@ -1636,6 +1664,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
       const actualVendorId = vendor.id;
+      const availabilityIds = await getVendorIdsForAvailabilityLookup(actualVendorId);
 
       // Allowed service styles from role (solo vs business) for slot creation UI
       let allowedServiceStyles: string[] = [];
@@ -1649,13 +1678,32 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         }
       } catch (_) { /* ignore */ }
 
-      // Get availability slots (use is_available column, not is_enabled)
-      const slotsResult = await query(
-        `SELECT * FROM vendor_availability_v2
-         WHERE vendor_id = $1 AND (is_available = true OR is_available IS NULL)
-         ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC`,
-        [actualVendorId]
-      ).catch(() => ({ rows: [] }));
+      // Get availability slots (query by vendor_id OR vendor_identity_id so slots are found regardless of which id was used when saving)
+      let slotsResult: { rows: any[] } = { rows: [] };
+      try {
+        slotsResult = await query(
+          `SELECT * FROM vendor_availability_v2
+           WHERE vendor_id::text = ANY($1::text[]) AND (COALESCE(is_available, is_enabled, true) = true OR (is_available IS NULL AND is_enabled IS NULL))
+           ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC`,
+          [availabilityIds]
+        );
+      } catch (_) {
+        try {
+          slotsResult = await query(
+            `SELECT * FROM vendor_availability_v2
+             WHERE vendor_id::text = ANY($1::text[]) AND (is_enabled = true OR is_enabled IS NULL)
+             ORDER BY day_of_week ASC, time_window_start ASC`,
+            [availabilityIds]
+          );
+        } catch (_) {
+          slotsResult = await query(
+            `SELECT * FROM vendor_availability_v2
+             WHERE vendor_id::text = ANY($1::text[]) AND (is_available = true OR is_available IS NULL)
+             ORDER BY day_of_week ASC, start_time ASC`,
+            [availabilityIds]
+          ).catch(() => ({ rows: [] }));
+        }
+      }
 
       // Get breaks
       const breaksResult = await query(

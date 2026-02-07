@@ -99,13 +99,34 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   const loadTrainingData = async () => {
     try {
       setLoading(true);
-      
+
+      let latitude: string | undefined;
+      let longitude: string | undefined;
+      try {
+        const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
+        const profile = profileRes?.profile || profileRes;
+        if (profile?.latitude != null && profile?.longitude != null) {
+          latitude = String(profile.latitude);
+          longitude = String(profile.longitude);
+        }
+      } catch (_) { /* ignore */ }
+      if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 300000 });
+          });
+          latitude = String(pos.coords.latitude);
+          longitude = String(pos.coords.longitude);
+        } catch (_) { /* ignore */ }
+      }
+      const locationParams = latitude && longitude ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}` : '';
+
       // ✅ Align with Vet: discover by category (service discovery respects category/role from dashboard tiles)
       let trainerServices: any[] = [];
       
       // Try 1: discover-services by category (same pattern as VetServiceRouter)
       try {
-        const endpoint = `/customer/discover-services?category=training`;
+        const endpoint = `/customer/discover-services?category=training${locationParams}`;
         const data = await apiClient.get<any>(endpoint);
         console.log('🔵 [TrainingServiceRouter] discover-services response:', data);
         
@@ -129,7 +150,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       // Try 2: services/by-style (at_home = at home training)
       if (trainerServices.length === 0) {
         try {
-          const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_home&category=training`);
+          const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_home&category=training${locationParams}`);
           const altData = (altRes as any)?.providers ?? (altRes as any)?.vendors ?? altRes;
           if (Array.isArray(altData)) trainerServices = altData;
           else if (altData?.services) trainerServices = altData.services;
@@ -141,7 +162,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       // Try 3: Fallback to /customer/vendors/search (GET /customer/vendors does not exist)
       if (trainerServices.length === 0) {
         try {
-          const vendorsData = await apiClient.get<any>(`/customer/vendors/search?roleId=pet_trainer&limit=50`);
+          const vendorsData = await apiClient.get<any>(`/customer/vendors/search?roleId=pet_trainer&limit=50${locationParams}`);
           if (Array.isArray(vendorsData)) trainerServices = vendorsData;
           else if (vendorsData?.vendors) trainerServices = vendorsData.vendors;
           else if (vendorsData?.results) trainerServices = vendorsData.results;

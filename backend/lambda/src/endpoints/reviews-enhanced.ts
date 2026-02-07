@@ -52,18 +52,15 @@ class CreateReviewHandler extends BaseHandler {
         return this.error('Review already submitted for this booking', 400);
       }
 
-      // Create review
+      // Create review – use only columns that exist in reviews table (comment, service_type, is_published)
       const [newReview] = await insert('reviews', {
         booking_id: bookingId,
         vendor_id: vendorId,
-        staff_id: staffId || null,
         customer_id: customerId || null,
-        customer_phone: customerPhone,
         rating,
-        review: review || null,
-        tags: tags || [],
-        service_style: serviceStyle || 'at_center',
-        status: 'published',
+        comment: review || null,
+        service_type: serviceStyle || 'at_center',
+        is_published: true,
         created_at: new Date(),
         updated_at: new Date(),
       });
@@ -99,7 +96,7 @@ class CreateReviewHandler extends BaseHandler {
       const { rows } = await query(
         `SELECT AVG(rating) as avg_rating, COUNT(*) as total_reviews
          FROM reviews 
-         WHERE vendor_id = $1 AND status = 'published'`,
+         WHERE vendor_id = $1 AND is_published = true`,
         [vendorId]
       );
 
@@ -120,7 +117,7 @@ class CreateReviewHandler extends BaseHandler {
       const { rows } = await query(
         `SELECT AVG(rating) as avg_rating, COUNT(*) as total_reviews
          FROM reviews 
-         WHERE staff_id = $1 AND status = 'published'`,
+         WHERE staff_id = $1 AND is_published = true`,
         [staffId]
       );
 
@@ -200,9 +197,8 @@ class GetVendorReviewsHandler extends BaseHandler {
           r.id,
           r.booking_id,
           r.rating,
-          r.review,
-          r.tags,
-          r.service_style,
+          r.comment as review,
+          r.service_type as service_style,
           r.created_at,
           c.full_name as customer_name,
           c.profile_photo_url as customer_photo,
@@ -211,7 +207,7 @@ class GetVendorReviewsHandler extends BaseHandler {
         LEFT JOIN customers c ON c.id = r.customer_id
         LEFT JOIN bookings b ON b.id = r.booking_id
         LEFT JOIN vendor_services vs ON vs.id = b.service_id
-        WHERE r.vendor_id = $1 AND r.status = 'published'
+        WHERE r.vendor_id = $1 AND r.is_published = true
       `;
       const params: any[] = [vendorId];
 
@@ -227,7 +223,7 @@ class GetVendorReviewsHandler extends BaseHandler {
 
       // Get total count
       const { rows: countResult } = await query(
-        `SELECT COUNT(*) as total FROM reviews WHERE vendor_id = $1 AND status = 'published'`,
+        `SELECT COUNT(*) as total FROM reviews WHERE vendor_id = $1 AND is_published = true`,
         [vendorId]
       );
 
@@ -235,7 +231,7 @@ class GetVendorReviewsHandler extends BaseHandler {
       const { rows: distribution } = await query(
         `SELECT rating, COUNT(*) as count 
          FROM reviews 
-         WHERE vendor_id = $1 AND status = 'published'
+         WHERE vendor_id = $1 AND is_published = true
          GROUP BY rating
          ORDER BY rating DESC`,
         [vendorId]
@@ -245,7 +241,7 @@ class GetVendorReviewsHandler extends BaseHandler {
       const { rows: avgResult } = await query(
         `SELECT AVG(rating) as average, COUNT(*) as total
          FROM reviews 
-         WHERE vendor_id = $1 AND status = 'published'`,
+         WHERE vendor_id = $1 AND is_published = true`,
         [vendorId]
       );
 
@@ -256,7 +252,7 @@ class GetVendorReviewsHandler extends BaseHandler {
           bookingId: r.booking_id,
           rating: r.rating,
           review: r.review,
-          tags: r.tags || [],
+          tags: [],
           serviceStyle: r.service_style,
           customerName: r.customer_name || 'Customer',
           customerPhoto: r.customer_photo,

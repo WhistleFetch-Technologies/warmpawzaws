@@ -66,13 +66,35 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   const loadGroomingData = async () => {
     try {
       setLoading(true);
-      
+
+      // Get customer location for distance/radius (same as VetServiceRouter)
+      let latitude: string | undefined;
+      let longitude: string | undefined;
+      try {
+        const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
+        const profile = profileRes?.profile || profileRes;
+        if (profile?.latitude != null && profile?.longitude != null) {
+          latitude = String(profile.latitude);
+          longitude = String(profile.longitude);
+        }
+      } catch (_) { /* ignore */ }
+      if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 300000 });
+          });
+          latitude = String(pos.coords.latitude);
+          longitude = String(pos.coords.longitude);
+        } catch (_) { /* ignore */ }
+      }
+      const locationParams = latitude && longitude ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}` : '';
+
       // ✅ Align with Vet: discover by category (service discovery respects category/role from dashboard tiles)
       let groomerServices: any[] = [];
       
       // Try 1: discover-services by category (same pattern as VetServiceRouter)
       try {
-        const endpoint = `/customer/discover-services?category=grooming`;
+        const endpoint = `/customer/discover-services?category=grooming${locationParams}`;
         const data = await apiClient.get<any>(endpoint);
         console.log('🔵 [GroomingServiceRouter] discover-services response:', data);
         
@@ -96,7 +118,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       // Try 2: services/by-style (at_center = grooming centre)
       if (groomerServices.length === 0) {
         try {
-          const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_center&category=grooming`);
+          const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_center&category=grooming${locationParams}`);
           const altData = (altRes as any)?.providers ?? (altRes as any)?.vendors ?? altRes;
           if (Array.isArray(altData)) groomerServices = altData;
           else if (altData?.services) groomerServices = altData.services;
@@ -108,7 +130,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       // Try 3: Fallback to /customer/vendors/search (GET /customer/vendors does not exist)
       if (groomerServices.length === 0) {
         try {
-          const vendorsData = await apiClient.get<any>(`/customer/vendors/search?roleId=pet_groomer&limit=50`);
+          const vendorsData = await apiClient.get<any>(`/customer/vendors/search?roleId=pet_groomer&limit=50${locationParams}`);
           if (Array.isArray(vendorsData)) groomerServices = vendorsData;
           else if (vendorsData?.vendors) groomerServices = vendorsData.vendors;
           else if (vendorsData?.results) groomerServices = vendorsData.results;

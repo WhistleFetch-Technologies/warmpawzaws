@@ -44,6 +44,49 @@ function normalizePhoneForLookup(phone: string | undefined): string | undefined 
   return String(phone).replace(/\D/g, '');
 }
 
+/**
+ * Get all vendor IDs that may have availability stored (vendors.id + vendor_identity.id for same vendor).
+ * Use for vendor_availability_v2 queries so slots are found whether stored by vendor_id or vendor_identity_id.
+ * Returns string[] for vendor_id::text = ANY($1::text[]) in queries.
+ * Order: ids[0] = vendors.id (canonical), ids[1+] = vendor_identity.id(s). Use ids[0] as vendorId and ids[1] as vendorIdentityId in API responses.
+ */
+export async function getVendorIdsForAvailabilityLookup(vendorIdOrResolved: string): Promise<string[]> {
+  const vendor = await resolveVendorById(vendorIdOrResolved);
+  if (!vendor || !vendor.id) return [String(vendorIdOrResolved || '')];
+  const ids: string[] = [String(vendor.id)];
+  try {
+    const res = await query(
+      `SELECT id FROM vendor_identity WHERE vendor_id::text = $1 OR phone = $2`,
+      [String(vendor.id), vendor.phone || '']
+    );
+    for (const row of res.rows || []) {
+      if (row?.id) {
+        const s = String(row.id);
+        if (!ids.includes(s)) ids.push(s);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return ids;
+}
+
+/** Get vendor_identity.id for a vendor (by vendors.id). Returns null if none. For API responses so clients have both vendorId and vendorIdentityId. */
+export async function getVendorIdentityId(vendorIdOrResolved: string): Promise<string | null> {
+  const vendor = await resolveVendorById(vendorIdOrResolved);
+  if (!vendor || !vendor.id) return null;
+  try {
+    const res = await query(
+      `SELECT id FROM vendor_identity WHERE vendor_id::text = $1 OR phone = $2 LIMIT 1`,
+      [String(vendor.id), vendor.phone || '']
+    );
+    const row = res.rows?.[0];
+    return row?.id ? String(row.id) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Resolve vendor by ID - checks vendors, then vendor_identity with auto-create. Returns vendor row or null. Exported for use by vendor-schedule. */
 export async function resolveVendorById(vendorId: string): Promise<any | null> {
   const trimmedId = (vendorId || '').trim();
@@ -206,9 +249,16 @@ export function registerVendorProfileEndpoints(app: Hono) {
       }
       
       // Also fetch vendor_identity for onboarding status (handle missing vendor_id column gracefully)
+      // Prefer APPROVED/ACTIVATED identity when multiple rows exist for same phone (re-applications)
       if (phone) {
         try {
-          const identities = await select('vendor_identity', { phone });
+          const identitiesResult = await query(
+            `SELECT * FROM vendor_identity WHERE phone = $1 ORDER BY 
+             (CASE WHEN onboarding_status IN ('APPROVED', 'ACTIVATED') THEN 0 ELSE 1 END),
+             updated_at DESC NULLS LAST`,
+            [phone]
+          );
+          const identities = identitiesResult?.rows || [];
           if (identities.length > 0) {
             identityData = identities[0];
             // Try to link vendor via vendor_id if column exists and vendor not found yet
@@ -222,6 +272,13 @@ export function registerVendorProfileEndpoints(app: Hono) {
                 console.warn(`[PROFILE-GET] Error finding vendor by identity.vendor_id:`, e);
               }
             }
+            // Try vendor by phone if identity has vendor_id but select failed (e.g. different id)
+            if (!vendor && identityData?.vendor_id) {
+              try {
+                const vByPhone = await select('vendors', { phone });
+                if (vByPhone.length > 0) vendor = vByPhone[0];
+              } catch (_e) { /* ignore */ }
+            }
           }
         } catch (e) {
           console.warn(`[PROFILE-GET] Error fetching vendor_identity:`, e);
@@ -231,19 +288,20 @@ export function registerVendorProfileEndpoints(app: Hono) {
       if (!vendor) {
         // No vendor record found - check if there's identity data for onboarding
         if (identityData) {
-          // Vendor is in onboarding but not yet approved (no vendors table entry)
           const identityStatus = identityData.onboarding_status || 'INIT';
-          console.log(`📝 [PROFILE-GET] Vendor in onboarding, status: ${identityStatus}`);
+          const isApproved = identityStatus === 'APPROVED' || identityStatus === 'ACTIVATED';
+          // Approved vendors must see dashboard (isActive/status=active) even before vendors row exists
+          console.log(`📝 [PROFILE-GET] Vendor in onboarding, status: ${identityStatus}, isApproved: ${isApproved}`);
           return c.json({
             success: true,
             vendor: {
               id: identityData.id,
               phone: phone,
-              status: identityStatus.toLowerCase(),
-              isActive: false,
+              status: isApproved ? 'active' : identityStatus.toLowerCase(),
+              isActive: isApproved,
               onboardingStatus: identityStatus,
             },
-            status: identityStatus === 'APPROVED' ? 'approved' : (identityStatus === 'INIT' ? 'new' : identityStatus.toLowerCase()),
+            status: isApproved ? 'active' : (identityStatus === 'INIT' ? 'new' : identityStatus.toLowerCase()),
             message: 'Vendor in onboarding'
           });
         }
@@ -257,27 +315,28 @@ export function registerVendorProfileEndpoints(app: Hono) {
         });
       }
 
-      // Get application data if exists (handle missing columns gracefully)
+      // Get application data (vendor_onboarding_applications uses vendor_identity_id)
       let applicationData = null;
       try {
-        // Try to find by vendor_id first
-        const applications = await select('vendor_onboarding_applications', { vendor_id: vendor.id });
-        if (applications.length > 0) {
-          applicationData = applications[0];
+        let identityForApp = identityData;
+        if (!identityForApp && phone) {
+          const idResult = await query('SELECT * FROM vendor_identity WHERE vendor_id = $1 OR phone = $2 LIMIT 1', [vendor.id, phone]);
+          identityForApp = (idResult as any).rows?.[0];
         }
-      } catch (e) {
-        // vendor_id column might not exist, try by phone
-        try {
-          const appsByPhone = await query(
-            'SELECT * FROM vendor_onboarding_applications WHERE application_payload->>\'phone\' = $1 ORDER BY created_at DESC LIMIT 1',
+        if (identityForApp?.id) {
+          const apps = await select('vendor_onboarding_applications', { vendor_identity_id: identityForApp.id });
+          if (apps.length > 0) applicationData = apps[0];
+        }
+        if (!applicationData && phone) {
+          const appsResult = await query(
+            'SELECT voa.* FROM vendor_onboarding_applications voa JOIN vendor_identity vi ON vi.id = voa.vendor_identity_id WHERE vi.phone = $1 ORDER BY voa.updated_at DESC LIMIT 1',
             [phone]
           );
-          if (appsByPhone.rows?.length > 0) {
-            applicationData = appsByPhone.rows[0];
-          }
-        } catch (e2) {
-          console.warn('[PROFILE-GET] Error fetching applications:', e2);
+          const rows = (appsResult as any).rows;
+          if (rows?.length > 0) applicationData = rows[0];
         }
+      } catch (e) {
+        console.warn('[PROFILE-GET] Error fetching applications:', e);
       }
 
       // Get role info
@@ -304,7 +363,8 @@ export function registerVendorProfileEndpoints(app: Hono) {
       } else if (vendor.status === 'rejected') {
         uiStatus = 'rejected';
       } else if (applicationData?.status) {
-        uiStatus = applicationData.status;
+        const appStatus = String(applicationData.status).toLowerCase();
+        uiStatus = appStatus === 'approved' ? (vendor.is_active ? 'active' : 'approved') : appStatus;
       }
 
       console.log(`✅ [PROFILE-GET] Found vendor: ${vendor.id}, status: ${uiStatus}`);

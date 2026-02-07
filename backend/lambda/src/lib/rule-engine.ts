@@ -12,6 +12,8 @@ import { query } from '../database/rds-connection';
 
 export type DiscoveryRuleSet = {
   discovery_radius_km?: number;
+  /** Tele discovery: 0 = no distance limit (no travel). Configurable in rule book per service_style=tele. */
+  discovery_radius_km_tele?: number;
   discovery_max_results?: number;
   discovery_sort_default?: string;
   discovery_location_source?: string;
@@ -33,6 +35,7 @@ export type DiscoveryRuleSet = {
 /** Platform defaults (fallback when DB has no override). */
 const PLATFORM_DEFAULTS: DiscoveryRuleSet = {
   discovery_radius_km: 50,
+  discovery_radius_km_tele: 0, // 0 = no distance limit for tele (no travel dependency)
   discovery_max_results: 50,
   discovery_sort_default: 'relevance',
   discovery_location_source: 'mobile_then_base',

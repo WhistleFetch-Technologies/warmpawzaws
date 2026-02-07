@@ -1,7 +1,7 @@
 'use client';
 
 import { X, Package } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { useTaxCategories } from '@/hooks/useTaxCategories';
@@ -29,6 +29,21 @@ const ROLE_DISPLAY_TO_CODE: Record<string, string> = {
   'nutritionist (center)': 'nutritionist_center', 'nutritionist (solo)': 'nutritionist',
   nutritionist_center: 'nutritionist_center', nutritionist: 'nutritionist',
   'pet nutritionist': 'pet_nutritionist', pet_nutritionist: 'pet_nutritionist',
+  'pet nutritionist (center)': 'nutritionist_center',
+  'pet nutritionist (solo)': 'nutritionist',
+  pet_nutritionist_center: 'nutritionist_center',
+  pet_nutritionist_solo: 'nutritionist',
+  'diagnostics center': 'diagnostics_center', diagnostics_center: 'diagnostics_center',
+  'diagnostic center': 'diagnostics_center', diagnostic_center: 'diagnostics_center',
+  'diagnostics provider': 'diagnostics_provider', diagnostics_provider: 'diagnostics_provider',
+  'diagnostics (solo)': 'diagnostics_solo', diagnostics_solo: 'diagnostics_solo',
+  'behaviorist center': 'behaviorist_center', behaviorist_center: 'behaviorist_center',
+  'behaviorist (solo)': 'behaviorist_solo', behaviorist_solo: 'behaviorist_solo',
+  'pet behaviorist': 'pet_behaviorist', pet_behaviorist: 'pet_behaviorist',
+  'e-commerce seller': 'ecommerce_seller', ecommerce_seller: 'ecommerce_seller',
+  'event organizer': 'event_organizer', event_organizer: 'event_organizer',
+  'pet adoption center': 'adoption_center', adoption_center: 'adoption_center',
+  pet_adoption_center: 'adoption_center',
 };
 function toCanonicalRoleCode(v: string): string {
   const raw = (v || '').toString().trim();
@@ -76,6 +91,7 @@ export function AddServiceModal({
   const [roles, setRoles] = useState<any[]>([]);
   const [specializationsByCategory, setSpecializationsByCategory] = useState<{ specializationId: string; name: string; displayName: string }[]>([]);
   const [loadingSpecializations, setLoadingSpecializations] = useState(false);
+  const specLoadIdRef = useRef(0);
   const { taxCategories } = useTaxCategories({ isActive: true });
   const { hsnCodes } = useHSNCodes({ isActive: true });
   const [formData, setFormData] = useState({
@@ -93,6 +109,8 @@ export function AddServiceModal({
     taxCategoryId: '' as string,
     hsnCodeId: '' as string,
   });
+  const formDataRef = useRef(formData);
+  formDataRef.current = formData;
 
   useEffect(() => {
     if (isOpen) {
@@ -146,7 +164,8 @@ export function AddServiceModal({
     return (c?.category_id || c?.id || categoryIdVal) as string;
   }, [categories]);
 
-  // Load specializations - extracted so we can call directly on role change (guarantees dynamic update)
+  // Load specializations - extracted so we can call directly on role change (guarantees dynamic update).
+  // Use request id so only the latest response updates state when user changes roles quickly.
   const loadSpecializations = useCallback((categoryIdVal: string, rolesArr: string[]) => {
     const hasCategory = !!categoryIdVal;
     const hasRoles = rolesArr.length > 0;
@@ -156,11 +175,11 @@ export function AddServiceModal({
     }
     const canonRoles = rolesArr.map(toCanonicalRoleCode).filter(Boolean);
     const roleIdsParam = canonRoles.length > 0 ? `roleIds=${encodeURIComponent(canonRoles.join(','))}` : '';
-    // Use slug when available so backend specialization_master (slug-based) matches; backend also resolves UUID if needed
     const categorySlug = getCategorySlugForSpec(categoryIdVal) || categoryIdVal;
     const categoryParam = hasCategory ? `categoryId=${encodeURIComponent(categorySlug)}` : '';
     const params = [categoryParam, roleIdsParam].filter(Boolean).join('&');
     const query = `/admin/specializations?${params}`;
+    const reqId = ++specLoadIdRef.current;
     if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
       console.log('[AddServiceModal] Loading specializations', { categoryIdVal, categorySlug, canonRoles, query });
     }
@@ -168,6 +187,7 @@ export function AddServiceModal({
     apiClient
       .get<any>(query)
       .then((data) => {
+        if (reqId !== specLoadIdRef.current) return;
         const list = (data.specializations ?? data.data ?? []).map((s: any) => ({
           specializationId: s.specializationId ?? s.specialization_id,
           name: s.name ?? '',
@@ -181,10 +201,13 @@ export function AddServiceModal({
         });
       })
       .catch((err) => {
+        if (reqId !== specLoadIdRef.current) return;
         if (typeof window !== 'undefined') console.warn('[AddServiceModal] Specializations API failed', query, err);
         setSpecializationsByCategory([]);
       })
-      .finally(() => setLoadingSpecializations(false));
+      .finally(() => {
+        if (reqId === specLoadIdRef.current) setLoadingSpecializations(false);
+      });
   }, [getCategorySlugForSpec]);
 
   // Trigger load when category or roles change
@@ -196,8 +219,8 @@ export function AddServiceModal({
   const effectiveHandleChange = (field: string, value: any) => {
     handleChange(field, value);
     if (field === 'applicableRoles') {
-      // Immediately fetch with new roles (don't wait for re-render)
-      const cat = formData.categoryId || '';
+      // Immediately fetch with new roles - use ref to avoid stale closure
+      const cat = formDataRef.current.categoryId || '';
       loadSpecializations(cat, Array.isArray(value) ? value : []);
     }
   };
@@ -422,13 +445,30 @@ export function AddServiceModal({
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] transition-colors bg-white"
               >
                 <option value="">Select duration</option>
-                <option value="15">15 minutes</option>
-                <option value="30">30 minutes</option>
-                <option value="45">45 minutes</option>
-                <option value="60">1 hour</option>
-                <option value="90">1.5 hours</option>
-                <option value="120">2 hours</option>
+                <optgroup label="Minutes">
+                  <option value="15">15 minutes</option>
+                  <option value="30">30 minutes</option>
+                  <option value="45">45 minutes</option>
+                </optgroup>
+                <optgroup label="Hours">
+                  <option value="60">1 hour</option>
+                  <option value="90">1.5 hours</option>
+                  <option value="120">2 hours</option>
+                  <option value="240">4 hours</option>
+                  <option value="480">8 hours</option>
+                  <option value="720">12 hours</option>
+                  <option value="1440">24 hours</option>
+                </optgroup>
+                <optgroup label="Days (nightly / multi-day)">
+                  <option value="2880">2 days</option>
+                  <option value="4320">3 days</option>
+                  <option value="5760">4 days</option>
+                  <option value="7200">5 days</option>
+                  <option value="8640">6 days</option>
+                  <option value="10080">7 days</option>
+                </optgroup>
               </select>
+              <p className="text-xs text-gray-500 mt-1">Stored in minutes (e.g. 24h = 1440, 2 days = 2880)</p>
             </div>
           </div>
 
@@ -551,6 +591,11 @@ export function AddServiceModal({
                       nutritionist_center: ['nutritionist_center', 'nutritionist', 'pet_nutritionist'],
                       nutritionist: ['nutritionist', 'nutritionist_center', 'pet_nutritionist'],
                       pet_nutritionist: ['pet_nutritionist', 'nutritionist', 'nutritionist_center'],
+                      diagnostics_center: ['diagnostics_center', 'diagnostic_center', 'diagnostics_provider', 'diagnostics_solo'],
+                      diagnostic_center: ['diagnostics_center', 'diagnostic_center'],
+                      behaviorist_center: ['behaviorist_center', 'behaviorist_solo', 'pet_behaviorist'],
+                      behaviorist_solo: ['behaviorist_solo', 'behaviorist_center', 'pet_behaviorist'],
+                      pet_behaviorist: ['pet_behaviorist', 'behaviorist_center', 'behaviorist_solo'],
                     };
                     return (
                       <label key={role.id} className="flex items-center gap-2 p-2 hover:bg-white rounded cursor-pointer transition-colors">

@@ -265,21 +265,22 @@ export function VetBookingRouter({
 
   // Load slots when date is selected and vendor is known
   useEffect(() => {
-    if (selectedDate && doctorId) {
+    const effectiveVendorId = vendorId || doctorId;
+    if (selectedDate && effectiveVendorId) {
       loadTimeSlots(selectedDate);
     } else {
-      // Reset slots when date is cleared
       setTimeSlots([]);
     }
-  }, [selectedDate, doctorId, selectedServiceType]);
+  }, [selectedDate, vendorId, doctorId, selectedServiceType]);
 
   const loadTimeSlots = async (date: string) => {
-    if (!doctorId) return;
-    
+    const effectiveVendorId = vendorId || doctorId;
+    if (!effectiveVendorId) return;
+
     try {
       setLoadingSlots(true);
       const response = await apiClient.get(
-        `/customer/vendor/${doctorId}/available-slots?date=${date}&serviceStyle=${selectedServiceType}`
+        `/customer/vendor/${effectiveVendorId}/available-slots?date=${date}&serviceStyle=${selectedServiceType}`
       ) as any;
 
       if (response.success && response.slots) {
@@ -692,6 +693,29 @@ export function VetBookingRouter({
           setProcessing(false);
           return;
         }
+        // For at_home: pass address so backend stores it and can compute commute (expects string; JSON with latitude/longitude for ETA)
+        let addressPayload: string | undefined;
+        if (selectedServiceType === 'at_home' && selectedAddress) {
+          const coords = (selectedAddress as any).coordinates;
+          if (coords && (coords.latitude != null || coords.lat != null) && (coords.longitude != null || coords.lng != null)) {
+            addressPayload = JSON.stringify({
+              addressLine1: selectedAddress.addressLine1 || (selectedAddress as any).address,
+              city: (selectedAddress as any).city,
+              pincode: (selectedAddress as any).pincode,
+              state: (selectedAddress as any).state,
+              latitude: coords.latitude ?? coords.lat,
+              longitude: coords.longitude ?? coords.lng,
+            });
+          } else {
+            const parts = [
+              selectedAddress.addressLine1 || (selectedAddress as any).address,
+              (selectedAddress as any).city,
+              (selectedAddress as any).pincode,
+              (selectedAddress as any).state,
+            ].filter(Boolean);
+            addressPayload = parts.join(', ');
+          }
+        }
         const bookingData = {
           customerId,
           vendorId: vendorIdValue,
@@ -705,12 +729,22 @@ export function VetBookingRouter({
           notes: notes || undefined,
           serviceName: selectedServiceOption?.name,
           customerPhone: phone,
+          ...(addressPayload && { address: addressPayload }),
         };
 
         try {
           const response = await apiClient.post('/bookings/create', bookingData) as any;
           const res = response?.data ?? response;
-          setBookingId(res?.bookingId || res?.booking?.id || res?.id || 'BK-' + Date.now());
+          const newBookingId = res?.bookingId || res?.booking?.id || res?.id || 'BK-' + Date.now();
+          setBookingId(newBookingId);
+          // Generate OTP for at_home/at_center so customer can share with vendor (skip if they will go through payment step)
+          if (selectedServiceType !== 'tele' && newBookingId) {
+            apiClient.post('/bookings/generate-otp', {
+              bookingId: newBookingId,
+              serviceStyle: selectedServiceType,
+              customerId: customerId || undefined,
+            }).catch(() => {});
+          }
         } catch (err: any) {
           console.error('Error creating booking:', err);
           const errorMessage = err?.response?.data?.error || err?.message || 'Failed to create booking';

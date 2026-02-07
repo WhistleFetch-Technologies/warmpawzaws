@@ -44,6 +44,7 @@ import {
   CreateBookingRequestSchema,
   UpdateBookingStatusRequestSchema,
 } from '@warmpawz/api-contracts/bookings';
+import { resolveVendorById } from './vendor-profile';
 
 // ============================================================================
 // CONFIGURATION
@@ -188,6 +189,13 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     // Note: 'tele' is already used in DB schema (vendor_services.service_style, vendor_availability_v2.service_style)
     const serviceType = rawServiceType === 'online' ? 'tele' : (rawServiceType || 'at_vendor');
 
+    // ✅ Resolve vendorId to canonical vendors.id (client may send vendors.id or vendor_identity.id); bookings.vendor_id must be vendors.id
+    const vendorRow = await resolveVendorById(vendorId);
+    if (!vendorRow || !vendorRow.id) {
+      return this.error('Vendor not found', 404, 'VENDOR_NOT_FOUND', undefined, requestId);
+    }
+    const resolvedVendorId = vendorRow.id;
+
     // ✅ Phase 2.3: Extract roomId and promotionId from raw body (may not be in schema)
     const roomId = body.roomId || body.room_id;
     const promotionId = body.promotionId || body.promotion_id;
@@ -240,17 +248,17 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     if (!isUUID && (String(serviceId).toLowerCase() === 'diagnostics' || String(serviceId).toLowerCase() === 'diagnostic')) {
       const diagResult = await query(
         `SELECT * FROM vendor_services WHERE vendor_id = $1::uuid AND (is_enabled = true OR is_enabled IS NULL) ORDER BY created_at ASC LIMIT 1`,
-        [vendorId]
+        [resolvedVendorId]
       );
       if (diagResult.rows?.length > 0) {
         const row = diagResult.rows[0];
         resolvedServiceId = row.service_id || row.id;
-        console.log(`[BOOKING] Resolved diagnostics serviceId to ${resolvedServiceId} for vendor ${vendorId}`);
+        console.log(`[BOOKING] Resolved diagnostics serviceId to ${resolvedServiceId} for vendor ${resolvedVendorId}`);
       } else {
         // Fallback: diagnostics center has tests but no vendor_services - create service + vendor_service
         const diagTests = await query(
           `SELECT id, price FROM diagnostic_tests WHERE vendor_id = $1::uuid LIMIT 1`,
-          [vendorId]
+          [resolvedVendorId]
         );
         if (diagTests.rows?.length > 0) {
           const test = diagTests.rows[0];
@@ -265,7 +273,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             await query(
               `INSERT INTO vendor_services (vendor_id, service_id, service_name, service_style, publish_status, is_enabled, created_at, updated_at)
                VALUES ($1, $2, 'Lab Tests', 'at_center', 'published', true, NOW(), NOW())`,
-              [vendorId, labServiceId]
+              [resolvedVendorId, labServiceId]
             );
           } catch (insErr: any) {
             if (!insErr.message?.includes('unique') && insErr.code !== '23505') {
@@ -273,7 +281,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             }
           }
           resolvedServiceId = labServiceId;
-          console.log(`[BOOKING] Diagnostics: created lab service + vendor_service for vendor ${vendorId}`);
+          console.log(`[BOOKING] Diagnostics: created lab service + vendor_service for vendor ${resolvedVendorId}`);
         }
       }
     }
@@ -282,7 +290,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     }
     const lookupServiceId = resolvedServiceId;
 
-    console.log(`[BOOKING] Looking up service ${lookupServiceId} for vendor ${vendorId}`);
+    console.log(`[BOOKING] Looking up service ${lookupServiceId} for vendor ${resolvedVendorId}`);
     
     let service: any = null; // Initialize service variable
     
@@ -297,7 +305,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
        AND (is_enabled = true OR is_enabled IS NULL)
        AND publish_status = 'published'
        LIMIT 1`,
-      [lookupServiceId, vendorId]
+      [lookupServiceId, resolvedVendorId]
     );
     
     if (vendorServicesResult.rows.length > 0) {
@@ -312,7 +320,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
          AND vendor_id = $2::uuid 
          AND (is_enabled = true OR is_enabled IS NULL)
          LIMIT 1`,
-        [lookupServiceId, vendorId]
+        [lookupServiceId, resolvedVendorId]
       );
       
       if (vendorServicesResult.rows.length > 0) {
@@ -326,7 +334,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
            WHERE service_id = $1::uuid 
            AND vendor_id = $2::uuid 
            LIMIT 1`,
-          [lookupServiceId, vendorId]
+          [lookupServiceId, resolvedVendorId]
         );
         
         if (vendorServicesResult.rows.length > 0) {
@@ -340,7 +348,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
              WHERE id = $1::uuid 
              AND vendor_id = $2::uuid 
              LIMIT 1`,
-            [lookupServiceId, vendorId]
+            [lookupServiceId, resolvedVendorId]
           );
           
           if (vendorServiceByIdResult.rows.length > 0) {
@@ -355,7 +363,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             if (baseService) {
               // Base service exists, but no vendor_services entry found
               // This shouldn't happen if the service was fetched from the customer clinic endpoint
-              console.error(`[BOOKING] Base service ${serviceId} exists but no vendor_services entry found for vendor ${vendorId}`);
+              console.error(`[BOOKING] Base service ${serviceId} exists but no vendor_services entry found for vendor ${resolvedVendorId}`);
               return this.error('Service not found for this vendor', 404, 'NOT_FOUND', undefined, requestId);
             } else {
               // Service doesn't exist in base services table either
@@ -412,7 +420,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     // Get vendor's role to validate service availability
     let roleId: string | null = null;
     try {
-      const vendors = await select('vendors', { id: vendorId });
+      const vendors = await select('vendors', { id: resolvedVendorId });
       if (vendors.length > 0) {
         roleId = vendors[0].role_id || vendors[0].roleId || null;
         
@@ -420,7 +428,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         if (!roleId) {
           const vendorRoles = await query(
             `SELECT role_id FROM vendor_roles WHERE vendor_id = $1 LIMIT 1`,
-            [vendorId]
+            [resolvedVendorId]
           );
           if (vendorRoles.rows.length > 0) {
             roleId = vendorRoles.rows[0].role_id;
@@ -488,8 +496,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
              FOR UPDATE NOWAIT`;
 
         const lockParams = staffId
-          ? [vendorId, bookingDate, bookingTime, staffId]
-          : [vendorId, bookingDate, bookingTime];
+          ? [resolvedVendorId, bookingDate, bookingTime, staffId]
+          : [resolvedVendorId, bookingDate, bookingTime];
 
         const { rows: conflictingBookings } = await client.query(lockQuery, lockParams);
 
@@ -524,7 +532,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               category: service.category || 'custom',
               price: service.price || service.custom_price || 0,
               duration_minutes: service.duration_minutes || service.custom_duration || 30,
-              vendor_id: vendorId,
+              vendor_id: resolvedVendorId,
               is_active: true,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
@@ -567,7 +575,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
                CASE WHEN vendor_id = $3 THEN 0 ELSE 1 END,
                CASE WHEN service_category = $2 THEN 0 ELSE 1 END
              LIMIT 1`,
-            [customerId, serviceCategory, vendorId]
+            [customerId, serviceCategory, resolvedVendorId]
           );
           
           const subscriptions = (activeSubscriptions as any).rows || [];
@@ -599,7 +607,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         
         const bookingData: Record<string, any> = {
           customer_id: customerId,
-          vendor_id: vendorId,
+          vendor_id: resolvedVendorId, // Always store canonical vendors.id (resolved from request vendorId)
           service_id: finalServiceId, // Use base service UUID for foreign key constraint (references services.id)
           booking_date: bookingDate,
           booking_time: bookingTime,
@@ -696,7 +704,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         newValues: {
           status: booking.status,
           customerId,
-          vendorId,
+          vendorId: resolvedVendorId,
           serviceId,
           bookingDate,
           bookingTime,

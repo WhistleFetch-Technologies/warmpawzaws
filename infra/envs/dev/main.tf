@@ -176,10 +176,11 @@ module "sqs" {
 module "secrets" {
   source = "../../modules/secrets"
 
-  environment         = local.environment
-  razorpay_key_id     = var.razorpay_key_id
-  razorpay_key_secret = var.razorpay_key_secret
-  google_maps_api_key = var.google_maps_api_key
+  environment                = local.environment
+  razorpay_key_id            = var.razorpay_key_id
+  razorpay_key_secret        = var.razorpay_key_secret
+  razorpay_x_account_number  = var.razorpay_x_account_number
+  google_maps_api_key        = var.google_maps_api_key
   shiprocket_email    = var.shiprocket_email
   shiprocket_password = var.shiprocket_password
 }

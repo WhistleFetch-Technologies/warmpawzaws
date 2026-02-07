@@ -79,6 +79,8 @@ export default function ServiceCatalogPage() {
   const [saving, setSaving] = useState(false);
   const [specializationsByCategory, setSpecializationsByCategory] = useState<{ specializationId: string; name: string; displayName: string }[]>([]);
   const [loadingSpecializations, setLoadingSpecializations] = useState(false);
+  const formDataRef = React.useRef(formData);
+  formDataRef.current = formData;
 
   // ============================================================================
   // DATA LOADING
@@ -201,21 +203,24 @@ export default function ServiceCatalogPage() {
   const handleEdit = (service: ServiceCatalogItem) => {
     setEditingService(service);
     const normRoles = (service.applicable_roles || []).map((r: string) => toCanonicalRoleCode(r)).filter(Boolean);
-    setFormData({
+    const payload = {
       service_name: service.service_name,
       display_name: service.display_name,
       description: service.description,
       category_id: service.category_id,
       applicable_roles: [...new Set(normRoles)],
-      specialization_ids: service.specialization_ids ?? [],
+      specialization_ids: service.specialization_ids ?? (service as any).specializationIds ?? [],
       service_style: service.service_style,
       base_price: service.base_price,
       duration_minutes: service.duration_minutes,
       status: service.status,
       publish_status: service.publish_status,
       display_order: service.display_order,
-    });
+    };
+    setFormData(payload);
     setShowModal(true);
+    // Load specializations immediately so list is correct when modal opens
+    loadSpecializationsForCatalog(service.category_id || '', payload.applicable_roles ?? []);
   };
 
   const handleSave = async () => {
@@ -290,6 +295,17 @@ export default function ServiceCatalogPage() {
       'veterinary clinic': 'vet_clinic', vet_clinic: 'vet_clinic',
       'groomer (center)': 'groomer_center', 'groomer (solo)': 'groomer_solo', groomer_center: 'groomer_center', groomer_solo: 'groomer_solo', pet_groomer: 'pet_groomer',
       'nutritionist (center)': 'nutritionist_center', 'nutritionist (solo)': 'nutritionist', nutritionist_center: 'nutritionist_center', nutritionist: 'nutritionist', pet_nutritionist: 'pet_nutritionist',
+      'pet nutritionist (center)': 'nutritionist_center', 'pet nutritionist (solo)': 'nutritionist',
+      pet_nutritionist_center: 'nutritionist_center', pet_nutritionist_solo: 'nutritionist',
+      'diagnostics center': 'diagnostics_center', diagnostics_center: 'diagnostics_center',
+      'diagnostic center': 'diagnostics_center', diagnostic_center: 'diagnostics_center',
+      'behaviorist center': 'behaviorist_center', behaviorist_center: 'behaviorist_center',
+      'behaviorist (solo)': 'behaviorist_solo', behaviorist_solo: 'behaviorist_solo',
+      'pet behaviorist': 'pet_behaviorist', pet_behaviorist: 'pet_behaviorist',
+      'e-commerce seller': 'ecommerce_seller', ecommerce_seller: 'ecommerce_seller',
+      'event organizer': 'event_organizer', event_organizer: 'event_organizer',
+      'pet adoption center': 'adoption_center', adoption_center: 'adoption_center',
+      pet_adoption_center: 'adoption_center',
     };
     const n = (v || '').toString().trim().toLowerCase().replace(/\s+/g, '_');
     const withSpace = (v || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
@@ -806,6 +822,7 @@ export default function ServiceCatalogPage() {
                   filterCategory={filterCategory}
                   filterStatus={filterStatus}
                   onEdit={(service) => {
+                    const normRoles = (service.applicable_roles || []).map((r: string) => toCanonicalRoleCode(r)).filter(Boolean);
                     const serviceData: Partial<ServiceCatalogItem> = {
                       id: service.id,
                       service_id: service.service_id,
@@ -816,7 +833,8 @@ export default function ServiceCatalogPage() {
                       category_name: service.category_name,
                       sub_category_id: service.sub_category_id,
                       sub_category_name: service.sub_category_name,
-                      applicable_roles: service.applicable_roles,
+                      applicable_roles: [...new Set(normRoles)],
+                      specialization_ids: (service as any).specialization_ids ?? (service as any).specializationIds ?? [],
                       service_style: (service.service_style === 'at_center' ? 'centre' : service.service_style === 'at_home' ? 'home' : service.service_style) as any,
                       base_price: service.base_price,
                       duration_minutes: service.duration_minutes,
@@ -828,6 +846,8 @@ export default function ServiceCatalogPage() {
                     setEditingService(serviceData as ServiceCatalogItem);
                     setFormData(serviceData);
                     setShowModal(true);
+                    // Load specializations immediately for this category + roles so list is correct when modal opens
+                    loadSpecializationsForCatalog(serviceData.category_id || '', serviceData.applicable_roles ?? []);
                   }}
                   onDelete={(service) => {
                     handleDelete(service as any);
@@ -913,7 +933,8 @@ export default function ServiceCatalogPage() {
                     onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
                       const newCategoryId = e.target.value;
                       setFormData(prev => ({ ...prev, category_id: newCategoryId }));
-                      loadSpecializationsForCatalog(newCategoryId, formData.applicable_roles ?? []);
+                      const currentRoles = formDataRef.current?.applicable_roles ?? formData.applicable_roles ?? [];
+                      loadSpecializationsForCatalog(newCategoryId, currentRoles);
                     }}
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                   >
@@ -949,13 +970,36 @@ export default function ServiceCatalogPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Duration (minutes)</label>
-                  <input
-                    type="number"
-                    value={formData.duration_minutes || 30}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, duration_minutes: Number(e.target.value) }))}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
-                  />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Duration</label>
+                  <select
+                    value={formData.duration_minutes ?? 30}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, duration_minutes: Number(e.target.value) }))}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none bg-white"
+                  >
+                    <optgroup label="Minutes">
+                      <option value={15}>15 minutes</option>
+                      <option value={30}>30 minutes</option>
+                      <option value={45}>45 minutes</option>
+                    </optgroup>
+                    <optgroup label="Hours">
+                      <option value={60}>1 hour</option>
+                      <option value={90}>1.5 hours</option>
+                      <option value={120}>2 hours</option>
+                      <option value={240}>4 hours</option>
+                      <option value={480}>8 hours</option>
+                      <option value={720}>12 hours</option>
+                      <option value={1440}>24 hours</option>
+                    </optgroup>
+                    <optgroup label="Days (nightly / multi-day)">
+                      <option value={2880}>2 days</option>
+                      <option value={4320}>3 days</option>
+                      <option value={5760}>4 days</option>
+                      <option value={7200}>5 days</option>
+                      <option value={8640}>6 days</option>
+                      <option value={10080}>7 days</option>
+                    </optgroup>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Stored in minutes</p>
                 </div>
               </div>
 
@@ -975,7 +1019,8 @@ export default function ServiceCatalogPage() {
                           ? roles.filter(r => toCanonicalRoleCode(r) !== canon)
                           : [...roles.filter(r => toCanonicalRoleCode(r) !== canon), canon];
                         setFormData(prev => ({ ...prev, applicable_roles: newRoles }));
-                        loadSpecializationsForCatalog(formData.category_id || '', newRoles);
+                        const currentCategory = formDataRef.current?.category_id || formData.category_id || '';
+                        loadSpecializationsForCatalog(currentCategory, newRoles);
                       }}
                       className={`px-3 py-1 rounded-lg text-sm transition ${
                         (formData.applicable_roles || []).map(toCanonicalRoleCode).includes(toCanonicalRoleCode(role))

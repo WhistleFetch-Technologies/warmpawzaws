@@ -15,8 +15,12 @@ resource "aws_secretsmanager_secret" "razorpay" {
 resource "aws_secretsmanager_secret_version" "razorpay" {
   secret_id = aws_secretsmanager_secret.razorpay.id
   secret_string = jsonencode({
-    key_id     = var.razorpay_key_id
-    key_secret = var.razorpay_key_secret
+    # Lambda expects camelCase (keyId, keySecret, razorpayXAccountNumber)
+    key_id                  = var.razorpay_key_id
+    key_secret              = var.razorpay_key_secret
+    keyId                   = var.razorpay_key_id
+    keySecret               = var.razorpay_key_secret
+    razorpayXAccountNumber  = var.razorpay_x_account_number
   })
 }
 
