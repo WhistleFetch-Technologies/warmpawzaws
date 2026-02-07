@@ -1,9 +1,10 @@
 # Production Environment Configuration
-# Maximum security, HA, and redundancy
+# Same AWS account as dev (057442119249); same pipeline credentials (dev deployment pipeline).
+# Prod has its own VPC (10.2.0.0/16) with one NAT gateway for all private traffic.
 
 terraform {
   backend "s3" {
-    bucket         = "warmpawz-terraform-state-023394150666"
+    bucket         = "warmpawz-terraform-state-057442119249"
     key            = "prod/terraform.tfstate"
     region         = "ap-south-1"
     encrypt        = true

@@ -6,6 +6,18 @@ This is the **full** plan for the dev→prod pipeline: every step, **gap-fixing*
 
 ---
 
+## Account and credentials (prod = same account as dev)
+
+| Item | Value |
+|------|--------|
+| **AWS account (dev and prod)** | **057442119249** — prod and dev use the **same** account. |
+| **Pipeline credentials** | **Same as dev.** GitHub Actions uses the same `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (dev deployment pipeline credentials) for prod. No separate prod account or credentials. |
+| **Terraform state** | **Same S3 bucket as dev:** `warmpawz-terraform-state-057442119249`. Dev state key: `dev/terraform.tfstate`; prod state key: `prod/terraform.tfstate`. One bucket, one DynamoDB lock table (`warmpawz-terraform-locks`). |
+| **VPC** | **Dev:** uses existing VPC (`use_existing_vpc = true`), one NAT. **Prod:** its own VPC (10.2.0.0/16) in the same account, **one NAT gateway** for all private traffic (`single_nat_gateway = true`). |
+| **Bootstrap** | Backend bucket and lock table already exist in 057442119249 (used by dev). No need to create a separate prod state bucket. |
+
+---
+
 ## 0. Gaps that were required and how they were fixed
 
 From the final outline (Part C), these gaps were identified and addressed as follows.
@@ -14,7 +26,7 @@ From the final outline (Part C), these gaps were identified and addressed as fol
 |---|-----|--------------|-------------------------|
 | 1 | **Build job** | Root `package.json` must provide Lambda + web build and Lambda zip. | **Fixed.** Root `package.json`: `build:backend`, `package:lambda`; workflow has `build-lambda` (Lambda only) and `build-frontends` (admin, vendor, customer with prod API URL). No `build:frontend` monolith; each app built in `build-frontends` job. |
 | 2 | **Lambda zip path** | Terraform expects `backend/lambda/api-handler.zip`; CI must place zip there. | **Fixed.** Build job uploads artifact from `backend/lambda/api-handler.zip`; `terraform-plan` and `terraform-apply` download artifact to `backend/lambda` so the file is in place for Terraform. |
-| 3 | **Prod VPC** | Originally “same VPC as dev”; dev/prod can be different accounts. | **Done.** Prod keeps its own VPC (10.2.0.0/16) in prod account; no shared VPC across accounts. |
+| 3 | **Prod VPC** | Originally “same VPC as dev”; dev/prod can be different accounts. | **Done.** Prod and dev share AWS account 057442119249. Prod has its own VPC (10.2.0.0/16) with **one NAT gateway** for all private traffic (`single_nat_gateway = true`). |
 | 4 | **NAT** | One NAT gateway for all private traffic. | **Fixed.** `infra/envs/prod/main.tf`: `single_nat_gateway = true` in `module "vpc"`. |
 | 5 | **Secrets** | Prod Lambda must get Razorpay, Google Maps, Shiprocket from Secrets Manager. | **Fixed.** `infra/envs/prod/main.tf`: `module "secrets"` added; Lambda `common_env_vars` includes `RAZORPAY_SECRET_ARN`, `GOOGLE_MAPS_SECRET_ARN`, `SHIPROCKET_SECRET_ARN`; `secrets_arns` uses `module.secrets.all_secret_arns`. |
 | 6 | **Seed / bootstrap** | One-time admin config import + admin user; then only migrations on later deploys. | **Partially.** Pipeline runs `seed:prod` (047/048) every time (idempotent). One-time bootstrap (export from dev → import to prod + admin user) is **manual** or one-off; `scripts/admin-config/check-prod-bootstrap.js` exists to detect if bootstrap already done. Optional: add workflow step to run check and skip seed when bootstrap done. |
@@ -37,6 +49,31 @@ From the final outline (Part C), these gaps were identified and addressed as fol
 | **Lambda build** | `Could not resolve "./discovery"` in api-contracts. | (1) `packages/api-contracts/package.json`: added `"./discovery"` to `exports`. (2) Root `build:backend` builds api-contracts first, then Lambda. (3) `prod.yml` build-lambda job: added "Install root dependencies", "Build api-contracts", then "Build backend". |
 | **DB migrations** | Already in pipeline. | Job `database-migrations` (after terraform-apply) runs `migrate:up` and `seed:prod` against prod RDS; no change. |
 | **Prod resources** | Already in Terraform. | `terraform-apply` creates/updates prod VPC, RDS, S3, Cognito, CloudFront, etc.; workflow header documents this. |
+
+### Terraform init 403 (state bucket Access Denied)
+
+Prod and dev use the **same** state bucket: `warmpawz-terraform-state-057442119249` (account **057442119249**). Prod state key is `prod/terraform.tfstate`.
+
+If `terraform init -backend-config=backend.hcl` fails with **403 / Unable to list objects in S3 bucket**:
+
+1. **Cause:** The bucket or lock table may not exist yet, or the credentials (e.g. GitHub Actions IAM user) lack permission.
+2. **Fix (AWS CLI):** With credentials for account **057442119249** (dev/prod account):
+   ```bash
+   cd infra/bootstrap
+   ./bootstrap-backend-aws-cli.sh 057442119249
+   ```
+   This creates the S3 bucket and DynamoDB table `warmpawz-terraform-locks` in that account. Once created, both dev and prod use it (different state keys).
+3. **IAM:** The principal used for `terraform init` (same as dev pipeline) must have S3 and DynamoDB access on that bucket and table. Example policy: `infra/bootstrap/iam-policy-terraform-state.example.json`. The **dev deployment pipeline credentials** already have this if dev Terraform works.
+4. **Alternative (Terraform bootstrap):** Run `infra/bootstrap/bootstrap.sh` with credentials for 057442119249; default `aws_account_id` is already 057442119249.
+
+### SMS in production
+
+| Item | Status |
+|------|--------|
+| **SNS infrastructure** | **Done in prod.** `infra/envs/prod/main.tf` has `module "sns"`; Lambda gets `SNS_NOTIFICATIONS_TOPIC_ARN`, `SNS_BOOKING_TOPIC_ARN`, `SNS_PAYMENT_TOPIC_ARN`. |
+| **UAT_MODE** | **Prod = false.** Lambda in prod runs with `UAT_MODE = "false"` so real OTP/SMS can be sent when configured. |
+| **SMS application config** | **One-time.** Backend sends SMS via SNS when `platform_settings` has `admin:settings:aws` (with SNS credentials and `sns.enabled`). Run **once** for prod: `scripts/seed-sms-aws-settings.js` against **prod** DB with **prod** AWS credentials (see `docs/SMS_PRODUCTION_READINESS.md`, `docs/PRODUCTION_SMS_SETUP_GUIDE.md`). Or include `platform_settings` in admin config export so prod gets it from dev export; then update secret values in prod Secrets Manager with prod APIs. |
+| **DLT / SNS SMS preferences** | **Manual in prod account.** Set SNS SMS attributes (DefaultSMSType=Transactional, DefaultSenderID=WARMPZ, DLT if required) and IAM for SMS in the prod AWS account (see `docs/SMS_PRODUCTION_READINESS.md`). |
 
 ---
 
@@ -227,6 +264,19 @@ From the final outline (Part C), these gaps were identified and addressed as fol
 
 ---
 
+## 3.1 What the pipeline does for DB vs full admin config (explicit)
+
+| In the prod workflow? | What | Details |
+|------------------------|------|--------|
+| **Yes** | **Schema migrations** | `npm run migrate:up` runs **all** migrations in `db/migrations/` (001, 003, 006, …). This brings prod DB schema to the **current state** (tables, columns, indexes, constraints). Same on first and every run. |
+| **Yes** | **Baseline seed (roles + service catalog only)** | `npm run seed:prod` runs **only** `047_seed_roles.sql` and `048_seed_service_catalog.sql`. Idempotent. This is **not** the full admin configuration. |
+| **No** | **Full admin configuration** | Roles (detailed), role_permissions, service_categories, specialization_master/symptoms, **policies** (cancellation, RBAC, booking_rules, payout_rules, refund_rules/tiers, booking_cancellation_rules, vendor_refund_tiers, vendor_payment_rules), **tax/GST** (tax_categories, gst_configs, hsn_codes, gst_rules), **platform_settings**, **admin_settings**, **payment_gateway_settings**, **onboarding_forms**, **discovery_rules**, **scheduling_policies**, **problem_grid_mappings**, **promotions**, **coupons**, **spotlight_offers**, **loyalty_rules**, **regions**, **notification_templates**, **content_pages**, **ecommerce_categories**, etc. — see `ADMIN_CONFIG_EXPORT_TABLE_LIST_AND_FINAL_PLAN.md` for the full list. These are **not** in the pipeline; they come from **one-time bootstrap** (export from dev → import to prod). |
+| **No** | **Admin user** | First admin user (e.g. admin@warmpawz.com) in prod Cognito is **not** created by the pipeline; it is part of one-time bootstrap. |
+
+So: the pipeline keeps **schema** and **baseline roles + service catalog** in sync. The **long list** of admin config (policies, onboarding, category, tax, platform settings, etc.) is **only** taken care of by running the one-time bootstrap (export/import + admin user), not by the workflow.
+
+---
+
 ## 4. One-time bootstrap (before or on first prod deploy)
 
 Run these steps **once** (manually or via a one-off script). The pipeline does **not** run export/import or admin user creation; it only runs migrations and idempotent seed:prod (047/048). To get full admin config (policies, onboarding, marketing, etc.) and the admin login in prod, do the following.
@@ -246,15 +296,30 @@ Run these steps **once** (manually or via a one-off script). The pipeline does *
 
 ## 5. First time vs repeat (summary)
 
-| Aspect | First time | Repeat (same pipeline, same steps) |
-|--------|------------|-------------------------------------|
-| Trigger | Manual (or push to `prod`) | Same. |
-| Approval | Required (production-approval + production) | Required every time. |
-| Terraform | Creates all prod resources (VPC, one NAT, RDS, DynamoDB, S3, CloudFront x3, SQS, SNS, Lambda, Cognito, API Gateway, OpenSearch, secrets). | Updates only changed resources; state already exists. |
-| DB | Migrations create schema; pipeline runs `seed:prod` (047/048, idempotent). For **full** config, run one-time bootstrap (export/import + admin user) separately. | New migrations applied if any; seed:prod runs again (idempotent). Optional: add step to run `check-prod-bootstrap.js` and skip seed when bootstrap done. |
-| Frontends | Built with prod API URL from Terraform; deployed to S3; runtime-config.js injected; CloudFront invalidated. | Same; new build and deploy. |
-| One-time bootstrap | Run §4 steps once (migrations, export from dev, import to prod, admin user, SMS if needed). Pipeline does **not** run export/import or admin user. | Not re-run; bootstrap marker prevents duplicate work if you add check to pipeline. |
-| Stage | Not used; prod is the deploy path. | Same. |
+### 5.1 Resources (Terraform) – first run vs next run
+
+| | First run | Next run |
+|---|-----------|----------|
+| **Terraform state** | None yet; `terraform init` uses backend bucket (key `prod/terraform.tfstate`). | State already exists; init loads it. |
+| **Terraform apply** | **Creates** all prod resources: VPC (10.2.0.0/16), one NAT, RDS cluster, DynamoDB, S3 (uploads + 3 frontend buckets), Cognito, API Gateway, CloudFront (3), SQS, SNS, Lambda, OpenSearch, secrets module. | **Updates only** what changed in code; no duplicate resources. |
+| **Result** | Full prod infra exists. | Infra stays in sync with `infra/envs/prod/main.tf`. |
+
+### 5.2 Database – first run vs next run
+
+| | First run | Next run |
+|---|-----------|----------|
+| **Migrations** | `migrate:up` runs all migrations → prod schema matches current code (all tables, columns, indexes). | `migrate:up` runs only **new** migrations (not yet applied); existing schema unchanged. |
+| **seed:prod** | Runs 047 (roles) + 048 (service catalog); baseline data in place. | Runs again (idempotent); safe, no duplicate inserts. |
+| **Full admin config** | **Not** in pipeline. Run one-time bootstrap (§4): export from dev → import to prod (roles, onboarding, category, service catalog, policies, tax, platform_settings, admin_settings, etc. per `ADMIN_CONFIG_EXPORT_TABLE_LIST_AND_FINAL_PLAN.md`). | Not re-run by pipeline; already in prod from bootstrap. Optional: re-export/import manually if you change admin config in dev and want to sync to prod. |
+
+### 5.3 Other aspects
+
+| Aspect | First time | Repeat |
+|--------|------------|--------|
+| Trigger | Manual or push to `prod` | Same. |
+| Approval | production-approval + production (repo owner) | Required every time. |
+| Frontends | Build with prod API URL; deploy to S3; inject runtime-config.js; CloudFront invalidation. | Same; new build and deploy. |
+| One-time bootstrap | Run §4 once (export/import + admin user + optional SMS). Pipeline does **not** do this. | Not re-run by pipeline. |
 
 ---
 
@@ -265,7 +330,7 @@ Run these steps **once** (manually or via a one-off script). The pipeline does *
 | `infra/envs/prod/main.tf` | VPC (single NAT), SNS, secrets, RDS, DynamoDB, S3, prod frontend S3 buckets, CloudFront, SQS, Lambda, Cognito, API Gateway, OpenSearch; locals for CORS. |
 | `infra/envs/prod/variables.tf` | aws_region, alert_emails, opensearch_master_password, prod_cloudfront_certificate_arn, secrets (defaults). |
 | `infra/envs/prod/outputs.tf` | api_endpoint, rds_*, cloudfront_distribution_ids, cloudfront_urls, prod_frontend_bucket_names, etc. |
-| `infra/envs/prod/backend.hcl` | S3 backend bucket, key, region, DynamoDB table. |
+| `infra/envs/prod/backend.hcl` | S3 backend bucket (same as dev: warmpawz-terraform-state-057442119249), key `prod/terraform.tfstate`, region, DynamoDB table. |
 | `infra/envs/prod/terraform.tfvars` | alert_emails, opensearch_master_password (or use env/CLI). |
 | `infra/modules/vpc` | One NAT when `single_nat_gateway = true`. |
 | `infra/modules/cloudfront` | Three distributions (admin, vendor, customer); references existing S3 buckets. |
@@ -307,6 +372,7 @@ Result: Every run (whether triggered manually or by push to `prod`) must pass en
 
 Before running “Deploy to Production”:
 
+- [ ] **Same AWS account (057442119249)** and **same pipeline credentials** as dev; state bucket `warmpawz-terraform-state-057442119249`, key `prod/terraform.tfstate`.
 - [ ] Build job succeeds (Lambda zip at `backend/lambda/api-handler.zip`; frontends build with prod API URL).
 - [ ] Terraform plan/apply uses **one NAT** (`single_nat_gateway = true`) and **secrets** module; Lambda has secret ARNs; `UAT_MODE=false` in prod.
 - [ ] **Bootstrap check** script exists: `scripts/admin-config/check-prod-bootstrap.js`; optionally run in pipeline to skip seed when bootstrap done.
@@ -330,7 +396,7 @@ Before running “Deploy to Production”:
 | Terraform plan | `terraform-plan` job (L68–98); init with `backend.hcl`, plan with `opensearch_master_password` | `infra/envs/prod/main.tf`, `backend.hcl`, `variables.tf`, `terraform.tfvars` |
 | Final approval | `final-approval` job (L100–108); `environment: production-approval` | GitHub Settings → Environments |
 | Terraform apply | `terraform-apply` job (L110–162); apply tfplan; export outputs (L148–161) | `infra/envs/prod/outputs.tf` (api_endpoint, cloudfront_*, prod_frontend_bucket_names) |
-| DB migrations | `database-migrations` job (L164–218); get DB URL from Terraform (L181–195); migrate (L196–206); seed (L209–216) | `db/package.json` (migrate:up, seed:prod); `db/run-migration-all.js`, `db/seed-prod-data.js` |
+| DB migrations | `database-migrations` job (L164–218); get DB URL from Terraform (L181–195); migrate (L196–206); seed (L209–216). Migrate = all schema; seed = 047+048 only (see §3.1). | `db/package.json` (migrate:up, seed:prod); `db/seed-prod-data.js` (047_seed_roles.sql, 048_seed_service_catalog.sql only). Full admin config = one-time bootstrap. |
 | Build frontends | `build-frontends` job (L220–254); `NEXT_PUBLIC_API_BASE_URL` from terraform-apply outputs | `apps/admin-web`, `apps/vendor-web`, `apps/customer-web` (Next.js build → dist) |
 | Deploy web | `deploy-web` job (L256–297); inject runtime-config (L268–276); S3 sync (L277–286); CloudFront invalidation (L287–296) | — |
 | Warmup / smoke / readiness / tag | `warmup-lambdas` (L299–311), `smoke-tests` (L313–321), `final-readiness` (L323–336), `tag-release` (L338–351) | `scripts/warmup-lambdas.sh`, `scripts/readiness-checks.sh` |

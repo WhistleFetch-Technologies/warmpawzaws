@@ -1,9 +1,10 @@
 # =============================================================================
 # DEPLOY TO PRODUCTION — Web + Backend + Infra only. NO Android/iOS/Capacitor.
 # =============================================================================
+# AWS: Same account as dev (057442119249). Same credentials (dev deployment pipeline).
 # This workflow:
 # - Builds Lambda (backend) and admin/vendor/customer WEB apps only
-# - Terraform apply: prod VPC, 1 NAT, RDS cluster, DynamoDB, S3 (uploads + 3 frontend buckets),
+# - Terraform apply: prod VPC (10.2.0.0/16), 1 NAT, RDS cluster, DynamoDB, S3 (uploads + 3 frontend buckets),
 #   Cognito, API Gateway, CloudFront (3), SQS, SNS, OpenSearch, secrets
 # - DB migrations + seed (idempotent) against prod RDS
 # - Deploys web assets to prod S3 + CloudFront invalidation
@@ -225,7 +226,7 @@ jobs:
         run: npm run migrate:status
         env:
           DATABASE_URL: ${{ steps.db.outputs.database_url }}
-      # Seed only if bootstrap not done (optional: add check-prod-bootstrap.js and condition)
+      # Baseline seed only: 047 (roles) + 048 (service catalog). Full admin config (policies, tax, onboarding, etc.) is one-time bootstrap (export/import), not in pipeline.
       - name: Seed prod baseline (idempotent)
         working-directory: db
         run: npm run seed:prod
