@@ -182,6 +182,15 @@ resource "aws_cognito_user_pool_client" "customer_web" {
   ]
 
   prevent_user_existence_errors = "ENABLED"
+
+  lifecycle {
+    ignore_changes = [
+      allowed_oauth_flows_user_pool_client,
+      allowed_oauth_flows,
+      allowed_oauth_scopes,
+      enable_token_revocation
+    ]
+  }
 }
 
 resource "aws_cognito_user_pool_client" "vendor_web" {
@@ -226,6 +235,15 @@ resource "aws_cognito_user_pool_client" "vendor_web" {
   ]
 
   prevent_user_existence_errors = "ENABLED"
+
+  lifecycle {
+    ignore_changes = [
+      allowed_oauth_flows_user_pool_client,
+      allowed_oauth_flows,
+      allowed_oauth_scopes,
+      enable_token_revocation
+    ]
+  }
 }
 
 resource "aws_cognito_user_pool_client" "admin_web" {
@@ -270,6 +288,15 @@ resource "aws_cognito_user_pool_client" "admin_web" {
   ]
 
   prevent_user_existence_errors = "ENABLED"
+
+  lifecycle {
+    ignore_changes = [
+      allowed_oauth_flows_user_pool_client,
+      allowed_oauth_flows,
+      allowed_oauth_scopes,
+      enable_token_revocation
+    ]
+  }
 }
 
 resource "aws_cognito_user_pool_client" "mobile_customer" {
@@ -307,6 +334,17 @@ resource "aws_cognito_user_pool_client" "mobile_customer" {
   ]
 
   prevent_user_existence_errors = "ENABLED"
+
+  lifecycle {
+    ignore_changes = [
+      callback_urls,
+      logout_urls,
+      allowed_oauth_flows_user_pool_client,
+      allowed_oauth_flows,
+      allowed_oauth_scopes,
+      enable_token_revocation
+    ]
+  }
 }
 
 resource "aws_cognito_user_pool_client" "mobile_vendor" {
@@ -344,6 +382,17 @@ resource "aws_cognito_user_pool_client" "mobile_vendor" {
   ]
 
   prevent_user_existence_errors = "ENABLED"
+
+  lifecycle {
+    ignore_changes = [
+      callback_urls,
+      logout_urls,
+      allowed_oauth_flows_user_pool_client,
+      allowed_oauth_flows,
+      allowed_oauth_scopes,
+      enable_token_revocation
+    ]
+  }
 }
 
 # Cognito Identity Pool (for AWS credentials)
