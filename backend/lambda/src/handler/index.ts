@@ -48,7 +48,7 @@ import { registerWalletEndpoints } from '../endpoints/wallet';
 import { registerSpecializedServicesEndpoints } from '../endpoints/specialized-services';
 import { registerSpecializedServiceFlows } from '../endpoints/specialized-service-flows';
 import { registerAdminGovernanceEndpoints } from '../endpoints/admin-governance';
-// ❌ DECOMMISSIONED: Staff management has been removed
+// Staff decommissioned: solo providers discovered via discover-services for at_home/tele
 // import { registerStaffEndpoints } from '../endpoints/staff';
 import { registerServiceDiscoveryEndpoints } from '../endpoints/service-discovery';
 import { registerReviewEndpoints } from '../endpoints/reviews';
@@ -404,8 +404,7 @@ registerWalletEndpoints(app);
 registerSpecializedServicesEndpoints(app);
 registerSpecializedServiceFlows(app);
 registerAdminGovernanceEndpoints(app);
-// ❌ DECOMMISSIONED: Staff management has been removed - solo vendors handle their own availability
-// registerStaffEndpoints(app);
+// registerStaffEndpoints(app); // Staff decommissioned – solo discovery for at_home/tele
 registerInstantTeleQueueEndpoints(app); // Instant tele consultation queue
 registerRoomsEndpoints(app); // Consultation rooms management (Phase 1.1)
 registerReviewEndpoints(app);

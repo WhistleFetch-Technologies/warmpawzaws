@@ -23,6 +23,7 @@ import { calculateCommuteTime } from '../utils/commute-time-calculator';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
+import { resolveVendorById } from './vendor-profile';
 
 /**
  * Calculate distance between two coordinates (Haversine formula)
@@ -55,15 +56,23 @@ export function registerStaffEndpoints(app: Hono) {
       const longitude = c.req.query('longitude');
       const maxDistance = parseFloat(c.req.query('maxDistance') || '50');
       const serviceId = c.req.query('serviceId');
-      const vendorId = c.req.query('vendorId');
+      const vendorIdParam = c.req.query('vendorId');
       const customerId = c.req.query('customerId'); // For previous provider prioritization
 
-      if (!roleId) {
-        return c.json({ error: 'roleId is required' }, 400);
+      if (!roleId && !vendorIdParam && !serviceId) {
+        return c.json({ error: 'At least one of roleId, vendorId, or serviceId is required' }, 400);
       }
 
       if (!serviceStyle || !['at_home', 'at_center', 'tele'].includes(serviceStyle)) {
         return c.json({ error: 'serviceStyle is required (at_home, at_center, or tele)' }, 400);
+      }
+
+      // Resolve vendorId to canonical vendors.id so vendor_identity.id works
+      let resolvedVendorId: string | null = null;
+      let resolvedVendor: any = null;
+      if (vendorIdParam) {
+        resolvedVendor = await resolveVendorById(vendorIdParam);
+        if (resolvedVendor?.id) resolvedVendorId = resolvedVendor.id;
       }
 
       const customerLat = latitude ? parseFloat(latitude) : null;
@@ -103,22 +112,25 @@ export function registerStaffEndpoints(app: Hono) {
       const params: any[] = [];
       let paramIndex = 1;
 
-      if (vendorId) {
+      if (resolvedVendorId) {
         staffQuery += ` AND s.vendor_id = $${paramIndex}`;
-        params.push(vendorId);
+        params.push(resolvedVendorId);
         paramIndex++;
       }
 
+      let effectiveRoleName: string | null = null;
       if (roleId) {
-        // Staff table uses 'role' TEXT column, not 'role_id'
-        // Check if roleId is a UUID (role.id) or role name
         const role = await query('SELECT name, id FROM roles WHERE name = $1 OR id = $1', [roleId]);
-        if (role.rows.length > 0) {
-          // Use role name to match staff.role column
-          staffQuery += ` AND s.role = $${paramIndex}`;
-          params.push(role.rows[0].name);
-          paramIndex++;
-        }
+        if (role.rows.length > 0) effectiveRoleName = role.rows[0].name;
+      }
+      if (!effectiveRoleName && resolvedVendor?.role_id) {
+        const role = await query('SELECT name FROM roles WHERE id = $1', [resolvedVendor.role_id]);
+        if (role.rows.length > 0) effectiveRoleName = role.rows[0].name;
+      }
+      if (effectiveRoleName) {
+        staffQuery += ` AND s.role = $${paramIndex}`;
+        params.push(effectiveRoleName);
+        paramIndex++;
       }
 
       if (serviceId) {

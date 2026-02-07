@@ -265,36 +265,36 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // Get vendors
       const vendors = await query(vendorQuery, params);
 
-      // Get services for each vendor
+      // Get services for each vendor: base on vendor_services so catalog-origin services appear (vs.service_id can point to services.id or service_catalog.id)
       const services = await Promise.all(
         vendors.rows.map(async (vendor: any) => {
-          // Check if is_global column exists
-          const serviceColumns = await query(
-            `SELECT column_name FROM information_schema.columns 
-             WHERE table_name = 'services' AND column_name = 'is_global'`
-          );
-          const hasIsGlobal = serviceColumns.rows.length > 0;
-          
+          const params: any[] = [vendor.id];
+          let styleClause = '';
+          if (serviceStyle) {
+            params.push(serviceStyle);
+            styleClause = ` AND vs.service_style = $${params.length}`;
+          }
           const vendorServices = await query(
-            `SELECT s.*, vs.custom_price, vs.custom_duration, vs.service_style
-             FROM services s
-             LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
-             WHERE (vs.vendor_id = $1${hasIsGlobal ? ' OR s.is_global = true' : ''})
-             AND s.is_active = true
-             ${serviceStyle ? `AND vs.service_style = $2` : ''}
-             ORDER BY s.name`,
-            serviceStyle ? [vendor.id, serviceStyle] : [vendor.id]
+            `SELECT vs.id as vs_id, vs.service_id, vs.service_name as vs_service_name, vs.custom_price, vs.custom_duration, vs.service_style, vs.category,
+                    s.id as s_id, s.name as s_name, s.price as s_price, s.duration_minutes as s_duration,
+                    sc.id as sc_id, sc.service_name as sc_service_name, sc.base_price as sc_price, sc.duration_minutes as sc_duration
+             FROM vendor_services vs
+             LEFT JOIN services s ON vs.service_id = s.id
+             LEFT JOIN service_catalog sc ON vs.service_id = sc.id
+             WHERE vs.vendor_id = $1 AND vs.is_enabled = true AND vs.publish_status = 'published'${styleClause}
+             ORDER BY COALESCE(vs.service_name, sc.service_name, s.name)`,
+            params
           );
 
-          return vendorServices.rows.map((service: any) => ({
-            id: service.id,
-            serviceId: service.id,
-            serviceName: service.name,
+          return vendorServices.rows.map((row: any) => ({
+            id: row.vs_id,
+            serviceId: row.service_id,
+            serviceName: row.vs_service_name || row.sc_service_name || row.s_name || 'Service',
             vendorId: vendor.id,
             vendorName: vendor.business_name,
-            price: service.custom_price || service.base_price || 0,
-            duration: service.custom_duration || service.duration_minutes || 30,
-            serviceStyle: service.service_style || serviceStyle,
+            price: row.custom_price != null ? parseFloat(row.custom_price) : (row.sc_price != null ? parseFloat(row.sc_price) : (row.s_price != null ? parseFloat(row.s_price) : 0)),
+            duration: row.custom_duration ?? row.sc_duration ?? row.s_duration ?? 30,
+            serviceStyle: row.service_style || serviceStyle,
           }));
         })
       );
@@ -560,19 +560,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               OR LOWER(r.name) LIKE '%solo%'
             )`;
 
-        // When targetRoles set: same source as admin – vendors with ANY published service (any style). No service_style filter so walkers/trainers show.
-        const vendorParams: any[] = targetRolesLower.length > 0 ? targetRolesLower : [];
+        // When targetRoles set: require published service; for at_home/tele require vs.service_style = requested style so at_center-only vendors do not appear.
+        const vendorParams: any[] = targetRolesLower.length > 0 ? [...targetRolesLower] : [];
         const isWalkerCategory = (category?.toLowerCase() === 'walker' || category?.toLowerCase() === 'walking') || (targetRolesLower.length > 0 && targetRolesLower.some((r: string) => ['walker', 'walker_solo', 'pet_walker', 'dog_walker'].includes(r)));
-        // Walker category: relax to any enabled service so active walkers without publish_status set are discoverable
-        // Align with /customer/vendor/:id/services: only show vendors that have at least one published service
+        // Style-strict: when roleId/category present, require at least one published service in this serviceStyle (at_home/tele)
+        const styleFilterInExists = targetRolesLower.length > 0 ? ` AND vs.service_style = $2` : '';
         const existsServiceClause = targetRolesLower.length > 0
           ? (isWalkerCategory
-              ? ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true AND vs.publish_status = 'published')`
+              ? ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true AND vs.publish_status = 'published'${styleFilterInExists})`
               : ` AND EXISTS (
               SELECT 1 FROM vendor_services vs
               WHERE vs.vendor_id = v.id
                 AND vs.is_enabled = true
-                AND vs.publish_status = 'published'
+                AND vs.publish_status = 'published'${styleFilterInExists}
             )`)
           : ` AND EXISTS (
               SELECT 1 FROM vendor_services vs
@@ -582,12 +582,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 AND vs.publish_status = 'published'
             )`;
         if (targetRolesLower.length === 0) vendorParams.unshift(serviceStyle);
+        if (targetRolesLower.length > 0) vendorParams.push(serviceStyle);
 
         // Vendor-defined radius applies only to at_home (travel); tele uses rule-book only, no travel.
         let vendorQuery = `
           SELECT DISTINCT v.id, v.business_name, v.owner_name, v.phone, v.city, v.state,
                  v.latitude, v.longitude, r.name as role_name, r.display_name as role_display_name,
-                 v.languages, v.is_verified, v.profile_image, v.specializations, v.is_online,
+                 v.languages, v.is_verified, v.profile_photo_url, v.profile_image, v.logo_url, v.specializations, v.is_online,
                  v.vendor_type, v.metadata,
                  v.service_radius,
                  (SELECT MIN(vs.service_radius_km) FROM vendor_services vs
@@ -803,8 +804,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             isVerified: vendor.is_verified ?? (vendor.status === 'approved'),
             isOnline: vendor.is_online ?? true,
             languages: vendor.languages ? (Array.isArray(vendor.languages) ? vendor.languages : JSON.parse(vendor.languages || '[]')) : ['English', 'Hindi'],
-            photoUrl: vendor.profile_image || null,
-            vendorProfileImage: vendor.profile_image || null,
+            photoUrl: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
+            vendorProfileImage: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
             specializations: vendor.specializations ? (Array.isArray(vendor.specializations) ? vendor.specializations : JSON.parse(vendor.specializations || '[]')) : [],
             // Phase 2: Gallery, price range, bestForProblem, hasPackages
             photos: photos.length > 0 ? photos : undefined,
@@ -1221,8 +1222,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             completedBookings,
             languages,
             isVerified,
-            photoUrl: vendor.profile_image || vendor.logo_url || null,
-            vendorProfileImage: vendor.profile_image || vendor.logo_url || null,
+            photoUrl: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
+            vendorProfileImage: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
             // Phase 2: Gallery, price range, bestForProblem, hasPackages
             photos: photos.length > 0 ? photos : undefined,
             priceMin: priceMin > 0 ? priceMin : undefined,
@@ -2172,15 +2173,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         paramIndex++;
       }
 
-      // ✅ Vendor discovery rules: filter by service style (at_center = business only; at_home/tele = solo with matching services)
+      // ✅ Vendor discovery rules: filter by service style; enforce publish_status = 'published' (align with discover-services)
       if (serviceStyle === 'at_center') {
         vendorQuery += ` AND (v.vendor_type IS NULL OR v.vendor_type != 'solo')`;
-        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true)`;
+        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true AND vs.publish_status = 'published')`;
         params.push(serviceStyle);
         paramIndex++;
       } else if (serviceStyle === 'at_home' || serviceStyle === 'tele') {
         vendorQuery += ` AND (v.vendor_type = 'solo' OR r.name LIKE '%_solo' OR LOWER(r.name) LIKE '%solo%')`;
-        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true)`;
+        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true AND vs.publish_status = 'published')`;
         params.push(serviceStyle);
         paramIndex++;
       }
@@ -4110,7 +4111,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           v.city,
           v.latitude,
           v.longitude,
+          v.profile_photo_url,
           v.profile_image,
+          v.logo_url,
           v.specializations,
           v.metadata,
           r.name as role_name,
@@ -4208,8 +4211,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vendorName: vendor.business_name || vendor.owner_name,
           name: vendor.business_name || vendor.owner_name,
           phone: vendor.phone,
-          photo: vendor.profile_image || null,
-          photoUrl: vendor.profile_image || null,
+          photo: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
+          photoUrl: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
           role: vendor.role_display_name || vendor.role_name,
           experienceYears: null,
           qualifications: null,

@@ -391,52 +391,8 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
 
   const loadAvailableStaff = async () => {
     if (!service || !selectedDate || !selectedTime || !selectedAddress) return;
-    
-    try {
-      // Get address coordinates
-      const address = addresses.find(a => a.id === selectedAddress);
-      if (!address) return;
-      
-      // Get customer ID for previous provider prioritization
-      const customerRes = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
-      const customerId = customerRes.customer?.id;
-      
-      const params = new URLSearchParams({
-        serviceId: serviceId,
-        serviceStyle: 'at_home',
-        date: selectedDate,
-        time: selectedTime,
-        ...(customerId && { customerId }),
-      });
-      
-      // If address has coordinates, add them
-      if (address.latitude && address.longitude) {
-        params.append('latitude', address.latitude.toString());
-        params.append('longitude', address.longitude.toString());
-      }
-      
-      const staffRes = await apiClient.get<any>(`/customer/discover-staff?${params}`);
-      
-      if (staffRes.staff) {
-        setAvailableStaff(staffRes.staff);
-        // Auto-select first staff (which will be previous provider if available)
-        if (staffRes.staff.length > 0 && !selectedStaff) {
-          setSelectedStaff(staffRes.staff[0].id);
-          // Set commute info
-          if (staffRes.staff[0].commuteTime) {
-            setCommuteInfo({
-              time: staffRes.staff[0].commuteTime,
-              distance: staffRes.staff[0].distance || 0,
-              arrival: staffRes.staff[0].estimatedArrivalWithBuffer || staffRes.staff[0].estimatedArrival || '',
-              bufferTime: staffRes.staff[0].bufferTime || 0,
-              totalTime: staffRes.staff[0].totalTime || staffRes.staff[0].commuteTime,
-            });
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Error loading available staff:', err);
-    }
+    // Staff decommissioned: at_home/tele use solo providers from discover-services; no separate staff list.
+    setAvailableStaff([]);
   };
 
   const getNextDays = () => {

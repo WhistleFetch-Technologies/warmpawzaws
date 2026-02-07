@@ -351,14 +351,20 @@ export function registerRefundPolicyEngineEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
-  // ✅ Customer-facing: refund policy for cancellation UI (no admin auth)
+  // ✅ Customer-facing: refund policy for cancellation UI (no admin auth). Optional vendorId/serviceId for service-specific policy.
   app.get('/customer/refund-policy', async (c) => {
     try {
-      const rules = await query(
+      const vendorId = c.req.query('vendorId');
+      const serviceId = c.req.query('serviceId');
+
+      let rules: { rows: any[] } = { rows: [] };
+      rules = await query(
         `SELECT * FROM booking_cancellation_rules
-         WHERE vendor_id IS NULL AND service_id IS NULL
-         ORDER BY created_at DESC
-         LIMIT 1`
+         WHERE (vendor_id IS NULL OR vendor_id::text = $1)
+           AND (service_id IS NULL OR service_id::text = $2)
+         ORDER BY (vendor_id IS NOT NULL)::int + (service_id IS NOT NULL)::int DESC, created_at DESC
+         LIMIT 1`,
+        [vendorId || null, serviceId || null]
       ).catch(() => ({ rows: [] }));
 
       const rows = (rules as any).rows || [];

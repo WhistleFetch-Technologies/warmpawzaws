@@ -214,6 +214,8 @@ export function UniversalPaymentPage({
   const [appliedPromotion, setAppliedPromotion] = useState<PromotionOffer | null>(null);
   const [razorpayOffers, setRazorpayOffers] = useState<RazorpayOffer[]>([]);
   const [selectedRazorpayOffer, setSelectedRazorpayOffer] = useState<RazorpayOffer | null>(null);
+  const [paymentPolicies, setPaymentPolicies] = useState<Record<string, { title: string; description: string; details?: string[] }> | null>(null);
+  const [refundPolicySummary, setRefundPolicySummary] = useState<string | null>(null);
   
   // Tax state
   const [taxBreakdown, setTaxBreakdown] = useState<TaxBreakdown>({
@@ -252,6 +254,7 @@ export function UniversalPaymentPage({
     loadPromotions();
     loadRazorpayOffers();
     loadPlatformFees();
+    loadPaymentAndRefundPolicies();
   }, [customerPhone, baseAmount, category, serviceStyle]);
   
   // ✅ NEW: Check if customer has active subscription that covers this booking
@@ -570,12 +573,10 @@ export function UniversalPaymentPage({
       }
     } catch (error) {
       console.error('Error loading platform fees:', error);
-      // Set default fees for services using same calculation as backend
+      // Resilience-only fallback when /config/fees fails; production should use backend as single source of truth
       if (baseAmount > 0) {
-        // Default: 2% platform fee with max cap of ₹200
         let defaultPlatformFee = Math.round((baseAmount * 2) / 100);
         defaultPlatformFee = Math.min(defaultPlatformFee, 200);
-        // Default: ₹10 convenience fee for bookings
         const defaultConvenienceFee = type === 'booking' ? 10 : 0;
         setPlatformFees({
           platformFee: defaultPlatformFee,
@@ -585,6 +586,33 @@ export function UniversalPaymentPage({
           total: defaultPlatformFee + defaultConvenienceFee,
         });
       }
+    }
+  };
+
+  const loadPaymentAndRefundPolicies = async () => {
+    try {
+      const serviceType = type === 'booking' ? 'booking' : (category || 'default');
+      const policiesRes = await apiClient.get<{ success?: boolean; policies?: Record<string, { title: string; description: string; details?: string[] }> }>(
+        `/config/policies?service_type=${encodeURIComponent(serviceType)}&policies=payment,cancellation,refund`
+      );
+      if (policiesRes?.policies && typeof policiesRes.policies === 'object') {
+        setPaymentPolicies(policiesRes.policies);
+      }
+    } catch (e) {
+      console.warn('Could not load payment policies:', e);
+    }
+    try {
+      const refundRes = await apiClient.get<{ success?: boolean; policy?: { refundPercentages?: Array<{ withinHours: number; percentage: number }>; cancellationWindowHours?: number } }>(
+        `/customer/refund-policy?vendorId=${encodeURIComponent(vendorId || '')}&serviceId=${encodeURIComponent(serviceId || '')}`
+      );
+      if (refundRes?.policy?.refundPercentages?.length) {
+        const parts = refundRes.policy.refundPercentages
+          .filter((p: { withinHours: number; percentage: number }) => p.withinHours != null && p.percentage != null)
+          .map((p: { withinHours: number; percentage: number }) => `${p.percentage}% refund if cancelled ${p.withinHours}h+ before`);
+        setRefundPolicySummary(parts.length ? parts.join('; ') : null);
+      }
+    } catch (e) {
+      console.warn('Could not load refund policy:', e);
     }
   };
 
@@ -2137,6 +2165,24 @@ export function UniversalPaymentPage({
             </div>
           </div>
         </Card>
+
+        {/* Payment & refund policy summary (dynamic from backend) */}
+        {(refundPolicySummary || (paymentPolicies && Object.keys(paymentPolicies).length > 0)) && (
+          <Card className="bg-gray-50 rounded-2xl p-4 shadow-sm border border-gray-100">
+            {refundPolicySummary && (
+              <p className="text-xs text-gray-600 mb-2">
+                <span className="font-medium text-gray-700">Cancellation: </span>
+                {refundPolicySummary}
+              </p>
+            )}
+            {paymentPolicies?.payment && (
+              <p className="text-xs text-gray-600">
+                <span className="font-medium text-gray-700">Payment: </span>
+                {paymentPolicies.payment.description}
+              </p>
+            )}
+          </Card>
+        )}
 
         {/* Saved Payment Methods */}
         {savedMethods.length > 0 && (

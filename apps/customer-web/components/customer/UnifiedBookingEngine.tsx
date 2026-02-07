@@ -216,44 +216,8 @@ export function UnifiedBookingEngine({
 
   const loadAvailableStaff = async () => {
     if (!service) return;
-    
-    // For instant tele booking, load available staff immediately
-    if (selectedServiceStyle === 'tele' && teleBookingType === 'instant') {
-      try {
-        const params = new URLSearchParams({
-          roleId: service.role_id || '',
-          serviceStyle: 'tele',
-          serviceId: service.id,
-        });
-        
-        const staffRes: any = await apiClient.get(`/customer/discover-staff?${params}`);
-        setAvailableStaff(staffRes.staff || []);
-        return;
-      } catch (err: any) {
-        console.error('Failed to load instant staff:', err);
-        setAvailableStaff([]);
-        return;
-      }
-    }
-    
-    // For scheduled bookings, require date and time
-    if (!selectedDate || !selectedTime) return;
-
-    try {
-      const params = new URLSearchParams({
-        vendorId: service.vendor_id,
-        serviceId: service.id,
-        date: selectedDate,
-        time: selectedTime,
-        serviceStyle: selectedServiceStyle || '',
-      });
-
-      const staff: any = await apiClient.get(`/vendors/${service.vendor_id}/staff/available?${params}`);
-      setAvailableStaff(staff || []);
-    } catch (err: any) {
-      console.error('Failed to load staff:', err);
-      setAvailableStaff([]);
-    }
+    // Staff decommissioned: solo providers are discovered via discover-services for at_home/tele.
+    setAvailableStaff([]);
   };
 
   // ============================================================================

@@ -109,6 +109,15 @@ const DEFAULT_POLICIES = {
     },
   },
   booking: {
+    payment: {
+      title: 'Payment Policy',
+      description: 'Secure payments via Razorpay',
+      details: [
+        'Accepted: Cards, UPI, Net Banking, Wallet',
+        'Payment is due at checkout unless otherwise stated',
+        'Platform and convenience fees may apply as per config',
+      ],
+    },
     cancellation: {
       title: 'Cancellation Policy',
       description: 'Flexible cancellation for your convenience',
