@@ -13,7 +13,7 @@ This is the **full** plan for the dev→prod pipeline: every step, **gap-fixing*
 | **AWS account (dev and prod)** | **057442119249** — prod and dev use the **same** account. |
 | **Pipeline credentials** | **Same as dev.** GitHub Actions uses the same `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (dev deployment pipeline credentials) for prod. No separate prod account or credentials. |
 | **Terraform state** | **Same S3 bucket as dev:** `warmpawz-terraform-state-057442119249`. Dev state key: `dev/terraform.tfstate`; prod state key: `prod/terraform.tfstate`. One bucket, one DynamoDB lock table (`warmpawz-terraform-locks`). |
-| **VPC** | **Dev:** uses existing VPC (`use_existing_vpc = true`), one NAT. **Prod:** its own VPC (10.2.0.0/16) in the same account, **one NAT gateway** for all private traffic (`single_nat_gateway = true`). |
+| **VPC** | **Dev and prod:** both use **existing** VPC (`use_existing_vpc = true`), one NAT. Prod VPC must exist in AWS with tags `Name=warmpawz-prod-vpc`, `Environment=prod` (and subnets tagged `Type=public\|private\|database`). This keeps Lambda and RDS in the same network and avoids "different networks" errors on RDS SG. |
 | **Bootstrap** | Backend bucket and lock table already exist in 057442119249 (used by dev). No need to create a separate prod state bucket. |
 
 ---
@@ -26,7 +26,7 @@ From the final outline (Part C), these gaps were identified and addressed as fol
 |---|-----|--------------|-------------------------|
 | 1 | **Build job** | Root `package.json` must provide Lambda + web build and Lambda zip. | **Fixed.** Root `package.json`: `build:backend`, `package:lambda`; workflow has `build-lambda` (Lambda only) and `build-frontends` (admin, vendor, customer with prod API URL). No `build:frontend` monolith; each app built in `build-frontends` job. |
 | 2 | **Lambda zip path** | Terraform expects `backend/lambda/api-handler.zip`; CI must place zip there. | **Fixed.** Build job uploads artifact from `backend/lambda/api-handler.zip`; `terraform-plan` and `terraform-apply` download artifact to `backend/lambda` so the file is in place for Terraform. |
-| 3 | **Prod VPC** | Originally “same VPC as dev”; dev/prod can be different accounts. | **Done.** Prod and dev share AWS account 057442119249. Prod has its own VPC (10.2.0.0/16) with **one NAT gateway** for all private traffic (`single_nat_gateway = true`). |
+| 3 | **Prod VPC** | Originally “same VPC as dev”; dev/prod can be different accounts. | **Done.** Prod uses **existing** VPC (`use_existing_vpc = true`), same pattern as dev; prod VPC must exist in AWS with tags so Lambda and RDS share one network. |
 | 4 | **NAT** | One NAT gateway for all private traffic. | **Fixed.** `infra/envs/prod/main.tf`: `single_nat_gateway = true` in `module "vpc"`. |
 | 5 | **Secrets** | Prod Lambda must get Razorpay, Google Maps, Shiprocket from Secrets Manager. | **Fixed.** `infra/envs/prod/main.tf`: `module "secrets"` added; Lambda `common_env_vars` includes `RAZORPAY_SECRET_ARN`, `GOOGLE_MAPS_SECRET_ARN`, `SHIPROCKET_SECRET_ARN`; `secrets_arns` uses `module.secrets.all_secret_arns`. |
 | 6 | **Seed / bootstrap** | One-time admin config import + admin user; then only migrations on later deploys. | **Partially.** Pipeline runs `seed:prod` (047/048) every time (idempotent). One-time bootstrap (export from dev → import to prod + admin user) is **manual** or one-off; `scripts/admin-config/check-prod-bootstrap.js` exists to detect if bootstrap already done. Optional: add workflow step to run check and skip seed when bootstrap done. |

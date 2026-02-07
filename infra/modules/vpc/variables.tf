@@ -47,7 +47,13 @@ variable "create_private_endpoints" {
 }
 
 variable "use_existing_vpc" {
-  description = "Use existing VPC if found"
+  description = "Use existing VPC if found (no new VPC, subnets, or SGs created)"
+  type        = bool
+  default     = false
+}
+
+variable "create_nat_gateway_in_existing_vpc" {
+  description = "When use_existing_vpc is true: create one NAT gateway (and EIP) in first public subnet. Does not touch route tables or any other existing resources."
   type        = bool
   default     = false
 }

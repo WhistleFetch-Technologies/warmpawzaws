@@ -29,8 +29,8 @@ output "database_subnet_ids" {
 }
 
 output "nat_gateway_ids" {
-  description = "NAT Gateway IDs"
-  value       = aws_nat_gateway.main[*].id
+  description = "NAT Gateway IDs (created by module or the one created in existing VPC)"
+  value       = concat(aws_nat_gateway.main[*].id, aws_nat_gateway.existing_vpc[*].id)
 }
 
 output "vpc_endpoints_security_group_id" {

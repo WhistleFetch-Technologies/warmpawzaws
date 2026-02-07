@@ -266,6 +266,30 @@ resource "aws_nat_gateway" "main" {
   }
 }
 
+# Optional: create one NAT gateway when using existing VPC (e.g. prod). Does not touch VPC, subnets, SGs, or route tables.
+resource "aws_eip" "nat_existing_vpc" {
+  count = var.use_existing_vpc && var.create_nat_gateway_in_existing_vpc ? 1 : 0
+
+  domain = "vpc"
+
+  tags = {
+    Name        = "warmpawz-${var.environment}-nat-eip"
+    Environment = var.environment
+  }
+}
+
+resource "aws_nat_gateway" "existing_vpc" {
+  count = var.use_existing_vpc && var.create_nat_gateway_in_existing_vpc ? 1 : 0
+
+  allocation_id = aws_eip.nat_existing_vpc[0].id
+  subnet_id     = local.public_subnet_ids[0]
+
+  tags = {
+    Name        = "warmpawz-${var.environment}-nat"
+    Environment = var.environment
+  }
+}
+
 # Route Table - Public
 # SKIP when use_existing_vpc = true (route tables already exist in AWS)
 resource "aws_route_table" "public" {
