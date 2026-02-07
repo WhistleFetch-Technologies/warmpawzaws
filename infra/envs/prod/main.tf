@@ -44,23 +44,24 @@ locals {
   )
 }
 
-# VPC Module - Use existing VPC, subnets, SGs (no new ones created). Only create one NAT gateway.
-# Prod VPC must exist in AWS with tags: Name=warmpawz-prod-vpc, Environment=prod;
-# subnets: Type=public|private|database and Environment=prod. Dev is unchanged (no names touched).
+# VPC Module - Use existing VPC, subnets, SGs. Use existing_nat_gateway_id if NAT was created via CLI (see scripts/create-prod-nat-gateway.sh).
+# Set existing_vpc_id to the VPC that contains Lambda to fix "different networks" (RDS SG + Lambda SG must be in same VPC).
 module "vpc" {
   source = "../../modules/vpc"
 
-  environment                         = local.environment
-  aws_region                          = var.aws_region
-  vpc_cidr                            = "10.2.0.0/16"
-  public_subnet_cidrs                 = ["10.2.1.0/24", "10.2.2.0/24", "10.2.3.0/24"]
-  private_subnet_cidrs                = ["10.2.11.0/24", "10.2.12.0/24", "10.2.13.0/24"]
-  database_subnet_cidrs               = ["10.2.21.0/24", "10.2.22.0/24", "10.2.23.0/24"]
-  enable_nat_gateway                  = true
-  single_nat_gateway                  = true
-  create_private_endpoints            = true
-  use_existing_vpc                    = true
-  create_nat_gateway_in_existing_vpc  = true  # Only new resource: one NAT in existing VPC
+  environment                        = local.environment
+  aws_region                         = var.aws_region
+  vpc_cidr                           = "10.2.0.0/16"
+  public_subnet_cidrs                = ["10.2.1.0/24", "10.2.2.0/24", "10.2.3.0/24"]
+  private_subnet_cidrs               = ["10.2.11.0/24", "10.2.12.0/24", "10.2.13.0/24"]
+  database_subnet_cidrs              = ["10.2.21.0/24", "10.2.22.0/24", "10.2.23.0/24"]
+  enable_nat_gateway                 = true
+  single_nat_gateway                 = true
+  create_private_endpoints           = true
+  use_existing_vpc                   = true
+  create_nat_gateway_in_existing_vpc = true
+  existing_vpc_id                    = var.existing_vpc_id
+  existing_nat_gateway_id            = var.existing_nat_gateway_id
 }
 
 module "sns" {

@@ -53,8 +53,20 @@ variable "use_existing_vpc" {
 }
 
 variable "create_nat_gateway_in_existing_vpc" {
-  description = "When use_existing_vpc is true: create one NAT gateway (and EIP) in first public subnet. Does not touch route tables or any other existing resources."
+  description = "When use_existing_vpc is true: create one NAT gateway (and EIP) in first public subnet, or use existing_nat_gateway_id if set."
   type        = bool
   default     = false
+}
+
+variable "existing_nat_gateway_id" {
+  description = "When use_existing_vpc and create_nat_gateway_in_existing_vpc: use this NAT gateway ID instead of creating one (e.g. created via AWS CLI)."
+  type        = string
+  default     = null
+}
+
+variable "existing_vpc_id" {
+  description = "When use_existing_vpc: use this VPC ID instead of looking up by tag (ensures same VPC as Lambda/RDS; use if tag lookup returns wrong VPC)."
+  type        = string
+  default     = null
 }
 

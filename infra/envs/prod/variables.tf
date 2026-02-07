@@ -106,3 +106,17 @@ variable "apns_private_key" {
   sensitive   = true
 }
 
+# Optional: use when prod VPC/subnets were created outside Terraform or to fix "different networks" (RDS/Lambda must be in same VPC)
+variable "existing_vpc_id" {
+  description = "Prod VPC ID to use (must be the VPC that contains Lambda). Set to avoid tag lookup returning wrong VPC."
+  type        = string
+  default     = null
+}
+
+# Optional: use when NAT gateway was created via AWS CLI (e.g. scripts/create-prod-nat-gateway.sh). Terraform will not create NAT.
+variable "existing_nat_gateway_id" {
+  description = "Existing NAT gateway ID (e.g. nat-xxxx). When set, Terraform does not create NAT in existing VPC."
+  type        = string
+  default     = null
+}
+

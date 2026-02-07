@@ -2,7 +2,7 @@
 # Idempotent: Creates only if not exists
 
 data "aws_vpc" "existing" {
-  count = var.use_existing_vpc ? 1 : 0
+  count = var.use_existing_vpc && var.existing_vpc_id == null ? 1 : 0
 
   filter {
     name   = "tag:Name"
@@ -34,21 +34,13 @@ resource "aws_vpc" "main" {
 }
 
 locals {
-  vpc_id = var.use_existing_vpc ? data.aws_vpc.existing[0].id : aws_vpc.main[0].id
-  
+  # When use_existing_vpc: prefer existing_vpc_id if set (fixes RDS/Lambda "different networks" when tag lookup returns wrong VPC)
+  vpc_id = var.use_existing_vpc ? (var.existing_vpc_id != null && var.existing_vpc_id != "" ? var.existing_vpc_id : data.aws_vpc.existing[0].id) : aws_vpc.main[0].id
+
   # Subnet IDs - use data source if existing VPC, otherwise use created subnets
-  # When use_existing_vpc = true, subnets have count = 0, so we MUST use data sources
-  private_subnet_ids = var.use_existing_vpc ? (
-    data.aws_subnets.existing_private[0].ids
-  ) : aws_subnet.private[*].id
-  
-  public_subnet_ids = var.use_existing_vpc ? (
-    data.aws_subnets.existing_public[0].ids
-  ) : aws_subnet.public[*].id
-  
-  database_subnet_ids = var.use_existing_vpc ? (
-    data.aws_subnets.existing_database[0].ids
-  ) : aws_subnet.database[*].id
+  private_subnet_ids  = var.use_existing_vpc ? data.aws_subnets.existing_private[0].ids : aws_subnet.private[*].id
+  public_subnet_ids   = var.use_existing_vpc ? data.aws_subnets.existing_public[0].ids : aws_subnet.public[*].id
+  database_subnet_ids = var.use_existing_vpc ? data.aws_subnets.existing_database[0].ids : aws_subnet.database[*].id
 }
 
 # Availability Zones
@@ -266,9 +258,9 @@ resource "aws_nat_gateway" "main" {
   }
 }
 
-# Optional: create one NAT gateway when using existing VPC (e.g. prod). Does not touch VPC, subnets, SGs, or route tables.
+# Optional: create one NAT gateway when using existing VPC, or use existing_nat_gateway_id (e.g. created via AWS CLI).
 resource "aws_eip" "nat_existing_vpc" {
-  count = var.use_existing_vpc && var.create_nat_gateway_in_existing_vpc ? 1 : 0
+  count = var.use_existing_vpc && var.create_nat_gateway_in_existing_vpc && (var.existing_nat_gateway_id == null || var.existing_nat_gateway_id == "") ? 1 : 0
 
   domain = "vpc"
 
@@ -279,7 +271,7 @@ resource "aws_eip" "nat_existing_vpc" {
 }
 
 resource "aws_nat_gateway" "existing_vpc" {
-  count = var.use_existing_vpc && var.create_nat_gateway_in_existing_vpc ? 1 : 0
+  count = var.use_existing_vpc && var.create_nat_gateway_in_existing_vpc && (var.existing_nat_gateway_id == null || var.existing_nat_gateway_id == "") ? 1 : 0
 
   allocation_id = aws_eip.nat_existing_vpc[0].id
   subnet_id     = local.public_subnet_ids[0]
