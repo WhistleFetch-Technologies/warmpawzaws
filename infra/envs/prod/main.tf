@@ -131,6 +131,8 @@ module "lambda" {
   }
 
   common_env_vars = {
+    UAT_MODE                    = "false"
+    ENVIRONMENT                 = local.environment
     DB_HOST                     = module.rds.cluster_endpoint
     DB_READER_HOST              = module.rds.cluster_reader_endpoint
     DB_NAME                     = module.rds.database_name

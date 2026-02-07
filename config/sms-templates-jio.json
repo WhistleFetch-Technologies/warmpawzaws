@@ -5,8 +5,9 @@
   "templates": [
     {
       "id": "otp_login",
-      "jioTemplateName": "Warmpawz OTP Login",
-      "message": "Warmpawz: Your OTP is {#number#}. Valid for 5 minutes. Do not share.",
+      "jioTemplateName": "Login OTP",
+      "jioTemplateId": "1207177028377787269",
+      "message": "Warmpawz: Your OTP for logging in is {#number#}. Do not share this OTP with anyone.",
       "variables": [
         { "key": "otp", "jioTag": "number", "maxLength": 30 }
       ]

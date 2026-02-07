@@ -74,6 +74,11 @@ async function verifyOtp(phone: string, code: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * Send SMS via AWS SNS direct to phone number.
+ * Uses admin:settings:aws from platform_settings (credentials + sns.enabled, smsOriginationNumber).
+ * For India DLT: message must match Jio-approved template exactly.
+ */
 async function sendSmsViaSns(phone: string, message: string): Promise<boolean> {
   try {
     const settings = await select('platform_settings', {
@@ -81,34 +86,48 @@ async function sendSmsViaSns(phone: string, message: string): Promise<boolean> {
     });
 
     if (settings.length === 0) {
-      console.warn('AWS settings not found in database');
+      console.warn('[SMS] AWS settings not found in database (admin:settings:aws)');
       return false;
     }
 
     const awsConfig = settings[0].setting_value as any;
-    const snsTopicArn = awsConfig?.sns?.smsTopicArn || process.env.SNS_SMS_TOPIC_ARN;
-
-    if (!snsTopicArn) {
-      console.warn('SNS topic ARN not configured');
+    if (!awsConfig?.sns?.enabled || !awsConfig?.credentials?.accessKeyId) {
+      console.warn('[SMS] SNS not enabled or credentials missing');
       return false;
     }
 
-    const snsClient = new SNSClient({ region: awsConfig?.region || 'ap-south-1' });
-    
-    await snsClient.send(new PublishCommand({
-      TopicArn: snsTopicArn,
-      Message: message,
-      MessageAttributes: {
-        phone: {
-          DataType: 'String',
-          StringValue: phone,
-        },
+    const snsClient = new SNSClient({
+      region: awsConfig?.sns?.region || awsConfig?.credentials?.region || 'ap-south-1',
+      credentials: {
+        accessKeyId: awsConfig.credentials.accessKeyId,
+        secretAccessKey: awsConfig.credentials.secretAccessKey,
       },
+    });
+
+    const messageAttributes: Record<string, { DataType: string; StringValue: string }> = {
+      'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
+    };
+    if (awsConfig?.sns?.smsOriginationNumber) {
+      messageAttributes['AWS.SNS.SMS.SenderID'] = {
+        DataType: 'String',
+        StringValue: String(awsConfig.sns.smsOriginationNumber).trim().substring(0, 6),
+      };
+    }
+    // India DLT: Entity ID (PE) and Template ID required for local routes
+    const entityId = awsConfig?.sns?.entityId || '1201176605406673276';
+    const templateId = awsConfig?.sns?.templateId || '1207177028377787269';
+    messageAttributes['AWS.MM.SMS.EntityId'] = { DataType: 'String', StringValue: entityId };
+    messageAttributes['AWS.MM.SMS.TemplateId'] = { DataType: 'String', StringValue: templateId };
+
+    await snsClient.send(new PublishCommand({
+      PhoneNumber: phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`,
+      Message: message,
+      MessageAttributes: messageAttributes,
     }));
 
     return true;
   } catch (error) {
-    console.error('Error sending SMS via SNS:', error);
+    console.error('[SMS] SNS send failed:', error);
     return false;
   }
 }
@@ -169,11 +188,12 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
       }
 
       // Send SMS (only in production, not in UAT mode)
+      // Use exact Jio-approved Login OTP template: Warmpawz: Your OTP for logging in is {#number#}. Do not share this OTP with anyone.
       if (!isUATMode) {
         try {
-          const message = `Your Warmpawz OTP is ${otpCode}. Valid for 5 minutes.`;
-          await sendSmsViaSns(phone, message);
-          console.log(`[AUTH] Production Mode: SMS sent to ${phone}`);
+          const message = `Warmpawz: Your OTP for logging in is ${otpCode}. Do not share this OTP with anyone.`;
+          await sendSmsViaSns(normalizedPhone, message);
+          console.log(`[AUTH] Production Mode: SMS sent to ${normalizedPhone}`);
         } catch (smsError: any) {
           console.warn('[AUTH] Production Mode: SMS send failed, continuing:', smsError);
           // Don't fail OTP send if SMS fails, but log it

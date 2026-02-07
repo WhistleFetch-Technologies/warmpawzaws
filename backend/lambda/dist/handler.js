@@ -127822,29 +127822,42 @@ async function sendSmsViaSns(phone, message2) {
       setting_key: "admin:settings:aws"
     });
     if (settings.length === 0) {
-      console.warn("AWS settings not found in database");
+      console.warn("[SMS] AWS settings not found in database (admin:settings:aws)");
       return false;
     }
     const awsConfig = settings[0].setting_value;
-    const snsTopicArn = awsConfig?.sns?.smsTopicArn || process.env.SNS_SMS_TOPIC_ARN;
-    if (!snsTopicArn) {
-      console.warn("SNS topic ARN not configured");
+    if (!awsConfig?.sns?.enabled || !awsConfig?.credentials?.accessKeyId) {
+      console.warn("[SMS] SNS not enabled or credentials missing");
       return false;
     }
-    const snsClient4 = new import_client_sns.SNSClient({ region: awsConfig?.region || "ap-south-1" });
-    await snsClient4.send(new import_client_sns.PublishCommand({
-      TopicArn: snsTopicArn,
-      Message: message2,
-      MessageAttributes: {
-        phone: {
-          DataType: "String",
-          StringValue: phone
-        }
+    const snsClient4 = new import_client_sns.SNSClient({
+      region: awsConfig?.sns?.region || awsConfig?.credentials?.region || "ap-south-1",
+      credentials: {
+        accessKeyId: awsConfig.credentials.accessKeyId,
+        secretAccessKey: awsConfig.credentials.secretAccessKey
       }
+    });
+    const messageAttributes = {
+      "AWS.SNS.SMS.SMSType": { DataType: "String", StringValue: "Transactional" }
+    };
+    if (awsConfig?.sns?.smsOriginationNumber) {
+      messageAttributes["AWS.SNS.SMS.SenderID"] = {
+        DataType: "String",
+        StringValue: String(awsConfig.sns.smsOriginationNumber).trim().substring(0, 6)
+      };
+    }
+    const entityId = awsConfig?.sns?.entityId || "1201176605406673276";
+    const templateId = awsConfig?.sns?.templateId || "1207177028377787269";
+    messageAttributes["AWS.MM.SMS.EntityId"] = { DataType: "String", StringValue: entityId };
+    messageAttributes["AWS.MM.SMS.TemplateId"] = { DataType: "String", StringValue: templateId };
+    await snsClient4.send(new import_client_sns.PublishCommand({
+      PhoneNumber: phone.startsWith("+") ? phone : `+91${phone.replace(/\D/g, "")}`,
+      Message: message2,
+      MessageAttributes: messageAttributes
     }));
     return true;
   } catch (error) {
-    console.error("Error sending SMS via SNS:", error);
+    console.error("[SMS] SNS send failed:", error);
     return false;
   }
 }
@@ -127883,9 +127896,9 @@ var SendOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
       }
       if (!isUATMode2) {
         try {
-          const message2 = `Your Warmpawz OTP is ${otpCode}. Valid for 5 minutes.`;
-          await sendSmsViaSns(phone, message2);
-          console.log(`[AUTH] Production Mode: SMS sent to ${phone}`);
+          const message2 = `Warmpawz: Your OTP for logging in is ${otpCode}. Do not share this OTP with anyone.`;
+          await sendSmsViaSns(normalizedPhone, message2);
+          console.log(`[AUTH] Production Mode: SMS sent to ${normalizedPhone}`);
         } catch (smsError) {
           console.warn("[AUTH] Production Mode: SMS send failed, continuing:", smsError);
         }
@@ -147253,30 +147266,32 @@ function registerServiceDiscoveryEndpoints(app3) {
       const vendors = await query(vendorQuery, params);
       const services = await Promise.all(
         vendors.rows.map(async (vendor) => {
-          const serviceColumns = await query(
-            `SELECT column_name FROM information_schema.columns 
-             WHERE table_name = 'services' AND column_name = 'is_global'`
-          );
-          const hasIsGlobal = serviceColumns.rows.length > 0;
+          const params2 = [vendor.id];
+          let styleClause = "";
+          if (serviceStyle) {
+            params2.push(serviceStyle);
+            styleClause = ` AND vs.service_style = $${params2.length}`;
+          }
           const vendorServices = await query(
-            `SELECT s.*, vs.custom_price, vs.custom_duration, vs.service_style
-             FROM services s
-             LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
-             WHERE (vs.vendor_id = $1${hasIsGlobal ? " OR s.is_global = true" : ""})
-             AND s.is_active = true
-             ${serviceStyle ? `AND vs.service_style = $2` : ""}
-             ORDER BY s.name`,
-            serviceStyle ? [vendor.id, serviceStyle] : [vendor.id]
+            `SELECT vs.id as vs_id, vs.service_id, vs.service_name as vs_service_name, vs.custom_price, vs.custom_duration, vs.service_style, vs.category,
+                    s.id as s_id, s.name as s_name, s.price as s_price, s.duration_minutes as s_duration,
+                    sc.id as sc_id, sc.service_name as sc_service_name, sc.base_price as sc_price, sc.duration_minutes as sc_duration
+             FROM vendor_services vs
+             LEFT JOIN services s ON vs.service_id = s.id
+             LEFT JOIN service_catalog sc ON vs.service_id = sc.id
+             WHERE vs.vendor_id = $1 AND vs.is_enabled = true AND vs.publish_status = 'published'${styleClause}
+             ORDER BY COALESCE(vs.service_name, sc.service_name, s.name)`,
+            params2
           );
-          return vendorServices.rows.map((service) => ({
-            id: service.id,
-            serviceId: service.id,
-            serviceName: service.name,
+          return vendorServices.rows.map((row) => ({
+            id: row.vs_id,
+            serviceId: row.service_id,
+            serviceName: row.vs_service_name || row.sc_service_name || row.s_name || "Service",
             vendorId: vendor.id,
             vendorName: vendor.business_name,
-            price: service.custom_price || service.base_price || 0,
-            duration: service.custom_duration || service.duration_minutes || 30,
-            serviceStyle: service.service_style || serviceStyle
+            price: row.custom_price != null ? parseFloat(row.custom_price) : row.sc_price != null ? parseFloat(row.sc_price) : row.s_price != null ? parseFloat(row.s_price) : 0,
+            duration: row.custom_duration ?? row.sc_duration ?? row.s_duration ?? 30,
+            serviceStyle: row.service_style || serviceStyle
           }));
         })
       );
@@ -147475,13 +147490,14 @@ function registerServiceDiscoveryEndpoints(app3) {
               OR r.name LIKE '%Solo%'
               OR LOWER(r.name) LIKE '%solo%'
             )`;
-        const vendorParams = targetRolesLower.length > 0 ? targetRolesLower : [];
+        const vendorParams = targetRolesLower.length > 0 ? [...targetRolesLower] : [];
         const isWalkerCategory = category?.toLowerCase() === "walker" || category?.toLowerCase() === "walking" || targetRolesLower.length > 0 && targetRolesLower.some((r) => ["walker", "walker_solo", "pet_walker", "dog_walker"].includes(r));
-        const existsServiceClause = targetRolesLower.length > 0 ? isWalkerCategory ? ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true AND vs.publish_status = 'published')` : ` AND EXISTS (
+        const styleFilterInExists = targetRolesLower.length > 0 ? ` AND vs.service_style = $2` : "";
+        const existsServiceClause = targetRolesLower.length > 0 ? isWalkerCategory ? ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true AND vs.publish_status = 'published'${styleFilterInExists})` : ` AND EXISTS (
               SELECT 1 FROM vendor_services vs
               WHERE vs.vendor_id = v.id
                 AND vs.is_enabled = true
-                AND vs.publish_status = 'published'
+                AND vs.publish_status = 'published'${styleFilterInExists}
             )` : ` AND EXISTS (
               SELECT 1 FROM vendor_services vs
               WHERE vs.vendor_id = v.id
@@ -147490,10 +147506,11 @@ function registerServiceDiscoveryEndpoints(app3) {
                 AND vs.publish_status = 'published'
             )`;
         if (targetRolesLower.length === 0) vendorParams.unshift(serviceStyle);
+        if (targetRolesLower.length > 0) vendorParams.push(serviceStyle);
         let vendorQuery2 = `
           SELECT DISTINCT v.id, v.business_name, v.owner_name, v.phone, v.city, v.state,
                  v.latitude, v.longitude, r.name as role_name, r.display_name as role_display_name,
-                 v.languages, v.is_verified, v.profile_image, v.specializations, v.is_online,
+                 v.languages, v.is_verified, v.profile_photo_url, v.profile_image, v.logo_url, v.specializations, v.is_online,
                  v.vendor_type, v.metadata,
                  v.service_radius,
                  (SELECT MIN(vs.service_radius_km) FROM vendor_services vs
@@ -147685,8 +147702,8 @@ function registerServiceDiscoveryEndpoints(app3) {
             isVerified: vendor.is_verified ?? vendor.status === "approved",
             isOnline: vendor.is_online ?? true,
             languages: vendor.languages ? Array.isArray(vendor.languages) ? vendor.languages : JSON.parse(vendor.languages || "[]") : ["English", "Hindi"],
-            photoUrl: vendor.profile_image || null,
-            vendorProfileImage: vendor.profile_image || null,
+            photoUrl: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
+            vendorProfileImage: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
             specializations: vendor.specializations ? Array.isArray(vendor.specializations) ? vendor.specializations : JSON.parse(vendor.specializations || "[]") : [],
             // Phase 2: Gallery, price range, bestForProblem, hasPackages
             photos: photos.length > 0 ? photos : void 0,
@@ -148030,8 +148047,8 @@ function registerServiceDiscoveryEndpoints(app3) {
             completedBookings,
             languages,
             isVerified,
-            photoUrl: vendor.profile_image || vendor.logo_url || null,
-            vendorProfileImage: vendor.profile_image || vendor.logo_url || null,
+            photoUrl: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
+            vendorProfileImage: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
             // Phase 2: Gallery, price range, bestForProblem, hasPackages
             photos: photos.length > 0 ? photos : void 0,
             priceMin: priceMin > 0 ? priceMin : void 0,
@@ -148810,12 +148827,12 @@ function registerServiceDiscoveryEndpoints(app3) {
       }
       if (serviceStyle === "at_center") {
         vendorQuery += ` AND (v.vendor_type IS NULL OR v.vendor_type != 'solo')`;
-        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true)`;
+        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true AND vs.publish_status = 'published')`;
         params.push(serviceStyle);
         paramIndex++;
       } else if (serviceStyle === "at_home" || serviceStyle === "tele") {
         vendorQuery += ` AND (v.vendor_type = 'solo' OR r.name LIKE '%_solo' OR LOWER(r.name) LIKE '%solo%')`;
-        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true)`;
+        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true AND vs.publish_status = 'published')`;
         params.push(serviceStyle);
         paramIndex++;
       }
@@ -150361,7 +150378,9 @@ function registerServiceDiscoveryEndpoints(app3) {
           v.city,
           v.latitude,
           v.longitude,
+          v.profile_photo_url,
           v.profile_image,
+          v.logo_url,
           v.specializations,
           v.metadata,
           r.name as role_name,
@@ -150440,8 +150459,8 @@ function registerServiceDiscoveryEndpoints(app3) {
           vendorName: vendor.business_name || vendor.owner_name,
           name: vendor.business_name || vendor.owner_name,
           phone: vendor.phone,
-          photo: vendor.profile_image || null,
-          photoUrl: vendor.profile_image || null,
+          photo: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
+          photoUrl: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
           role: vendor.role_display_name || vendor.role_name,
           experienceYears: null,
           qualifications: null,
@@ -151423,37 +151442,60 @@ function registerFollowupRescheduleEndpoints(app3) {
         return c.json({ error: "Booking not found" }, 404);
       }
       const booking = bookingResult.rows[0];
-      const vendorId = booking.vendor_id;
+      const bookingVendorId = booking.vendor_id;
+      const vendor = await resolveVendorById(bookingVendorId);
+      const resolvedVendorId = vendor?.id ?? bookingVendorId;
+      const availabilityIds = await getVendorIdsForAvailabilityLookup(resolvedVendorId);
+      const vendorIdsForQuery = availabilityIds.length > 0 ? availabilityIds : [resolvedVendorId];
       const datesToCheck = date ? [date] : Array.from({ length: 7 }, (_, i) => {
         const d = /* @__PURE__ */ new Date();
         d.setDate(d.getDate() + i + 1);
         return d.toISOString().split("T")[0];
       });
+      const styleArray = [serviceStyle];
       const allSlots = [];
       for (const checkDate of datesToCheck) {
         const requestedDate = new Date(checkDate);
         const dayOfWeek = requestedDate.getDay();
-        const scheduleSlots = await query(
-          `SELECT * FROM vendor_availability_v2
-           WHERE vendor_id::text = $1::text
-           AND day_of_week = $2
-           AND service_style = $3
-           AND is_enabled = true
-           ORDER BY time_window_start`,
-          [booking.vendor_id, dayOfWeek, serviceStyle]
-        );
+        let scheduleSlots;
+        try {
+          scheduleSlots = await query(
+            `SELECT * FROM vendor_availability_v2
+             WHERE vendor_id::text = ANY($1::text[])
+             AND day_of_week = $2
+             AND (
+               service_style::text = ANY($3::text[])
+               OR (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
+               OR COALESCE(service_type, '')::text = ANY($3::text[])
+             )
+             AND COALESCE(is_enabled, is_available, true) = true
+             ORDER BY COALESCE(time_window_start, start_time)`,
+            [vendorIdsForQuery, dayOfWeek, styleArray]
+          );
+        } catch (_) {
+          scheduleSlots = await query(
+            `SELECT * FROM vendor_availability_v2
+             WHERE vendor_id::text = ANY($1::text[])
+             AND day_of_week = $2
+             AND service_style = $3
+             AND (is_enabled = true OR is_enabled IS NULL)
+             ORDER BY time_window_start`,
+            [vendorIdsForQuery, dayOfWeek, serviceStyle]
+          );
+        }
         const existingBookings = await query(
           `SELECT booking_time FROM bookings
            WHERE vendor_id::text = $1::text
            AND booking_date = $2
            AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
            AND id::text != $3::text`,
-          [booking.vendor_id, checkDate, bookingId]
+          [resolvedVendorId, checkDate, bookingId]
         );
         const bookedTimes = new Set(existingBookings.rows.map((b) => b.booking_time));
         for (const slot of scheduleSlots.rows) {
-          const startTime = slot.time_window_start;
-          const endTime = slot.time_window_end;
+          const startTime = slot.time_window_start ?? slot.start_time;
+          const endTime = slot.time_window_end ?? slot.end_time;
+          if (!startTime || !endTime) continue;
           const slots = generateTimeSlots(startTime, endTime, 30);
           for (const timeSlot of slots) {
             if (!bookedTimes.has(timeSlot)) {
@@ -186083,11 +186125,16 @@ function registerRefundPolicyEngineEndpoints(app3) {
   });
   app3.get("/customer/refund-policy", async (c) => {
     try {
-      const rules = await query(
+      const vendorId = c.req.query("vendorId");
+      const serviceId = c.req.query("serviceId");
+      let rules = { rows: [] };
+      rules = await query(
         `SELECT * FROM booking_cancellation_rules
-         WHERE vendor_id IS NULL AND service_id IS NULL
-         ORDER BY created_at DESC
-         LIMIT 1`
+         WHERE (vendor_id IS NULL OR vendor_id::text = $1)
+           AND (service_id IS NULL OR service_id::text = $2)
+         ORDER BY (vendor_id IS NOT NULL)::int + (service_id IS NOT NULL)::int DESC, created_at DESC
+         LIMIT 1`,
+        [vendorId || null, serviceId || null]
       ).catch(() => ({ rows: [] }));
       const rows = rules.rows || [];
       if (rows.length > 0) {
@@ -189652,6 +189699,36 @@ function registerAdminAdvancedEndpoints(app3) {
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode);
     }
   });
+  async function getHsnCodeColumn() {
+    try {
+      const r = await query(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'hsn_codes' AND column_name IN ('hsn_code', 'code') ORDER BY column_name`,
+        []
+      );
+      const rows = r?.rows ?? (Array.isArray(r) ? r : []);
+      const names = rows.map((x) => (x?.column_name || x?.Column_name || "").toLowerCase());
+      if (names.includes("hsn_code")) return "hsn_code";
+      if (names.includes("code")) return "code";
+    } catch (_) {
+    }
+    try {
+      await query(`SELECT id FROM hsn_codes WHERE hsn_code = $1 LIMIT 0`, [""]);
+      return "hsn_code";
+    } catch (e) {
+      if (String(e?.message || "").includes("hsn_code") && String(e?.message || "").includes("does not exist")) return "code";
+      throw e;
+    }
+  }
+  async function hsnCodeExistsElsewhere(codeColumn, code, excludeId) {
+    const normalized = String(code ?? "").trim();
+    if (!normalized) return false;
+    const q = await query(
+      `SELECT id FROM hsn_codes WHERE ${codeColumn} = $1 AND ($2::uuid IS NULL OR id != $2) LIMIT 1`,
+      [normalized, excludeId ?? null]
+    );
+    const rows = q?.rows ?? (Array.isArray(q) ? q : []);
+    return rows.length > 0;
+  }
   app3.get("/admin/finance/gst/hsn-codes", async (c) => {
     try {
       let rows;
@@ -189701,8 +189778,17 @@ function registerAdminAdvancedEndpoints(app3) {
       if (!code || !gstRate) {
         return c.json({ success: false, error: "HSN code and GST rate are required" }, 400);
       }
+      const codeColumn = await getHsnCodeColumn();
+      const codeVal = String(code).trim();
+      if (await hsnCodeExistsElsewhere(codeColumn, codeVal, null)) {
+        console.log("[HSN] Create rejected: duplicate code", { code: codeVal, column: codeColumn });
+        return c.json(
+          { success: false, error: "An HSN code with this code already exists. Use a different code or edit the existing one." },
+          409
+        );
+      }
       const insertPayload = {
-        hsn_code: code,
+        [codeColumn]: codeVal,
         description: description || "",
         gst_rate: parseFloat(gstRate),
         is_active: isActive !== false,
@@ -189712,8 +189798,31 @@ function registerAdminAdvancedEndpoints(app3) {
       let newCode;
       try {
         newCode = await insert("hsn_codes", insertPayload);
+        console.log("[HSN] Create success", { id: newCode[0]?.id, code: codeVal, column: codeColumn });
       } catch (insErr) {
-        if (categoryId && String(insErr?.message || "").includes("category_id") && String(insErr?.message || "").includes("does not exist")) {
+        const msg = String(insErr?.message || "");
+        if (msg.includes("duplicate key") || insErr?.code === "23505") {
+          return c.json(
+            { success: false, error: "An HSN code with this code already exists. Use a different code or edit the existing one." },
+            409
+          );
+        }
+        if (msg.includes("does not exist") && (msg.includes("hsn_code") || msg.includes("code"))) {
+          const otherCol = codeColumn === "hsn_code" ? "code" : "hsn_code";
+          delete insertPayload[codeColumn];
+          insertPayload[otherCol] = codeVal;
+          try {
+            newCode = await insert("hsn_codes", insertPayload);
+          } catch (retryErr) {
+            if (String(retryErr?.message || "").includes("duplicate key") || retryErr?.code === "23505") {
+              return c.json(
+                { success: false, error: "An HSN code with this code already exists. Use a different code or edit the existing one." },
+                409
+              );
+            }
+            throw retryErr;
+          }
+        } else if (categoryId && msg.includes("category_id") && msg.includes("does not exist")) {
           delete insertPayload.category_id;
           newCode = await insert("hsn_codes", insertPayload);
         } else {
@@ -189726,7 +189835,7 @@ function registerAdminAdvancedEndpoints(app3) {
         code: newCode[0]
       });
     } catch (error) {
-      console.error("Error creating HSN code:", error);
+      console.error("[HSN] Create error:", error?.message || error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });
@@ -189734,17 +189843,65 @@ function registerAdminAdvancedEndpoints(app3) {
     try {
       const id = c.req.param("id");
       const body = await c.req.json().catch(() => ({}));
+      const codeColumn = await getHsnCodeColumn();
       const updateData = {};
-      if (body.code !== void 0) updateData.hsn_code = body.code;
+      if (body.code !== void 0) {
+        const newCode = String(body.code).trim();
+        const existing = await query(
+          `SELECT id, ${codeColumn} as code_val FROM hsn_codes WHERE id = $1::uuid LIMIT 1`,
+          [id]
+        );
+        const rows = existing?.rows ?? (Array.isArray(existing) ? existing : []);
+        const currentRow = rows[0];
+        const currentCode = currentRow ? String(currentRow.code_val ?? "").trim() : "";
+        if (newCode === currentCode) {
+        } else {
+          if (await hsnCodeExistsElsewhere(codeColumn, newCode, id)) {
+            console.log("[HSN] Update rejected: duplicate code", { id, code: newCode, column: codeColumn });
+            return c.json(
+              { success: false, error: "Another HSN code with this code already exists. Use a different code or edit the existing one." },
+              409
+            );
+          }
+          updateData[codeColumn] = newCode;
+        }
+      }
       if (body.description !== void 0) updateData.description = body.description;
       if (body.gstRate !== void 0) updateData.gst_rate = parseFloat(body.gstRate);
       if (body.isActive !== void 0) updateData.is_active = body.isActive;
       if (body.categoryId !== void 0) updateData.category_id = body.categoryId || null;
+      if (Object.keys(updateData).length === 0) {
+        const existing = await query(`SELECT * FROM hsn_codes WHERE id = $1::uuid LIMIT 1`, [id]);
+        const row = existing.rows?.[0];
+        if (row) return c.json({ success: true, message: "HSN code unchanged", code: row });
+        return c.json({ success: false, error: "HSN code not found" }, 404);
+      }
       let updated;
       try {
         updated = await update("hsn_codes", { id }, updateData);
+        if (!updated || updated.length === 0) {
+          return c.json({ success: false, error: "HSN code not found" }, 404);
+        }
+        console.log("[HSN] Update success", { id, column: codeColumn });
       } catch (updErr) {
-        if (updateData.category_id !== void 0 && String(updErr?.message || "").includes("category_id") && String(updErr?.message || "").includes("does not exist")) {
+        const msg = String(updErr?.message || "");
+        if (msg.includes("duplicate key") || updErr?.code === "23505") {
+          return c.json(
+            { success: false, error: "Another HSN code with this code already exists. Use a different code or edit the existing one." },
+            409
+          );
+        }
+        if (msg.includes("does not exist") && (msg.includes("hsn_code") || msg.includes("code"))) {
+          const codeVal = updateData[codeColumn];
+          if (codeVal !== void 0) {
+            const otherCol = codeColumn === "hsn_code" ? "code" : "hsn_code";
+            delete updateData[codeColumn];
+            updateData[otherCol] = codeVal;
+            updated = await update("hsn_codes", { id }, updateData);
+          } else {
+            throw updErr;
+          }
+        } else if (updateData.category_id !== void 0 && msg.includes("category_id") && msg.includes("does not exist")) {
           delete updateData.category_id;
           updated = await update("hsn_codes", { id }, updateData);
         } else {
@@ -189757,7 +189914,14 @@ function registerAdminAdvancedEndpoints(app3) {
         code: updated[0]
       });
     } catch (error) {
-      console.error("Error updating HSN code:", error);
+      console.error("[HSN] Update error:", error?.message || error);
+      const msg = String(error?.message || "");
+      if (msg.includes("duplicate key") || error?.code === "23505") {
+        return c.json(
+          { success: false, error: "Another HSN code with this code already exists. Use a different code or edit the existing one." },
+          409
+        );
+      }
       return c.json({ success: false, error: error.message }, 500);
     }
   });
@@ -189784,13 +189948,17 @@ function registerAdminAdvancedEndpoints(app3) {
     try {
       const body = await c.req.json().catch(() => ({}));
       const { name, description, defaultGSTRate, applicableServices, isActive } = body;
-      if (!name || !defaultGSTRate) {
-        return c.json({ success: false, error: "Category name and default GST rate are required" }, 400);
+      if (!name || typeof name === "string" && !name.trim()) {
+        return c.json({ success: false, error: "Category name is required" }, 400);
+      }
+      const rate = defaultGSTRate !== void 0 && defaultGSTRate !== null ? parseFloat(String(defaultGSTRate)) : NaN;
+      if (Number.isNaN(rate) || rate < 0) {
+        return c.json({ success: false, error: "Default GST rate must be a non-negative number (0 is allowed)" }, 400);
       }
       const newCategory = await insert("tax_categories", {
-        category_name: name,
-        description: description || "",
-        tax_rate: parseFloat(defaultGSTRate),
+        category_name: String(name).trim(),
+        description: description != null ? String(description) : "",
+        tax_rate: rate,
         is_active: isActive !== false,
         created_at: (/* @__PURE__ */ new Date()).toISOString()
       });
@@ -192513,22 +192681,35 @@ function registerAdminAdvancedEndpoints(app3) {
   });
   app3.get("/admin/settings/aws", async (c) => {
     try {
-      const settings = await query(`
-        SELECT * FROM platform_settings 
-        WHERE setting_key LIKE 'aws_%' OR setting_key LIKE 's3_%' OR setting_key LIKE 'sns_%' OR setting_key LIKE 'sqs_%' OR setting_key LIKE 'chime_%' OR setting_key LIKE 'bedrock_%'
-        ORDER BY setting_key ASC
-      `).catch(() => ({ rows: [] }));
-      return c.json({ success: true, settings: settings.rows });
+      const row = await query(
+        `SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:settings:aws' LIMIT 1`
+      ).then((r) => r.rows?.[0]).catch(() => null);
+      const settings = row?.setting_value || {
+        credentials: { accessKeyId: "", secretAccessKey: "", region: "ap-south-1" },
+        s3: { enabled: false, bucket: "", region: "ap-south-1" },
+        sns: { enabled: false, region: "ap-south-1", smsOriginationNumber: "WARMPZ", entityId: "1201176605406673276", templateId: "1207177028377787269", emailSourceAddress: "" },
+        sqs: { enabled: false, queueUrl: "", region: "ap-south-1" },
+        chime: { enabled: false, region: "us-east-1" },
+        bedrock: { enabled: false, region: "us-east-1", modelId: "anthropic.claude-v2" }
+      };
+      return c.json({ success: true, settings });
     } catch (error) {
-      return c.json({ success: true, settings: [] });
+      return c.json({ success: true, settings: {} });
     }
   });
   app3.post("/admin/settings/aws", async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
+      await query(
+        `INSERT INTO platform_settings (setting_key, setting_value, setting_type, is_public, created_at, updated_at)
+         VALUES ('admin:settings:aws', $1::jsonb, 'object', false, NOW(), NOW())
+         ON CONFLICT (setting_key) DO UPDATE SET setting_value = $1::jsonb, updated_at = NOW()`,
+        [JSON.stringify(body)]
+      );
       return c.json({ success: true, message: "AWS settings saved" });
     } catch (error) {
-      return c.json({ success: false, error: "Failed to save AWS settings" }, 500);
+      const err = error;
+      return c.json({ success: false, error: err?.message || "Failed to save AWS settings" }, 500);
     }
   });
   app3.get("/admin/settings/payment-gateway", async (c) => {
@@ -195410,6 +195591,15 @@ var DEFAULT_POLICIES = {
     }
   },
   booking: {
+    payment: {
+      title: "Payment Policy",
+      description: "Secure payments via Razorpay",
+      details: [
+        "Accepted: Cards, UPI, Net Banking, Wallet",
+        "Payment is due at checkout unless otherwise stated",
+        "Platform and convenience fees may apply as per config"
+      ]
+    },
     cancellation: {
       title: "Cancellation Policy",
       description: "Flexible cancellation for your convenience",

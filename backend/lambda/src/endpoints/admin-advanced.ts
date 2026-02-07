@@ -3109,6 +3109,39 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  /** Detect which code column exists in hsn_codes (hsn_code, code, or both). Prefer hsn_code. */
+  async function getHsnCodeColumn(): Promise<'hsn_code' | 'code'> {
+    try {
+      const r = await query(
+        `SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'hsn_codes' AND column_name IN ('hsn_code', 'code') ORDER BY column_name`,
+        []
+      );
+      const rows = (r as any)?.rows ?? (Array.isArray(r) ? r : []);
+      const names = rows.map((x: any) => (x?.column_name || x?.Column_name || '').toLowerCase());
+      if (names.includes('hsn_code')) return 'hsn_code';
+      if (names.includes('code')) return 'code';
+    } catch (_) {}
+    try {
+      await query(`SELECT id FROM hsn_codes WHERE hsn_code = $1 LIMIT 0`, ['']);
+      return 'hsn_code';
+    } catch (e: any) {
+      if (String(e?.message || '').includes('hsn_code') && String(e?.message || '').includes('does not exist')) return 'code';
+      throw e;
+    }
+  }
+
+  /** Returns true if another row has this code (optionally excluding one id). Uses detected column. */
+  async function hsnCodeExistsElsewhere(codeColumn: 'hsn_code' | 'code', code: string, excludeId: string | null): Promise<boolean> {
+    const normalized = String(code ?? '').trim();
+    if (!normalized) return false;
+    const q = await query(
+      `SELECT id FROM hsn_codes WHERE ${codeColumn} = $1 AND ($2::uuid IS NULL OR id != $2) LIMIT 1`,
+      [normalized, excludeId ?? null]
+    );
+    const rows = (q as any)?.rows ?? (Array.isArray(q) ? q : []);
+    return rows.length > 0;
+  }
+
   app.get('/admin/finance/gst/hsn-codes', async (c) => {
     try {
       let rows: any[];
@@ -3163,8 +3196,18 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         return c.json({ success: false, error: 'HSN code and GST rate are required' }, 400);
       }
 
+      const codeColumn = await getHsnCodeColumn();
+      const codeVal = String(code).trim();
+      if (await hsnCodeExistsElsewhere(codeColumn, codeVal, null)) {
+        console.log('[HSN] Create rejected: duplicate code', { code: codeVal, column: codeColumn });
+        return c.json(
+          { success: false, error: 'An HSN code with this code already exists. Use a different code or edit the existing one.' },
+          409
+        );
+      }
+
       const insertPayload: Record<string, unknown> = {
-        hsn_code: code,
+        [codeColumn]: codeVal,
         description: description || '',
         gst_rate: parseFloat(gstRate),
         is_active: isActive !== false,
@@ -3175,8 +3218,31 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       let newCode;
       try {
         newCode = await insert('hsn_codes', insertPayload);
+        console.log('[HSN] Create success', { id: newCode[0]?.id, code: codeVal, column: codeColumn });
       } catch (insErr: any) {
-        if (categoryId && String(insErr?.message || '').includes('category_id') && String(insErr?.message || '').includes('does not exist')) {
+        const msg = String(insErr?.message || '');
+        if (msg.includes('duplicate key') || (insErr?.code === '23505')) {
+          return c.json(
+            { success: false, error: 'An HSN code with this code already exists. Use a different code or edit the existing one.' },
+            409
+          );
+        }
+        if (msg.includes('does not exist') && (msg.includes('hsn_code') || msg.includes('code'))) {
+          const otherCol = codeColumn === 'hsn_code' ? 'code' : 'hsn_code';
+          delete insertPayload[codeColumn];
+          insertPayload[otherCol] = codeVal;
+          try {
+            newCode = await insert('hsn_codes', insertPayload);
+          } catch (retryErr: any) {
+            if (String(retryErr?.message || '').includes('duplicate key') || retryErr?.code === '23505') {
+              return c.json(
+                { success: false, error: 'An HSN code with this code already exists. Use a different code or edit the existing one.' },
+                409
+              );
+            }
+            throw retryErr;
+          }
+        } else if (categoryId && msg.includes('category_id') && msg.includes('does not exist')) {
           delete insertPayload.category_id;
           newCode = await insert('hsn_codes', insertPayload);
         } else {
@@ -3190,7 +3256,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         code: newCode[0],
       });
     } catch (error: any) {
-      console.error('Error creating HSN code:', error);
+      console.error('[HSN] Create error:', error?.message || error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });
@@ -3200,18 +3266,69 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const id = c.req.param('id');
       const body = await c.req.json().catch(() => ({}));
 
+      const codeColumn = await getHsnCodeColumn();
       const updateData: any = {};
-      if (body.code !== undefined) updateData.hsn_code = body.code;
+
+      if (body.code !== undefined) {
+        const newCode = String(body.code).trim();
+        const existing = await query(
+          `SELECT id, ${codeColumn} as code_val FROM hsn_codes WHERE id = $1::uuid LIMIT 1`,
+          [id]
+        );
+        const rows = (existing as any)?.rows ?? (Array.isArray(existing) ? existing : []);
+        const currentRow = rows[0];
+        const currentCode = currentRow ? String(currentRow.code_val ?? '').trim() : '';
+        if (newCode === currentCode) {
+          // No change to code – don't set it so we don't trigger unique check
+        } else {
+          if (await hsnCodeExistsElsewhere(codeColumn, newCode, id)) {
+            console.log('[HSN] Update rejected: duplicate code', { id, code: newCode, column: codeColumn });
+            return c.json(
+              { success: false, error: 'Another HSN code with this code already exists. Use a different code or edit the existing one.' },
+              409
+            );
+          }
+          updateData[codeColumn] = newCode;
+        }
+      }
       if (body.description !== undefined) updateData.description = body.description;
       if (body.gstRate !== undefined) updateData.gst_rate = parseFloat(body.gstRate);
       if (body.isActive !== undefined) updateData.is_active = body.isActive;
       if (body.categoryId !== undefined) updateData.category_id = body.categoryId || null;
 
-      let updated;
+      if (Object.keys(updateData).length === 0) {
+        const existing = await query(`SELECT * FROM hsn_codes WHERE id = $1::uuid LIMIT 1`, [id]);
+        const row = (existing as any).rows?.[0];
+        if (row) return c.json({ success: true, message: 'HSN code unchanged', code: row });
+        return c.json({ success: false, error: 'HSN code not found' }, 404);
+      }
+
+      let updated: any[];
       try {
         updated = await update('hsn_codes', { id }, updateData);
+        if (!updated || updated.length === 0) {
+          return c.json({ success: false, error: 'HSN code not found' }, 404);
+        }
+        console.log('[HSN] Update success', { id, column: codeColumn });
       } catch (updErr: any) {
-        if (updateData.category_id !== undefined && String(updErr?.message || '').includes('category_id') && String(updErr?.message || '').includes('does not exist')) {
+        const msg = String(updErr?.message || '');
+        if (msg.includes('duplicate key') || (updErr?.code === '23505')) {
+          return c.json(
+            { success: false, error: 'Another HSN code with this code already exists. Use a different code or edit the existing one.' },
+            409
+          );
+        }
+        if (msg.includes('does not exist') && (msg.includes('hsn_code') || msg.includes('code'))) {
+          const codeVal = updateData[codeColumn];
+          if (codeVal !== undefined) {
+            const otherCol = codeColumn === 'hsn_code' ? 'code' : 'hsn_code';
+            delete updateData[codeColumn];
+            updateData[otherCol] = codeVal;
+            updated = await update('hsn_codes', { id }, updateData);
+          } else {
+            throw updErr;
+          }
+        } else if (updateData.category_id !== undefined && msg.includes('category_id') && msg.includes('does not exist')) {
           delete updateData.category_id;
           updated = await update('hsn_codes', { id }, updateData);
         } else {
@@ -3225,7 +3342,14 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         code: updated[0],
       });
     } catch (error: any) {
-      console.error('Error updating HSN code:', error);
+      console.error('[HSN] Update error:', error?.message || error);
+      const msg = String(error?.message || '');
+      if (msg.includes('duplicate key') || (error?.code === '23505')) {
+        return c.json(
+          { success: false, error: 'Another HSN code with this code already exists. Use a different code or edit the existing one.' },
+          409
+        );
+      }
       return c.json({ success: false, error: error.message }, 500);
     }
   });
@@ -3256,14 +3380,20 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const body = await c.req.json().catch(() => ({}));
       const { name, description, defaultGSTRate, applicableServices, isActive } = body;
 
-      if (!name || !defaultGSTRate) {
-        return c.json({ success: false, error: 'Category name and default GST rate are required' }, 400);
+      if (!name || (typeof name === 'string' && !name.trim())) {
+        return c.json({ success: false, error: 'Category name is required' }, 400);
+      }
+      const rate = defaultGSTRate !== undefined && defaultGSTRate !== null
+        ? parseFloat(String(defaultGSTRate))
+        : NaN;
+      if (Number.isNaN(rate) || rate < 0) {
+        return c.json({ success: false, error: 'Default GST rate must be a non-negative number (0 is allowed)' }, 400);
       }
 
       const newCategory = await insert('tax_categories', {
-        category_name: name,
-        description: description || '',
-        tax_rate: parseFloat(defaultGSTRate),
+        category_name: String(name).trim(),
+        description: description != null ? String(description) : '',
+        tax_rate: rate,
         is_active: isActive !== false,
         created_at: new Date().toISOString(),
       });
@@ -6280,27 +6410,40 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
-  // Platform Settings - AWS Integration
+  // Platform Settings - AWS Integration (SNS SMS, S3, SQS, Chime, Bedrock)
+  // Uses admin:settings:aws - auth sendSmsViaSns reads this for SMS credentials
   app.get('/admin/settings/aws', async (c) => {
     try {
-      const settings = await query(`
-        SELECT * FROM platform_settings 
-        WHERE setting_key LIKE 'aws_%' OR setting_key LIKE 's3_%' OR setting_key LIKE 'sns_%' OR setting_key LIKE 'sqs_%' OR setting_key LIKE 'chime_%' OR setting_key LIKE 'bedrock_%'
-        ORDER BY setting_key ASC
-      `).catch(() => ({ rows: [] }));
-      return c.json({ success: true, settings: settings.rows });
+      const row = await query(
+        `SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:settings:aws' LIMIT 1`
+      ).then(r => r.rows?.[0]).catch(() => null);
+      const settings = row?.setting_value || {
+        credentials: { accessKeyId: '', secretAccessKey: '', region: 'ap-south-1' },
+        s3: { enabled: false, bucket: '', region: 'ap-south-1' },
+        sns: { enabled: false, region: 'ap-south-1', smsOriginationNumber: 'WARMPZ', entityId: '1201176605406673276', templateId: '1207177028377787269', emailSourceAddress: '' },
+        sqs: { enabled: false, queueUrl: '', region: 'ap-south-1' },
+        chime: { enabled: false, region: 'us-east-1' },
+        bedrock: { enabled: false, region: 'us-east-1', modelId: 'anthropic.claude-v2' },
+      };
+      return c.json({ success: true, settings });
     } catch (error: unknown) {
-      return c.json({ success: true, settings: [] });
+      return c.json({ success: true, settings: {} });
     }
   });
 
   app.post('/admin/settings/aws', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      // Save AWS settings
+      await query(
+        `INSERT INTO platform_settings (setting_key, setting_value, setting_type, is_public, created_at, updated_at)
+         VALUES ('admin:settings:aws', $1::jsonb, 'object', false, NOW(), NOW())
+         ON CONFLICT (setting_key) DO UPDATE SET setting_value = $1::jsonb, updated_at = NOW()`,
+        [JSON.stringify(body)]
+      );
       return c.json({ success: true, message: 'AWS settings saved' });
     } catch (error: unknown) {
-      return c.json({ success: false, error: 'Failed to save AWS settings' }, 500);
+      const err = error as Error;
+      return c.json({ success: false, error: err?.message || 'Failed to save AWS settings' }, 500);
     }
   });
 
