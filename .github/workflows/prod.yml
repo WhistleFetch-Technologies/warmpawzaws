@@ -108,17 +108,17 @@ jobs:
     name: Final Approval
     runs-on: ubuntu-latest
     needs: terraform-plan
-    environment:
-      name: production-approval
-      url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    # Repo owner bypass: on push to prod use environment with no reviewers; on manual run use production-approval
+    environment: ${{ github.event_name == 'workflow_dispatch' && 'production-approval' || 'production-auto' }}
     steps:
-      - run: echo "Production deployment approved"
+      - run: echo "Production deployment approved (auto on push to prod)"
 
   terraform-apply:
     name: Terraform Apply
     runs-on: ubuntu-latest
     needs: final-approval
-    environment: production
+    # Repo owner bypass: on push to prod use environment with no reviewers; on manual use production
+    environment: ${{ github.event_name == 'workflow_dispatch' && 'production' || 'production-auto' }}
     outputs:
       api_endpoint: ${{ steps.export.outputs.api_endpoint }}
       cloudfront_admin_id: ${{ steps.export.outputs.cloudfront_admin_id }}
