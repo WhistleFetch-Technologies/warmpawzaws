@@ -60,6 +60,9 @@ module "sns" {
   alert_emails = var.alert_emails
 }
 
+
+
+
 module "rds" {
   source = "../../modules/rds"
 
@@ -131,10 +134,10 @@ module "lambda" {
   }
 
   common_env_vars = {
-    DB_HOST                     = module.rds.cluster_endpoint
-    DB_READER_HOST              = module.rds.cluster_reader_endpoint
+    DB_HOST                     = module.rds.cluster_endpoint  # ← Use dev RDS endpoint
+    DB_READER_HOST              = module.rds.cluster_reader_endpoint  # ← Use dev RDS reader endpoint
     DB_NAME                     = module.rds.database_name
-    DB_SECRET_ARN               = module.rds.secret_arn
+    DB_SECRET_ARN               = module.rds.secret_arn  # ← Use dev RDS secret ARN
     DYNAMODB_SESSIONS_TABLE     = module.dynamodb.sessions_table_name
     DYNAMODB_CACHE_TABLE        = module.dynamodb.cache_table_name
     DYNAMODB_ANALYTICS_TABLE    = module.dynamodb.analytics_events_table_name
