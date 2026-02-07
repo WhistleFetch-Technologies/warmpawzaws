@@ -192,8 +192,8 @@ resource "aws_lambda_function" "functions" {
   filename         = each.value.zip_path
   source_code_hash = filebase64sha256(each.value.zip_path)
 
-  # Enable versioning for provisioned concurrency
-  publish = try(each.value.provisioned_concurrency, 0) > 0 ? true : false
+  # Enable versioning for provisioned concurrency (coalesce: try() does not substitute for null)
+  publish = coalesce(each.value.provisioned_concurrency, 0) > 0
 
   # VPC Configuration
   vpc_config {
@@ -271,7 +271,7 @@ resource "aws_lambda_function_url" "functions" {
 resource "aws_lambda_alias" "provisioned" {
   for_each = {
     for k, v in var.lambda_functions : k => v
-    if try(v.provisioned_concurrency, 0) > 0
+    if coalesce(v.provisioned_concurrency, 0) > 0
   }
 
   name             = "provisioned"
@@ -286,11 +286,11 @@ resource "aws_lambda_alias" "provisioned" {
 resource "aws_lambda_provisioned_concurrency_config" "functions" {
   for_each = {
     for k, v in var.lambda_functions : k => v
-    if try(v.provisioned_concurrency, 0) > 0
+    if coalesce(v.provisioned_concurrency, 0) > 0
   }
 
   function_name                     = aws_lambda_function.functions[each.key].function_name
-  provisioned_concurrent_executions = each.value.provisioned_concurrency
+  provisioned_concurrent_executions = coalesce(each.value.provisioned_concurrency, 0)
   qualifier                         = aws_lambda_alias.provisioned[each.key].name
 
   lifecycle {
