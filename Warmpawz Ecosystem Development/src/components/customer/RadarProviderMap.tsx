@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MapPin, Navigation, User, Briefcase, Star, Clock } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface Provider {
   id: string;
@@ -40,9 +40,9 @@ export function RadarProviderMap({ userLocation, radius, serviceType, onSelectPr
     try {
         // Fetch from the new radar endpoint
         const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/home-services/providers/radar?lat=${userLocation.lat}&lng=${userLocation.lng}&radius=${radius}&serviceType=${serviceType}`,
+            `${getApiBaseUrl()}/home-services/providers/radar?lat=${userLocation.lat}&lng=${userLocation.lng}&radius=${radius}&serviceType=${serviceType}`,
             {
-                headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+                headers: getAuthHeaders()
             }
         );
         

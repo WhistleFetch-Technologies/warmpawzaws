@@ -34,7 +34,8 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
   const loadServices = async () => {
     try {
       const response = await apiClient.get<any>(`/vendor/${centerId}/services`);
-      setServices(response.services || []);
+      const list = Array.isArray(response.services) ? response.services : (response.allServices || []);
+      setServices(list);
     } catch (error) {
       console.error('Error loading services:', error);
     }
@@ -91,7 +92,7 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
           <h2 className="text-xl font-semibold">Service Catalog</h2>
           <button
             onClick={() => handleOpenModal()}
-            className="px-4 py-0 bg-primary text-white rounded-lg font-medium flex items-center gap-0"
+            className="px-4 py-0 bg-primary text-white rounded-lg font-medium flex items-center gap-3"
           >
             <Plus className="w-4 h-4" />
             Add Service
@@ -112,7 +113,7 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
             <p className="text-gray-600 mb-4">No services added yet</p>
             <button
               onClick={() => handleOpenModal()}
-              className="px-4 py-0 bg-[#FF8C42] text-white rounded-lg font-medium flex items-center gap-0 mx-auto"
+              className="px-4 py-0 bg-[#FF8C42] text-white rounded-lg font-medium flex items-center gap-3 mx-auto"
             >
               <Plus className="w-4 h-4" />
               Add Your First Service
@@ -134,7 +135,7 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
                       )}
                     </div>
                   </div>
-                  <div className="flex gap-0">
+                  <div className="flex gap-3">
                     <button
                       onClick={() => handleOpenModal(service)}
                       className="p-0 hover:bg-gray-100 rounded-lg"
@@ -228,7 +229,7 @@ export function ServiceCatalogManager({ centerId, center, isSoloProvider, onUpda
                 </div>
               </div>
 
-              <div className="flex gap-0 mt-0">
+              <div className="flex gap-3 mt-0">
                 <button
                   onClick={() => setModalOpen(false)}
                   className="flex-1 px-4 py-0 border border-gray-300 text-gray-700 rounded-lg font-medium"

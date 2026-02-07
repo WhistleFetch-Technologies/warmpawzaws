@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Briefcase, Plus, X, Edit2, Trash2, Camera, Award, Calendar, DollarSign, Star } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface PortfolioItem {
@@ -43,7 +43,7 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
     featured: false
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchPortfolio();
@@ -53,7 +53,7 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
     try {
       setLoading(true);
       const response = await fetch(`${API_BASE}/vendor/portfolio/${vendorId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {
@@ -87,7 +87,7 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
       const response = await fetch(url, {
         method: editingItem ? 'PUT' : 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(formData)
@@ -122,7 +122,7 @@ export function VendorPortfolioManagement({ vendorId, vendorData, onBack }: Vend
     try {
       const response = await fetch(`${API_BASE}/vendor/portfolio/${vendorId}/${itemId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {

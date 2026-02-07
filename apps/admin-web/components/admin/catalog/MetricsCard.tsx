@@ -29,7 +29,7 @@ export function MetricsCard({
           {icon}
         </div>
         {change && (
-          <div className={`flex items-center gap-0 text-xs ${
+          <div className={`flex items-center gap-3 text-xs ${
             changePositive ? 'text-green-600' : 'text-red-600'
           }`}>
             {changePositive ? (

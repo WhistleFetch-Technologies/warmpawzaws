@@ -8,8 +8,9 @@ import { EnhancedSearchBar } from './EnhancedSearchBar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Star, MapPin, Clock, ArrowLeft } from 'lucide-react';
+import { Star, MapPin, Clock, ArrowLeft, Scissors, GraduationCap, Building2, Home } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 
 interface Service {
   id: string;
@@ -41,19 +42,87 @@ interface CustomerServicesPageProps {
   };
 }
 
+interface DiscoveryMeta {
+  roles: { roleId: string; roleName: string; displayName: string; category?: string }[];
+  serviceStyles: string[];
+  categories: string[];
+}
+
 export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: CustomerServicesPageProps) {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  // Filters
+  const [discoveryMeta, setDiscoveryMeta] = useState<DiscoveryMeta | null>(null);
+
+  // Filters (DB-driven when discovery/meta is available)
   const [category, setCategory] = useState(initialFilters?.category || '');
-  // Auto-set serviceStyle based on screen context (grooming_center = at_center, grooming_home = at_home)
   const [serviceStyle, setServiceStyle] = useState<'at_home' | 'at_center' | 'tele' | 'all'>(
     initialFilters?.serviceStyle || 'all'
   );
   const [roleId, setRoleId] = useState(initialFilters?.roleId || '');
   
+  // ✅ FIX: Determine service name and icon based on category and serviceStyle
+  const getServiceConfig = () => {
+    const isGrooming = category === 'grooming' || roleId === 'pet_groomer';
+    const isTraining = category === 'training' || roleId === 'trainer';
+    const isAtCenter = serviceStyle === 'at_center';
+    const isAtHome = serviceStyle === 'at_home';
+    
+    if (isGrooming) {
+      return {
+        name: isAtCenter ? 'Grooming Center' : 'At Home Grooming',
+        subtitle: isAtCenter ? 'Visit our grooming centers' : 'Groomer comes to you',
+        icon: Scissors,
+        stats: [
+          { value: '50+', label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
+          { value: '1K+', label: 'Bookings' },
+          { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+        ]
+      };
+    } else if (isTraining) {
+      return {
+        name: isAtCenter ? 'Training Center' : 'At Home Training',
+        subtitle: isAtCenter ? 'Visit our training centers' : 'Trainer comes to you',
+        icon: GraduationCap,
+        stats: [
+          { value: '45+', label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
+          { value: '800+', label: 'Sessions' },
+          { value: '4.9', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+        ]
+      };
+    }
+    return {
+      name: 'Browse Services',
+      subtitle: 'Find the best services for your pet',
+      icon: Building2,
+      stats: [
+        { value: '100+', label: 'Services' },
+        { value: '5K+', label: 'Bookings' },
+        { value: '4.7', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+      ]
+    };
+  };
+  
+  const serviceConfig = getServiceConfig();
+  
+  // Fetch DB-driven discovery meta (roles, service styles, categories)
+  useEffect(() => {
+    apiClient
+      .get<{ success?: boolean; roles?: DiscoveryMeta['roles']; serviceStyles?: string[]; categories?: string[] }>(
+        '/customer/discovery/meta'
+      )
+      .then((res) => {
+        if (res.roles && Array.isArray(res.roles)) {
+          setDiscoveryMeta({
+            roles: res.roles,
+            serviceStyles: res.serviceStyles || ['at_center', 'at_home', 'tele'],
+            categories: res.categories || [],
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Update serviceStyle when initialFilters change
   useEffect(() => {
     if (initialFilters?.serviceStyle) {
@@ -63,7 +132,14 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredServices, setFilteredServices] = useState<Service[]>([]);
-  
+
+  const categoriesForFilter = discoveryMeta?.categories?.length
+    ? discoveryMeta.categories
+    : ['grooming', 'vet', 'training', 'boarding', 'walker', 'nutrition', 'diagnostics'];
+  const serviceStylesForFilter = discoveryMeta?.serviceStyles?.length
+    ? discoveryMeta.serviceStyles
+    : ['at_center', 'at_home', 'tele'];
+
   useEffect(() => {
     fetchServices();
   }, [category, serviceStyle, roleId, location]);
@@ -109,19 +185,8 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
   };
   
   const getCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-        }
-      );
-    }
+    const { getCurrentPositionSafe } = require('@/lib/geolocation-utils');
+    getCurrentPositionSafe((coords: { lat: number; lng: number }) => setLocation(coords));
   };
   
   useEffect(() => {
@@ -133,13 +198,17 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
   
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={onBack}>
-          <ArrowLeft className="w-5 h-5" />
-        </Button>
-        <h1 className="text-lg font-bold">Browse Services</h1>
-      </div>
+      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
+      <ServiceDashboardHeader
+        serviceName={serviceConfig.name}
+        serviceSubtitle={serviceConfig.subtitle}
+        serviceIcon={serviceConfig.icon}
+        iconColor="text-white"
+        stats={serviceConfig.stats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
+      />
 
       <div className="container mx-auto px-4 py-6">
         {/* Filters */}
@@ -151,22 +220,25 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
-                <SelectItem value="grooming">Grooming</SelectItem>
-                <SelectItem value="vet">Veterinary</SelectItem>
-                <SelectItem value="training">Training</SelectItem>
-                <SelectItem value="boarding">Boarding</SelectItem>
+                {categoriesForFilter.map((cat) => (
+                  <SelectItem key={cat} value={cat}>
+                    {cat === 'vet' ? 'Veterinary' : cat.charAt(0).toUpperCase() + cat.slice(1)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
-            
+
             <Select value={serviceStyle} onValueChange={(v: 'at_home' | 'at_center' | 'tele' | 'all') => setServiceStyle(v)}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Style" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Styles</SelectItem>
-                <SelectItem value="at_home">At Home</SelectItem>
-                <SelectItem value="at_center">At Center</SelectItem>
-                <SelectItem value="tele">Teleconsultation</SelectItem>
+                {serviceStylesForFilter.map((style) => (
+                  <SelectItem key={style} value={style}>
+                    {style === 'at_center' ? 'At Center' : style === 'at_home' ? 'At Home' : 'Teleconsultation'}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             
@@ -236,7 +308,7 @@ function ServiceCard({ service, onSelect }: { service: Service; onSelect: () => 
                  'Tele-consult'}
              </Badge>
              {service.distance && (
-                <p className="text-xs text-gray-400 text-right">{service.distance.toFixed(1)} km</p>
+                <p className="text-xs text-gray-400 text-right">{Number(service.distance || 0).toFixed(1)} km</p>
              )}
           </div>
         </div>

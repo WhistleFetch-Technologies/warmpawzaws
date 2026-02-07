@@ -216,44 +216,8 @@ export function UnifiedBookingEngine({
 
   const loadAvailableStaff = async () => {
     if (!service) return;
-    
-    // For instant tele booking, load available staff immediately
-    if (selectedServiceStyle === 'tele' && teleBookingType === 'instant') {
-      try {
-        const params = new URLSearchParams({
-          roleId: service.role_id || '',
-          serviceStyle: 'tele',
-          serviceId: service.id,
-        });
-        
-        const staffRes: any = await apiClient.get(`/customer/discover-staff?${params}`);
-        setAvailableStaff(staffRes.staff || []);
-        return;
-      } catch (err: any) {
-        console.error('Failed to load instant staff:', err);
-        setAvailableStaff([]);
-        return;
-      }
-    }
-    
-    // For scheduled bookings, require date and time
-    if (!selectedDate || !selectedTime) return;
-
-    try {
-      const params = new URLSearchParams({
-        vendorId: service.vendor_id,
-        serviceId: service.id,
-        date: selectedDate,
-        time: selectedTime,
-        serviceStyle: selectedServiceStyle || '',
-      });
-
-      const staff: any = await apiClient.get(`/vendors/${service.vendor_id}/staff/available?${params}`);
-      setAvailableStaff(staff || []);
-    } catch (err: any) {
-      console.error('Failed to load staff:', err);
-      setAvailableStaff([]);
-    }
+    // Staff decommissioned: solo providers are discovered via discover-services for at_home/tele.
+    setAvailableStaff([]);
   };
 
   // ============================================================================
@@ -433,18 +397,40 @@ export function UnifiedBookingEngine({
       bookingData.customerId = customer.id;
 
       const result: any = await apiClient.post('/bookings/create', bookingData);
+      // P2: Treat 200-with-error as failure (resilient parsing)
+      if (result?.error || result?.success === false) {
+        const errMsg = typeof result?.error === 'string' ? result.error : (result?.error?.message ?? result?.error ?? 'Booking creation failed');
+        throw new Error(errMsg);
+      }
+      // Support multiple response shapes (data.bookingId, data.data?.bookingId, data.booking?.id)
+      const bookingId =
+        result?.data?.bookingId ??
+        result?.bookingId ??
+        result?.booking?.id ??
+        result?.booking?.bookingId ??
+        result?.data?.id ??
+        result?.id ??
+        '';
 
-      if (result.bookingId) {
+      if (result?.error) {
+        throw new Error(typeof result.error === 'string' ? result.error : result.error?.message ?? 'Failed to create booking');
+      }
+      if (bookingId) {
         if (onSuccess) {
-          onSuccess(result.bookingId);
+          onSuccess(bookingId);
         } else {
-          router.push(`/bookings/${result.bookingId}`);
+          router.push(`/bookings/${bookingId}`);
         }
       } else {
         throw new Error('Failed to create booking');
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to create booking');
+      const errorMessage =
+        err?.response?.data?.error?.message ??
+        err?.response?.data?.error ??
+        err?.message ??
+        'Failed to create booking';
+      setError(typeof errorMessage === 'string' ? errorMessage : 'Failed to create booking');
     } finally {
       setProcessing(false);
     }
@@ -504,7 +490,7 @@ export function UnifiedBookingEngine({
             ) : (
               <p className="text-gray-600">Service selection not implemented in this view</p>
             )}
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={onCancel}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"
@@ -540,7 +526,7 @@ export function UnifiedBookingEngine({
                 </button>
               ))}
             </div>
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={handleBack}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"
@@ -580,7 +566,7 @@ export function UnifiedBookingEngine({
                 <div className="text-sm text-gray-600">Book for a specific date and time</div>
               </button>
             </div>
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={handleBack}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"
@@ -620,7 +606,7 @@ export function UnifiedBookingEngine({
                 ))}
               </div>
             )}
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={handleBack}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"
@@ -647,7 +633,7 @@ export function UnifiedBookingEngine({
             {selectedDate && (
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-0">Time</label>
-                <div className="grid grid-cols-4 gap-0">
+                <div className="grid grid-cols-4 gap-3">
                   {timeSlots.map((slot) => (
                     <button
                       key={slot.time}
@@ -667,7 +653,7 @@ export function UnifiedBookingEngine({
                 </div>
               </div>
             )}
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={handleBack}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"
@@ -705,7 +691,7 @@ export function UnifiedBookingEngine({
                 </button>
               ))}
             </div>
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={handleBack}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"
@@ -737,7 +723,7 @@ export function UnifiedBookingEngine({
                 </button>
               ))}
             </div>
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={handleBack}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"
@@ -771,7 +757,7 @@ export function UnifiedBookingEngine({
                 placeholder="Any special instructions..."
               />
             </div>
-            <div className="flex justify-end gap-0 mt-4">
+            <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={handleBack}
                 className="px-4 py-0 border rounded-lg hover:bg-gray-50"

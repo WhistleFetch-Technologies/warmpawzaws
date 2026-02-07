@@ -10,20 +10,29 @@ export declare const UpdateCustomerProfileRequestSchema: z.ZodObject<{
     email: z.ZodOptional<z.ZodString>;
     address: z.ZodOptional<z.ZodString>;
     pincode: z.ZodOptional<z.ZodString>;
+    city: z.ZodOptional<z.ZodString>;
+    state: z.ZodOptional<z.ZodString>;
+    landmark: z.ZodOptional<z.ZodString>;
     photo: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     email?: string | undefined;
     address?: string | undefined;
+    city?: string | undefined;
+    state?: string | undefined;
     pincode?: string | undefined;
     firstName?: string | undefined;
     lastName?: string | undefined;
+    landmark?: string | undefined;
     photo?: string | undefined;
 }, {
     email?: string | undefined;
     address?: string | undefined;
+    city?: string | undefined;
+    state?: string | undefined;
     pincode?: string | undefined;
     firstName?: string | undefined;
     lastName?: string | undefined;
+    landmark?: string | undefined;
     photo?: string | undefined;
 }>;
 export declare const AddPetRequestSchema: z.ZodObject<{

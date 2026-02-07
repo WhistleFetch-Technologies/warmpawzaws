@@ -121,7 +121,7 @@ export function CalendarSlotPicker({
         </div>
 
         {/* Day Names */}
-        <div className="grid grid-cols-7 gap-0 mb-0">
+        <div className="grid grid-cols-7 gap-3 mb-0">
           {dayNames.map((day) => (
             <div key={day} className="text-center text-xs font-semibold text-gray-600 py-0">
               {day}
@@ -130,7 +130,7 @@ export function CalendarSlotPicker({
         </div>
 
         {/* Calendar Days */}
-        <div className="grid grid-cols-7 gap-0">
+        <div className="grid grid-cols-7 gap-3">
           {days.map((date, idx) => {
             if (!date) {
               return <div key={idx} className="aspect-square" />;
@@ -165,11 +165,11 @@ export function CalendarSlotPicker({
       {/* Time Slots */}
       {selectedDateState && (
         <div className="bg-white rounded-2xl p-0 shadow-sm">
-          <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-0">
+          <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-3">
             <Clock className="w-5 h-5" />
             Available Time Slots
           </h3>
-          <div className="grid grid-cols-3 gap-0">
+          <div className="grid grid-cols-3 gap-3">
             {timeSlots.map((slot) => (
               <button
                 key={slot.time}

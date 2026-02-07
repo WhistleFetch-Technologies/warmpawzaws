@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plane, ArrowLeft, Truck, Globe } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { UniversalVendorCard } from './UniversalVendorCard';
 import { toast } from 'sonner@2.0.3';
 
@@ -15,7 +15,7 @@ interface RelocationServicesLandingProps {
 export function RelocationServicesLanding({ onBack, onNavigate, phone }: RelocationServicesLandingProps) {
   const [loading, setLoading] = useState(true);
   const [movers, setMovers] = useState<any[]>([]);
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadMovers();

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Save, Loader2 } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface VendorConsultationNotesProps {
@@ -33,10 +33,10 @@ export function VendorConsultationNotes({
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/consultation/notes/${appointmentData.id}`,
+        `${getApiBaseUrl()}/consultation/notes/${appointmentData.id}`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -70,12 +70,12 @@ export function VendorConsultationNotes({
     try {
       setSaving(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/consultation/notes`,
+        `${getApiBaseUrl()}/consultation/notes`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({
             bookingId: appointmentData.id,

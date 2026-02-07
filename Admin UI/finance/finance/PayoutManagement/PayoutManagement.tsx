@@ -17,7 +17,7 @@ import {
 	FileText,
 } from "lucide-react";
 import { toast } from "sonner";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 
 interface PayoutManagementProps {
 	onBack: () => void;
@@ -80,10 +80,10 @@ export function PayoutManagement({ onBack }: PayoutManagementProps) {
 		try {
 			// GET /make-server-3dd53475/admin/payouts
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/payouts`,
+				`${getApiBaseUrl()}/admin/payouts`,
 				{
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 				}
 			);
@@ -211,11 +211,11 @@ export function PayoutManagement({ onBack }: PayoutManagementProps) {
 		try {
 			// POST /make-server-3dd53475/admin/payouts/{id}/approve
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/payouts/${payoutId}/approve`,
+				`${getApiBaseUrl()}/admin/payouts/${payoutId}/approve`,
 				{
 					method: "POST",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 				}
@@ -240,11 +240,11 @@ export function PayoutManagement({ onBack }: PayoutManagementProps) {
 		try {
 			// POST /make-server-3dd53475/admin/payouts/{id}/complete
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/payouts/${payoutId}/complete`,
+				`${getApiBaseUrl()}/admin/payouts/${payoutId}/complete`,
 				{
 					method: "POST",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({
@@ -273,11 +273,11 @@ export function PayoutManagement({ onBack }: PayoutManagementProps) {
 		try {
 			// POST /make-server-3dd53475/admin/payouts/{id}/reject
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/payouts/${payoutId}/reject`,
+				`${getApiBaseUrl()}/admin/payouts/${payoutId}/reject`,
 				{
 					method: "POST",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({ reason }),

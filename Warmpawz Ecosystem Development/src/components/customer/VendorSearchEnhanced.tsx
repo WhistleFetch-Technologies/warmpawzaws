@@ -21,7 +21,7 @@ import { AdvancedFiltersPanel, SearchFilters } from '../ui/AdvancedFiltersPanel'
 import { SearchResultsGrid, VendorResultCard } from '../ui/SearchResultsGrid';
 import { GoogleMapVendorView } from '../ui/GoogleMapVendorView';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { useNavigate } from 'react-router-dom';
 
 interface VendorResult {
@@ -83,11 +83,11 @@ export function VendorSearchEnhanced() {
     setLoading(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/advanced-search/vendors`,
+        `${getApiBaseUrl()}/advanced-search/vendors`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

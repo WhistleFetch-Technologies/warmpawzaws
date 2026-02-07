@@ -16,6 +16,8 @@
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { select, insert, update, query } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // LOCATION SHARING HANDLERS
@@ -190,21 +192,24 @@ export function registerLocationSharingEndpoints(app: Hono) {
   const getHandler = new GetSharedLocationHandler();
 
   app.post("/location/start-sharing", async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const body = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await startHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.post("/location/update", async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const body = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await updateHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
   app.post("/location/stop-sharing", async (c) => {
-    const event = createApiGatewayEvent(c.req);
+    const body = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEvent(c.req, body);
     const context = createLambdaContext();
     const result = await stopHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
@@ -219,14 +224,14 @@ export function registerLocationSharingEndpoints(app: Hono) {
   });
 }
 
-function createApiGatewayEvent(req: any): any {
+function createApiGatewayEvent(req: any, body?: any): any {
   return {
     httpMethod: req.method,
     path: req.url,
     pathParameters: {},
     queryStringParameters: {},
     headers: Object.fromEntries(req.headers.entries()),
-    body: req.body ? JSON.stringify(req.body) : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
     requestContext: {
       requestId: `req-${Date.now()}`,
     },

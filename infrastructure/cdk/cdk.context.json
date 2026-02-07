@@ -34,5 +34,97 @@
   "hosted-zone:account=023394150666:domainName=warmpawz.com:region=ap-south-1": {
     "Id": "/hostedzone/Z05490792J3QDVPVIG5UA",
     "Name": "warmpawz.com."
+  },
+  "vpc-provider:account=057442119249:filter.isDefault=true:region=ap-south-1:returnAsymmetricSubnets=true": {
+    "vpcId": "vpc-06f3085b6a63d0d86",
+    "vpcCidrBlock": "172.31.0.0/16",
+    "ownerAccountId": "057442119249",
+    "availabilityZones": [],
+    "subnetGroups": [
+      {
+        "name": "Public",
+        "type": "Public",
+        "subnets": [
+          {
+            "subnetId": "subnet-0b352e91231e46e42",
+            "cidr": "172.31.32.0/20",
+            "availabilityZone": "ap-south-1a",
+            "routeTableId": "rtb-0c643a6e4609f31f1"
+          },
+          {
+            "subnetId": "subnet-04d6066e0fbebe114",
+            "cidr": "172.31.0.0/20",
+            "availabilityZone": "ap-south-1b",
+            "routeTableId": "rtb-0c643a6e4609f31f1"
+          },
+          {
+            "subnetId": "subnet-042a90000fd723fa6",
+            "cidr": "172.31.16.0/20",
+            "availabilityZone": "ap-south-1c",
+            "routeTableId": "rtb-0c643a6e4609f31f1"
+          }
+        ]
+      }
+    ]
+  },
+  "hosted-zone:account=057442119249:domainName=warmpawz.com:region=ap-south-1": {
+    "Id": "/hostedzone/Z07857473SRNOUZ0V7594",
+    "Name": "warmpawz.com."
+  },
+  "vpc-provider:account=057442119249:filter.vpc-id=vpc-02a4893e5e582c4d8:region=ap-south-1:returnAsymmetricSubnets=true": {
+    "vpcId": "vpc-02a4893e5e582c4d8",
+    "vpcCidrBlock": "10.0.0.0/16",
+    "ownerAccountId": "057442119249",
+    "availabilityZones": [],
+    "subnetGroups": [
+      {
+        "name": "Isolated",
+        "type": "Isolated",
+        "subnets": [
+          {
+            "subnetId": "subnet-0e296797f392b8250",
+            "cidr": "10.0.21.0/24",
+            "availabilityZone": "ap-south-1a",
+            "routeTableId": "rtb-08885dd20f52db552"
+          },
+          {
+            "subnetId": "subnet-0fcae82d307f494c5",
+            "cidr": "10.0.11.0/24",
+            "availabilityZone": "ap-south-1a",
+            "routeTableId": "rtb-08885dd20f52db552"
+          },
+          {
+            "subnetId": "subnet-0351dcfcb7fddfc5d",
+            "cidr": "10.0.12.0/24",
+            "availabilityZone": "ap-south-1b",
+            "routeTableId": "rtb-08885dd20f52db552"
+          }
+        ]
+      },
+      {
+        "name": "Public",
+        "type": "Public",
+        "subnets": [
+          {
+            "subnetId": "subnet-0b667c6835342a6b8",
+            "cidr": "10.0.1.0/24",
+            "availabilityZone": "ap-south-1a",
+            "routeTableId": "rtb-053f471e40869c730"
+          },
+          {
+            "subnetId": "subnet-00237c0065313789f",
+            "cidr": "10.0.2.0/24",
+            "availabilityZone": "ap-south-1b",
+            "routeTableId": "rtb-053f471e40869c730"
+          },
+          {
+            "subnetId": "subnet-0552174bc421dff3d",
+            "cidr": "10.0.22.0/24",
+            "availabilityZone": "ap-south-1b",
+            "routeTableId": "rtb-04e286764da52e84d"
+          }
+        ]
+      }
+    ]
   }
 }

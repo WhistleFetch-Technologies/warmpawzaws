@@ -1,5 +1,9 @@
 # API Gateway Module - HTTP API for serverless REST endpoints
 
+locals {
+  is_prod = var.environment == "prod"
+}
+
 # Reference existing API Gateway (IMMUTABLE - do not create or modify)
 # If existing_api_gateway_id is provided, use data source to reference it
 # Otherwise, create a new one (for new environments)
@@ -18,10 +22,10 @@ resource "aws_apigatewayv2_api" "main" {
 
   cors_configuration {
     allow_origins     = var.cors_allowed_origins
-    allow_methods     = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
-    allow_headers     = ["content-type", "authorization", "x-api-key"]
+    allow_methods     = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"]
+    allow_headers     = ["content-type", "authorization", "x-api-key", "x-uat-mode", "x-uat-token", "x-requested-with"]
     expose_headers    = ["content-length", "x-request-id"]
-    max_age           = 300
+    max_age           = 86400
     allow_credentials = true
   }
 
@@ -32,6 +36,47 @@ resource "aws_apigatewayv2_api" "main" {
   
   lifecycle {
     prevent_destroy = true  # Prevent accidental deletion
+  }
+}
+
+# ============================================================================
+# CORS Configuration for Existing API Gateway
+# ============================================================================
+# When using an existing API Gateway, we need to update its CORS configuration
+# using the AWS CLI since data sources are read-only.
+# This runs on every apply to ensure CORS stays correctly configured.
+
+locals {
+  cors_origins_json = jsonencode(var.cors_allowed_origins)
+}
+
+resource "null_resource" "update_existing_api_cors" {
+  count = var.existing_api_gateway_id != null ? 1 : 0
+  
+  # Trigger update when CORS origins change
+  triggers = {
+    cors_origins = local.cors_origins_json
+    api_id       = var.existing_api_gateway_id
+  }
+  
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws apigatewayv2 update-api \
+        --api-id ${var.existing_api_gateway_id} \
+        --region ${var.aws_region} \
+        --cors-configuration '{
+          "AllowOrigins": ${local.cors_origins_json},
+          "AllowMethods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],
+          "AllowHeaders": ["content-type", "authorization", "x-api-key", "x-uat-mode", "x-uat-token", "x-requested-with"],
+          "ExposeHeaders": ["content-length", "x-request-id"],
+          "AllowCredentials": true,
+          "MaxAge": 86400
+        }'
+    EOT
+    
+    environment = {
+      AWS_DEFAULT_REGION = var.aws_region
+    }
   }
 }
 
@@ -114,6 +159,11 @@ resource "aws_apigatewayv2_integration" "lambda" {
   timeout_milliseconds   = each.value.timeout_ms
 
   description = "Integration for ${each.key}"
+
+  # CRITICAL: Prevent duplicate integrations - ONE integration per function per environment
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Lambda Permissions for API Gateway
@@ -136,6 +186,11 @@ resource "aws_apigatewayv2_route" "routes" {
   for_each = var.routes
 
   api_id    = local.api_gateway_id
+
+  # CRITICAL: Prevent duplicate routes - ONE route per path per environment
+  lifecycle {
+    create_before_destroy = true
+  }
   route_key = each.value.route_key
   target    = "integrations/${aws_apigatewayv2_integration.lambda[each.value.integration_key].id}"
 
@@ -159,6 +214,12 @@ resource "aws_apigatewayv2_domain_name" "main" {
   tags = {
     Name        = "warmpawz-${var.environment}-domain"
     Environment = var.environment
+  }
+
+  # CRITICAL: Prevent duplicate domain - ONE domain per name per environment
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true
   }
 }
 

@@ -1,9 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { Suspense, useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { Package, MapPin, Calendar, Clock, CheckCircle, Truck, Home } from 'lucide-react';
+import { 
+  Package, MapPin, Calendar, Clock, CheckCircle, Truck, Home,
+  Key, Eye, EyeOff, Copy, Check, Phone, User, AlertCircle
+} from 'lucide-react';
+import { toast } from 'sonner';
 
 interface MealPlanOrder {
   id: string;
@@ -20,31 +24,62 @@ interface MealPlanOrder {
   delivery_address: string;
   created_at: string;
   updated_at: string;
+  // Delivery OTP fields
+  delivery_otp?: string;
+  otp_verified?: boolean;
+  delivery_partner_name?: string;
+  delivery_partner_phone?: string;
 }
 
-export default function MealPlanOrdersPage() {
+// Format delivery slot from API (object or string) to display time
+function formatDeliveryTime(slot: any): string {
+  if (!slot) return '';
+  if (typeof slot === 'string') return slot;
+  if (slot.start) return slot.start;
+  if (slot.end) return slot.end;
+  return '';
+}
+
+function MealPlanOrdersContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [orders, setOrders] = useState<MealPlanOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<MealPlanOrder | null>(null);
+  
+  // OTP display states
+  const [showOTP, setShowOTP] = useState<Record<string, boolean>>({});
+  const [copiedOTP, setCopiedOTP] = useState<string | null>(null);
 
   useEffect(() => {
     loadOrders();
-  }, []);
+  }, [searchParams]);
 
   const loadOrders = async () => {
     try {
       setLoading(true);
-      // Get customer ID from phone or session
-      const customerPhone = localStorage.getItem('customerPhone') || '';
+      // Get customer ID: phone from URL (from My Bookings) first, then localStorage
+      const phoneFromUrl = searchParams?.get('phone') || '';
+      const customerPhone = phoneFromUrl || localStorage.getItem('customerPhone') || '';
+      if (!customerPhone) {
+        setOrders([]);
+        return;
+      }
       const customer: any = await apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
       const customerId = customer?.customer?.id || customer?.id;
 
       if (customerId) {
-        const response: any = await apiClient.get(`/customer/orders?customerId=${customerId}&orderType=meal_plan_delivery`);
-        const mealPlanOrders = (response?.orders || []).filter((o: any) => 
-          o.order_type === 'meal_plan_delivery' || o.orderType === 'meal_plan_delivery'
-        );
+        const response: any = await apiClient.get(`/customer/meal-plan-orders?customerId=${customerId}`);
+        const mealPlanOrders = (response?.orders || []).map((o: any) => ({
+          ...o,
+          meal_plan_name: o.meal_plan_name || o.meal_plan_id || 'Meal Plan',
+          // Map API fields to page shape so "Track Order" and delivery display work
+          delivery_date: o.delivery_date || o.scheduled_delivery_date || o.created_at,
+          delivery_time: o.delivery_time || formatDeliveryTime(o.scheduled_delivery_slot) || '',
+          delivery_address: typeof o.delivery_address === 'string' 
+            ? (() => { try { const p = JSON.parse(o.delivery_address); return p?.address || p?.addressLine1 || o.delivery_address; } catch { return o.delivery_address; } })() 
+            : (o.delivery_address?.address || o.delivery_address?.addressLine1 || ''),
+        }));
         setOrders(mealPlanOrders);
       }
     } catch (error) {
@@ -52,6 +87,24 @@ export default function MealPlanOrdersPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Copy OTP to clipboard
+  const copyOTP = (orderId: string, otp: string) => {
+    navigator.clipboard.writeText(otp);
+    setCopiedOTP(orderId);
+    toast.success('OTP copied to clipboard');
+    setTimeout(() => setCopiedOTP(null), 2000);
+  };
+
+  // Toggle OTP visibility for an order
+  const toggleOTPVisibility = (orderId: string) => {
+    setShowOTP(prev => ({ ...prev, [orderId]: !prev[orderId] }));
+  };
+
+  // Check if order is out for delivery
+  const isOutForDelivery = (status: string) => {
+    return ['out_for_delivery', 'dispatched', 'in_transit', 'arriving', 'on_way'].includes(status.toLowerCase());
   };
 
   const getStatusColor = (status: string) => {
@@ -158,11 +211,11 @@ export default function MealPlanOrdersPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4" />
-                        <span>Delivery: {new Date(order.delivery_date).toLocaleDateString()}</span>
+                        <span>Delivery: {order.delivery_date ? new Date(order.delivery_date).toLocaleDateString() : '—'}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Clock className="w-4 h-4" />
-                        <span>{order.delivery_time}</span>
+                        <span>{order.delivery_time || '—'}</span>
                       </div>
                       <div className="flex items-center gap-2 col-span-2">
                         <MapPin className="w-4 h-4" />
@@ -177,31 +230,125 @@ export default function MealPlanOrdersPage() {
                   </div>
                 </div>
 
-                {selectedOrder?.id === order.id && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-gray-600">
-                          Ordered: {new Date(order.created_at).toLocaleString()}
-                        </p>
-                        {order.updated_at && (
-                          <p className="text-sm text-gray-600">
-                            Updated: {new Date(order.updated_at).toLocaleString()}
-                          </p>
-                        )}
+                {/* Delivery OTP Section - Show when out for delivery */}
+                {isOutForDelivery(order.status) && order.delivery_otp && !order.otp_verified && (
+                  <div className="mt-4 p-4 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl border-2 border-orange-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Key className="w-5 h-5 text-orange-600" />
+                        <span className="font-bold text-orange-800">Your Delivery OTP</span>
                       </div>
+                      {order.delivery_partner_name && (
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 text-sm text-gray-600">
+                            <User className="w-4 h-4" />
+                            <span>{order.delivery_partner_name}</span>
+                          </div>
+                          {order.delivery_partner_phone && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.location.href = `tel:${order.delivery_partner_phone}`;
+                              }}
+                              className="p-2 bg-orange-100 rounded-full hover:bg-orange-200 transition"
+                            >
+                              <Phone className="w-4 h-4 text-orange-600" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* OTP Display */}
+                    <div className="flex justify-center gap-2 mb-3">
+                      {order.delivery_otp.split('').map((digit, idx) => (
+                        <div
+                          key={idx}
+                          className="w-12 h-14 bg-white rounded-lg shadow-sm border-2 border-orange-300 flex items-center justify-center"
+                        >
+                          <span className="text-2xl font-bold text-orange-600">
+                            {showOTP[order.id] ? digit : '•'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {/* OTP Actions */}
+                    <div className="flex justify-center gap-3">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          router.push(`/orders/${order.id}`);
+                          toggleOTPVisibility(order.id);
                         }}
-                        className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-orange-300 rounded-lg text-orange-700 hover:bg-orange-50 transition text-sm font-medium"
                       >
-                        View Details
+                        {showOTP[order.id] ? (
+                          <>
+                            <EyeOff className="w-4 h-4" />
+                            Hide OTP
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="w-4 h-4" />
+                            Show OTP
+                          </>
+                        )}
                       </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          copyOTP(order.id, order.delivery_otp!);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-orange-300 rounded-lg text-orange-700 hover:bg-orange-50 transition text-sm font-medium"
+                      >
+                        {copiedOTP === order.id ? (
+                          <>
+                            <Check className="w-4 h-4 text-green-600" />
+                            Copied!
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4" />
+                            Copy OTP
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    
+                    {/* Instructions */}
+                    <div className="mt-3 flex items-start gap-2 text-sm text-orange-700">
+                      <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      <p>Share this OTP with the delivery partner only after receiving your order.</p>
                     </div>
                   </div>
                 )}
+
+                {/* OTP Verified Badge */}
+                {order.otp_verified && order.status.toLowerCase() === 'delivered' && (
+                  <div className="mt-4 p-4 bg-green-50 rounded-xl border border-green-200 flex items-center justify-center gap-3">
+                    <CheckCircle className="w-6 h-6 text-green-600" />
+                    <div>
+                      <p className="font-semibold text-green-800">Delivery Confirmed!</p>
+                      <p className="text-sm text-green-600">Your meal plan has been delivered successfully.</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Track Order: always visible so customer can access meal tracker at will (OBJECTIVE 1) */}
+                <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
+                  <div className="text-sm text-gray-600">
+                    Ordered: {new Date(order.created_at).toLocaleString()}
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      router.push(`/track/${order.id}`);
+                    }}
+                    className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
+                  >
+                    Track Order
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -211,3 +358,16 @@ export default function MealPlanOrdersPage() {
   );
 }
 
+export default function MealPlanOrdersPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500" />
+        </div>
+      }
+    >
+      <MealPlanOrdersContent />
+    </Suspense>
+  );
+}

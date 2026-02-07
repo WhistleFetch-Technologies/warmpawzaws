@@ -18,9 +18,9 @@ import { useState, useEffect, useRef } from 'react';
 import { MapPin, Navigation, Clock, Phone, X, RefreshCw, CheckCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 interface LiveGPSTrackingProps {
   bookingId: string;
@@ -77,7 +77,7 @@ export function LiveGPSTracking({
         `${API_BASE}/tracking/location/${bookingId}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

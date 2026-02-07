@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { MapPin, Navigation, Phone, Clock, User, X, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 // Google Maps API key is available as VITE_GOOGLE_MAPS_API_KEY
 declare global {
@@ -101,10 +101,10 @@ export function LiveTrackingMap({
       console.log(`🗺️ [TRACKING] Fetching tracking data for session ${trackingSessionId}`);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/tracking/${trackingSessionId}`,
+        `${getApiBaseUrl()}/tracking/${trackingSessionId}`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );

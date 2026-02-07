@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { ArrowLeft, Home, MapPin, Star, User, Clock, ChevronRight, Phone, Search, X } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface VetAtHomeProps {
   onBack: () => void;
@@ -42,13 +42,13 @@ export function VetAtHome({ onBack, customerId, customerData, phone, onNavigate 
       
       console.log('🔍 [VET-AT-HOME] Discovering vets with home services enabled...');
       console.log('   Customer location:', { latitude, longitude });
-      console.log('   API URL:', `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/discover-staff?${params}`);
+      console.log('   API URL:', `${getApiBaseUrl()}/customer/discover-staff?${params}`);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/discover-staff?${params}`,
+        `${getApiBaseUrl()}/customer/discover-staff?${params}`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );

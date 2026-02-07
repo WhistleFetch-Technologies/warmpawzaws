@@ -244,7 +244,7 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <div className="flex items-center gap-0">
+                        <div className="flex items-center gap-3">
                           <Pill className="text-orange-500" size={18} />
                           <span className="font-semibold text-gray-900">{medicine.name}</span>
                           {medicine.prescription_required && (
@@ -267,7 +267,7 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
                             <p className="text-sm text-gray-500">× {quantity} = ₹{medicine.price * quantity}</p>
                           )}
                         </div>
-                        <div className="flex items-center gap-0">
+                        <div className="flex items-center gap-3">
                           <button
                             type="button"
                             onClick={() => updateQuantity(medicine.id, quantity - 1)}
@@ -311,7 +311,7 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
         {/* Prescription Upload */}
         {requiresPrescription() && (
           <div className="bg-white rounded-xl p-0 shadow-sm">
-            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-0">
+            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-3">
               <FileText className="text-orange-500" size={20} />
               Prescription Required
             </h3>
@@ -356,7 +356,7 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-0">
-              <MapPin className="inline mr-0" size={16} />
+              <MapPin className="inline mr-2" size={16} />
               Delivery Address *
             </label>
             <textarea
@@ -372,7 +372,7 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-0">
-                <Clock className="inline mr-0" size={16} />
+                <Clock className="inline mr-2" size={16} />
                 Delivery Date *
               </label>
               <input
@@ -419,7 +419,7 @@ export function MedicineDeliveryFlow({ vendorId, customerPhone, onSuccess, onCan
         )}
 
         {/* Actions */}
-        <div className="flex gap-0">
+        <div className="flex gap-3">
           {onCancel && (
             <button
               type="button"

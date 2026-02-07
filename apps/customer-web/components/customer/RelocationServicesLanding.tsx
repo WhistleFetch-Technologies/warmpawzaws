@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PromotionBanner } from './shared/PromotionBanner';
 
 interface RelocationServicesLandingProps {
   phone: string;
@@ -34,7 +35,7 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
         activeServices: serviceList.length || 25,
         relocations: '500+',
         rating: serviceList.length > 0 
-          ? (serviceList.reduce((acc: number, s: any) => acc + (s.rating || 4.7), 0) / serviceList.length).toFixed(1) 
+          ? Number(serviceList.reduce((acc: number, s: any) => acc + Number(s.rating || 4.7), 0) / serviceList.length).toFixed(1) 
           : '4.7'
       });
     } catch (error) {
@@ -47,7 +48,7 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
   };
 
   const handleServiceSelect = (service: any) => {
-    onNavigate?.('create-booking', { vendorId: service.id || service.vendorId, serviceId: 'pet_relocation' });
+    onNavigate?.('relocation-booking', { vendorId: service.id || service.vendorId, serviceId: 'pet_relocation' });
   };
 
   const serviceTypes = [
@@ -104,34 +105,8 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
       <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
         <div className="space-y-8">
           
-          {/* Spotlight Offers */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-orange-500" />
-              <h2 className="text-lg font-bold text-slate-900">Spotlight Offers</h2>
-            </div>
-            
-            <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-6 px-6">
-              <Card className="min-w-[280px] flex-shrink-0 bg-white border border-slate-100 p-5 shadow-sm rounded-2xl">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase mb-2 w-fit">International</div>
-                    <div className="text-2xl font-bold text-slate-900">15% OFF</div>
-                    <div className="text-slate-500 text-xs">On Air Transport</div>
-                  </div>
-                  <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center">
-                    <Plane className="w-5 h-5 text-blue-600" />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                  <div className="text-xs text-slate-500">Valid on bookings above ₹10K</div>
-                  <Button size="sm" className="bg-blue-600 text-white hover:bg-blue-700 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate?.('create-booking', { serviceId: 'pet_relocation', serviceType: 'air' })}>
-                    Book Now
-                  </Button>
-                </div>
-              </Card>
-            </div>
-          </div>
+          {/* Promotion Banner */}
+          <PromotionBanner service="relocation" maxPromotions={3} />
 
           {/* Service Types */}
           <div>
@@ -140,7 +115,7 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
               {serviceTypes.map((type, idx) => (
                 <button
                   key={idx}
-                  onClick={() => onNavigate?.('create-booking', { serviceId: 'pet_relocation', serviceType: type.label })}
+                  onClick={() => onNavigate?.('relocation-booking', { serviceId: 'pet_relocation', serviceType: type.label })}
                   className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
                 >
                   <div className={`w-10 h-10 rounded-xl ${type.color.split(' ')[0]} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
@@ -159,7 +134,7 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
               <h2 className="text-lg font-bold text-slate-900">Relocation Services</h2>
               <button 
                 className="text-sm text-orange-600 flex items-center gap-1 font-medium"
-                onClick={() => onNavigate?.('create-booking', { serviceId: 'pet_relocation' })}
+                onClick={() => onNavigate?.('relocation-booking', { serviceId: 'pet_relocation' })}
               >
                 View All <ChevronRight className="w-4 h-4" />
               </button>

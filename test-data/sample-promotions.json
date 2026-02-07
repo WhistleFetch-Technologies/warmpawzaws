@@ -1,0 +1,118 @@
+{
+  "sample_promotions": [
+    {
+      "id": "promo-001",
+      "name": "First Vet Consultation - 20% Off",
+      "description": "Get 20% discount on your first tele consultation with any veterinarian. Perfect for new pet parents!",
+      "promotion_type": "first_order",
+      "discount_type": "percentage",
+      "discount_value": 20,
+      "max_discount_amount": 200,
+      "is_spotlight": true,
+      "published": true,
+      "applicable_services": ["vet"],
+      "priority": 1,
+      "start_date": "2025-01-30",
+      "end_date": "2025-04-30",
+      "is_active": true,
+      "min_order_amount": 0,
+      "usage_limit": 1000,
+      "stackable": false,
+      "notes": "Highest priority spotlight promotion for vet service"
+    },
+    {
+      "id": "promo-002",
+      "name": "Weekend Grooming Special",
+      "description": "15% off on weekend grooming appointments. Book your pet's pampering session now!",
+      "promotion_type": "seasonal",
+      "discount_type": "percentage",
+      "discount_value": 15,
+      "max_discount_amount": 300,
+      "is_spotlight": false,
+      "published": true,
+      "applicable_services": ["grooming"],
+      "priority": 5,
+      "start_date": "2025-01-30",
+      "end_date": "2025-02-28",
+      "is_active": true,
+      "min_order_amount": 500,
+      "usage_limit": 500,
+      "stackable": false,
+      "notes": "Regular promotion for grooming service"
+    },
+    {
+      "id": "promo-003",
+      "name": "Complete Pet Care Package",
+      "description": "Save ₹500 on combo bookings: Vet + Grooming + Training. Complete wellness for your pet!",
+      "promotion_type": "bundle",
+      "discount_type": "fixed",
+      "discount_value": 500,
+      "max_discount_amount": 500,
+      "is_spotlight": true,
+      "published": true,
+      "applicable_services": ["vet", "grooming", "training"],
+      "priority": 2,
+      "start_date": "2025-01-30",
+      "end_date": "2025-06-30",
+      "is_active": true,
+      "min_order_amount": 2000,
+      "usage_limit": 200,
+      "stackable": false,
+      "notes": "Multi-service spotlight promotion with lower priority"
+    },
+    {
+      "id": "promo-004",
+      "name": "Flash Sale - Coming Soon",
+      "description": "Upcoming flash sale for pet products. Stay tuned!",
+      "promotion_type": "flash_sale",
+      "discount_type": "percentage",
+      "discount_value": 25,
+      "is_spotlight": false,
+      "published": false,
+      "applicable_services": ["shop"],
+      "priority": 10,
+      "start_date": "2025-03-01",
+      "end_date": "2025-03-07",
+      "is_active": true,
+      "notes": "Unpublished draft promotion for testing"
+    },
+    {
+      "id": "promo-005",
+      "name": "Summer Training Camp",
+      "description": "20% off on pet training sessions this summer. Help your pet learn new skills!",
+      "promotion_type": "seasonal",
+      "discount_type": "percentage",
+      "discount_value": 20,
+      "max_discount_amount": 400,
+      "is_spotlight": false,
+      "published": true,
+      "applicable_services": ["training"],
+      "priority": 3,
+      "start_date": "2025-05-01",
+      "end_date": "2025-07-31",
+      "is_active": true,
+      "min_order_amount": 1000,
+      "usage_limit": 100,
+      "stackable": true,
+      "notes": "Seasonal promotion for training service"
+    }
+  ],
+  "test_scenarios": {
+    "spotlight_ordering": {
+      "promotions": ["promo-001", "promo-003"],
+      "expected_order": ["promo-001", "promo-003"],
+      "reason": "Both are spotlight, promo-001 has priority 1, promo-003 has priority 2"
+    },
+    "service_filtering": {
+      "service": "vet",
+      "expected_promotions": ["promo-001", "promo-003"],
+      "reason": "promo-001 targets 'vet', promo-003 targets 'vet, grooming, training'"
+    },
+    "published_filtering": {
+      "published": true,
+      "expected_promotions": ["promo-001", "promo-002", "promo-003", "promo-005"],
+      "excluded": ["promo-004"],
+      "reason": "promo-004 is published=false, should not appear in customer app"
+    }
+  }
+}

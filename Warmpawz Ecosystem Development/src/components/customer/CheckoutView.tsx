@@ -1,6 +1,6 @@
 import { useCart } from '../../context/CartContext';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { mockAuthAPI, mockEcommerceAPI } from '../../lib/mockAPI';
 
 interface CheckoutViewProps {

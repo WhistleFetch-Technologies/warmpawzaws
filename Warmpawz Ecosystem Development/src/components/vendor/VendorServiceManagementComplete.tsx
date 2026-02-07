@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, X } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { VendorServiceConfigurationScreen } from './VendorServiceConfigurationScreen';
 import { VendorCustomServiceCreation } from './VendorCustomServiceCreation';
 import { PackageManagementContainer } from './packages/PackageManagementContainer';
@@ -42,9 +42,9 @@ export function VendorServiceManagementComplete({
       
       // Use the new dedicated endpoint
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/allowed-service-styles`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/allowed-service-styles`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

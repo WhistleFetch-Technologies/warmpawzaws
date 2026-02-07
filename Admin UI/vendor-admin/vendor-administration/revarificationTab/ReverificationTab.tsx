@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@repo/ui";
 import { Calendar, Download, Eye } from "lucide-react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 interface ReverificationVendor {
 	id: string;
 	businessName: string;
@@ -27,9 +27,9 @@ export function ReverificationTab() {
 		try {
 			setLoading(true);
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/reverification`,
+				`${getApiBaseUrl()}/admin/vendors/reverification`,
 				{
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 
@@ -50,12 +50,12 @@ export function ReverificationTab() {
 
 		try {
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/reverification/${vendor.vendorId}/schedule`,
+				`${getApiBaseUrl()}/admin/vendors/reverification/${vendor.vendorId}/schedule`,
 				{
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 					body: JSON.stringify({ scheduledDate, notes: "" }),
 				}

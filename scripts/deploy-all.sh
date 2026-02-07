@@ -100,7 +100,7 @@ echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━�
 
 cd "$PROJECT_ROOT/backend/lambda"
 echo "  Installing dependencies..."
-npm install --silent
+npm install --silent --legacy-peer-deps
 echo "  Compiling TypeScript..."
 npm run build
 echo -e "  ${GREEN}✓${NC} Backend build complete"
@@ -116,8 +116,21 @@ echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━�
 for APP in admin-web customer-web vendor-web; do
     echo "  Building $APP..."
     cd "$PROJECT_ROOT/apps/$APP"
+    # Clean Next.js/React cache to avoid ENOENT and type-check flakes
+    rm -rf .next 2>/dev/null || true
     npm install --silent --legacy-peer-deps
-    npm run build
+    for attempt in 1 2; do
+        if npm run build; then
+            break
+        fi
+        if [ "$attempt" -eq 2 ]; then
+            echo -e "  ${RED}✗${NC} $APP build failed after 2 attempts"
+            exit 1
+        fi
+        echo -e "  ${YELLOW}Retrying $APP build (attempt 2)...${NC}"
+        rm -rf .next 2>/dev/null || true
+        sleep 2
+    done
     echo -e "  ${GREEN}✓${NC} $APP built"
 done
 echo ""
@@ -141,19 +154,22 @@ fi
 cd "$PROJECT_ROOT/infrastructure/cdk"
 npm install --silent
 
+# Avoid concurrent access on cdk.out: remove stale output so only this run uses it
+rm -rf cdk.out 2>/dev/null || true
+
 STACK_NAME="WarmpawzStack-$ENVIRONMENT"
 
 echo "  Synthesizing CloudFormation..."
-cdk synth $STACK_NAME > /dev/null
+npx cdk synth $STACK_NAME > /dev/null
 
 echo "  Deploying $STACK_NAME..."
-cdk deploy $STACK_NAME --require-approval never --outputs-file cdk-outputs.json
+npx cdk deploy $STACK_NAME --require-approval never --outputs-file cdk-outputs.json
 
 echo -e "  ${GREEN}✓${NC} Infrastructure deployed"
 echo ""
 
 # Get outputs
-API_URL=$(cat cdk-outputs.json | grep -o '"ApiGatewayUrl":"[^"]*' | cut -d'"' -f4 || echo "")
+API_URL=$(cat cdk-outputs.json | grep -o '"ApiGatewayUrl":"[^"]*' | cut -d'"' -f4 || echo '')
 
 # ============================================================================
 # STEP 5: VERIFY DEPLOYMENT
@@ -188,6 +204,15 @@ echo -e "  Duration:        ${DURATION}s"
 echo -e "  Stack:           $STACK_NAME"
 if [ -n "$API_URL" ]; then
     echo -e "  API URL:         ${GREEN}$API_URL${NC}"
+fi
+echo ""
+echo "Official CloudFront URLs (from config/urls.json):"
+if [ -f "$PROJECT_ROOT/config/urls.json" ] && command -v jq &>/dev/null; then
+  echo "  • Admin:    $(jq -r '.cloudfront.admin // "not set"' "$PROJECT_ROOT/config/urls.json")"
+  echo "  • Vendor:   $(jq -r '.cloudfront.vendor // "not set"' "$PROJECT_ROOT/config/urls.json")"
+  echo "  • Customer: $(jq -r '.cloudfront.customer // "not set"' "$PROJECT_ROOT/config/urls.json")"
+else
+  echo "  • Set config/urls.json (cloudfront.admin, .vendor, .customer) for app URLs"
 fi
 echo ""
 echo -e "${GREEN}Deployment successful! 🎉${NC}"

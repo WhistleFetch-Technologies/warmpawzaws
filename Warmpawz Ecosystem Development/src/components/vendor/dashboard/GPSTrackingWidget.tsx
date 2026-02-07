@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Navigation } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface GPSTrackingWidgetProps {
   staffId: string;
@@ -15,7 +15,7 @@ export function GPSTrackingWidget({ staffId, isSoloProvider, onUpdate }: GPSTrac
   const [position, setPosition] = useState<any>(null);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   const getCurrentPosition = (): Promise<GeolocationPosition> => {
     return new Promise((resolve, reject) => {
@@ -52,7 +52,7 @@ export function GPSTrackingWidget({ staffId, isSoloProvider, onUpdate }: GPSTrac
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           lat: pos.coords.latitude,

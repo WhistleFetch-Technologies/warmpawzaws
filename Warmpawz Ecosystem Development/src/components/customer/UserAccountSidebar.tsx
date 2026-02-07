@@ -226,8 +226,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/profile/${phone}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/profile/${phone}`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -293,12 +293,12 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     setSaving(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/profile`,
+        `${getApiBaseUrl()}/customer/profile`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({ phone: phone, profile: profile }),
         }
@@ -338,8 +338,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     try {
       setLoadingBookings(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/bookings/history/${phone}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/bookings/history/${phone}`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -414,10 +414,10 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const removeFromSaved = async (itemId: string, type: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${phone}/saved/${itemId}?type=${type}`,
+        `${getApiBaseUrl()}/customer/${phone}/saved/${itemId}?type=${type}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -437,8 +437,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     try {
       setLoadingAddresses(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${phone}/addresses`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/${phone}/addresses`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -455,14 +455,14 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const saveAddress = async (addressData: any) => {
     try {
       const url = editingAddress
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${phone}/addresses/${editingAddress.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${phone}/addresses`;
+        ? `${getApiBaseUrl()}/customer/${phone}/addresses/${editingAddress.id}`
+        : `${getApiBaseUrl()}/customer/${phone}/addresses`;
 
       const response = await fetch(url, {
         method: editingAddress ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify(addressData)
       });
@@ -487,10 +487,10 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${phone}/addresses/${addressId}`,
+        `${getApiBaseUrl()}/customer/${phone}/addresses/${addressId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -511,8 +511,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     try {
       setLoadingPayments(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${phone}/payments`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/${phone}/payments`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -555,12 +555,12 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
       }
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${phone}/payments`,
+        `${getApiBaseUrl()}/customer/${phone}/payments`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(newPayment)
         }
@@ -597,10 +597,10 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${phone}/payments/${paymentId}`,
+        `${getApiBaseUrl()}/customer/${phone}/payments/${paymentId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -621,8 +621,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     try {
       setLoadingNotifications(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${phone}/notification-settings`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/${phone}/notification-settings`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -642,12 +642,12 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${phone}/notification-settings`,
+        `${getApiBaseUrl()}/customer/${phone}/notification-settings`,
         {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(newSettings)
         }

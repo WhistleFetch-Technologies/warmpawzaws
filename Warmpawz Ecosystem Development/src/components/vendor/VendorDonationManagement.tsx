@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Heart, Users, TrendingUp, Award, Plus, Download, Calendar } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'react-toastify';
 
 interface Donation {
@@ -86,9 +86,9 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
   const loadDashboard = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/dashboard`,
+        `${getApiBaseUrl()}/vendor/donation-management/${vendorId}/dashboard`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          headers: { Authorization: (getAuthHeaders().Authorization || "") }
         }
       );
       const data = await response.json();
@@ -120,9 +120,9 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
   const loadDonations = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/list`,
+        `${getApiBaseUrl()}/vendor/donation-management/${vendorId}/list`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          headers: { Authorization: (getAuthHeaders().Authorization || "") }
         }
       );
       const data = await response.json();
@@ -138,9 +138,9 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
   const loadDonors = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/donors`,
+        `${getApiBaseUrl()}/vendor/donation-management/${vendorId}/donors`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          headers: { Authorization: (getAuthHeaders().Authorization || "") }
         }
       );
       const data = await response.json();
@@ -155,9 +155,9 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
   const loadCampaigns = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/campaigns`,
+        `${getApiBaseUrl()}/vendor/donation-management/${vendorId}/campaigns`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          headers: { Authorization: (getAuthHeaders().Authorization || "") }
         }
       );
       const data = await response.json();
@@ -173,12 +173,12 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
     e.preventDefault();
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/create`,
+        `${getApiBaseUrl()}/vendor/donation-management/${vendorId}/create`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`
+            Authorization: (getAuthHeaders().Authorization || "")
           },
           body: JSON.stringify({
             ...donationForm,
@@ -219,12 +219,12 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
     e.preventDefault();
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/campaigns`,
+        `${getApiBaseUrl()}/vendor/donation-management/${vendorId}/campaigns`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`
+            Authorization: (getAuthHeaders().Authorization || "")
           },
           body: JSON.stringify({
             ...campaignForm,
@@ -252,12 +252,12 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
   const updateDonationStatus = async (donationId: string, status: Donation['status']) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/${donationId}/status`,
+        `${getApiBaseUrl()}/vendor/donation-management/${vendorId}/${donationId}/status`,
         {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`
+            Authorization: (getAuthHeaders().Authorization || "")
           },
           body: JSON.stringify({ status })
         }
@@ -280,11 +280,11 @@ export function VendorDonationManagement({ vendorId, vendorData, onBack }: Vendo
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/donation-management/${vendorId}/${donationId}`,
+        `${getApiBaseUrl()}/vendor/donation-management/${vendorId}/${donationId}`,
         {
           method: 'DELETE',
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`
+            Authorization: (getAuthHeaders().Authorization || "")
           }
         }
       );

@@ -3,7 +3,7 @@ import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Input } from '../ui/input';
 import { ArrowLeft, Home, MapPin, Navigation, Star, User, Clock, Check, Phone } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { UniversalHomeServiceTracking } from './UniversalHomeServiceTracking';
 
@@ -53,8 +53,8 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vet/doctors?serviceType=home`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vet/doctors?serviceType=home`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
       if (response.ok) {
         const data = await response.json();
@@ -71,8 +71,8 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vet/slots?vendorId=${selectedDoctor.id}&date=${selectedDate}&serviceType=home`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vet/slots?vendorId=${selectedDoctor.id}&date=${selectedDate}&serviceType=home`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
       if (response.ok) {
         const data = await response.json();
@@ -89,10 +89,10 @@ export function HomeVisit({ onBack, customerId, petProfiles }: HomeVisitProps) {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vet/booking`,
+        `${getApiBaseUrl()}/vet/booking`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+          headers: { 'Content-Type': 'application/json', Authorization: (getAuthHeaders().Authorization || "") },
           body: JSON.stringify({
             customerId,
             petId: selectedPet.id,

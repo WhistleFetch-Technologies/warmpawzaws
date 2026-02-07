@@ -4,7 +4,7 @@ import { VetTimeSlotSelection } from './VetTimeSlotSelection';
 import { VetAddressSelector } from './VetAddressSelector';
 import { VetPaymentScreen } from './VetPaymentScreen';
 import { VetBookingSuccess } from './VetBookingSuccess';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface VetBookingFlowProps {
   phone: string;
@@ -75,12 +75,12 @@ export function VetBookingFlow({ phone, serviceType, vendorId, onBack, onNavigat
       console.log('🎯 Creating booking:', bookingPayload);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/bookings/create`,
+        `${getApiBaseUrl()}/customer/bookings/create`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify(bookingPayload),
         }

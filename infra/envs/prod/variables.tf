@@ -33,3 +33,45 @@ variable "route53_zone_id" {
   default     = null
 }
 
+# ============================================
+# External Integration Variables
+# ============================================
+
+variable "razorpay_key_id" {
+  description = "Razorpay API Key ID (use rzp_live_... for production)"
+  type        = string
+  sensitive   = true
+}
+
+variable "razorpay_key_secret" {
+  description = "Razorpay API Key Secret"
+  type        = string
+  sensitive   = true
+}
+
+variable "razorpay_x_account_number" {
+  description = "RazorpayX Current Account number (payout source) for vendor payouts"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "google_maps_api_key" {
+  description = "Google Maps API key"
+  type        = string
+  sensitive   = true
+}
+
+variable "shiprocket_email" {
+  description = "Shiprocket account email"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "shiprocket_password" {
+  description = "Shiprocket account password"
+  type        = string
+  default     = ""
+  sensitive   = true
+}

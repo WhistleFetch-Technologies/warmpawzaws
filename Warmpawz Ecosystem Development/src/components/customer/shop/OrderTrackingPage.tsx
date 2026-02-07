@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { LoadingState, ErrorState, EmptyState } from '../../ui/states';
 import { Button } from '../../ui/button';
 import { ArrowLeft, MapPin, Truck, Calendar, Clock, CheckCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface OrderTrackingPageProps {
   orderId: string;
@@ -15,9 +15,9 @@ export function OrderTrackingPage({ orderId, onBack }: OrderTrackingPageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
   const getAuthHeaders = () => ({
-    'Authorization': `Bearer ${publicAnonKey}`,
+    ...getAuthHeaders(),
     'apikey': publicAnonKey
   });
 

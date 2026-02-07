@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Eye, MessageSquare } from "lucide-react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import { CustomDropdown } from "../CustomDropdown";
 
 interface PaymentDispute {
@@ -31,10 +31,10 @@ export function PaymentDisputesTab() {
 			setLoading(true);
 
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/payment/disputes`,
+				`${getApiBaseUrl()}/admin/vendors/payment/disputes`,
 				{
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 				}
 			);

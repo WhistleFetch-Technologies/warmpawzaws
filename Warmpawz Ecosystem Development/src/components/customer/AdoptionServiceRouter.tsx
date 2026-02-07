@@ -4,7 +4,7 @@ import { AdoptionCenterProfileView } from './adoption/AdoptionCenterProfileView'
 import { AdoptionPetListView } from './adoption/AdoptionPetListView';
 import { AdoptionApplicationForm } from './adoption/AdoptionApplicationForm';
 import { AdoptionConfirmation } from './adoption/AdoptionConfirmation';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { ArrowLeft, Heart, MapPin, Star } from 'lucide-react';
 
 type ViewType = 
@@ -34,7 +34,7 @@ export function AdoptionServiceRouter({ onBack, phone }: AdoptionServiceRouterPr
     applicationId: null
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadCustomerData();

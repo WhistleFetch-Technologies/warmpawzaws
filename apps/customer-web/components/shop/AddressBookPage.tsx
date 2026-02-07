@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 
 interface AddressBookPageProps {
   phone: string;
@@ -39,6 +41,13 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
   const [showForm, setShowForm] = useState(false);
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
   const [saving, setSaving] = useState(false);
+  const [countryCode, setCountryCode] = useState(() => {
+    // Get saved country code or default to +91
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('customerCountryCode') || '+91';
+    }
+    return '+91';
+  });
   const [formData, setFormData] = useState({
     label: 'home',
     name: '',
@@ -210,7 +219,7 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
   if (showForm) {
     return (
       <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
-        <div className="bg-white sticky top-0 z-50 border-b border-gray-200 px-4 py-4">
+        <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-50 px-4 py-4 rounded-b-2xl shadow-md">
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
@@ -219,12 +228,12 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
                 setShowForm(false);
                 setEditingAddress(null);
               }}
-              className="rounded-full"
+              className="rounded-full text-white hover:bg-white/20"
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div className="flex-1">
-              <h1 className="text-xl font-bold text-gray-900">
+              <h1 className="text-xl font-bold text-white">
                 {editingAddress ? 'Edit Address' : 'Add New Address'}
               </h1>
             </div>
@@ -275,33 +284,53 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
             />
           </div>
 
-          {/* Phone */}
+          {/* Phone with Country Code */}
           <div>
             <Label htmlFor="phone" className="text-sm font-medium text-gray-700 mb-2 block">
               Phone Number *
             </Label>
-            <Input
-              id="phone"
-              type="tel"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/[^0-9]/g, '') })}
-              placeholder="10-digit mobile number"
-              maxLength={10}
-              required
-            />
+            <div className="flex items-stretch border-2 border-gray-200 rounded-xl overflow-hidden focus-within:border-[#FF8C42] focus-within:ring-2 focus-within:ring-[#FF8C42]/20 transition-all bg-white">
+              <CountryCodeSelector
+                selectedCode={countryCode}
+                onSelect={setCountryCode}
+                disabled={false}
+              />
+              <input
+                id="phone"
+                type="tel"
+                inputMode="numeric"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/[^0-9]/g, '') })}
+                placeholder="10-digit mobile number"
+                maxLength={10}
+                required
+                className="flex-1 py-3 px-4 text-base outline-none"
+              />
+            </div>
           </div>
 
-          {/* Address Line 1 */}
+          {/* Address Line 1 with Google Maps Autocomplete */}
           <div>
             <Label htmlFor="addressLine1" className="text-sm font-medium text-gray-700 mb-2 block">
               Address Line 1 *
             </Label>
-            <Input
-              id="addressLine1"
-              type="text"
+            <EnhancedAddressAutocomplete
               value={formData.addressLine1}
-              onChange={(e) => setFormData({ ...formData, addressLine1: e.target.value })}
-              placeholder="House/Flat no., Building name"
+              onChange={(address: string, components?: AddressComponents) => {
+                setFormData(prev => {
+                  const updates: any = { ...prev, addressLine1: address };
+                  // Auto-populate city, state, pincode from Google Maps selection
+                  if (components) {
+                    if (components.city && !prev.city) updates.city = components.city;
+                    if (components.state && !prev.state) updates.state = components.state;
+                    if (components.pincode && !prev.pincode) updates.pincode = components.pincode;
+                    if (components.landmark && !prev.landmark) updates.landmark = components.landmark;
+                    if (components.street && !prev.addressLine2) updates.addressLine2 = components.street;
+                  }
+                  return updates;
+                });
+              }}
+              placeholder="Search address, landmark, city..."
               required
             />
           </div>
@@ -412,19 +441,19 @@ export function AddressBookPage({ phone, onBack, onSelect, onNavigate }: Address
   return (
     <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
       {/* Header */}
-      <div className="bg-white sticky top-0 z-50 border-b border-gray-200 px-4 py-4">
+      <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-50 px-4 py-4 rounded-b-2xl shadow-md">
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
             size="icon"
             onClick={onBack}
-            className="rounded-full"
+            className="rounded-full text-white hover:bg-white/20"
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div className="flex-1">
-            <h1 className="text-xl font-bold text-gray-900">Address Book</h1>
-            <p className="text-sm text-gray-600">{addresses.length} saved {addresses.length === 1 ? 'address' : 'addresses'}</p>
+            <h1 className="text-xl font-bold text-white">Address Book</h1>
+            <p className="text-sm text-white/90">{addresses.length} saved {addresses.length === 1 ? 'address' : 'addresses'}</p>
           </div>
         </div>
       </div>

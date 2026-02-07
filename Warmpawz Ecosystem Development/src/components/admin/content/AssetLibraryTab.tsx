@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, SortAsc, Filter, ChevronDown, Eye, Edit, MoreVertical, Download, Trash2, FileImage, FileVideo, FileText } from 'lucide-react';
 import { Button } from '../../ui/button';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { EditAssetModal } from './EditAssetModal';
 import { BulkActionsModal } from './BulkActionsModal';
 
@@ -42,10 +42,10 @@ export function AssetLibraryTab({ onRefresh }: AssetLibraryTabProps) {
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/content/assets`,
+        `${getApiBaseUrl()}/admin/content/assets`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -66,11 +66,11 @@ export function AssetLibraryTab({ onRefresh }: AssetLibraryTabProps) {
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/content/assets/${assetId}`,
+        `${getApiBaseUrl()}/admin/content/assets/${assetId}`,
         {
           method: 'DELETE',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Star, MapPin, Clock, ArrowLeft } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface Service {
   id: string;
@@ -50,7 +50,7 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredServices, setFilteredServices] = useState<Service[]>([]);
   
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchServices();
@@ -74,7 +74,7 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
         `${API_BASE}/customer/services?${params.toString()}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'apikey': publicAnonKey
           }
         }
@@ -86,7 +86,7 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
             `${API_BASE}/catalog/services?${params.toString()}`,
             {
               headers: {
-                'Authorization': `Bearer ${publicAnonKey}`,
+                ...getAuthHeaders(),
                 'apikey': publicAnonKey
               }
             }

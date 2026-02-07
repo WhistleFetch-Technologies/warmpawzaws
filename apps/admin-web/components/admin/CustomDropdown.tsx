@@ -36,7 +36,7 @@ export function CustomDropdown({ options, value, onChange, placeholder = 'Select
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="px-0 py-0.5 border border-gray-200 rounded-lg text-sm bg-white hover:bg-gray-50 transition-colors flex items-center gap-0 min-w-[140px] justify-between"
+        className="px-0 py-0.5 border border-gray-200 rounded-lg text-sm bg-white hover:bg-gray-50 transition-colors flex items-center gap-3 min-w-[140px] justify-between"
       >
         <span>{selectedOption?.label || placeholder}</span>
         <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />

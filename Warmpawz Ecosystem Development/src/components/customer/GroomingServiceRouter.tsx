@@ -11,7 +11,7 @@ import { BookingConfirmation } from './grooming/BookingConfirmation';
 import { GroomingAtHome } from './GroomingAtHome';
 import { ProblemGridSelector } from './ProblemGridSelector'; // ✅ NEW
 import { VendorDiscoveryByProblem } from './VendorDiscoveryByProblem'; // ✅ NEW
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 type ViewType = 
   | 'landing'
@@ -74,7 +74,7 @@ export function GroomingServiceRouter({ onBack, phone, onNavigate, onViewBooking
     booking: null
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadCustomerData();
@@ -388,6 +388,7 @@ export function GroomingServiceRouter({ onBack, phone, onNavigate, onViewBooking
     return (
       <TimeSlotSelector
         vendorId={bookingFlow.vendorId}
+        vendorName={bookingFlow.vendorName || 'Grooming Center'} // ✅ Pass vendorName for scheduling policy display
         serviceDuration={bookingFlow.services[0].duration || 60}
         serviceStyle={bookingFlow.serviceType === 'home' ? 'at_home' : 'at_center'} // ✅ Pass serviceStyle for V2 slots
         onBack={() => setCurrentView('select_pet')}

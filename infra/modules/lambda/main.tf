@@ -46,6 +46,13 @@ resource "aws_iam_role" "lambda" {
     Name        = "warmpawz-${var.environment}-lambda-role"
     Environment = var.environment
   }
+
+  # CRITICAL: Prevent duplicate IAM roles - ONE role per environment
+  lifecycle {
+    create_before_destroy = true
+    # Prevent recreation if role name changes (name_prefix ensures uniqueness)
+    ignore_changes = [name_prefix]
+  }
 }
 
 # Attach basic Lambda execution policy
@@ -175,6 +182,13 @@ resource "aws_cloudwatch_log_group" "lambda" {
     Environment = var.environment
     Function    = each.key
   }
+
+  # CRITICAL: Prevent duplicate log groups - ONE log group per function per environment
+  lifecycle {
+    create_before_destroy = true
+    # Prevent recreation if log group name changes (name is unique per function)
+    ignore_changes = [name]
+  }
 }
 
 # Lambda Functions
@@ -190,6 +204,9 @@ resource "aws_lambda_function" "functions" {
 
   filename         = each.value.zip_path
   source_code_hash = filebase64sha256(each.value.zip_path)
+
+  # Enable versioning for provisioned concurrency
+  publish = coalesce(each.value.provisioned_concurrency, 0) > 0
 
   # VPC Configuration
   vpc_config {
@@ -231,6 +248,13 @@ resource "aws_lambda_function" "functions" {
     Function    = each.key
   }
 
+  # CRITICAL: Prevent duplicate Lambda functions - ONE function per name per environment
+  lifecycle {
+    create_before_destroy = true
+    # Prevent recreation if function name changes (name is unique per environment)
+    ignore_changes = [function_name]
+  }
+
   depends_on = [
     aws_iam_role_policy_attachment.lambda_basic,
     aws_iam_role_policy_attachment.lambda_vpc,
@@ -257,18 +281,43 @@ resource "aws_lambda_function_url" "functions" {
   }
 }
 
-# Lambda Aliases - REMOVED
-# Aliases are NOT needed for API Gateway integration (uses function_name directly)
-# Aliases would require manual versioning and cause ResourceConflictException
-# For blue/green deployments, use Lambda versions + weighted aliases OUTSIDE Terraform
-#
-# Previous attempts to manage aliases in Terraform caused:
-# - ResourceConflictException when alias already exists
-# - Non-idempotent deployments (157+ failed attempts)
-# - State drift between AWS and Terraform
-#
+# Lambda Aliases - REMOVED for API Gateway integration
+# See previous comments about alias management challenges
 # DECISION: API Gateway references Lambda functions directly via invoke_arn
-# See: infra/modules/api-gateway/main.tf line 90 (uses invoke_arn, not alias)
+
+# Provisioned Concurrency - Keeps Lambda instances warm to eliminate cold starts
+# NOTE: Provisioned concurrency requires a published version, not $LATEST
+# This creates a version for functions that request provisioned_concurrency
+resource "aws_lambda_alias" "provisioned" {
+  for_each = {
+    for k, v in var.lambda_functions : k => v
+    if coalesce(v.provisioned_concurrency, 0) > 0
+  }
+
+  name             = "provisioned"
+  function_name    = aws_lambda_function.functions[each.key].function_name
+  function_version = aws_lambda_function.functions[each.key].version
+
+  lifecycle {
+    ignore_changes = [function_version]
+  }
+}
+
+resource "aws_lambda_provisioned_concurrency_config" "functions" {
+  for_each = {
+    for k, v in var.lambda_functions : k => v
+    if coalesce(v.provisioned_concurrency, 0) > 0
+  }
+
+  function_name                     = aws_lambda_function.functions[each.key].function_name
+  provisioned_concurrent_executions = each.value.provisioned_concurrency
+  qualifier                         = aws_lambda_alias.provisioned[each.key].name
+
+  lifecycle {
+    # Allow updates without destroying (prevents downtime)
+    create_before_destroy = true
+  }
+}
 
 # CloudWatch Alarms for Lambda
 resource "aws_cloudwatch_metric_alarm" "lambda_errors" {

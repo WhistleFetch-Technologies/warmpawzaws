@@ -4,14 +4,36 @@
  * ============================================================================
  */
 import { z } from 'zod';
+export declare const SelectedServiceSchema: z.ZodObject<{
+    id: z.ZodOptional<z.ZodString>;
+    serviceId: z.ZodOptional<z.ZodString>;
+    name: z.ZodOptional<z.ZodString>;
+    price: z.ZodOptional<z.ZodNumber>;
+    duration: z.ZodOptional<z.ZodNumber>;
+    quantity: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+}, "strip", z.ZodTypeAny, {
+    quantity: number;
+    id?: string | undefined;
+    name?: string | undefined;
+    serviceId?: string | undefined;
+    price?: number | undefined;
+    duration?: number | undefined;
+}, {
+    id?: string | undefined;
+    name?: string | undefined;
+    serviceId?: string | undefined;
+    price?: number | undefined;
+    duration?: number | undefined;
+    quantity?: number | undefined;
+}>;
 export declare const CreateBookingRequestSchema: z.ZodObject<{
     customerId: z.ZodString;
     vendorId: z.ZodString;
-    serviceId: z.ZodString;
+    serviceId: z.ZodUnion<[z.ZodString, z.ZodEffects<z.ZodString, string, string>]>;
     staffId: z.ZodOptional<z.ZodString>;
     bookingDate: z.ZodString;
     bookingTime: z.ZodString;
-    serviceType: z.ZodEnum<["at_vendor", "at_home", "online"]>;
+    serviceType: z.ZodEnum<["at_vendor", "at_home", "online", "at_center", "tele", "hybrid", "product"]>;
     address: z.ZodOptional<z.ZodString>;
     city: z.ZodOptional<z.ZodString>;
     state: z.ZodOptional<z.ZodString>;
@@ -20,17 +42,44 @@ export declare const CreateBookingRequestSchema: z.ZodObject<{
     longitude: z.ZodOptional<z.ZodNumber>;
     petId: z.ZodOptional<z.ZodString>;
     amount: z.ZodOptional<z.ZodNumber>;
+    totalAmount: z.ZodOptional<z.ZodNumber>;
     notes: z.ZodOptional<z.ZodString>;
     idempotencyKey: z.ZodOptional<z.ZodString>;
     couponCode: z.ZodOptional<z.ZodString>;
     promotionId: z.ZodOptional<z.ZodString>;
+    selectedServices: z.ZodOptional<z.ZodArray<z.ZodObject<{
+        id: z.ZodOptional<z.ZodString>;
+        serviceId: z.ZodOptional<z.ZodString>;
+        name: z.ZodOptional<z.ZodString>;
+        price: z.ZodOptional<z.ZodNumber>;
+        duration: z.ZodOptional<z.ZodNumber>;
+        quantity: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+    }, "strip", z.ZodTypeAny, {
+        quantity: number;
+        id?: string | undefined;
+        name?: string | undefined;
+        serviceId?: string | undefined;
+        price?: number | undefined;
+        duration?: number | undefined;
+    }, {
+        id?: string | undefined;
+        name?: string | undefined;
+        serviceId?: string | undefined;
+        price?: number | undefined;
+        duration?: number | undefined;
+        quantity?: number | undefined;
+    }>, "many">>;
+    serviceName: z.ZodOptional<z.ZodString>;
+    customerPhone: z.ZodOptional<z.ZodString>;
+    customerName: z.ZodOptional<z.ZodString>;
+    petName: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
+    serviceId: string;
     customerId: string;
     vendorId: string;
-    serviceId: string;
     bookingDate: string;
     bookingTime: string;
-    serviceType: "at_vendor" | "at_home" | "online";
+    serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
     staffId?: string | undefined;
     address?: string | undefined;
     city?: string | undefined;
@@ -40,17 +89,30 @@ export declare const CreateBookingRequestSchema: z.ZodObject<{
     longitude?: number | undefined;
     petId?: string | undefined;
     amount?: number | undefined;
+    totalAmount?: number | undefined;
     notes?: string | undefined;
     idempotencyKey?: string | undefined;
     couponCode?: string | undefined;
     promotionId?: string | undefined;
+    selectedServices?: {
+        quantity: number;
+        id?: string | undefined;
+        name?: string | undefined;
+        serviceId?: string | undefined;
+        price?: number | undefined;
+        duration?: number | undefined;
+    }[] | undefined;
+    serviceName?: string | undefined;
+    customerPhone?: string | undefined;
+    customerName?: string | undefined;
+    petName?: string | undefined;
 }, {
+    serviceId: string;
     customerId: string;
     vendorId: string;
-    serviceId: string;
     bookingDate: string;
     bookingTime: string;
-    serviceType: "at_vendor" | "at_home" | "online";
+    serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
     staffId?: string | undefined;
     address?: string | undefined;
     city?: string | undefined;
@@ -60,21 +122,34 @@ export declare const CreateBookingRequestSchema: z.ZodObject<{
     longitude?: number | undefined;
     petId?: string | undefined;
     amount?: number | undefined;
+    totalAmount?: number | undefined;
     notes?: string | undefined;
     idempotencyKey?: string | undefined;
     couponCode?: string | undefined;
     promotionId?: string | undefined;
+    selectedServices?: {
+        id?: string | undefined;
+        name?: string | undefined;
+        serviceId?: string | undefined;
+        price?: number | undefined;
+        duration?: number | undefined;
+        quantity?: number | undefined;
+    }[] | undefined;
+    serviceName?: string | undefined;
+    customerPhone?: string | undefined;
+    customerName?: string | undefined;
+    petName?: string | undefined;
 }>;
 export declare const UpdateBookingStatusRequestSchema: z.ZodObject<{
-    status: z.ZodEnum<["pending", "confirmed", "in_progress", "completed", "cancelled", "no_show", "rescheduled"]>;
+    status: z.ZodEnum<["pending", "confirmed", "scheduled", "in_progress", "completed", "cancelled", "no_show", "rescheduled", "sample_collected", "sample_received_at_lab", "processing", "reports_ready"]>;
     reason: z.ZodOptional<z.ZodString>;
     notes: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
-    status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
+    status: "pending" | "confirmed" | "scheduled" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled" | "sample_collected" | "sample_received_at_lab" | "processing" | "reports_ready";
     notes?: string | undefined;
     reason?: string | undefined;
 }, {
-    status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
+    status: "pending" | "confirmed" | "scheduled" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled" | "sample_collected" | "sample_received_at_lab" | "processing" | "reports_ready";
     notes?: string | undefined;
     reason?: string | undefined;
 }>;
@@ -110,7 +185,7 @@ export declare const BookingSchema: z.ZodObject<{
     bookingDate: z.ZodString;
     bookingTime: z.ZodString;
     status: z.ZodEnum<["pending", "confirmed", "in_progress", "completed", "cancelled", "no_show", "rescheduled"]>;
-    serviceType: z.ZodEnum<["at_vendor", "at_home", "online"]>;
+    serviceType: z.ZodEnum<["at_vendor", "at_home", "online", "at_center", "tele", "hybrid", "product"]>;
     address: z.ZodNullable<z.ZodString>;
     city: z.ZodNullable<z.ZodString>;
     state: z.ZodNullable<z.ZodString>;
@@ -130,16 +205,39 @@ export declare const BookingSchema: z.ZodObject<{
     updatedAt: z.ZodString;
     completedAt: z.ZodNullable<z.ZodString>;
     cancelledAt: z.ZodNullable<z.ZodString>;
+    selectedServices: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodObject<{
+        id: z.ZodOptional<z.ZodString>;
+        serviceId: z.ZodOptional<z.ZodString>;
+        name: z.ZodOptional<z.ZodString>;
+        price: z.ZodOptional<z.ZodNumber>;
+        duration: z.ZodOptional<z.ZodNumber>;
+        quantity: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+    }, "strip", z.ZodTypeAny, {
+        quantity: number;
+        id?: string | undefined;
+        name?: string | undefined;
+        serviceId?: string | undefined;
+        price?: number | undefined;
+        duration?: number | undefined;
+    }, {
+        id?: string | undefined;
+        name?: string | undefined;
+        serviceId?: string | undefined;
+        price?: number | undefined;
+        duration?: number | undefined;
+        quantity?: number | undefined;
+    }>, "many">>>;
+    totalDurationMinutes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
 }, "strip", z.ZodTypeAny, {
     status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
     id: string;
+    serviceId: string;
     customerId: string;
     vendorId: string | null;
-    serviceId: string;
     staffId: string | null;
     bookingDate: string;
     bookingTime: string;
-    serviceType: "at_vendor" | "at_home" | "online";
+    serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
     address: string | null;
     city: string | null;
     state: string | null;
@@ -147,11 +245,11 @@ export declare const BookingSchema: z.ZodObject<{
     latitude: number | null;
     longitude: number | null;
     petId: string | null;
+    totalAmount: number;
     notes: string | null;
     basePrice: number;
     discountAmount: number;
     taxAmount: number;
-    totalAmount: number;
     paymentStatus: "pending" | "partial" | "paid" | "refunded" | "failed";
     paymentId: string | null;
     cancellationReason: string | null;
@@ -159,16 +257,25 @@ export declare const BookingSchema: z.ZodObject<{
     updatedAt: string;
     completedAt: string | null;
     cancelledAt: string | null;
+    selectedServices?: {
+        quantity: number;
+        id?: string | undefined;
+        name?: string | undefined;
+        serviceId?: string | undefined;
+        price?: number | undefined;
+        duration?: number | undefined;
+    }[] | null | undefined;
+    totalDurationMinutes?: number | null | undefined;
 }, {
     status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
     id: string;
+    serviceId: string;
     customerId: string;
     vendorId: string | null;
-    serviceId: string;
     staffId: string | null;
     bookingDate: string;
     bookingTime: string;
-    serviceType: "at_vendor" | "at_home" | "online";
+    serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
     address: string | null;
     city: string | null;
     state: string | null;
@@ -176,11 +283,11 @@ export declare const BookingSchema: z.ZodObject<{
     latitude: number | null;
     longitude: number | null;
     petId: string | null;
+    totalAmount: number;
     notes: string | null;
     basePrice: number;
     discountAmount: number;
     taxAmount: number;
-    totalAmount: number;
     paymentStatus: "pending" | "partial" | "paid" | "refunded" | "failed";
     paymentId: string | null;
     cancellationReason: string | null;
@@ -188,6 +295,15 @@ export declare const BookingSchema: z.ZodObject<{
     updatedAt: string;
     completedAt: string | null;
     cancelledAt: string | null;
+    selectedServices?: {
+        id?: string | undefined;
+        name?: string | undefined;
+        serviceId?: string | undefined;
+        price?: number | undefined;
+        duration?: number | undefined;
+        quantity?: number | undefined;
+    }[] | null | undefined;
+    totalDurationMinutes?: number | null | undefined;
 }>;
 export declare const BookingStatusHistorySchema: z.ZodObject<{
     id: z.ZodString;
@@ -264,7 +380,7 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             bookingDate: z.ZodString;
             bookingTime: z.ZodString;
             status: z.ZodEnum<["pending", "confirmed", "in_progress", "completed", "cancelled", "no_show", "rescheduled"]>;
-            serviceType: z.ZodEnum<["at_vendor", "at_home", "online"]>;
+            serviceType: z.ZodEnum<["at_vendor", "at_home", "online", "at_center", "tele", "hybrid", "product"]>;
             address: z.ZodNullable<z.ZodString>;
             city: z.ZodNullable<z.ZodString>;
             state: z.ZodNullable<z.ZodString>;
@@ -284,16 +400,39 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             updatedAt: z.ZodString;
             completedAt: z.ZodNullable<z.ZodString>;
             cancelledAt: z.ZodNullable<z.ZodString>;
+            selectedServices: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodObject<{
+                id: z.ZodOptional<z.ZodString>;
+                serviceId: z.ZodOptional<z.ZodString>;
+                name: z.ZodOptional<z.ZodString>;
+                price: z.ZodOptional<z.ZodNumber>;
+                duration: z.ZodOptional<z.ZodNumber>;
+                quantity: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+            }, "strip", z.ZodTypeAny, {
+                quantity: number;
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+            }, {
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+                quantity?: number | undefined;
+            }>, "many">>>;
+            totalDurationMinutes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
         }, "strip", z.ZodTypeAny, {
             status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
             id: string;
+            serviceId: string;
             customerId: string;
             vendorId: string | null;
-            serviceId: string;
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -301,11 +440,11 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             latitude: number | null;
             longitude: number | null;
             petId: string | null;
+            totalAmount: number;
             notes: string | null;
             basePrice: number;
             discountAmount: number;
             taxAmount: number;
-            totalAmount: number;
             paymentStatus: "pending" | "partial" | "paid" | "refunded" | "failed";
             paymentId: string | null;
             cancellationReason: string | null;
@@ -313,16 +452,25 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             updatedAt: string;
             completedAt: string | null;
             cancelledAt: string | null;
+            selectedServices?: {
+                quantity: number;
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+            }[] | null | undefined;
+            totalDurationMinutes?: number | null | undefined;
         }, {
             status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
             id: string;
+            serviceId: string;
             customerId: string;
             vendorId: string | null;
-            serviceId: string;
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -330,11 +478,11 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             latitude: number | null;
             longitude: number | null;
             petId: string | null;
+            totalAmount: number;
             notes: string | null;
             basePrice: number;
             discountAmount: number;
             taxAmount: number;
-            totalAmount: number;
             paymentStatus: "pending" | "partial" | "paid" | "refunded" | "failed";
             paymentId: string | null;
             cancellationReason: string | null;
@@ -342,18 +490,27 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             updatedAt: string;
             completedAt: string | null;
             cancelledAt: string | null;
+            selectedServices?: {
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+                quantity?: number | undefined;
+            }[] | null | undefined;
+            totalDurationMinutes?: number | null | undefined;
         }>;
     }, "strip", z.ZodTypeAny, {
         booking: {
             status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
             id: string;
+            serviceId: string;
             customerId: string;
             vendorId: string | null;
-            serviceId: string;
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -361,11 +518,11 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             latitude: number | null;
             longitude: number | null;
             petId: string | null;
+            totalAmount: number;
             notes: string | null;
             basePrice: number;
             discountAmount: number;
             taxAmount: number;
-            totalAmount: number;
             paymentStatus: "pending" | "partial" | "paid" | "refunded" | "failed";
             paymentId: string | null;
             cancellationReason: string | null;
@@ -373,18 +530,27 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             updatedAt: string;
             completedAt: string | null;
             cancelledAt: string | null;
+            selectedServices?: {
+                quantity: number;
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+            }[] | null | undefined;
+            totalDurationMinutes?: number | null | undefined;
         };
     }, {
         booking: {
             status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
             id: string;
+            serviceId: string;
             customerId: string;
             vendorId: string | null;
-            serviceId: string;
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -392,11 +558,11 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             latitude: number | null;
             longitude: number | null;
             petId: string | null;
+            totalAmount: number;
             notes: string | null;
             basePrice: number;
             discountAmount: number;
             taxAmount: number;
-            totalAmount: number;
             paymentStatus: "pending" | "partial" | "paid" | "refunded" | "failed";
             paymentId: string | null;
             cancellationReason: string | null;
@@ -404,6 +570,15 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             updatedAt: string;
             completedAt: string | null;
             cancelledAt: string | null;
+            selectedServices?: {
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+                quantity?: number | undefined;
+            }[] | null | undefined;
+            totalDurationMinutes?: number | null | undefined;
         };
     }>;
 }, "strip", z.ZodTypeAny, {
@@ -412,13 +587,13 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
         booking: {
             status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
             id: string;
+            serviceId: string;
             customerId: string;
             vendorId: string | null;
-            serviceId: string;
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -426,11 +601,11 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             latitude: number | null;
             longitude: number | null;
             petId: string | null;
+            totalAmount: number;
             notes: string | null;
             basePrice: number;
             discountAmount: number;
             taxAmount: number;
-            totalAmount: number;
             paymentStatus: "pending" | "partial" | "paid" | "refunded" | "failed";
             paymentId: string | null;
             cancellationReason: string | null;
@@ -438,6 +613,15 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             updatedAt: string;
             completedAt: string | null;
             cancelledAt: string | null;
+            selectedServices?: {
+                quantity: number;
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+            }[] | null | undefined;
+            totalDurationMinutes?: number | null | undefined;
         };
     };
 }, {
@@ -446,13 +630,13 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
         booking: {
             status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
             id: string;
+            serviceId: string;
             customerId: string;
             vendorId: string | null;
-            serviceId: string;
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -460,11 +644,11 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             latitude: number | null;
             longitude: number | null;
             petId: string | null;
+            totalAmount: number;
             notes: string | null;
             basePrice: number;
             discountAmount: number;
             taxAmount: number;
-            totalAmount: number;
             paymentStatus: "pending" | "partial" | "paid" | "refunded" | "failed";
             paymentId: string | null;
             cancellationReason: string | null;
@@ -472,6 +656,15 @@ export declare const GetBookingResponseSchema: z.ZodObject<{
             updatedAt: string;
             completedAt: string | null;
             cancelledAt: string | null;
+            selectedServices?: {
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+                quantity?: number | undefined;
+            }[] | null | undefined;
+            totalDurationMinutes?: number | null | undefined;
         };
     };
 }>;
@@ -487,7 +680,7 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             bookingDate: z.ZodString;
             bookingTime: z.ZodString;
             status: z.ZodEnum<["pending", "confirmed", "in_progress", "completed", "cancelled", "no_show", "rescheduled"]>;
-            serviceType: z.ZodEnum<["at_vendor", "at_home", "online"]>;
+            serviceType: z.ZodEnum<["at_vendor", "at_home", "online", "at_center", "tele", "hybrid", "product"]>;
             address: z.ZodNullable<z.ZodString>;
             city: z.ZodNullable<z.ZodString>;
             state: z.ZodNullable<z.ZodString>;
@@ -507,16 +700,39 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             updatedAt: z.ZodString;
             completedAt: z.ZodNullable<z.ZodString>;
             cancelledAt: z.ZodNullable<z.ZodString>;
+            selectedServices: z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodObject<{
+                id: z.ZodOptional<z.ZodString>;
+                serviceId: z.ZodOptional<z.ZodString>;
+                name: z.ZodOptional<z.ZodString>;
+                price: z.ZodOptional<z.ZodNumber>;
+                duration: z.ZodOptional<z.ZodNumber>;
+                quantity: z.ZodDefault<z.ZodOptional<z.ZodNumber>>;
+            }, "strip", z.ZodTypeAny, {
+                quantity: number;
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+            }, {
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+                quantity?: number | undefined;
+            }>, "many">>>;
+            totalDurationMinutes: z.ZodOptional<z.ZodNullable<z.ZodNumber>>;
         }, "strip", z.ZodTypeAny, {
             status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
             id: string;
+            serviceId: string;
             customerId: string;
             vendorId: string | null;
-            serviceId: string;
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -524,11 +740,11 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             latitude: number | null;
             longitude: number | null;
             petId: string | null;
+            totalAmount: number;
             notes: string | null;
             basePrice: number;
             discountAmount: number;
             taxAmount: number;
-            totalAmount: number;
             paymentStatus: "pending" | "partial" | "paid" | "refunded" | "failed";
             paymentId: string | null;
             cancellationReason: string | null;
@@ -536,16 +752,25 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             updatedAt: string;
             completedAt: string | null;
             cancelledAt: string | null;
+            selectedServices?: {
+                quantity: number;
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+            }[] | null | undefined;
+            totalDurationMinutes?: number | null | undefined;
         }, {
             status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
             id: string;
+            serviceId: string;
             customerId: string;
             vendorId: string | null;
-            serviceId: string;
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -553,11 +778,11 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             latitude: number | null;
             longitude: number | null;
             petId: string | null;
+            totalAmount: number;
             notes: string | null;
             basePrice: number;
             discountAmount: number;
             taxAmount: number;
-            totalAmount: number;
             paymentStatus: "pending" | "partial" | "paid" | "refunded" | "failed";
             paymentId: string | null;
             cancellationReason: string | null;
@@ -565,6 +790,15 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             updatedAt: string;
             completedAt: string | null;
             cancelledAt: string | null;
+            selectedServices?: {
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+                quantity?: number | undefined;
+            }[] | null | undefined;
+            totalDurationMinutes?: number | null | undefined;
         }>, "many">;
         total: z.ZodNumber;
         page: z.ZodOptional<z.ZodNumber>;
@@ -573,13 +807,13 @@ export declare const BookingListResponseSchema: z.ZodObject<{
         bookings: {
             status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
             id: string;
+            serviceId: string;
             customerId: string;
             vendorId: string | null;
-            serviceId: string;
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -587,11 +821,11 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             latitude: number | null;
             longitude: number | null;
             petId: string | null;
+            totalAmount: number;
             notes: string | null;
             basePrice: number;
             discountAmount: number;
             taxAmount: number;
-            totalAmount: number;
             paymentStatus: "pending" | "partial" | "paid" | "refunded" | "failed";
             paymentId: string | null;
             cancellationReason: string | null;
@@ -599,6 +833,15 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             updatedAt: string;
             completedAt: string | null;
             cancelledAt: string | null;
+            selectedServices?: {
+                quantity: number;
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+            }[] | null | undefined;
+            totalDurationMinutes?: number | null | undefined;
         }[];
         total: number;
         page?: number | undefined;
@@ -607,13 +850,13 @@ export declare const BookingListResponseSchema: z.ZodObject<{
         bookings: {
             status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
             id: string;
+            serviceId: string;
             customerId: string;
             vendorId: string | null;
-            serviceId: string;
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -621,11 +864,11 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             latitude: number | null;
             longitude: number | null;
             petId: string | null;
+            totalAmount: number;
             notes: string | null;
             basePrice: number;
             discountAmount: number;
             taxAmount: number;
-            totalAmount: number;
             paymentStatus: "pending" | "partial" | "paid" | "refunded" | "failed";
             paymentId: string | null;
             cancellationReason: string | null;
@@ -633,6 +876,15 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             updatedAt: string;
             completedAt: string | null;
             cancelledAt: string | null;
+            selectedServices?: {
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+                quantity?: number | undefined;
+            }[] | null | undefined;
+            totalDurationMinutes?: number | null | undefined;
         }[];
         total: number;
         page?: number | undefined;
@@ -644,13 +896,13 @@ export declare const BookingListResponseSchema: z.ZodObject<{
         bookings: {
             status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
             id: string;
+            serviceId: string;
             customerId: string;
             vendorId: string | null;
-            serviceId: string;
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -658,11 +910,11 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             latitude: number | null;
             longitude: number | null;
             petId: string | null;
+            totalAmount: number;
             notes: string | null;
             basePrice: number;
             discountAmount: number;
             taxAmount: number;
-            totalAmount: number;
             paymentStatus: "pending" | "partial" | "paid" | "refunded" | "failed";
             paymentId: string | null;
             cancellationReason: string | null;
@@ -670,6 +922,15 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             updatedAt: string;
             completedAt: string | null;
             cancelledAt: string | null;
+            selectedServices?: {
+                quantity: number;
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+            }[] | null | undefined;
+            totalDurationMinutes?: number | null | undefined;
         }[];
         total: number;
         page?: number | undefined;
@@ -681,13 +942,13 @@ export declare const BookingListResponseSchema: z.ZodObject<{
         bookings: {
             status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled";
             id: string;
+            serviceId: string;
             customerId: string;
             vendorId: string | null;
-            serviceId: string;
             staffId: string | null;
             bookingDate: string;
             bookingTime: string;
-            serviceType: "at_vendor" | "at_home" | "online";
+            serviceType: "at_vendor" | "at_home" | "online" | "at_center" | "tele" | "hybrid" | "product";
             address: string | null;
             city: string | null;
             state: string | null;
@@ -695,11 +956,11 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             latitude: number | null;
             longitude: number | null;
             petId: string | null;
+            totalAmount: number;
             notes: string | null;
             basePrice: number;
             discountAmount: number;
             taxAmount: number;
-            totalAmount: number;
             paymentStatus: "pending" | "partial" | "paid" | "refunded" | "failed";
             paymentId: string | null;
             cancellationReason: string | null;
@@ -707,6 +968,15 @@ export declare const BookingListResponseSchema: z.ZodObject<{
             updatedAt: string;
             completedAt: string | null;
             cancelledAt: string | null;
+            selectedServices?: {
+                id?: string | undefined;
+                name?: string | undefined;
+                serviceId?: string | undefined;
+                price?: number | undefined;
+                duration?: number | undefined;
+                quantity?: number | undefined;
+            }[] | null | undefined;
+            totalDurationMinutes?: number | null | undefined;
         }[];
         total: number;
         page?: number | undefined;

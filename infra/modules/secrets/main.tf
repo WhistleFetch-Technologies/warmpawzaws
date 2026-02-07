@@ -1,5 +1,9 @@
 # Secrets Module - AWS Secrets Manager for external integrations
 
+locals {
+  is_prod = var.environment == "prod"
+}
+
 # Razorpay Credentials
 resource "aws_secretsmanager_secret" "razorpay" {
   name                    = "warmpawz/${var.environment}/razorpay"
@@ -10,13 +14,23 @@ resource "aws_secretsmanager_secret" "razorpay" {
     Name        = "warmpawz-${var.environment}-razorpay"
     Environment = var.environment
   }
+
+  # CRITICAL: Prevent duplicate secrets - ONE secret per name per environment
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime and prevent duplicates
+  }
 }
 
 resource "aws_secretsmanager_secret_version" "razorpay" {
   secret_id = aws_secretsmanager_secret.razorpay.id
   secret_string = jsonencode({
-    key_id     = var.razorpay_key_id
-    key_secret = var.razorpay_key_secret
+    # Lambda expects camelCase (keyId, keySecret, razorpayXAccountNumber)
+    key_id                  = var.razorpay_key_id
+    key_secret              = var.razorpay_key_secret
+    keyId                   = var.razorpay_key_id
+    keySecret               = var.razorpay_key_secret
+    razorpayXAccountNumber  = var.razorpay_x_account_number
   })
 }
 
@@ -29,6 +43,12 @@ resource "aws_secretsmanager_secret" "google_maps" {
   tags = {
     Name        = "warmpawz-${var.environment}-google-maps"
     Environment = var.environment
+  }
+
+  # CRITICAL: Prevent duplicate secrets - ONE secret per name per environment
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime and prevent duplicates
   }
 }
 
@@ -48,6 +68,12 @@ resource "aws_secretsmanager_secret" "shiprocket" {
   tags = {
     Name        = "warmpawz-${var.environment}-shiprocket"
     Environment = var.environment
+  }
+
+  # CRITICAL: Prevent duplicate secrets - ONE secret per name per environment
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime and prevent duplicates
   }
 }
 

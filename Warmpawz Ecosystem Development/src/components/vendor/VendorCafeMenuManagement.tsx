@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Coffee, Upload, Plus, Edit2, Trash2, Grid, Table, Download } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface MenuItem {
   id: string;
@@ -101,9 +101,9 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
   const loadMenuItems = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/menu`,
+        `${getApiBaseUrl()}/vendor/cafe/${vendorId}/menu`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          headers: { Authorization: (getAuthHeaders().Authorization || "") }
         }
       );
       const data = await response.json();
@@ -118,9 +118,9 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
   const loadTables = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/tables`,
+        `${getApiBaseUrl()}/vendor/cafe/${vendorId}/tables`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          headers: { Authorization: (getAuthHeaders().Authorization || "") }
         }
       );
       const data = await response.json();
@@ -136,8 +136,8 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
     e.preventDefault();
     try {
       const url = editingItem
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/menu/${editingItem.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/menu`;
+        ? `${getApiBaseUrl()}/vendor/cafe/${vendorId}/menu/${editingItem.id}`
+        : `${getApiBaseUrl()}/vendor/cafe/${vendorId}/menu`;
 
       const method = editingItem ? 'PUT' : 'POST';
 
@@ -145,7 +145,7 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
         method,
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${publicAnonKey}`
+          Authorization: (getAuthHeaders().Authorization || "")
         },
         body: JSON.stringify({
           ...itemForm,
@@ -183,10 +183,10 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/menu/${itemId}`,
+        `${getApiBaseUrl()}/vendor/cafe/${vendorId}/menu/${itemId}`,
         {
           method: 'DELETE',
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          headers: { Authorization: (getAuthHeaders().Authorization || "") }
         }
       );
 
@@ -203,8 +203,8 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
     e.preventDefault();
     try {
       const url = editingTable
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/tables/${editingTable.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/tables`;
+        ? `${getApiBaseUrl()}/vendor/cafe/${vendorId}/tables/${editingTable.id}`
+        : `${getApiBaseUrl()}/vendor/cafe/${vendorId}/tables`;
 
       const method = editingTable ? 'PUT' : 'POST';
 
@@ -212,7 +212,7 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
         method,
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${publicAnonKey}`
+          Authorization: (getAuthHeaders().Authorization || "")
         },
         body: JSON.stringify({
           ...tableForm,
@@ -241,12 +241,12 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
   const handleUpdateTableStatus = async (tableId: string, status: TableConfig['status']) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/cafe/${vendorId}/tables/${tableId}/status`,
+        `${getApiBaseUrl()}/vendor/cafe/${vendorId}/tables/${tableId}/status`,
         {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`
+            Authorization: (getAuthHeaders().Authorization || "")
           },
           body: JSON.stringify({ status })
         }

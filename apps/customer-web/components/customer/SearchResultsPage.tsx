@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Star, MapPin, DollarSign, Filter, X, Award, Briefcase } from 'lucide-react';
+import { Star, MapPin, IndianRupee, Filter, X, Award, Briefcase } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -21,21 +21,10 @@ export function SearchResultsPage() {
   const limit = 20;
 
 
-  // Get user location
+  // Get user location (silent fallback when permission denied)
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-        },
-        (error) => {
-          console.log('Location access denied:', error);
-        }
-      );
-    }
+    const { getCurrentPositionSafe } = require('@/lib/geolocation-utils');
+    getCurrentPositionSafe((coords: { lat: number; lng: number }) => setUserLocation(coords));
   }, []);
 
   useEffect(() => {
@@ -128,7 +117,7 @@ export function SearchResultsPage() {
               <div className="flex items-center gap-2 mb-2">
                 <div className="flex items-center gap-1">
                   <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                  <span className="font-semibold text-gray-900">{data.rating.toFixed(1)}</span>
+                  <span className="font-semibold text-gray-900">{Number(data.rating || 0).toFixed(1)}</span>
                 </div>
                 {data.reviewCount && (
                   <span className="text-sm text-gray-600">({data.reviewCount} reviews)</span>
@@ -154,7 +143,7 @@ export function SearchResultsPage() {
               {/* Price */}
               {data.price && (
                 <div className="flex items-center gap-2 text-gray-600">
-                  <DollarSign className="w-4 h-4" />
+                  <IndianRupee className="w-4 h-4" />
                   <span className="text-sm">₹{data.price}</span>
                 </div>
               )}

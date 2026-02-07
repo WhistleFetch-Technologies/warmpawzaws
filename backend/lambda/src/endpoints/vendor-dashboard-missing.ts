@@ -6,6 +6,7 @@
  * These endpoints were missing and causing 404 errors in the vendor dashboard:
  * - /vendor/notifications/:vendorId - Vendor notifications
  * - /vendor/:vendorId/watchlist - Patient watchlist
+ * - /vendor/:vendorId/staff - Staff for vendor (path used by vendor-web)
  * - /staff/vendor/:vendorId - Staff for vendor (alternate route)
  * - /vendor/:vendorId/patient-monitors - Patient monitoring list
  * - /vendor/:vendorId/bookings/today - Today's bookings
@@ -16,6 +17,8 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 export function registerVendorDashboardMissingEndpoints(app: Hono) {
   
@@ -41,35 +44,69 @@ export function registerVendorDashboardMissingEndpoints(app: Hono) {
         });
       }
 
-      // Get notifications for this vendor
-      const notifications = await query(
-        `SELECT * FROM notifications
-         WHERE recipient_id = $1 AND recipient_type = 'vendor'
-         ORDER BY created_at DESC
-         LIMIT $2 OFFSET $3`,
-        [vendorId, limit, offset]
-      ).catch(() => ({ rows: [] }));
+      // ✅ FIX: Add query timeout wrapper to prevent Lambda timeout (30s limit)
+      const queryWithTimeout = async <T>(queryFn: () => Promise<T>, timeoutMs: number = 25000): Promise<T> => {
+        return Promise.race([
+          queryFn(),
+          new Promise<T>((_, reject) => 
+            setTimeout(() => reject(new Error('Query timeout')), timeoutMs)
+          )
+        ]);
+      };
 
-      // Count unread
-      const unreadResult = await query(
-        `SELECT COUNT(*) as count FROM notifications 
-         WHERE recipient_id = $1 AND recipient_type = 'vendor' AND is_read = false`,
-        [vendorId]
-      ).catch(() => ({ rows: [{ count: '0' }] }));
+      // Get notifications for this vendor with timeout protection
+      let notifications: any = { rows: [] };
+      try {
+        notifications = await queryWithTimeout(() => 
+          query(
+            `SELECT * FROM notifications
+             WHERE recipient_id = $1 AND recipient_type = 'vendor'
+             ORDER BY created_at DESC
+             LIMIT $2 OFFSET $3`,
+            [vendorId, limit, offset]
+          )
+        ).catch((err) => {
+          console.warn(`[NOTIFICATIONS] Query timeout or error, returning empty:`, err.message);
+          return { rows: [] };
+        });
+      } catch (err: any) {
+        console.warn(`[NOTIFICATIONS] Failed to fetch notifications:`, err.message);
+        notifications = { rows: [] };
+      }
+
+      // Count unread with timeout protection
+      let unreadResult: any = { rows: [{ count: '0' }] };
+      try {
+        unreadResult = await queryWithTimeout(() =>
+          query(
+            `SELECT COUNT(*) as count FROM notifications 
+             WHERE recipient_id = $1 AND recipient_type = 'vendor' AND is_read = false`,
+            [vendorId]
+          )
+        ).catch((err) => {
+          console.warn(`[NOTIFICATIONS] Unread count query timeout, defaulting to 0:`, err.message);
+          return { rows: [{ count: '0' }] };
+        });
+      } catch (err: any) {
+        console.warn(`[NOTIFICATIONS] Failed to count unread:`, err.message);
+        unreadResult = { rows: [{ count: '0' }] };
+      }
 
       return c.json({
         success: true,
-        notifications: notifications.rows,
-        total: notifications.rows.length,
-        unreadCount: parseInt(unreadResult.rows[0]?.count || '0', 10),
+        notifications: notifications.rows || [],
+        total: (notifications.rows || []).length,
+        unreadCount: parseInt(unreadResult.rows?.[0]?.count || '0', 10),
       });
     } catch (error: any) {
       console.error('Error fetching vendor notifications:', error);
+      // ✅ FIX: Always return 200 with empty data instead of letting Lambda timeout (503)
       return c.json({
         success: true,
         notifications: [],
         total: 0,
         unreadCount: 0,
+        error: error.message || 'Failed to fetch notifications',
       });
     }
   });
@@ -96,35 +133,69 @@ export function registerVendorDashboardMissingEndpoints(app: Hono) {
         });
       }
 
-      // Get notifications for this vendor
-      const notifications = await query(
-        `SELECT * FROM notifications
-         WHERE recipient_id = $1 AND recipient_type = 'vendor'
-         ORDER BY created_at DESC
-         LIMIT $2 OFFSET $3`,
-        [vendorId, limit, offset]
-      ).catch(() => ({ rows: [] }));
+      // ✅ FIX: Add query timeout wrapper to prevent Lambda timeout (30s limit)
+      const queryWithTimeout = async <T>(queryFn: () => Promise<T>, timeoutMs: number = 25000): Promise<T> => {
+        return Promise.race([
+          queryFn(),
+          new Promise<T>((_, reject) => 
+            setTimeout(() => reject(new Error('Query timeout')), timeoutMs)
+          )
+        ]);
+      };
 
-      // Count unread
-      const unreadResult = await query(
-        `SELECT COUNT(*) as count FROM notifications 
-         WHERE recipient_id = $1 AND recipient_type = 'vendor' AND is_read = false`,
-        [vendorId]
-      ).catch(() => ({ rows: [{ count: '0' }] }));
+      // Get notifications for this vendor with timeout protection
+      let notifications: any = { rows: [] };
+      try {
+        notifications = await queryWithTimeout(() => 
+          query(
+            `SELECT * FROM notifications
+             WHERE recipient_id = $1 AND recipient_type = 'vendor'
+             ORDER BY created_at DESC
+             LIMIT $2 OFFSET $3`,
+            [vendorId, limit, offset]
+          )
+        ).catch((err) => {
+          console.warn(`[NOTIFICATIONS] Query timeout or error (alt route), returning empty:`, err.message);
+          return { rows: [] };
+        });
+      } catch (err: any) {
+        console.warn(`[NOTIFICATIONS] Failed to fetch notifications (alt route):`, err.message);
+        notifications = { rows: [] };
+      }
+
+      // Count unread with timeout protection
+      let unreadResult: any = { rows: [{ count: '0' }] };
+      try {
+        unreadResult = await queryWithTimeout(() =>
+          query(
+            `SELECT COUNT(*) as count FROM notifications 
+             WHERE recipient_id = $1 AND recipient_type = 'vendor' AND is_read = false`,
+            [vendorId]
+          )
+        ).catch((err) => {
+          console.warn(`[NOTIFICATIONS] Unread count query timeout (alt route), defaulting to 0:`, err.message);
+          return { rows: [{ count: '0' }] };
+        });
+      } catch (err: any) {
+        console.warn(`[NOTIFICATIONS] Failed to count unread (alt route):`, err.message);
+        unreadResult = { rows: [{ count: '0' }] };
+      }
 
       return c.json({
         success: true,
-        notifications: notifications.rows,
-        total: notifications.rows.length,
-        unreadCount: parseInt(unreadResult.rows[0]?.count || '0', 10),
+        notifications: notifications.rows || [],
+        total: (notifications.rows || []).length,
+        unreadCount: parseInt(unreadResult.rows?.[0]?.count || '0', 10),
       });
     } catch (error: any) {
       console.error('Error fetching vendor notifications (alt route):', error);
+      // ✅ FIX: Always return 200 with empty data instead of letting Lambda timeout (503)
       return c.json({
         success: true,
         notifications: [],
         total: 0,
         unreadCount: 0,
+        error: error.message || 'Failed to fetch notifications',
       });
     }
   });
@@ -191,6 +262,44 @@ export function registerVendorDashboardMissingEndpoints(app: Hono) {
   });
 
   /**
+   * GET /vendor/:vendorId/staff
+   * Staff for vendor (path used by vendor-web: /vendor/{vendorId}/staff)
+   */
+  app.get("/vendor/:vendorId/staff", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return c.json({ success: true, staff: [], count: 0 });
+      }
+
+      const staff = await query(
+        `SELECT s.id, s.name, s.phone, s.email, s.role, s.experience_years, s.is_active, s.created_at
+         FROM staff s
+         WHERE s.vendor_id = $1 AND (s.is_active = true OR s.is_active IS NULL)
+         ORDER BY s.created_at DESC`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+
+      const list = (staff.rows || []).map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        phone: s.phone,
+        email: s.email,
+        role: s.role,
+        experienceYears: s.experience_years,
+        isActive: s.is_active !== false,
+        photoUrl: (s as any).photo ?? (s as any).photo_url ?? null,
+      }));
+
+      return c.json({ success: true, staff: list, count: list.length });
+    } catch (error: any) {
+      console.error('Error fetching vendor staff (/vendor/:vendorId/staff):', error);
+      return c.json({ success: true, staff: [], count: 0 });
+    }
+  });
+
+  /**
    * GET /staff/vendor/:vendorId
    * Alternative route for getting staff by vendor
    */
@@ -238,7 +347,7 @@ export function registerVendorDashboardMissingEndpoints(app: Hono) {
           completedAppointments: parseInt(s.completed_appointments || '0', 10),
           averageRating: parseFloat(s.average_rating || '0').toFixed(1),
           totalReviews: parseInt(s.total_reviews || '0', 10),
-          photoUrl: s.photo_url,
+          photoUrl: s.photo,
         })),
         total: staff.rows.length,
       });
@@ -374,13 +483,14 @@ export function registerVendorDashboardMissingEndpoints(app: Hono) {
 
       const bookings = await query(
         `SELECT b.*, p.name as pet_name, p.species, p.breed,
-                c.name as customer_name, c.phone as customer_phone,
-                s.name as service_name,
+                c.full_name as customer_name, c.phone as customer_phone,
+                COALESCE(s.name, vs.service_name) as service_name,
                 st.name as staff_name
          FROM bookings b
          LEFT JOIN pets p ON b.pet_id = p.id
          LEFT JOIN customers c ON b.customer_id = c.id
          LEFT JOIN services s ON b.service_id = s.id
+         LEFT JOIN vendor_services vs ON vs.id = b.service_id
          LEFT JOIN staff st ON b.staff_id = st.id
          WHERE b.vendor_id = $1 
            AND b.booking_date = $2

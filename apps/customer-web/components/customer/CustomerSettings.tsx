@@ -13,9 +13,11 @@ interface NotificationSettings {
 
 interface CustomerSettingsProps {
   customerPhone: string;
+  onBack?: () => void;
+  onNavigate?: (screen: string) => void;
 }
 
-export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
+export function CustomerSettings({ customerPhone, onBack, onNavigate }: CustomerSettingsProps) {
   const [notifications, setNotifications] = useState<NotificationSettings>({
     push_enabled: true,
     booking_reminders: true,
@@ -35,9 +37,15 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get<any>(`/customer/settings?phone=${encodeURIComponent(customerPhone)}`);
-      if (response.notifications) {
-        setNotifications(response.notifications);
+      // First get customer ID from phone
+      const customerRes = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
+      const customerId = customerRes?.customer?.id || customerRes?.id;
+      
+      if (customerId) {
+        const response = await apiClient.get<any>(`/customer/${customerId}/preferences`);
+        if (response.preferences?.notifications) {
+          setNotifications(response.preferences.notifications);
+        }
       }
     } catch (err) {
       console.error('Error loading settings:', err);
@@ -74,18 +82,25 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
     }
 
     try {
-      await apiClient.put('/customer/settings/notifications', {
-        phone: customerPhone,
-        [key]: newValue,
-        ...(key === 'push_enabled' && !newValue
-          ? {
-              booking_reminders: false,
-              promotional: false,
-              order_updates: false,
-              chat_messages: false,
-            }
-          : {}),
-      });
+      // Get customer ID from phone
+      const customerRes = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
+      const customerId = customerRes?.customer?.id || customerRes?.id;
+      
+      if (customerId) {
+        await apiClient.put(`/customer/${customerId}/preferences`, {
+          notifications: {
+            [key]: newValue,
+            ...(key === 'push_enabled' && !newValue
+              ? {
+                  booking_reminders: false,
+                  promotional: false,
+                  order_updates: false,
+                  chat_messages: false,
+                }
+              : {}),
+          }
+        });
+      }
     } catch (err) {
       console.error('Error saving settings:', err);
       // Revert on error
@@ -130,20 +145,14 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-4">
-          <a href="/" className="text-2xl">←</a>
-          <h1 className="text-xl font-bold text-gray-900">Settings</h1>
-        </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto px-4 py-0 space-y-6">
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
         {/* Notification Settings */}
         <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="p-4 border-b">
-            <h2 className="text-lg font-semibold flex items-center gap-0">
+            <h2 className="text-lg font-semibold flex items-center gap-3">
               <span className="text-2xl">🔔</span> Notifications
             </h2>
           </div>
@@ -203,46 +212,64 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
         {/* Account Settings */}
         <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="p-4 border-b">
-            <h2 className="text-lg font-semibold flex items-center gap-0">
+            <h2 className="text-lg font-semibold flex items-center gap-3">
               <span className="text-2xl">👤</span> Account
             </h2>
           </div>
           <div className="divide-y">
-            <a href="/profile" className="flex items-center justify-between p-4 hover:bg-gray-50">
+            <button 
+              onClick={() => onNavigate?.('profile')} 
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left"
+            >
               <span>Edit Profile</span>
               <span className="text-gray-400">→</span>
-            </a>
-            <a href="/addresses" className="flex items-center justify-between p-4 hover:bg-gray-50">
+            </button>
+            <button 
+              onClick={() => onNavigate?.('addresses')} 
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left"
+            >
               <span>Saved Addresses</span>
               <span className="text-gray-400">→</span>
-            </a>
-            <a href="/pets" className="flex items-center justify-between p-4 hover:bg-gray-50">
+            </button>
+            <button 
+              onClick={() => onNavigate?.('pets')} 
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left"
+            >
               <span>My Pets</span>
               <span className="text-gray-400">→</span>
-            </a>
+            </button>
           </div>
         </section>
 
         {/* Support */}
         <section className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="p-4 border-b">
-            <h2 className="text-lg font-semibold flex items-center gap-0">
+            <h2 className="text-lg font-semibold flex items-center gap-3">
               <span className="text-2xl">❓</span> Support
             </h2>
           </div>
           <div className="divide-y">
-            <a href="/help" className="flex items-center justify-between p-4 hover:bg-gray-50">
+            <button 
+              onClick={() => onNavigate?.('help')} 
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left"
+            >
               <span>Help Center</span>
               <span className="text-gray-400">→</span>
-            </a>
-            <a href="/privacy" className="flex items-center justify-between p-4 hover:bg-gray-50">
+            </button>
+            <button 
+              onClick={() => onNavigate?.('privacy')} 
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left"
+            >
               <span>Privacy Policy</span>
               <span className="text-gray-400">→</span>
-            </a>
-            <a href="/terms" className="flex items-center justify-between p-4 hover:bg-gray-50">
+            </button>
+            <button 
+              onClick={() => onNavigate?.('terms')} 
+              className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left"
+            >
               <span>Terms of Service</span>
               <span className="text-gray-400">→</span>
-            </a>
+            </button>
           </div>
         </section>
 
@@ -254,7 +281,7 @@ export function CustomerSettings({ customerPhone }: CustomerSettingsProps) {
           Log Out
         </button>
       </main>
-    </div>
+    </>
   );
 }
 

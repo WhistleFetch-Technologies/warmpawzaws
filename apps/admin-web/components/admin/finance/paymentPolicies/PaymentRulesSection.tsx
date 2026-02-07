@@ -5,28 +5,47 @@ import { Button, Input, Label, Checkbox } from '@warmpawz/ui';
 import { Plus, Edit, Trash2, Check, X, RefreshCw, Save } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 
-const VENDOR_TYPES = [
-  { id: 'dog-walking', name: 'Dog Walking', icon: '🐕' },
+/** Fallback vendor types when API roles are not available (ids match role codes). */
+const FALLBACK_VENDOR_TYPES = [
+  { id: 'dog_walking', name: 'Dog Walking', icon: '🐕' },
   { id: 'breeder', name: 'Breeder', icon: '🐾' },
   { id: 'adoption', name: 'Adoption', icon: '❤️' },
   { id: 'grooming', name: 'Grooming', icon: '✂️' },
   { id: 'veterinarian', name: 'Veterinarian', icon: '⚕️' },
-  { id: 'pet-cafe', name: 'Pet Cafe', icon: '☕' },
+  { id: 'tele', name: 'Tele / Video Consultation', icon: '📹' },
+  { id: 'pet_cafe', name: 'Pet Cafe', icon: '☕' },
   { id: 'trainer', name: 'Trainer', icon: '🎓' },
   { id: 'resorts', name: 'Resorts', icon: '🏖️' },
   { id: 'rehome', name: 'Rehome', icon: '🏡' },
   { id: 'nutritionist', name: 'Nutritionist', icon: '🥗' },
-  { id: 'sunset-services', name: 'Sunset Services', icon: '🌅' },
-  { id: 'healthcare-provider', name: 'Healthcare Service Provider', icon: '🏥' },
-  { id: 'pet-products-seller', name: 'Food, Medicine & Pet Products Sellers', icon: '🛒' },
+  { id: 'sunset_services', name: 'Sunset Services', icon: '🌅' },
+  { id: 'healthcare_provider', name: 'Healthcare Service Provider', icon: '🏥' },
+  { id: 'pet_products_seller', name: 'Food, Medicine & Pet Products Sellers', icon: '🛒' },
 ];
+
+/** Service location: Home, Center, Tele (and All for all locations). */
+const SERVICE_LOCATION_OPTIONS = [
+  { value: 'at_home' as const, label: 'Home' },
+  { value: 'at_center' as const, label: 'Center' },
+  { value: 'tele' as const, label: 'Tele / Video Consultation' },
+  { value: 'all' as const, label: 'All' },
+];
+type ServiceLocationValue = 'at_home' | 'at_center' | 'tele' | 'all';
+
+const serviceLocationFromDb = (v: string): ServiceLocationValue => {
+  if (v === 'home') return 'at_home';
+  if (v === 'clinic') return 'at_center';
+  if (v === 'tele') return 'tele';
+  return 'all';
+};
 
 interface PaymentRule {
   id: string;
   name: string;
   vendorTypes: string[];
-  serviceLocation: 'at_home' | 'at_center' | 'both';
+  serviceLocation: ServiceLocationValue;
   reservationType: 'flat' | 'percentage' | 'full';
   reservationPercentage: number;
   flatAmount: number;
@@ -50,16 +69,68 @@ export function PaymentRulesSection() {
   const [editingRule, setEditingRule] = useState<PaymentRule | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [vendorTypeOptions, setVendorTypeOptions] = useState<{ id: string; name: string; icon: string }[]>(FALLBACK_VENDOR_TYPES);
 
   useEffect(() => {
     loadData();
   }, []);
 
+  useEffect(() => {
+    loadRolesForVendorTypes();
+  }, []);
+
+  const loadRolesForVendorTypes = async () => {
+    const roleToIcon: Record<string, string> = {
+      veterinarian: '⚕️', grooming: '✂️', groomer: '✂️', trainer: '🎓', walker: '🐕', dog_walking: '🐕',
+      nutritionist: '🥗', resorts: '🏖️', adoption: '❤️', breeder: '🐾', pet_cafe: '☕', tele: '📹',
+      rehome: '🏡', sunset_services: '🌅', healthcare: '🏥', pet_products_seller: '🛒',
+    };
+    const mapRolesToOptions = (roles: any[]): { id: string; name: string; icon: string }[] => {
+      const options = roles
+        .filter((r: any) => r.is_active !== false)
+        .map((r: any) => ({
+          id: (r.code ?? r.id ?? r.name ?? '').toString().toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_'),
+          name: r.display_name ?? r.name ?? r.code ?? '',
+          icon: roleToIcon[(r.code ?? r.name ?? '').toString().toLowerCase()] ?? '📌',
+        }))
+        .filter((o: { id: string }) => o.id);
+      const hasTele = options.some((o: { id: string }) => o.id === 'tele' || o.id === 'video_consultation');
+      if (!hasTele) {
+        options.push({ id: 'tele', name: 'Tele / Video Consultation', icon: '📹' });
+      }
+      return options;
+    };
+    try {
+      let data = await apiClient.get<any>('/config/roles').catch(() => null);
+      let roles = (data as any)?.roles ?? (data as any)?.data?.roles ?? [];
+      if (!Array.isArray(roles) || roles.length === 0) {
+        data = await apiClient.get<any>('/admin/roles').catch(() => null);
+        roles = (data as any)?.roles ?? (data as any)?.data?.roles ?? [];
+      }
+      if (Array.isArray(roles) && roles.length > 0) {
+        const options = mapRolesToOptions(roles);
+        setVendorTypeOptions(options.length > 0 ? options : FALLBACK_VENDOR_TYPES);
+      } else {
+        setVendorTypeOptions(FALLBACK_VENDOR_TYPES);
+      }
+    } catch {
+      setVendorTypeOptions(FALLBACK_VENDOR_TYPES);
+    }
+  };
+
   const loadData = async () => {
     try {
       setLoading(true);
       const data = await apiClient.get<any>('/admin/vendor-settings-rules');
-      setRules((data as any).data?.paymentRules || (data as any).paymentRules || []);
+      const raw = (data as any).data?.paymentRules || (data as any).paymentRules || [];
+      setRules(
+        Array.isArray(raw)
+          ? raw.map((r: any) => ({
+              ...r,
+              serviceLocation: serviceLocationFromDb(String(r.service_location ?? r.serviceLocation ?? 'all')),
+            }))
+          : []
+      );
     } catch (error) {
       console.error('Error loading payment rules:', error);
       toast.error('Failed to load payment rules');
@@ -73,7 +144,7 @@ export function PaymentRulesSection() {
       id: '',
       name: '',
       vendorTypes: [],
-      serviceLocation: 'both',
+      serviceLocation: 'all',
       reservationType: 'flat',
       reservationPercentage: 20,
       flatAmount: 100,
@@ -150,9 +221,12 @@ export function PaymentRulesSection() {
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-black text-xl font-semibold">Payment Policies</h2>
-          <p className="text-gray-500 text-sm mt-1">Configure payment rules and policies</p>
+        <div className="flex items-center gap-2">
+          <div>
+            <h2 className="text-black text-xl font-semibold">Payment Policies</h2>
+            <p className="text-gray-500 text-sm mt-1">Configure payment rules and policies</p>
+          </div>
+          <PolicyHelpButton docKey="finance-payment-policies" />
         </div>
         <Button onClick={handleCreateRule} className="bg-[#FF8C42] text-white hover:bg-[#E67A32]">
           <Plus className="w-4 h-4 mr-2" />
@@ -271,7 +345,7 @@ export function PaymentRulesSection() {
               <div className="space-y-2">
                 <Label>Vendor Types *</Label>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3 border p-4 rounded-lg max-h-60 overflow-y-auto">
-                  {VENDOR_TYPES.map((type) => (
+                  {vendorTypeOptions.map((type) => (
                     <div key={type.id} className="flex items-center gap-2">
                       <Checkbox
                         checked={editingRule.vendorTypes.includes(type.id)}
@@ -291,15 +365,18 @@ export function PaymentRulesSection() {
                     onChange={(e) =>
                       setEditingRule({
                         ...editingRule,
-                        serviceLocation: e.target.value as any,
+                        serviceLocation: e.target.value as ServiceLocationValue,
                       })
                     }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
                   >
-                    <option value="at_home">At Home</option>
-                    <option value="at_center">At Center</option>
-                    <option value="both">Both</option>
+                    {SERVICE_LOCATION_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
+                  <p className="text-xs text-gray-500">Home, Center, or Tele / Video Consultation (All = applies to all)</p>
                 </div>
                 <div className="space-y-2">
                   <Label>Reservation Type</Label>

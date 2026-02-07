@@ -7,7 +7,8 @@ set -euo pipefail
 echo "🚀 Deploying Lambda with updated endpoints..."
 
 # Configuration
-LAMBDA_FUNCTION_NAME="warmpawz-dev-api-handler"
+# Allow override via environment variable, default to warmpawz-api-dev-api (the active Lambda)
+LAMBDA_FUNCTION_NAME="${LAMBDA_FUNCTION_NAME:-warmpawz-api-dev-api}"
 AWS_REGION="ap-south-1"
 LAMBDA_ZIP="api-handler.zip"
 
@@ -77,10 +78,5 @@ if [ ! -z "${LAMBDA_VERSION:-}" ]; then
   echo -e "   ✅ Version: $LAMBDA_VERSION"
 fi
 echo -e "   ✅ Region: $AWS_REGION"
-echo ""
-echo -e "🧪 Next Steps:"
-echo -e "   1. Run: ./scripts/test-catalog-endpoints.sh"
-echo -e "   2. Test seeding: POST /admin/roles/seed"
-echo -e "   3. Verify all 20 roles are created"
 echo ""
 

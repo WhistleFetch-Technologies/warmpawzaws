@@ -82,13 +82,13 @@ export function PermissionsTab() {
       {/* Permissions by Category */}
       {Object.entries(groupedPermissions).map(([category, perms]) => (
         <div key={category} className="bg-white rounded-lg border-2 border-gray-200 p-4">
-          <h3 className="font-semibold text-gray-900 mb-0 flex items-center gap-0">
+          <h3 className="font-semibold text-gray-900 mb-0 flex items-center gap-3">
             <Key className="w-5 h-5 text-orange-600" />
             {category}
           </h3>
           <div className="space-y-2">
             {perms.map((perm) => (
-              <div key={perm.id} className="flex items-start gap-0 p-0 hover:bg-gray-50 rounded-lg">
+              <div key={perm.id} className="flex items-start gap-3 p-0 hover:bg-gray-50 rounded-lg">
                 <Check className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
                 <div className="flex-1">
                   <p className="font-medium text-sm text-gray-900">{perm.name}</p>

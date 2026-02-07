@@ -20,6 +20,8 @@ import { Hono } from 'hono';
 import { select, upsert, query } from '../database/rds-connection';
 import { getSnsClient } from '../utils/sns-client';
 import { PublishCommand } from '@aws-sdk/client-sns';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 export function registerVendorSettingsEndpoints(app: Hono) {
   /**
@@ -174,42 +176,9 @@ export function registerVendorSettingsEndpoints(app: Hono) {
   });
 
   /**
-   * POST /admin/vendor-settings/refund-tiers
-   * Create a new refund tier
+   * POST /admin/vendor-settings/refund-tiers - handled by admin-comprehensive (vendor_refund_tiers table)
+   * GET/POST/PUT/DELETE refund-tiers use vendor_refund_tiers; do not use platform_settings.
    */
-  app.post("/admin/vendor-settings/refund-tiers", async (c) => {
-    try {
-      const tier = await c.req.json();
-
-      if (!tier.id) {
-        tier.id = `tier_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-      }
-      tier.createdAt = tier.createdAt || new Date().toISOString();
-
-      // Get existing tiers
-      const existingSettings = await select('platform_settings', { setting_key: 'admin:settings:refund_tiers' });
-      const tiers = existingSettings.length > 0 ? (existingSettings[0].setting_value as any[]) : [];
-
-      // Add new tier
-      tiers.push(tier);
-
-      // Save to platform_settings
-      await upsert('platform_settings',
-        {
-          setting_key: 'admin:settings:refund_tiers',
-          setting_value: tiers,
-          setting_type: 'json',
-          description: 'Refund tiers configuration',
-        },
-        'setting_key'
-      );
-
-      return c.json({ success: true, tier });
-    } catch (error: any) {
-      console.error('Error creating refund tier:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
 
   /**
    * POST /admin/vendor-settings/booking-rules

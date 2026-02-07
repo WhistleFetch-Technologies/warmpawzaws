@@ -16,7 +16,7 @@ import {
   Briefcase,
   Home
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
@@ -120,9 +120,9 @@ export function UniversalStaffScheduleManager({
       setLoading(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staffId}/schedules`,
+        `${getApiBaseUrl()}/staff/${staffId}/schedules`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -172,11 +172,11 @@ export function UniversalStaffScheduleManager({
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staffId}/schedules`,
+        `${getApiBaseUrl()}/staff/${staffId}/schedules`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -216,10 +216,10 @@ export function UniversalStaffScheduleManager({
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staffId}/schedules/${scheduleId}`,
+        `${getApiBaseUrl()}/staff/${staffId}/schedules/${scheduleId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -279,11 +279,11 @@ export function UniversalStaffScheduleManager({
   const handleAddVacation = async (startDate: string, endDate: string, reason: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staffId}/vacations`,
+        `${getApiBaseUrl()}/staff/${staffId}/vacations`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ startDate, endDate, reason })
@@ -305,11 +305,11 @@ export function UniversalStaffScheduleManager({
   const handleAddHoliday = async (date: string, name: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staffId}/holidays`,
+        `${getApiBaseUrl()}/staff/${staffId}/holidays`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ date, name })

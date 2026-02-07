@@ -1,3 +1,7 @@
+/**
+ * AWS CDK STACK - EVENTBRIDGE
+ * Defines EventBridge event bus and rules
+ */
 import * as events from 'aws-cdk-lib/aws-events';
 import { Construct } from 'constructs';
 import { SqsStack } from './sqs-stack';
@@ -11,3 +15,4 @@ export declare class EventBridgeStack extends Construct {
     readonly eventBus: events.EventBus;
     constructor(scope: Construct, id: string, props: EventBridgeStackProps);
 }
+//# sourceMappingURL=eventbridge-stack.d.ts.map

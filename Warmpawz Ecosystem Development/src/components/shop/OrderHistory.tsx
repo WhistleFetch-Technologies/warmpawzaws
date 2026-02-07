@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Package, Search, Filter, ChevronRight, Star, Download, RotateCcw } from 'lucide-react';
 import { Button } from '../ui/button';
 import { authenticatedGet, authenticatedPost } from '../../utils/authenticatedFetch';
-import { projectId } from '../../utils/supabase/info';
+import { getApiBaseUrl } from '../../utils/api-config';
 
 interface OrderItem {
   id: string;
@@ -77,7 +77,7 @@ export function OrderHistory() {
     try {
       setLoading(true);
       const data = await authenticatedGet(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/orders`,
+        `${getApiBaseUrl()}/customer/orders`,
         true
       );
       setOrders(data.orders || []);
@@ -113,7 +113,7 @@ export function OrderHistory() {
   const downloadInvoice = async (orderId: string) => {
     try {
       const response = await authenticatedGet(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/orders/${orderId}/invoice`,
+        `${getApiBaseUrl()}/customer/orders/${orderId}/invoice`,
         true
       );
       
@@ -138,7 +138,7 @@ export function OrderHistory() {
 
     try {
       await authenticatedPost(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/orders/${orderId}/return`,
+        `${getApiBaseUrl()}/customer/orders/${orderId}/return`,
         { reason: 'Customer initiated return' },
         true
       );

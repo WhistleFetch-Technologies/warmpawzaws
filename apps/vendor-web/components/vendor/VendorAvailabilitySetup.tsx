@@ -5,7 +5,7 @@ import { apiClient } from '@/lib/api-client';
 import { Calendar, Plus, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 
 interface TimeSlot {
   start: string;
@@ -129,7 +129,7 @@ export function VendorAvailabilitySetup({ vendorId, onComplete }: VendorAvailabi
         availability
       };
       
-      const data = await apiClient.post('/vendor/setup/availability', payload) as any;
+      const data = await apiClient.put(`/vendor/${vendorId}/availability`, { availability }) as any;
 
       if (!data || !data.success) {
         throw new Error(data?.error || 'Failed to save availability');

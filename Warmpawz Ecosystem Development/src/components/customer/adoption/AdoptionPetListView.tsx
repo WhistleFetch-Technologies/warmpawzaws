@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Heart, Calendar } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { ImageWithFallback } from '../../figma/ImageWithFallback';
 
 interface AdoptionPetListViewProps {

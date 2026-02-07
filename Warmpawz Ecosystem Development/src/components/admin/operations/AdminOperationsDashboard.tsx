@@ -32,9 +32,9 @@ import {
   Truck,
   RefreshCw
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 interface DashboardData {
   liveBookings: any;

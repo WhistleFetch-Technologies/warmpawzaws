@@ -16,7 +16,7 @@ import {
   Award,
   Heart
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface BehavioralServicesLandingProps {
   onBack: () => void;
@@ -30,7 +30,7 @@ export function BehavioralServicesLanding({ onBack, onNavigate, customerId, phon
   const [featuredBehaviorists, setFeaturedBehaviorists] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   // ✅ Behavioral Issues - Problem Grid
   const behavioralIssues = [

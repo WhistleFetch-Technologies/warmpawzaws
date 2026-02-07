@@ -4,7 +4,7 @@ import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../ui/table';
 import { ArrowLeft, Download, FileText, Plus, Calendar, Share2, Eye } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface ReportsDashboardProps {
   onBack: () => void;
@@ -14,7 +14,7 @@ export function ReportsDashboard({ onBack }: ReportsDashboardProps) {
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadReports();
@@ -25,7 +25,7 @@ export function ReportsDashboard({ onBack }: ReportsDashboardProps) {
     try {
       const response = await fetch(`${API_BASE}/admin/reports`, {
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         }
       });
 
@@ -47,7 +47,7 @@ export function ReportsDashboard({ onBack }: ReportsDashboardProps) {
       const response = await fetch(`${API_BASE}/admin/reports/${reportId}/generate`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         }
       });

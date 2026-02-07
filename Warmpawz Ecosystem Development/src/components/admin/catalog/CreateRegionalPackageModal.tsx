@@ -6,7 +6,7 @@ import { Label } from '../../ui/label';
 import { Card } from '../../ui/card';
 import { RegionalAvailabilitySelector } from './RegionalAvailabilitySelector';
 import { RegionalPricingEditor } from './RegionalPricingEditor';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner';
 
 interface Region {
@@ -103,10 +103,10 @@ export function CreateRegionalPackageModal({
     try {
       setLoadingRegions(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/regions`,
+        `${getApiBaseUrl()}/admin/regions`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
           },
         }
       );
@@ -193,11 +193,11 @@ export function CreateRegionalPackageModal({
       };
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/packages`,
+        `${getApiBaseUrl()}/admin/packages`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(packageData),

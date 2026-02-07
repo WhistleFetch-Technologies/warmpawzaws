@@ -3,7 +3,7 @@ import { WalkingServicesLanding } from './WalkingServicesLanding';
 import { WalkerService } from './WalkerService';
 import { ProblemGridSelector } from './ProblemGridSelector';
 import { VendorDiscoveryByProblem } from './VendorDiscoveryByProblem';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 type ViewType = 
   | 'landing'
@@ -28,7 +28,7 @@ export function WalkingServiceRouter({ onBack, phone, onNavigate, onViewBooking,
   // ✅ Problem grid state
   const [selectedProblem, setSelectedProblem] = useState<any>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadCustomerData();

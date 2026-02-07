@@ -1,16 +1,14 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
 import { HierarchicalServiceList } from '@/components/admin/catalog/HierarchicalServiceList';
 import { CategoriesTab } from '@/components/admin/catalog/CategoriesTab';
-import { ProductServicesTab } from '@/components/admin/catalog/ProductServicesTab';
-import { PricingInventoryTab } from '@/components/admin/catalog/PricingInventoryTab';
-import { BulkOperationsTab } from '@/components/admin/catalog/BulkOperationsTab';
 import { ServiceCatalogTab } from '@/components/admin/catalog/ServiceCatalogTab';
-import { AdminRolesPage } from '@/components/admin/AdminRolesPage';
+import { VendorRolesTab } from '@/components/admin/catalog/VendorRolesTab';
+// AdminRolesPage removed - use /roles page instead
 import { OnboardingDesigner } from '@/components/admin/onboarding/OnboardingDesigner';
 
 // ============================================================================
@@ -28,6 +26,7 @@ interface ServiceCatalogItem {
   sub_category_id?: string;
   sub_category_name?: string;
   applicable_roles: string[];
+  specialization_ids?: string[];
   service_style: 'centre' | 'home' | 'tele' | 'ecommerce' | 'all' | 'at_center' | 'at_home';
   base_price: number;
   duration_minutes: number;
@@ -44,6 +43,7 @@ interface Category {
   id: string;
   name: string;
   display_name: string;
+  category_id?: string;
 }
 
 // ============================================================================
@@ -51,7 +51,7 @@ interface Category {
 // ============================================================================
 
 export default function ServiceCatalogPage() {
-  const [activeTab, setActiveTab] = useState<'categories' | 'products' | 'pricing' | 'bulk' | 'roles' | 'onboarding' | 'servicecatalog'>('categories');
+  const [activeTab, setActiveTab] = useState<'categories' | 'roles' | 'onboarding' | 'servicecatalog'>('categories');
   const [services, setServices] = useState<ServiceCatalogItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,6 +77,10 @@ export default function ServiceCatalogPage() {
   const [editingService, setEditingService] = useState<ServiceCatalogItem | null>(null);
   const [formData, setFormData] = useState<Partial<ServiceCatalogItem>>({});
   const [saving, setSaving] = useState(false);
+  const [specializationsByCategory, setSpecializationsByCategory] = useState<{ specializationId: string; name: string; displayName: string }[]>([]);
+  const [loadingSpecializations, setLoadingSpecializations] = useState(false);
+  const formDataRef = React.useRef(formData);
+  formDataRef.current = formData;
 
   // ============================================================================
   // DATA LOADING
@@ -185,6 +189,7 @@ export default function ServiceCatalogPage() {
       description: '',
       category_id: '',
       applicable_roles: [],
+      specialization_ids: [],
       service_style: 'centre',
       base_price: 0,
       duration_minutes: 30,
@@ -197,20 +202,25 @@ export default function ServiceCatalogPage() {
 
   const handleEdit = (service: ServiceCatalogItem) => {
     setEditingService(service);
-    setFormData({
+    const normRoles = (service.applicable_roles || []).map((r: string) => toCanonicalRoleCode(r)).filter(Boolean);
+    const payload = {
       service_name: service.service_name,
       display_name: service.display_name,
       description: service.description,
       category_id: service.category_id,
-      applicable_roles: service.applicable_roles,
+      applicable_roles: [...new Set(normRoles)],
+      specialization_ids: service.specialization_ids ?? (service as any).specializationIds ?? [],
       service_style: service.service_style,
       base_price: service.base_price,
       duration_minutes: service.duration_minutes,
       status: service.status,
       publish_status: service.publish_status,
       display_order: service.display_order,
-    });
+    };
+    setFormData(payload);
     setShowModal(true);
+    // Load specializations immediately so list is correct when modal opens
+    loadSpecializationsForCatalog(service.category_id || '', payload.applicable_roles ?? []);
   };
 
   const handleSave = async () => {
@@ -222,7 +232,17 @@ export default function ServiceCatalogPage() {
         await apiClient.put(`/admin/service-catalog/${editingService.id}`, formData);
         setSuccess('Service updated successfully');
       } else {
-        await apiClient.post('/admin/service-catalog', formData);
+        const categoryName = categories.find(c => c.id === formData.category_id)?.display_name || categories.find(c => c.id === formData.category_id)?.name || formData.category_id || '';
+        const serviceId = formData.service_id || (formData.service_name || '').replace(/\s+/g, '_').toLowerCase().replace(/[^a-z0-9_]/g, '') || `svc_${Date.now()}`;
+        await apiClient.post('/admin/service-catalog', {
+          ...formData,
+          service_id: serviceId,
+          service_name: formData.service_name || formData.display_name || '',
+          display_name: formData.display_name || formData.service_name || '',
+          category_name: categoryName,
+          applicable_roles: formData.applicable_roles || [],
+          specialization_ids: formData.specialization_ids || [],
+        });
         setSuccess('Service created successfully');
       }
       
@@ -258,6 +278,90 @@ export default function ServiceCatalogPage() {
       setError(err.message || 'Failed to update service status');
     }
   };
+
+  // Normalize role to canonical code for API (must match backend ROLE_EXPANSIONS / ROLE_DISPLAY_TO_CODE)
+  const toCanonicalRoleCode = (v: string) => {
+    const map: Record<string, string> = {
+      'pet sitter': 'sitter', sitter: 'sitter', pet_sitter: 'sitter',
+      'pet walker': 'walker', walker: 'walker', pet_walker: 'walker',
+      'pet resort': 'resort', resort: 'resort', pet_resort: 'resort',
+      'pet boarding': 'pet_boarding', pet_boarding: 'pet_boarding',
+      'pet boarding & daycare': 'pet_boarding_daycare', pet_boarding_daycare: 'pet_boarding_daycare',
+      'boarding': 'boarding', pet_boarder: 'pet_boarder', pet_daycare: 'pet_daycare',
+      'sunset care': 'sunset', sunset: 'sunset',
+      'trainer (center)': 'trainer_center', trainer_center: 'trainer_center',
+      'trainer (solo)': 'trainer_solo', trainer_solo: 'trainer_solo',
+      'veterinarian (solo)': 'vet_solo', vet_solo: 'vet_solo',
+      'veterinary clinic': 'vet_clinic', vet_clinic: 'vet_clinic',
+      'groomer (center)': 'groomer_center', 'groomer (solo)': 'groomer_solo', groomer_center: 'groomer_center', groomer_solo: 'groomer_solo', pet_groomer: 'pet_groomer',
+      'nutritionist (center)': 'nutritionist_center', 'nutritionist (solo)': 'nutritionist', nutritionist_center: 'nutritionist_center', nutritionist: 'nutritionist', pet_nutritionist: 'pet_nutritionist',
+      'pet nutritionist (center)': 'nutritionist_center', 'pet nutritionist (solo)': 'nutritionist',
+      pet_nutritionist_center: 'nutritionist_center', pet_nutritionist_solo: 'nutritionist',
+      'diagnostics center': 'diagnostics_center', diagnostics_center: 'diagnostics_center',
+      'diagnostic center': 'diagnostics_center', diagnostic_center: 'diagnostics_center',
+      'behaviorist center': 'behaviorist_center', behaviorist_center: 'behaviorist_center',
+      'behaviorist (solo)': 'behaviorist_solo', behaviorist_solo: 'behaviorist_solo',
+      'pet behaviorist': 'pet_behaviorist', pet_behaviorist: 'pet_behaviorist',
+      'e-commerce seller': 'ecommerce_seller', ecommerce_seller: 'ecommerce_seller',
+      'event organizer': 'event_organizer', event_organizer: 'event_organizer',
+      'pet adoption center': 'adoption_center', adoption_center: 'adoption_center',
+      pet_adoption_center: 'adoption_center',
+    };
+    const n = (v || '').toString().trim().toLowerCase().replace(/\s+/g, '_');
+    const withSpace = (v || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+    return map[n] ?? map[withSpace] ?? n;
+  };
+
+  // Resolve category id (UUID from dropdown) to slug for specialization_master API
+  const getCategorySlugForSpec = useCallback((catIdVal: string) => {
+    if (!catIdVal) return '';
+    const c = categories.find((cat: any) => String(cat?.id) === String(catIdVal) || String(cat?.category_id) === String(catIdVal));
+    return (c?.category_id || c?.id || catIdVal) as string;
+  }, [categories]);
+
+  const loadSpecializationsForCatalog = useCallback((catId: string, rolesArr: string[]) => {
+    const hasCat = !!catId;
+    const hasRoles = rolesArr.length > 0;
+    if (!showModal || (!hasCat && !hasRoles)) {
+      setSpecializationsByCategory([]);
+      return;
+    }
+    const canonRoles = rolesArr.map(toCanonicalRoleCode).filter(Boolean);
+    const roleParam = canonRoles.length > 0 ? `roleIds=${encodeURIComponent(canonRoles.join(','))}` : '';
+    const categorySlug = getCategorySlugForSpec(catId) || catId;
+    const catParam = hasCat ? `categoryId=${encodeURIComponent(categorySlug)}` : '';
+    const params = [catParam, roleParam].filter(Boolean).join('&');
+    const url = `/admin/specializations?${params}`;
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+      console.log('[Catalog] Loading specializations', { catId, categorySlug, canonRoles, url });
+    }
+    setLoadingSpecializations(true);
+    apiClient.get<any>(url)
+      .then((data) => {
+        const list = (data.specializations ?? data.data ?? []).map((s: any) => ({
+          specializationId: s.specializationId ?? s.specialization_id,
+          name: s.name ?? '',
+          displayName: s.displayName ?? s.display_name ?? s.name ?? '',
+        }));
+        setSpecializationsByCategory(list);
+        setFormData((prev) => {
+          const validIds = new Set(list.map((s: { specializationId: string }) => s.specializationId));
+          const kept = (prev.specialization_ids || []).filter((id: string) => validIds.has(id));
+          return kept.length === (prev.specialization_ids?.length ?? 0) ? prev : { ...prev, specialization_ids: kept };
+        });
+      })
+      .catch((err) => {
+        if (typeof window !== 'undefined') console.warn('[Catalog] Specializations API failed', url, err);
+        setSpecializationsByCategory([]);
+      })
+      .finally(() => setLoadingSpecializations(false));
+  }, [showModal, getCategorySlugForSpec]);
+
+  const applicableRolesKey = JSON.stringify(formData.applicable_roles ?? []);
+  useEffect(() => {
+    if (!showModal) return;
+    loadSpecializationsForCatalog(formData.category_id || '', formData.applicable_roles ?? []);
+  }, [showModal, formData.category_id, applicableRolesKey, loadSpecializationsForCatalog]);
 
   const handleReorder = async (serviceId: string, direction: 'up' | 'down') => {
     const currentIndex = services.findIndex(s => s.id === serviceId);
@@ -314,11 +418,31 @@ export default function ServiceCatalogPage() {
     { id: 'all', label: 'All Styles', icon: 'All' },
   ];
 
-  const ROLES = [
-    'veterinarian', 'vet_clinic', 'pet_groomer', 'pet_trainer', 'pet_walker',
-    'pet_sitter', 'pet_boarder', 'pet_cafe', 'pharmacy', 'ambulance',
-    'diagnostics_center', 'pet_photographer', 'pet_transport',
+  // ✅ FIX: Canonical roles (post-migration 250/521/522) - fetch active roles from API
+  const CANONICAL_ROLES_FALLBACK = [
+    'vet_solo', 'vet_clinic', 'groomer_solo', 'groomer_center', 'trainer_solo', 'trainer_center',
+    'walker', 'sitter', 'boarding', 'cafe', 'pharmacy', 'ambulance', 'photographer', 'resort',
+    'breeder', 'sunset', 'adoption_center', 'seller', 'relocation', 'diagnostics_center',
+    'nutritionist', 'nutritionist_center', 'insurance', 'holiday', 'event_organizer',
   ];
+  const [catalogRoles, setCatalogRoles] = useState<string[]>(CANONICAL_ROLES_FALLBACK);
+  useEffect(() => {
+    apiClient.get<any>('/admin/roles').then((r: any) => {
+      const roles = r?.roles || r?.data || [];
+      const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s || '');
+      const names = Array.isArray(roles)
+        ? roles
+            .filter((x: any) => x.isActive !== false && x.is_active !== false)
+            .map((x: any) => {
+              const v = x.name || x.roleCode || (isUuid(x.roleId || x.id) ? null : (x.roleId || x.id));
+              return v;
+            })
+            .filter(Boolean)
+        : [];
+      if (names.length > 0) setCatalogRoles(names);
+    }).catch(() => {});
+  }, []);
+  const ROLES = catalogRoles;
 
   return (
     <AdminLayout>
@@ -520,76 +644,46 @@ export default function ServiceCatalogPage() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="bg-white rounded-xl border border-gray-300 shadow-sm text-gray-900">
-          <div className="border-b border-gray-200 px-6 py-2 flex items-center justify-between flex-wrap gap-4">
-            <div className="flex gap-0 overflow-x-auto">
+        {/* ✅ FIX: Improved tabs with thicker border and better visual hierarchy */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm text-gray-900">
+          <div className="border-b border-gray-200 px-4 flex items-center justify-between flex-wrap gap-4">
+            <div className="flex gap-0 overflow-x-auto -mb-px">
               <button
                 onClick={() => setActiveTab('categories')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                className={`px-4 py-3 text-sm font-medium border-b-[3px] transition-colors whitespace-nowrap ${
                   activeTab === 'categories'
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                    ? 'border-orange-500 text-orange-600 bg-orange-50/50'
+                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
                 Categories
               </button>
               <button
-                onClick={() => setActiveTab('products')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                  activeTab === 'products'
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Product & Services
-              </button>
-              <button
-                onClick={() => setActiveTab('pricing')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                  activeTab === 'pricing'
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Pricing & Inventory
-              </button>
-              <button
-                onClick={() => setActiveTab('bulk')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                  activeTab === 'bulk'
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Bulk Operations
-              </button>
-              <button
                 onClick={() => setActiveTab('roles')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                className={`px-4 py-3 text-sm font-medium border-b-[3px] transition-colors whitespace-nowrap ${
                   activeTab === 'roles'
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                    ? 'border-orange-500 text-orange-600 bg-orange-50/50'
+                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
                 Roles
               </button>
               <button
                 onClick={() => setActiveTab('onboarding')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                className={`px-4 py-3 text-sm font-medium border-b-[3px] transition-colors whitespace-nowrap ${
                   activeTab === 'onboarding'
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                    ? 'border-orange-500 text-orange-600 bg-orange-50/50'
+                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
                 Onboarding
               </button>
               <button
                 onClick={() => setActiveTab('servicecatalog')}
-                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                className={`px-4 py-3 text-sm font-medium border-b-[3px] transition-colors whitespace-nowrap ${
                   activeTab === 'servicecatalog'
-                    ? 'border-orange-500 text-orange-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                    ? 'border-orange-500 text-orange-600 bg-orange-50/50'
+                    : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                 }`}
               >
                 Service Catalog
@@ -630,13 +724,60 @@ export default function ServiceCatalogPage() {
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                       className="px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none text-sm"
                     />
-                    <button className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm">
+                    <button 
+                      onClick={async () => {
+                        try {
+                          const response = await apiClient.get<any>('/admin/catalog/export');
+                          const data = response.categories || response.data || [];
+                          const csvContent = [
+                            ['ID', 'Name', 'Slug', 'Description', 'Parent ID', 'Is Active'],
+                            ...data.map((cat: any) => [cat.id, cat.name, cat.slug, cat.description || '', cat.parent_id || '', cat.is_active])
+                          ].map(row => row.join(',')).join('\n');
+                          const blob = new Blob([csvContent], { type: 'text/csv' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `categories_${new Date().toISOString().split('T')[0]}.csv`;
+                          a.click();
+                          setSuccess('Categories exported successfully!');
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to export categories');
+                        }
+                      }}
+                      className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm"
+                    >
                       Export
                     </button>
-                    <button className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm">
+                    <button 
+                      onClick={async () => {
+                        try {
+                          setLoading(true);
+                          await apiClient.post<any>('/admin/catalog/seed', { type: 'vet_only' });
+                          setSuccess('Vet services seeded successfully! Refresh to see changes.');
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to seed vet data');
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm"
+                    >
                       Seed Vet Only
                     </button>
-                    <button className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm">
+                    <button 
+                      onClick={async () => {
+                        try {
+                          setLoading(true);
+                          await apiClient.post<any>('/admin/catalog/seed', { type: 'all' });
+                          setSuccess('All services seeded successfully! Refresh to see changes.');
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to seed all data');
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      className="px-4 py-2 bg-white border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition text-sm"
+                    >
                       Seed All
                     </button>
                   </div>
@@ -645,13 +786,9 @@ export default function ServiceCatalogPage() {
               </div>
             )}
             
-            {activeTab === 'products' && <ProductServicesTab />}
-            {activeTab === 'pricing' && <PricingInventoryTab />}
-            {activeTab === 'bulk' && <BulkOperationsTab />}
-            
             {activeTab === 'roles' && (
               <div className="p-6">
-                <AdminRolesPage />
+                <VendorRolesTab />
               </div>
             )}
             
@@ -685,6 +822,7 @@ export default function ServiceCatalogPage() {
                   filterCategory={filterCategory}
                   filterStatus={filterStatus}
                   onEdit={(service) => {
+                    const normRoles = (service.applicable_roles || []).map((r: string) => toCanonicalRoleCode(r)).filter(Boolean);
                     const serviceData: Partial<ServiceCatalogItem> = {
                       id: service.id,
                       service_id: service.service_id,
@@ -695,7 +833,8 @@ export default function ServiceCatalogPage() {
                       category_name: service.category_name,
                       sub_category_id: service.sub_category_id,
                       sub_category_name: service.sub_category_name,
-                      applicable_roles: service.applicable_roles,
+                      applicable_roles: [...new Set(normRoles)],
+                      specialization_ids: (service as any).specialization_ids ?? (service as any).specializationIds ?? [],
                       service_style: (service.service_style === 'at_center' ? 'centre' : service.service_style === 'at_home' ? 'home' : service.service_style) as any,
                       base_price: service.base_price,
                       duration_minutes: service.duration_minutes,
@@ -707,6 +846,8 @@ export default function ServiceCatalogPage() {
                     setEditingService(serviceData as ServiceCatalogItem);
                     setFormData(serviceData);
                     setShowModal(true);
+                    // Load specializations immediately for this category + roles so list is correct when modal opens
+                    loadSpecializationsForCatalog(serviceData.category_id || '', serviceData.applicable_roles ?? []);
                   }}
                   onDelete={(service) => {
                     handleDelete(service as any);
@@ -789,7 +930,12 @@ export default function ServiceCatalogPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
                   <select
                     value={formData.category_id || ''}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, category_id: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                      const newCategoryId = e.target.value;
+                      setFormData(prev => ({ ...prev, category_id: newCategoryId }));
+                      const currentRoles = formDataRef.current?.applicable_roles ?? formData.applicable_roles ?? [];
+                      loadSpecializationsForCatalog(newCategoryId, currentRoles);
+                    }}
                     className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                   >
                     <option value="">Select Category</option>
@@ -824,19 +970,43 @@ export default function ServiceCatalogPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Duration (minutes)</label>
-                  <input
-                    type="number"
-                    value={formData.duration_minutes || 30}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, duration_minutes: Number(e.target.value) }))}
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
-                  />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Duration</label>
+                  <select
+                    value={formData.duration_minutes ?? 30}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, duration_minutes: Number(e.target.value) }))}
+                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none bg-white"
+                  >
+                    <optgroup label="Minutes">
+                      <option value={15}>15 minutes</option>
+                      <option value={30}>30 minutes</option>
+                      <option value={45}>45 minutes</option>
+                    </optgroup>
+                    <optgroup label="Hours">
+                      <option value={60}>1 hour</option>
+                      <option value={90}>1.5 hours</option>
+                      <option value={120}>2 hours</option>
+                      <option value={240}>4 hours</option>
+                      <option value={480}>8 hours</option>
+                      <option value={720}>12 hours</option>
+                      <option value={1440}>24 hours</option>
+                    </optgroup>
+                    <optgroup label="Days (nightly / multi-day)">
+                      <option value={2880}>2 days</option>
+                      <option value={4320}>3 days</option>
+                      <option value={5760}>4 days</option>
+                      <option value={7200}>5 days</option>
+                      <option value={8640}>6 days</option>
+                      <option value={10080}>7 days</option>
+                    </optgroup>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Stored in minutes</p>
                 </div>
               </div>
 
-              {/* Applicable Roles */}
+              {/* Applicable Roles — select first so specializations below filter dynamically */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Applicable Roles</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Applicable Roles <span className="text-red-500">*</span></label>
+                <p className="text-xs text-gray-500 mb-2">Select roles that can use this service. Specializations below are filtered by these roles (from Catalog &gt; Categories).</p>
                 <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 border border-gray-200 rounded-lg">
                   {ROLES.map(role => (
                     <button
@@ -844,15 +1014,16 @@ export default function ServiceCatalogPage() {
                       type="button"
                       onClick={() => {
                         const roles = formData.applicable_roles || [];
-                        setFormData(prev => ({
-                          ...prev,
-                          applicable_roles: roles.includes(role)
-                            ? roles.filter(r => r !== role)
-                            : [...roles, role]
-                        }));
+                        const canon = toCanonicalRoleCode(role);
+                        const newRoles = roles.includes(canon)
+                          ? roles.filter(r => toCanonicalRoleCode(r) !== canon)
+                          : [...roles.filter(r => toCanonicalRoleCode(r) !== canon), canon];
+                        setFormData(prev => ({ ...prev, applicable_roles: newRoles }));
+                        const currentCategory = formDataRef.current?.category_id || formData.category_id || '';
+                        loadSpecializationsForCatalog(currentCategory, newRoles);
                       }}
                       className={`px-3 py-1 rounded-lg text-sm transition ${
-                        (formData.applicable_roles || []).includes(role)
+                        (formData.applicable_roles || []).map(toCanonicalRoleCode).includes(toCanonicalRoleCode(role))
                           ? 'bg-orange-500 text-white'
                           : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
                       }`}
@@ -861,6 +1032,52 @@ export default function ServiceCatalogPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Specializations (optional) — from Catalog > Categories, filtered by selected applicable roles */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Specializations (optional)</label>
+                <p className="text-xs text-gray-500 mb-2">Link this service to category specializations (Catalog &gt; Categories), filtered by selected applicable roles.</p>
+                {!formData.category_id ? (
+                  <p className="text-sm text-gray-400">Select a category first to load specializations.</p>
+                ) : loadingSpecializations ? (
+                  <p className="text-sm text-gray-500">Loading…</p>
+                ) : specializationsByCategory.length === 0 ? (
+                  <p className="text-sm text-gray-500">No specializations for this category and selected roles.</p>
+                ) : (
+                  <>
+                    {(formData.applicable_roles?.length ?? 0) === 0 && (
+                      <p className="text-xs text-amber-600 mb-2">Showing all specializations for this category. Select applicable roles above to filter.</p>
+                    )}
+                    <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 border border-gray-200 rounded-lg">
+                      {specializationsByCategory.map((spec) => {
+                        const selected = (formData.specialization_ids || []).includes(spec.specializationId);
+                        return (
+                          <button
+                            key={spec.specializationId}
+                            type="button"
+                            onClick={() => {
+                              const current = formData.specialization_ids || [];
+                              setFormData(prev => ({
+                                ...prev,
+                                specialization_ids: selected
+                                  ? current.filter((id) => id !== spec.specializationId)
+                                  : [...current, spec.specializationId],
+                              }));
+                            }}
+                            className={`px-3 py-1 rounded-lg text-sm transition ${
+                              selected
+                                ? 'bg-purple-500 text-white'
+                                : 'bg-white border border-gray-300 text-gray-900 hover:bg-gray-50'
+                            }`}
+                          >
+                            {spec.displayName || spec.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">

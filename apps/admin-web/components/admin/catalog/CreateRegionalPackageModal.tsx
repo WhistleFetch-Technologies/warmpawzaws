@@ -125,7 +125,7 @@ export function CreateRegionalPackageModal({
             <p className="text-xs text-gray-500 mt-0">Leave empty if no discount</p>
           </div>
 
-          <div className="flex gap-0 pt-4">
+          <div className="flex gap-3 pt-4">
             <button
               type="button"
               onClick={onClose}
@@ -136,7 +136,7 @@ export function CreateRegionalPackageModal({
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
+              className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50"
             >
               {loading ? (
                 <>

@@ -5,7 +5,7 @@ import { SmartTimeSlotSelection } from './SmartTimeSlotSelection';
 import { PaymentPage } from '../grooming/PaymentPage';
 import { BookingConfirmation } from '../grooming/BookingConfirmation';
 import { AddressSelector } from '../grooming/AddressSelector';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 type ViewType = 
   | 'doctor_details'
@@ -21,6 +21,8 @@ interface VetBookingRouterProps {
   doctorId?: string; // Doctor ID to load details
   selectedService?: any; // Pre-selected service
   serviceType?: 'tele' | 'clinic' | 'home'; // Service style
+  vendorId?: string; // Vendor/Clinic ID for clinic bookings
+  clinicId?: string; // Clinic ID (alias for vendorId)
   onBack: () => void;
   onNavigate?: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string, petId: string) => void;
@@ -32,12 +34,18 @@ export function VetBookingRouter({
   doctorId,
   selectedService,
   serviceType,
+  vendorId,
+  clinicId,
   onBack, 
   onNavigate,
   onViewBooking 
 }: VetBookingRouterProps) {
-  // ✅ FIXED: If service is pre-selected, skip to pet selection
-  const initialView: ViewType = selectedService ? 'select_pet' : 'doctor_details';
+  // ✅ FIXED: For clinic bookings with service selected, check if doctor selection is needed
+  // If service is pre-selected and doctor is provided, skip to pet selection
+  // If service is pre-selected but no doctor, go to doctor selection first
+  const initialView: ViewType = selectedService 
+    ? (doctor || doctorId ? 'select_pet' : 'doctor_details')
+    : 'doctor_details';
   
   console.log('🎯 [VET-BOOKING-ROUTER] Initializing with:');
   console.log('   - Doctor:', doctor);
@@ -55,6 +63,8 @@ export function VetBookingRouter({
     doctor: any;
     service: any | null;
     serviceType: 'tele' | 'clinic' | 'home';
+    vendorId: string | null;
+    clinicId: string | null;
     pet: any | null;
     date: string | null;
     time: string | null;
@@ -66,6 +76,8 @@ export function VetBookingRouter({
     doctor: doctor,
     service: selectedService || null,
     serviceType: serviceType || 'clinic',
+    vendorId: vendorId || clinicId || null,
+    clinicId: clinicId || vendorId || null,
     pet: null,
     date: null,
     time: null,
@@ -75,7 +87,7 @@ export function VetBookingRouter({
     booking: null
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadCustomerData();
@@ -166,10 +178,10 @@ export function VetBookingRouter({
         petType: bookingFlow.pet?.type || bookingFlow.pet?.species || 'dog',
         
         // Vendor/Doctor info
-        vendorId: bookingFlow.doctor.clinicId || bookingFlow.doctor.vendorId,
-        vendorName: bookingFlow.doctor.clinicName || 'Vet Clinic',
-        staffId: bookingFlow.slotData?.staffId || bookingFlow.doctor.staffId || bookingFlow.doctor.id,
-        staffName: bookingFlow.slotData?.staffName || bookingFlow.doctor.fullName || bookingFlow.doctor.name,
+        vendorId: bookingFlow.vendorId || bookingFlow.clinicId || bookingFlow.doctor?.clinicId || bookingFlow.doctor?.vendorId,
+        vendorName: bookingFlow.doctor?.clinicName || bookingFlow.doctor?.vendorName || 'Vet Clinic',
+        staffId: bookingFlow.slotData?.staffId || bookingFlow.doctor?.staffId || bookingFlow.doctor?.id,
+        staffName: bookingFlow.slotData?.staffName || bookingFlow.doctor?.fullName || bookingFlow.doctor?.name,
         
         // Service info
         serviceId: bookingFlow.service?.serviceId || bookingFlow.service?.id,
@@ -272,9 +284,9 @@ export function VetBookingRouter({
         bookingData={{
           bookingId: bookingFlow.booking.bookingId,
           serviceName: bookingFlow.service?.serviceName || bookingFlow.service?.name,
-          serviceType: bookingFlow.serviceType,
-          vendorName: bookingFlow.doctor.clinicName || bookingFlow.doctor.fullName || 'Veterinary Clinic',
-          vendorAddress: bookingFlow.slotData?.locationName || bookingFlow.doctor.clinicAddress || '',
+          serviceType: bookingFlow.serviceType === 'home' ? 'home' : 'center',
+          vendorName: bookingFlow.doctor?.clinicName || bookingFlow.doctor?.fullName || 'Veterinary Clinic',
+          vendorAddress: bookingFlow.slotData?.locationName || bookingFlow.doctor?.clinicAddress || '',
           petName: bookingFlow.pet?.name || 'Pet',
           petId: bookingFlow.pet?.id, // ✅ ADD: Pass pet ID for navigation
           date: bookingFlow.date || '',
@@ -285,6 +297,7 @@ export function VetBookingRouter({
         }}
         onViewBooking={handleViewBooking}
         onBackToDashboard={handleBackToDashboard}
+        onNavigate={onNavigate}
       />
     );
   }
@@ -295,11 +308,12 @@ export function VetBookingRouter({
       <PaymentPage
         bookingData={{
           services: [bookingFlow.service],
-          vendorName: bookingFlow.doctor.clinicName || bookingFlow.doctor.fullName || 'Vet Service',
+          vendorName: bookingFlow.doctor?.clinicName || bookingFlow.doctor?.fullName || 'Vet Service',
           petName: bookingFlow.pet.name,
           date: bookingFlow.date,
           time: bookingFlow.time,
-          addOns: []
+          addOns: [],
+          vendorId: bookingFlow.vendorId || bookingFlow.clinicId
         }}
         phone={phone}
         onBack={() => {
@@ -310,6 +324,7 @@ export function VetBookingRouter({
           }
         }}
         onPaymentSuccess={handlePaymentSuccess}
+        onNavigate={onNavigate}
       />
     );
   }
@@ -330,13 +345,14 @@ export function VetBookingRouter({
     return (
       <SmartTimeSlotSelection
         serviceType={bookingFlow.serviceType}
-        vendorName={bookingFlow.doctor.clinicName || bookingFlow.doctor.fullName || 'Vet Clinic'}
-        vendorId={bookingFlow.doctor.clinicId || bookingFlow.doctor.vendorId}
+        vendorName={bookingFlow.doctor?.clinicName || bookingFlow.doctor?.fullName || bookingFlow.doctor?.name || 'Vet Clinic'}
+        vendorId={bookingFlow.vendorId || bookingFlow.clinicId || bookingFlow.doctor?.clinicId || bookingFlow.doctor?.vendorId || ''}
         selectedService={bookingFlow.service}
-        selectedStaffId={bookingFlow.doctor.staffId || bookingFlow.doctor.id}
-        vendorRoleId={bookingFlow.doctor.roleId || 'veterinarian'} // ✅ Pass vendor role
+        selectedStaffId={bookingFlow.doctor?.staffId || bookingFlow.doctor?.id}
+        vendorRoleId={bookingFlow.doctor?.roleId || 'veterinarian'} // ✅ Pass vendor role
         onBack={() => setCurrentView('select_pet')}
         onSelectSlot={handleTimeSelected}
+        onNavigate={onNavigate}
       />
     );
   }
@@ -348,6 +364,7 @@ export function VetBookingRouter({
         phone={phone}
         onBack={() => setCurrentView('doctor_details')}
         onSelect={handlePetSelected}
+        onNavigate={onNavigate}
       />
     );
   }
@@ -358,8 +375,12 @@ export function VetBookingRouter({
       <VetDoctorDetails
         phone={phone}
         doctor={bookingFlow.doctor}
+        doctorId={doctorId}
         preSelectedService={bookingFlow.service}
+        vendorId={bookingFlow.vendorId || bookingFlow.clinicId}
+        clinicId={bookingFlow.clinicId || bookingFlow.vendorId}
         onBack={onBack}
+        onNavigate={onNavigate}
         onBookService={handleServiceSelected}
       />
     );

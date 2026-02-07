@@ -4,7 +4,7 @@ import {
   MessageSquare, X, Send, Headphones, Ticket, Loader2, 
   ShoppingBag, Stethoscope, Calendar, HelpCircle, Zap 
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { motion, AnimatePresence } from 'motion/react';
 import { Badge } from '../ui/badge';
@@ -70,12 +70,12 @@ export function CustomerAIChatbot({
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ai-chatbot/chat`,
+        `${getApiBaseUrl()}/ai-chatbot/chat`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             message: text,

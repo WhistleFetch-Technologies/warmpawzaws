@@ -4,7 +4,7 @@ import { Card } from '../../ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../../ui/dialog';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { Package, Truck, FileText, CheckCircle, Clock, AlertTriangle, MapPin } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 
@@ -22,11 +22,11 @@ export function ShiprocketOrderIntegration({ orderId, order, onUpdate }: Shiproc
   const [isCourierModalOpen, setIsCourierModalOpen] = useState(false);
   const [courierId, setCourierId] = useState('');
   
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
   
   const getAuthHeaders = () => ({
     'apikey': publicAnonKey,
-    'Authorization': `Bearer ${publicAnonKey}`,
+    ...getAuthHeaders(),
     'Content-Type': 'application/json'
   });
 

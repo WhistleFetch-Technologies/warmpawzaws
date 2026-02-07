@@ -19,6 +19,8 @@ import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { invokeBedrock } from '../utils/bedrock-client';
 import { withRetry } from '../utils/error-recovery';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 export function registerAIChatbotEndpoints(app: Hono) {
   /**
@@ -43,12 +45,13 @@ export function registerAIChatbotEndpoints(app: Hono) {
 
       if (customerId || customerPhone) {
         try {
-          const customer = customerId
+          const customerResult = customerId
             ? await select('customers', { id: customerId })
             : await query(`SELECT * FROM customers WHERE phone = $1 LIMIT 1`, [customerPhone]);
           
-          if (customer.length > 0 || (customer as any).rows?.length > 0) {
-            const cust = Array.isArray(customer) ? customer[0] : (customer as any).rows[0];
+          const customers = Array.isArray(customerResult) ? customerResult : customerResult.rows || [];
+          if (customers.length > 0) {
+            const cust = customers[0];
             customerContext = `Customer: ${cust.first_name || ''} ${cust.last_name || ''}, Phone: ${cust.phone || customerPhone}`;
           }
         } catch (e) {

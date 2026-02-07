@@ -21,14 +21,15 @@ variable "private_subnet_ids" {
 variable "lambda_functions" {
   description = "Map of Lambda functions to create"
   type = map(object({
-    handler              = string
-    runtime              = string
-    timeout              = number
-    memory_size          = number
-    zip_path             = string
-    env_vars             = map(string)
-    reserved_concurrency = optional(number)
-    enable_function_url  = optional(bool)
+    handler                  = string
+    runtime                  = string
+    timeout                  = number
+    memory_size              = number
+    zip_path                 = string
+    env_vars                 = map(string)
+    reserved_concurrency     = optional(number)
+    provisioned_concurrency  = optional(number)  # Keeps Lambda instances warm to eliminate cold starts
+    enable_function_url      = optional(bool)
   }))
 }
 

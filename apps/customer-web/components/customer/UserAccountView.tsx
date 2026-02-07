@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { 
-  ChevronLeft, Camera, Edit2, Save, X, User, Calendar, 
+  Camera, Edit2, Save, X, User, Calendar, 
   MessageSquare, Heart, Settings, ChevronRight, Package,
   Clock, MapPin, Star, Bell, CreditCard, HelpCircle, LogOut,
   Copy, Check, Navigation, Route, Timer, TrendingUp, ShoppingCart,
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { BookingDetailModal } from './BookingDetailModal';
 import { apiClient } from '@/lib/api-client';
+import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 
 interface UserProfile {
   firstName: string;
@@ -62,6 +63,8 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
   const [loading, setLoading] = useState(true);
   const [loadingBookings, setLoadingBookings] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedBookingForModal, setSelectedBookingForModal] = useState<{ bookingId: string; petId: string } | null>(null);
@@ -152,34 +155,34 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
       };
       reader.readAsDataURL(file);
       
-      // Upload to S3
+      // Upload to S3 with progress tracking
+      setUploadingPhoto(true);
+      setUploadProgress(0);
       try {
-        setSaving(true);
-        const { uploadCustomerPhoto } = await import('@/lib/photo-upload');
-        const result = await uploadCustomerPhoto(file, phone);
+        const { uploadCustomerPhotoWithProgress } = await import('@/lib/photo-upload-enhanced');
+        const result = await uploadCustomerPhotoWithProgress(file, phone, {
+          onProgress: (progress) => {
+            setUploadProgress(progress);
+          },
+          verifyUpload: true,
+          maxRetries: 3,
+        });
         
         if (result.success && result.publicUrl) {
-          setProfile({ ...profile, photo: result.publicUrl });
+          setProfile(prev => prev ? { ...prev, photo: result.publicUrl } : null);
+          setPhotoPreview(result.publicUrl || '');
           console.log('✅ Customer photo uploaded to S3:', result.publicUrl);
         } else {
-          console.error('Failed to upload photo:', result.error);
-          // Fallback to base64 if S3 upload fails
-          const base64Reader = new FileReader();
-          base64Reader.onloadend = () => {
-            setProfile({ ...profile, photo: base64Reader.result as string });
-          };
-          base64Reader.readAsDataURL(file);
+          alert(result.error || 'Failed to upload photo. Please try again.');
+          setPhotoPreview(profile?.photo || '');
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error uploading photo to S3:', error);
-        // Fallback to base64
-        const base64Reader = new FileReader();
-        base64Reader.onloadend = () => {
-          setProfile({ ...profile, photo: base64Reader.result as string });
-        };
-        base64Reader.readAsDataURL(file);
+        alert(error.message || 'Failed to upload photo. Please try again.');
+        setPhotoPreview(profile?.photo || '');
       } finally {
-        setSaving(false);
+        setUploadingPhoto(false);
+        setUploadProgress(0);
       }
     }
   };
@@ -258,27 +261,18 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
   const completedBookings = bookings.filter(b => b.status === 'completed');
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto pb-20">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pt-12 pb-8 sticky top-0 z-20">
-        <div className="flex items-center gap-4 mb-4">
-          <button onClick={onBack} className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
-            <ChevronLeft className="w-5 h-5 text-white" />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-white text-xl font-bold">My Account</h1>
-            <p className="text-white/90 text-sm">{profile?.firstName || 'User'}</p>
-          </div>
-        </div>
-
-        {/* Tab Navigation */}
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      {/* Tab Navigation */}
+      <div className="px-6 pt-4 pb-2">
         <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-2 px-2">
           <button
             onClick={() => setActiveTab('bookings')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium whitespace-nowrap transition-all ${
               activeTab === 'bookings'
-                ? 'bg-white text-[#FF8C42]'
-                : 'bg-white/20 text-white'
+                ? 'bg-[#FF8C42] text-white'
+                : 'bg-gray-100 text-gray-700'
             }`}
           >
             <Calendar className="w-4 h-4" />
@@ -288,8 +282,8 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
             onClick={() => setActiveTab('profile')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium whitespace-nowrap transition-all ${
               activeTab === 'profile'
-                ? 'bg-white text-[#FF8C42]'
-                : 'bg-white/20 text-white'
+                ? 'bg-[#FF8C42] text-white'
+                : 'bg-gray-100 text-gray-700'
             }`}
           >
             <User className="w-4 h-4" />
@@ -299,8 +293,8 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
             onClick={() => setActiveTab('complaints')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium whitespace-nowrap transition-all ${
               activeTab === 'complaints'
-                ? 'bg-white text-[#FF8C42]'
-                : 'bg-white/20 text-white'
+                ? 'bg-[#FF8C42] text-white'
+                : 'bg-gray-100 text-gray-700'
             }`}
           >
             <MessageSquare className="w-4 h-4" />
@@ -310,8 +304,8 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
             onClick={() => setActiveTab('saved')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium whitespace-nowrap transition-all ${
               activeTab === 'saved'
-                ? 'bg-white text-[#FF8C42]'
-                : 'bg-white/20 text-white'
+                ? 'bg-[#FF8C42] text-white'
+                : 'bg-gray-100 text-gray-700'
             }`}
           >
             <Heart className="w-4 h-4" />
@@ -321,8 +315,8 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
             onClick={() => setActiveTab('settings')}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium whitespace-nowrap transition-all ${
               activeTab === 'settings'
-                ? 'bg-white text-[#FF8C42]'
-                : 'bg-white/20 text-white'
+                ? 'bg-[#FF8C42] text-white'
+                : 'bg-gray-100 text-gray-700'
             }`}
           >
             <Settings className="w-4 h-4" />
@@ -508,9 +502,14 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
                 {/* Photo */}
                 <div className="flex flex-col items-center mb-6">
                   <div className="relative">
-                    <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-200">
-                      {photoPreview ? (
+                    <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-200 relative">
+                      {photoPreview && !uploadingPhoto ? (
                         <img src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
+                      ) : uploadingPhoto ? (
+                        <div className="w-full h-full flex flex-col items-center justify-center bg-black bg-opacity-50">
+                          <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin mb-1" />
+                          <span className="text-white text-[10px]">{uploadProgress}%</span>
+                        </div>
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
                           <User className="w-12 h-12 text-gray-400" />
@@ -520,16 +519,22 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
                     {editMode && (
                       <>
                         <button
-                          onClick={() => fileInputRef.current?.click()}
-                          className="absolute bottom-0 right-0 w-8 h-8 bg-[#FF8C42] rounded-full flex items-center justify-center"
+                          onClick={() => !uploadingPhoto && fileInputRef.current?.click()}
+                          disabled={uploadingPhoto}
+                          className={`absolute bottom-0 right-0 w-8 h-8 bg-[#FF8C42] rounded-full flex items-center justify-center ${uploadingPhoto ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
-                          <Camera className="w-4 h-4 text-white" />
+                          {uploadingPhoto ? (
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <Camera className="w-4 h-4 text-white" />
+                          )}
                         </button>
                         <input
                           ref={fileInputRef}
                           type="file"
                           accept="image/*"
                           onChange={handlePhotoUpload}
+                          disabled={uploadingPhoto}
                           className="hidden"
                         />
                       </>
@@ -590,11 +595,19 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-2">Address</label>
                     {editMode ? (
-                      <textarea
+                      <EnhancedAddressAutocomplete
                         value={profile.address}
-                        onChange={(e) => setProfile({ ...profile, address: e.target.value })}
-                        rows={3}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none"
+                        onChange={(address: string, components?: AddressComponents) => {
+                          setProfile(prev => {
+                            if (!prev) return null;
+                            const updated: UserProfile = { ...prev, address };
+                            if (components?.pincode) updated.pincode = components.pincode;
+                            return updated;
+                          });
+                        }}
+                        placeholder="Search address, landmark, city..."
+                        className="w-full"
+                        required
                       />
                     ) : (
                       <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">{profile.address}</p>
@@ -691,6 +704,6 @@ export function UserAccountView({ phone, onBack, onViewBooking }: CustomerProfil
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }

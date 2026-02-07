@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { MapPin, Phone, AlertCircle, Clock, User } from 'lucide-react';
+import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 
 interface AmbulanceBookingFlowProps {
   vendorId: string;
@@ -38,7 +39,13 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
   const [pickupAddress, setPickupAddress] = useState('');
   const [dropAddress, setDropAddress] = useState('');
   const [urgency, setUrgency] = useState<'critical' | 'urgent' | 'normal'>('urgent');
-  const [contactPhone, setContactPhone] = useState(customerPhone);
+  const [contactPhone, setContactPhone] = useState(customerPhone.replace(/[^0-9]/g, ''));
+  const [contactCountryCode, setContactCountryCode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('customerCountryCode') || '+91';
+    }
+    return '+91';
+  });
 
   useEffect(() => {
     loadAvailableVehicles();
@@ -174,7 +181,7 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
 
   return (
     <div className="max-w-2xl mx-auto p-0">
-      <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-0 flex items-start gap-0">
+      <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-0 flex items-start gap-3">
         <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={20} />
         <div>
           <h3 className="font-semibold text-red-900">Emergency Ambulance Booking</h3>
@@ -190,7 +197,7 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
           <label className="block text-sm font-medium text-gray-700 mb-0">
             Service Type
           </label>
-          <div className="grid grid-cols-3 gap-0">
+          <div className="grid grid-cols-3 gap-3">
             {(['emergency', 'transfer', 'other'] as const).map((type) => (
               <button
                 key={type}
@@ -253,7 +260,7 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
           <label className="block text-sm font-medium text-gray-700 mb-0">
             Urgency Level
           </label>
-          <div className="grid grid-cols-3 gap-0">
+          <div className="grid grid-cols-3 gap-3">
             {(['critical', 'urgent', 'normal'] as const).map((level) => (
               <button
                 key={level}
@@ -311,17 +318,23 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
 
         {/* Contact */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-0">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             Contact Phone *
           </label>
-          <div className="relative">
-            <Phone className="absolute left-3 top-1 text-gray-400" size={20} />
+          <div className="flex items-stretch border border-gray-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-orange-500 focus-within:border-orange-500 bg-white">
+            <CountryCodeSelector
+              selectedCode={contactCountryCode}
+              onSelect={setContactCountryCode}
+              disabled={false}
+            />
             <input
               type="tel"
+              inputMode="numeric"
               value={contactPhone}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setContactPhone(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setContactPhone(e.target.value.replace(/[^0-9]/g, ''))}
+              maxLength={10}
               required
-              className="w-full pl-0 pr-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="flex-1 px-4 py-3 outline-none"
             />
           </div>
         </div>
@@ -346,7 +359,7 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="flex items-center gap-0">
+                      <div className="flex items-center gap-3">
                         <span className="font-semibold text-gray-900">
                           {vehicle.vehicle_number}
                         </span>
@@ -355,15 +368,15 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
                         </span>
                       </div>
                       <div className="mt-0 flex items-center gap-4 text-sm text-gray-600">
-                        <span className="flex items-center gap-0">
+                        <span className="flex items-center gap-3">
                           <User size={14} />
                           Capacity: {vehicle.capacity}
                         </span>
-                        <span className="flex items-center gap-0">
-                          ⭐ {vehicle.rating.toFixed(1)}
+                        <span className="flex items-center gap-3">
+                          ⭐ {Number(vehicle.rating || 0).toFixed(1)}
                         </span>
                         {vehicle.estimated_arrival && (
-                          <span className="flex items-center gap-0">
+                          <span className="flex items-center gap-3">
                             <Clock size={14} />
                             ETA: {vehicle.estimated_arrival} min
                           </span>
@@ -393,7 +406,7 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
         )}
 
         {/* Actions */}
-        <div className="flex gap-0">
+        <div className="flex gap-3">
           {onCancel && (
             <button
               type="button"

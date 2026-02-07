@@ -6,20 +6,52 @@
  * Handles push notifications via Firebase Cloud Messaging (FCM)
  * for mobile apps (iOS + Android)
  * 
+ * ✅ IMPORTANT: firebase-admin is optional and loaded lazily to avoid
+ * bundling issues in Lambda. Push notifications will be disabled if
+ * firebase-admin is not installed.
+ * 
  * Date: 2025-01-02
  * ============================================================================
  */
 
-// Use require to avoid type dependency; runtime will use firebase-admin if available
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const admin: any = require('firebase-admin');
-
+let admin: any = null;
+let firebaseAvailable = false;
+let firebaseLoadAttempted = false;
 let firebaseApp: any | null = null;
+
+/**
+ * Lazy load firebase-admin module
+ * Uses eval to prevent esbuild from trying to bundle it
+ */
+function loadFirebaseAdmin(): boolean {
+  if (firebaseLoadAttempted) {
+    return firebaseAvailable;
+  }
+  
+  firebaseLoadAttempted = true;
+  
+  try {
+    // Use eval to prevent esbuild from bundling firebase-admin
+    // This allows the module to be external and loaded at runtime if available
+    admin = eval('require')('firebase-admin');
+    firebaseAvailable = true;
+    console.log('[Firebase] Module loaded successfully');
+    return true;
+  } catch (e) {
+    console.warn('[Firebase] firebase-admin not available - push notifications disabled');
+    firebaseAvailable = false;
+    return false;
+  }
+}
 
 /**
  * Initialize Firebase Admin SDK
  */
 function initializeFirebase(): any {
+  if (!loadFirebaseAdmin()) {
+    throw new Error('Firebase not available - push notifications disabled');
+  }
+
   if (firebaseApp) {
     return firebaseApp;
   }
@@ -54,8 +86,18 @@ function initializeFirebase(): any {
  * Get Firebase messaging instance
  */
 export function getFirebaseMessaging(): any {
+  if (!loadFirebaseAdmin()) {
+    throw new Error('Firebase not available');
+  }
   const app = initializeFirebase();
   return admin.messaging(app);
+}
+
+/**
+ * Check if Firebase is available
+ */
+export function isFirebaseAvailable(): boolean {
+  return loadFirebaseAdmin();
 }
 
 export interface PushNotificationPayload {

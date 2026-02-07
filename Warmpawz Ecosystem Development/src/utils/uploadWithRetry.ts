@@ -1,4 +1,4 @@
-import { projectId, publicAnonKey } from './supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from './api-config';
 
 /**
  * 📤 FILE UPLOAD WITH RETRY
@@ -128,7 +128,7 @@ async function uploadFile(
     // Set timeout to 60 seconds
     xhr.timeout = 60000;
 
-    xhr.open('POST', `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/upload`);
+    xhr.open('POST', `${getApiBaseUrl()}/upload`);
     xhr.setRequestHeader('Authorization', `Bearer ${publicAnonKey}`);
     xhr.send(formData);
   });

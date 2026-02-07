@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Check, CheckCheck, Trash2, Bell, MessageCircle, Calendar, AlertCircle, RefreshCw } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface NotificationItem {
   notificationId: string;
@@ -32,7 +32,7 @@ export function CustomerNotificationModal({
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchNotifications();
@@ -47,7 +47,7 @@ export function CustomerNotificationModal({
       setLoading(true);
       const cleanPhone = phone.replace(/[^0-9]/g, '');
       const response = await fetch(`${API_BASE}/customer/notifications/${cleanPhone}?limit=50`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {
@@ -69,7 +69,7 @@ export function CustomerNotificationModal({
       await fetch(`${API_BASE}/notifications/mark-read`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ notificationId })
@@ -94,7 +94,7 @@ export function CustomerNotificationModal({
       await fetch(`${API_BASE}/notifications/mark-all-read`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ phone: cleanPhone })
@@ -115,7 +115,7 @@ export function CustomerNotificationModal({
       await fetch(`${API_BASE}/notifications/${notificationId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ phone: cleanPhone })

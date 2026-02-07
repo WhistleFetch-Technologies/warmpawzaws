@@ -11,9 +11,9 @@ import {
   Shield, Users, Key, Plus, Edit, Trash2, Save, X, 
   Check, AlertCircle, ArrowLeft, Search
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 interface Role {
   id: string;
@@ -69,7 +69,7 @@ export function RBACManagement({ onBack }: RBACManagementProps) {
     try {
       // Load roles
       const rolesRes = await fetch(`${API_BASE}/admin/rbac/roles`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       if (rolesRes.ok) {
         const rolesData = await rolesRes.json();
@@ -79,7 +79,7 @@ export function RBACManagement({ onBack }: RBACManagementProps) {
 
       // Load permissions
       const permsRes = await fetch(`${API_BASE}/admin/rbac/permissions`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       if (permsRes.ok) {
         const permsData = await permsRes.json();
@@ -94,7 +94,7 @@ export function RBACManagement({ onBack }: RBACManagementProps) {
 
       // Load admin users
       const usersRes = await fetch(`${API_BASE}/admin/rbac/users`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       if (usersRes.ok) {
         const usersData = await usersRes.json();
@@ -130,7 +130,7 @@ export function RBACManagement({ onBack }: RBACManagementProps) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           name: roleName,
@@ -180,7 +180,7 @@ export function RBACManagement({ onBack }: RBACManagementProps) {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           name: roleName,
@@ -212,7 +212,7 @@ export function RBACManagement({ onBack }: RBACManagementProps) {
     try {
       const response = await fetch(`${API_BASE}/admin/rbac/roles/${roleId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {

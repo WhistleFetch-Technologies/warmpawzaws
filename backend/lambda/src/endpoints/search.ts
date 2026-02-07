@@ -18,8 +18,11 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // Import OpenSearch client with fallback handling
 let openSearchClient: any = null;
@@ -153,6 +156,7 @@ class UniversalSearchHandler extends BaseHandler {
 
   /**
    * Search using SQL (fallback method)
+   * ✅ LIVE STATUS: Only returns vendors that meet live eligibility criteria
    */
   private async searchWithSQL(
     searchQuery: string,
@@ -161,6 +165,8 @@ class UniversalSearchHandler extends BaseHandler {
     limit: number
   ): Promise<HandlerResponse> {
     // ✅ SQL: Search vendors and services
+    // ✅ LIVE STATUS FILTER: Only show vendors that are eligible for listing
+    // Criteria: At least 1 enabled service, has schedule, has location (lat/lng)
     let vendorsQuery = `
       SELECT v.*, 
              (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as completed_bookings,
@@ -168,6 +174,18 @@ class UniversalSearchHandler extends BaseHandler {
       FROM vendors v
       WHERE v.is_active = true 
         AND v.status = 'approved'
+        AND v.latitude IS NOT NULL 
+        AND v.longitude IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM vendor_services vs 
+          WHERE vs.vendor_id = v.id 
+            AND vs.is_enabled = true 
+            AND vs.publish_status = 'published'
+        )
+        AND EXISTS (
+          SELECT 1 FROM vendor_availability_v2 va 
+          WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
+        )
     `;
 
     const params: any[] = [];
@@ -202,6 +220,7 @@ class UniversalSearchHandler extends BaseHandler {
     const { rows: vendors } = await query(vendorsQuery, params);
 
     // ✅ SQL: Search services
+    // ✅ LIVE STATUS FILTER: Only show services from live-eligible vendors
     let servicesQuery = `
       SELECT vs.*, v.business_name, v.owner_name, v.city, v.state
       FROM vendor_services vs
@@ -210,6 +229,12 @@ class UniversalSearchHandler extends BaseHandler {
         AND vs.is_enabled = true
         AND v.is_active = true
         AND v.status = 'approved'
+        AND v.latitude IS NOT NULL 
+        AND v.longitude IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM vendor_availability_v2 va 
+          WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
+        )
     `;
 
     const serviceParams: any[] = [];
@@ -217,8 +242,7 @@ class UniversalSearchHandler extends BaseHandler {
 
     if (searchQuery) {
       servicesQuery += ` AND (
-        vs.service_name ILIKE $${serviceParamIndex} OR
-        vs.description ILIKE $${serviceParamIndex}
+        vs.service_name ILIKE $${serviceParamIndex}
       )`;
       serviceParams.push(`%${searchQuery}%`);
       serviceParamIndex++;
@@ -250,7 +274,7 @@ class UniversalSearchHandler extends BaseHandler {
       services: services.map(s => ({
         id: s.id,
         serviceName: s.service_name,
-        description: s.description,
+        description: s.service_description || s.description_text || s.service_name,
         price: s.price,
         vendorId: s.vendor_id,
         vendorName: s.business_name,
@@ -287,14 +311,14 @@ function createApiGatewayEvent(req: any): any {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'search-handler',
     functionVersion: '$LATEST',
   };

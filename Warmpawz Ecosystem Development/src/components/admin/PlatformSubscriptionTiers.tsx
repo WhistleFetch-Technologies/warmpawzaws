@@ -4,7 +4,7 @@ import {
   Plus, Edit2, Trash2, Save, X, DollarSign, Users, Heart,
   TrendingUp, Shield, Star, Percent, Calendar, Check, AlertCircle
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface SubscriptionTier {
@@ -63,8 +63,8 @@ export function PlatformSubscriptionTiers() {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/subscription-tiers`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/admin/subscription-tiers`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -82,8 +82,8 @@ export function PlatformSubscriptionTiers() {
   const loadAnalytics = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/subscription-tiers/analytics`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/admin/subscription-tiers/analytics`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -98,15 +98,15 @@ export function PlatformSubscriptionTiers() {
   const handleCreateOrUpdate = async () => {
     try {
       const url = editingTier
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/subscription-tiers/${editingTier.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/subscription-tiers`;
+        ? `${getApiBaseUrl()}/admin/subscription-tiers/${editingTier.id}`
+        : `${getApiBaseUrl()}/admin/subscription-tiers`;
 
       const method = editingTier ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
         method,
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(formData)
@@ -151,10 +151,10 @@ export function PlatformSubscriptionTiers() {
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/subscription-tiers/${tierId}`,
+        `${getApiBaseUrl()}/admin/subscription-tiers/${tierId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

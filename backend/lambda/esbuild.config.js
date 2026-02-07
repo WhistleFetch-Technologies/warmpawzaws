@@ -26,13 +26,19 @@ esbuild.build({
   outfile: 'dist/handler.js',
   
   // External dependencies (AWS SDK, native modules)
-  // These are provided by Lambda runtime or bundled separately
+  // These are provided by Lambda runtime or must be excluded due to native bindings
   external: [
-    '@aws-sdk/*',
-    'aws-lambda',
-    'pg-native', // Native PostgreSQL module
+    '@aws-sdk/*',     // Provided by Lambda runtime
+    'aws-lambda',     // Provided by Lambda runtime
+    'pg-native',      // Native PostgreSQL module (we use pure JS pg instead)
     '@opensearch-project/opensearch',
     '@opensearch-project/opensearch/aws',
+    'firebase-admin', // Not used in Lambda, exclude to reduce bundle size
+    // ✅ FIX: These MUST be bundled for Lambda to work:
+    // - 'pg' - PostgreSQL driver (removed from external)
+    // - 'jose' - JWT handling (removed from external)
+    // - 'zod' - Schema validation (removed from external)
+    // - 'hono' - HTTP framework (already bundled)
   ],
   
   // Exclude old non-enhanced handlers from bundle

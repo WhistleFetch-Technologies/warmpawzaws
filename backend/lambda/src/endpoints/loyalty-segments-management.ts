@@ -6,8 +6,11 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update, deleteRecord } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // LOYALTY SEGMENTS MANAGEMENT
@@ -354,7 +357,7 @@ function createLambdaContext(): any {
   return {
     functionName: 'loyalty-segments-management',
     functionVersion: '$LATEST',
-    awsRequestId: crypto.randomUUID(),
+    awsRequestId: randomUUID(),
   };
 }
 

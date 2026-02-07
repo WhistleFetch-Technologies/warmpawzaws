@@ -17,8 +17,11 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // CUSTOMER HANDLERS
@@ -104,6 +107,62 @@ class GetCustomerPetsHandler extends BaseHandler {
   }
 }
 
+class CreateCustomerHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const body = this.parseBody(context.event);
+
+    // Validate required fields
+    if (!body.phone && !body.email) {
+      return this.error('Phone or email is required', 400);
+    }
+
+    try {
+      // Check if customer already exists
+      if (body.phone) {
+        const existing = await select('customers', { phone: body.phone });
+        if (existing.length > 0) {
+          return this.success({ 
+            customer: existing[0], 
+            message: 'Customer already exists' 
+          });
+        }
+      }
+
+      // ✅ SQL: Create customer
+      const customerData: any = {
+        phone: body.phone,
+        email: body.email,
+        full_name: body.name || body.fullName,
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+
+      // Add optional fields
+      if (body.address) customerData.address = body.address;
+      if (body.city) customerData.city = body.city;
+      if (body.state) customerData.state = body.state;
+      if (body.pincode) customerData.pincode = body.pincode;
+
+      const customers = await insert('customers', customerData);
+
+      return this.success({ customer: customers[0] }, 201);
+    } catch (error: any) {
+      console.error('Error creating customer:', error);
+      // Handle duplicate phone error
+      if (error.message?.includes('duplicate') || error.code === '23505') {
+        const existing = await select('customers', { phone: body.phone });
+        if (existing.length > 0) {
+          return this.success({ 
+            customer: existing[0], 
+            message: 'Customer already exists' 
+          });
+        }
+      }
+      return this.error(error.message || 'Failed to create customer', 500);
+    }
+  }
+}
+
 class AddPetHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const customerId = context.event.pathParameters?.customerId;
@@ -137,9 +196,25 @@ class AddPetHandler extends BaseHandler {
 export function registerCustomerEndpoints(app: Hono) {
   const getHandler = new GetCustomerHandler();
   const getByPhoneHandler = new GetCustomerByPhoneHandler();
+  const createHandler = new CreateCustomerHandler();
   const updateHandler = new UpdateCustomerHandler();
   const getPetsHandler = new GetCustomerPetsHandler();
   const addPetHandler = new AddPetHandler();
+
+  // POST /customers - Create new customer
+  app.post('/customers', async (c) => {
+    try {
+      const body = await c.req.json();
+      const event = createApiGatewayEvent(c.req);
+      event.body = JSON.stringify(body);
+      const context = createLambdaContext();
+      const result = await createHandler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      console.error('Error in POST /customers:', error);
+      return c.json({ error: error.message || 'Failed to create customer' }, 500);
+    }
+  });
 
   app.get('/customer/:customerId', async (c) => {
     const event = createApiGatewayEvent(c.req);
@@ -191,14 +266,14 @@ function createApiGatewayEvent(req: any): any {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'customer-handler',
     functionVersion: '$LATEST',
   };

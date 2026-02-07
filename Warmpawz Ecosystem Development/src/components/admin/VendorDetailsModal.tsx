@@ -1,6 +1,6 @@
 import { X, MapPin, Star, TrendingUp, ShoppingBag, Package, Shield } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface VendorDetails {
   id: string;
@@ -63,10 +63,10 @@ export function VendorDetailsModal({ isOpen, onClose, vendorId }: VendorDetailsM
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/${vendorId}/details`,
+        `${getApiBaseUrl()}/admin/vendors/${vendorId}/details`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

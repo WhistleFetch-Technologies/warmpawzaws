@@ -4,7 +4,7 @@ import {
   Bone, Heart, Pill, Users, TrendingUp, ChevronRight 
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface Problem {
   problemId: string;
@@ -101,6 +101,29 @@ const SERVICE_TYPE_CONFIG = {
   }
 };
 
+/**
+ * Fallback problem grid data when API returns empty or fails.
+ * Ensures "What's Your Pet's Need?" always shows content (matches original full UI).
+ */
+const FALLBACK_PROBLEMS: Problem[] = [
+  { problemId: 'vaccination', title: 'Vaccination', description: 'Vaccination & preventive care', icon: 'pill', category: 'veterinary', vendorTypes: ['veterinary'] },
+  { problemId: 'general', title: 'General Checkup', description: 'General health checkup', icon: 'stethoscope', category: 'veterinary', vendorTypes: ['veterinary'] },
+  { problemId: 'dermatology', title: 'Skin Care', description: 'Skin & coat issues', icon: 'stethoscope', category: 'veterinary', vendorTypes: ['veterinary'] },
+  { problemId: 'full_grooming', title: 'Full Grooming', description: 'Bath, trim & styling', icon: 'scissors', category: 'grooming', vendorTypes: ['grooming'] },
+  { problemId: 'bath_only', title: 'Bath & Brush', description: 'Bath and brush only', icon: 'scissors', category: 'grooming', vendorTypes: ['grooming'] },
+  { problemId: 'nail_care', title: 'Nail Care', description: 'Nail trimming & care', icon: 'scissors', category: 'grooming', vendorTypes: ['grooming'] },
+  { problemId: 'basic_obedience', title: 'Basic Obedience', description: 'Basic training', icon: 'graduation-cap', category: 'training', vendorTypes: ['training'] },
+  { problemId: 'potty_training', title: 'Potty Training', description: 'House training', icon: 'graduation-cap', category: 'training', vendorTypes: ['training'] },
+  { problemId: 'daily_walk', title: 'Daily Walk', description: 'Regular dog walking', icon: 'home', category: 'walking', vendorTypes: ['walking'] },
+  { problemId: 'puppy_walk', title: 'Puppy Walking', description: 'Puppy walks', icon: 'bone', category: 'walking', vendorTypes: ['walking'] },
+  { problemId: 'diet_plan', title: 'Diet Planning', description: 'Nutrition & diet', icon: 'bone', category: 'nutrition', vendorTypes: ['nutrition'] },
+  { problemId: 'weight_management', title: 'Weight Management', description: 'Weight & diet support', icon: 'bone', category: 'nutrition', vendorTypes: ['nutrition'] },
+  { problemId: 'daycare', title: 'Daycare', description: 'Daily daycare', icon: 'home', category: 'boarding', vendorTypes: ['boarding'] },
+  { problemId: 'short_stay', title: 'Weekend Stay', description: 'Short boarding', icon: 'home', category: 'boarding', vendorTypes: ['boarding'] },
+  { problemId: 'anxiety', title: 'Anxiety & Stress', description: 'Behavior support', icon: 'heart', category: 'behavioral', vendorTypes: ['behavioral'] },
+  { problemId: 'barking', title: 'Barking Issues', description: 'Barking & noise', icon: 'heart', category: 'behavioral', vendorTypes: ['behavioral'] },
+];
+
 export function ProblemGridNavigation({ 
   onProblemSelect, 
   vendorType,
@@ -123,19 +146,24 @@ export function ProblemGridNavigation({
     setLoading(true);
     try {
       const url = vendorType
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/problem-grid/${vendorType}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/problem-grid/all`;
+        ? `${getApiBaseUrl()}/problem-grid/${vendorType}`
+        : `${getApiBaseUrl()}/problem-grid/all`;
 
       const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {
         const data = await response.json();
-        setProblems(data.data?.problems || data.problems || []);
+        const apiList = data.data?.problems || data.problems || [];
+        // Use API data when available; otherwise fallback so "What's Your Pet's Need?" always has content
+        setProblems(Array.isArray(apiList) && apiList.length > 0 ? apiList : FALLBACK_PROBLEMS);
+      } else {
+        setProblems(FALLBACK_PROBLEMS);
       }
     } catch (error) {
       console.error('Error fetching problems:', error);
+      setProblems(FALLBACK_PROBLEMS);
     } finally {
       setLoading(false);
     }
@@ -144,9 +172,9 @@ export function ProblemGridNavigation({
   const fetchTrendingProblems = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/trending-problems`,
+        `${getApiBaseUrl()}/customer/trending-problems`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -168,11 +196,11 @@ export function ProblemGridNavigation({
   const trackSearch = async (query: string) => {
     try {
       await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/search-history`,
+        `${getApiBaseUrl()}/customer/search-history`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

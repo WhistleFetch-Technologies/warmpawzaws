@@ -3,7 +3,7 @@ import { Button } from '../ui/button';
 import { ChevronLeft, Plus, Camera, X } from 'lucide-react';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
 import logoImage from 'figma:asset/da6636b92da744b3db8eed5288ca6da9ab889afe.png';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface Pet {
   id: string;
@@ -161,12 +161,12 @@ export function CustomerPetProfile({ session, prefillData, onComplete, onBack }:
     try {
       // Save pets data to backend
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/pets`,
+        `${getApiBaseUrl()}/customer/pets`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({
             phone: session.phone,

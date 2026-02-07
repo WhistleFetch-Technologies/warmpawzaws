@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { X, Star, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-// Removed Supabase imports - using apiClient instead
+// Uses apiClient (API Gateway)
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { awardReviewPoints } from '@/lib/loyalty-helper'; // ✅ NEW

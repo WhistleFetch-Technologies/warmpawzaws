@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { 
   Phone, 
   Video, 
@@ -13,7 +14,8 @@ import {
   Square
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
+import { getVendorRoleId, hasVendorRole } from '@/lib/vendor-utils';
 
 interface BookingCardProps {
   booking: any;
@@ -23,6 +25,12 @@ interface BookingCardProps {
   onEndSession: (booking: any) => void;
   completingBooking: boolean;
   onRefresh: () => void;
+  /** Whether chat capability is enabled for this vendor's role (from role config) */
+  chatEnabled?: boolean;
+  /** Optional callback to open chat modal */
+  onOpenChat?: (booking: any) => void;
+  /** Optional callback to open prescription modal */
+  onOpenPrescription?: (booking: any) => void;
 }
 
 export function VendorBookingCard({ 
@@ -32,14 +40,17 @@ export function VendorBookingCard({
   onComplete, 
   onEndSession,
   completingBooking,
-  onRefresh
+  onRefresh,
+  chatEnabled = true, // Default to true for backwards compatibility
+  onOpenChat,
+  onOpenPrescription,
 }: BookingCardProps) {
-  
-  const isVet = vendorData?.roleId === 'veterinarian' || vendorData?.roleId === 'vet';
+  const router = useRouter();
+  const isVet = hasVendorRole(vendorData, ['veterinarian', 'vet']);
   const isDogWalking = booking.serviceName?.toLowerCase().includes('walk') || 
                       booking.serviceName?.toLowerCase().includes('walking');
   
-  // ✅ Handle Open Chat
+  // ✅ Handle Open Chat - Use parent callback or fallback to alert
   const handleOpenChat = async () => {
     console.log('💬 Opening chat for booking:', booking.bookingId || booking.id);
     
@@ -52,59 +63,25 @@ export function VendorBookingCard({
       console.error('Error marking messages as read:', error);
     }
     
-    // TODO: Navigate to VendorChatInterface
-    // For now, show alert
-    alert(`Chat with ${booking.customerName} about ${booking.petName}'s booking.\n\nChat interface will open here.`);
-    
-    // Reload bookings to clear unread badges
-    onRefresh();
+    // Use parent callback if provided (opens VendorChatModal)
+    if (onOpenChat) {
+      onOpenChat(booking);
+    } else {
+      // Fallback - should not happen in normal usage
+      alert(`Chat with ${booking.customerName} about ${booking.petName}'s booking.\n\nChat interface will open here.`);
+      onRefresh();
+    }
   };
   
-  // ✅ Handle Open Prescription
-  const handleOpenPrescription = async () => {
+  // ✅ Handle Open Prescription - Use parent callback to open modal
+  const handleOpenPrescription = () => {
     console.log('💊 Opening prescription for booking:', booking.bookingId || booking.id);
     
-    const bookingId = booking.bookingId || booking.id;
-    
-    if (booking.hasPrescription) {
-      // View existing prescription
-      try {
-        const data = await apiClient.get(`/vendor/prescription/${bookingId}`) as any;
-        
-        if (data && data.prescription) {
-          alert(`📋 Prescription Details\n\n${data.prescription.notes}\n\nUploaded: ${new Date(data.prescription.uploadedAt).toLocaleString()}`);
-        } else {
-          alert('❌ Failed to load prescription');
-        }
-      } catch (error) {
-        console.error('Error fetching prescription:', error);
-        alert('❌ Error loading prescription');
-      }
+    if (onOpenPrescription) {
+      onOpenPrescription(booking);
     } else {
-      // Upload new prescription
-      const notes = prompt('Enter prescription notes for ' + booking.petName + ':');
-      if (!notes) return;
-      
-      try {
-        const payload = {
-          bookingId,
-          vendorId,
-          prescriptionNotes: notes,
-          prescriptionFile: null // TODO: Add file upload
-        };
-        
-        const data = await apiClient.post('/vendor/prescription/upload', payload) as any;
-        
-        if (data && data.success) {
-          alert('✅ Prescription uploaded successfully!');
-          onRefresh(); // Reload to show prescription badge
-        } else {
-          alert('❌ Failed to upload prescription: ' + (data?.error || 'Unknown error'));
-        }
-      } catch (error) {
-        console.error('Error uploading prescription:', error);
-        alert('❌ Error uploading prescription');
-      }
+      // Fallback alert if no callback provided
+      alert('Prescription modal not available. Please try from the full booking view.');
     }
   };
   
@@ -200,7 +177,7 @@ export function VendorBookingCard({
         {/* Call Button - TELE ONLY */}
         {booking.communicationType === 'video' && booking.serviceType === 'tele' && booking.status !== 'completed' && (
           <button
-            onClick={() => alert('Video call interface would open here.\n\nIntegrate with your video call provider (Jitsi, Agora, Twilio, etc.)')}
+            onClick={() => router.push(`/video/${booking.bookingId || booking.id}`)}
             className="flex-1 min-w-[100px] py-2 px-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1"
           >
             <Video className="w-3.5 h-3.5" />
@@ -208,8 +185,8 @@ export function VendorBookingCard({
           </button>
         )}
         
-        {/* Chat Button - ALL BOOKINGS */}
-        {booking.chatEnabled !== false && (
+        {/* Chat Button - Only show if chat capability is enabled for this role */}
+        {chatEnabled && booking.chatEnabled !== false && (
           <button
             onClick={handleOpenChat}
             className="relative flex-1 min-w-[100px] py-2 px-3 bg-[#FF8C42] hover:bg-[#FF7829] text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1"

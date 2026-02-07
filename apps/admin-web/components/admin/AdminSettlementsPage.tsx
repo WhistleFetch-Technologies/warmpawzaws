@@ -98,7 +98,7 @@ export function AdminSettlementsPage() {
     <div className="p-0">
       <div className="flex items-center justify-between mb-0">
         <h1 className="text-2xl font-bold text-gray-900">Settlements & Payouts</h1>
-        <div className="flex gap-0">
+        <div className="flex gap-3">
           <button
             onClick={handleTriggerDailySettlement}
             disabled={processing}
@@ -120,7 +120,7 @@ export function AdminSettlementsPage() {
       {stats && (
         <div className="grid grid-cols-4 gap-4 mb-0">
           <div className="bg-white rounded-xl p-4 shadow-sm">
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">⏳</div>
               <div>
                 <p className="text-sm text-gray-500">Pending</p>
@@ -130,7 +130,7 @@ export function AdminSettlementsPage() {
             </div>
           </div>
           <div className="bg-white rounded-xl p-4 shadow-sm">
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">⚙️</div>
               <div>
                 <p className="text-sm text-gray-500">Processing</p>
@@ -139,7 +139,7 @@ export function AdminSettlementsPage() {
             </div>
           </div>
           <div className="bg-white rounded-xl p-4 shadow-sm">
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">✅</div>
               <div>
                 <p className="text-sm text-gray-500">Completed</p>
@@ -149,7 +149,7 @@ export function AdminSettlementsPage() {
             </div>
           </div>
           <div className="bg-white rounded-xl p-4 shadow-sm">
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">❌</div>
               <div>
                 <p className="text-sm text-gray-500">Failed</p>

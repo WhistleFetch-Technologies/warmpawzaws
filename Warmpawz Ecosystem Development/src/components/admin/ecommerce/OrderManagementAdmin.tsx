@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ShoppingCart, Search, Filter, ChevronRight, ArrowLeft } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { Input } from '../../ui/input';
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
@@ -15,7 +15,7 @@ export function OrderManagementAdmin() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchOrders();
@@ -38,7 +38,7 @@ export function OrderManagementAdmin() {
         `${API_BASE}/ecommerce/orders`, // Using the actual orders endpoint
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'apikey': publicAnonKey
           }
         }
@@ -65,7 +65,7 @@ export function OrderManagementAdmin() {
         `${API_BASE}/ecommerce/order/${id}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'apikey': publicAnonKey
           }
         }

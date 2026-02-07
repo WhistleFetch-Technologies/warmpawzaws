@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Star, MapPin, Phone, Mail, Clock, Award, CheckCircle2, Package, TrendingUp } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Star, MapPin, Phone, Mail, Clock, Award, CheckCircle2, Package, TrendingUp, Sparkles } from 'lucide-react';
+import { AmenitiesSection } from './shared/AmenitiesSection';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -22,11 +23,7 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
   const [products, setProducts] = useState<any[]>([]);
   const [reviews, setReviews] = useState<any[]>([]);
   const [rating, setRating] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'products' | 'reviews'>('overview');
-
-  useEffect(() => {
-    loadVendorData();
-  }, [vendorId]);
+  const [activeTab, setActiveTab] = useState<'overview' | 'amenities' | 'products' | 'reviews'>('overview');
 
   const loadVendorData = async () => {
     try {
@@ -58,9 +55,13 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
     }
   };
 
+  useEffect(() => {
+    loadVendorData();
+  }, [vendorId]);
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center max-w-md mx-auto">
+      <div className="flex items-center justify-center min-h-[200px]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
@@ -68,7 +69,7 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
 
   if (!vendor) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center max-w-md mx-auto">
+      <div className="flex items-center justify-center min-h-[200px]">
         <Card className="p-8 text-center">
           <p className="text-gray-600 mb-4">Vendor information not available</p>
           <Button onClick={onBack} variant="outline">Go Back</Button>
@@ -81,27 +82,13 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
   const vendorImage = vendor.vendorProfileImage || vendor.image;
   const averageRating = rating?.averageRating || vendor.rating || 4.5;
   const totalReviews = rating?.totalReviews || vendor.reviewCount || vendor.totalReviews || 0;
-
+  
   return (
-    <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
-      {/* Header */}
-      <div className="bg-white sticky top-0 z-50 border-b border-gray-200">
-        <div className="flex items-center gap-3 px-4 py-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onBack}
-            className="rounded-full"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold text-gray-900">Vendor Profile</h1>
-          </div>
-        </div>
-
-        {/* Vendor Info Header */}
-        <div className="px-4 pb-4">
+    <div>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      {/* Vendor Info Header */}
+      <div className="px-4 pb-4 bg-white">
           <div className="flex gap-4">
             <div className="w-20 h-20 bg-gradient-to-br from-[#FF8C42] to-[#FF6B9D] rounded-xl flex items-center justify-center text-3xl flex-shrink-0 overflow-hidden">
               {vendorImage ? (
@@ -167,6 +154,16 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
             Overview
           </button>
           <button
+            onClick={() => setActiveTab('amenities')}
+            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'amenities'
+                ? 'border-[#FF8C42] text-[#FF8C42]'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Amenities
+          </button>
+          <button
             onClick={() => setActiveTab('products')}
             className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
               activeTab === 'products'
@@ -187,7 +184,6 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
             Reviews ({totalReviews})
           </button>
         </div>
-      </div>
 
       {/* Content */}
       <div className="p-4 space-y-4">
@@ -242,6 +238,20 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
           </>
         )}
 
+        {activeTab === 'amenities' && (
+          <Card className="p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <Sparkles className="w-5 h-5 text-[#FF8C42]" />
+              <h3 className="font-semibold text-gray-900">Facilities & Amenities</h3>
+            </div>
+            <AmenitiesSection
+              amenities={vendor?.amenities || []}
+              customAmenities={vendor?.customAmenities || []}
+              showCategories={true}
+            />
+          </Card>
+        )}
+
         {activeTab === 'products' && (
           <div className="space-y-3">
             {products.length === 0 ? (
@@ -272,7 +282,7 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
                         {product.rating && (
                           <div className="flex items-center gap-1">
                             <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-                            <span className="text-sm text-gray-600">{product.rating.toFixed(1)}</span>
+                            <span className="text-sm text-gray-600">{Number(product.rating || 0).toFixed(1)}</span>
                           </div>
                         )}
                       </div>

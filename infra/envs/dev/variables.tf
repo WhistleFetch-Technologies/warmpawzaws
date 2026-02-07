@@ -37,6 +37,13 @@ variable "razorpay_key_secret" {
   sensitive   = true
 }
 
+variable "razorpay_x_account_number" {
+  description = "RazorpayX Current Account number (payout source) for vendor payouts"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "google_maps_api_key" {
   description = "Google Maps API Key"
   type        = string

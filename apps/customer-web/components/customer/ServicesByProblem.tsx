@@ -44,20 +44,8 @@ export function ServicesByProblem({
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
-    // Get user location
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-        },
-        (error) => {
-          console.log('Location access denied:', error);
-        }
-      );
-    }
+    const { getCurrentPositionSafe } = require('@/lib/geolocation-utils');
+    getCurrentPositionSafe((coords: { lat: number; lng: number }) => setUserLocation(coords));
   }, []);
 
   useEffect(() => {
@@ -202,7 +190,7 @@ export function ServicesByProblem({
                     {service.distance !== undefined && (
                       <span className="flex items-center gap-1">
                         <MapPin className="w-4 h-4" />
-                        {service.distance.toFixed(1)} km
+                        {Number(service.distance || 0).toFixed(1)} km
                       </span>
                     )}
 

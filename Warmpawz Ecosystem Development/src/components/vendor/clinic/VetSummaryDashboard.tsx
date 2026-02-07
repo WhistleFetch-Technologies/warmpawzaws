@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../../ui/button';
 import { Calendar, TrendingUp, Users, FileText, Clock, Activity, DollarSign, AlertCircle, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface VetSummaryDashboardProps {
   vendorId: string;
@@ -60,8 +60,8 @@ export function VetSummaryDashboard({ vendorId, vendorName }: VetSummaryDashboar
 
       // Load bookings for analysis
       const bookingsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/bookings`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/bookings`,
+        { headers: getAuthHeaders() }
       );
 
       if (bookingsResponse.ok) {

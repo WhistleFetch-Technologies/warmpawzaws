@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { Clock, Calendar, Ambulance, Home, Pill, Activity, Save, ArrowLeft } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 

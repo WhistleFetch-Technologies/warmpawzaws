@@ -3,7 +3,7 @@ import { Search, SlidersHorizontal, ShoppingCart, ArrowLeft, TrendingUp, Star, H
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Input } from '../ui/input';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { useCart } from '../../context/CartContext';
 
 interface ShopDashboardProps {

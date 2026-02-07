@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, CreditCard, Edit2 } from 'lucide-react';
+import { ArrowLeft, MapPin, CreditCard, Edit2, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
@@ -21,6 +21,7 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
   const [addresses, setAddresses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online'>('online');
 
   useEffect(() => {
     loadAddresses();
@@ -28,7 +29,7 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
 
   const loadAddresses = async () => {
     try {
-      const data = await apiClient.get<{ addresses?: any[] }>(`/customer/${phone}/addresses`);
+      const data = await apiClient.get<{ addresses?: any[] }>(`/customer/addresses?phone=${encodeURIComponent(phone)}`);
       const addressList = data.addresses || [];
       setAddresses(addressList);
       
@@ -54,9 +55,26 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
                        primaryTax?.taxType === 'service_tax' ? 'Service Tax' :
                        primaryTax?.taxType || 'Tax';
 
-  const handleAddressChange = () => {
-    // Navigate to address book - in real implementation, this would open AddressBookPage
-    toast.info('Address book coming soon - using default address');
+  const handleAddressChange = async () => {
+    try {
+      // Reload addresses to get latest
+      await loadAddresses();
+      
+      // Show address selection - in a real implementation, this would open a modal
+      // For now, we'll just reload and let user see updated addresses
+      if (addresses.length > 1) {
+        // Cycle through addresses or show selection
+        const currentIndex = addresses.findIndex(a => a.id === selectedAddress?.id);
+        const nextIndex = (currentIndex + 1) % addresses.length;
+        setSelectedAddress(addresses[nextIndex]);
+        toast.success('Address changed');
+      } else {
+        toast.info('Add more addresses in your account settings');
+      }
+    } catch (error) {
+      console.error('Error changing address:', error);
+      toast.error('Failed to load addresses');
+    }
   };
 
   const handlePayment = async () => {
@@ -73,7 +91,39 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
     try {
       setProcessing(true);
 
-      // Mock Razorpay payment flow
+      // Handle COD (Cash on Delivery) - direct order creation
+      if (paymentMethod === 'cod') {
+        try {
+          const orderData = await apiClient.post<any>('/customer/orders', {
+            items: cart.map(item => ({
+              productId: item.id,
+              quantity: item.quantity,
+              price: item.price,
+            })),
+            subtotal,
+            taxAmount,
+            taxBreakdown: taxResult.breakdown,
+            taxByType: taxResult.byType,
+            total,
+            address: selectedAddress,
+            shippingAddress: selectedAddress, // PHASE 1.3 FIX: Support both naming conventions
+            paymentMethod: 'cod',
+            customerPhone: phone, // PHASE 1.3 FIX: Include customer phone
+          });
+
+          clearCart();
+          toast.success('Order placed successfully! Pay on delivery.');
+          onSuccess(orderData.orderId || `order_${Date.now()}`);
+        } catch (error: any) {
+          console.error('Order creation error:', error);
+          toast.error('Order creation failed. Please try again.');
+        } finally {
+          setProcessing(false);
+        }
+        return;
+      }
+
+      // Online payment (Razorpay) flow
       const paymentOptions = {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY || 'rzp_test_key',
         amount: total * 100, // Convert to paise
@@ -95,8 +145,10 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
               taxByType: taxResult.byType,
               total,
               address: selectedAddress,
+              shippingAddress: selectedAddress, // PHASE 1.3 FIX: Support both naming conventions
               paymentId: response.razorpay_payment_id,
               paymentMethod: 'razorpay',
+              customerPhone: phone, // PHASE 1.3 FIX: Include customer phone
             });
 
             clearCart();
@@ -178,17 +230,17 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="max-w-md mx-auto">
         {/* Header */}
-        <div className="bg-white sticky top-0 z-10 border-b border-gray-200 px-4 py-4">
+        <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-10 px-4 py-4 rounded-b-2xl shadow-md">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="icon"
               onClick={onBack}
-              className="rounded-full"
+              className="rounded-full text-white hover:bg-white/20"
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <h1 className="text-xl font-semibold">Checkout</h1>
+            <h1 className="text-xl font-semibold text-white">Checkout</h1>
           </div>
         </div>
 
@@ -265,6 +317,64 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
             </div>
           </div>
 
+          {/* Payment Method Selection */}
+          <div className="bg-white rounded-xl p-4 shadow-sm">
+            <h2 className="font-semibold text-gray-900 mb-4">Payment Method</h2>
+            <div className="space-y-3">
+              <button
+                onClick={() => setPaymentMethod('online')}
+                className={`w-full p-4 rounded-xl border-2 transition-all ${
+                  paymentMethod === 'online'
+                    ? 'border-[#FF8C42] bg-orange-50'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                    paymentMethod === 'online' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    <CreditCard className="w-6 h-6" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <h3 className="font-semibold text-gray-900">Online Payment</h3>
+                    <p className="text-sm text-gray-500">Pay securely via Razorpay</p>
+                  </div>
+                  {paymentMethod === 'online' && (
+                    <div className="w-6 h-6 rounded-full bg-[#FF8C42] flex items-center justify-center">
+                      <div className="w-3 h-3 rounded-full bg-white"></div>
+                    </div>
+                  )}
+                </div>
+              </button>
+
+              <button
+                onClick={() => setPaymentMethod('cod')}
+                className={`w-full p-4 rounded-xl border-2 transition-all ${
+                  paymentMethod === 'cod'
+                    ? 'border-[#FF8C42] bg-orange-50'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                    paymentMethod === 'cod' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    <Wallet className="w-6 h-6" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <h3 className="font-semibold text-gray-900">Cash on Delivery (COD)</h3>
+                    <p className="text-sm text-gray-500">Pay when you receive your order</p>
+                  </div>
+                  {paymentMethod === 'cod' && (
+                    <div className="w-6 h-6 rounded-full bg-[#FF8C42] flex items-center justify-center">
+                      <div className="w-3 h-3 rounded-full bg-white"></div>
+                    </div>
+                  )}
+                </div>
+              </button>
+            </div>
+          </div>
+
           {/* Payment Button */}
           <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 max-w-md mx-auto shadow-lg">
             <Button
@@ -282,8 +392,17 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
                 </span>
               ) : (
                 <>
-                  <CreditCard className="w-5 h-5 mr-2" />
-                  Pay ₹{total.toFixed(2)}
+                  {paymentMethod === 'cod' ? (
+                    <>
+                      <Wallet className="w-5 h-5 mr-2" />
+                      Place Order (COD) ₹{total.toFixed(2)}
+                    </>
+                  ) : (
+                    <>
+                      <CreditCard className="w-5 h-5 mr-2" />
+                      Pay ₹{total.toFixed(2)}
+                    </>
+                  )}
                 </>
               )}
             </Button>

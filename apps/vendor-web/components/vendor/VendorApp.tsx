@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { VendorRoleSelection } from './VendorRoleSelection';
 import { DynamicVendorOnboardingForm } from './DynamicVendorOnboardingForm';
@@ -18,8 +18,6 @@ interface VendorSession {
   vendor?: any;
   sessionToken?: string;
   verified: boolean;
-  isStaffLogin?: boolean;
-  staff?: any;
 }
 
 interface VendorAppProps {
@@ -37,35 +35,171 @@ type VendorStatus =
   | 'clarification'          
   | 'active';               
 
+/** Compute initial state from session + localStorage so existing vendors never flash "choose role" or loading. */
+function getInitialVendorState(session: VendorSession): { status: VendorStatus; vendorData: any; isLoading: boolean } {
+  if (typeof window === 'undefined') return { status: 'new', vendorData: null, isLoading: true };
+  const sv = session?.vendor;
+  const sessionActive = sv && (
+    sv.onboarding_status === 'ACTIVATED' || sv.onboarding_status === 'APPROVED' ||
+    sv.onboardingStatus === 'ACTIVATED' || sv.onboardingStatus === 'APPROVED' ||
+    sv.isActive === true
+  );
+  if (sessionActive && sv) {
+    return { status: 'active', vendorData: { ...sv, isActive: true, status: 'active' }, isLoading: false };
+  }
+  const storedStatus = localStorage.getItem('vendorApplicationStatus');
+  const storedVendorRaw = localStorage.getItem('vendorData');
+  if (storedStatus === 'APPROVED' || storedStatus === 'ACTIVATED') {
+    try {
+      const v = storedVendorRaw ? JSON.parse(storedVendorRaw) : sv;
+      if (v) return { status: 'active', vendorData: { ...v, isActive: true, status: 'active' }, isLoading: false };
+    } catch (_) {}
+  }
+  if (storedVendorRaw) {
+    try {
+      const v = JSON.parse(storedVendorRaw);
+      const active = v?.isActive === true || v?.onboarding_status === 'ACTIVATED' || v?.onboarding_status === 'APPROVED' || v?.onboardingStatus === 'ACTIVATED' || v?.onboardingStatus === 'APPROVED';
+      if (active) return { status: 'active', vendorData: { ...v, isActive: true, status: 'active' }, isLoading: false };
+    } catch (_) {}
+  }
+  return { status: 'new', vendorData: null, isLoading: true };
+}
+
 export function VendorApp({ initialSession }: VendorAppProps) {
   const router = useRouter();
-  const [session, setSession] = useState<VendorSession>(initialSession);
-  const [status, setStatus] = useState<VendorStatus>('new');
+  const [session] = useState<VendorSession>(initialSession);
+  const initialRef = useRef<{ status: VendorStatus; vendorData: any; isLoading: boolean } | null>(null);
+  if (initialRef.current === null) initialRef.current = getInitialVendorState(initialSession);
+  const initial = initialRef.current;
+  const [status, setStatus] = useState<VendorStatus>(initial.status);
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
-  const [vendorData, setVendorData] = useState<any>(null);
+  const [vendorData, setVendorData] = useState<any>(initial.vendorData);
   const [applicationData, setApplicationData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState<boolean>(initial.isLoading);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [resubmitInitialData, setResubmitInitialData] = useState<any>(null);
 
-  // Load vendor status on mount
+  const hasCheckedStatus = useRef(false);
+  const isCheckingStatus = useRef(false);
+
   useEffect(() => {
+    if (hasCheckedStatus.current || isCheckingStatus.current) return;
+    if (!initial.isLoading) {
+      hasCheckedStatus.current = true;
+      return;
+    }
+    hasCheckedStatus.current = true;
     checkVendorStatus();
-  }, [session]);
+  }, []);
 
   const checkVendorStatus = async () => {
+    if (isCheckingStatus.current) {
+      console.log('⚠️ [VendorApp] Status check already in progress, skipping');
+      return;
+    }
+    isCheckingStatus.current = true;
     setIsLoading(true);
-    
+
     try {
-      // ✅ FIX: Check localStorage first for onboarding status (set by verify-otp)
       const storedStatus = localStorage.getItem('vendorApplicationStatus');
-      console.log('📊 [VendorApp] Stored onboarding status from localStorage:', storedStatus);
-      
-      // If status is APPROVED or ACTIVATED, show dashboard directly (skip approved setup screen)
-      if (storedStatus === 'APPROVED' || storedStatus === 'ACTIVATED') {
-        console.log('✅ [VendorApp] Vendor is approved/activated, showing dashboard directly');
-        setStatus('active'); // Set to 'active' to show dashboard, not 'approved' which shows setup screen
+      const sessionVendor = session.vendor;
+      const sessionVendorActive =
+        sessionVendor &&
+        (sessionVendor.onboarding_status === 'ACTIVATED' ||
+          sessionVendor.onboarding_status === 'APPROVED' ||
+          sessionVendor.onboardingStatus === 'ACTIVATED' ||
+          sessionVendor.onboardingStatus === 'APPROVED' ||
+          sessionVendor.isActive === true);
+      console.log('📊 [VendorApp] Stored status:', storedStatus, 'session vendor active:', !!sessionVendorActive);
+
+      // FAST PATH 1: Session already has active vendor (e.g. from root page localStorage)
+      if (sessionVendorActive) {
+        console.log('✅ [VendorApp] Existing vendor from session – showing dashboard (session FAST PATH)');
+        const v = { ...sessionVendor, isActive: true, status: 'active' };
+        setVendorData(v);
+        setStatus('active');
+        if (!storedStatus || (storedStatus !== 'ACTIVATED' && storedStatus !== 'APPROVED')) {
+          localStorage.setItem('vendorApplicationStatus', sessionVendor.onboarding_status || sessionVendor.onboardingStatus || 'ACTIVATED');
+        }
         setIsLoading(false);
-        // Don't return - continue to set vendorData so dashboard can render
+        isCheckingStatus.current = false;
+        return;
+      }
+
+      // FAST PATH 2: localStorage status is APPROVED or ACTIVATED
+      // This prevents the infinite loading loop by short-circuiting before API calls
+      if (storedStatus === 'APPROVED' || storedStatus === 'ACTIVATED') {
+        console.log('✅ [VendorApp] Vendor is approved/activated, showing dashboard directly (FAST PATH)');
+        
+        // Load vendor data from localStorage for immediate display
+        const storedVendor = localStorage.getItem('vendorData');
+        const storedVendorId = localStorage.getItem('vendorId');
+        
+        if (storedVendor) {
+          try {
+            const vendor = JSON.parse(storedVendor);
+            vendor.isActive = true;
+            vendor.status = 'active';
+            setVendorData(vendor);
+            
+            // ✅ CRITICAL FIX: Fetch profile in background to update vendorId if needed
+            // This ensures we get the correct vendors table ID (not vendor_identity ID)
+            if (storedVendorId) {
+              apiClient.get<any>(`/vendor/${storedVendorId}/profile`)
+                .then((profileResponse) => {
+                  const profileData = profileResponse?.data || profileResponse;
+                  if (profileData?.success && profileData?.vendor) {
+                    const profileVendor = profileData.vendor;
+                    const correctVendorId = profileVendor.id || storedVendorId;
+                    
+                    // ✅ CRITICAL FIX: ALWAYS merge profile data to get roleId and capabilities
+                    // Preserve address and vendorConfiguration from localStorage when profile returns null/undefined
+                    // (on reload, profile API can omit these and overwriting would hide address + flip to solo UI)
+                    const updatedVendor = { 
+                      ...vendor, 
+                      ...profileVendor,
+                      id: correctVendorId,
+                      roleId: profileVendor.role_id ?? profileVendor.roleId ?? vendor.roleId,
+                      role_id: profileVendor.role_id ?? profileVendor.roleId ?? vendor.role_id,
+                      roleName: profileVendor.roleName ?? profileVendor.role_name ?? vendor.roleName ?? vendor.role_name,
+                      role_name: profileVendor.role_name ?? profileVendor.roleName ?? vendor.role_name ?? vendor.roleName,
+                      isActive: true,
+                      status: 'active',
+                      // Preserve from localStorage when profile omits or nulls (prevents reload bug)
+                      address: (profileVendor.address != null && profileVendor.address !== '') ? profileVendor.address : (vendor.address ?? profileVendor.address),
+                      vendorConfiguration: (profileVendor.vendorConfiguration ?? profileVendor.vendor_configuration) ?? (vendor.vendorConfiguration ?? vendor.vendor_configuration),
+                    };
+                    
+                    console.log('✅ [VendorApp] FAST PATH: Merging profile data with roleId:', updatedVendor.roleId || updatedVendor.role_id);
+                    
+                    // Update localStorage
+                    localStorage.setItem('vendorId', correctVendorId);
+                    localStorage.setItem('vendorData', JSON.stringify(updatedVendor));
+                    
+                    // Update roleId in localStorage
+                    const roleId = profileVendor.role_id || profileVendor.roleId;
+                    if (roleId) {
+                      localStorage.setItem('vendorRole', roleId);
+                      console.log('✅ [VendorApp] FAST PATH: Updated vendorRole to', roleId);
+                    }
+                    
+                    // ✅ CRITICAL: Update state to trigger re-render with roleId
+                    setVendorData(updatedVendor);
+                  }
+                })
+                .catch((err) => {
+                  console.warn('⚠️ [VendorApp] FAST PATH: Could not fetch profile for ID update:', err);
+                });
+            }
+          } catch (e) {
+            console.warn('⚠️ [VendorApp] Could not parse stored vendor data');
+          }
+        }
+        
+        setStatus('active');
+        setIsLoading(false);
+        isCheckingStatus.current = false;
+        return; // ✅ FIX: Return early to prevent further API calls
       }
       
       // Fetch onboarding status from API (correct endpoint)
@@ -80,12 +214,27 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         const { identity, application, role } = responseData;
         
         // Map onboarding status to frontend status
-        const onboardingStatus = identity.onboarding_status;
+        let onboardingStatus = identity.onboarding_status;
         console.log('📊 [VendorApp] Onboarding status from API:', onboardingStatus);
         
-        // ✅ FIX: Update localStorage with status from API
+        // ✅ CRITICAL: Check existing status - don't overwrite ACTIVATED/APPROVED with lower status
+        const existingStatus = localStorage.getItem('vendorApplicationStatus');
+        
+        // ✅ CRITICAL FIX: Don't overwrite ACTIVATED/APPROVED with INIT or lower status
         if (onboardingStatus) {
-          localStorage.setItem('vendorApplicationStatus', onboardingStatus);
+          if (existingStatus === 'ACTIVATED' || existingStatus === 'APPROVED') {
+            // Only update if new status is also ACTIVATED/APPROVED (don't downgrade)
+            if (onboardingStatus === 'ACTIVATED' || onboardingStatus === 'APPROVED') {
+              localStorage.setItem('vendorApplicationStatus', onboardingStatus);
+              console.log('✅ [VendorApp] Updated status to', onboardingStatus);
+            } else {
+              console.log('⚠️ [VendorApp] Keeping existing ACTIVATED/APPROVED status, not overwriting with', onboardingStatus);
+            }
+          } else {
+            // No existing status or lower status - update normally
+            localStorage.setItem('vendorApplicationStatus', onboardingStatus);
+            console.log('📊 [VendorApp] Updated status to', onboardingStatus);
+          }
         }
         
         // ✅ FIX: For APPROVED/ACTIVATED vendors, fetch vendor profile to get correct vendor.id
@@ -111,6 +260,11 @@ export function VendorApp({ initialSession }: VendorAppProps) {
               }
               // Merge profile data with identity data
               Object.assign(identity, { vendor_id: vendorId });
+            } else {
+              // Profile returned null vendor - use identity.id (vendors must not call /admin/vendors; 403)
+              console.log('⚠️ [VendorApp] Profile returned null vendor, using identity ID:', identity.id);
+              vendorId = identity.id;
+              vendorRecordExists = false;
             }
           } catch (profileError: any) {
             console.warn('⚠️ [VendorApp] Could not fetch vendor profile, using identity ID:', profileError.message);
@@ -120,20 +274,25 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         }
         
         // Update localStorage with identity and application data
-        // ✅ FIX: Resolve roleId from multiple sources with fallbacks
+        // ✅ FIX GAP 1.1: Simplified and prioritized role ID resolution
+        // PRIORITY: API response is the source of truth, localStorage is ONLY for offline fallback
+        // The backend should always return role from identity.selected_role_id
         const resolvedRoleId = 
-          identity.selected_role_id || // 1. From identity table
-          application?.role_id ||       // 2. From application record
-          role?.id ||                   // 3. From role object
-          localStorage.getItem('vendorRole') || // 4. From localStorage
+          identity.selected_role_id || // 1. PRIMARY: From identity table (backend source of truth)
+          role?.id ||                   // 2. From role object returned by API
+          application?.role_id ||       // 3. From application record
           null;
         
-        console.log('🔍 [VendorApp] Role ID resolution:', {
+        // ✅ ONLY use localStorage as a last resort when API fails (handled in catch block)
+        // Do NOT include localStorage in the primary resolution chain
+        // This prevents stale localStorage data from overriding fresh API data
+        
+        console.log('🔍 [VendorApp] Role ID resolution (simplified):', {
           'identity.selected_role_id': identity.selected_role_id,
-          'application.role_id': application?.role_id,
           'role.id': role?.id,
-          'localStorage.vendorRole': localStorage.getItem('vendorRole'),
-          'resolvedRoleId': resolvedRoleId
+          'application.role_id': application?.role_id,
+          'resolvedRoleId': resolvedRoleId,
+          'source': identity.selected_role_id ? 'identity' : (role?.id ? 'role_object' : 'application'),
         });
         
         const vendorData: any = {
@@ -191,12 +350,12 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           vendorData.isActive = true;
           vendorData.status = 'active';
         } else if (onboardingStatus === 'APPROVED') {
-          // ✅ FIX: Show dashboard directly for APPROVED vendors (not approved setup screen)
-          console.log('✅ [VendorApp] Vendor is APPROVED, showing dashboard directly');
-          setStatus('active'); // Set to 'active' to show dashboard, not 'approved' which shows setup screen
-          vendorData.isActive = true; // Approved vendors are active
-          vendorData.status = 'active';
-          // Continue to set vendorData - don't return early
+          // Wireframe: Show "You're approved" screen with Get Started, then dashboard
+          console.log('✅ [VendorApp] Vendor is APPROVED, showing approved setup screen (Get Started)');
+          setStatus('approved');
+          vendorData.isActive = true;
+          vendorData.status = 'approved';
+          // Don't set to 'active' here - user must click Get Started first
         } else if (onboardingStatus === 'UNDER_REVIEW') {
           setStatus('pending');
           vendorData.status = 'pending';
@@ -204,16 +363,22 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         } else if (onboardingStatus === 'REJECTED') {
           setStatus('rejected');
           vendorData.status = 'rejected';
+          // ✅ FIX GAP VO-2: Use feedback object for rejection reason
+          const feedback = (application as any)?.feedback;
           setApplicationData({
-            rejectionReason: application?.rejection_reason || 'Your application was not approved.',
-            allowResubmit: true
+            rejectionReason: feedback?.rejectionReason || application?.rejection_reason || 'Your application was not approved.',
+            allowResubmit: true,
+            reviewedAt: feedback?.reviewedAt || application?.reviewed_at,
           });
         } else if (onboardingStatus === 'CLARIFICATION_REQUIRED') {
           setStatus('clarification');
           vendorData.status = 'clarification';
+          // ✅ FIX GAP VO-1: Use feedback object from API response (preferred) or fallback to application fields
+          const feedback = (application as any)?.feedback;
           setApplicationData({
-            clarificationNotes: application?.admin_comments || 'Please provide additional information.',
-            reviewerName: application?.reviewed_by || 'Admin'
+            clarificationNotes: feedback?.clarificationNote || application?.admin_comments || application?.clarification_notes || 'Please provide additional information.',
+            reviewerName: feedback?.reviewedBy || application?.reviewed_by || 'Admin',
+            reviewedAt: feedback?.reviewedAt || application?.reviewed_at,
           });
         } else if (onboardingStatus === 'FORM_PENDING' || onboardingStatus === 'ROLE_PENDING') {
           // Still in onboarding
@@ -232,6 +397,11 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         localStorage.setItem('vendorData', JSON.stringify(vendorData));
         localStorage.setItem('vendorApplicationStatus', onboardingStatus);
         localStorage.setItem('vendorId', vendorData.id || identity.id);
+        const bizName = (vendorData as any).business_name || (vendorData as any).businessName || '';
+        if (bizName) {
+          localStorage.setItem('vendorName', bizName);
+          localStorage.setItem('businessName', bizName);
+        }
         
         console.log('✅ [VendorApp] Status updated:', {
           onboardingStatus,
@@ -242,10 +412,11 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     } catch (err: any) {
       console.error('❌ [VendorApp] Error checking vendor status:', err);
       
-      // ✅ FIX: Fallback to stored data on error, but prioritize APPROVED/ACTIVATED status
+      // ✅ FIX: Fallback to stored data on error (e.g. 401 from onboarding/status); never leave user stuck on loading
       const storedStatus = localStorage.getItem('vendorApplicationStatus');
       const storedVendor = localStorage.getItem('vendorData');
-      
+      const knownStatuses: VendorStatus[] = ['new', 'profile_incomplete', 'submitted', 'pending', 'approved', 'approved_services', 'rejected', 'clarification', 'active'];
+
       if (storedStatus === 'APPROVED' || storedStatus === 'ACTIVATED') {
         console.log('✅ [VendorApp] Using stored APPROVED/ACTIVATED status from localStorage');
         setStatus('active');
@@ -261,9 +432,10 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         try {
           const vendor = JSON.parse(storedVendor);
           setVendorData(vendor);
-          
+          const onboardingFromVendor = vendor.onboarding_status || vendor.onboardingStatus;
+          const isActiveFromVendor = vendor.isActive === true || vendor.status === 'active' || vendor.status === 'approved';
+
           if (storedStatus) {
-            // Map stored status to frontend status
             if (storedStatus === 'APPROVED' || storedStatus === 'ACTIVATED') {
               setStatus('active');
             } else if (storedStatus === 'UNDER_REVIEW') {
@@ -272,13 +444,15 @@ export function VendorApp({ initialSession }: VendorAppProps) {
               setStatus('rejected');
             } else if (storedStatus === 'CLARIFICATION_REQUIRED') {
               setStatus('clarification');
-            } else {
+            } else if (knownStatuses.includes(storedStatus as VendorStatus)) {
               setStatus(storedStatus as VendorStatus);
+            } else {
+              // INIT, FORM_PENDING, ROLE_PENDING etc. → show role/onboarding (avoid stuck "Loading your profile...")
+              setStatus('new');
             }
-          } else if (vendor.isActive) {
+          } else if (isActiveFromVendor || onboardingFromVendor === 'ACTIVATED' || onboardingFromVendor === 'APPROVED') {
             setStatus('active');
-          } else if (vendor.status === 'approved') {
-            setStatus('active'); // Approved vendors are active
+            localStorage.setItem('vendorApplicationStatus', onboardingFromVendor || 'ACTIVATED');
           } else if (vendor.status === 'pending' || vendor.status === 'under_review') {
             setStatus('pending');
           } else {
@@ -289,11 +463,11 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           setStatus('new');
         }
       } else {
-        // No stored data - show role selection
         setStatus('new');
       }
     } finally {
       setIsLoading(false);
+      isCheckingStatus.current = false;
     }
   };
 
@@ -310,17 +484,49 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     try {
       // Step 1: Save selected role to backend
       console.log('📤 Saving role selection to backend...');
-      await apiClient.post('/vendor/onboarding/select-role', { phone, role_id: role });
+      const roleResponse = await apiClient.post<any>('/vendor/onboarding/select-role', { phone, role_id: role });
       console.log('✅ Role saved');
       
-      // Step 2: Auto-set vendor type to "business" (lowercase, since we removed Solo/Business selection)
-      console.log('📤 Setting vendor type to business...');
-      await apiClient.post('/vendor/onboarding/select-vendor-type', { phone, vendor_type: 'business' });
+      // Step 2: Determine vendor type based on role configuration
+      // Fetch role details to check supported vendor types
+      let vendorType = 'business'; // Default fallback
+      try {
+        const rolesResponse = await apiClient.get<any>('/config/roles');
+        if (rolesResponse?.roles) {
+          const selectedRoleData = rolesResponse.roles.find((r: any) => 
+            r.id === role || r.name === role || r.roleCode === role
+          );
+          if (selectedRoleData) {
+            const vendorConfig = selectedRoleData.vendorConfiguration;
+            const supportedTypes = selectedRoleData.config?.vendorTypes || [];
+            
+            // If role has vendorConfiguration set (solo or business), use it
+            if (vendorConfig === 'solo') {
+              vendorType = 'solo';
+            } else if (vendorConfig === 'business') {
+              vendorType = 'business';
+            } else if (supportedTypes.length === 1) {
+              // If only one type is supported, use it
+              vendorType = supportedTypes[0];
+            } else if (!supportedTypes.includes('business') && supportedTypes.includes('solo')) {
+              // Role only supports solo
+              vendorType = 'solo';
+            }
+            console.log('📋 Role vendor configuration:', { vendorConfig, supportedTypes, resolvedType: vendorType });
+          }
+        }
+      } catch (roleErr) {
+        console.warn('⚠️ Could not fetch role details, using default vendor type:', roleErr);
+      }
+      
+      console.log('📤 Setting vendor type to:', vendorType);
+      await apiClient.post('/vendor/onboarding/select-vendor-type', { phone, vendor_type: vendorType });
       console.log('✅ Vendor type saved');
       
       // Now set state and show onboarding form
       setSelectedRole(role);
       localStorage.setItem('vendorRole', role);
+      localStorage.setItem('vendorType', vendorType);
       setShowOnboarding(true);
     } catch (error) {
       console.error('❌ Error saving role/vendor type:', error);
@@ -345,8 +551,30 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     localStorage.setItem('vendorApplicationStatus', 'pending');
   };
 
-  const handleCorrectAndResubmit = () => {
+  const handleCorrectAndResubmit = async () => {
+    const roleId = vendorData?.roleId || vendorData?.role_id || (typeof window !== 'undefined' ? localStorage.getItem('vendorRole') : null);
+    if (!roleId) {
+      console.error('[VendorApp] No roleId for clarification resubmit');
+      alert('Could not determine your role. Please refresh the page.');
+      return;
+    }
+    const applicationId = vendorData?.application_id || vendorData?.application?.id || applicationData?.id || vendorData?.id || session.vendorId;
+    try {
+      if (applicationId) {
+        const data = await apiClient.get<any>(`/vendor/application/status/${applicationId}`);
+        const app = data?.application;
+        const payload = app?.form_data ?? app?.application_payload ?? app ?? null;
+        setResubmitInitialData(payload && typeof payload === 'object' ? payload : null);
+      } else {
+        setResubmitInitialData(vendorData?.application?.application_payload || null);
+      }
+    } catch (e) {
+      console.warn('[VendorApp] Could not fetch application for pre-fill, using cached:', e);
+      setResubmitInitialData(vendorData?.application?.application_payload || null);
+    }
+    setSelectedRole(roleId);
     setShowOnboarding(true);
+    setStatus('new');
   };
 
   const handleStartFresh = () => {
@@ -410,6 +638,16 @@ export function VendorApp({ initialSession }: VendorAppProps) {
         allowResubmit={applicationData?.allowResubmit !== false}
         onResubmit={handleStartFresh}
         onCorrectAndResubmit={handleCorrectAndResubmit}
+        onGoBack={() => {
+          setStatus('new');
+          setSelectedRole(null);
+          setShowOnboarding(false);
+          setVendorData(null);
+          setApplicationData(null);
+          localStorage.removeItem('vendorData');
+          localStorage.removeItem('vendorApplicationStatus');
+          localStorage.removeItem('vendorRole');
+        }}
       />
     );
   }
@@ -426,31 +664,41 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     );
   }
 
-  // ✅ FIX: Skip approved setup screen - approved vendors go directly to VendorLandingPage (full portal)
-  // VendorLandingPage includes VendorDashboard with all navigation handlers and sub-screens
+  // Approved: show "You're approved" screen with Get Started; on complete → dashboard
   if (status === 'approved' || status === 'approved_services') {
-    console.log('✅ [VendorApp] Approved vendor - showing VendorLandingPage (full portal)');
     return (
-      <VendorLandingPage 
+      <VendorApprovedSetup
         vendorId={vendorData?.id || session.vendorId || ''}
-        phone={session.phone}
-        initialVendorData={vendorData}
-        vendorType={vendorData?.vendorType}
-        serviceStyle={vendorData?.serviceStyle}
+        roleId={vendorData?.roleId || vendorData?.role_id}
+        onComplete={() => {
+          setStatus('active');
+          localStorage.setItem('vendorApplicationStatus', 'ACTIVATED');
+        }}
       />
     );
   }
 
-  // Active Vendor - Show VendorLandingPage (full portal)
+  // Active Vendor - Show VendorLandingPage (full portal), lazy-loaded to avoid TDZ in dashboard chunk
   if (status === 'active') {
     return (
-      <VendorLandingPage 
-        vendorId={vendorData?.id || session.vendorId || ''}
-        phone={session.phone}
-        initialVendorData={vendorData}
-        vendorType={vendorData?.vendorType}
-        serviceStyle={vendorData?.serviceStyle}
-      />
+      <Suspense
+        fallback={
+          <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4" />
+              <p className="text-gray-600">Loading...</p>
+            </div>
+          </div>
+        }
+      >
+        <VendorLandingPage
+          vendorId={vendorData?.id || session.vendorId || ''}
+          phone={session.phone}
+          initialVendorData={vendorData}
+          vendorType={vendorData?.vendorType}
+          serviceStyle={vendorData?.serviceStyle}
+        />
+      </Suspense>
     );
   }
 
@@ -460,8 +708,8 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     // Store role for onboarding flow to read
     localStorage.setItem('vendorSelectedRole', selectedRole);
     
-    // Get initial data if vendor is re-editing (clarification requested)
-    const initialFormData = vendorData?.application?.application_payload || null;
+    // Pre-fill from resubmit (Go back to onboarding form) or from cached application
+    const initialFormData = resubmitInitialData ?? vendorData?.application?.application_payload ?? null;
     
     return (
       <DynamicVendorOnboardingForm 
@@ -476,28 +724,80 @@ export function VendorApp({ initialSession }: VendorAppProps) {
           try {
             const phone = session.phone || localStorage.getItem('vendorPhone');
             
+            // ✅ FIX: Sanitize formData to remove invalid/placeholder fields
+            const sanitizedFormData: Record<string, any> = {};
+            const invalidFieldPatterns = ['new_field', 'newfield', 'new-field'];
+            const invalidValuePatterns = ['xxxxxxxx', 'placeholder'];
+            
+            for (const [key, value] of Object.entries(submissionData.formData || {})) {
+              // Skip fields with placeholder names
+              if (invalidFieldPatterns.some(pattern => key.toLowerCase().includes(pattern))) {
+                console.warn(`⚠️ [VendorApp] Skipping invalid field: ${key}`);
+                continue;
+              }
+              
+              // Skip boolean values for fields that should be strings (e.g., phone: true)
+              if (key === 'phone' && typeof value === 'boolean') {
+                console.warn(`⚠️ [VendorApp] Skipping boolean phone field`);
+                continue;
+              }
+              
+              // Skip placeholder values
+              if (typeof value === 'string' && invalidValuePatterns.some(pattern => value.toLowerCase().includes(pattern))) {
+                console.warn(`⚠️ [VendorApp] Skipping placeholder value for ${key}: ${value}`);
+                continue;
+              }
+              
+              // Skip empty/null values (but keep false booleans and 0 numbers)
+              if (value === null || value === undefined || value === '') {
+                continue;
+              }
+              
+              sanitizedFormData[key] = value;
+            }
+            
+            // ✅ FIX: Sanitize documents to only include valid entries with URLs
+            const validDocuments = Object.entries(submissionData.documents || {})
+              .filter(([key, doc]: [string, any]) => {
+                // Skip invalid document types
+                if (invalidFieldPatterns.some(pattern => key.toLowerCase().includes(pattern))) {
+                  console.warn(`⚠️ [VendorApp] Skipping invalid document type: ${key}`);
+                  return false;
+                }
+                // Only include documents with valid URLs
+                if (!doc?.url || doc.url.trim() === '') {
+                  console.warn(`⚠️ [VendorApp] Skipping document without URL: ${key}`);
+                  return false;
+                }
+                return true;
+              })
+              .map(([key, doc]: [string, any]) => ({
+                type: key,
+                name: doc?.name || key,
+                url: doc?.url || '',
+                size: doc?.size,
+                mime_type: doc?.type,
+              }));
+            
             const payload = {
               phone,
               application_payload: {
-                ...submissionData.formData,
+                ...sanitizedFormData,
                 roleId: selectedRole,
                 location: submissionData.coordinates,
                 coordinates: submissionData.coordinates,
                 specializations: submissionData.specializations || [],
                 agreedToTerms: submissionData.agreedToTerms || true,
               },
-              uploaded_documents: Object.entries(submissionData.documents || {}).map(([key, doc]: [string, any]) => ({
-                type: key,
-                name: doc?.name || key,
-                url: doc?.url || '',
-                size: doc?.size,
-                mime_type: doc?.type,
-              })),
+              uploaded_documents: validDocuments,
             };
+            
+            console.log('📤 [VendorApp] Sanitized payload:', JSON.stringify(payload, null, 2));
 
             const response = await apiClient.post<any>('/vendor/onboarding/submit-application', payload);
             
             if (response.success || response.applicationId) {
+              setResubmitInitialData(null);
               handleOnboardingComplete({
                 ...submissionData,
                 applicationId: response.applicationId,
@@ -510,23 +810,49 @@ export function VendorApp({ initialSession }: VendorAppProps) {
             }
           } catch (error: any) {
             console.error('❌ [VendorApp] Error submitting application:', error);
-            alert(error.message || 'Error submitting application');
+            // ✅ FIX: Properly extract error message from various error formats
+            let errorMessage = 'Error submitting application';
+            if (typeof error === 'string') {
+              errorMessage = error;
+            } else if (error?.message && typeof error.message === 'string') {
+              errorMessage = error.message;
+            } else if (error?.error && typeof error.error === 'string') {
+              errorMessage = error.error;
+            } else if (error?.response?.data?.error) {
+              errorMessage = error.response.data.error;
+            } else if (typeof error === 'object') {
+              try {
+                errorMessage = JSON.stringify(error);
+              } catch (e) {
+                errorMessage = 'Error submitting application (unknown error)';
+              }
+            }
+            console.error('❌ [VendorApp] Error message:', errorMessage);
+            alert(errorMessage);
           }
         }}
         onBack={() => {
           setShowOnboarding(false);
           setSelectedRole(null);
+          setResubmitInitialData(null);
         }}
       />
     );
   }
 
-  // New Vendor - Role Selection
-  if (status === 'new' && !selectedRole) {
+  // New Vendor - Role Selection (when loading done and status is 'new', or we have vendorData but unknown status – e.g. after 401 fallback)
+  if (!isLoading && !selectedRole && (status === 'new' || vendorData)) {
     return <VendorRoleSelection onRoleSelect={handleRoleSelect} />;
   }
 
-  // Default: Show role selection
-  return <VendorRoleSelection onRoleSelect={handleRoleSelect} />;
+  // Default: still determining status – show loading only when we truly have no data (avoid infinite "Loading your profile..." after 401)
+  return (
+    <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+        <p className="text-gray-600">Loading your profile...</p>
+      </div>
+    </div>
+  );
 }
 

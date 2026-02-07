@@ -15,7 +15,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Check, Calendar, Clock, MapPin, User, DollarSign, Percent, Info, ChevronRight } from 'lucide-react';
+import { Check, Calendar, Clock, MapPin, User, IndianRupee, Percent, Info, ChevronRight } from 'lucide-react';
 
 interface Pet {
   id: string;
@@ -261,7 +261,7 @@ export function MultiPetBookingPage({
             </div>
           )}
           <div className="flex items-center gap-2 text-gray-700">
-            <DollarSign className="w-4 h-4 text-gray-400" />
+            <IndianRupee className="w-4 h-4 text-gray-400" />
             <span>₹{service.price} per pet</span>
           </div>
         </div>

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { MapPin, Play, StopCircle, Clock, Navigation, User, X, AlertCircle, CheckCircle, Copy, Phone } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { copyTextToClipboard } from '../../utils/shareUtils';
 
 declare global {
@@ -98,10 +98,10 @@ export function WalkerSessionTracking({
       console.log('🐕 [WALKER] Checking session status...');
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${bookingId}`,
+        `${getApiBaseUrl()}/booking/${bookingId}`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -132,10 +132,10 @@ export function WalkerSessionTracking({
   const fetchWalkerSession = async (sessionId: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/walker-session/${sessionId}`,
+        `${getApiBaseUrl()}/walker-session/${sessionId}`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );

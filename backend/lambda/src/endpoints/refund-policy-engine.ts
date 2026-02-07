@@ -14,8 +14,11 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // REFUND POLICY CALCULATION
@@ -309,7 +312,7 @@ export function registerRefundPolicyEngineEndpoints(app: Hono) {
         pathParameters: {},
         queryStringParameters: Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams),
         requestContext: {
-          requestId: crypto.randomUUID(),
+          requestId: randomUUID(),
         },
       };
       
@@ -347,6 +350,124 @@ export function registerRefundPolicyEngineEndpoints(app: Hono) {
     const result = await updateRuleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
+
+  // ✅ Customer-facing: refund policy for cancellation UI (no admin auth). Optional vendorId/serviceId for service-specific policy.
+  app.get('/customer/refund-policy', async (c) => {
+    try {
+      const vendorId = c.req.query('vendorId');
+      const serviceId = c.req.query('serviceId');
+
+      let rules: { rows: any[] } = { rows: [] };
+      rules = await query(
+        `SELECT * FROM booking_cancellation_rules
+         WHERE (vendor_id IS NULL OR vendor_id::text = $1)
+           AND (service_id IS NULL OR service_id::text = $2)
+         ORDER BY (vendor_id IS NOT NULL)::int + (service_id IS NOT NULL)::int DESC, created_at DESC
+         LIMIT 1`,
+        [vendorId || null, serviceId || null]
+      ).catch(() => ({ rows: [] }));
+
+      const rows = (rules as any).rows || [];
+      if (rows.length > 0) {
+        const rule = rows[0];
+        return c.json({
+          success: true,
+          policy: {
+            cancellationWindowHours: rule.no_refund_before_hours || 0,
+            refundPercentages: [
+              { withinHours: rule.full_refund_before_hours || 24, percentage: 100 },
+              { withinHours: rule.partial_refund_before_hours || 12, percentage: rule.partial_refund_percentage || 50 },
+              { withinHours: rule.no_refund_before_hours || 2, percentage: 0 },
+            ],
+            defaultRefundMethod: 'wallet',
+          },
+        });
+      }
+      return c.json({
+        success: true,
+        policy: {
+          cancellationWindowHours: 24,
+          refundPercentages: [
+            { withinHours: 24, percentage: 100 },
+            { withinHours: 12, percentage: 50 },
+            { withinHours: 6, percentage: 25 },
+            { withinHours: 2, percentage: 0 },
+          ],
+          defaultRefundMethod: 'wallet',
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching refund policy:', error);
+      return c.json({
+        success: true,
+        policy: {
+          cancellationWindowHours: 24,
+          refundPercentages: [
+            { withinHours: 24, percentage: 100 },
+            { withinHours: 12, percentage: 50 },
+          ],
+          defaultRefundMethod: 'wallet',
+        },
+      });
+    }
+  });
+
+  // ✅ Admin: Get refund policy settings for frontend
+  app.get('/admin/settings/refund-policy', async (c) => {
+    try {
+      // Get default policy rules
+      const rules = await query(
+        `SELECT * FROM booking_cancellation_rules
+         WHERE vendor_id IS NULL AND service_id IS NULL
+         ORDER BY created_at DESC
+         LIMIT 1`
+      ).catch(() => ({ rows: [] }));
+
+      if (rules.rows.length > 0) {
+        const rule = rules.rows[0];
+        return c.json({
+          success: true,
+          policy: {
+            cancellationWindowHours: rule.no_refund_before_hours || 0,
+            refundPercentages: [
+              { withinHours: rule.full_refund_before_hours || 24, percentage: 100 },
+              { withinHours: rule.partial_refund_before_hours || 12, percentage: rule.partial_refund_percentage || 50 },
+              { withinHours: rule.no_refund_before_hours || 2, percentage: 0 },
+            ],
+            defaultRefundMethod: 'wallet',
+          },
+        });
+      }
+
+      // Return default policy if not configured
+      return c.json({
+        success: true,
+        policy: {
+          cancellationWindowHours: 24,
+          refundPercentages: [
+            { withinHours: 24, percentage: 100 },
+            { withinHours: 12, percentage: 50 },
+            { withinHours: 6, percentage: 25 },
+            { withinHours: 2, percentage: 0 },
+          ],
+          defaultRefundMethod: 'wallet',
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching refund policy:', error);
+      return c.json({
+        success: true,
+        policy: {
+          cancellationWindowHours: 24,
+          refundPercentages: [
+            { withinHours: 24, percentage: 100 },
+            { withinHours: 12, percentage: 50 },
+          ],
+          defaultRefundMethod: 'wallet',
+        },
+      });
+    }
+  });
 }
 
 function createApiGatewayEvent(req: any): any {
@@ -358,14 +479,14 @@ function createApiGatewayEvent(req: any): any {
     pathParameters: {},
     queryStringParameters: Object.fromEntries(new URL(req.url, 'http://localhost').searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'refund-policy-engine',
     functionVersion: '$LATEST',
   };

@@ -55,7 +55,7 @@ interface ServiceStyleSelectorProps {
 
 export function ServiceStyleSelector({ selectedStyle, onSelect }: ServiceStyleSelectorProps) {
   return (
-    <div className="grid grid-cols-2 gap-0">
+    <div className="grid grid-cols-2 gap-3">
       {SERVICE_STYLES.map((style) => (
         <button
           key={style.id}
@@ -74,7 +74,7 @@ export function ServiceStyleSelector({ selectedStyle, onSelect }: ServiceStyleSe
               <Check className="w-2.5 h-2.5 text-white" />
             </div>
           )}
-          <div className="flex items-start gap-0">
+          <div className="flex items-start gap-3">
             <div className="text-primary scale-75">{style.icon}</div>
             <div className="flex-1">
               <div className="text-xs mb-0.5">{style.label}</div>

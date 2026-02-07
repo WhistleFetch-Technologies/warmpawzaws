@@ -44,9 +44,9 @@ export default function MealPlansPage() {
         router.push('/');
         return;
       }
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/nutrition/meal-plans`);
-      if (response.success || response.plans) {
-        setPlans(response.plans || []);
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/nutritionist/meal-plans`);
+      if (response.success || response.mealPlans || response.plans) {
+        setPlans(response.mealPlans || response.plans || []);
       }
     } catch (error: any) {
       console.error('Error loading meal plans:', error);
@@ -86,7 +86,7 @@ export default function MealPlansPage() {
     try {
       const vendorId = localStorage.getItem('vendorId');
       if (!vendorId) return;
-      await apiClient.delete(`/vendor/${vendorId}/nutrition/meal-plans/${planId}`);
+      await apiClient.delete(`/vendor/${vendorId}/nutritionist/meal-plans/${planId}`);
       loadPlans();
     } catch (error: any) {
       alert(error.message || 'Failed to delete meal plan');
@@ -227,7 +227,7 @@ export default function MealPlansPage() {
                 <div className="mb-4">
                   <p className="text-xs text-gray-500 mb-2">Pet Types:</p>
                   <div className="flex flex-wrap gap-1">
-                    {plan.pet_types.map((type) => (
+                    {plan.pet_types?.map((type) => (
                       <span
                         key={type}
                         className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs"

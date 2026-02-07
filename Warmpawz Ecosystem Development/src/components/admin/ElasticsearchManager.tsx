@@ -12,9 +12,9 @@ import {
   BarChart3
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
-const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const BASE_URL = `${getApiBaseUrl()}`;
 
 interface IndexStatus {
   exists: boolean;
@@ -56,7 +56,7 @@ export function ElasticsearchManager() {
       const response = await fetch(
         `${BASE_URL}/elasticsearch/health`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -74,7 +74,7 @@ export function ElasticsearchManager() {
       const response = await fetch(
         `${BASE_URL}/elasticsearch/indices/status`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -93,7 +93,7 @@ export function ElasticsearchManager() {
       const response = await fetch(
         `${BASE_URL}/elasticsearch/analytics`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -114,7 +114,7 @@ export function ElasticsearchManager() {
         `${BASE_URL}/elasticsearch/init`,
         {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -144,7 +144,7 @@ export function ElasticsearchManager() {
         `${BASE_URL}/elasticsearch/reindex/all`,
         {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

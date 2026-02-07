@@ -10,7 +10,7 @@ import {
   Play,
   Square
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface BookingCardProps {
   booking: any;
@@ -45,11 +45,11 @@ export function VendorBookingCard({
     // Mark messages as read
     try {
       await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/chat/mark-read/${bookingId}`,
+        `${getApiBaseUrl()}/chat/mark-read/${bookingId}`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ vendorId })
@@ -77,9 +77,9 @@ export function VendorBookingCard({
       // View existing prescription
       try {
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/prescription/${bookingId}`,
+          `${getApiBaseUrl()}/vendor/prescription/${bookingId}`,
           {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            headers: getAuthHeaders()
           }
         );
         
@@ -100,11 +100,11 @@ export function VendorBookingCard({
       
       try {
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/prescription/upload`,
+          `${getApiBaseUrl()}/vendor/prescription/upload`,
           {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
+              ...getAuthHeaders(),
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({

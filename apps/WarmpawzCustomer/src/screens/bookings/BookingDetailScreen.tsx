@@ -303,7 +303,7 @@ export function BookingDetailScreen({
                   ` • ${booking.serviceStyle.replace('_', ' ')}`}
               </Text>
             </View>
-            <Text style={styles.servicePrice}>₹{booking.price || 0}</Text>
+            <Text style={styles.servicePrice}>₹{booking.price ?? booking.amount ?? booking.totalAmount ?? 0}</Text>
           </View>
         </View>
 

@@ -14,6 +14,9 @@
 
 import { Hono } from 'hono';
 import { select, insert, query } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
+import { resolveVendorById, getVendorIdsForAvailabilityLookup } from './vendor-profile';
 
 export function registerFollowupRescheduleEndpoints(app: Hono) {
   /**
@@ -283,7 +286,13 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
       }
 
       const booking = bookingResult.rows[0];
-      const vendorId = booking.vendor_id;
+      const bookingVendorId = booking.vendor_id;
+
+      // Resolve to canonical vendors.id and get ids for availability lookup (vendor + vendor_identity)
+      const vendor = await resolveVendorById(bookingVendorId);
+      const resolvedVendorId = vendor?.id ?? bookingVendorId;
+      const availabilityIds = await getVendorIdsForAvailabilityLookup(resolvedVendorId);
+      const vendorIdsForQuery = availabilityIds.length > 0 ? availabilityIds : [resolvedVendorId];
 
       // If date provided, get slots for that date, otherwise get next 7 days
       const datesToCheck = date 
@@ -294,41 +303,58 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
             return d.toISOString().split('T')[0];
           });
 
+      const styleArray = [serviceStyle];
+
       const allSlots: any[] = [];
 
       for (const checkDate of datesToCheck) {
-        // Get vendor schedule for this date
         const requestedDate = new Date(checkDate);
         const dayOfWeek = requestedDate.getDay();
 
-        const scheduleSlots = await query(
-          `SELECT * FROM vendor_availability_v2
-           WHERE vendor_id::text = $1::text
-           AND day_of_week = $2
-           AND service_style = $3
-           AND is_enabled = true
-           ORDER BY time_window_start`,
-          [booking.vendor_id, dayOfWeek, serviceStyle]
-        );
+        let scheduleSlots: { rows: any[] };
+        try {
+          scheduleSlots = await query(
+            `SELECT * FROM vendor_availability_v2
+             WHERE vendor_id::text = ANY($1::text[])
+             AND day_of_week = $2
+             AND (
+               service_style::text = ANY($3::text[])
+               OR (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
+               OR COALESCE(service_type, '')::text = ANY($3::text[])
+             )
+             AND COALESCE(is_enabled, is_available, true) = true
+             ORDER BY COALESCE(time_window_start, start_time)`,
+            [vendorIdsForQuery, dayOfWeek, styleArray]
+          );
+        } catch (_) {
+          scheduleSlots = await query(
+            `SELECT * FROM vendor_availability_v2
+             WHERE vendor_id::text = ANY($1::text[])
+             AND day_of_week = $2
+             AND service_style = $3
+             AND (is_enabled = true OR is_enabled IS NULL)
+             ORDER BY time_window_start`,
+            [vendorIdsForQuery, dayOfWeek, serviceStyle]
+          );
+        }
 
-        // Get existing bookings for this date
         const existingBookings = await query(
           `SELECT booking_time FROM bookings
            WHERE vendor_id::text = $1::text
            AND booking_date = $2
            AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
            AND id::text != $3::text`,
-          [booking.vendor_id, checkDate, bookingId]
+          [resolvedVendorId, checkDate, bookingId]
         );
 
         const bookedTimes = new Set(existingBookings.rows.map((b: any) => b.booking_time));
 
-        // Generate available slots
+        // Generate available slots (support time_window_* or start_time/end_time)
         for (const slot of scheduleSlots.rows) {
-          const startTime = slot.time_window_start;
-          const endTime = slot.time_window_end;
-          
-          // Generate 30-minute slots
+          const startTime = slot.time_window_start ?? slot.start_time;
+          const endTime = slot.time_window_end ?? slot.end_time;
+          if (!startTime || !endTime) continue;
+
           const slots = generateTimeSlots(startTime, endTime, 30);
           
           for (const timeSlot of slots) {

@@ -20,6 +20,8 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { select, query } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 class GetEnhancedBookingDetailsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
@@ -40,6 +42,27 @@ class GetEnhancedBookingDetailsHandler extends BaseHandler {
 
       const booking = bookings[0];
 
+      // ✅ FIX: Extract pet_id from multiple sources (column, notes, special_instructions)
+      let petIdToUse = booking.pet_id;
+      
+      // Try to extract from notes if not in column
+      if (!petIdToUse && booking.notes) {
+        const petIdMatch = booking.notes.match(/Pet ID:\s*([a-f0-9-]{36})/i);
+        if (petIdMatch) {
+          petIdToUse = petIdMatch[1];
+          console.log(`[BOOKING-DETAILS] Extracted pet_id from notes: ${petIdToUse}`);
+        }
+      }
+      
+      // Try to extract from special_instructions if still not found
+      if (!petIdToUse && booking.special_instructions) {
+        const petIdMatch = booking.special_instructions.match(/Pet ID:\s*([a-f0-9-]{36})/i);
+        if (petIdMatch) {
+          petIdToUse = petIdMatch[1];
+          console.log(`[BOOKING-DETAILS] Extracted pet_id from special_instructions: ${petIdToUse}`);
+        }
+      }
+
       // Access control (only enforce if actorId is provided)
       // In UAT mode or when actorId is not provided, allow access
       const isUATMode = context.event.headers?.['x-uat-mode'] === 'true' || 
@@ -52,6 +75,31 @@ class GetEnhancedBookingDetailsHandler extends BaseHandler {
 
         if (actorRole === 'vendor' && booking.vendor_id !== actorId) {
           return this.error('Access denied', 403);
+        }
+      }
+
+      // ✅ FIX GAP 4.1: Role-based prescription/medical record visibility
+      // Only vet, nutritionist, and diagnostics roles should show prescription/medical records
+      // Groomer, trainer, walker, behaviourist, sitters should NOT show these
+      const ROLES_WITH_MEDICAL_FEATURES = ['vet', 'veterinary', 'nutritionist', 'diagnostics', 'diagnostic', 'lab', 'laboratory'];
+      let showMedicalFeatures = true; // Default to true for backwards compatibility
+      
+      if (booking.vendor_id) {
+        try {
+          const vendorWithRole = await query(
+            `SELECT v.role_id, r.name as role_name 
+             FROM vendors v 
+             LEFT JOIN roles r ON v.role_id = r.id 
+             WHERE v.id = $1`,
+            [booking.vendor_id]
+          );
+          if (vendorWithRole.rows.length > 0) {
+            const roleName = (vendorWithRole.rows[0].role_name || '').toLowerCase();
+            showMedicalFeatures = ROLES_WITH_MEDICAL_FEATURES.some(r => roleName.includes(r));
+          }
+        } catch (roleCheckError) {
+          console.warn('[BOOKING-DETAILS] Could not check vendor role for medical features:', roleCheckError);
+          // Default to showing medical features on error for backwards compatibility
         }
       }
 
@@ -90,9 +138,9 @@ class GetEnhancedBookingDetailsHandler extends BaseHandler {
           [bookingId]
         ).catch(() => ({ rows: [] })),
 
-        // Pet information
-        booking.pet_id
-          ? select('pets', { id: booking.pet_id }).catch(() => [])
+        // Pet information - use extracted petIdToUse
+        petIdToUse
+          ? select('pets', { id: petIdToUse }).catch(() => [])
           : Promise.resolve([]),
 
         // Vendor information
@@ -116,15 +164,39 @@ class GetEnhancedBookingDetailsHandler extends BaseHandler {
           : Promise.resolve([]),
       ]);
 
+      // ✅ FIX GAP 4.1: Filter medical data based on role
+      // For groomer, trainer, walker, behaviourist, sitters: hide prescriptions and medical records
+      const filteredPrescriptions = showMedicalFeatures ? (prescriptions.rows || []) : [];
+      const filteredMedicalRecords = showMedicalFeatures ? (medicalRecords.rows || []) : [];
+
       // Build comprehensive response
       const response = {
         booking: {
           id: booking.id,
+          // ✅ FIX: Ensure all IDs are at top level
+          vendorId: booking.vendor_id,
+          vendor_id: booking.vendor_id,
+          staffId: booking.staff_id || booking.assigned_staff_id || null,
+          staff_id: booking.staff_id || booking.assigned_staff_id || null,
+          petId: petIdToUse || null,
+          pet_id: petIdToUse || null,
+          customerId: booking.customer_id,
+          customer_id: booking.customer_id,
+          serviceId: booking.service_id,
+          service_id: booking.service_id,
           status: booking.status,
           payment_status: booking.payment_status,
+          // ✅ FIX: Schedule information - ensure all formats are included
           booking_date: booking.booking_date,
           booking_time: booking.booking_time,
+          bookingDate: booking.booking_date, // Alias for frontend compatibility
+          bookingTime: booking.booking_time, // Alias for frontend compatibility
+          scheduledDate: booking.booking_date, // Alias for frontend compatibility
+          scheduledTime: booking.booking_time, // Alias for frontend compatibility
+          schedule: booking.booking_time, // Alias for frontend compatibility
+          startDate: booking.booking_date, // Alias for frontend compatibility
           service_type: booking.service_type,
+          serviceStyle: booking.service_type || booking.service_style, // Alias
           address: booking.address,
           base_price: booking.base_price,
           total_amount: booking.total_amount,
@@ -132,7 +204,10 @@ class GetEnhancedBookingDetailsHandler extends BaseHandler {
           created_at: booking.created_at,
           updated_at: booking.updated_at,
         },
-        pet: pet[0] || null,
+        pet: pet[0] ? {
+          ...pet[0],
+          id: pet[0].id || petIdToUse,
+        } : null,
         vendor: vendor[0] ? {
           id: vendor[0].id,
           business_name: vendor[0].business_name,
@@ -152,20 +227,25 @@ class GetEnhancedBookingDetailsHandler extends BaseHandler {
           full_name: customer[0].full_name || customer[0].name,
           phone: customer[0].phone,
         } : null,
-        prescriptions: prescriptions.rows || [],
-        medicalRecords: medicalRecords.rows || [],
+        // ✅ FIX GAP 4.1: Only include prescriptions/medical records for medical roles
+        prescriptions: filteredPrescriptions,
+        medicalRecords: filteredMedicalRecords,
+        // ✅ Include flag to let frontend know if medical features are available
+        medicalFeaturesEnabled: showMedicalFeatures,
         chat: {
           messages: chatMessages.rows || [],
           messageCount: chatMessages.rows?.length || 0,
           hasUnreadMessages: chatMessages.rows?.some((msg: any) => !msg.is_read) || false,
         },
         summary: {
-          hasPrescription: (prescriptions.rows?.length || 0) > 0,
-          hasMedicalRecords: (medicalRecords.rows?.length || 0) > 0,
+          hasPrescription: filteredPrescriptions.length > 0,
+          hasMedicalRecords: filteredMedicalRecords.length > 0,
           hasChatMessages: (chatMessages.rows?.length || 0) > 0,
-          prescriptionCount: prescriptions.rows?.length || 0,
-          medicalRecordCount: medicalRecords.rows?.length || 0,
+          prescriptionCount: filteredPrescriptions.length,
+          medicalRecordCount: filteredMedicalRecords.length,
           chatMessageCount: chatMessages.rows?.length || 0,
+          // ✅ Let frontend know this service type doesn't support prescriptions
+          medicalFeaturesAvailable: showMedicalFeatures,
         },
       };
 

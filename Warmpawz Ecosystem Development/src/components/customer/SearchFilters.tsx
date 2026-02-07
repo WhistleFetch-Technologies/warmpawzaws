@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Filter, X, Star, MapPin, DollarSign, Briefcase } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface SearchFiltersProps {
   query?: string;
@@ -46,10 +46,10 @@ export function SearchFilters({ query, type = 'all', onFilterChange, className =
       if (type) params.append('type', type);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/search/facets?${params}`,
+        `${getApiBaseUrl()}/search/facets?${params}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

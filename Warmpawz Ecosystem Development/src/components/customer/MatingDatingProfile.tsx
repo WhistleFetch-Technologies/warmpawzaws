@@ -4,7 +4,7 @@ import {
   ChevronLeft, Upload, X, Check, Heart, User, MapPin,
   Calendar, Shield, Info
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface MatingDatingProfileProps {
@@ -59,8 +59,8 @@ export function MatingDatingProfile({ phone, mode, onBack, onComplete }: MatingD
   const loadUserPets = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/pets?phone=${phone}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/pets?phone=${phone}`,
+        { headers: getAuthHeaders() }
       );
       if (response.ok) {
         const result = await response.json();
@@ -78,8 +78,8 @@ export function MatingDatingProfile({ phone, mode, onBack, onComplete }: MatingD
         : `owner_dating_${phone}`;
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/${mode}-profile/${profileKey}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/dating/${mode}-profile/${profileKey}`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -182,8 +182,8 @@ export function MatingDatingProfile({ phone, mode, onBack, onComplete }: MatingD
       setLoading(true);
 
       const endpoint = mode === 'pet' 
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/pet-profile`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/owner-profile`;
+        ? `${getApiBaseUrl()}/dating/pet-profile`
+        : `${getApiBaseUrl()}/dating/owner-profile`;
 
       const payload = mode === 'pet' ? {
         petId: selectedPetId || `temp_${Date.now()}`,
@@ -199,7 +199,7 @@ export function MatingDatingProfile({ phone, mode, onBack, onComplete }: MatingD
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)

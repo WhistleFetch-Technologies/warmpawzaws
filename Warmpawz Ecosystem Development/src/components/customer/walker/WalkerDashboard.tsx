@@ -16,19 +16,41 @@ import {
   Shield,
   Video
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface WalkerDashboardProps {
   phone: string;
   onNavigate: (screen: string, data?: any) => void;
   onBack: () => void;
   data?: any;
+  onBrowseProviders?: () => void; // ✅ Navigate to full provider listing
+  onViewProvider?: (provider: any) => void; // ✅ Navigate to provider profile
 }
 
-export function WalkerDashboard({ phone, onNavigate, onBack, data }: WalkerDashboardProps) {
+export function WalkerDashboard({ phone, onNavigate, onBack, data, onBrowseProviders, onViewProvider }: WalkerDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [featuredWalkers, setFeaturedWalkers] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
+
+  // ✅ Handler to navigate to full provider listing (unified flow)
+  const handleBrowseProviders = () => {
+    if (onBrowseProviders) {
+      onBrowseProviders();
+    } else {
+      // Fallback to universal router via screen navigation
+      onNavigate('home-walker');
+    }
+  };
+
+  // ✅ Handler to view provider profile (unified flow)
+  const handleViewProvider = (provider: any) => {
+    if (onViewProvider) {
+      onViewProvider(provider);
+    } else {
+      // Fallback navigation
+      onNavigate('home-walker', { vendorId: provider.id });
+    }
+  };
 
   useEffect(() => {
     loadWalkerData();
@@ -40,9 +62,9 @@ export function WalkerDashboard({ phone, onNavigate, onBack, data }: WalkerDashb
       
       // Fetch all approved vendors from database
       const vendorsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/services`,
+        `${getApiBaseUrl()}/customer/services`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` },
+          headers: { Authorization: (getAuthHeaders().Authorization || "") },
         }
       );
 
@@ -230,7 +252,7 @@ export function WalkerDashboard({ phone, onNavigate, onBack, data }: WalkerDashb
                 <Button 
                   size="sm" 
                   className="bg-blue-600 text-white hover:bg-blue-700 h-8"
-                  onClick={() => onNavigate('walker-booking')}
+                  onClick={handleBrowseProviders}
                 >
                   Book Now
                 </Button>
@@ -254,7 +276,7 @@ export function WalkerDashboard({ phone, onNavigate, onBack, data }: WalkerDashb
                 <Button 
                   size="sm" 
                   className="bg-purple-600 text-white hover:bg-purple-700 h-8"
-                  onClick={() => onNavigate('walker-booking')}
+                  onClick={handleBrowseProviders}
                 >
                   Subscribe
                 </Button>
@@ -278,7 +300,7 @@ export function WalkerDashboard({ phone, onNavigate, onBack, data }: WalkerDashb
                 <Button 
                   size="sm" 
                   className="bg-green-600 text-white hover:bg-green-700 h-8"
-                  onClick={() => onNavigate('walker-booking')}
+                  onClick={handleBrowseProviders}
                 >
                   Try Now
                 </Button>
@@ -298,7 +320,7 @@ export function WalkerDashboard({ phone, onNavigate, onBack, data }: WalkerDashb
               <Card
                 key={category.id}
                 className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm"
-                onClick={() => onNavigate('walker-booking', { packageType: category.id })}
+                onClick={handleBrowseProviders}
               >
                 <div className="flex flex-col h-full">
                   <div 
@@ -330,7 +352,7 @@ export function WalkerDashboard({ phone, onNavigate, onBack, data }: WalkerDashb
             <h2 className="text-lg font-semibold">Featured Walkers</h2>
             <button 
               className="text-sm text-[#FF8C42] flex items-center gap-1"
-              onClick={() => onNavigate('walker-all-list')}
+              onClick={handleBrowseProviders}
             >
               View All
               <ChevronRight className="w-4 h-4" />
@@ -343,7 +365,7 @@ export function WalkerDashboard({ phone, onNavigate, onBack, data }: WalkerDashb
                 <Card 
                   key={index}
                   className="p-4 cursor-pointer hover:shadow-md transition-all bg-white border border-gray-100 shadow-sm"
-                  onClick={() => onNavigate('walker-details', { walkerId: walker.id })}
+                  onClick={() => handleViewProvider(walker)}
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#FF7029] rounded-xl flex items-center justify-center text-white text-xl font-bold">
@@ -377,7 +399,7 @@ export function WalkerDashboard({ phone, onNavigate, onBack, data }: WalkerDashb
                 <Card 
                   key={i}
                   className="p-4 cursor-pointer hover:shadow-md transition-all bg-white border border-gray-100 shadow-sm"
-                  onClick={() => onNavigate('walker-booking')}
+                  onClick={handleBrowseProviders}
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#FF7029] rounded-xl flex items-center justify-center text-white text-xl font-bold">

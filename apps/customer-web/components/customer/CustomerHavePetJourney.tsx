@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, PawPrint, Plus } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { EnhancedAddPetModal } from './EnhancedAddPetModal';
+import { toast } from 'sonner';
 
 interface CustomerHavePetJourneyProps {
   session: any;
@@ -11,12 +13,7 @@ interface CustomerHavePetJourneyProps {
 }
 
 interface OnboardingData {
-  petName: string;
-  petType: string;
-  breed: string;
-  age: string;
-  gender: string;
-  weight: string;
+  pets: any[]; // ✅ NEW: Use array of pets with enhanced model
   livingSpace: {
     homeType: string;
     outdoorSpace: string;
@@ -27,25 +24,18 @@ interface OnboardingData {
     travelFrequency: string;
   };
   budget: string;
-  healthInfo: {
-    spayedNeutered: string;
-    allergies: string;
-    medications: string;
-  };
-  preferences: string[];
+  servicePreferences: string[];
 }
 
 export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJourneyProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
   
+  // ✅ NEW: Show EnhancedAddPetModal for pet collection
+  const [showAddPetModal, setShowAddPetModal] = useState(false);
+  
   const [data, setData] = useState<OnboardingData>({
-    petName: '',
-    petType: '',
-    breed: '',
-    age: '',
-    gender: '',
-    weight: '',
+    pets: [], // ✅ NEW: Pets array with enhanced model
     livingSpace: {
       homeType: '',
       outdoorSpace: ''
@@ -56,17 +46,18 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
       travelFrequency: ''
     },
     budget: '',
-    healthInfo: {
-      spayedNeutered: '',
-      allergies: '',
-      medications: ''
-    },
-    preferences: []
+    servicePreferences: []
   });
 
   const [tempSelections, setTempSelections] = useState<any>({});
 
-  const totalSteps = 12;
+  // ✅ UPDATED: Reduced steps since pet modal handles pet collection
+  // Step 1: Add Pet(s) via EnhancedAddPetModal
+  // Step 2: Living Space
+  // Step 3: Lifestyle
+  // Step 4: Budget
+  // Step 5: Complete
+  const totalSteps = 5;
 
   const handleNext = async () => {
     // Validate selections based on current step
@@ -90,14 +81,18 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
 
   const validateStep = (step: number): boolean => {
     switch (step) {
-      case 3:
+      case 1:
+        return data.pets.length > 0; // Must have at least one pet
+      case 2:
         return !!(tempSelections.homeType && tempSelections.outdoorSpace);
-      case 4:
+      case 3:
         return !!(tempSelections.workSchedule && tempSelections.activityLevel && tempSelections.travelFrequency);
-      case 5:
+      case 4:
         return !!tempSelections.budget;
+      case 5:
+        return true; // Final step always valid
       default:
-        return Object.keys(tempSelections).length > 0;
+        return true;
     }
   };
 
@@ -107,25 +102,130 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
       console.log('Saving onboarding with phone:', session.phone);
       console.log('Onboarding data:', onboardingData);
       
-      const responseData = await apiClient.post('/customer/onboarding', {
-        phone: session.phone,
-        type: 'have-pet',
-        data: onboardingData,
-      }) as any;
-      console.log('Response data:', responseData);
+      // ✅ NEW: Save preferences to dedicated endpoint
+      await apiClient.post(`/customer/${session.phone}/preferences`, {
+        journeyType: 'have-pet',
+        livingSpace: onboardingData.livingSpace,
+        lifestyle: onboardingData.lifestyle,
+        budget: onboardingData.budget,
+        servicePreferences: onboardingData.servicePreferences,
+      });
 
+      // ✅ NEW: Mark onboarding as complete
+      await apiClient.post(`/customer/${session.phone}/onboarding/complete`, {
+        journeyType: 'have-pet',
+      });
+
+      toast.success('Profile completed successfully!');
       console.log('Onboarding data saved successfully');
     } catch (error) {
       console.error('Error saving onboarding data:', error);
-      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
+    }
+  };
+  
+  // ✅ NEW: Handle pet added from modal
+  const handlePetAdded = () => {
+    // Refresh pets from API
+    loadPets();
+    setShowAddPetModal(false);
+    toast.success('Pet added successfully!');
+  };
+  
+  const loadPets = async () => {
+    try {
+      const response = await apiClient.get(`/customer/pets/${session.phone}`) as any;
+      if (response.pets) {
+        setData(prev => ({ ...prev, pets: response.pets }));
+      }
+    } catch (error) {
+      console.error('Error loading pets:', error);
     }
   };
 
   const renderStep = () => {
     switch (currentStep) {
-      case 3:
+      // ✅ NEW: Step 1 - Add Pet(s) using EnhancedAddPetModal
+      case 1:
+        return (
+          <>
+            {/* Orange Top Section */}
+            <div className="flex flex-col items-center pt-12 pb-8 px-6">
+              <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center mb-6">
+                <PawPrint className="w-12 h-12 text-white" />
+              </div>
+              <h1 className="text-white text-center text-2xl font-bold">Add Your<br />Pet(s) 🐾</h1>
+            </div>
+
+            {/* White Bottom Section */}
+            <div className="flex-1 bg-white rounded-t-[40px] px-6 py-8 overflow-y-auto">
+              <p className="text-center text-gray-600 mb-6 text-base">
+                Let's create a detailed profile for your furry friend(s)
+              </p>
+
+              {/* Display added pets */}
+              {data.pets.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-black mb-3 text-sm font-medium">Your Pets ({data.pets.length})</h3>
+                  <div className="space-y-3">
+                    {data.pets.map((pet: any) => (
+                      <div
+                        key={pet.id}
+                        className="flex items-center gap-4 p-4 border-2 border-green-200 bg-green-50 rounded-2xl"
+                      >
+                        {pet.photo ? (
+                          <img
+                            src={pet.photo}
+                            alt={pet.name}
+                            className="w-16 h-16 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center">
+                            <PawPrint className="w-8 h-8 text-orange-500" />
+                          </div>
+                        )}
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-gray-900">{pet.name}</h4>
+                          <p className="text-sm text-gray-600">
+                            {pet.breed || pet.type} • {pet.age || 'Age not set'}
+                          </p>
+                        </div>
+                        <span className="text-green-600 text-2xl">✓</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Add Pet Button */}
+              <button
+                onClick={() => setShowAddPetModal(true)}
+                className="w-full border-2 border-dashed border-orange-300 bg-orange-50 rounded-2xl p-6 flex flex-col items-center gap-3 hover:bg-orange-100 transition-all"
+              >
+                <div className="w-14 h-14 bg-orange-500 rounded-full flex items-center justify-center">
+                  <Plus className="w-8 h-8 text-white" />
+                </div>
+                <span className="font-medium text-orange-700">
+                  {data.pets.length === 0 ? 'Add Your First Pet' : 'Add Another Pet'}
+                </span>
+                <span className="text-sm text-gray-500">
+                  Photo, health records, vaccinations & more
+                </span>
+              </button>
+
+              {data.pets.length === 0 && (
+                <p className="text-center text-sm text-gray-500 mt-4">
+                  Add at least one pet to continue
+                </p>
+              )}
+            </div>
+          </>
+        );
+
+      // ✅ UPDATED: Step 2 - Living Space (was step 3)
+      case 2:
         return (
           <>
             {/* Orange Top Section */}
@@ -231,7 +331,8 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
           </>
         );
 
-      case 4:
+      // ✅ UPDATED: Step 3 - Lifestyle (was step 4)
+      case 3:
         return (
           <>
             {/* Orange Top Section */}
@@ -377,7 +478,8 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
           </>
         );
 
-      case 5:
+      // ✅ UPDATED: Step 4 - Budget (was step 5)
+      case 4:
         return (
           <>
             {/* Orange Top Section */}
@@ -486,10 +588,83 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
           </>
         );
 
+      // ✅ NEW: Step 5 - Completion Summary
+      case 5:
+        return (
+          <>
+            {/* Orange Top Section */}
+            <div className="flex flex-col items-center pt-12 pb-8 px-6">
+              <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center mb-6">
+                <span className="text-5xl">🎉</span>
+              </div>
+              <h1 className="text-white text-center text-2xl font-bold">You're All<br />Set! 🐾</h1>
+            </div>
+
+            {/* White Bottom Section */}
+            <div className="flex-1 bg-white rounded-t-[40px] px-6 py-8 overflow-y-auto">
+              <p className="text-center text-gray-600 mb-6 text-base">
+                Great job! Here's a summary of your profile
+              </p>
+
+              {/* Pets Summary */}
+              <div className="mb-6">
+                <h3 className="text-black mb-3 text-sm font-medium flex items-center gap-2">
+                  <PawPrint className="w-4 h-4" /> Your Pets ({data.pets.length})
+                </h3>
+                <div className="flex flex-wrap gap-3">
+                  {data.pets.map((pet: any) => (
+                    <div key={pet.id} className="flex items-center gap-2 px-3 py-2 bg-orange-100 rounded-full">
+                      <span className="font-medium text-orange-800">{pet.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Lifestyle Summary */}
+              <div className="space-y-4">
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl">
+                  <h4 className="font-medium text-blue-900 mb-2">🏡 Living Space</h4>
+                  <p className="text-sm text-blue-800">
+                    {data.livingSpace.homeType?.replace('-', ' ')} with {data.livingSpace.outdoorSpace?.replace('-', ' ')}
+                  </p>
+                </div>
+
+                <div className="p-4 bg-green-50 border border-green-200 rounded-2xl">
+                  <h4 className="font-medium text-green-900 mb-2">⭐ Lifestyle</h4>
+                  <p className="text-sm text-green-800">
+                    {data.lifestyle.workSchedule?.replace('-', ' ')} • {data.lifestyle.activityLevel} activity
+                  </p>
+                </div>
+
+                <div className="p-4 bg-purple-50 border border-purple-200 rounded-2xl">
+                  <h4 className="font-medium text-purple-900 mb-2">💳 Budget</h4>
+                  <p className="text-sm text-purple-800">
+                    ₹{data.budget?.replace('-', ' - ')}/month
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-center text-sm text-gray-500 mt-6">
+                We'll personalize your experience based on this information
+              </p>
+            </div>
+          </>
+        );
+
       default:
         return (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-white">Step {currentStep} - Coming soon</p>
+          <div className="flex-1 flex items-center justify-center p-6">
+            <div className="text-center">
+              <p className="text-white text-lg font-medium mb-2">Step {currentStep}</p>
+              <p className="text-white/80 text-sm">This step is being configured</p>
+              <Button
+                onClick={() => setCurrentStep(Math.max(1, currentStep - 1))}
+                variant="outline"
+                className="mt-4 bg-white/10 text-white border-white/20 hover:bg-white/20"
+              >
+                Go Back
+              </Button>
+            </div>
           </div>
         );
     }
@@ -547,8 +722,8 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
         {/* Continue Button */}
         <Button
           onClick={() => {
-            // Save temp selections to main data
-            if (currentStep === 3) {
+            // ✅ UPDATED: Save temp selections to main data based on new step numbers
+            if (currentStep === 2) {
               setData({
                 ...data,
                 livingSpace: {
@@ -556,7 +731,7 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
                   outdoorSpace: tempSelections.outdoorSpace
                 }
               });
-            } else if (currentStep === 4) {
+            } else if (currentStep === 3) {
               setData({
                 ...data,
                 lifestyle: {
@@ -565,7 +740,7 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
                   travelFrequency: tempSelections.travelFrequency
                 }
               });
-            } else if (currentStep === 5) {
+            } else if (currentStep === 4) {
               setData({
                 ...data,
                 budget: tempSelections.budget
@@ -576,7 +751,7 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
           disabled={!validateStep(currentStep) || loading}
           className="w-full h-14 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-2xl text-black disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? 'Saving...' : 'Continue'}
+          {loading ? 'Saving...' : currentStep === totalSteps ? 'Complete Setup' : 'Continue'}
         </Button>
 
         {/* Home Indicator */}
@@ -584,6 +759,16 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
           <div className="w-32 h-1 bg-black rounded-full"></div>
         </div>
       </div>
+      
+      {/* ✅ NEW: Enhanced Add Pet Modal */}
+      {showAddPetModal && (
+        <EnhancedAddPetModal
+          isOpen={showAddPetModal}
+          onClose={() => setShowAddPetModal(false)}
+          onSuccess={handlePetAdded}
+          phone={session.phone}
+        />
+      )}
     </div>
   );
 }

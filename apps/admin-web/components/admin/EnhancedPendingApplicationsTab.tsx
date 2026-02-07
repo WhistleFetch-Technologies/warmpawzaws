@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Eye, RefreshCw, Check, X, FileText } from 'lucide-react';
+import { Search, Eye, RefreshCw, Check, X, FileText, User, Building2 } from 'lucide-react';
 import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { getAdminId } from '@/lib/cognito-auth';
+import { toast } from 'sonner';
 import { CustomDropdown } from './CustomDropdown';
 import { ApplicationDetailModal } from './ApplicationDetailModal';
 import { RejectVendorModal } from './RejectVendorModal';
@@ -15,6 +16,7 @@ interface Vendor {
   fullName?: string;
   vendorName?: string;
   businessName?: string;
+  ownerName?: string;
   vendorId: string;
   location?: string;
   city?: string;
@@ -24,6 +26,7 @@ interface Vendor {
   serviceCategory?: string;
   roleName?: string;
   experience: string;
+  experienceYears?: number;
   progress?: number;
   progressPercentage?: number;
   applied?: string;
@@ -31,7 +34,10 @@ interface Vendor {
   status: 'pending_approval' | 'approved' | 'rejected' | 'pending_reverification';
   phone?: string;
   mobile?: string;
+  email?: string;
   serviceType?: string;
+  vendorType?: 'solo' | 'business';
+  vendor_type?: 'solo' | 'business';
 }
 
 type StatusTab = 'new_applications' | 'approved' | 'rejected' | 'reverification';
@@ -78,11 +84,11 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
       const timestamp = new Date().getTime();
       
       // ✅ FIX: Try to load from both new and old endpoints
-      let vendorsList: any[] = [];
+      let vendorsList: Vendor[] = [];
       
       try {
         // Try fixed pending applications endpoint first
-        const pendingData = await apiClient.get<any>(`/admin/vendors/pending-applications-fixed?t=${timestamp}`);
+        const pendingData = await apiClient.get<{ applications: Vendor[] }>(`/admin/vendors/pending-applications-fixed?t=${timestamp}`);
         console.log('✅ [ADMIN] Loaded from FIXED endpoint:', pendingData.applications?.length || 0);
         if (pendingData.applications && pendingData.applications.length > 0) {
           vendorsList = pendingData.applications;
@@ -93,12 +99,12 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
       
       // Also try original endpoint and merge results
       try {
-        const allData = await apiClient.get<any>(`/admin/vendors/all?t=${timestamp}`);
+        const allData = await apiClient.get<{ vendors: Vendor[] }>(`/admin/vendors/all?t=${timestamp}`);
         console.log('✅ [ADMIN] Loaded from ORIGINAL endpoint:', allData.vendors?.length || 0);
         
         // Merge with fixed endpoint results (deduplicate by id)
         const existingIds = new Set(vendorsList.map(v => v.id));
-        const newVendors = (allData.vendors || []).filter((v: any) => !existingIds.has(v.id));
+        const newVendors = (allData.vendors || []).filter((v: Vendor) => !existingIds.has(v.id));
         vendorsList = [...vendorsList, ...newVendors];
       } catch (originalError) {
         console.warn('⚠️ [ADMIN] Original endpoint also failed:', originalError);
@@ -187,7 +193,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
           rejection_reason: reason,
           comments: notes
         });
-        alert('Vendor rejected');
+        toast.success('Vendor rejected. They can see the reason and re-submit or choose another role.');
         setShowRejectModal(false);
         setRejectingApplication(null);
         await loadVendors();
@@ -201,14 +207,14 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
           notes,
           allowResubmit: true
         });
-        alert('Vendor rejected');
+        toast.success('Vendor rejected. They can see the reason and re-submit or choose another role.');
         setShowRejectModal(false);
         setRejectingApplication(null);
         await loadVendors();
       }
     } catch (error: any) {
       console.error('Error rejecting vendor:', error);
-      alert(error.message || 'Failed to reject vendor');
+      toast.error(error.message || 'Failed to reject vendor');
     }
   };
 
@@ -220,34 +226,28 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
   const handleRequestInfoConfirm = async (message: string) => {
     if (!selectedApplication) return;
 
+    const trimmed = (message || '').trim();
+    if (!trimmed) {
+      alert('Please enter a message to send to the vendor.');
+      return;
+    }
+
+    const appId = selectedApplication.id || selectedApplication.vendorId;
+    if (!appId) {
+      alert('Application ID not found');
+      return;
+    }
+
     try {
-      const appId = selectedApplication.id || selectedApplication.vendorId;
-      
-      // Try onboarding review endpoint first (proper state machine)
-      try {
-        const adminId = getAdminId() || 'admin'; // Fallback to 'admin' if not available
-        await apiClient.post(`/admin/vendor/onboarding/${appId}/review`, {
-          action: 'REQUEST_CLARIFICATION',
-          admin_id: adminId,
-          comments: message
-        });
-        alert('Information request sent');
-        setShowRequestInfoModal(false);
-        setSelectedApplication(null);
-        await loadVendors();
-        return;
-      } catch (onboardingError: any) {
-        // Fallback to compatibility endpoint
-        console.warn('Onboarding review endpoint failed, trying compatibility endpoint:', onboardingError);
-        await apiClient.post(`/admin/vendor/application/${appId}/request-clarification`, {
-          reviewerName: 'Admin',
-          notes: message
-        });
-        alert('Information request sent');
-        setShowRequestInfoModal(false);
-        setSelectedApplication(null);
-        await loadVendors();
-      }
+      // Call request-clarification directly (notes/message only – rejection_reason is for reject only)
+      await apiClient.post(`/admin/vendor/application/${appId}/request-clarification`, {
+        notes: trimmed,
+        message: trimmed,
+      });
+      alert('Information request sent');
+      setShowRequestInfoModal(false);
+      setSelectedApplication(null);
+      await loadVendors();
     } catch (error: any) {
       console.error('Error requesting info:', error);
       alert(error.message || 'Failed to send request');
@@ -318,7 +318,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
       </div>
 
       {/* Filters */}
-      <div className="mb-4 flex gap-0 items-center">
+      <div className="mb-4 flex gap-3 items-center">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-0/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
           <input
@@ -355,7 +355,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
         />
         
         <Button variant="outline" size="sm" onClick={loadVendors}>
-          <RefreshCw className="w-4 h-4 mr-0" />
+          <RefreshCw className="w-4 h-4 mr-2" />
           Refresh
         </Button>
       </div>
@@ -369,41 +369,69 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
         <div className="space-y-3">
           {filteredVendors.map((vendor) => {
             const isProcessing = processingVendorIds.has(vendor.vendorId || vendor.id);
+            const vendorType = vendor.vendorType || vendor.vendor_type || 'business';
             
             return (
-              <div key={vendor.id || vendor.vendorId} className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow">
+              <div key={vendor.id || vendor.vendorId} className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md hover:border-[#FF8C42]/30 transition-all">
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center gap-0 mb-0">
-                      <h4 className="font-semibold text-gray-900">
-                        {vendor.fullName || vendor.businessName || vendor.vendorName}
+                    <div className="flex items-center gap-3 mb-2">
+                      <h4 className="font-semibold text-gray-900 text-lg">
+                        {vendor.fullName || vendor.businessName || vendor.ownerName || vendor.vendorName}
                       </h4>
-                      <span className={`px-0 py-0 text-xs rounded-full ${
-                        vendor.priority === 'high' ? 'bg-red-100 text-red-700' :
-                        vendor.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' :
-                        'bg-blue-100 text-blue-700'
+                      {/* Vendor Type Badge */}
+                      {vendorType === 'solo' ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-700 border border-purple-200">
+                          <User className="w-3 h-3" />
+                          Solo
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+                          <Building2 className="w-3 h-3" />
+                          Business
+                        </span>
+                      )}
+                      <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
+                        vendor.priority === 'high' ? 'bg-red-100 text-red-700 border border-red-200' :
+                        vendor.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 border border-yellow-200' :
+                        'bg-blue-100 text-blue-700 border border-blue-200'
                       }`}>
                         {vendor.priority || 'medium'}
                       </span>
-                      <span className="px-0 py-0 text-xs bg-gray-100 text-gray-700 rounded-full">
-                        {vendor.category || vendor.serviceCategory || 'N/A'}
+                      {/* Role Name Badge */}
+                      {vendor.roleName && (
+                        <span className="px-2.5 py-1 text-xs font-medium bg-indigo-100 text-indigo-700 rounded-full border border-indigo-200">
+                          Role: {vendor.roleName}
+                        </span>
+                      )}
+                      <span className="px-2.5 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full border border-gray-200">
+                        {vendor.category || vendor.serviceCategory || vendor.roleName || 'N/A'}
                       </span>
                     </div>
                     
-                    <div className="grid grid-cols-3 gap-4 text-sm text-gray-600">
+                    <div className="grid grid-cols-4 gap-4 text-sm text-gray-600">
                       <div>
-                        <span className="text-gray-500">Phone:</span> {vendor.phone || vendor.mobile || 'N/A'}
+                        <span className="text-gray-500">Phone:</span>
+                        <span className="ml-2 font-medium">{vendor.phone || vendor.mobile || 'N/A'}</span>
                       </div>
                       <div>
-                        <span className="text-gray-500">Location:</span> {vendor.city || vendor.location || 'N/A'}
+                        <span className="text-gray-500">Location:</span>
+                        <span className="ml-2 font-medium">{vendor.city || vendor.location || 'N/A'}</span>
                       </div>
                       <div>
-                        <span className="text-gray-500">Experience:</span> {vendor.experience || 'N/A'}
+                        <span className="text-gray-500">Experience:</span>
+                        <span className="ml-2 font-medium">{vendor.experience || (vendor.experienceYears ? `${vendor.experienceYears} years` : 'N/A')}</span>
                       </div>
+                      {vendor.email && (
+                        <div>
+                          <span className="text-gray-500">Email:</span>
+                          <span className="ml-2 font-medium truncate">{vendor.email}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   
-                  <div className="flex gap-0 ml-4">
+                  <div className="flex gap-3 ml-4">
                     <Button
                       size="sm"
                       variant="outline"
@@ -412,7 +440,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
                         if (onViewDetails) onViewDetails(vendor);
                       }}
                     >
-                      <Eye className="w-4 h-4 mr-0" />
+                      <Eye className="w-4 h-4 mr-2" />
                       View
                     </Button>
                     
@@ -424,7 +452,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
                           onClick={() => handleRequestInfo(vendor)}
                           className="text-blue-600 hover:bg-blue-50"
                         >
-                          <FileText className="w-4 h-4 mr-0" />
+                          <FileText className="w-4 h-4 mr-2" />
                           Request Info
                         </Button>
                         <Button
@@ -434,7 +462,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
                           className="text-red-600 hover:bg-red-50"
                           disabled={isProcessing}
                         >
-                          <X className="w-4 h-4 mr-0" />
+                          <X className="w-4 h-4 mr-2" />
                           Reject
                         </Button>
                         <Button
@@ -443,7 +471,7 @@ export function EnhancedPendingApplicationsTab({ onViewDetails }: EnhancedPendin
                           disabled={isProcessing}
                           className="bg-green-600 hover:bg-green-700"
                         >
-                          <Check className="w-4 h-4 mr-0" />
+                          <Check className="w-4 h-4 mr-2" />
                           {isProcessing ? 'Processing...' : 'Approve'}
                         </Button>
                       </>

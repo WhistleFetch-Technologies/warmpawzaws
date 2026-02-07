@@ -1,7 +1,7 @@
 import { X, AlertTriangle, Calendar, AlertCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Button } from '../../ui/button';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface DeleteCategoryModalProps {
   isOpen: boolean;
@@ -43,12 +43,12 @@ export function DeleteCategoryModal({
       setCheckingBookings(true);
       
       const endpoint = type === 'category'
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/categories/${category.id}/check-bookings`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/subcategories/${category.id}/check-bookings`;
+        ? `${getApiBaseUrl()}/admin/catalog/categories/${category.id}/check-bookings`
+        : `${getApiBaseUrl()}/admin/catalog/subcategories/${category.id}/check-bookings`;
       
       const response = await fetch(endpoint, {
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         }
       });
 
@@ -76,13 +76,13 @@ export function DeleteCategoryModal({
       setLoading(true);
       
       const endpoint = type === 'category'
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/categories/${category.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/subcategories/${category.id}`;
+        ? `${getApiBaseUrl()}/admin/catalog/categories/${category.id}`
+        : `${getApiBaseUrl()}/admin/catalog/subcategories/${category.id}`;
       
       const response = await fetch(endpoint, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({

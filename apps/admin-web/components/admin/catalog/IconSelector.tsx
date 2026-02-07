@@ -48,7 +48,7 @@ export function IconSelector({ value, onChange, onClose }: IconSelectorProps) {
         />
       </div>
 
-      <div className="grid grid-cols-8 gap-0 max-h-64 overflow-y-auto">
+      <div className="grid grid-cols-8 gap-3 max-h-64 overflow-y-auto">
         {filteredIcons.map((icon) => (
           <button
             key={icon}

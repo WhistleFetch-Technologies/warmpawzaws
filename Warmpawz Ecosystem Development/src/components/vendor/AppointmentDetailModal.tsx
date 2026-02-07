@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, AlertCircle, Navigation, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, AlertCircle, Navigation, Loader2, FileText, Pill, Stethoscope } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 import { authenticatedFetch } from '../../utils/session-manager'; // ✅ SECURITY FIX
 
@@ -105,9 +105,9 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       
       // Load booking details
       const bookingResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${bookingId}/details`,
+        `${getApiBaseUrl()}/vendor/bookings/${bookingId}/details`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
       
@@ -136,7 +136,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     try {
       // ✅ SECURITY FIX: Use authenticated fetch for OTP verification
       const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${bookingId}/otp/verify`,
+        `${getApiBaseUrl()}/vendor/bookings/${bookingId}/otp/verify`,
         {
           method: 'POST',
           body: JSON.stringify({ otp, action: otpAction })
@@ -163,34 +163,97 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     }
   };
 
+  // Ref for tracking session ID so watchPosition callback can send updates (closure-safe)
+  const trackingSessionIdRef = useRef<string | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+
   const handleStartTravel = async () => {
     if (!booking) return;
-    
-    // ✅ SECURITY FIX: Use authenticated fetch for tracking session
+    if (!navigator.geolocation) {
+      toast.error('GPS is not supported on this device');
+      return;
+    }
     try {
       setProcessing(true);
-      const response = await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/tracking/session/create`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            bookingId: booking.id,
-            vendorId: vendorData.id,
-            type: 'traveling'
-          })
-        }
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          try {
+            // ✅ Rule 1: Start travel with vendor lat/long; destination = customer address (from backend)
+            const response = await authenticatedFetch(
+              `${getApiBaseUrl()}/tracking/start`,
+              {
+                method: 'POST',
+                body: JSON.stringify({
+                  bookingId: booking.id,
+                  vendorId: vendorData.id,
+                  staffId: (booking as any).staffId || (booking as any).staff_id,
+                  startLatitude: latitude,
+                  startLongitude: longitude,
+                }),
+              }
+            );
+            if (!response.ok) {
+              const err = await response.json().catch(() => ({}));
+              toast.error(err.error || 'Failed to start tracking');
+              setProcessing(false);
+              return;
+            }
+            const data = await response.json().catch(() => ({}));
+            const sessionId = data?.session?.id;
+            if (sessionId) {
+              trackingSessionIdRef.current = sessionId;
+              watchIdRef.current = navigator.geolocation.watchPosition(
+                (pos) => {
+                  const sid = trackingSessionIdRef.current;
+                  if (sid) {
+                    authenticatedFetch(
+                      `${getApiBaseUrl()}/tracking/${sid}/update`,
+                      {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          latitude: pos.coords.latitude,
+                          longitude: pos.coords.longitude,
+                        }),
+                      }
+                    ).catch(() => {});
+                  }
+                },
+                () => {},
+                { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+              );
+            }
+            setShowTracking(true);
+            toast.success('GPS tracking started. Customer can track your location.');
+            loadAppointmentDetails();
+            onRefresh?.();
+          } catch (e) {
+            console.error('Error starting travel:', e);
+            toast.error('Failed to start tracking');
+          } finally {
+            setProcessing(false);
+          }
+        },
+        (err) => {
+          setProcessing(false);
+          if (err.code === err.PERMISSION_DENIED) toast.error('Please enable location to start travel.');
+          else toast.error('Could not get your location.');
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
       );
-      
-      if (response.ok) {
-        // Update local state to show we are traveling
-        loadAppointmentDetails();
-        onRefresh?.();
-      }
     } catch (error) {
       console.error('Error starting travel:', error);
-    } finally {
       setProcessing(false);
     }
+  };
+
+  const stopTracking = () => {
+    if (watchIdRef.current != null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    trackingSessionIdRef.current = null;
+    setShowTracking(false);
   };
 
   const handleArrived = async () => {
@@ -198,7 +261,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     try {
       setProcessing(true);
       await authenticatedFetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${bookingId}/status`,
+        `${getApiBaseUrl()}/vendor/bookings/${bookingId}/status`,
         {
           method: 'POST',
           body: JSON.stringify({ status: 'arrived', note: 'Vendor has arrived at location' })
@@ -603,8 +666,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     </button>
                   )}
 
-                  {/* Phase 2: Arrived (If traveling/in_progress) */}
-                  {(booking.status === 'traveling' || (booking.status === 'in_progress' && !booking.arrived)) && (
+                  {/* Phase 2: Arrived (If traveling/vendor_on_way/in_progress) */}
+                  {(booking.status === 'traveling' || booking.status === 'vendor_on_way' || (booking.status === 'in_progress' && !(booking as any).arrived)) && (
                     <button
                       onClick={handleArrived}
                       disabled={processing}
@@ -677,6 +740,42 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           </div>
         </div>
       </div>
+
+      {/* GPS Tracking overlay (Rule 1: mobile-optimized, mounted on Start Travel in appointment detail) */}
+      {showTracking && booking && (
+        <div className="fixed inset-0 bg-black/70 z-[70] flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+            <div className="p-6 flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+                  <Navigation className="w-6 h-6 text-green-600 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">Live tracking on</h3>
+                  <p className="text-sm text-gray-500">Customer can track your location</p>
+                </div>
+              </div>
+              <p className="text-sm text-gray-600">{booking.location || booking.customerName}</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { stopTracking(); loadAppointmentDetails(); onRefresh?.(); }}
+                  className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => { handleArrived(); stopTracking(); loadAppointmentDetails(); onRefresh?.(); }}
+                  disabled={processing}
+                  className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+                >
+                  <MapPin className="w-4 h-4" />
+                  I&apos;ve Arrived
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Medical History Modal */}
       {showMedicalHistory && booking.petId && (

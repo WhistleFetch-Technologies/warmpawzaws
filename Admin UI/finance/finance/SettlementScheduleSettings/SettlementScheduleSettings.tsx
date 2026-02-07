@@ -37,7 +37,7 @@ import {
 	AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 
 interface SettlementSchedule {
 	enabled: boolean;
@@ -69,7 +69,7 @@ export function SettlementScheduleSettings() {
 		nextProcessAt: null,
 	});
 
-	const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+	const API_BASE = `${getApiBaseUrl()}`;
 
 	useEffect(() => {
 		loadSettings();
@@ -81,7 +81,7 @@ export function SettlementScheduleSettings() {
 			const response = await fetch(
 				`${API_BASE}/admin/finance/settlement-schedule`,
 				{
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 
@@ -108,7 +108,7 @@ export function SettlementScheduleSettings() {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 					body: JSON.stringify(settings),
 				}
@@ -137,7 +137,7 @@ export function SettlementScheduleSettings() {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 					body: JSON.stringify({ force: false }),
 				}

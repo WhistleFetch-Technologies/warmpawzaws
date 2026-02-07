@@ -6,7 +6,7 @@ import { Card, Button } from "@warmpawz/ui";
 import {
 	Briefcase,
 	TrendingUp,
-	DollarSign,
+	IndianRupee,
 	Users,
 	Building2,
 	ArrowUp,
@@ -60,25 +60,54 @@ export default function EnterpriseRevenue() {
 			setLoading(true);
 
 			// Load revenue stats
-			const statsRes = await apiClient.get<any>(
-				`/admin/enterprise/revenue/stats?range=${dateRange}`
-			);
-
-			if (statsRes.success) {
-				setStats(statsRes.data);
+			try {
+				const statsRes = await apiClient.get<any>(
+					`/admin/enterprise/revenue/stats?range=${dateRange}`
+				);
+				if (statsRes?.success && statsRes?.data) {
+					setStats(statsRes.data);
+				} else {
+					// Set default stats
+					setStats({
+						totalRevenue: 0,
+						commissionEarned: 0,
+						vendorPayouts: 0,
+						growthRate: 0,
+						enterpriseCustomers: 0,
+						avgOrderValue: 0,
+						monthlyRecurring: 0,
+					});
+				}
+			} catch {
+				setStats({
+					totalRevenue: 0,
+					commissionEarned: 0,
+					vendorPayouts: 0,
+					growthRate: 0,
+					enterpriseCustomers: 0,
+					avgOrderValue: 0,
+					monthlyRecurring: 0,
+				});
 			}
 
 			// Load enterprise customers
-			const customersRes = await apiClient.get<any>(
-				"/admin/enterprise/customers"
-			);
-
-			if (customersRes.success) {
-				setEnterpriseCustomers(customersRes.data.customers || []);
+			try {
+				const customersRes = await apiClient.get<any>(
+					"/admin/enterprise/customers"
+				);
+				if (customersRes?.success && customersRes?.data?.customers) {
+					setEnterpriseCustomers(customersRes.data.customers);
+				} else if (customersRes?.success && Array.isArray(customersRes?.data)) {
+					setEnterpriseCustomers(customersRes.data);
+				} else {
+					setEnterpriseCustomers([]);
+				}
+			} catch {
+				setEnterpriseCustomers([]);
 			}
 		} catch (error: any) {
 			console.error("Error loading enterprise data:", error);
-			toast.error("Failed to load enterprise data");
+			// Don't show toast error for expected API failures
 		} finally {
 			setLoading(false);
 		}
@@ -93,7 +122,7 @@ export default function EnterpriseRevenue() {
 						<div className="flex items-center justify-between">
 							<div className="flex items-center gap-4">
 								<div className="flex items-center gap-3">
-									<div className="w-10 h-10 bg-linear-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center">
+									<div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center">
 										<Briefcase className="w-5 h-5 text-white" />
 									</div>
 									<div>
@@ -189,7 +218,7 @@ export default function EnterpriseRevenue() {
 								<Card className="p-6">
 									<div className="flex items-center justify-between mb-4">
 										<div className="p-2 bg-green-100 rounded-lg">
-											<DollarSign className="w-5 h-5 text-green-600" />
+											<IndianRupee className="w-5 h-5 text-green-600" />
 										</div>
 										{stats && stats.growthRate > 0 ? (
 											<div className="flex items-center text-green-600 text-sm">

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { CustomerOnboarding } from './CustomerOnboarding';
 import { CustomerUserProfile } from './CustomerUserProfile';
 import { CustomerPetProfile } from './CustomerPetProfile';
-import { CustomerHomeWrapper } from './CustomerHomeWrapper';
+import { CustomerHomeWrapper } from './wrappers/CustomerHomeWrapper';
 import { isUatMode } from '@/lib/api-client';
 
 interface CustomerSession {
@@ -40,21 +40,29 @@ export function CustomerApp({ initialSession }: CustomerAppProps) {
     const determineInitialState = () => {
       console.log('🎯 CustomerApp: Checking session state', session);
       
-      const isOnboardingComplete = session.hasCompletedOnboarding || 
-        localStorage.getItem('customerOnboardingComplete') === 'true';
+      const storedOnboarding = localStorage.getItem('customerOnboardingComplete') === 'true';
+      const hasSessionOnboarded = session.hasCompletedOnboarding === true;
+      const customer = session.customer;
+      const hasCustomerWithName = !!(customer?.id && (customer?.name || customer?.full_name) && String(customer?.name || customer?.full_name).trim());
+      const hasCustomerWithUsage = !!(customer?.id && ((customer?.bookings?.length || 0) > 0 || (customer?.orders?.all?.length || 0) > 0));
+      const isOnboardingComplete = hasSessionOnboarded || storedOnboarding || hasCustomerWithName || hasCustomerWithUsage;
       const storedJourney = localStorage.getItem('customerJourneyStage');
       const storedProfile = localStorage.getItem('customerProfile');
       const storedPets = localStorage.getItem('customerPets');
       
       console.log('📊 State check:', {
         isOnboardingComplete,
+        hasSessionOnboarded,
+        storedOnboarding,
+        hasCustomerWithName,
+        hasCustomerWithUsage,
         storedJourney,
         hasProfile: !!storedProfile,
         hasPets: !!storedPets
       });
       
       if (isOnboardingComplete) {
-        // User has completed full journey - go directly to home
+        if (!storedOnboarding) localStorage.setItem('customerOnboardingComplete', 'true');
         console.log('✅ Returning user with completed profile - going to home');
         setCurrentScreen('home');
       } else if (storedProfile && !storedPets) {
@@ -128,15 +136,23 @@ export function CustomerApp({ initialSession }: CustomerAppProps) {
 
   const handleNavigate = (screen: string) => {
     if (screen === 'logout') {
-      // Clear all session data
-      localStorage.removeItem('customerPhone');
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('customerData');
-      localStorage.removeItem('customerProfile');
-      localStorage.removeItem('customerPets');
-      localStorage.removeItem('customerOnboardingComplete');
-      localStorage.removeItem('customerJourneyStage');
-      router.push('/auth');
+      // Clear all session data and redirect immediately (no async - lands on customer auth)
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('customerPhone');
+        localStorage.removeItem('customerId');
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('customerData');
+        localStorage.removeItem('customerProfile');
+        localStorage.removeItem('customerPets');
+        localStorage.removeItem('customerOnboardingComplete');
+        localStorage.removeItem('customerJourneyStage');
+        localStorage.removeItem('cognitoAccessToken');
+        localStorage.removeItem('cognitoIdToken');
+        localStorage.removeItem('cognitoRefreshToken');
+        localStorage.removeItem('cognitoTokenExpiry');
+        localStorage.removeItem('cognitoUserInfo');
+        window.location.href = '/auth';
+      }
       return;
     }
     setCurrentScreen(screen);
@@ -188,19 +204,27 @@ export function CustomerApp({ initialSession }: CustomerAppProps) {
       phone={session.phone}
       initialScreen={currentScreen === 'home' ? 'home' : undefined}
       onNavigate={(screen: string) => {
-        // Handle logout - clear all data and redirect
+        // Handle logout - clear all data and redirect immediately to customer auth
         if (screen === 'logout') {
-          localStorage.removeItem('customerPhone');
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('customerData');
-          localStorage.removeItem('customerProfile');
-          localStorage.removeItem('customerPets');
-          localStorage.removeItem('customerOnboardingComplete');
-          localStorage.removeItem('customerJourneyStage');
-          router.push('/auth');
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('customerPhone');
+            localStorage.removeItem('customerId');
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('customerData');
+            localStorage.removeItem('customerProfile');
+            localStorage.removeItem('customerPets');
+            localStorage.removeItem('customerOnboardingComplete');
+            localStorage.removeItem('customerJourneyStage');
+            localStorage.removeItem('cognitoAccessToken');
+            localStorage.removeItem('cognitoIdToken');
+            localStorage.removeItem('cognitoRefreshToken');
+            localStorage.removeItem('cognitoTokenExpiry');
+            localStorage.removeItem('cognitoUserInfo');
+            window.location.href = '/auth';
+          }
+          return;
         }
         // All other navigation is handled internally by CustomerHomeWrapper
-        // via its handleNavigateToService function
       }}
     />
   );

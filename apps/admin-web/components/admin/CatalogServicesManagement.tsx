@@ -68,12 +68,12 @@ export function CatalogServicesManagement({ onNavigate }: CatalogServicesManagem
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Bar */}
-        <div className="bg-white border-b border-gray-200 px-0 py-4">
+        <div className="bg-white border-b border-gray-200 px-6 py-5">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <div className="flex items-center gap-0 mb-0">
-                <h1 className="text-xl text-gray-900">Catalog & Services</h1>
-                <select className="text-sm border border-gray-200 rounded-lg px-0 py-0 bg-white">
+              <div className="flex items-center gap-3 mb-1">
+                <h1 className="text-2xl font-bold text-gray-900">Catalog & Services</h1>
+                <select className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white hover:bg-gray-50 cursor-pointer">
                   <option>/Catalog Management</option>
                   <option>/Low Stock Alerts</option>
                 </select>
@@ -81,23 +81,23 @@ export function CatalogServicesManagement({ onNavigate }: CatalogServicesManagem
               <p className="text-sm text-gray-500">Effortlessly manage categories, products, services, pricing and inventory across the platform.</p>
             </div>
             
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-3">
               <div className="relative">
-                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-0/2 -translate-y-1/2" />
+                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   placeholder="Search"
-                  className="pl-0 pr-4 py-0 border border-gray-200 rounded-lg text-sm w-64"
+                  className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm w-64 focus:ring-2 focus:ring-[#FF8C42] focus:border-transparent"
                 />
               </div>
-              <button className="p-0 hover:bg-gray-100 rounded-lg relative">
+              <button className="p-2.5 hover:bg-gray-100 rounded-lg relative transition-colors">
                 <Bell className="w-5 h-5 text-gray-600" />
-                <span className="absolute top-0 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
               </button>
-              <button className="p-0 hover:bg-gray-100 rounded-lg">
+              <button className="p-2.5 hover:bg-gray-100 rounded-lg transition-colors">
                 <MessageSquare className="w-5 h-5 text-gray-600" />
               </button>
-              <button className="p-0 hover:bg-gray-100 rounded-lg">
+              <button className="p-2.5 hover:bg-gray-100 rounded-lg transition-colors">
                 <User className="w-5 h-5 text-gray-600" />
               </button>
             </div>
@@ -105,9 +105,9 @@ export function CatalogServicesManagement({ onNavigate }: CatalogServicesManagem
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-0">
+        <div className="flex-1 overflow-y-auto p-6">
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-0">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <MetricsCard
               icon={<Grid3x3 className="w-5 h-5 text-blue-600" />}
               iconBg="bg-blue-50"
@@ -143,9 +143,9 @@ export function CatalogServicesManagement({ onNavigate }: CatalogServicesManagem
           </div>
 
           {/* Tabs */}
-          <div className="bg-white rounded-xl border border-gray-200">
-            <div className="border-b border-gray-200 px-0 py-0 flex items-center justify-between flex-wrap gap-4">
-              <div className="flex gap-0 overflow-x-auto">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+            <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-wrap gap-4">
+              <div className="flex gap-1 overflow-x-auto">
                 <TabButton 
                   label="Categories" 
                   active={activeTab === 'categories'}
@@ -178,8 +178,8 @@ export function CatalogServicesManagement({ onNavigate }: CatalogServicesManagem
                 />
               </div>
 
-              <div className="flex gap-0">
-                <Button variant="outline" className="gap-0">
+              <div className="flex gap-2">
+                <Button variant="outline" className="gap-2">
                   <Download className="w-4 h-4" />
                   Export
                 </Button>
@@ -187,7 +187,7 @@ export function CatalogServicesManagement({ onNavigate }: CatalogServicesManagem
             </div>
 
             {/* Tab Content */}
-            <div className="p-0">
+            <div className="p-4">
               {activeTab === 'categories' && <CategoriesTab />}
               {activeTab === 'products' && <ProductServicesTab />}
               {activeTab === 'pricing' && <PricingInventoryTab />}
@@ -211,10 +211,10 @@ function TabButton({ label, active = false, onClick }: { label: string; active?:
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-0 text-sm border-b-2 transition-colors whitespace-nowrap ${
+      className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
         active
-          ? 'border-[#FF8C42] text-[#FF8C42]'
-          : 'border-transparent text-gray-600 hover:text-gray-900'
+          ? 'border-[#FF8C42] text-[#FF8C42] bg-orange-50/50'
+          : 'border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50'
       }`}
     >
       {label}

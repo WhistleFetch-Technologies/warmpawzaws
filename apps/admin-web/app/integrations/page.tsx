@@ -45,6 +45,14 @@ interface SMSConfig {
   enabled: boolean;
 }
 
+interface KYCConfig {
+  provider: 'sandbox' | 'signzy' | 'idfy' | 'karza';
+  apiKey: string;
+  apiSecret: string;
+  baseUrl: string;
+  enabled: boolean;
+}
+
 interface IntegrationStatus {
   name: string;
   connected: boolean;
@@ -67,6 +75,8 @@ export default function IntegrationsPage() {
   const [googleMapsConfig, setGoogleMapsConfig] = useState<GoogleMapsConfig | null>(null);
   const [shiprocketConfig, setShiprocketConfig] = useState<ShiprocketConfig | null>(null);
   const [smsConfig, setSmsConfig] = useState<SMSConfig | null>(null);
+  const [kycConfig, setKycConfig] = useState<KYCConfig | null>(null);
+  const [savingKyc, setSavingKyc] = useState(false);
   
   // Test states
   const [testing, setTesting] = useState<string | null>(null);
@@ -88,17 +98,25 @@ export default function IntegrationsPage() {
       setLoading(true);
       setError(null);
       
-      const [aws, razorpay, maps, shiprocket] = await Promise.all([
+      const [aws, razorpay, maps, shiprocket, kyc] = await Promise.all([
         apiClient.get<any>('/admin/integrations/aws'),
         apiClient.get<any>('/admin/integrations/razorpay'),
         apiClient.get<any>('/admin/integrations/google-maps'),
         apiClient.get<any>('/admin/integrations/shiprocket'),
+        apiClient.get<any>('/admin/kyc/config').catch(() => ({ data: null })),
       ]);
       
       setAwsConfig(aws.config || aws);
       setRazorpayConfig(razorpay.config || razorpay);
       setGoogleMapsConfig(maps.config || maps);
       setShiprocketConfig(shiprocket.config || shiprocket);
+      setKycConfig(kyc.data || kyc.config || {
+        provider: 'sandbox',
+        apiKey: '',
+        apiSecret: '',
+        baseUrl: '',
+        enabled: false,
+      });
     } catch (err: any) {
       console.error('Error loading configs:', err);
       setError(err.message || 'Failed to load integration configs');
@@ -157,6 +175,66 @@ export default function IntegrationsPage() {
       loadConfigs();
     } catch (err: any) {
       setError(err.message || `Failed to save ${integration} config`);
+    }
+  };
+
+  const handleSaveKycConfig = async () => {
+    if (!kycConfig) return;
+    
+    try {
+      setSavingKyc(true);
+      setError(null);
+      
+      const response = await apiClient.post<any>('/admin/kyc/config', kycConfig);
+      
+      if (response.success) {
+        setSuccess('KYC configuration saved successfully!');
+        loadConfigs();
+      } else {
+        setError(response.error || 'Failed to save KYC configuration');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to save KYC config');
+    } finally {
+      setSavingKyc(false);
+    }
+  };
+
+  const handleTestKycConnection = async () => {
+    try {
+      setTesting('kyc');
+      setError(null);
+      
+      const response = await apiClient.post<any>('/admin/kyc/test-connection', {});
+      
+      setTestResults(prev => ({
+        ...prev,
+        kyc: {
+          name: 'kyc',
+          connected: response.success,
+          lastTested: new Date().toISOString(),
+          error: response.error,
+        }
+      }));
+      
+      if (response.success) {
+        setSuccess(`KYC provider (${response.data?.provider}) connection successful!`);
+      } else {
+        setError(`KYC connection failed: ${response.error}`);
+      }
+    } catch (err: any) {
+      setTestResults(prev => ({
+        ...prev,
+        kyc: {
+          name: 'kyc',
+          connected: false,
+          lastTested: new Date().toISOString(),
+          error: err.message,
+        }
+      }));
+      setError(`Failed to test KYC connection: ${err.message}`);
+    } finally {
+      setTesting(null);
     }
   };
 
@@ -223,6 +301,13 @@ export default function IntegrationsPage() {
       icon: '📱',
       description: 'OTP and notification SMS delivery',
       configured: !!smsConfig?.api_key,
+    },
+    {
+      id: 'kyc',
+      name: 'KYC Verification',
+      icon: '🛡️',
+      description: 'Aadhaar, PAN, and GST verification for vendor onboarding',
+      configured: !!kycConfig?.apiKey && kycConfig?.enabled,
     },
   ];
 
@@ -497,10 +582,106 @@ export default function IntegrationsPage() {
                     </div>
                   )}
 
+                  {/* KYC Verification Configuration */}
+                  {integration.id === 'kyc' && (
+                    <div className="space-y-4">
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                        <div className="flex items-start gap-3">
+                          <span className="text-2xl">ℹ️</span>
+                          <div>
+                            <h4 className="font-medium text-blue-900">KYC Verification Providers</h4>
+                            <p className="text-sm text-blue-700 mt-1">
+                              Supported providers: Sandbox (for testing), Signzy, IDfy, Karza. 
+                              Each provides Aadhaar OTP, PAN verification, and GST verification APIs.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+                          <select
+                            value={kycConfig?.provider || 'sandbox'}
+                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setKycConfig(prev => prev ? { ...prev, provider: e.target.value as any } : { provider: e.target.value as any, apiKey: '', apiSecret: '', baseUrl: '', enabled: false })}
+                            className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
+                          >
+                            <option value="sandbox">Sandbox (Testing)</option>
+                            <option value="signzy">Signzy</option>
+                            <option value="idfy">IDfy</option>
+                            <option value="karza">Karza</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Base URL (Optional)</label>
+                          <input
+                            type="text"
+                            value={kycConfig?.baseUrl || ''}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKycConfig(prev => prev ? { ...prev, baseUrl: e.target.value } : null)}
+                            className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
+                            placeholder="https://api.provider.com"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                          <input
+                            type="password"
+                            value={kycConfig?.apiKey || ''}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKycConfig(prev => prev ? { ...prev, apiKey: e.target.value } : { provider: 'sandbox', apiKey: e.target.value, apiSecret: '', baseUrl: '', enabled: false })}
+                            className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
+                            placeholder="Enter API key"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">API Secret</label>
+                          <input
+                            type="password"
+                            value={kycConfig?.apiSecret || ''}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKycConfig(prev => prev ? { ...prev, apiSecret: e.target.value } : null)}
+                            className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
+                            placeholder="Enter API secret"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-6">
+                        <label className="flex items-center gap-2">
+                          <input 
+                            type="checkbox" 
+                            checked={kycConfig?.enabled ?? false} 
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setKycConfig(prev => prev ? { ...prev, enabled: e.target.checked } : null)} 
+                            className="rounded" 
+                          />
+                          <span className="text-sm font-medium text-gray-700">Enable KYC Verification</span>
+                        </label>
+                      </div>
+                      
+                      {!kycConfig?.enabled && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                          <strong>Note:</strong> When disabled, KYC verification will return mock responses for testing purposes.
+                        </div>
+                      )}
+                      
+                      <div className="bg-gray-100 rounded-lg p-4 mt-4">
+                        <h4 className="font-medium text-gray-900 mb-2">Verification Endpoints</h4>
+                        <ul className="text-sm text-gray-600 space-y-1">
+                          <li>• <code className="bg-gray-200 px-1 rounded">POST /kyc/aadhaar/generate-otp</code> - Generate Aadhaar OTP</li>
+                          <li>• <code className="bg-gray-200 px-1 rounded">POST /kyc/aadhaar/verify-otp</code> - Verify Aadhaar OTP</li>
+                          <li>• <code className="bg-gray-200 px-1 rounded">POST /kyc/pan/verify</code> - Verify PAN number</li>
+                          <li>• <code className="bg-gray-200 px-1 rounded">POST /kyc/gst/verify</code> - Verify GST number</li>
+                          <li>• <code className="bg-gray-200 px-1 rounded">GET /kyc/status/:vendorId</code> - Get KYC status</li>
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Action Buttons */}
                   <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
                     <button
-                      onClick={() => handleTestConnection(integration.id)}
+                      onClick={() => integration.id === 'kyc' ? handleTestKycConnection() : handleTestConnection(integration.id)}
                       disabled={testing === integration.id}
                       className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200 transition disabled:opacity-50"
                     >
@@ -518,8 +699,13 @@ export default function IntegrationsPage() {
                                        integration.id === 'razorpay' ? razorpayConfig :
                                        integration.id === 'google-maps' ? googleMapsConfig :
                                        integration.id === 'shiprocket' ? shiprocketConfig :
+                                       integration.id === 'kyc' ? kycConfig :
                                        smsConfig;
-                        handleSaveConfig(integration.id, config);
+                        if (integration.id === 'kyc') {
+                          handleSaveKycConfig();
+                        } else {
+                          handleSaveConfig(integration.id, config);
+                        }
                       }}
                       className="px-4 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
                     >

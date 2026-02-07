@@ -34,7 +34,7 @@ import {
   Clock,
   LogOut,
   TrendingUp,
-  DollarSign,
+  IndianRupee,
   Package,
   LayoutDashboard,
   Megaphone,
@@ -57,7 +57,6 @@ import {
   Globe,
   Download as DownloadIcon,
   CalendarCheck,
-  DollarSignIcon,
   Database,
   Briefcase
 } from 'lucide-react';
@@ -205,7 +204,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
         <div className="bg-white border-b px-0 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4 flex-1">
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
                 <div className="w-6 h-6 bg-gray-200 rounded"></div>
                 <div>
                   <h1 className="text-[#FF8C42]">Vendor Administration</h1>
@@ -224,12 +223,12 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
               </div>
             </div>
 
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-3">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={loadVendors}
-                className="h-9 gap-0"
+                className="h-9 gap-3"
               >
                 <RefreshCw className="w-4 h-4" />
                 Refresh
@@ -237,7 +236,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
 
               <Button
                 size="sm"
-                className="bg-[#FF8C42] hover:bg-[#FF7A2E] h-9 gap-0"
+                className="bg-[#FF8C42] hover:bg-[#FF7A2E] h-9 gap-3"
               >
                 <Plus className="w-4 h-4" />
                 Add Vendor
@@ -273,7 +272,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                 <p className="text-gray-600 text-sm mb-0">Active Vendors</p>
                 <p className="text-2xl mb-0">{stats.approved}</p>
                 {/* Mini line chart placeholder */}
-                <div className="h-8 flex items-end gap-0.5">
+                <div className="h-8 flex items-end gap-3.5">
                   {[20, 30, 25, 40, 35, 50, 45, 55, 50, 60].map((h, i) => (
                     <div key={i} className="flex-1 bg-green-200 rounded-t" style={{ height: `${h}%` }}></div>
                   ))}
@@ -302,7 +301,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                 <p className="text-gray-600 text-sm mb-0">Pending Applications</p>
                 <p className="text-2xl mb-0">{stats.pending}</p>
                 {/* Mini bar chart placeholder */}
-                <div className="h-8 flex items-end gap-0.5">
+                <div className="h-8 flex items-end gap-3.5">
                   {[40, 30, 50, 35, 60].map((h, i) => (
                     <div key={i} className="flex-1 bg-orange-300 rounded-t" style={{ height: `${h}%` }}></div>
                   ))}
@@ -332,7 +331,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                   <span className="text-xs text-gray-500">Requires Attention</span>
                 </div>
                 {/* Mini line chart */}
-                <div className="h-8 flex items-end gap-0.5">
+                <div className="h-8 flex items-end gap-3.5">
                   {[30, 20, 40, 25, 35, 20, 30].map((h, i) => (
                     <div key={i} className="flex-1 bg-red-200 rounded-t" style={{ height: `${h}%` }}></div>
                   ))}
@@ -360,7 +359,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                 <p className="text-gray-600 text-sm mb-0">Support Tickets</p>
                 <p className="text-2xl mb-0">15</p>
                 {/* Mini line chart */}
-                <div className="h-8 flex items-end gap-0.5">
+                <div className="h-8 flex items-end gap-3.5">
                   {[40, 35, 50, 45, 55, 50, 60, 55, 65].map((h, i) => (
                     <div key={i} className="flex-1 bg-blue-200 rounded-t" style={{ height: `${h}%` }}></div>
                   ))}
@@ -380,10 +379,10 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
           </div>
 
           {/* Vendor Distribution & Quick Access */}
-          <div className="grid grid-cols-3 gap-0 mb-0">
+          <div className="grid grid-cols-3 gap-3 mb-0">
             {/* Vendor Distribution */}
             <Card className="p-4">
-              <div className="flex items-center gap-0 mb-4">
+              <div className="flex items-center gap-3 mb-4">
                 <Users className="w-5 h-5 text-blue-600" />
                 <h3>Vendor Distribution</h3>
               </div>
@@ -411,19 +410,19 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
               {/* Legend */}
               <div className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-0">
+                  <div className="flex items-center gap-3">
                     <div className="w-3 h-3 rounded-full bg-blue-600"></div>
                     <span>Active Vendors (1,267)</span>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-0">
+                  <div className="flex items-center gap-3">
                     <div className="w-3 h-3 rounded-full bg-blue-300"></div>
                     <span>Deactivated Vendors (342)</span>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-0">
+                  <div className="flex items-center gap-3">
                     <div className="w-3 h-3 rounded-full bg-blue-200"></div>
                     <span>Pending Vendors (1,873)</span>
                   </div>
@@ -435,8 +434,8 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
             <Card className="p-4 col-span-2">
               <h3 className="mb-4">Quick Access</h3>
               
-              <div className="grid grid-cols-3 gap-0">
-                <button className="flex flex-col items-center gap-0 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
+              <div className="grid grid-cols-3 gap-3">
+                <button className="flex flex-col items-center gap-3 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
                   <div className="p-0 bg-red-100 rounded-lg">
                     <XCircle className="w-5 h-5 text-red-600" />
                   </div>
@@ -446,7 +445,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                   </div>
                 </button>
 
-                <button className="flex flex-col items-center gap-0 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
+                <button className="flex flex-col items-center gap-3 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
                   <div className="p-0 bg-green-100 rounded-lg">
                     <CalendarCheck className="w-5 h-5 text-green-600" />
                   </div>
@@ -456,9 +455,9 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                   </div>
                 </button>
 
-                <button className="flex flex-col items-center gap-0 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
+                <button className="flex flex-col items-center gap-3 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
                   <div className="p-0 bg-red-100 rounded-lg">
-                    <DollarSign className="w-5 h-5 text-red-600" />
+                    <IndianRupee className="w-5 h-5 text-red-600" />
                   </div>
                   <div className="text-center">
                     <p className="text-xs">Payment</p>
@@ -466,7 +465,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                   </div>
                 </button>
 
-                <button className="flex flex-col items-center gap-0 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
+                <button className="flex flex-col items-center gap-3 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
                   <div className="p-0 bg-blue-100 rounded-lg">
                     <CheckCircle className="w-5 h-5 text-blue-600" />
                   </div>
@@ -476,7 +475,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                   </div>
                 </button>
 
-                <button className="flex flex-col items-center gap-0 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
+                <button className="flex flex-col items-center gap-3 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
                   <div className="p-0 bg-purple-100 rounded-lg">
                     <Send className="w-5 h-5 text-purple-600" />
                   </div>
@@ -486,7 +485,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                   </div>
                 </button>
 
-                <button className="flex flex-col items-center gap-0 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
+                <button className="flex flex-col items-center gap-3 p-0 border border-gray-200 rounded-lg hover:border-[#FF8C42] hover:bg-orange-50 transition-colors">
                   <div className="p-0 bg-blue-100 rounded-lg">
                     <DownloadIcon className="w-5 h-5 text-blue-600" />
                   </div>
@@ -501,7 +500,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
 
           {/* Tabs */}
           <div className="mb-4">
-            <div className="flex gap-0 border-b">
+            <div className="flex gap-3 border-b">
               <button className="px-4 py-0 text-sm text-gray-600 hover:text-gray-900">
                 New Vendor Applications
               </button>
@@ -524,7 +523,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
           <Accordion type="single" collapsible className="space-y-4">
             <AccordionItem value="refund" className="bg-white rounded-lg border">
               <AccordionTrigger className="px-4 py-0 hover:no-underline">
-                <div className="flex items-center gap-0">
+                <div className="flex items-center gap-3">
                   <RefreshCw className="w-4 h-4" />
                   <span>Refund Policies</span>
                 </div>
@@ -536,8 +535,8 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
 
             <AccordionItem value="reservation" className="bg-white rounded-lg border">
               <AccordionTrigger className="px-4 py-0 hover:no-underline">
-                <div className="flex items-center gap-0">
-                  <DollarSign className="w-4 h-4" />
+                <div className="flex items-center gap-3">
+                  <IndianRupee className="w-4 h-4" />
                   <span>Reservation & Payment Type</span>
                 </div>
               </AccordionTrigger>
@@ -548,7 +547,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
 
             <AccordionItem value="booking" className="bg-white rounded-lg border">
               <AccordionTrigger className="px-4 py-0 hover:no-underline">
-                <div className="flex items-center gap-0">
+                <div className="flex items-center gap-3">
                   <Calendar className="w-4 h-4" />
                   <span>Booking Rules</span>
                 </div>
@@ -603,7 +602,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
               {/* Business Info */}
               <div>
                 <h4 className="font-semibold mb-0">Business Information</h4>
-                <div className="grid grid-cols-2 gap-0 text-sm">
+                <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <p className="text-gray-600">Business Name</p>
                     <p className="font-medium">{selectedVendor.businessName}</p>
@@ -626,7 +625,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
               {/* Services */}
               <div>
                 <h4 className="font-semibold mb-0">Services Offered</h4>
-                <div className="flex flex-wrap gap-0">
+                <div className="flex flex-wrap gap-3">
                   {selectedVendor.services?.map((service: string, idx: number) => (
                     <Badge key={idx} variant="default">
                       {service}
@@ -647,7 +646,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
               {/* Documents */}
               <div>
                 <h4 className="font-semibold mb-0">Business Documents</h4>
-                <div className="grid grid-cols-2 gap-0 text-sm">
+                <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <p className="text-gray-600">GSTIN</p>
                     <p className="font-medium">{selectedVendor.gstin || 'Not provided'}</p>
@@ -673,7 +672,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
             </div>
           )}
 
-          <DialogFooter className="flex gap-0">
+          <DialogFooter className="flex gap-3">
             {selectedVendor?.status === 'pending' && (
               <>
                 <Button
@@ -682,7 +681,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                   disabled={actionLoading}
                   className="text-red-600 hover:text-red-700 border-red-200 hover:bg-red-50"
                 >
-                  <XCircle className="w-4 h-4 mr-0" />
+                  <XCircle className="w-4 h-4 mr-2" />
                   Reject
                 </Button>
                 <Button
@@ -690,7 +689,7 @@ export function AdminDashboard({ session, onNavigate, initialView }: AdminDashbo
                   disabled={actionLoading}
                   className="bg-green-600 hover:bg-green-700"
                 >
-                  <CheckCircle className="w-4 h-4 mr-0" />
+                  <CheckCircle className="w-4 h-4 mr-2" />
                   Approve
                 </Button>
               </>

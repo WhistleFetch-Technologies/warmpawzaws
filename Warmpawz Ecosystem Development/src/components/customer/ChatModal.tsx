@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { X, Send, Paperclip, Image as ImageIcon, FileText } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { PrescriptionModal } from './PrescriptionModal';
 
 interface ChatModalProps {
@@ -56,9 +56,9 @@ export function ChatModal({ bookingId, customerPhone, customerName, onClose, onR
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/chat/booking/${bookingId}/conversation`,
+        `${getApiBaseUrl()}/chat/booking/${bookingId}/conversation`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -79,9 +79,9 @@ export function ChatModal({ bookingId, customerPhone, customerName, onClose, onR
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/chat/conversation/${conversation.id}/messages?userType=customer`,
+        `${getApiBaseUrl()}/chat/conversation/${conversation.id}/messages?userType=customer`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -100,11 +100,11 @@ export function ChatModal({ bookingId, customerPhone, customerName, onClose, onR
     try {
       setSending(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/chat/message/send`,
+        `${getApiBaseUrl()}/chat/message/send`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

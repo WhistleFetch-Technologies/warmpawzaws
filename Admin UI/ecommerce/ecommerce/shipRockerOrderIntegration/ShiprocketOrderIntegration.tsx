@@ -11,7 +11,7 @@ import {
 	Input,
 	Label,
 } from "@repo/ui";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders, getAuthToken } from "@repo/utils/api-config";
 import {
 	Package,
 	Truck,
@@ -41,11 +41,11 @@ export function ShiprocketOrderIntegration({
 	const [isCourierModalOpen, setIsCourierModalOpen] = useState(false);
 	const [courierId, setCourierId] = useState("");
 
-	const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+	const API_BASE = `${getApiBaseUrl()}`;
 
 	const getAuthHeaders = () => ({
-		apikey: publicAnonKey,
-		Authorization: `Bearer ${publicAnonKey}`,
+		apikey: getAuthToken(),
+		...getAuthHeaders(),
 		"Content-Type": "application/json",
 	});
 

@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { Button, Card, CardHeader, CardTitle, CardContent, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, Input, Label, Badge, Textarea, Checkbox, Tabs, TabsList, TabsTrigger, TabsContent, Switch } from '@warmpawz/ui';
+import { Search, Filter, RotateCcw, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 
 interface Role {
   id: string;
@@ -29,12 +30,17 @@ interface Capability {
   category: string;
 }
 
+type RoleFilter = 'all' | 'active' | 'inactive';
+
 export function AdminRolesPage() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
 
   useEffect(() => {
     loadData();
@@ -43,8 +49,9 @@ export function AdminRolesPage() {
   const loadData = async () => {
     try {
       setLoading(true);
+      // Fetch ALL roles including inactive ones
       const [rolesRes, capsRes] = await Promise.all([
-        apiClient.get<any>('/admin/roles'), // Using admin endpoint to get full role data
+        apiClient.get<any>('/admin/roles?active=false'), // Get all roles including inactive
         apiClient.get<any>('/admin/capabilities'),
       ]);
       if (rolesRes.success) {
@@ -76,12 +83,98 @@ export function AdminRolesPage() {
     }
   };
 
+  // Get unique categories from roles
+  const categories = useMemo(() => {
+    const cats = new Set(roles.map(r => r.category));
+    return ['all', ...Array.from(cats)];
+  }, [roles]);
+
+  // Filtered roles based on search, status, and category
+  const filteredRoles = useMemo(() => {
+    return roles.filter(role => {
+      // Status filter
+      if (roleFilter === 'active' && !role.is_active) return false;
+      if (roleFilter === 'inactive' && role.is_active) return false;
+      
+      // Category filter
+      if (categoryFilter !== 'all' && role.category !== categoryFilter) return false;
+      
+      // Search filter
+      if (searchTerm) {
+        const search = searchTerm.toLowerCase();
+        return (
+          role.display_name.toLowerCase().includes(search) ||
+          role.name.toLowerCase().includes(search) ||
+          role.description.toLowerCase().includes(search)
+        );
+      }
+      
+      return true;
+    });
+  }, [roles, roleFilter, categoryFilter, searchTerm]);
+
   const handleToggleRole = async (roleId: string, isActive: boolean) => {
     try {
+      const action = isActive ? 'deactivate' : 'activate';
+      const confirmed = window.confirm(
+        `Are you sure you want to ${action} this role? ${
+          isActive 
+            ? 'Deactivated roles will not be available for new vendors but existing vendors will retain their role.' 
+            : 'This will make the role available for vendor onboarding.'
+        }`
+      );
+      
+      if (!confirmed) return;
+      
       await apiClient.put(`/admin/roles/${roleId}`, { is_active: !isActive });
       loadData();
     } catch (err) {
       console.error('Error toggling role:', err);
+      alert('Failed to update role status');
+    }
+  };
+
+  const handleRestoreRole = async (roleId: string) => {
+    try {
+      await apiClient.put(`/admin/roles/${roleId}`, { is_active: true });
+      loadData();
+    } catch (err) {
+      console.error('Error restoring role:', err);
+      alert('Failed to restore role');
+    }
+  };
+
+  const handleDeleteRole = async (roleId: string, roleName: string, permanent: boolean = false) => {
+    if (permanent) {
+      // Double confirmation for permanent delete
+      const firstConfirm = window.confirm(
+        `⚠️ PERMANENT DELETE\n\nAre you sure you want to PERMANENTLY delete role "${roleName}"?\n\nThis will:\n• Remove the role from the database\n• Delete all associated permissions\n• This action CANNOT be undone!`
+      );
+      if (!firstConfirm) return;
+      
+      const secondConfirm = window.prompt(
+        `To confirm permanent deletion, type the role name: "${roleName}"`
+      );
+      if (secondConfirm !== roleName) {
+        alert('Role name did not match. Deletion cancelled.');
+        return;
+      }
+    } else {
+      if (!confirm(`Are you sure you want to deactivate role "${roleName}"?\n\nThe role will be hidden from new vendors but existing vendors will keep their role. You can restore it later.`)) {
+        return;
+      }
+    }
+
+    try {
+      const endpoint = permanent 
+        ? `/admin/roles/${roleId}?permanent=true`
+        : `/admin/roles/${roleId}`;
+      const result = await apiClient.delete<any>(endpoint);
+      alert(result.message || (permanent ? 'Role permanently deleted' : 'Role deactivated'));
+      loadData();
+    } catch (err: any) {
+      console.error('Error deleting role:', err);
+      alert(err.message || 'Failed to delete role');
     }
   };
 
@@ -104,9 +197,14 @@ export function AdminRolesPage() {
   }
 
   return (
-    <div className="p-0">
-      <div className="flex items-center justify-between mb-0">
-        <h1 className="text-2xl font-bold text-gray-900">Roles & Capabilities</h1>
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Roles & Capabilities</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Manage vendor roles, capabilities, and configuration. All data is stored in the database.
+          </p>
+        </div>
         <Button
           onClick={() => setShowAddModal(true)}
           variant="default"
@@ -116,17 +214,29 @@ export function AdminRolesPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-0">
-        <Card>
+      <div className="grid grid-cols-4 gap-4">
+        <Card className="cursor-pointer hover:border-primary transition" onClick={() => setRoleFilter('all')}>
           <CardContent className="p-4">
             <p className="text-sm text-muted-foreground">Total Roles</p>
             <p className="text-2xl font-bold text-gray-900">{roles.length}</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="cursor-pointer hover:border-green-500 transition" onClick={() => setRoleFilter('active')}>
           <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">Active Roles</p>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-green-600" />
+              <p className="text-sm text-muted-foreground">Active Roles</p>
+            </div>
             <p className="text-2xl font-bold text-green-600">{roles.filter(r => r.is_active).length}</p>
+          </CardContent>
+        </Card>
+        <Card className="cursor-pointer hover:border-gray-400 transition" onClick={() => setRoleFilter('inactive')}>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <XCircle className="w-4 h-4 text-gray-500" />
+              <p className="text-sm text-muted-foreground">Inactive Roles</p>
+            </div>
+            <p className="text-2xl font-bold text-gray-500">{roles.filter(r => !r.is_active).length}</p>
           </CardContent>
         </Card>
         <Card>
@@ -137,15 +247,95 @@ export function AdminRolesPage() {
         </Card>
       </div>
 
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-lg border">
+        <div className="flex-1 min-w-[200px] relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Input
+            type="text"
+            placeholder="Search roles..."
+            value={searchTerm}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Filter className="w-4 h-4 text-gray-400" />
+          <select
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value as RoleFilter)}
+            className="h-9 px-3 py-1 text-sm border rounded-md bg-white"
+          >
+            <option value="all">All Status</option>
+            <option value="active">Active Only</option>
+            <option value="inactive">Inactive Only</option>
+          </select>
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="h-9 px-3 py-1 text-sm border rounded-md bg-white capitalize"
+          >
+            {categories.map(cat => (
+              <option key={cat} value={cat} className="capitalize">
+                {cat === 'all' ? 'All Categories' : cat.replace(/_/g, ' ')}
+              </option>
+            ))}
+          </select>
+        </div>
+        {(searchTerm || roleFilter !== 'all' || categoryFilter !== 'all') && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setSearchTerm('');
+              setRoleFilter('all');
+              setCategoryFilter('all');
+            }}
+          >
+            Clear Filters
+          </Button>
+        )}
+      </div>
+
+      {/* Filtered count */}
+      <div className="text-sm text-gray-500">
+        Showing {filteredRoles.length} of {roles.length} roles
+        {roleFilter !== 'all' && ` (${roleFilter})`}
+        {categoryFilter !== 'all' && ` in ${categoryFilter.replace(/_/g, ' ')}`}
+      </div>
+
       {/* Roles Grid */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
-        {roles.map((role) => (
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredRoles.map((role) => (
           <Card
             key={role.id}
-            className="cursor-pointer hover:shadow-md transition"
+            className={`cursor-pointer hover:shadow-md transition relative ${
+              !role.is_active ? 'opacity-75 border-dashed' : ''
+            }`}
             onClick={() => setSelectedRole(role)}
           >
-            <CardContent className="p-4">
+            {/* Inactive overlay banner */}
+            {!role.is_active && (
+              <div className="absolute top-0 left-0 right-0 bg-gray-100 px-3 py-1 rounded-t-lg flex items-center justify-between">
+                <span className="text-xs text-gray-600 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  Inactive Role
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs text-green-600 hover:text-green-700 hover:bg-green-50"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRestoreRole(role.id);
+                  }}
+                >
+                  <RotateCcw className="w-3 h-3 mr-1" />
+                  Restore
+                </Button>
+              </div>
+            )}
+            <CardContent className={`p-4 ${!role.is_active ? 'pt-10' : ''}`}>
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">
                   {role.icon && (
@@ -205,15 +395,107 @@ export function AdminRolesPage() {
                   </div>
                 </div>
               )}
+
+              {/* Capabilities Summary */}
+              <div className="mb-3 p-2 bg-gray-50 rounded-lg">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-gray-700">Capabilities</span>
+                  <span className="text-xs text-primary font-semibold">
+                    {role.capabilities?.length || 0} / {capabilities.length}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-1.5">
+                  <div 
+                    className="bg-primary h-1.5 rounded-full transition-all"
+                    style={{ width: `${((role.capabilities?.length || 0) / capabilities.length) * 100}%` }}
+                  />
+                </div>
+                {role.capabilities && role.capabilities.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {role.capabilities.slice(0, 4).map((cap, idx) => (
+                      <Badge key={idx} variant="outline" className="text-xs bg-primary/5 text-primary border-primary/20">
+                        {cap.replace(/_/g, ' ')}
+                      </Badge>
+                    ))}
+                    {role.capabilities.length > 4 && (
+                      <Badge variant="outline" className="text-xs">+{role.capabilities.length - 4} more</Badge>
+                    )}
+                  </div>
+                )}
+              </div>
               
               <div className="flex items-center justify-between pt-3 border-t">
-                <span className="text-xs text-muted-foreground capitalize">{role.category}</span>
-                <span className="text-xs text-primary font-medium">{role.capabilities?.length || 0} capabilities</span>
+                <span className="text-xs text-muted-foreground capitalize">{role.category.replace(/_/g, ' ')}</span>
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedRole(role);
+                    }}
+                  >
+                    Edit →
+                  </Button>
+                  {role.is_active && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteRole(role.id, role.display_name, false);
+                      }}
+                      title="Deactivate role (soft delete)"
+                    >
+                      ⏸️
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteRole(role.id, role.display_name, true);
+                    }}
+                    title="Permanently delete role"
+                  >
+                    🗑️
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
+
+      {/* Empty state */}
+      {filteredRoles.length === 0 && (
+        <div className="text-center py-12 bg-gray-50 rounded-lg border-2 border-dashed">
+          <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No roles found</h3>
+          <p className="text-sm text-gray-500 mb-4">
+            {searchTerm 
+              ? 'Try adjusting your search or filters'
+              : roleFilter === 'inactive' 
+                ? 'No inactive roles. All roles are currently active.'
+                : 'No roles match the current filters.'
+            }
+          </p>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setSearchTerm('');
+              setRoleFilter('all');
+              setCategoryFilter('all');
+            }}
+          >
+            Clear Filters
+          </Button>
+        </div>
+      )}
 
       {/* Role Detail Modal */}
       {selectedRole && (
@@ -232,6 +514,10 @@ export function AdminRolesPage() {
             }
           }}
           onToggle={() => handleToggleRole(selectedRole.id, selectedRole.is_active)}
+          onDelete={async (permanent: boolean) => {
+            await handleDeleteRole(selectedRole.id, selectedRole.display_name, permanent);
+            setSelectedRole(null);
+          }}
         />
       )}
 
@@ -262,6 +548,7 @@ function RoleDetailModal({
   onClose,
   onSave,
   onToggle,
+  onDelete,
 }: {
   role: Role;
   allCapabilities: Capability[];
@@ -269,6 +556,7 @@ function RoleDetailModal({
   onClose: () => void;
   onSave: (role: Partial<Role>) => void;
   onToggle: () => void;
+  onDelete: (permanent: boolean) => void;
 }) {
   const [activeTab, setActiveTab] = useState('basic');
   const [formData, setFormData] = useState({
@@ -406,31 +694,85 @@ function RoleDetailModal({
               </div>
 
               <div className="mt-6">
-                <h3 className="font-semibold mb-3">Capabilities ({formData.capabilities.length} selected)</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold">Capabilities</h3>
+                  <div className="flex items-center gap-4 text-sm">
+                    <span className="flex items-center gap-1">
+                      <span className="w-3 h-3 rounded bg-primary"></span>
+                      <span className="text-gray-600">Selected: {formData.capabilities.length}</span>
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-3 h-3 rounded bg-gray-200"></span>
+                      <span className="text-gray-600">Available: {allCapabilities.length - formData.capabilities.length}</span>
+                    </span>
+                  </div>
+                </div>
+                
+                {/* Quick actions */}
+                <div className="flex gap-2 mb-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFormData({ ...formData, capabilities: allCapabilities.map(c => c.id) })}
+                  >
+                    Select All
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setFormData({ ...formData, capabilities: [] })}
+                  >
+                    Clear All
+                  </Button>
+                </div>
+
                 <div className="space-y-4 max-h-96 overflow-y-auto">
-                  {Object.entries(groupedCapabilities).map(([category, caps]) => (
-                    <Card key={category} className="bg-white border border-gray-300">
-                      <CardContent className="p-4 bg-white text-gray-900">
-                        <h4 className="font-medium text-gray-700 mb-3">{category}</h4>
-                        <div className="grid grid-cols-2 gap-2">
-                          {caps.map((cap) => (
-                            <label
-                              key={cap.id}
-                              className={`flex items-center gap-2 p-2 rounded cursor-pointer transition ${
-                                formData.capabilities.includes(cap.name) ? 'bg-primary/10 border border-primary text-gray-900' : 'bg-white hover:bg-gray-50 border border-gray-300 text-gray-900'
-                              }`}
-                            >
-                              <Checkbox
-                                checked={formData.capabilities.includes(cap.name)}
-                                onCheckedChange={() => toggleCapability(cap.name)}
-                              />
-                              <span className="text-sm">{cap.name}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                  {Object.entries(groupedCapabilities).map(([category, caps]) => {
+                    // FIX: Use cap.id instead of cap.name for comparison (backend stores IDs not display names)
+                    const selectedInCategory = caps.filter(c => formData.capabilities.includes(c.id)).length;
+                    return (
+                      <Card key={category} className="bg-white border border-gray-300">
+                        <CardContent className="p-4 bg-white text-gray-900">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="font-medium text-gray-700">{category}</h4>
+                            <Badge variant={selectedInCategory === caps.length ? "default" : selectedInCategory > 0 ? "secondary" : "outline"}>
+                              {selectedInCategory}/{caps.length} selected
+                            </Badge>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            {caps.map((cap) => {
+                              // FIX: Use cap.id instead of cap.name for comparison
+                              const isSelected = formData.capabilities.includes(cap.id);
+                              return (
+                                <label
+                                  key={cap.id}
+                                  className={`flex items-center gap-2 p-2 rounded cursor-pointer transition ${
+                                    isSelected 
+                                      ? 'bg-primary/10 border-2 border-primary text-gray-900' 
+                                      : 'bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-600'
+                                  }`}
+                                  title={cap.description}
+                                >
+                                  <Checkbox
+                                    checked={isSelected}
+                                    onCheckedChange={() => toggleCapability(cap.id)}
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <span className={`text-sm block truncate ${isSelected ? 'font-medium' : ''}`}>
+                                      {cap.name}
+                                    </span>
+                                  </div>
+                                  {isSelected && (
+                                    <span className="text-xs text-primary">✓</span>
+                                  )}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
               </div>
             </TabsContent>
@@ -533,14 +875,23 @@ function RoleDetailModal({
           </div>
         </Tabs>
 
-        <DialogFooter className="mt-4">
-          <Button
-            onClick={onToggle}
-            variant={role.is_active ? "secondary" : "default"}
-          >
-            {role.is_active ? 'Deactivate Role' : 'Activate Role'}
-          </Button>
+        <DialogFooter className="mt-4 flex-wrap gap-2">
           <div className="flex gap-2">
+            <Button
+              onClick={onToggle}
+              variant={role.is_active ? "secondary" : "default"}
+            >
+              {role.is_active ? 'Deactivate Role' : 'Activate Role'}
+            </Button>
+            <Button
+              onClick={() => onDelete(true)}
+              variant="destructive"
+              className="bg-red-600 hover:bg-red-700"
+            >
+              🗑️ Permanently Delete
+            </Button>
+          </div>
+          <div className="flex gap-2 ml-auto">
             <Button onClick={onClose} variant="outline">
               Cancel
             </Button>
@@ -792,12 +1143,12 @@ function AddRoleModal({
                         <label
                           key={cap.id}
                           className={`flex items-center gap-2 p-2 rounded cursor-pointer transition ${
-                            formData.capabilities.includes(cap.name) ? 'bg-primary/10 border border-primary' : 'hover:bg-gray-50 border border-transparent'
+                            formData.capabilities.includes(cap.id) ? 'bg-primary/10 border border-primary' : 'hover:bg-gray-50 border border-transparent'
                           }`}
                         >
                           <Checkbox
-                            checked={formData.capabilities.includes(cap.name)}
-                            onCheckedChange={() => toggleCapability(cap.name)}
+                            checked={formData.capabilities.includes(cap.id)}
+                            onCheckedChange={() => toggleCapability(cap.id)}
                           />
                           <span className="text-sm">{cap.name}</span>
                         </label>

@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Star, Clock, MapPin, Phone, Globe, Calendar, Users, Image as ImageIcon, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Star, Clock, MapPin, Phone, Globe, Calendar, Users, Image as ImageIcon, ChevronRight, CheckCircle2, Building2, Stethoscope } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { StandardizedFooter } from '../shared/StandardizedFooter';
 
 interface ClinicProfileViewProps {
   phone: string;
@@ -25,7 +27,7 @@ interface ClinicInfo {
   rating: number;
   review_count: number;
   timing: string;
-  services: { id: string; name: string; price: number }[];
+  services: { id: string; name: string; price: number; duration?: number }[];
   doctors: { id: string; name: string; specialization: string; rating: number }[];
   photos: string[];
   amenities: string[];
@@ -34,6 +36,28 @@ interface ClinicInfo {
 export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: ClinicProfileViewProps) {
   const [loading, setLoading] = useState(true);
   const [clinic, setClinic] = useState<ClinicInfo | null>(null);
+  const [selectedService, setSelectedService] = useState<{ id: string; name: string; price: number; duration?: number } | null>(null);
+  
+  // User profile data for header
+  const [userName, setUserName] = useState('User');
+  const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
+  
+  useEffect(() => {
+    loadUserProfile();
+  }, [phone]);
+  
+  const loadUserProfile = async () => {
+    try {
+      const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
+      if (profileResponse?.profile || profileResponse) {
+        const profile = profileResponse.profile || profileResponse;
+        setUserName(profile.name || profile.fullName || 'User');
+        setUserProfilePhoto(profile.profilePhoto || profile.profile_image_url || profile.photo);
+      }
+    } catch (error) {
+      console.error('Error loading user profile:', error);
+    }
+  };
 
   useEffect(() => {
     loadClinicData();
@@ -42,73 +66,102 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
   const loadClinicData = async () => {
     try {
       setLoading(true);
-      // Try API first, fallback to mock
-      try {
-        const response = await apiClient.get(`/vendors/${clinicId}`);
-        const data = response as any;
-        setClinic({
-          id: data.id || clinicId,
-          name: data.business_name || data.name || 'PetCare Veterinary Clinic',
-          description: data.description || 'A full-service veterinary clinic providing comprehensive care for your pets.',
-          address: data.address || 'Shop 12, Ground Floor, Linking Road',
-          city: data.city || 'Mumbai',
-          pincode: data.pincode || '400050',
-          phone: data.phone || '+91 98765 43210',
-          email: data.email,
-          website: data.website,
-          rating: data.rating || 4.5,
-          review_count: data.review_count || 120,
-          timing: data.timing || '9:00 AM - 8:00 PM',
-          services: data.services || [
-            { id: '1', name: 'General Consultation', price: 399 },
-            { id: '2', name: 'Vaccination', price: 599 },
-            { id: '3', name: 'Health Checkup', price: 999 },
-            { id: '4', name: 'Surgery', price: 2999 },
-          ],
-          doctors: data.doctors || [
-            { id: '1', name: 'Dr. Priya Sharma', specialization: 'General Veterinarian', rating: 4.8 },
-            { id: '2', name: 'Dr. Rahul Mehta', specialization: 'Surgery Specialist', rating: 4.7 },
-          ],
-          photos: data.photos || [],
-          amenities: data.amenities || ['Parking', 'AC', 'Emergency 24/7', 'Lab', 'Pharmacy'],
-        });
-      } catch (err) {
-        // Mock data
-        setClinic({
-          id: clinicId,
-          name: 'PetCare Veterinary Clinic',
-          description: 'A full-service veterinary clinic providing comprehensive care for your beloved pets. We offer state-of-the-art facilities and experienced veterinarians.',
-          address: 'Shop 12, Ground Floor, Linking Road, Bandra West',
-          city: 'Mumbai',
-          pincode: '400050',
-          phone: '+91 98765 43210',
-          rating: 4.6,
-          review_count: 156,
-          timing: '9:00 AM - 8:00 PM',
-          services: [
-            { id: '1', name: 'General Consultation', price: 399 },
-            { id: '2', name: 'Vaccination', price: 599 },
-            { id: '3', name: 'Health Checkup', price: 999 },
-            { id: '4', name: 'Dental Care', price: 1499 },
-            { id: '5', name: 'Surgery', price: 2999 },
-          ],
-          doctors: [
-            { id: '1', name: 'Dr. Priya Sharma', specialization: 'General Veterinarian', rating: 4.8 },
-            { id: '2', name: 'Dr. Rahul Mehta', specialization: 'Surgery Specialist', rating: 4.7 },
-          ],
-          photos: [],
-          amenities: ['Parking', 'Air Conditioning', 'Emergency 24/7', 'In-house Lab', 'Pharmacy'],
-        });
+      
+      // ✅ CRITICAL: Load vendor profile from real API - NO MOCK DATA, NO FALLBACKS
+      const [vendorResponse, servicesResponse] = await Promise.all([
+        apiClient.get(`/customer/vendor/${clinicId}`),
+        apiClient.get(`/customer/vendor/${clinicId}/services`).catch(() => apiClient.get(`/vendor/${clinicId}/services`))
+      ]);
+      
+      const vendorData = (vendorResponse as any)?.vendor || vendorResponse as any;
+      
+      // Extract services (customer endpoint returns { success, services: [...] }; vendor may return nested by style)
+      let services: any[] = [];
+      const servicesData = servicesResponse as any;
+      if (servicesData?.services && Array.isArray(servicesData.services)) {
+        services = servicesData.services;
+      } else if (servicesData?.services?.at_home || servicesData?.services?.at_center || servicesData?.services?.tele) {
+        services = [
+          ...(servicesData.services.at_home?.services || []),
+          ...(servicesData.services.at_center?.services || []),
+          ...(servicesData.services.tele?.services || [])
+        ];
+      } else if (servicesData?.allServices) {
+        services = servicesData.allServices;
+      } else if (Array.isArray(servicesData?.services)) {
+        services = servicesData.services;
+      } else if (Array.isArray(servicesData)) {
+        services = servicesData;
       }
+      
+      // ✅ CRITICAL: Map services to use service_id (UUID) as id, not numeric vendor_services.id
+      const mappedServices = services.map((s: any) => ({
+        id: s.serviceId || s.service_id, // ✅ UUID from services table
+        serviceId: s.serviceId || s.service_id, // ✅ UUID
+        vendorServiceId: s.id, // Numeric vendor_services.id (for reference)
+        name: s.serviceName || s.name || s.service_name,
+        price: parseFloat(s.price || '0'),
+        duration: s.duration || s.duration_minutes || 30,
+      }));
+      
+      console.log('✅ Loaded clinic data:', {
+        vendorId: vendorData.id || clinicId,
+        servicesCount: mappedServices.length,
+        services: mappedServices
+      });
+      
+      setClinic({
+        id: vendorData.id || clinicId,
+        name: vendorData.business_name || vendorData.name || 'Veterinary Clinic',
+        description: vendorData.description || '',
+        address: vendorData.address || '',
+        city: vendorData.city || '',
+        pincode: vendorData.pincode || '',
+        phone: vendorData.phone || '',
+        email: vendorData.email,
+        website: vendorData.website,
+        rating: parseFloat(vendorData.rating || '0'),
+        review_count: parseInt(vendorData.review_count || '0', 10),
+        timing: vendorData.timing || vendorData.businessHours || '9:00 AM - 8:00 PM',
+        services: mappedServices, // ✅ Real services with UUID
+        doctors: vendorData.doctors || vendorData.staff || [],
+        photos: vendorData.photos || vendorData.gallery || [],
+        amenities: vendorData.amenities || [],
+      });
     } catch (error) {
-      console.error('Error loading clinic data:', error);
+      console.error('❌ Error loading clinic data:', error);
+      setClinic(null);
     } finally {
       setLoading(false);
     }
   };
 
   const handleBookAppointment = () => {
-    onNavigate('vet-booking', { clinicId: clinic?.id, clinic });
+    if (!selectedService) {
+      // If no service selected, show error or select first service
+      if (clinic?.services && clinic.services.length > 0) {
+        setSelectedService(clinic.services[0]);
+        return;
+      }
+      return;
+    }
+    
+    // ✅ CRITICAL: Use service_id (UUID) not numeric id
+    const serviceId = (selectedService as any).serviceId || selectedService.id;
+    
+    // Navigate with service data - use 'appointment' to match CustomerHomeWrapper expectation
+    onNavigate('appointment', { 
+      clinicId: clinic?.id, 
+      vendorId: clinic?.id,
+      service: selectedService,
+      serviceId: serviceId, // ✅ UUID from services table
+      serviceName: selectedService.name,
+      price: selectedService.price,
+      duration: selectedService.duration || 20,
+      serviceStyle: 'at_center', // Clinic visits are at_center type
+      serviceType: 'at_center',
+      clinic 
+    });
   };
 
   const handleViewDoctor = (doctorId: string) => {
@@ -134,23 +187,32 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
     );
   }
 
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const dashboardStats = [
+    { value: `${clinic.rating?.toFixed(1) || '4.5'}`, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: `${clinic.review_count || 0}`, label: 'Reviews' },
+    { value: clinic.services?.length ? `${clinic.services.length}` : '10+', label: 'Services', icon: <Stethoscope className="w-4 h-4" /> }
+  ];
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header Image/Gradient */}
-      <div className="bg-gradient-to-br from-purple-600 to-purple-700 h-48 relative">
-        <button
-          onClick={onBack}
-          className="absolute top-4 left-4 p-2 bg-white/20 backdrop-blur-sm rounded-full text-white hover:bg-white/30"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-      </div>
+      {/* ✅ FIX: Use ServiceDashboardHeader for consistent Frame UI */}
+      <ServiceDashboardHeader
+        serviceName={clinic.name}
+        serviceSubtitle="Veterinary Clinic"
+        serviceIcon={Building2}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
+      />
 
-      <div className="max-w-md mx-auto px-4 -mt-20 pb-24">
+      <div className="max-w-[430px] mx-auto px-4 pt-4 pb-32">
         {/* Clinic Card */}
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-4">
           <div className="flex items-start gap-4">
-            <div className="w-16 h-16 rounded-xl bg-purple-100 flex items-center justify-center text-2xl">
+            <div className="w-16 h-16 rounded-xl bg-orange-100 flex items-center justify-center text-2xl">
               🏥
             </div>
             <div className="flex-1">
@@ -184,7 +246,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
           {/* Amenities */}
           <div className="mt-4 flex flex-wrap gap-2">
             {clinic.amenities.map((amenity, idx) => (
-              <span key={idx} className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-xs font-medium">
+              <span key={idx} className="px-3 py-1 bg-orange-50 text-orange-700 rounded-full text-xs font-medium">
                 {amenity}
               </span>
             ))}
@@ -226,38 +288,83 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
           <h2 className="font-bold text-gray-900 mb-3">Services & Prices</h2>
           <div className="space-y-2">
             {clinic.services.map((service) => (
-              <div key={service.id} className="flex items-center justify-between py-2 border-b last:border-0">
-                <span className="text-gray-700">{service.name}</span>
-                <span className="font-semibold text-gray-900">₹{service.price}</span>
-              </div>
+              <button
+                key={service.id}
+                onClick={() => setSelectedService(service)}
+                className={`w-full flex items-center justify-between py-3 px-3 rounded-lg border-2 transition-all ${
+                  selectedService?.id === service.id
+                    ? 'border-orange-600 bg-orange-50'
+                    : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50/50'
+                }`}
+              >
+                <span className={`font-medium ${selectedService?.id === service.id ? 'text-orange-900' : 'text-gray-700'}`}>
+                  {service.name}
+                </span>
+                <span className={`font-semibold ${selectedService?.id === service.id ? 'text-orange-600' : 'text-gray-900'}`}>
+                  ₹{service.price}
+                </span>
+                {selectedService?.id === service.id && (
+                  <CheckCircle2 className="w-5 h-5 text-orange-600 ml-2" />
+                )}
+              </button>
             ))}
           </div>
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <button className="flex items-center justify-center gap-2 p-4 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow">
-            <Phone className="w-5 h-5 text-purple-500" />
+        <div className="grid grid-cols-2 gap-3 mb-20">
+          <button 
+            onClick={() => {
+              if (clinic?.phone) {
+                window.location.href = `tel:${clinic.phone}`;
+              } else {
+                alert('Phone number not available');
+              }
+            }}
+            className="flex items-center justify-center gap-2 p-4 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"
+          >
+            <Phone className="w-5 h-5 text-orange-500" />
             <span className="font-medium text-gray-700">Call</span>
           </button>
-          <button className="flex items-center justify-center gap-2 p-4 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow">
-            <MapPin className="w-5 h-5 text-purple-500" />
+          <button 
+            onClick={() => {
+              if (clinic?.address) {
+                const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(clinic.address + ', ' + clinic.city)}`;
+                window.open(url, '_blank');
+              } else {
+                alert('Location not available');
+              }
+            }}
+            className="flex items-center justify-center gap-2 p-4 bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow"
+          >
+            <MapPin className="w-5 h-5 text-orange-500" />
             <span className="font-medium text-gray-700">Directions</span>
           </button>
         </div>
       </div>
 
-      {/* Fixed Bottom Button */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4">
-        <div className="max-w-md mx-auto">
-          <Button 
-            onClick={handleBookAppointment}
-            className="w-full bg-purple-600 hover:bg-purple-700 h-12 text-lg"
-          >
-            Book Appointment
-          </Button>
-        </div>
+      {/* Book Appointment Button - Fixed above footer */}
+      <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-40 max-w-[430px] mx-auto">
+        <Button 
+          onClick={handleBookAppointment}
+          disabled={!selectedService}
+          className="w-full bg-orange-500 hover:bg-orange-600 h-12 text-base font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed"
+        >
+          {selectedService ? `Book ${selectedService.name}` : 'Select a Service'}
+        </Button>
       </div>
+
+      {/* Standardized Footer */}
+      <StandardizedFooter
+        currentTab="bookings"
+        onTabChange={(tab) => {
+          if (tab === 'home') onBack();
+          else if (tab === 'bookings') onNavigate('my-bookings');
+          else if (tab === 'cart') onNavigate('cart');
+          else if (tab === 'profile') onNavigate('profile');
+        }}
+        maxWidth="max-w-[430px]"
+      />
     </div>
   );
 }

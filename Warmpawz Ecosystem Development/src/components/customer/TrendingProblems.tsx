@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, ChevronRight } from 'lucide-react';
 import { Badge } from '../ui/badge';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface TrendingProblem {
   problemId: string;
@@ -34,9 +34,9 @@ export function TrendingProblems({
     setLoading(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/trending-problems?limit=${limit}`,
+        `${getApiBaseUrl()}/customer/trending-problems?limit=${limit}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

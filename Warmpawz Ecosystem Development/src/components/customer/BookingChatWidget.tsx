@@ -3,7 +3,7 @@ import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { MessageCircle, Send, X, Paperclip, FileText, Video, Phone, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -124,8 +124,8 @@ export function BookingChatWidget({
   const loadChatConfig = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/chat-config`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/chat-config`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -140,8 +140,8 @@ export function BookingChatWidget({
   const loadRoleContext = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${bookingId}/chat/role-context`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/booking/${bookingId}/chat/role-context`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -156,8 +156,8 @@ export function BookingChatWidget({
   const loadMessages = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/chat/booking/${bookingId}/conversation`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/chat/booking/${bookingId}/conversation`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -178,11 +178,11 @@ export function BookingChatWidget({
   const markMessagesAsRead = async () => {
     try {
       await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/chat/booking/${bookingId}/read`,
+        `${getApiBaseUrl()}/chat/booking/${bookingId}/read`,
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ readerPhone: customerPhone })
@@ -200,11 +200,11 @@ export function BookingChatWidget({
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/chat/booking/${bookingId}/message`,
+        `${getApiBaseUrl()}/chat/booking/${bookingId}/message`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -247,10 +247,10 @@ export function BookingChatWidget({
       formData.append('caption', `Shared ${file.name}`);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/chat/upload-file`,
+        `${getApiBaseUrl()}/chat/upload-file`,
         {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` },
+          headers: getAuthHeaders(),
           body: formData
         }
       );

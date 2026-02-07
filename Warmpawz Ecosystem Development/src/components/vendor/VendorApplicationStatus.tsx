@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Clock, CheckCircle, FileText, Mail, Phone } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface VendorApplicationStatusProps {
   vendorId: string;
@@ -34,11 +34,11 @@ export function VendorApplicationStatus({ vendorId, onApproved, onClarificationR
     try {
       console.log('🔍 Loading application status for vendorId:', vendorId);
       
-      const url = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/application/status/${vendorId}`;
+      const url = `${getApiBaseUrl()}/vendor/application/status/${vendorId}`;
       console.log('📡 Fetching from URL:', url);
       
       const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       console.log('📡 Application status response:', {

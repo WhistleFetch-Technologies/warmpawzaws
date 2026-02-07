@@ -11,7 +11,7 @@ import {
   Clock, Home, Calendar, User, Phone, Mail, MapPin, FileText,
   AlertCircle, Shield, Camera, Trash2, DollarSign, Award
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface AdoptablePet {
   id: string;
@@ -131,9 +131,9 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
       
       // Load pets
       const petsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/pets`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/adoption/pets`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -144,9 +144,9 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
 
       // Load applications
       const appsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/applications`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/adoption/applications`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -202,11 +202,11 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
   const addPet = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/pets`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/adoption/pets`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(newPet)
@@ -227,11 +227,11 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
   const updatePetStatus = async (petId: string, status: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/pets/${petId}/status`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/adoption/pets/${petId}/status`,
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ status })
@@ -249,11 +249,11 @@ export function ShelterAdoptionSystem({ vendorId }: { vendorId: string }) {
   const reviewApplication = async (applicationId: string, approved: boolean, notes?: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/adoption/applications/${applicationId}/review`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/adoption/applications/${applicationId}/review`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ approved, notes })

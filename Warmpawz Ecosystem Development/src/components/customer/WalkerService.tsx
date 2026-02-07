@@ -3,7 +3,7 @@ import { ArrowLeft, ChevronRight, MapPin, Star, Calendar, Clock, DollarSign, Use
 import { Button } from '../ui/button';
 import { WalkerSelection } from './WalkerSelection';
 import { WalkerBookingConfirm } from './WalkerBookingConfirm';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface Pet {
   id: string;
@@ -46,8 +46,8 @@ export function WalkerService({ phone, onBack }: { phone: string; onBack: () => 
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/pets/${phone}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/pets/${phone}`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {

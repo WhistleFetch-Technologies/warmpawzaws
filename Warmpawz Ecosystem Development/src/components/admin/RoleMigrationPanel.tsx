@@ -13,7 +13,7 @@
 
 import { useState } from 'react';
 import { RefreshCw, CheckCircle, AlertCircle, Database, Play, Eye, Trash2, Filter } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface MigrationStatus {
@@ -134,7 +134,7 @@ export function RoleMigrationPanel() {
   const [filterRole, setFilterRole] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   const loadStatus = async () => {
     try {
@@ -312,7 +312,7 @@ export function RoleMigrationPanel() {
       const response = await fetch(`${API_BASE}/admin/migrate/create-staff-and-indexes`, {
         method: 'POST',
         headers: { 
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         }
       });

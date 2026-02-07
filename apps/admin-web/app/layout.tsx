@@ -6,7 +6,7 @@ import { Providers } from './providers';
 const inter = Inter({ 
   subsets: ['latin'],
   display: 'swap',
-  preload: true,
+  preload: false, // Avoid "preloaded but not used" warning on client-rendered/loading pages
 });
 
 export const metadata: Metadata = {
@@ -28,38 +28,20 @@ export default function RootLayout({
             __html: `
               // Inline fallback config (ensures API URL is always available)
               if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
-                window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-                  apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
-                  uatMode: true
-                };
-                console.log('🔧 Runtime config loaded (inline fallback):', window.__WARMPAWZ_RUNTIME_CONFIG__);
+                window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '', uatMode: true };
               }
-              // Load external runtime-config.js to override if needed (deploy-time)
-              // Load synchronously to ensure it's available before components mount
               (function() {
                 try {
                   var script = document.createElement('script');
-                  script.src = '/runtime-config.js?v=' + Date.now(); // Cache bust
+                  script.src = '/runtime-config.js?v=' + Date.now();
                   script.async = false;
                   script.defer = false;
-                  script.onload = function() {
-                    console.log('🔧 External runtime-config.js loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
-                  };
+                  script.onload = function() { console.log('🔧 runtime-config.js loaded'); };
                   script.onerror = function() {
-                    console.warn('⚠️ Failed to load runtime-config.js, using fallback');
-                    // Ensure fallback is set if external load fails
-                    if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
-                      window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-                        apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
-                        uatMode: true
-                      };
-                    }
+                    console.warn('⚠️ runtime-config.js failed; set NEXT_PUBLIC_API_BASE_URL for local dev');
                   };
-                  // Insert at the beginning to ensure it loads first
                   document.head.insertBefore(script, document.head.firstChild);
-                } catch (e) {
-                  console.error('Error loading runtime-config.js:', e);
-                }
+                } catch (e) { console.error('Error loading runtime-config.js', e); }
               })();
               // UAT Mode: Auto-login for direct page access (e.g., /ecommerce, /vendors, etc.)
               (function() {
@@ -77,7 +59,9 @@ export default function RootLayout({
             `,
           }}
         />
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );

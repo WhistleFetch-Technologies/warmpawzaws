@@ -2,37 +2,72 @@
 
 /**
  * SPECIALIZATION SELECTOR FOR CENTER PROFILES
- * 
- * Allows centers to select their broad specializations from problem grid categories
- * Uses exact same labels as customer-facing problem grid for perfect matching
+ * Loads specializations from specialization_master (Catalog > Categories).
+ * All imports at top; no interleaved imports or * namespace to avoid TDZ.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ComponentType } from 'react';
+import {
+  Check,
+  Loader2,
+  AlertCircle,
+  Stethoscope,
+  Heart,
+  Dog,
+  Scissors,
+  Pill,
+  Apple,
+  Camera,
+  Shield,
+  Truck,
+  Home,
+  Video,
+} from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { Check, Loader2, AlertCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
 import { toast } from 'sonner';
+
+const SPEC_ICON_MAP: Record<string, ComponentType<{ className?: string }>> = {
+  Stethoscope,
+  Heart,
+  Dog,
+  Scissors,
+  Pill,
+  Apple,
+  Camera,
+  Shield,
+  Truck,
+  Home,
+  Video,
+};
+
+function SpecIcon({ spec }: { spec: { iconName?: string; iconColor?: string; icon?: string } }) {
+  const IconComponent = spec.iconName ? SPEC_ICON_MAP[spec.iconName] : null;
+  if (IconComponent) {
+    return <IconComponent className={`w-6 h-6 ${spec.iconColor || 'text-gray-600'}`} />;
+  }
+  if (spec.icon && typeof spec.icon === 'string') {
+    return <span className="text-2xl">{spec.icon}</span>;
+  }
+  return <span className="text-2xl">•</span>;
+}
 
 interface SpecializationSelectorProps {
   roleId?: string;
   selected: string[];
   onChange: (specs: string[]) => void;
+  /** When this changes (e.g. modal opens), refetch to get latest from Catalog > Categories */
+  refreshTrigger?: unknown;
 }
 
 export function SpecializationSelector({ 
   roleId, 
   selected = [], // ✅ FIX: Default to empty array
-  onChange 
+  onChange,
+  refreshTrigger,
 }: SpecializationSelectorProps) {
   const [specializations, setSpecializations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (roleId) {
-      loadSpecializations();
-    }
-  }, [roleId]);
 
   const loadSpecializations = async () => {
     if (!roleId) {
@@ -48,10 +83,12 @@ export function SpecializationSelector({
       const cleanRoleId = roleId.replace('role_', '');
       console.log('[CENTER SPEC] Loading specializations for role:', cleanRoleId);
 
-      const data = await apiClient.get(`/vendor/problem-grid-specializations/${cleanRoleId}`) as any;
+      // Use specialization_master so admin-created specializations (e.g. hair trimming)
+      // with "show on vendor app" appear. Supports UUID roleId (looked up server-side).
+      const data = await apiClient.get(`/vendor/specializations/${cleanRoleId}`) as any;
 
       if (data && data.specializations) {
-        console.log('[CENTER SPEC] Loaded specializations:', data);
+        console.log('[CENTER SPEC] Loaded specializations:', data.specializations.length, data.specializations);
         setSpecializations(data.specializations || []);
         
         if (data.specializations?.length === 0) {
@@ -69,6 +106,15 @@ export function SpecializationSelector({
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (roleId) {
+      loadSpecializations();
+    } else {
+      setLoading(false);
+      setError('Role ID is required to load specializations');
+    }
+  }, [roleId, refreshTrigger]);
 
   const toggleSpec = (specId: string) => {
     if (selected.includes(specId)) {
@@ -156,13 +202,13 @@ export function SpecializationSelector({
                 </div>
               )}
 
-              {/* Icon */}
+              {/* Icon: from Categories (iconName/iconColor) so same as customer app */}
               <div className={`w-12 h-12 rounded-lg flex items-center justify-center mb-2 ${
                 isSelected 
                   ? 'bg-gradient-to-br from-[#FF8C42] to-[#FF6B35]' 
                   : 'bg-gray-100'
               }`}>
-                <span className="text-2xl">{spec.icon}</span>
+                <SpecIcon spec={spec} />
               </div>
 
               {/* Name */}
@@ -200,7 +246,7 @@ export function SpecializationSelector({
                       key={s.id}
                       className="inline-flex items-center gap-1 px-2 py-0.5 bg-white rounded-full text-xs text-green-700"
                     >
-                      {s.icon} {s.displayName || s.name}
+                      <SpecIcon spec={s} /> {s.displayName || s.name}
                     </span>
                   ))}
               </div>

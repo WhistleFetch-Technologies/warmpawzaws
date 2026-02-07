@@ -5,7 +5,7 @@ import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Label } from '../ui/label';
 import { toast } from 'sonner@2.0.3';
 import { AlertCircle, Wallet, CreditCard, ArrowRight, CheckCircle2 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface RefundEstimate {
   paidAmount: number;
@@ -36,8 +36,8 @@ export function RefundRequestEnhanced({ bookingId, onClose, onSuccess }: RefundR
   const fetchEstimate = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/refunds/estimate/${bookingId}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/refunds/estimate/${bookingId}`,
+        { headers: getAuthHeaders() }
       );
       if (response.ok) {
         const data = await response.json();
@@ -62,12 +62,12 @@ export function RefundRequestEnhanced({ bookingId, onClose, onSuccess }: RefundR
     try {
       setSubmitting(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/refunds/request`,
+        `${getApiBaseUrl()}/refunds/request`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             bookingId,

@@ -17,7 +17,7 @@
 import { useState, useEffect } from 'react';
 import { Search, Filter, Download, Calendar, DollarSign, User, Package, ShoppingBag, Calendar as CalendarIcon, TrendingUp, Eye, Edit, Trash2, MoreVertical, Loader2, FileText } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface SearchResult {
   type: 'vendor' | 'order' | 'booking' | 'customer';
@@ -64,11 +64,11 @@ export function AdminUniversalSearch() {
     try {
       // Call universal search endpoint
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/advanced-search/universal`,
+        `${getApiBaseUrl()}/advanced-search/universal`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

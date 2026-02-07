@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Calendar, Clock, MapPin, Package, Download, FileText, ChevronRight } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { BookingDetailModal } from './BookingDetailModal';
 
 interface ServiceBookingHistoryProps {
@@ -45,9 +45,9 @@ export function ServiceBookingHistory({ phone, serviceType, serviceName, onClose
       const cleanPhone = phone.replace(/[^0-9]/g, '');
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/bookings?phone=${cleanPhone}`,
+        `${getApiBaseUrl()}/customer/bookings?phone=${cleanPhone}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

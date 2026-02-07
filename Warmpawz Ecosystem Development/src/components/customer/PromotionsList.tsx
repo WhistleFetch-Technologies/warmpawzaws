@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
 import { Tag, Clock, ChevronRight, Percent, DollarSign, Gift, Truck, Zap } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
@@ -41,7 +41,7 @@ export function PromotionsList({ category, applicableTo, onSelectPromotion }: Pr
       if (applicableTo) queryParams.append('applicableTo', applicableTo);
 
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/promotions/active?${queryParams.toString()}`,
+        `${getApiBaseUrl()}/promotions/active?${queryParams.toString()}`,
         {
           headers: {
             'apikey': publicAnonKey,

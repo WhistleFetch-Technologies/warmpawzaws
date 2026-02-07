@@ -8,7 +8,7 @@ import {
   Search, 
   Filter, 
   Globe, 
-  DollarSign,
+  IndianRupee,
   Edit,
   Trash2,
   Eye,
@@ -154,7 +154,7 @@ export function RegionalPackageList({ regionId, onRefresh }: RegionalPackageList
           onClick={() => setShowCreateModal(true)}
           className="bg-primary hover:bg-primary/90"
         >
-          <Plus className="w-4 h-4 mr-0" />
+          <Plus className="w-4 h-4 mr-2" />
           Create Package
         </Button>
       </div>
@@ -201,7 +201,7 @@ export function RegionalPackageList({ regionId, onRefresh }: RegionalPackageList
                     : 0}
                 </p>
               </div>
-              <DollarSign className="w-8 h-8 text-purple-600" />
+              <IndianRupee className="w-8 h-8 text-purple-600" />
             </div>
           </div>
         </div>
@@ -275,7 +275,7 @@ export function RegionalPackageList({ regionId, onRefresh }: RegionalPackageList
             onClick={() => setShowCreateModal(true)}
             className="bg-primary hover:bg-primary/90"
           >
-            <Plus className="w-4 h-4 mr-0" />
+            <Plus className="w-4 h-4 mr-2" />
             Create Package
           </Button>
         </div>
@@ -318,33 +318,33 @@ export function RegionalPackageList({ regionId, onRefresh }: RegionalPackageList
                       </span>
 
                       {pkg.regionalAvailability.mode === 'all' && (
-                        <span className="flex items-center gap-0 text-xs text-gray-600">
+                        <span className="flex items-center gap-3 text-xs text-gray-600">
                           <Globe className="w-3 h-3" />
                           All Regions
                         </span>
                       )}
 
                       {pkg.regionalAvailability.mode === 'specific' && (
-                        <span className="flex items-center gap-0 text-xs text-gray-600">
+                        <span className="flex items-center gap-3 text-xs text-gray-600">
                           <Globe className="w-3 h-3" />
                           {pkg.regionalAvailability.regions.length} Regions
                         </span>
                       )}
 
                       {pkg.isActive ? (
-                        <span className="flex items-center gap-0 text-xs text-green-600">
+                        <span className="flex items-center gap-3 text-xs text-green-600">
                           <CheckCircle className="w-3 h-3" />
                           Active
                         </span>
                       ) : (
-                        <span className="flex items-center gap-0 text-xs text-red-600">
+                        <span className="flex items-center gap-3 text-xs text-red-600">
                           <XCircle className="w-3 h-3" />
                           Inactive
                         </span>
                       )}
                     </div>
 
-                    <div className="mt-0 flex flex-wrap gap-0">
+                    <div className="mt-0 flex flex-wrap gap-3">
                       {pkg.regionalPricing.slice(0, 4).map(pricing => {
                         const region = regions.find(r => r.regionId === pricing.regionId);
                         if (!region) return null;
@@ -352,7 +352,7 @@ export function RegionalPackageList({ regionId, onRefresh }: RegionalPackageList
                         return (
                           <span
                             key={pricing.regionId}
-                            className="inline-flex items-center gap-0 px-0 py-0 bg-gray-100 rounded text-xs"
+                            className="inline-flex items-center gap-3 px-0 py-0 bg-gray-100 rounded text-xs"
                             title={`${region.regionName}: ${pricing.symbol}${pricing.basePrice}`}
                           >
                             <span>{flag}</span>
@@ -368,7 +368,7 @@ export function RegionalPackageList({ regionId, onRefresh }: RegionalPackageList
                     </div>
                   </div>
 
-                  <div className="flex gap-0">
+                  <div className="flex gap-3">
                     <button
                       className="p-0 hover:bg-gray-100 rounded-lg transition-colors"
                       title="View"

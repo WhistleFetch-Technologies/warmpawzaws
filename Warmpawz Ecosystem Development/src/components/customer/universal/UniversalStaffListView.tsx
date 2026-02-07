@@ -35,7 +35,7 @@ import {
   Award,
   Clock
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface RoleConfig {
   serviceCategory: string; // grooming_services, veterinary_services, etc.
@@ -93,7 +93,7 @@ export function UniversalStaffListView({
   const [availableToday, setAvailableToday] = useState(false);
   const [sortBy, setSortBy] = useState<'relevance' | 'fee_low' | 'fee_high' | 'rating' | 'experience'>('relevance');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
   const Icon = roleConfig.icon;
 
   useEffect(() => {
@@ -133,7 +133,7 @@ export function UniversalStaffListView({
         `${API_BASE}/universal/search?${params.toString()}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

@@ -1,18 +1,25 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Layers, Plus, Save, Loader2, Edit, Trash2, GripVertical, X, Check } from 'lucide-react';
+import { Layers, Plus, Save, Loader2, Edit, Trash2, GripVertical, X, Check, Shield, Download } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { Button, Card, CardContent, Input, Label, Textarea, Switch, Badge } from '@warmpawz/ui';
 
 interface FormField {
   id: string;
   label: string;
-  type: 'text' | 'email' | 'tel' | 'textarea' | 'select' | 'checkbox' | 'file';
+  type: 'text' | 'email' | 'tel' | 'textarea' | 'select' | 'checkbox' | 'file' | 'aadhaar-otp' | 'pan-verify' | 'gst-verify' | 'declaration';
   placeholder?: string;
+  helpText?: string;
   required: boolean;
   options?: string[]; // For select fields
   order: number;
+  // KYC-specific fields
+  requiresVerification?: boolean;
+  verificationEndpoint?: string;
+  declarationText?: string;
+  declarationType?: string;
+  softBlock?: boolean;
 }
 
 interface FormSection {
@@ -48,10 +55,57 @@ export function OnboardingDesigner() {
   ]);
   const [editingField, setEditingField] = useState<FormField | null>(null);
   const [editingSection, setEditingSection] = useState<FormSection | null>(null);
+  const [migratingKYC, setMigratingKYC] = useState(false);
+  const [kycMigrationResult, setKycMigrationResult] = useState<any>(null);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // KYC Migration - adds KYC fields to all active roles
+  const handleKYCMigration = async () => {
+    if (!confirm('This will add KYC verification fields to all active roles. Existing fields will be preserved. Continue?')) {
+      return;
+    }
+
+    setMigratingKYC(true);
+    setKycMigrationResult(null);
+
+    try {
+      const response = await apiClient.post<any>('/admin/onboarding-fields/migrate-kyc', {});
+      
+      if (response.success) {
+        setKycMigrationResult({
+          success: true,
+          message: response.message,
+          summary: response.summary,
+          results: response.results,
+        });
+        
+        // Reload current form
+        if (selectedRole) {
+          await loadFormForRole(selectedRole);
+        }
+        
+        alert(`KYC Migration Complete!\n${response.message}`);
+      } else {
+        setKycMigrationResult({
+          success: false,
+          error: response.error || 'Migration failed',
+        });
+        alert(`Migration failed: ${response.error || 'Unknown error'}`);
+      }
+    } catch (error: any) {
+      console.error('KYC migration error:', error);
+      setKycMigrationResult({
+        success: false,
+        error: error.message || 'Migration failed',
+      });
+      alert(`Migration failed: ${error.message || 'Unknown error'}`);
+    } finally {
+      setMigratingKYC(false);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -314,6 +368,24 @@ export function OnboardingDesigner() {
               </>
             )}
           </Button>
+          <Button
+            onClick={handleKYCMigration}
+            disabled={migratingKYC}
+            variant="outline"
+            className="border-indigo-500 text-indigo-600 hover:bg-indigo-50"
+          >
+            {migratingKYC ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Migrating...
+              </>
+            ) : (
+              <>
+                <Shield className="w-4 h-4 mr-2" />
+                Add KYC Fields
+              </>
+            )}
+          </Button>
         </div>
       </div>
 
@@ -456,6 +528,10 @@ function FieldEditModal({
   onClose: () => void;
 }) {
   const [formData, setFormData] = useState(field);
+  // Sync when field prop changes (e.g. after reload so placeholder/label reflect saved values)
+  useEffect(() => {
+    setFormData(field);
+  }, [field.id, field.placeholder, field.label, field.helpText]);
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -492,6 +568,12 @@ function FieldEditModal({
               <option value="select">Select</option>
               <option value="checkbox">Checkbox</option>
               <option value="file">File Upload</option>
+              <optgroup label="KYC Verification">
+                <option value="aadhaar-otp">Aadhaar (OTP Verification)</option>
+                <option value="pan-verify">PAN (Auto-Verify)</option>
+                <option value="gst-verify">GST (Auto-Verify)</option>
+                <option value="declaration">Declaration/Consent</option>
+              </optgroup>
             </select>
           </div>
 
@@ -517,6 +599,33 @@ function FieldEditModal({
                 placeholder="Option 1, Option 2, Option 3"
                 rows={3}
               />
+            </div>
+          )}
+
+          {formData.type === 'declaration' && (
+            <div>
+              <Label className="text-gray-900 font-medium">Declaration Text *</Label>
+              <Textarea
+                value={formData.declarationText || ''}
+                onChange={(e) => setFormData({ ...formData, declarationText: e.target.value })}
+                placeholder="Enter the declaration text that vendors must agree to..."
+                rows={4}
+                className="bg-white border-gray-300 text-gray-900"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                This text will be displayed as a consent checkbox. Vendors must check it to proceed.
+              </p>
+            </div>
+          )}
+
+          {['aadhaar-otp', 'pan-verify', 'gst-verify'].includes(formData.type) && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+              <p className="font-medium text-blue-800">KYC Verification Field</p>
+              <p className="text-blue-700 mt-1">
+                {formData.type === 'aadhaar-otp' && 'Vendors will enter Aadhaar and verify via OTP sent to their registered mobile.'}
+                {formData.type === 'pan-verify' && 'PAN number will be automatically verified against government database.'}
+                {formData.type === 'gst-verify' && 'GST number will be automatically verified and business details fetched.'}
+              </p>
             </div>
           )}
 

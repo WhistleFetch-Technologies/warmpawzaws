@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Calendar, Clock, MapPin, User, ChevronRight, Filter } from 'lucide-react';
+import { Calendar, Clock, MapPin, User, ChevronRight, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 
@@ -72,19 +72,9 @@ export function AppointmentsList({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto pb-24">
-      {/* Header */}
-      <div className="bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white px-6 pt-8 pb-6 sticky top-0 z-10">
-        <button onClick={onBack} className="mb-4 flex items-center gap-2">
-          <ArrowLeft className="w-5 h-5" />
-          <span>Back</span>
-        </button>
-        <div>
-          <h1 className="text-2xl text-white mb-1">My Appointments</h1>
-          <p className="text-sm text-white/80">View and manage your bookings</p>
-        </div>
-      </div>
-
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
       <div className="p-4 space-y-4">
         {/* Filter Tabs */}
         <div className="bg-white rounded-xl p-2 shadow-sm flex gap-2 overflow-x-auto scrollbar-hide">
@@ -188,6 +178,6 @@ export function AppointmentsList({
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }

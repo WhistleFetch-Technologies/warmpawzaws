@@ -11,10 +11,15 @@ import {
   Check,
   Smartphone,
   Building2,
-  Loader2
+  Loader2,
+  Home as HomeIcon,
+  ShoppingCart,
+  Calendar,
+  User
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
+import { useCart } from '../../../context/CartContext';
 
 interface PaymentPageProps {
   bookingData: {
@@ -32,17 +37,19 @@ interface PaymentPageProps {
   phone: string;
   onBack: () => void;
   onPaymentSuccess: (paymentData: any) => void;
+  onNavigate?: (screen: string, data?: any) => void;
 }
 
-export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: PaymentPageProps) {
+export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess, onNavigate }: PaymentPageProps) {
   const [loading, setLoading] = useState(false);
   const [walletBalance, setWalletBalance] = useState(0);
   const [useWallet, setUseWallet] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('upi');
+  const { itemCount } = useCart();
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadWalletBalance();
@@ -209,7 +216,7 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto pb-32">
+    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto pb-32">
       {/* Header */}
       <div className="bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white px-6 pt-8 pb-6 sticky top-0 z-10">
         <button 
@@ -411,7 +418,7 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
       </div>
 
       {/* Fixed Bottom Button */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 max-w-md mx-auto">
+      <div className="fixed bottom-16 left-0 right-0 bg-white border-t border-gray-200 p-4 max-w-[430px] mx-auto z-40">
         <div className="flex items-center justify-between mb-3">
           <span className="text-gray-600">Total Payable</span>
           <span className="text-2xl font-bold text-[#FF8C42]">₹{finalAmount.toFixed(2)}</span>
@@ -431,6 +438,51 @@ export function PaymentPage({ bookingData, phone, onBack, onPaymentSuccess }: Pa
         <p className="text-xs text-gray-500 text-center mt-2">
           Secured by Razorpay • 256-bit encryption
         </p>
+      </div>
+
+      {/* Fixed Bottom Navigation - Matching Customer Home */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto z-50">
+        <div className="flex items-center justify-around">
+          <button 
+            onClick={() => onNavigate && onNavigate('home')}
+            className="flex flex-col items-center gap-1"
+          >
+            <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
+            <span className="text-xs font-medium text-[#FF8C42]">Home</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('cart')}
+            className="flex flex-col items-center gap-1 relative"
+          >
+            <div className="relative">
+              <ShoppingCart className="w-6 h-6 text-gray-400" />
+              {itemCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {itemCount}
+                </span>
+              )}
+            </div>
+            <span className="text-xs text-gray-400">Cart</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('bookings')}
+            className="flex flex-col items-center gap-1"
+          >
+            <Calendar className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Bookings</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('profile')}
+            className="flex flex-col items-center gap-1"
+          >
+            <User className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Profile</span>
+          </button>
+        </div>
+        {/* Home Indicator */}
+        <div className="flex justify-center mt-2">
+          <div className="w-32 h-1 bg-black rounded-full"></div>
+        </div>
       </div>
     </div>
   );

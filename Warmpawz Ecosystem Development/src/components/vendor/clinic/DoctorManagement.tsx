@@ -17,7 +17,7 @@ import {
   Upload,
   Camera
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner';
 
 interface DoctorManagementProps {
@@ -66,10 +66,10 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
       
       // First, check if migration is needed
       const migrationCheck = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${clinicId}/check-migration-status`,
+        `${getApiBaseUrl()}/vendor/${clinicId}/check-migration-status`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -103,11 +103,11 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
       setMigrating(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${clinicId}/migrate-doctors`,
+        `${getApiBaseUrl()}/vendor/${clinicId}/migrate-doctors`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -135,10 +135,10 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/vendor/${clinicId}`,
+        `${getApiBaseUrl()}/staff/vendor/${clinicId}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -173,11 +173,11 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staffId}`,
+        `${getApiBaseUrl()}/staff/${staffId}`,
         {
           method: 'DELETE',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -433,10 +433,10 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
     try {
       setLoadingServices(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services/${clinicId}`,
+        `${getApiBaseUrl()}/vendor/services/${clinicId}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -512,11 +512,11 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
     formData.append('staff_photo', photoFile);
 
     const uploadResponse = await fetch(
-      `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/storage/upload-multiple`,
+      `${getApiBaseUrl()}/storage/upload-multiple`,
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: formData
       }
@@ -571,8 +571,8 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
       const photoUrl = await uploadPhoto();
 
       const endpoint = staff
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/create`;
+        ? `${getApiBaseUrl()}/staff/${staff.id}`
+        : `${getApiBaseUrl()}/staff/create`;
 
       const method = staff ? 'PUT' : 'POST';
 
@@ -595,7 +595,7 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
       const response = await fetch(endpoint, {
         method,
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
@@ -610,11 +610,11 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
           console.log(`🔧 [FIX] Expanding ${selectedServices.length} service IDs into full objects for staff ${staffId}`);
           
           const servicesResponse = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staffId}/services`,
+            `${getApiBaseUrl()}/staff/${staffId}/services`,
             {
               method: 'PUT',
               headers: {
-                'Authorization': `Bearer ${publicAnonKey}`,
+                ...getAuthHeaders(),
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({ serviceIds: selectedServices })

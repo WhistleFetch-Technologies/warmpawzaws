@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { VendorChatModal } from './VendorChatModal';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
@@ -129,9 +129,9 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       // Don't pass activeFilter (today/week/month) as status filter - it's just for UI display
       // Pass empty string to get all statuses
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${vendorId}?date=${selectedDate}&filter=all`,
+        `${getApiBaseUrl()}/vendor/bookings/${vendorId}?date=${selectedDate}&filter=all`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -191,11 +191,11 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${bookingId}/cancel`,
+        `${getApiBaseUrl()}/vendor/bookings/${bookingId}/cancel`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -219,11 +219,11 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
     try {
       setCompletingBooking(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${booking.id}/accept`,
+        `${getApiBaseUrl()}/bookings/${booking.id}/accept`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ vendorId })
@@ -281,11 +281,11 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       setOtpError('');
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${selectedBooking.id}/start-session`,
+        `${getApiBaseUrl()}/vendor/bookings/${selectedBooking.id}/start-session`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -320,11 +320,11 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       setCompletingBooking(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${booking.id}/end-session`,
+        `${getApiBaseUrl()}/vendor/bookings/${booking.id}/end-session`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -355,11 +355,11 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       setCompletingBooking(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${booking.id}/complete`,
+        `${getApiBaseUrl()}/vendor/bookings/${booking.id}/complete`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -399,11 +399,11 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       setOtpError('');
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/bookings/${selectedBooking.id}/complete`,
+        `${getApiBaseUrl()}/vendor/bookings/${selectedBooking.id}/complete`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -458,9 +458,9 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       // View existing prescription
       try {
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/prescription/${bookingId}`,
+          `${getApiBaseUrl()}/vendor/prescription/${bookingId}`,
           {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            headers: getAuthHeaders()
           }
         );
         
@@ -482,11 +482,11 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       
       try {
         const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/prescription/upload`,
+          `${getApiBaseUrl()}/vendor/prescription/upload`,
           {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`,
+              ...getAuthHeaders(),
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({

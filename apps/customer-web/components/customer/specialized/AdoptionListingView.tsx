@@ -113,11 +113,11 @@ export function AdoptionListingView({ vendorId, customerPhone, onApply }: Adopti
   return (
     <div className="max-w-6xl mx-auto p-0">
       <div className="flex items-center justify-between mb-0">
-        <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-0">
+        <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
           <Heart className="text-orange-500" size={28} />
           Available Pets
         </h2>
-        <div className="flex gap-0">
+        <div className="flex gap-3">
           <button
             onClick={() => setFilter('all')}
             className={`px-4 py-0 rounded-lg transition ${
@@ -163,7 +163,7 @@ export function AdoptionListingView({ vendorId, customerPhone, onApply }: Adopti
           <p className="text-gray-500">No pets available at the moment</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-0">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {pets.map((pet) => (
             <div
               key={pet.id}
@@ -205,7 +205,7 @@ export function AdoptionListingView({ vendorId, customerPhone, onApply }: Adopti
                 </div>
 
                 {pet.location_city && (
-                  <div className="flex items-center gap-0 text-sm text-gray-500 mt-0">
+                  <div className="flex items-center gap-3 text-sm text-gray-500 mt-0">
                     <MapPin size={14} />
                     {pet.location_city}, {pet.location_state}
                   </div>
@@ -303,7 +303,7 @@ export function AdoptionListingView({ vendorId, customerPhone, onApply }: Adopti
                 </div>
               )}
 
-              <div className="flex gap-0 mt-0">
+              <div className="flex gap-3 mt-0">
                 <button
                   onClick={() => {
                     handleApply(selectedPet);

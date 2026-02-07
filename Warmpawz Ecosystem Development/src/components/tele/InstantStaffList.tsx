@@ -11,9 +11,9 @@ import {
   Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
-const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const BASE_URL = `${getApiBaseUrl()}`;
 
 interface StaffMember {
   staffId: string;
@@ -55,7 +55,7 @@ export function InstantStaffList({
       const response = await fetch(
         `${BASE_URL}/tele-services/instant/available-staff?roleId=${roleId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

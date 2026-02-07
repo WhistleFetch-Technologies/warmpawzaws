@@ -19,6 +19,8 @@
 import { Hono } from 'hono';
 import { select, update, query, insert } from '../database/rds-connection';
 import { UpdateCustomerProfileRequestSchema } from '@warmpawz/api-contracts';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '');
@@ -45,60 +47,131 @@ export function registerCustomerProfileEndpoints(app: Hono) {
    */
   app.get("/customer/profile/unified/:identifier", async (c) => {
     try {
-      const { identifier } = c.req.param();
+      const identifier = c.req.param('identifier');
+      console.log('[profile/unified] Request received for identifier:', identifier);
+      
+      if (!identifier) {
+        console.error('[profile/unified] No identifier provided');
+        return c.json({ error: 'Identifier is required' }, 400);
+      }
 
       // Resolve identifier (phone or customer ID)
-      const customerId = await resolveCustomerId(identifier);
+      let customerId: string | null;
+      try {
+        console.log('[profile/unified] Resolving customer ID for:', identifier);
+        customerId = await resolveCustomerId(identifier);
+        console.log('[profile/unified] Resolved customer ID:', customerId);
+      } catch (error: any) {
+        console.error('[profile/unified] Error resolving customer ID:', error);
+        console.error('[profile/unified] Error stack:', error?.stack);
+        return c.json({ success: true, profile: null, _degraded: true, error: error?.message }, 200);
+      }
+
       if (!customerId) {
+        console.log('[profile/unified] Customer not found for identifier:', identifier);
         return c.json({ error: 'Customer not found' }, 404);
       }
 
       // Get customer
-      const customers = await select('customers', { id: customerId });
+      let customers: any[];
+      try {
+        customers = await select('customers', { id: customerId });
+      } catch (error: any) {
+        console.error('[profile/unified] Error fetching customer:', error);
+        return c.json({ success: true, profile: null, _degraded: true }, 200);
+      }
+
       if (customers.length === 0) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
       const customer = customers[0];
 
-      // Fetch Wallet
-      const wallets = await query(
-        'SELECT * FROM customer_wallets WHERE customer_id = $1',
-        [customerId]
-      ).catch(() => ({ rows: [] }));
-      const wallet = wallets.rows.length > 0 ? wallets.rows[0] : { balance: 0, currency: 'INR', status: 'active' };
+      // Fetch Wallet with better error handling
+      let wallet: any = { balance: 0, currency: 'INR', status: 'active' };
+      try {
+        const wallets = await query(
+          'SELECT * FROM customer_wallets WHERE customer_id = $1',
+          [customerId]
+        );
+        if (wallets.rows && wallets.rows.length > 0) {
+          wallet = wallets.rows[0];
+        }
+      } catch (error: any) {
+        console.warn('Error fetching wallet (using defaults):', error.message);
+        // Continue with default wallet
+      }
 
-      // Fetch Addresses
-      const addresses = await query(
-        'SELECT * FROM customer_addresses WHERE customer_id = $1 ORDER BY is_default DESC, created_at DESC',
-        [customerId]
-      ).catch(() => ({ rows: [] }));
+      // Fetch Addresses with better error handling
+      let addresses: any = { rows: [] };
+      try {
+        addresses = await query(
+          'SELECT * FROM customer_addresses WHERE customer_id = $1 ORDER BY is_default DESC, created_at DESC',
+          [customerId]
+        );
+      } catch (error: any) {
+        console.warn('Error fetching addresses (using empty):', error.message);
+        // Continue with empty addresses
+      }
 
-      // Fetch Bookings
-      const bookings = await query(
-        'SELECT * FROM bookings WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 50',
-        [customerId]
-      ).catch(() => ({ rows: [] }));
+      // Fetch Bookings with better error handling
+      let bookings: any = { rows: [] };
+      try {
+        bookings = await query(
+          'SELECT * FROM bookings WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 50',
+          [customerId]
+        );
+      } catch (error: any) {
+        console.warn('Error fetching bookings (using empty):', error.message);
+        // Continue with empty bookings
+      }
 
-      // Fetch Orders
-      const orders = await query(
-        'SELECT * FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 50',
-        [customerId]
-      ).catch(() => ({ rows: [] }));
+      // Fetch Orders with better error handling
+      let orders: any = { rows: [] };
+      try {
+        orders = await query(
+          'SELECT * FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 50',
+          [customerId]
+        );
+      } catch (error: any) {
+        console.warn('Error fetching orders (using empty):', error.message);
+        // Continue with empty orders
+      }
 
-      // Calculate stats
+      // Calculate stats safely
+      const bookingsRows = bookings.rows || [];
+      const ordersRows = orders.rows || [];
       const stats = {
-        totalBookings: bookings.rows.length,
-        activeBookings: bookings.rows.filter((b: any) => ['pending', 'confirmed', 'in_progress'].includes(b.status)).length,
-        totalEcommerceOrders: orders.rows.length,
+        totalBookings: bookingsRows.length,
+        activeBookings: bookingsRows.filter((b: any) => ['pending', 'confirmed', 'in_progress'].includes(b.status)).length,
+        totalEcommerceOrders: ordersRows.length,
         walletBalance: parseFloat(wallet.balance || '0'),
       };
 
       // Get customer state (onboarding_status, profile_completed)
-      const onboardingStatus = customer.onboarding_status || 'INIT';
-      const profileCompleted = customer.profile_completed || false;
+      let onboardingStatus = customer.onboarding_status || 'INIT';
+      let profileCompleted = customer.profile_completed || false;
       const customerStatus = customer.status || 'new';
 
+      // Existing-user fix: treat users with profile/usage as COMPLETED so they are not sent to onboarding again
+      const hasName = !!(customer.full_name && String(customer.full_name).trim() && customer.full_name !== `Customer ${(customer.phone || '').slice(-4)}`);
+      const hasBookings = (bookingsRows?.length || 0) > 0;
+      const hasOrders = (ordersRows?.length || 0) > 0;
+      if (onboardingStatus !== 'COMPLETED' && (profileCompleted || hasName)) {
+        const effectivelyOnboarded = profileCompleted || hasBookings || hasOrders || hasName;
+        if (effectivelyOnboarded) {
+          onboardingStatus = 'COMPLETED';
+          profileCompleted = true;
+          // Persist so we don't infer every time
+          try {
+            await update('customers', { id: customerId }, { onboarding_status: 'COMPLETED', profile_completed: true });
+          } catch (e) {
+            // Non-fatal
+          }
+        }
+      }
+
+      console.log('[profile/unified] Successfully fetched profile for customer:', customerId);
       return c.json({
         success: true,
         profile: {
@@ -115,7 +188,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
             currency: wallet.currency || 'INR',
             status: wallet.status || 'active',
           },
-          addresses: addresses.rows.map((addr: any) => ({
+          addresses: (addresses.rows || []).map((addr: any) => ({
             id: addr.id,
             label: addr.address_type,
             name: addr.full_name,
@@ -129,16 +202,25 @@ export function registerCustomerProfileEndpoints(app: Hono) {
             isDefault: addr.is_default,
           })),
           orders: {
-            all: orders.rows,
-            total: orders.rows.length,
+            all: ordersRows,
+            total: ordersRows.length,
           },
-          bookings: bookings.rows,
+          bookings: bookingsRows,
           stats,
         },
       });
     } catch (error: any) {
-      console.error('Error fetching unified customer profile:', error);
-      return c.json({ error: error.message }, 500);
+      console.error('[profile/unified] Error fetching unified customer profile:', error);
+      console.error('[profile/unified] Error message:', error?.message);
+      console.error('[profile/unified] Error stack:', error?.stack);
+      console.error('[profile/unified] Error name:', error?.name);
+      // Return 200 with degraded response instead of 500
+      return c.json({ 
+        success: true, 
+        profile: null, 
+        _degraded: true,
+        error: error?.message || 'Unknown error'
+      }, 200);
     }
   });
 
@@ -155,16 +237,28 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       const cleanPhone = normalizePhone(phone);
-      const customers = await select('customers', { phone: cleanPhone });
-      
+      let customers: any[];
+      try {
+        customers = await select('customers', { phone: cleanPhone });
+      } catch (error: any) {
+        console.error('[profile] Error fetching customer by phone:', error);
+        return c.json({ success: true, profile: null, _degraded: true }, 200);
+      }
+
       if (customers.length === 0) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
       const customer = customers[0];
       
-      // Get pets for this customer
-      const pets = await select('pets', { customer_id: customer.id }).catch(() => []);
+      // Get pets for this customer with error handling
+      let pets: any[] = [];
+      try {
+        pets = await select('pets', { customer_id: customer.id });
+      } catch (error: any) {
+        console.warn('Error fetching pets (using empty):', error.message);
+        // Continue with empty pets array
+      }
       
       return c.json({
         success: true,
@@ -193,8 +287,11 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         }
       });
     } catch (error: any) {
-      console.error('Error fetching customer profile by query:', error);
-      return c.json({ error: error.message }, 500);
+      console.error('[profile] Error fetching customer profile by query:', error);
+      console.error('[profile] Error stack:', error?.stack);
+      
+      // Return 200 with degraded so customer home loads (non-critical for query param profile)
+      return c.json({ success: true, profile: null, _degraded: true });
     }
   });
 
@@ -223,12 +320,18 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ') || '';
 
-      // Extract photo from preferences JSONB
-      const preferences = (customer.preferences as any) || {};
-      const photoUrl = preferences.profile_photo_url || null;
+      // Use profile_photo_url directly (preferences column may not exist yet)
+      const photoUrl = customer.profile_photo_url || null;
 
-      // Extract address fields from JSONB
-      const addressData = (customer.address as any) || {};
+      // Extract address fields from JSONB (if address is stored as JSONB)
+      // Otherwise use address as text
+      let addressData: any = {};
+      if (typeof customer.address === 'string') {
+        // Address is stored as text, use it directly
+        addressData = { street: customer.address };
+      } else if (customer.address) {
+        addressData = customer.address;
+      }
 
       return c.json({
         success: true,
@@ -295,7 +398,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       const profileData = validationResult.data;
       
       // Get phone from body (required for POST endpoint)
-      const phone = body.phone || profileData.phone;
+      // Note: phone is not part of the validated schema, it comes from body directly
+      const phone = body.phone || (body.profile as any)?.phone;
       if (!phone) {
         return c.json({ error: 'Phone number is required' }, 400);
       }
@@ -357,12 +461,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       if (profileData.photo) {
-        const customers = await select('customers', { id: customerId });
-        const existingPreferences = (customers[0]?.preferences as any) || {};
-        updateData.preferences = {
-          ...existingPreferences,
-          profile_photo_url: profileData.photo,
-        };
+        // Use profile_photo_url column directly instead of storing in preferences
+        updateData.profile_photo_url = profileData.photo;
       }
 
       const { updateProfileCompletion, updateCustomerOnboardingStatus } = await import('../utils/customer-state');
@@ -375,25 +475,40 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         completionUpdates.address = true;
       }
 
-      // Handle address - customers table has address (TEXT) and pincode (TEXT) as separate fields
+      // Handle address - customers table has address (TEXT), pincode (TEXT), city (TEXT), state (TEXT) as separate fields
       if (profileData.address) {
         updateData.address = profileData.address;
       }
       if (profileData.pincode) {
         updateData.pincode = profileData.pincode;
       }
+      if (profileData.city) {
+        updateData.city = profileData.city;
+      }
+      if (profileData.state) {
+        updateData.state = profileData.state;
+      }
+      if (profileData.landmark) {
+        updateData.landmark = profileData.landmark;
+      }
+
+      // Ensure we're not trying to update preferences column (it may not exist yet)
+      // Remove preferences from updateData if it somehow got added
+      if ('preferences' in updateData) {
+        delete updateData.preferences;
+      }
 
       const updated = await update('customers', { id: customerId }, updateData);
 
-      if (Object.keys(completionUpdates).length > 0) {
+      if (Object.keys(completionUpdates).length > 0 && customerId) {
         try {
-          await updateProfileCompletion(customerId, completionUpdates);
+          await updateProfileCompletion(customerId as string, completionUpdates);
           
           const customers = await select('customers', { id: customerId });
           const customer = customers[0];
           
           if (customer.onboarding_status === 'PHONE_VERIFIED' && completionUpdates.basic_info) {
-            await updateCustomerOnboardingStatus(customerId, 'PROFILE_PENDING', 'profile');
+            await updateCustomerOnboardingStatus(customerId as string, 'PROFILE_PENDING', 'profile');
           }
         } catch (stateError) {
           console.error('Error updating customer state:', stateError);
@@ -407,6 +522,16 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error updating customer profile:', error);
+      
+      // Check if error is about missing preferences column
+      if (error.message && error.message.includes('column "preferences"')) {
+        console.error('[PROFILE] Preferences column does not exist. Run migration 139_add_customers_preferences_column.sql');
+        return c.json({ 
+          error: 'Database schema mismatch. Please run migration 139_add_customers_preferences_column.sql',
+          details: error.message 
+        }, 500);
+      }
+      
       return c.json({ error: error.message }, 500);
     }
   });
@@ -456,13 +581,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       }
 
       if (profileData.photo) {
-        // Store photo in preferences JSONB
-        const customers = await select('customers', { id: customerId });
-        const existingPreferences = (customers[0]?.preferences as any) || {};
-        updateData.preferences = {
-          ...existingPreferences,
-          profile_photo_url: profileData.photo,
-        };
+        // Use profile_photo_url column directly instead of storing in preferences
+        updateData.profile_photo_url = profileData.photo;
       }
 
       // Update profile completion status
@@ -476,12 +596,27 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         completionUpdates.address = true;
       }
 
-      // Handle address - customers table has address (TEXT) and pincode (TEXT) as separate fields
+      // Handle address - customers table has address (TEXT), pincode (TEXT), city (TEXT), state (TEXT) as separate fields
       if (profileData.address) {
         updateData.address = profileData.address;
       }
       if (profileData.pincode) {
         updateData.pincode = profileData.pincode;
+      }
+      if (profileData.city) {
+        updateData.city = profileData.city;
+      }
+      if (profileData.state) {
+        updateData.state = profileData.state;
+      }
+      if (profileData.landmark) {
+        updateData.landmark = profileData.landmark;
+      }
+
+      // Ensure we're not trying to update preferences column (it may not exist yet)
+      // Remove preferences from updateData if it somehow got added
+      if ('preferences' in updateData) {
+        delete updateData.preferences;
       }
 
       const updated = await update('customers', { id: customerId }, updateData);
@@ -610,8 +745,13 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         }
       });
     } catch (error: any) {
+      const msg = error?.message || String(error);
       console.error('Error fetching customer by phone:', error);
-      return c.json({ error: error.message }, 500);
+      // Return 503 for pool exhaustion/timeout so clients can retry; 500 for other errors
+      if (msg.includes('connection pool') || msg.includes('too many clients') || msg.includes('timeout') || msg.includes('Timeout')) {
+        return c.json({ error: 'Service temporarily busy. Please try again in a moment.', code: 'SERVICE_BUSY' }, 503);
+      }
+      return c.json({ error: msg }, 500);
     }
   });
 
@@ -640,8 +780,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         count: searchHistory.length,
       });
     } catch (error: any) {
-      console.error('Error fetching search history:', error);
-      return c.json({ error: error.message }, 500);
+      console.error('[search-history] Error fetching search history:', error);
+      return c.json({ success: true, history: [], count: 0 }, 200);
     }
   });
 
@@ -710,8 +850,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         count: suggestions.length,
       });
     } catch (error: any) {
-      console.error('Error fetching suggestions:', error);
-      return c.json({ error: error.message }, 500);
+      console.error('[search-suggestions] Error fetching suggestions:', error);
+      return c.json({ success: true, suggestions: [], count: 0 }, 200);
     }
   });
 

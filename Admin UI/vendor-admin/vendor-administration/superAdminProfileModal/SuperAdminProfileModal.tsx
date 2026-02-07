@@ -1,7 +1,7 @@
 import { X, Download } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Button } from "@repo/ui";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 
 interface AdminProfile {
 	id: string;
@@ -60,10 +60,10 @@ export function SuperAdminProfileModal({
 			setLoading(true);
 
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/profile/${adminId}`,
+				`${getApiBaseUrl()}/admin/profile/${adminId}`,
 				{
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 				}
 			);
@@ -84,11 +84,11 @@ export function SuperAdminProfileModal({
 			setSaving(true);
 
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/profile/${adminId}`,
+				`${getApiBaseUrl()}/admin/profile/${adminId}`,
 				{
 					method: "PUT",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify(updates),
@@ -137,11 +137,11 @@ export function SuperAdminProfileModal({
 	const handleGenerateApiKey = async () => {
 		try {
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/profile/${adminId}/api-key`,
+				`${getApiBaseUrl()}/admin/profile/${adminId}/api-key`,
 				{
 					method: "POST",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 				}
 			);
@@ -158,10 +158,10 @@ export function SuperAdminProfileModal({
 	const handleExport = async () => {
 		try {
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/profile/${adminId}/export`,
+				`${getApiBaseUrl()}/admin/profile/${adminId}/export`,
 				{
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 				}
 			);

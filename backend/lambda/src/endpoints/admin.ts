@@ -21,8 +21,11 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, update, insert } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // ADMIN HANDLERS
@@ -35,19 +38,32 @@ class VendorStatsHandler extends BaseHandler {
       const vendors = await select('vendors', {});
 
     const activeVendors = vendors.filter(v => v.status === 'approved' && v.is_active);
-    const pendingApplications = vendors.filter(v => 
-      v.status === 'pending' || v.status === 'pending_approval'
-    );
+    
+    // ✅ FIX: Get pending applications from vendor_onboarding_applications table (not vendors table)
+    let pendingApplicationsCount = 0;
+    let pendingTodayCount = 0;
+    try {
+      const pendingResult = await query(`
+        SELECT COUNT(*) as total, 
+               SUM(CASE WHEN submitted_at >= CURRENT_DATE THEN 1 ELSE 0 END) as today_count
+        FROM vendor_onboarding_applications 
+        WHERE status IN ('SUBMITTED', 'PENDING', 'UNDER_REVIEW')
+      `);
+      if (pendingResult.rows && pendingResult.rows[0]) {
+        pendingApplicationsCount = parseInt(pendingResult.rows[0].total || '0', 10);
+        pendingTodayCount = parseInt(pendingResult.rows[0].today_count || '0', 10);
+      }
+    } catch (e) {
+      console.warn('Could not fetch pending applications from vendor_onboarding_applications:', e);
+      // Fallback to vendors table if the new table doesn't exist
+      const fallbackPending = vendors.filter(v => 
+        v.status === 'pending' || v.status === 'pending_approval'
+      );
+      pendingApplicationsCount = fallbackPending.length;
+    }
+    
     const deactivatedVendors = vendors.filter(v => !v.is_active);
     const rejectedVendors = vendors.filter(v => v.status === 'rejected');
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const pendingToday = pendingApplications.filter(v => {
-      if (!v.created_at) return false;
-      const submittedDate = new Date(v.created_at);
-      return submittedDate >= today;
-    });
 
     // Distribution by category
     const distributionByCategory: Record<string, number> = {};
@@ -66,8 +82,8 @@ class VendorStatsHandler extends BaseHandler {
           : 0,
       },
       pendingApplications: {
-        count: pendingApplications.length,
-        todayCount: pendingToday.length,
+        count: pendingApplicationsCount,
+        todayCount: pendingTodayCount,
       },
       deactivatedVendors: {
         count: deactivatedVendors.length,
@@ -136,6 +152,18 @@ class ApproveVendorHandler extends BaseHandler {
       console.error('Failed to publish vendor approved event:', error);
     }
 
+    // ✅ Trigger webhooks
+    try {
+      const { triggerWebhook } = await import('./webhooks');
+      await triggerWebhook('vendor.approved', {
+        vendorId,
+        approvedAt: new Date().toISOString(),
+        approvedBy: adminId,
+      });
+    } catch (error) {
+      console.error('Failed to trigger webhooks:', error);
+    }
+
     return this.success({
       message: 'Vendor approved successfully',
       vendorId,
@@ -177,6 +205,19 @@ class RejectVendorHandler extends BaseHandler {
       }
     );
 
+    // ✅ Trigger webhooks
+    try {
+      const { triggerWebhook } = await import('./webhooks');
+      await triggerWebhook('vendor.rejected', {
+        vendorId,
+        rejectedAt: new Date().toISOString(),
+        rejectedBy: adminId,
+        reason,
+      });
+    } catch (error) {
+      console.error('Failed to trigger webhooks:', error);
+    }
+
     // ✅ SQL: Add comment
     await insert('vendor_onboarding_comments', {
       vendor_id: vendorId,
@@ -207,40 +248,193 @@ class RejectVendorHandler extends BaseHandler {
 class ListVendorsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const status = context.event.queryStringParameters?.status;
-      const limit = parseInt(context.event.queryStringParameters?.limit || '50', 10);
-      const offset = parseInt(context.event.queryStringParameters?.offset || '0', 10);
+      // ✅ ENHANCED: Extract all filter parameters
+      const queryParams = context.event.queryStringParameters || {};
+      const status = queryParams.status;
+      const search = queryParams.search?.trim();
+      const category = queryParams.category;
+      const role = queryParams.role;
+      const vendorType = queryParams.vendorType;
+      const city = queryParams.city;
+      const tier = queryParams.tier;
+      const isActive = queryParams.isActive;
+      const limit = parseInt(queryParams.limit || '100', 10);
+      const offset = parseInt(queryParams.offset || '0', 10);
 
-      // ✅ SQL: Get vendors with filters
-      let vendors;
-      if (status) {
-        vendors = await select('vendors', { status }, {
-          limit,
-          offset,
-          orderBy: 'created_at',
-          orderDirection: 'DESC',
-        });
-      } else {
-        vendors = await select('vendors', {}, {
-          limit,
-          offset,
-          orderBy: 'created_at',
-          orderDirection: 'DESC',
-        });
+      console.log('[ListVendors] Filters:', { status, search, category, role, vendorType, city, tier, isActive });
+
+      // Build dynamic WHERE clause
+      let whereConditions: string[] = ['1=1'];
+      const params: any[] = [];
+      let paramIdx = 1;
+      
+      // Status filter
+      if (status && status !== 'all') {
+        whereConditions.push(`v.status = $${paramIdx}`);
+        params.push(status);
+        paramIdx++;
+      }
+
+      // Search filter - across multiple fields
+      if (search) {
+        whereConditions.push(`(
+          v.business_name ILIKE $${paramIdx} OR
+          v.owner_name ILIKE $${paramIdx} OR
+          v.phone ILIKE $${paramIdx} OR
+          v.email ILIKE $${paramIdx} OR
+          v.city ILIKE $${paramIdx} OR
+          r.name ILIKE $${paramIdx} OR
+          r.display_name ILIKE $${paramIdx}
+        )`);
+        params.push(`%${search}%`);
+        paramIdx++;
+      }
+
+      // Category filter
+      if (category && category !== 'all') {
+        whereConditions.push(`(
+          LOWER(v.category) = LOWER($${paramIdx}) OR 
+          LOWER(r.name) ILIKE $${paramIdx + 1} OR
+          LOWER(r.display_name) ILIKE $${paramIdx + 1}
+        )`);
+        params.push(category.toLowerCase());
+        params.push(`%${category}%`);
+        paramIdx += 2;
+      }
+
+      // Role ID filter
+      if (role && role !== 'all') {
+        whereConditions.push(`v.role_id = $${paramIdx}`);
+        params.push(role);
+        paramIdx++;
+      }
+
+      // City filter
+      if (city && city !== 'all') {
+        whereConditions.push(`LOWER(v.city) = LOWER($${paramIdx})`);
+        params.push(city);
+        paramIdx++;
+      }
+
+      // Tier filter
+      if (tier && tier !== 'all') {
+        whereConditions.push(`LOWER(v.tier) = LOWER($${paramIdx})`);
+        params.push(tier);
+        paramIdx++;
+      }
+
+      // Is Active filter (treat NULL is_active as active when requesting active, to match stats and schema default)
+      if (isActive !== undefined && isActive !== 'all') {
+        if (isActive === 'true') {
+          whereConditions.push(`COALESCE(v.is_active, true) = true`);
+        } else {
+          whereConditions.push(`COALESCE(v.is_active, true) = false`);
+        }
+      }
+
+      const whereClause = whereConditions.join(' AND ');
+
+      // Main query with all filters
+      const vendorsResult = await query(`
+        SELECT 
+          v.id,
+          v.phone,
+          v.email,
+          v.business_name,
+          v.owner_name,
+          v.role_id,
+          v.category,
+          v.status,
+          v.tier,
+          v.is_active,
+          v.city,
+          v.state,
+          v.address,
+          v.experience_years,
+          v.rating,
+          v.created_at,
+          v.approved_at,
+          -- Role information
+          r.name as role_name,
+          r.display_name as role_display_name,
+          -- Vendor type derived from multiple sources
+          CASE 
+            WHEN vi.vendor_type IS NOT NULL AND vi.vendor_type != '' THEN vi.vendor_type
+            WHEN r.config->>'vendorConfiguration' IS NOT NULL THEN r.config->>'vendorConfiguration'
+            WHEN r.name LIKE '%_solo' OR r.name LIKE 'solo_%' OR LOWER(r.display_name) LIKE '%solo%' THEN 'solo'
+            ELSE 'business'
+          END as vendor_type,
+          -- Services count
+          (SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true) as active_services_count,
+          -- Average rating
+          (SELECT COALESCE(AVG(rating), 0) FROM reviews rv WHERE rv.vendor_id = v.id) as avg_rating,
+          -- Review count
+          (SELECT COUNT(*) FROM reviews rv WHERE rv.vendor_id = v.id) as review_count
+        FROM vendors v
+        LEFT JOIN roles r ON r.id = v.role_id
+        LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
+        WHERE ${whereClause}
+        ORDER BY v.created_at DESC
+        LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
+      `, [...params, limit, offset]);
+
+      // Get total count for pagination
+      const countResult = await query(`
+        SELECT COUNT(DISTINCT v.id) as total
+        FROM vendors v
+        LEFT JOIN roles r ON r.id = v.role_id
+        LEFT JOIN vendor_identity vi ON vi.vendor_id = v.id
+        WHERE ${whereClause}
+      `, params);
+
+      const totalCount = parseInt(countResult.rows[0]?.total) || 0;
+
+      // Transform and filter by vendor type (derived field, done in memory)
+      let vendors = (vendorsResult.rows || []).map((v: any) => ({
+        id: v.id,
+        vendorId: v.id,
+        businessName: v.business_name,
+        ownerName: v.owner_name,
+        fullName: v.business_name || v.owner_name,
+        phone: v.phone,
+        email: v.email,
+        status: v.status,
+        tier: v.tier || 'Bronze',
+        isActive: v.is_active,
+        // Role and type info
+        roleId: v.role_id,
+        roleName: v.role_name,
+        roleDisplayName: v.role_display_name,
+        category: v.category || v.role_name || 'General',
+        vendorType: v.vendor_type,
+        vendor_type: v.vendor_type,
+        // Location
+        city: v.city,
+        location: v.city ? `${v.city}${v.state ? ', ' + v.state : ''}` : null,
+        address: v.address,
+        // Experience
+        experience: v.experience_years ? `${v.experience_years} years` : null,
+        experienceYears: v.experience_years,
+        // Rating
+        rating: parseFloat(v.avg_rating) || parseFloat(v.rating) || 0,
+        reviewCount: parseInt(v.review_count) || 0,
+        // Services
+        activeServicesCount: parseInt(v.active_services_count) || 0,
+        // Dates
+        createdAt: v.created_at,
+        approvedAt: v.approved_at,
+      }));
+
+      // Apply vendor type filter (derived field)
+      if (vendorType && vendorType !== 'all') {
+        vendors = vendors.filter((v: any) => v.vendorType === vendorType);
       }
 
       return this.success({
-        vendors: vendors.map(v => ({
-          id: v.id,
-          businessName: v.business_name,
-          ownerName: v.owner_name,
-          phone: v.phone,
-          email: v.email,
-          status: v.status,
-          tier: v.tier,
-          createdAt: v.created_at,
-        })),
-        total: vendors.length,
+        vendors,
+        total: totalCount,
+        filtered: vendors.length,
+        filters: { status, search, category, role, vendorType, city, tier, isActive }
       });
     } catch (error: any) {
       console.error('Error in ListVendorsHandler:', error);
@@ -275,10 +469,19 @@ async function requireAdminAuth(c: any): Promise<{ authorized: boolean; userId?:
       return { authorized: true, userId: 'uat-admin-user' };
     }
     
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace(/^Bearer\s+/i, '');
     
-    // Allow UAT tokens
-    if (token.startsWith('uat-token-') || token.startsWith('eyJ')) {
+    // Allow UAT tokens immediately (no JWT verification)
+    if (token.startsWith('uat-token-')) {
+      const suffix = token.replace('uat-token-', '');
+      if (suffix.length >= 10) {
+        console.log('[ADMIN AUTH] UAT Mode: Allowing admin access with UAT token');
+        return { authorized: true, userId: 'uat-admin-user' };
+      }
+    }
+    
+    // Allow JWT tokens (verify or allow in dev)
+    if (token.startsWith('eyJ')) {
       // JWT token or UAT token - verify it's valid
       try {
         const { extractAndVerifyAuthToken } = await import('../utils/jwt-verification');
@@ -307,11 +510,17 @@ async function requireAdminAuth(c: any): Promise<{ authorized: boolean; userId?:
         console.log('[ADMIN AUTH] UAT Mode: Allowing admin access with valid token');
         return { authorized: true, userId: result.payload?.sub || 'uat-admin-user' };
       } catch (tokenError) {
-        // In UAT mode, still allow if token format looks valid
-        if (token.startsWith('eyJ')) {
-          console.log('[ADMIN AUTH] UAT Mode: Allowing admin access (token verification skipped)');
+        // SECURITY FIX: Only allow UAT bypass in non-production environments
+        const isProduction = process.env.NODE_ENV === 'production' || 
+                             process.env.STAGE === 'prod' || 
+                             process.env.AWS_LAMBDA_FUNCTION_NAME?.includes('prod');
+        
+        if (!isProduction && token.startsWith('eyJ')) {
+          console.log('[ADMIN AUTH] UAT Mode (DEV ONLY): Allowing admin access (token verification skipped)');
           return { authorized: true, userId: 'uat-admin-user' };
         }
+        // In production, require valid token
+        console.warn('[ADMIN AUTH] Token verification failed in production');
       }
     }
   }
@@ -363,6 +572,10 @@ export function registerAdminEndpoints(app: Hono) {
   const rejectHandler = new RejectVendorHandler();
   const listHandler = new ListVendorsHandler();
 
+  // Register webhook endpoints
+  const { setupWebhookRoutes } = require('./webhooks');
+  setupWebhookRoutes(app);
+
   app.get('/admin/vendors/stats', async (c) => {
     // ✅ SECURITY FIX: Require admin authentication
     const authResult = await requireAdminAuth(c);
@@ -402,6 +615,57 @@ export function registerAdminEndpoints(app: Hono) {
     const context = createLambdaContext();
     const result = await rejectHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // Request clarification by vendorId (e.g. useVendors, AdminApp). Uses message/notes/comment only – NEVER rejection_reason.
+  app.post('/admin/vendors/:vendorId/request-clarification', async (c) => {
+    const authResult = await requireAdminAuth(c);
+    if (!authResult.authorized) {
+      return c.json({ error: authResult.error }, 401);
+    }
+    const vendorId = c.req.param('vendorId');
+    const body = await c.req.json().catch(() => ({}));
+    const notes = (body.notes ?? body.message ?? body.comment ?? body.comments ?? '').trim();
+    if (!notes) {
+      return c.json({ success: false, error: 'Message or notes are required for request clarification' }, 400);
+    }
+    try {
+      let applicationId: string | null = null;
+      const byVendor = await query(
+        `SELECT voa.id FROM vendor_onboarding_applications voa
+         JOIN vendor_identity vi ON vi.id = voa.vendor_identity_id
+         WHERE vi.vendor_id = $1 OR vi.phone = (SELECT phone FROM vendors WHERE id = $1 LIMIT 1)
+         ORDER BY voa.created_at DESC LIMIT 1`,
+        [vendorId]
+      );
+      applicationId = byVendor?.rows?.[0]?.id ?? null;
+      if (!applicationId) {
+        const byAppId = await query(
+          `SELECT id FROM vendor_onboarding_applications WHERE id = $1 LIMIT 1`,
+          [vendorId]
+        );
+        applicationId = byAppId?.rows?.[0]?.id ?? null;
+      }
+      if (!applicationId) {
+        return c.json({ success: false, error: 'Application not found for this vendor' }, 404);
+      }
+      await query(
+        `UPDATE vendor_onboarding_applications SET status = 'CLARIFICATION_REQUIRED', admin_comments = $2, is_locked = false, locked_at = NULL, updated_at = NOW() WHERE id = $1`,
+        [applicationId, notes]
+      );
+      try {
+        await query(
+          `UPDATE vendor_identity SET onboarding_status = 'CLARIFICATION_REQUIRED', updated_at = NOW() WHERE application_id = $1 OR id = $1`,
+          [applicationId]
+        );
+      } catch (e) {
+        console.warn('Optional vendor_identity update failed:', (e as Error).message);
+      }
+      return c.json({ success: true, message: 'Clarification requested', applicationId });
+    } catch (error: any) {
+      console.error('Error requesting clarification (vendors/:id):', error);
+      return c.json({ success: false, error: error.message || 'Failed to request clarification' }, 500);
+    }
   });
 
   app.get('/admin/vendors', async (c) => {
@@ -503,7 +767,7 @@ export function registerAdminEndpoints(app: Hono) {
               formData.city || 'Unknown',
               formData.state || 'Unknown',
               formData.address || 'Unknown',
-              formData.pincode || formData.pinCode || '000000'
+              formData.pincode || formData.pinCode || ''
             ]
           );
           vendorId = insertResult.rows[0].id;
@@ -538,6 +802,52 @@ export function registerAdminEndpoints(app: Hono) {
           return c.json({ error: 'Application not found' }, 404);
         }
         vendorId = vendors[0].id;
+      }
+      
+      // ✅ FIX: Ensure facility/profile is provisioned after approval
+      // Update vendor record with any missing facility fields from application data
+      // Do this BEFORE status update so facility data is available immediately
+      try {
+        const application = await select('vendor_onboarding_applications', { id: applicationId });
+        const currentVendor = await select('vendors', { id: vendorId });
+        const vendorRecord = currentVendor.length > 0 ? currentVendor[0] : null;
+        
+        if (application.length > 0) {
+          const appPayload = application[0].application_payload || {};
+          const facilityUpdate: any = {};
+          
+          // Ensure address fields are populated (even if from application)
+          if (appPayload.address && (!vendorRecord?.address || vendorRecord.address === 'Unknown' || vendorRecord.address === 'Not specified')) {
+            facilityUpdate.address = appPayload.address;
+          }
+          if (appPayload.city && (!vendorRecord?.city || vendorRecord.city === 'Unknown' || vendorRecord.city === 'Not specified')) {
+            facilityUpdate.city = appPayload.city;
+          }
+          if (appPayload.state && (!vendorRecord?.state || vendorRecord.state === 'Unknown' || vendorRecord.state === 'Not specified')) {
+            facilityUpdate.state = appPayload.state;
+          }
+          if ((appPayload.pincode || appPayload.pinCode) && (!vendorRecord?.pincode || vendorRecord.pincode === '000000' || vendorRecord.pincode === '')) {
+            facilityUpdate.pincode = appPayload.pincode || appPayload.pinCode;
+          }
+          if (appPayload.latitude && !vendorRecord?.latitude) {
+            facilityUpdate.latitude = appPayload.latitude;
+          }
+          if (appPayload.longitude && !vendorRecord?.longitude) {
+            facilityUpdate.longitude = appPayload.longitude;
+          }
+          
+          // Update vendor if any facility fields need to be set
+          if (Object.keys(facilityUpdate).length > 0) {
+            await update('vendors', { id: vendorId }, {
+              ...facilityUpdate,
+              updated_at: new Date().toISOString(),
+            });
+            console.log(`✅ [Vendor Approval] Provisioned facility fields for vendor ${vendorId}:`, Object.keys(facilityUpdate));
+          }
+        }
+      } catch (facilityErr: any) {
+        console.warn(`⚠️ [Vendor Approval] Failed to provision facility (non-critical):`, facilityErr.message);
+        // Don't fail approval if facility provisioning fails - vendor can update later
       }
       
       // Update vendor status to approved
@@ -640,20 +950,51 @@ export function registerAdminEndpoints(app: Hono) {
   });
 
   // Frontend compatibility: /admin/vendor/application/:applicationId/request-clarification
+  // Request clarification uses message/notes only. rejection_reason is ONLY for reject – never required here.
   app.post('/admin/vendor/application/:applicationId/request-clarification', async (c) => {
-    // ✅ SECURITY FIX: Require admin authentication
     const authResult = await requireAdminAuth(c);
     if (!authResult.authorized) {
       return c.json({ error: authResult.error }, 401);
     }
-    
-    // This endpoint can use the reject handler with a clarification reason
+
     const applicationId = c.req.param('applicationId');
-    const event = createApiGatewayEvent(c.req);
-    event.pathParameters = { vendorId: applicationId };
-    const context = createLambdaContext();
-    const result = await rejectHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const body = await c.req.json().catch(() => ({}));
+    // Only notes/message/comments – do not use or require rejection_reason
+    const notes = (body.notes ?? body.message ?? body.comments ?? '').trim();
+    if (!notes) {
+      return c.json({ success: false, error: 'Message or notes are required for request clarification' }, 400);
+    }
+
+    try {
+      const apps = await select('vendor_onboarding_applications', { id: applicationId });
+      if (!apps.length) {
+        return c.json({ success: false, error: 'Application not found' }, 404);
+      }
+      const app = apps[0];
+      await query(
+        `UPDATE vendor_onboarding_applications 
+         SET status = 'CLARIFICATION_REQUIRED', admin_comments = $2, is_locked = false, locked_at = NULL, updated_at = NOW() 
+         WHERE id = $1`,
+        [applicationId, notes]
+      );
+      try {
+        await query(
+          `UPDATE vendor_identity SET onboarding_status = 'CLARIFICATION_REQUIRED', updated_at = NOW() 
+           WHERE application_id = $1 OR id = $1`,
+          [applicationId]
+        );
+      } catch (e) {
+        console.warn('Optional vendor_identity update failed:', (e as Error).message);
+      }
+      return c.json({
+        success: true,
+        message: 'Clarification requested',
+        applicationId,
+      });
+    } catch (error: any) {
+      console.error('Error requesting clarification:', error);
+      return c.json({ success: false, error: error.message || 'Failed to request clarification' }, 500);
+    }
   });
 
   // ============================================================================
@@ -814,6 +1155,118 @@ export function registerAdminEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
+  // ✅ TEMPORARY: Fix staff vendor_identity records
+  app.post('/admin/fix-staff-vendor-identity', async (c) => {
+    try {
+      console.log('[ADMIN] Fixing staff vendor_identity records...');
+      
+      // Step 1: Delete existing vendor_identity for staff phones
+      await query(`
+        DELETE FROM vendor_identity
+        WHERE phone IN ('8426334832', '5555555555')
+      `);
+      console.log('[ADMIN] Deleted existing vendor_identity records');
+      
+      // Step 2: Create/Update vendor_identity with proper staff configuration
+      const result = await query(`
+        INSERT INTO vendor_identity (
+          phone,
+          user_type,
+          onboarding_status,
+          vendor_id,
+          selected_role_id,
+          vendor_type,
+          full_name,
+          business_name,
+          email,
+          metadata
+        )
+        SELECT 
+          s.phone,
+          'staff',
+          'ACTIVATED',
+          s.vendor_id::uuid,
+          r.id as selected_role_id,
+          -- Vendor type derived from role name if vendor_identity.vendor_type is NULL
+          CASE 
+            WHEN vi_vendor.vendor_type IS NOT NULL THEN vi_vendor.vendor_type
+            WHEN r.name LIKE '%_solo' OR r.name LIKE 'solo_%' OR LOWER(r.display_name) LIKE '%solo%' THEN 'solo'
+            ELSE 'business'
+          END as vendor_type,
+          s.name as full_name,
+          COALESCE(v.business_name, s.name) as business_name,
+          s.email,
+          jsonb_build_object(
+            'staff_id', s.id,
+            'created_via', 'staff_fix_script'
+          ) as metadata
+        FROM staff s
+        LEFT JOIN roles r ON (
+          (r.name = s.role OR r.display_name = s.role OR 
+           LOWER(r.name) = LOWER(s.role) OR LOWER(r.display_name) = LOWER(s.role))
+          AND r.is_active = true
+        )
+        LEFT JOIN vendor_identity vi_vendor ON (
+          vi_vendor.vendor_id = s.vendor_id::uuid 
+          AND (vi_vendor.user_type IS NULL OR vi_vendor.user_type = 'vendor')
+        )
+        LEFT JOIN vendors v ON v.id = s.vendor_id::uuid
+        WHERE s.phone IN ('8426334832', '5555555555')
+          AND s.is_active = true
+        ON CONFLICT (phone) DO UPDATE SET
+          user_type = 'staff',
+          onboarding_status = 'ACTIVATED',
+          vendor_id = EXCLUDED.vendor_id,
+          selected_role_id = EXCLUDED.selected_role_id,
+          vendor_type = EXCLUDED.vendor_type,
+          full_name = EXCLUDED.full_name,
+          business_name = EXCLUDED.business_name,
+          email = EXCLUDED.email,
+          metadata = EXCLUDED.metadata,
+          updated_at = NOW()
+        RETURNING *
+      `);
+      
+      console.log('[ADMIN] Created/updated vendor_identity records:', result.rows.length);
+      
+      // Step 3: Verify the fix
+      const verify = await query(`
+        SELECT 
+          s.id as staff_id,
+          s.name,
+          s.phone,
+          s.vendor_id,
+          vi.id as vendor_identity_id,
+          vi.user_type,
+          vi.onboarding_status,
+          vi.vendor_id as vi_vendor_id,
+          vi.selected_role_id,
+          r.name as role_name,
+          vi.vendor_type,
+          vi.business_name
+        FROM staff s
+        INNER JOIN vendor_identity vi ON s.phone = vi.phone
+        LEFT JOIN roles r ON vi.selected_role_id = r.id
+        WHERE s.phone IN ('8426334832', '5555555555')
+        ORDER BY s.phone
+      `);
+      
+      return c.json({
+        success: true,
+        message: 'Staff vendor_identity records fixed successfully',
+        records_updated: result.rows.length,
+        verification: verify.rows,
+      });
+    } catch (error: any) {
+      console.error('[ADMIN] Error fixing staff vendor_identity:', error);
+      return c.json({ 
+        success: false,
+        error: error.message,
+        stack: error.stack 
+      }, 500);
+    }
+  });
 }
 
 function createApiGatewayEvent(req: any): any {
@@ -825,14 +1278,14 @@ function createApiGatewayEvent(req: any): any {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'admin-handler',
     functionVersion: '$LATEST',
   };

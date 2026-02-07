@@ -2,11 +2,16 @@
 
 export const dynamic = 'force-dynamic';
 
-import { VendorSettingsPage } from '@/components/vendor/VendorSettingsPage';
-import { useEffect, useState } from 'react';
+import { VendorSettingsScreen } from '@/components/vendor/VendorSettingsScreen';
+import { useEffect, useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function SettingsPage() {
+function SettingsContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [vendorId, setVendorId] = useState<string | null>(null);
+  const tabParam = searchParams?.get('tab');
+  const initialTab = tabParam === 'bank' ? 'payment' : undefined;
 
   useEffect(() => {
     const storedVendorId = localStorage.getItem('vendorId');
@@ -15,10 +20,16 @@ export default function SettingsPage() {
 
   if (!vendorId) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-600">Please login to access settings</p>
-          <a href="/auth" className="mt-4 inline-block px-6 py-2 bg-orange-500 text-white rounded-full">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="w-full max-w-[430px] mx-auto bg-white p-6 text-center">
+          <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-2xl">🔒</span>
+          </div>
+          <p className="text-gray-600 mb-4">Please login to access settings</p>
+          <a 
+            href="/auth" 
+            className="inline-block px-6 py-2.5 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition-colors"
+          >
             Login
           </a>
         </div>
@@ -27,22 +38,20 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Header - Match consistency pattern: max-w-7xl mx-auto px-6 py-4 */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <h1 className="text-2xl font-bold text-gray-800">Settings</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage your account settings and preferences</p>
-        </div>
-      </div>
-
-      {/* Main Content - Match consistency pattern: max-w-7xl mx-auto p-6 */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto p-6">
-          <VendorSettingsPage vendorId={vendorId} />
-        </div>
-      </div>
+    <div className="min-h-screen bg-gray-50">
+      <VendorSettingsScreen
+        vendorId={vendorId}
+        onBack={() => router.back()}
+        initialTab={initialTab}
+      />
     </div>
   );
 }
 
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-orange-500" /></div>}>
+      <SettingsContent />
+    </Suspense>
+  );
+}

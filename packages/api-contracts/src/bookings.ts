@@ -10,15 +10,29 @@ import { z } from 'zod';
 // REQUEST SCHEMAS
 // ============================================================================
 
+// Schema for individual service in multi-service booking
+// id/serviceId can be UUID or catalog ID (string) - backend accepts both
+export const SelectedServiceSchema = z.object({
+  id: z.string().optional(),
+  serviceId: z.string().optional(),
+  name: z.string().optional(),
+  price: z.coerce.number().optional(),
+  duration: z.coerce.number().optional(),
+  quantity: z.coerce.number().int().positive().optional().default(1),
+});
+
 export const CreateBookingRequestSchema = z.object({
   customerId: z.string().uuid('Invalid customer ID format'),
   vendorId: z.string().uuid('Invalid vendor ID format'),
-  serviceId: z.string().uuid('Invalid service ID format'),
+  serviceId: z.union([
+    z.string().uuid('Invalid service ID format'),
+    z.string().refine(s => /^diagnostics?$/i.test(s), 'Must be UUID or diagnostics')
+  ]),
   staffId: z.string().uuid('Invalid staff ID format').optional(),
   bookingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
   bookingTime: z.string().regex(/^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/, 'Invalid time format (HH:MM)'),
-  serviceType: z.enum(['at_vendor', 'at_home', 'online'], {
-    errorMap: () => ({ message: 'Service type must be at_vendor, at_home, or online' }),
+  serviceType: z.enum(['at_vendor', 'at_home', 'online', 'at_center', 'tele', 'hybrid', 'product'], {
+    errorMap: () => ({ message: 'Service type must be at_vendor/at_center, at_home, or online/tele' }),
   }),
   address: z.string().optional(),
   city: z.string().optional(),
@@ -27,15 +41,25 @@ export const CreateBookingRequestSchema = z.object({
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   petId: z.string().uuid('Invalid pet ID format').optional(),
-  amount: z.number().positive('Amount must be positive').optional(),
-  notes: z.string().max(1000, 'Notes too long').optional(),
+  amount: z.coerce.number().min(0, 'Amount must be non-negative').optional(),
+  totalAmount: z.coerce.number().min(0, 'Total amount must be non-negative').optional(),
+  notes: z.string().max(10000, 'Notes too long').optional(),
   idempotencyKey: z.string().uuid('Invalid idempotency key format').optional(),
   couponCode: z.string().optional(),
   promotionId: z.string().uuid('Invalid promotion ID format').optional(),
+  // ✅ NEW: Support for multiple services in a single booking
+  selectedServices: z.array(SelectedServiceSchema).optional(),
+  serviceName: z.string().optional(),
+  customerPhone: z.string().optional(),
+  customerName: z.string().optional(),
+  petName: z.string().optional(),
 });
 
 export const UpdateBookingStatusRequestSchema = z.object({
-  status: z.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show', 'rescheduled'], {
+  status: z.enum([
+    'pending', 'confirmed', 'scheduled', 'in_progress', 'completed', 'cancelled', 'no_show', 'rescheduled',
+    'sample_collected', 'sample_received_at_lab', 'processing', 'reports_ready'
+  ], {
     errorMap: () => ({ message: 'Invalid booking status' }),
   }),
   reason: z.string().max(500, 'Reason too long').optional(),
@@ -66,7 +90,7 @@ export const BookingSchema = z.object({
   bookingDate: z.string(),
   bookingTime: z.string(),
   status: z.enum(['pending', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show', 'rescheduled']),
-  serviceType: z.enum(['at_vendor', 'at_home', 'online']),
+  serviceType: z.enum(['at_vendor', 'at_home', 'online', 'at_center', 'tele', 'hybrid', 'product']),
   address: z.string().nullable(),
   city: z.string().nullable(),
   state: z.string().nullable(),
@@ -86,6 +110,9 @@ export const BookingSchema = z.object({
   updatedAt: z.string().datetime(),
   completedAt: z.string().datetime().nullable(),
   cancelledAt: z.string().datetime().nullable(),
+  // ✅ NEW: Support for multiple services
+  selectedServices: z.array(SelectedServiceSchema).nullable().optional(),
+  totalDurationMinutes: z.number().nullable().optional(),
 });
 
 export const BookingStatusHistorySchema = z.object({

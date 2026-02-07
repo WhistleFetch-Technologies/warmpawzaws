@@ -16,6 +16,8 @@ import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { select, update, insert, query } from '../database/rds-connection';
 import { publishNotification } from '../utils/aws-clients';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // SECURITY HANDLERS

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Calendar, Clock, User, Phone, FileText, MessageCircle, History, AlertCircle, Copy, Check } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { copyTextToClipboard } from '../../utils/shareUtils';
 import { VendorPrescriptionForm } from './VendorPrescriptionForm';
 import { VendorChatModal } from './VendorChatModal';
@@ -38,9 +38,9 @@ export function VendorBookingDetailModal({
       console.log('🔍 [VENDOR-BOOKING-DETAIL] Loading booking:', bookingId);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${bookingId}`,
+        `${getApiBaseUrl()}/bookings/${bookingId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -62,9 +62,9 @@ export function VendorBookingDetailModal({
   const checkPrescription = async (bookingId: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/prescription/booking/${bookingId}`,
+        `${getApiBaseUrl()}/prescription/booking/${bookingId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
       setHasPrescription(response.ok);

@@ -47,7 +47,7 @@ import {
 	AlertCircle,
 	CheckCircle2,
 } from "lucide-react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import { toast } from "sonner";
 
 interface CancellationPolicy {
@@ -117,7 +117,7 @@ export function CancellationPolicyManagement() {
 		"all" | "standard" | "vendor_specific" | "service_specific"
 	>("all");
 
-	const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+	const API_BASE = `${getApiBaseUrl()}`;
 
 	useEffect(() => {
 		loadPolicies();
@@ -129,7 +129,7 @@ export function CancellationPolicyManagement() {
 			const response = await fetch(
 				`${API_BASE}/admin/finance/cancellation-policies`,
 				{
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 
@@ -167,7 +167,7 @@ export function CancellationPolicyManagement() {
 				method,
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${publicAnonKey}`,
+					...getAuthHeaders(),
 				},
 				body: JSON.stringify(editingPolicy),
 			});
@@ -198,7 +198,7 @@ export function CancellationPolicyManagement() {
 				`${API_BASE}/admin/finance/cancellation-policies/${id}`,
 				{
 					method: "DELETE",
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 

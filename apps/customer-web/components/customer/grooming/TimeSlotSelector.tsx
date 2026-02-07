@@ -56,18 +56,30 @@ export function TimeSlotSelector({
     try {
       setLoadingSlots(true);
       setVendorOffline(false);
-      
-      const response = await apiClient.get<{ available: boolean; slots: string[] }>(
-        `/vendor/${vendorId}/available-slots?date=${date}&serviceStyle=${serviceStyle}`
-      );
-      
-      if (response.available === false) {
-        setVendorOffline(true);
+
+      // Customer available-slots: advanced schedule only (vendor_availability_v2), dynamic payload
+      const params = new URLSearchParams({
+        date,
+        serviceStyle: serviceStyle || 'at_center',
+        totalDuration: String(Math.max(15, serviceDuration || 30)),
+      });
+      const response = await apiClient.get<{
+        success?: boolean;
+        slots?: Array<{ time: string; available?: boolean; booked?: boolean; slotDuration?: number; bufferMinutes?: number; serviceStyles?: string[] } | string>;
+        availabilityMeta?: Record<string, unknown>;
+        message?: string;
+      }>(`/customer/vendor/${vendorId}/available-slots?${params}`);
+
+      if (!response?.success || !response.slots?.length) {
+        if (response?.message) setVendorOffline(true);
         setSlots([]);
         return;
       }
 
-      const normalizedSlots = (response.slots || []).map((s: string) => s.split(' - ')[0]);
+      // Normalize: slots are objects { time, available, ... } or legacy strings
+      const normalizedSlots = (response.slots || []).map((s) =>
+        typeof s === 'string' ? s.split(' - ')[0]?.trim() || s : (s as { time: string }).time || ''
+      ).filter(Boolean);
       setSlots(normalizedSlots);
     } catch (error) {
       console.error('Error loading slots:', error);
@@ -128,7 +140,7 @@ export function TimeSlotSelector({
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b px-0 py-4 flex items-center gap-0">
+      <div className="sticky top-0 z-10 bg-white border-b px-0 py-4 flex items-center gap-3">
         <button
           onClick={onBack}
           className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
@@ -161,7 +173,7 @@ export function TimeSlotSelector({
           </div>
 
           {/* Date Picker */}
-          <div className="grid grid-cols-7 gap-0">
+          <div className="grid grid-cols-7 gap-3">
             {weekDates.map((date) => {
               const dateStr = formatDate(date);
               const isSelected = selectedDate === dateStr;
@@ -213,7 +225,7 @@ export function TimeSlotSelector({
               <p className="text-sm text-gray-500 mt-0">Please select another date</p>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-0">
+            <div className="grid grid-cols-3 gap-3">
               {slots.map((time) => {
                 const isSelected = selectedTime === time;
                 return (

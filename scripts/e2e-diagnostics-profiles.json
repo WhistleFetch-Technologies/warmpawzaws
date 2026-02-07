@@ -1,0 +1,12 @@
+{
+  "default": {
+    "apiBase": "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
+    "vendorId": "868061d4-c8f7-4f69-945c-bd09de78661d",
+    "customerPhone": "9876543210"
+  },
+  "dev": {
+    "apiBase": "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
+    "vendorId": "868061d4-c8f7-4f69-945c-bd09de78661d",
+    "customerPhone": "9876543210"
+  }
+}

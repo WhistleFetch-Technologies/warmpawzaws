@@ -8,7 +8,7 @@
 
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Home, Building2, Video, MapPin, Settings, Save, Check } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 
 interface ServiceStyleManagerProps {
@@ -30,9 +30,9 @@ export function ServiceStyleManager({ staff, onBack }: ServiceStyleManagerProps)
       setLoading(true);
       
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/style-preferences`,
+        `${getApiBaseUrl()}/staff/${staff.id}/style-preferences`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -51,11 +51,11 @@ export function ServiceStyleManager({ staff, onBack }: ServiceStyleManagerProps)
   const toggleStyle = async (style: 'at_center' | 'at_home' | 'tele', enabled: boolean) => {
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/toggle-style`,
+        `${getApiBaseUrl()}/staff/${staff.id}/toggle-style`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ style, enabled })
@@ -79,11 +79,11 @@ export function ServiceStyleManager({ staff, onBack }: ServiceStyleManagerProps)
   const updateHomeDistance = async (maxDistance: number) => {
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/home-distance`,
+        `${getApiBaseUrl()}/staff/${staff.id}/home-distance`,
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ maxDistance })
@@ -106,11 +106,11 @@ export function ServiceStyleManager({ staff, onBack }: ServiceStyleManagerProps)
   const updateTeleSettings = async (updates: any) => {
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/tele-settings`,
+        `${getApiBaseUrl()}/staff/${staff.id}/tele-settings`,
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(updates)

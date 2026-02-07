@@ -13,3 +13,6 @@ export * from './table';
 export * from './tabs';
 export * from './textarea';
 export * from './accordion';
+
+// Export 2D Sketch-style Icons
+export * from './icons/SketchIcons';

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../ui
 import { Badge } from '../ui/badge';
 import { toast } from 'sonner@2.0.3';
 import { TrendingUp, DollarSign, Crown, ArrowUpRight, Building2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface VendorTier {
   id: string;
@@ -38,8 +38,8 @@ export function SettlementDashboardEnhanced({ vendorId }: { vendorId: string }) 
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/tier`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/tier`,
+        { headers: getAuthHeaders() }
       );
       if (response.ok) {
         const resData = await response.json();
@@ -59,12 +59,12 @@ export function SettlementDashboardEnhanced({ vendorId }: { vendorId: string }) 
     try {
         setProcessingPayout(true);
         const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/settlement/process`,
+            `${getApiBaseUrl()}/settlement/process`,
             {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${publicAnonKey}`
+                    ...getAuthHeaders()
                 },
                 body: JSON.stringify({
                     vendorId,
@@ -90,12 +90,12 @@ export function SettlementDashboardEnhanced({ vendorId }: { vendorId: string }) 
   const handleUpgrade = async (targetTierId: string) => {
       try {
           const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/tier/upgrade`,
+            `${getApiBaseUrl()}/vendor/${vendorId}/tier/upgrade`,
             {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${publicAnonKey}`
+                    ...getAuthHeaders()
                 },
                 body: JSON.stringify({ targetTierId })
             }

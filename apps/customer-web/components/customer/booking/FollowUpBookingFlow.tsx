@@ -89,7 +89,7 @@ export function FollowUpBookingFlow({
         {/* Previous Booking Info */}
         {previousBooking && (
           <div className="bg-white rounded-2xl p-0 shadow-sm border-2 border-primary">
-            <div className="flex items-center gap-0 mb-0">
+            <div className="flex items-center gap-3 mb-0">
               <CheckCircle className="w-6 h-6 text-green-600" />
               <h3 className="font-bold text-gray-900">Previous Appointment</h3>
             </div>

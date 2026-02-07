@@ -4,7 +4,7 @@ import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Separator } from '../ui/separator';
 import { Package, Truck, MapPin, Clock, CheckCircle, XCircle, RefreshCw, ArrowLeft } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface TrackingEvent {
@@ -59,8 +59,8 @@ export function UniversalOrderTracking({
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/orders/${orderId}/shipment`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/orders/${orderId}/shipment`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
       const data = await response.json();
       if (data.success && data.shipment) {
@@ -80,8 +80,8 @@ export function UniversalOrderTracking({
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/logistics/track/${trackingId}`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/logistics/track/${trackingId}`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
       const data = await response.json();
       if (data.success) {

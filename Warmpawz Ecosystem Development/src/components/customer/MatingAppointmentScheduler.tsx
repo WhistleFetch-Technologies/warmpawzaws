@@ -4,7 +4,7 @@ import {
   ChevronLeft, MapPin, Star, Stethoscope, Clock,
   Calendar, Check, Shield, Award, Phone
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface MatingAppointmentSchedulerProps {
@@ -62,8 +62,8 @@ export function MatingAppointmentScheduler({
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/nearby-vets?lat=${lat}&lng=${lng}&radius=10`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/dating/nearby-vets?lat=${lat}&lng=${lng}&radius=10`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -94,11 +94,11 @@ export function MatingAppointmentScheduler({
       const dateTime = `${selectedDate}T${selectedTime}:00`;
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/request-mating-appointment`,
+        `${getApiBaseUrl()}/dating/request-mating-appointment`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

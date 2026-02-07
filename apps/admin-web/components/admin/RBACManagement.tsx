@@ -21,13 +21,13 @@ export function RBACManagement({ onBack }: RBACManagementProps) {
           {onBack && (
             <button
               onClick={onBack}
-              className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-0"
+              className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-3"
             >
               <ArrowLeft className="w-4 h-4" />
               Back
             </button>
           )}
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-3">
             <div className="p-0 bg-orange-100 rounded-lg">
               <Shield className="w-6 h-6 text-orange-600" />
             </div>

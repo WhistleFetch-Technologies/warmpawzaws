@@ -4,7 +4,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Checkbox } from '../ui/checkbox';
 import { supabase } from '../../utils/supabase/client';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { ChevronLeft, CheckCircle2 } from 'lucide-react';
 import logoImage from 'figma:asset/da6636b92da744b3db8eed5288ca6da9ab889afe.png';
 import { storeSession } from '../../utils/session-manager'; // ✅ SECURITY FIX
@@ -71,7 +71,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       if (error) throw error;
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/profile`,
+        `${getApiBaseUrl()}/vendor/profile`,
         {
           headers: {
             Authorization: `Bearer ${data.session.access_token}`,
@@ -139,11 +139,11 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
     // FIRST: Check if this phone belongs to a staff member
     console.log('🔍 [VendorAuth] Step 1: Checking if phone belongs to staff...');
     
-    safeFetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/auth/check-phone`, {
+    safeFetch(`${getApiBaseUrl()}/staff/auth/check-phone`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${publicAnonKey}`
+        ...getAuthHeaders()
       },
       body: JSON.stringify({ phone: phoneNumber })
     })
@@ -160,11 +160,11 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         console.log('🔐 [VendorAuth] Step 2: Logging in as staff...');
         
         // Call staff login endpoint
-        return safeFetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/auth/login`, {
+        return safeFetch(`${getApiBaseUrl()}/staff/auth/login`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({ phone: phoneNumber })
         })
@@ -185,11 +185,11 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       
       // Not a staff member, proceed with regular vendor login
       console.log('📞 [VendorAuth] Not a staff member, proceeding with vendor login...');
-      return safeFetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/auth/login`, {
+      return safeFetch(`${getApiBaseUrl()}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           phone: phoneNumber,
@@ -231,9 +231,9 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   // DEBUG: Test button to check database
   const handleDebugCheck = () => {
     console.log('🔍 DEBUG: Checking ALL vendor data...');
-    fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/auth/diagnostic/all-vendors`, {
+    fetch(`${getApiBaseUrl()}/auth/diagnostic/all-vendors`, {
       headers: {
-        'Authorization': `Bearer ${publicAnonKey}`
+        ...getAuthHeaders()
       }
     })
     .then(response => {

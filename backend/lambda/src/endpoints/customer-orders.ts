@@ -13,8 +13,212 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
-import { query } from '../database/rds-connection';
+import { query, insert } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
+
+// ============================================================================
+// POST /customer/orders - Create order for customer
+// ============================================================================
+
+class CreateCustomerOrderHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    try {
+      const body = this.parseBody(context.event);
+      const customerId = context.event.pathParameters?.customerId || 
+                        context.event.queryStringParameters?.customerId ||
+                        context.userId;
+
+      // Get customer phone from context or body
+      let customerPhone = body.customer_phone || body.customerPhone;
+      
+      // If no phone in body, try to get from customer ID
+      if (!customerPhone && customerId) {
+        try {
+          const customers = await query(
+            'SELECT phone FROM customers WHERE id = $1',
+            [customerId]
+          );
+          if (customers.rows.length > 0) {
+            customerPhone = customers.rows[0].phone;
+          }
+        } catch (e) {
+          console.error('Error fetching customer phone:', e);
+        }
+      }
+
+      if (!customerPhone) {
+        return this.error('Customer phone is required', 400);
+      }
+
+      const items = body.items || [];
+      if (items.length === 0) {
+        return this.error('Items are required', 400);
+      }
+
+      // Handle both naming conventions
+      const shippingAddress = body.shipping_address || body.shippingAddress || body.address || {};
+      const paymentMethod = body.payment_method || body.paymentMethod || 'cod';
+      const paymentId = body.payment_id || body.paymentId;
+      
+      // Use tax breakdown from frontend if provided, otherwise calculate
+      const taxAmount = body.taxAmount || 0;
+      const subtotal = body.subtotal || 0;
+      const total = body.total || 0;
+
+      // Get or create customer by phone
+      let actualCustomerId = customerId;
+      if (!actualCustomerId) {
+        try {
+          const customers = await query(
+            'SELECT id FROM customers WHERE phone = $1',
+            [customerPhone]
+          );
+          if (customers.rows.length > 0) {
+            actualCustomerId = customers.rows[0].id;
+          } else {
+            // Create a new customer
+            const newCustomerId = randomUUID();
+            const customerName = shippingAddress.name || `Customer ${customerPhone.slice(-4)}`;
+            await insert('customers', {
+              id: newCustomerId,
+              name: customerName,
+              full_name: customerName,
+              phone: customerPhone,
+              is_active: true,
+              status: 'new',
+            });
+            actualCustomerId = newCustomerId;
+          }
+        } catch (e: any) {
+          console.error('Error finding/creating customer:', e);
+          return this.error('Failed to find or create customer', 500);
+        }
+      }
+
+      // Calculate totals if not provided
+      let calculatedSubtotal = subtotal;
+      const orderItems = [];
+      let firstVendorId = null;
+
+      if (calculatedSubtotal === 0) {
+        // Calculate from items
+        for (const item of items) {
+          const productId = item.product_id || item.productId;
+          const quantity = item.quantity || 1;
+          
+          try {
+            const products = await query(
+              'SELECT id, name, price, vendor_id FROM products WHERE id = $1',
+              [productId]
+            );
+            if (products.rows.length > 0) {
+              const product = products.rows[0];
+              const itemTotal = parseFloat(product.price) * quantity;
+              calculatedSubtotal += itemTotal;
+              
+              if (!firstVendorId && product.vendor_id) {
+                firstVendorId = product.vendor_id;
+              }
+
+              orderItems.push({
+                product_id: productId,
+                product_name: product.name,
+                quantity: quantity,
+                unit_price: parseFloat(product.price),
+                total: itemTotal,
+              });
+            }
+          } catch (e) {
+            console.error('Error fetching product:', e);
+          }
+        }
+      } else {
+        // Use provided items structure
+        for (const item of items) {
+          const productId = item.product_id || item.productId;
+          const quantity = item.quantity || 1;
+          const price = item.price || 0;
+          
+          orderItems.push({
+            product_id: productId,
+            quantity: quantity,
+            unit_price: parseFloat(price.toString()),
+            total: parseFloat(price.toString()) * quantity,
+          });
+        }
+      }
+
+      // Create order
+      const orderId = randomUUID();
+      const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      
+      // Calculate amounts (use provided or calculate)
+      const shippingAmount = subtotal > 499 ? 0 : 49;
+      const calculatedTaxAmount = taxAmount || (calculatedSubtotal * 0.18);
+      const finalTotal = total || (calculatedSubtotal + shippingAmount + calculatedTaxAmount);
+      
+      const order = {
+        id: orderId,
+        order_number: orderNumber,
+        customer_id: actualCustomerId,
+        vendor_id: firstVendorId,
+        status: 'pending',
+        payment_status: paymentMethod === 'cod' ? 'pending' : 'paid',
+        payment_method: paymentMethod,
+        payment_id: paymentId || null,
+        subtotal: calculatedSubtotal,
+        shipping_amount: shippingAmount,
+        tax_amount: calculatedTaxAmount,
+        discount_amount: 0,
+        total_amount: finalTotal,
+        final_amount: finalTotal,
+        delivery_address: JSON.stringify(shippingAddress),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      try {
+        await insert('orders', order);
+        
+        // Insert order items
+        for (const item of orderItems) {
+          await insert('order_items', {
+            order_id: orderId,
+            product_id: item.product_id,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            total: item.total,
+          });
+        }
+      } catch (e: any) {
+        console.error('Error creating order:', e);
+        return this.error(e.message || 'Failed to create order', 500);
+      }
+
+      return this.success({
+        orderId: orderId,
+        order_number: orderNumber,
+        order: {
+          id: orderId,
+          order_number: orderNumber,
+          status: 'pending',
+          total: finalTotal,
+          items: orderItems,
+          address: shippingAddress,
+          payment_method: paymentMethod,
+          created_at: order.created_at,
+        },
+        message: 'Order placed successfully!',
+      });
+    } catch (error: any) {
+      console.error('Error creating customer order:', error);
+      return this.error(error.message || 'Failed to create order', 500);
+    }
+  }
+}
 
 // ============================================================================
 // GET /customer/orders - List all orders for customer
@@ -297,28 +501,32 @@ class GetOrderInvoiceHandler extends BaseHandler {
           const { taxCalculationService } = await import('../lib/services/tax-calculation-service');
           
           // Get customer and vendor locations
-          let customerLocation = null;
-          let vendorLocation = null;
+          let customerLocation: { state: string; city?: string; pincode?: string } | undefined = undefined;
+          let vendorLocation: { state: string; city?: string } | undefined = undefined;
           
           if (order.rows[0].customer_address) {
             const addr = typeof order.rows[0].customer_address === 'string'
               ? JSON.parse(order.rows[0].customer_address)
               : order.rows[0].customer_address;
-            customerLocation = {
-              state: addr?.state,
-              city: addr?.city,
-              pincode: addr?.pincode,
-            };
+            if (addr?.state) {
+              customerLocation = {
+                state: addr.state,
+                city: addr.city,
+                pincode: addr.pincode,
+              };
+            }
           }
 
           if (order.rows[0].vendor_address) {
             const addr = typeof order.rows[0].vendor_address === 'string'
               ? JSON.parse(order.rows[0].vendor_address)
               : order.rows[0].vendor_address;
-            vendorLocation = {
-              state: addr?.state,
-              city: addr?.city,
-            };
+            if (addr?.state) {
+              vendorLocation = {
+                state: addr.state,
+                city: addr.city,
+              };
+            }
           }
 
           // Build tax calculation items
@@ -418,9 +626,27 @@ class GetOrderInvoiceHandler extends BaseHandler {
 // ============================================================================
 
 export function registerCustomerOrdersEndpoints(app: Hono) {
+  const createOrderHandler = new CreateCustomerOrderHandler();
   const getOrdersHandler = new GetCustomerOrdersHandler();
   const getDetailsHandler = new GetOrderDetailsHandler();
   const getInvoiceHandler = new GetOrderInvoiceHandler();
+
+  // PHASE 1.3 FIX: Add POST /customer/orders endpoint
+  app.post('/customer/orders', async (c) => {
+    try {
+      const body = await c.req.json();
+      const response = await createOrderHandler.handle({
+        event: {
+          body: JSON.stringify(body),
+          queryStringParameters: c.req.query ? Object.fromEntries(Object.entries(c.req.query())) : {},
+        } as any,
+      } as HandlerContext);
+      return c.json(JSON.parse(response.body), response.statusCode as 200 | 400 | 500);
+    } catch (error: any) {
+      console.error('Error creating order:', error);
+      return c.json({ error: error.message || 'Failed to create order' }, 500);
+    }
+  });
 
   app.get('/customer/orders', async (c) => {
     const event = createApiGatewayEvent(c.req);

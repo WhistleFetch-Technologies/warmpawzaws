@@ -41,7 +41,7 @@ import {
   Zap,
   Tag
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 import { CouponManagement } from './marketing/CouponManagement';
 import { AdvancedPromotionsEngine } from './marketing/AdvancedPromotionsEngine';
@@ -82,7 +82,7 @@ export function MarketingPromotionsTab() {
   const [availableRoles, setAvailableRoles] = useState<any[]>([]);
   const [configLoading, setConfigLoading] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     if (activeTab === 'promotions') {
@@ -106,7 +106,7 @@ export function MarketingPromotionsTab() {
   const loadRoles = async () => {
     try {
       const res = await fetch(`${API_BASE}/config/roles`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       if (res.ok) {
         const data = await res.json();
@@ -134,7 +134,7 @@ export function MarketingPromotionsTab() {
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/marketing/spotlights`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       if (res.ok) {
         const data = await res.json();
@@ -151,7 +151,7 @@ export function MarketingPromotionsTab() {
     try {
       // Fetch only active vendors
       const res = await fetch(`${API_BASE}/admin/vendors`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       if (res.ok) {
         const data = await res.json();
@@ -184,7 +184,7 @@ export function MarketingPromotionsTab() {
       const res = await fetch(`${API_BASE}/marketing/spotlights`, {
         method: 'POST',
         headers: { 
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
@@ -210,7 +210,7 @@ export function MarketingPromotionsTab() {
     try {
       const res = await fetch(`${API_BASE}/marketing/spotlights/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (res.ok) {
@@ -230,7 +230,7 @@ export function MarketingPromotionsTab() {
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/marketing/promotions`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       const data = await res.json();
       if (data.success) {
@@ -254,7 +254,7 @@ export function MarketingPromotionsTab() {
       const res = await fetch(url, {
         method,
         headers: { 
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(promoForm)
@@ -280,7 +280,7 @@ export function MarketingPromotionsTab() {
     try {
       const res = await fetch(`${API_BASE}/marketing/promotions/${id}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (res.ok) {
@@ -335,7 +335,7 @@ export function MarketingPromotionsTab() {
     setConfigLoading(true);
     try {
       const res = await fetch(`${API_BASE}/config/ui/dashboard?roleId=${selectedRole}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       const data = await res.json();
       if (data.success) {
@@ -361,7 +361,7 @@ export function MarketingPromotionsTab() {
       const res = await fetch(`${API_BASE}/config/ui/dashboard`, {
         method: 'PUT',
         headers: { 
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -500,7 +500,7 @@ export function MarketingPromotionsTab() {
                           // Toggle active status
                           await fetch(`${API_BASE}/marketing/promotions/${promo.id}`, {
                             method: 'PUT',
-                            headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+                            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
                             body: JSON.stringify({ isActive: !promo.isActive })
                           });
                           loadPromotions();

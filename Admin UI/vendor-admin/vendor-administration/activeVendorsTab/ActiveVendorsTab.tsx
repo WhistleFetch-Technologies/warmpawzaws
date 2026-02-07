@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { Eye, Phone, RefreshCw, Plus } from "lucide-react";
 import { Button } from "@repo/ui";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import { CustomDropdown } from "../CustomDropdown";
 import { VendorDetailsModal } from "../";
 
 interface ActiveVendor {
 	id: string;
+	roleId: string;
 	name: string;
 	tier: string;
 	tierColor: string;
@@ -34,46 +35,52 @@ export function ActiveVendorsTab() {
 		loadActiveVendors();
 	}, []);
 
+	const mapVendorToDisplay = (v: any) => ({
+		id: v.id,
+		roleId: v.roleId ?? v.role_id ?? "",
+		name: v.businessName || v.ownerName || v.fullName,
+		tier: v.tier || "Bronze",
+		tierColor: (v.tier || "bronze")?.toLowerCase(),
+		location: v.city || v.location?.city || "N/A",
+		experience: v.experience || "N/A",
+		lastActive: "Just now",
+		category: v.category || v.services?.[0] || "General",
+		rating: v.rating || 0,
+		complaints: 0,
+		module: v.services?.join?.(", ") ?? (v.activeServicesCount != null ? `${v.activeServicesCount} services` : "N/A"),
+		moduleTier: v.tier || "Bronze",
+		revenue: v.revenue || 0,
+		revenuePeriod: "This month",
+		lastActiveDate: new Date(
+			v.lastActive || v.joinedDate || v.createdAt || v.approvedAt || Date.now()
+		).toLocaleDateString(),
+	});
+
 	const loadActiveVendors = async () => {
 		try {
 			setLoading(true);
+			const headers = { ...getAuthHeaders() };
+			const base = getApiBaseUrl();
 
-			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/active`,
-				{
-					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
-					},
+			// 1) Try dedicated active endpoint
+			let response = await fetch(`${base}/admin/vendors/active`, { headers });
+			let data: any = response.ok ? await response.json() : null;
+			let list = (data?.vendors || []) as any[];
+
+			// 2) Fallback: if empty or error, use list endpoint with status=approved & isActive=true
+			if ((!response.ok || list.length === 0) && base) {
+				const listRes = await fetch(
+					`${base}/admin/vendors?status=approved&isActive=true&limit=500`,
+					{ headers }
+				);
+				if (listRes.ok) {
+					const listData = await listRes.json();
+					list = listData.vendors || [];
 				}
-			);
-
-			if (response.ok) {
-				const data = await response.json();
-				console.log("Active vendors loaded:", data);
-
-				// Map the vendor data to match the expected format
-				const mappedVendors = (data.vendors || []).map((v: any) => ({
-					id: v.id,
-					name: v.businessName || v.ownerName,
-					tier: v.tier || "Bronze",
-					tierColor: v.tier?.toLowerCase() || "bronze",
-					location: v.city || v.location?.city || "N/A",
-					experience: v.experience || "N/A",
-					lastActive: "Just now",
-					category: v.category || v.services?.[0] || "General",
-					rating: v.rating || 0,
-					complaints: 0,
-					module: v.services?.join(", ") || "N/A",
-					moduleTier: v.tier || "Bronze",
-					revenue: v.revenue || 0,
-					revenuePeriod: "This month",
-					lastActiveDate: new Date(
-						v.lastActive || v.joinedDate
-					).toLocaleDateString(),
-				}));
-
-				setVendors(mappedVendors);
 			}
+
+			const mappedVendors = list.map(mapVendorToDisplay);
+			setVendors(mappedVendors);
 		} catch (error) {
 			console.error("Error loading active vendors:", error);
 		} finally {

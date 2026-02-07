@@ -24,11 +24,14 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update, withTransaction } from '../database/rds-connection';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
 import { logAuditEntry, logPaymentStatusChange } from '../utils/audit-log';
 import { publishPaymentCreated, publishPaymentProcessed } from '../utils/sns-client';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // PAYMENT HANDLERS
@@ -37,7 +40,7 @@ import { publishPaymentCreated, publishPaymentProcessed } from '../utils/sns-cli
 class CreatePaymentHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
-    const requestId = context.event.requestContext?.requestId || crypto.randomUUID();
+    const requestId = context.event.requestContext?.requestId || randomUUID();
     const { 
       bookingId, 
       amount, 
@@ -116,6 +119,22 @@ class CreatePaymentHandler extends BaseHandler {
 
     // ✅ TEMPORAL FIX: Publish event with timestamps
     try {
+      // ✅ Trigger webhooks
+      try {
+        const { triggerWebhook } = await import('./webhooks');
+        await triggerWebhook('payment.received', {
+          paymentId: payment.id,
+          bookingId,
+          customerId: customerId || booking.customer_id,
+          vendorId: vendorId || booking.vendor_id,
+          amount,
+          paymentMethod: paymentMethod || 'razorpay',
+          status: 'pending',
+        });
+      } catch (error) {
+        console.error('Failed to trigger webhooks:', error);
+      }
+
       await publishPaymentCreated({
         paymentId: payment.id,
         bookingId,
@@ -329,26 +348,87 @@ export function registerPaymentEndpoints(app: Hono) {
   const getHandler = new GetPaymentHandler();
 
   app.post('/payments/create', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    const context = createLambdaContext();
-    const result = await createHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    try {
+      // ✅ FIX: Parse body from Hono context first (req.body is undefined in Hono)
+      const contextData = c.env as { parsedBody?: Record<string, unknown> } | undefined;
+      let body: Record<string, unknown> = contextData?.parsedBody as Record<string, unknown> || {};
+      
+      // Fallback: try to parse from request if context not available
+      if (!body || Object.keys(body).length === 0) {
+        try {
+          body = await c.req.json() as Record<string, unknown>;
+        } catch (e) {
+          body = {};
+        }
+      }
+      
+      const event = createApiGatewayEventWithBody(c.req, body);
+      const context = createLambdaContext();
+      const result = await createHandler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      console.error('Error in /payments/create:', error);
+      return c.json({ 
+        success: false, 
+        error: { 
+          code: 'INTERNAL_ERROR', 
+          message: error?.message || 'Failed to create payment' 
+        } 
+      }, 500);
+    }
   });
 
   app.post('/payments/razorpay/webhook', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    const context = createLambdaContext();
-    const result = await webhookHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    try {
+      // ✅ FIX: Parse body from Hono context first
+      const contextData = c.env as { parsedBody?: Record<string, unknown> } | undefined;
+      let body: Record<string, unknown> = contextData?.parsedBody as Record<string, unknown> || {};
+      
+      if (!body || Object.keys(body).length === 0) {
+        try {
+          body = await c.req.json() as Record<string, unknown>;
+        } catch (e) {
+          body = {};
+        }
+      }
+      
+      const event = createApiGatewayEventWithBody(c.req, body);
+      const context = createLambdaContext();
+      const result = await webhookHandler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      console.error('Error in /payments/razorpay/webhook:', error);
+      return c.json({ success: false, error: error?.message }, 500);
+    }
   });
 
   app.get('/payments/:paymentId', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    event.pathParameters = { paymentId: c.req.param('paymentId') };
-    const context = createLambdaContext();
-    const result = await getHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    try {
+      const event = createApiGatewayEvent(c.req);
+      event.pathParameters = { paymentId: c.req.param('paymentId') };
+      const context = createLambdaContext();
+      const result = await getHandler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      console.error('Error in /payments/:paymentId:', error);
+      return c.json({ success: false, error: error?.message }, 500);
+    }
   });
+}
+
+// ✅ FIX: Accept pre-parsed body since Hono doesn't have req.body
+function createApiGatewayEventWithBody(req: any, parsedBody: any): any {
+  return {
+    httpMethod: req.method,
+    path: req.url,
+    headers: req.headers,
+    body: parsedBody ? JSON.stringify(parsedBody) : null,
+    pathParameters: {},
+    queryStringParameters: Object.fromEntries(new URL(req.url, 'http://localhost').searchParams),
+    requestContext: {
+      requestId: randomUUID(),
+    },
+  };
 }
 
 function createApiGatewayEvent(req: any): any {
@@ -356,18 +436,18 @@ function createApiGatewayEvent(req: any): any {
     httpMethod: req.method,
     path: req.url,
     headers: req.headers,
-    body: JSON.stringify(req.body || {}),
-    pathParameters: req.param() || {},
-    queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
+    body: null, // Will be set for POST requests via createApiGatewayEventWithBody
+    pathParameters: {},
+    queryStringParameters: Object.fromEntries(new URL(req.url, 'http://localhost').searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'payment-handler',
     functionVersion: '$LATEST',
   };

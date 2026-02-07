@@ -15,7 +15,7 @@ import {
   ChevronDown,
   ChevronRight
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface ServiceCatalogItem {
@@ -29,6 +29,8 @@ interface ServiceCatalogItem {
   serviceName: string;
   serviceStyle: 'at_home' | 'at_center' | 'tele';
   applicableRoles: string[];
+  /** Specialization IDs from specialization_master (e.g. general_health, surgery). Multi-select for 360° category → service linkage. */
+  specializationIds?: string[];
   basePrice: number;
   isPackage: boolean;
   packageDetails?: {
@@ -75,6 +77,8 @@ export function ServiceCatalogTab() {
   const [saving, setSaving] = useState(false);
   const [roleConfigs, setRoleConfigs] = useState<RoleConfig[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
+  const [specializationsByCategory, setSpecializationsByCategory] = useState<{ specializationId: string; name: string; displayName: string }[]>([]);
+  const [loadingSpecializations, setLoadingSpecializations] = useState(false);
 
   const [categories, setCategories] = useState<any[]>([
     { id: 'grooming', name: 'Grooming' },
@@ -95,6 +99,7 @@ export function ServiceCatalogTab() {
     serviceName: '',
     serviceStyle: 'at_home',
     applicableRoles: [],
+    specializationIds: [],
     basePrice: 0,
     isPackage: false,
     description: '',
@@ -111,13 +116,47 @@ export function ServiceCatalogTab() {
     groupServicesByCategory();
   }, [services, searchQuery]);
 
+  // Load specializations for selected category and applicable roles (from Catalog > Categories; filtered by selected roles)
+  useEffect(() => {
+    if (!formData.categoryId) {
+      setSpecializationsByCategory([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingSpecializations(true);
+    const roleIdsParam = (formData.applicableRoles?.length ?? 0) > 0
+      ? `&roleIds=${encodeURIComponent(formData.applicableRoles.join(','))}`
+      : '';
+    fetch(
+      `${getApiBaseUrl()}/admin/specializations?categoryId=${encodeURIComponent(formData.categoryId)}${roleIdsParam}`,
+      { headers: { Authorization: (getAuthHeaders().Authorization || '') } }
+    )
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        const list = (data.specializations ?? data.data ?? []).map((s: any) => ({
+          specializationId: s.specializationId ?? s.specialization_id,
+          name: s.name ?? '',
+          displayName: s.displayName ?? s.display_name ?? s.name ?? '',
+        }));
+        setSpecializationsByCategory(list);
+      })
+      .catch(() => {
+        if (!cancelled) setSpecializationsByCategory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSpecializations(false);
+      });
+    return () => { cancelled = true; };
+  }, [formData.categoryId, (formData.applicableRoles ?? []).join(',')]);
+
   const loadRoleConfigs = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`,
+        `${getApiBaseUrl()}/config/roles`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -135,10 +174,10 @@ export function ServiceCatalogTab() {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/service-catalog`,
+        `${getApiBaseUrl()}/admin/service-catalog`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -157,10 +196,10 @@ export function ServiceCatalogTab() {
   const loadRoles = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`,
+        `${getApiBaseUrl()}/config/roles`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -308,12 +347,12 @@ export function ServiceCatalogTab() {
       toast.info('Seeding catalog with 150+ comprehensive services...', { duration: 2000 });
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/seed-all-services`,
+        `${getApiBaseUrl()}/admin/catalog/seed-all-services`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           }
         }
       );
@@ -351,12 +390,12 @@ export function ServiceCatalogTab() {
       toast.info('Updating prices with realistic Indian market rates...', { duration: 2000 });
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/update-realistic-prices`,
+        `${getApiBaseUrl()}/admin/catalog/update-realistic-prices`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           }
         }
       );
@@ -400,14 +439,14 @@ export function ServiceCatalogTab() {
       setSaving(true);
       
       const endpoint = editingService
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/service-catalog/${editingService.catalogId}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/service-catalog`;
+        ? `${getApiBaseUrl()}/admin/service-catalog/${editingService.catalogId}`
+        : `${getApiBaseUrl()}/admin/service-catalog`;
 
       const response = await fetch(endpoint, {
         method: editingService ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${publicAnonKey}`,
+          Authorization: (getAuthHeaders().Authorization || ""),
         },
         body: JSON.stringify(formData)
       });
@@ -435,11 +474,11 @@ export function ServiceCatalogTab() {
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/service-catalog/${catalogId}`,
+        `${getApiBaseUrl()}/admin/service-catalog/${catalogId}`,
         {
           method: 'DELETE',
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           }
         }
       );
@@ -458,7 +497,10 @@ export function ServiceCatalogTab() {
 
   const handleEdit = (service: ServiceCatalogItem) => {
     setEditingService(service);
-    setFormData({ ...service });
+    setFormData({
+      ...service,
+      specializationIds: service.specializationIds ?? (service as any).specialization_ids ?? [],
+    });
     setIsCreating(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -485,6 +527,7 @@ export function ServiceCatalogTab() {
       serviceName: '',
       serviceStyle: 'at_home',
       applicableRoles: [],
+      specializationIds: [],
       basePrice: 0,
       isPackage: false,
       description: '',
@@ -497,6 +540,14 @@ export function ServiceCatalogTab() {
       ? formData.applicableRoles.filter(r => r !== roleId)
       : [...formData.applicableRoles, roleId];
     setFormData({ ...formData, applicableRoles: newRoles });
+  };
+
+  const toggleSpecialization = (specId: string) => {
+    const current = formData.specializationIds ?? [];
+    const next = current.includes(specId)
+      ? current.filter((id) => id !== specId)
+      : [...current, specId];
+    setFormData({ ...formData, specializationIds: next });
   };
 
   const stats = {
@@ -850,6 +901,37 @@ export function ServiceCatalogTab() {
                 </div>
               </>
             )}
+
+            <div className="col-span-2">
+              <label className="block text-sm font-medium mb-2">Specializations (optional)</label>
+              <p className="text-xs text-gray-500 mb-2">From Catalog &gt; Categories, filtered by selected applicable roles.</p>
+              {!formData.categoryId ? (
+                <p className="text-sm text-gray-400">Select a category first to load specializations.</p>
+              ) : (formData.applicableRoles?.length ?? 0) === 0 ? (
+                <p className="text-sm text-gray-400">Select at least one applicable role to load specializations.</p>
+              ) : loadingSpecializations ? (
+                <p className="text-sm text-gray-500">Loading…</p>
+              ) : specializationsByCategory.length === 0 ? (
+                <p className="text-sm text-gray-500">No specializations for this category and selected roles.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {specializationsByCategory.map((spec) => {
+                    const selected = (formData.specializationIds ?? []).includes(spec.specializationId);
+                    return (
+                      <div
+                        key={spec.specializationId}
+                        onClick={() => toggleSpecialization(spec.specializationId)}
+                        className={`px-3 py-1 rounded-full text-sm border cursor-pointer transition-all ${
+                          selected ? 'bg-purple-100 text-purple-800 border-purple-300' : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        {spec.displayName || spec.name}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             <div className="col-span-2">
               <label className="block text-sm font-medium mb-2">Applicable Roles *</label>

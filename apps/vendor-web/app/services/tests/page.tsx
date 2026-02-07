@@ -54,14 +54,15 @@ export default function TestCatalogPage() {
       return;
     }
     setVendorId(storedVendorId);
-    loadTests();
+    loadTests(storedVendorId); // Pass id directly - setState is async, vendorId state not yet updated
   }, [router]);
 
-  const loadTests = async () => {
-    if (!vendorId) return;
+  const loadTests = async (vId?: string) => {
+    const id = vId ?? vendorId;
+    if (!id) return;
     try {
       setLoading(true);
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/diagnostics/tests`);
+      const response = await apiClient.get<any>(`/vendor/${id}/diagnostics/tests`);
       setTests(response.tests || []);
     } catch (err: any) {
       console.error('Error loading tests:', err);
@@ -183,10 +184,19 @@ export default function TestCatalogPage() {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => router.back()}
-                className="rounded-full"
+                onClick={() => {
+                  // ✅ FIX: Enhanced back navigation with fallback
+                  if (window.history.length > 1) {
+                    router.back();
+                  } else {
+                    // Fallback to dashboard if no history
+                    router.push('/');
+                  }
+                }}
+                className="rounded-full hover:bg-orange-100"
+                aria-label="Go back"
               >
-                <ArrowLeft className="w-5 h-5" />
+                <ArrowLeft className="w-5 h-5 text-gray-700" />
               </Button>
               <div>
                 <h1 className="text-2xl font-bold text-gray-800">Test Catalog</h1>

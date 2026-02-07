@@ -216,7 +216,7 @@ export function FeatureFlagsTab() {
                 className="flex items-start justify-between p-0 border-2 border-gray-100 rounded-lg hover:border-gray-200 transition-colors"
               >
                 <div className="flex-1">
-                  <div className="flex items-center gap-0 mb-0">
+                  <div className="flex items-center gap-3 mb-0">
                     <Flag className={`w-4 h-4 ${flag.enabled ? 'text-orange-600' : 'text-gray-400'}`} />
                     <span className="font-medium text-gray-900">{flag.name}</span>
                   </div>
@@ -246,7 +246,7 @@ export function FeatureFlagsTab() {
       <button
         onClick={handleSave}
         disabled={saving}
-        className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {saving ? (
           <>

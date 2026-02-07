@@ -19,15 +19,16 @@
 
 import { Pool, PoolClient, QueryResult } from 'pg';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { promises as dns } from 'dns';
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
-const DB_HOST = process.env.DB_HOST || process.env.RDS_HOSTNAME;
+const DB_HOST = process.env.DB_HOST || process.env.RDS_HOSTNAME || process.env.AURORA_PROXY_ENDPOINT;
 const DB_PORT = parseInt(process.env.DB_PORT || '5432', 10);
-const DB_NAME = process.env.DB_NAME || process.env.RDS_DB_NAME;
-const DB_SECRET_ARN = process.env.DB_SECRET_ARN;
+const DB_NAME = process.env.DB_NAME || process.env.RDS_DB_NAME || process.env.AURORA_DATABASE;
+const DB_SECRET_ARN = process.env.DB_SECRET_ARN || process.env.AURORA_SECRET_ARN;
 
 // Database credentials (will be fetched from Secrets Manager)
 let DB_USER: string | undefined = process.env.DB_USER || process.env.RDS_USERNAME;
@@ -104,28 +105,84 @@ export async function getRdsPool(): Promise<Pool> {
     }
 
     console.log('[DB] Creating connection pool...');
-    pool = new Pool({
+    
+    // ✅ DIAGNOSTIC: Test DNS resolution before creating pool
+    try {
+      console.log('[DB] Testing DNS resolution for:', DB_HOST);
+      const dnsStart = Date.now();
+      const addresses = await Promise.race([
+        dns.resolve4(DB_HOST),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('DNS resolution timeout after 5s')), 5000);
+        })
+      ]);
+      const dnsDuration = Date.now() - dnsStart;
+      console.log(`[DB] ✅ DNS resolution successful in ${dnsDuration}ms. Resolved to:`, addresses);
+    } catch (dnsError: any) {
+      console.error('[DB] ❌ DNS resolution failed:', dnsError?.message || dnsError);
+      console.error('[DB] DNS error code:', dnsError?.code);
+      // Continue anyway - the connection attempt will also fail, but we'll have better diagnostics
+    }
+    
+    // ✅ FIX: Reduce pool size to prevent connection exhaustion
+    // Lambda functions share the same RDS instance, so we need to be conservative
+    // Each Lambda instance can have its own pool, so max: 5 per instance is safer
+    // With many concurrent Lambda invocations, even 5 per instance can exhaust RDS
+    const poolMax = parseInt(process.env.DB_POOL_MAX || '5', 10);
+    
+    // ✅ FIX: RDS Proxy doesn't support statement_timeout option
+    // Only set statement_timeout if NOT using RDS Proxy (proxy endpoint contains 'proxy')
+    const isRdsProxy = DB_HOST?.includes('proxy') || false;
+    
+    const poolConfig: any = {
       host: DB_HOST,
       port: DB_PORT,
       database: DB_NAME,
       user: DB_USER,
       password: DB_PASSWORD,
-      max: 50, // Increased from 20 to handle more concurrent requests
+      max: poolMax, // Reduced from 50 to 10 to prevent connection exhaustion
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 15000, // Increased from 10000ms to 15000ms for better reliability
+      connectionTimeoutMillis: 10000, // Reduced timeout to fail faster
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-    });
+    };
+    
+    // Only add statement_timeout if NOT using RDS Proxy
+    if (!isRdsProxy) {
+      poolConfig.statement_timeout = 45000; // 45 seconds (leave buffer for Lambda 60s timeout)
+    }
+    
+    pool = new Pool(poolConfig);
 
     // Handle pool errors
     pool.on('error', (err) => {
       console.error('[DB] Unexpected error on idle client', err);
     });
+    
+    // ✅ FIX: Monitor pool size to detect connection exhaustion
+    pool.on('connect', () => {
+      console.log(`[DB] Pool: ${pool?.totalCount || 0} total, ${pool?.idleCount || 0} idle, ${pool?.waitingCount || 0} waiting`);
+    });
+    
+    // Log pool statistics periodically (only in development to avoid log spam)
+    if (process.env.NODE_ENV === 'development' || process.env.LOG_POOL_STATS === 'true') {
+      setInterval(() => {
+        if (pool) {
+          console.log(`[DB] Pool stats - Total: ${pool.totalCount}, Idle: ${pool.idleCount}, Waiting: ${pool.waitingCount}`);
+        }
+      }, 60000); // Every minute
+    }
 
-    // Test connection immediately
+    // Test connection immediately with timeout to prevent hanging
+    // ✅ PRODUCTION FIX: Wrap initial connection test in timeout to prevent Lambda timeout
     try {
       console.log('[DB] Testing initial connection...');
-      const testResult = await pool.query('SELECT 1 as test');
-      console.log('[DB] Connection test successful:', testResult.rows[0]);
+      const testQuery = pool.query('SELECT 1 as test');
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Initial connection test timeout')), 8000);
+      });
+      
+      const testResult = await Promise.race([testQuery, timeoutPromise]);
+      console.log('[DB] Connection test successful:', (testResult as any).rows[0]);
     } catch (error) {
       console.error('[DB] Initial connection test failed:', error);
       // Don't throw here - let individual queries handle errors
@@ -164,8 +221,8 @@ export async function query(
     throw new Error(`Database connection failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
   
-  // Add query timeout (50 seconds to leave buffer for Lambda timeout of 60s)
-  const QUERY_TIMEOUT_MS = 50000;
+  // Query timeout (25s to stay under typical 30s Lambda timeout)
+  const QUERY_TIMEOUT_MS = 25000;
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => {
       reject(new Error(`Query exceeded ${QUERY_TIMEOUT_MS}ms timeout. Consider optimizing the query.`));
@@ -189,6 +246,18 @@ export async function query(
     console.error('[DB] Error code:', error?.code);
     console.error('[DB] Query:', text.substring(0, 200));
     console.error('[DB] Params:', params?.slice(0, 5)); // Log first 5 params only
+    
+    // ✅ FIX: Handle connection pool exhaustion specifically
+    if (error?.message?.includes('remaining connection slots are reserved') || 
+        error?.message?.includes('too many clients already') ||
+        error?.code === '53300') {
+      console.error('[DB] ⚠️ Connection pool exhausted! Pool stats:', {
+        total: pool?.totalCount,
+        idle: pool?.idleCount,
+        waiting: pool?.waitingCount
+      });
+      throw new Error('Database connection pool exhausted. Please try again in a moment. If this persists, contact support.');
+    }
     
     // Handle query timeout
     if (error?.message?.includes('Query exceeded') || error?.message?.includes('timeout')) {
@@ -287,6 +356,7 @@ export async function select(
 
 /**
  * Execute an INSERT query
+ * ✅ FIX: Properly handle JSONB columns by serializing objects to JSON strings
  */
 export async function insert(
   table: string,
@@ -296,14 +366,64 @@ export async function insert(
   if (dataArray.length === 0) return [];
 
   const keys = Object.keys(dataArray[0]);
-  const placeholders = dataArray.map((_, idx) => {
+  
+  // ✅ FIX: Known JSONB columns that need JSON.stringify and ::jsonb cast
+  const jsonbColumns = new Set([
+    'application_payload',
+    'uploaded_documents', 
+    'metadata',
+    'operating_hours',
+    'config',
+    'settings',
+    'form_data',
+    'additional_info',
+    'pricing',
+    'services_config',
+    'notification_preferences',
+    'search_vector_data',
+    'channels', // notifications.channels is JSONB
+    'data',    // notifications.data is JSONB (booking_id, meeting_id, etc.)
+    'cancellation_windows',      // cancellation_policies
+    'vendor_cancellation_penalty',
+    'no_show_policy',
+    'setting_value',             // admin_settings
+  ]);
+  
+  // Also check for columns ending with common JSONB suffixes
+  const isJsonbColumn = (key: string): boolean => {
+    return jsonbColumns.has(key) || 
+           key.endsWith('_config') || 
+           key.endsWith('_metadata') || 
+           key.endsWith('_payload') ||
+           key.endsWith('_data') ||
+           key.endsWith('_settings');
+  };
+  
+  // ✅ FIX: Build placeholders with ::jsonb cast for JSONB columns
+  const placeholders = dataArray.map((row, idx) => {
     const start = idx * keys.length + 1;
-    return `(${keys.map((_, i) => `$${start + i}`).join(', ')})`;
+    return `(${keys.map((key, i) => {
+      const value = (row as any)[key];
+      // Add ::jsonb cast for JSONB columns that are objects/arrays
+      if (isJsonbColumn(key) && value !== null && value !== undefined && typeof value === 'object') {
+        return `$${start + i}::jsonb`;
+      }
+      return `$${start + i}`;
+    }).join(', ')})`;
   }).join(', ');
 
-  const values = dataArray.flatMap(row => keys.map(key => (row as any)[key]));
+  // ✅ FIX: Serialize JSONB values to JSON strings
+  const values = dataArray.flatMap(row => keys.map(key => {
+    const value = (row as any)[key];
+    // Serialize objects for JSONB columns
+    if (isJsonbColumn(key) && value !== null && value !== undefined && typeof value === 'object') {
+      return JSON.stringify(value);
+    }
+    return value;
+  }));
+  
   const columns = keys.join(', ');
-  const returning = keys.includes('id') ? ' RETURNING *' : ' RETURNING *';
+  const returning = ' RETURNING *';
 
   const queryText = `INSERT INTO ${table} (${columns}) VALUES ${placeholders}${returning}`;
   const result = await query(queryText, values);
@@ -322,21 +442,104 @@ export async function update(
   const params: any[] = [];
   let paramIndex = 1;
 
+  // ✅ FIX: Known JSONB columns that need JSON.stringify and ::jsonb cast
+  const jsonbColumns = new Set([
+    'application_payload',
+    'uploaded_documents', 
+    'metadata',
+    'operating_hours',
+    'config',
+    'settings',
+    'form_data',
+    'additional_info',
+    'pricing',
+    'services_config',
+    'notification_preferences',
+    'search_vector_data',
+    'channels', // notifications.channels is JSONB
+    'data',    // notifications.data is JSONB (booking_id, meeting_id, etc.)
+    'specializations', // vendors.specializations is JSONB array
+    'cancellation_windows',
+    'vendor_cancellation_penalty',
+    'no_show_policy',
+    'setting_value',   // admin_settings
+  ]);
+  
+  // Also check for columns ending with common JSONB suffixes
+  const isJsonbColumn = (key: string): boolean => {
+    return jsonbColumns.has(key) || 
+           key.endsWith('_config') || 
+           key.endsWith('_metadata') || 
+           key.endsWith('_payload') ||
+           key.endsWith('_data') ||
+           key.endsWith('_settings');
+  };
+
   // Build SET clause
   for (const [key, value] of Object.entries(data)) {
     if (value !== undefined) {
+      // ✅ FIX: Handle JSONB columns first (including arrays stored as JSONB like uploaded_documents)
+      if (isJsonbColumn(key) && value !== null && typeof value === 'object') {
+        try {
+          // Serialize to JSON string and cast to JSONB
+          setClause.push(`${key} = $${paramIndex}::jsonb`);
+          params.push(JSON.stringify(value));
+          paramIndex++;
+          continue;
+        } catch (error) {
+          // If JSON.stringify fails (circular reference, etc.), log and skip
+          console.error(`❌ [DB] Failed to serialize JSONB column ${key}:`, error);
+          throw new Error(`Invalid JSON value for column ${key}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      
+      // ✅ Arrays (TEXT[], etc.): pass as-is; node-pg serializes to PG array
+      if (Array.isArray(value)) {
+        setClause.push(`${key} = $${paramIndex}`);
+        params.push(value);
+        paramIndex++;
+        continue;
+      }
+      
+      // Regular values
       setClause.push(`${key} = $${paramIndex}`);
       params.push(value);
       paramIndex++;
     }
   }
 
+  // ✅ FIX: Validate that at least one field is being updated
+  if (setClause.length === 0) {
+    throw new Error('No fields to update. At least one field must be provided.');
+  }
+
   // Build WHERE clause
   const whereClause: string[] = [];
   for (const [key, value] of Object.entries(filters)) {
-    whereClause.push(`${key} = $${paramIndex}`);
-    params.push(value);
-    paramIndex++;
+    if (value !== undefined) {
+      // ✅ FIX: Auto-detect UUID columns (id, *_id) and cast appropriately
+      // This prevents "operator does not exist: uuid = text" errors
+      if (key === 'id' || key.endsWith('_id')) {
+        // Try to detect if it's a UUID format (basic check)
+        const isLikelyUuid = typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+        if (isLikelyUuid) {
+          // Use UUID type directly - PostgreSQL will handle conversion
+          whereClause.push(`${key} = $${paramIndex}::uuid`);
+        } else {
+          // For non-UUID values, cast both sides to text to avoid type mismatch
+          whereClause.push(`CAST(${key} AS TEXT) = CAST($${paramIndex} AS TEXT)`);
+        }
+      } else {
+        whereClause.push(`${key} = $${paramIndex}`);
+      }
+      params.push(value);
+      paramIndex++;
+    }
+  }
+
+  // ✅ FIX: Validate that at least one filter condition exists
+  if (whereClause.length === 0) {
+    throw new Error('No filter conditions provided. At least one filter must be specified for safety.');
   }
 
   const queryText = `UPDATE ${table} SET ${setClause.join(', ')} WHERE ${whereClause.join(' AND ')} RETURNING *`;
@@ -388,7 +591,15 @@ export async function upsert(
     return `(${keys.map((_, i) => `$${start + i}`).join(', ')})`;
   }).join(', ');
 
-  const values = dataArray.flatMap(row => keys.map(key => (row as any)[key]));
+  // Serialize JSONB columns (e.g. platform_settings.setting_value) to avoid "invalid input syntax for type json"
+  const jsonbKeys = new Set(['setting_value']);
+  const values = dataArray.flatMap(row => keys.map(key => {
+    const value = (row as any)[key];
+    if (jsonbKeys.has(key) && value !== null && value !== undefined && typeof value === 'object') {
+      return JSON.stringify(value);
+    }
+    return value;
+  }));
   const columns = keys.join(', ');
   const updateClause = keys.filter(k => k !== conflictColumn)
     .map(k => `${k} = EXCLUDED.${k}`)
@@ -437,13 +648,23 @@ export async function withTransaction<T>(
 
 /**
  * Check database connection health
+ * Used by health check endpoint to verify database connectivity
  */
 export async function checkDbHealth(): Promise<boolean> {
   try {
-    await query('SELECT 1');
+    // Try to get connection pool (will create if doesn't exist)
+    const pool = await getRdsPool();
+    
+    // Test with a simple query with timeout
+    const testQuery = pool.query('SELECT 1 as health_check');
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Health check timeout')), 5000);
+    });
+    
+    await Promise.race([testQuery, timeoutPromise]);
     return true;
   } catch (error) {
-    console.error('[DB] Health check failed:', error);
+    console.error('[DB] Health check failed:', error instanceof Error ? error.message : error);
     return false;
   }
 }

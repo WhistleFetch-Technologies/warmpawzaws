@@ -61,27 +61,28 @@ export class WarmpawzStack extends cdk.Stack {
     const environment = props?.environment || 'dev';
 
     // Use existing VPC instead of creating new one (to avoid VPC limit)
-    // Lookup existing VPC - try default VPC first, then lookup by ID if provided
-    const vpcId = this.node.tryGetContext('vpcId') || process.env.VPC_ID;
+    // IMPORTANT: Must use the same VPC as RDS for database connectivity
+    // The RDS VPC has Secrets Manager VPC endpoint configured
+    const vpcId = this.node.tryGetContext('vpcId') || process.env.VPC_ID || 'vpc-02a4893e5e582c4d8'; // RDS VPC
     
-    if (vpcId) {
-      // Import existing VPC by ID
-      this.vpc = ec2.Vpc.fromLookup(this, 'ExistingVpc', {
-        vpcId: vpcId,
-      });
-    } else {
-      // Try to lookup default VPC (most common case)
-      // If this fails, user needs to provide VPC ID via: cdk deploy --context vpcId=vpc-xxxxx
-      this.vpc = ec2.Vpc.fromLookup(this, 'DefaultVpc', {
-        isDefault: true,
-      });
-    }
+    // Import existing VPC by ID
+    this.vpc = ec2.Vpc.fromLookup(this, 'ExistingVpc', {
+      vpcId: vpcId,
+    });
+    
+    // Note: Secrets Manager VPC Endpoint already exists in the RDS VPC (vpc-02a4893e5e582c4d8)
+    // Lambda security group (sg-04f3c12d9c3f4fb64) has ingress to SM endpoint (sg-029fd9f75cf25da6f)
+    // and RDS security groups (sg-0f873d37e561cdfb0)
 
     // Deploy Aurora RDS (use existing if cluster identifier provided)
     const existingClusterId = this.node.tryGetContext('existingRdsClusterId') || 
                               process.env.EXISTING_RDS_CLUSTER_ID;
+    const existingClusterEndpoint = this.node.tryGetContext('existingRdsClusterEndpoint') || 
+                              process.env.EXISTING_RDS_CLUSTER_ENDPOINT;
+    // Use the correct RDS master secret (not the CDK-generated one)
     const existingSecretArn = this.node.tryGetContext('existingRdsSecretArn') || 
-                              process.env.EXISTING_RDS_SECRET_ARN;
+                              process.env.EXISTING_RDS_SECRET_ARN ||
+                              'arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-dev-rds-master-20260106164510791100000002-WqZcjI';
     const existingProxyName = this.node.tryGetContext('existingRdsProxyName') || 
                               process.env.EXISTING_RDS_PROXY_NAME;
     
@@ -89,6 +90,7 @@ export class WarmpawzStack extends cdk.Stack {
       vpc: this.vpc,
       environment: environment,
       existingClusterIdentifier: existingClusterId || 'warmpawz-dev-cluster', // Default from CI/CD
+      existingClusterEndpoint: existingClusterEndpoint || 'warmpawz-dev-cluster.cluster-cpgs0s0iyq8o.ap-south-1.rds.amazonaws.com',
       existingSecretArn: existingSecretArn,
       existingProxyName: existingProxyName || 'warmpawz-aurora-proxy',
     });
@@ -135,9 +137,10 @@ export class WarmpawzStack extends cdk.Stack {
       environment: environment,
     });
 
-    // Deploy DynamoDB Tables
+    // Deploy DynamoDB Tables (use existing tables to avoid conflicts)
     this.dynamoDbStack = new DynamoDbStack(this, 'DynamoDbStack', {
       environment: environment,
+      useExistingTables: true, // Tables already exist in AWS
     });
 
     // Deploy Chime Stack (for video calls)
@@ -190,22 +193,17 @@ export class WarmpawzStack extends cdk.Stack {
       // No authorizer - public route
     });
 
+    // 1b. Pharmacy order status by orderId (public – track by order ID without auth)
+    this.apiGatewayStack.api.addRoutes({
+      path: '/customer/orders/{orderId}/pharmacy-status',
+      methods: [apigateway.HttpMethod.GET],
+      integration: lambdaIntegration,
+      // No authorizer - public so customer app can poll order status after creating order
+    });
+
     // 2. Authorized routes (specific paths before catch-all)
-    // Admin routes require admin Cognito token
-    this.apiGatewayStack.addAuthorizedRoute(
-      '/admin/{proxy+}',
-      [
-        apigateway.HttpMethod.GET,
-        apigateway.HttpMethod.POST,
-        apigateway.HttpMethod.PUT,
-        apigateway.HttpMethod.PATCH,
-        apigateway.HttpMethod.DELETE,
-        apigateway.HttpMethod.OPTIONS,
-        apigateway.HttpMethod.HEAD,
-      ],
-      lambdaIntegration,
-      'admin'
-    );
+    // Admin routes: no API Gateway authorizer - /admin/* goes via catch-all so Lambda can allow UAT (X-UAT-Mode + token)
+    // Auth is enforced in Lambda (admin.ts requireAdminAuth supports both Cognito JWT and UAT tokens).
 
     // Customer routes require customer Cognito token
     this.apiGatewayStack.addAuthorizedRoute(
@@ -286,11 +284,19 @@ export class WarmpawzStack extends cdk.Stack {
       exportName: 'Warmpawz-AuroraEndpoint',
     });
 
-    new cdk.CfnOutput(this, 'AuroraProxyEndpoint', {
-      value: this.auroraStack.proxy.endpoint,
-      description: 'RDS Proxy Endpoint - For A4 (Backend Engineer)',
-      exportName: 'Warmpawz-AuroraProxyEndpoint',
-    });
+    if (this.auroraStack.proxy) {
+      new cdk.CfnOutput(this, 'AuroraProxyEndpoint', {
+        value: this.auroraStack.proxy.endpoint,
+        description: 'RDS Proxy Endpoint - For A4 (Backend Engineer)',
+        exportName: 'Warmpawz-AuroraProxyEndpoint',
+      });
+    } else {
+      new cdk.CfnOutput(this, 'AuroraClusterEndpoint', {
+        value: this.auroraStack.cluster.clusterEndpoint.hostname,
+        description: 'RDS Cluster Endpoint - For A4 (Backend Engineer)',
+        exportName: 'Warmpawz-AuroraClusterEndpoint',
+      });
+    }
 
     new cdk.CfnOutput(this, 'AuroraSecretArn', {
       value: this.auroraStack.secret.secretArn,
@@ -346,11 +352,7 @@ export class WarmpawzStack extends cdk.Stack {
       exportName: 'Warmpawz-VendorAuthorizerId',
     });
 
-    new cdk.CfnOutput(this, 'AdminAuthorizerId', {
-      value: this.apiGatewayStack.adminAuthorizer.authorizerId,
-      description: 'Admin Cognito Authorizer ID - For Agent 3 (Auth Integration)',
-      exportName: 'Warmpawz-AdminAuthorizerId',
-    });
+    // AdminAuthorizerId output removed: /admin/* uses catch-all (Lambda auth), so admin authorizer is not attached to any route.
 
     new cdk.CfnOutput(this, 'ApiGatewayUrl', {
       value: this.apiGatewayStack.api.url || 'Not yet deployed',
@@ -376,11 +378,13 @@ export class WarmpawzStack extends cdk.Stack {
       exportName: 'Warmpawz-UploadsBucketName',
     });
 
-    new cdk.CfnOutput(this, 'CloudFrontDomainName', {
-      value: this.s3Stack.distribution.distributionDomainName,
-      description: 'CloudFront Domain - For A6 (Mobile Engineer)',
-      exportName: 'Warmpawz-CloudFrontDomainName',
-    });
+    if (this.s3Stack.distribution) {
+      new cdk.CfnOutput(this, 'CloudFrontDomainName', {
+        value: this.s3Stack.distribution.distributionDomainName,
+        description: 'CloudFront Domain - For A6 (Mobile Engineer)',
+        exportName: 'Warmpawz-CloudFrontDomainName',
+      });
+    }
 
     new cdk.CfnOutput(this, 'ApiDomainName', {
       value: this.route53Stack.apiDomainName,
@@ -406,17 +410,21 @@ export class WarmpawzStack extends cdk.Stack {
       exportName: 'Warmpawz-AdminDomain',
     });
 
-    new cdk.CfnOutput(this, 'ApkBucketName', {
-      value: this.s3Stack.apkBucket.bucketName,
-      description: 'APK Storage Bucket - For Mobile Apps',
-      exportName: 'Warmpawz-ApkBucketName',
-    });
+    if (this.s3Stack.apkBucket) {
+      new cdk.CfnOutput(this, 'ApkBucketName', {
+        value: this.s3Stack.apkBucket.bucketName,
+        description: 'APK Storage Bucket - For Mobile Apps',
+        exportName: 'Warmpawz-ApkBucketName',
+      });
+    }
 
-    new cdk.CfnOutput(this, 'ApkDistributionDomain', {
-      value: this.s3Stack.apkDistribution.distributionDomainName,
-      description: 'APK CloudFront Distribution Domain',
-      exportName: 'Warmpawz-ApkDistributionDomain',
-    });
+    if (this.s3Stack.apkDistribution) {
+      new cdk.CfnOutput(this, 'ApkDistributionDomain', {
+        value: this.s3Stack.apkDistribution.distributionDomainName,
+        description: 'APK CloudFront Distribution Domain',
+        exportName: 'Warmpawz-ApkDistributionDomain',
+      });
+    }
 
     new cdk.CfnOutput(this, 'LambdaExecutionRoleArn', {
       value: this.iamStack.lambdaExecutionRole.roleArn,

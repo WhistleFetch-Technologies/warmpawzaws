@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Calendar, Clock, DollarSign, Info } from 'lucide-react';
+import { Calendar, Clock, IndianRupee, Info } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 interface RescheduleBookingProps {
@@ -110,7 +110,7 @@ export function RescheduleBooking({ bookingId, onSuccess, onCancel }: Reschedule
             </ul>
             {policy.fee > 0 && (
               <div className="mt-3 flex items-center gap-2 text-orange-700">
-                <DollarSign className="w-4 h-4" />
+                <IndianRupee className="w-4 h-4" />
                 <span className="font-semibold">Rescheduling Fee: ₹{policy.fee}</span>
               </div>
             )}

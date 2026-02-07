@@ -1,19 +1,27 @@
 'use client';
 
-import { CheckCircle } from 'lucide-react';
+import { CheckCircle, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface VendorApplicationSubmittedProps {
   applicationId: string;
   onContinue: () => void;
+  onBack?: () => void;
 }
 
-export function VendorApplicationSubmitted({ applicationId, onContinue }: VendorApplicationSubmittedProps) {
+export function VendorApplicationSubmitted({ applicationId, onContinue, onBack }: VendorApplicationSubmittedProps) {
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white flex items-center justify-center p-4">
       <div className="w-full max-w-[430px] space-y-6">
+        {onBack && (
+          <div className="flex justify-start pt-2">
+            <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full -ml-2">
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+          </div>
+        )}
         {/* Success Icon */}
-        <div className="flex justify-center pt-8">
+        <div className="flex justify-center pt-4">
           <div className="w-24 h-24 rounded-full bg-[#FF8C42] flex items-center justify-center">
             <CheckCircle className="w-12 h-12 text-white" strokeWidth={3} />
           </div>

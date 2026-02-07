@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Star, Heart, Share2, MapPin, Phone, Clock, Navigation, Award, CheckCircle2, Stethoscope, Calendar, TrendingUp } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, Star, Heart, Share2, MapPin, Phone, Clock, Navigation, Award, CheckCircle2, Stethoscope, Calendar, TrendingUp, Sparkles } from 'lucide-react';
+import { AmenitiesSection } from '../shared/AmenitiesSection';
 import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
+import { formatOperatingHours } from '@/lib/format-utils';
 
 interface VetCenterProfileViewProps {
   phone: string;
@@ -42,7 +44,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
   const [rating, setRating] = useState<any>(null);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'services' | 'reviews'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'amenities' | 'services' | 'reviews'>('overview');
 
   useEffect(() => {
     loadCenterData();
@@ -79,9 +81,15 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
             serviceStyle: service.serviceStyle
           }));
         setServices(clinicServices);
+      } else if (servicesRes && !servicesRes.success) {
+        // ✅ Handle gracefully - services not loading is fine, just set empty array
+        console.log('Clinic services not available or not loaded yet');
+        setServices([]);
       }
     } catch (error) {
-      console.error('Error loading clinic data:', error);
+      // ✅ Handle gracefully - services not loading is fine, just set empty array
+      console.log('Clinic services not available:', error);
+      setServices([]);
     } finally {
       setLoading(false);
     }
@@ -154,7 +162,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
             <ArrowLeft className="w-5 h-5 text-gray-700" />
           </button>
 
-          <div className="absolute top-4 right-4 flex gap-0">
+          <div className="absolute top-4 right-4 flex gap-3">
             <button
               onClick={() => setIsFavorite(!isFavorite)}
               className="w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg"
@@ -177,14 +185,14 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
               <h1 className="text-2xl font-bold text-gray-900 mb-0">{centerName}</h1>
               <p className="text-sm text-gray-600 mb-0">{facility.address || center.address}</p>
               
-              <div className="flex items-center gap-0">
-                <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3">
                   <Star className="w-5 h-5 fill-amber-500 text-amber-500" />
                   <span className="font-semibold text-lg">{rating?.averageRating?.toFixed(1) || '4.5'}</span>
                   <span className="text-sm text-gray-500">({rating?.totalReviews || 0} reviews)</span>
                 </div>
                 {facility.isPremium && (
-                  <span className="px-0 py-0 bg-amber-100 text-amber-700 rounded-full text-xs flex items-center gap-0">
+                  <span className="px-0 py-0 bg-amber-100 text-amber-700 rounded-full text-xs flex items-center gap-3">
                     <Award className="w-3 h-3" />
                     Premium
                   </span>
@@ -193,7 +201,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-0">
+          <div className="grid grid-cols-3 gap-3">
             <div className="text-center py-0 bg-gray-50 rounded-lg">
               <div className="text-lg font-bold text-gray-900">{services.length}+</div>
               <div className="text-xs text-gray-500">Services</div>
@@ -211,11 +219,11 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
 
         {/* Tabs */}
         <div className="flex border-b border-gray-200 sticky top-0 bg-white z-10">
-          {['overview', 'services', 'reviews'].map((tab) => (
+          {['overview', 'amenities', 'services', 'reviews'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab as any)}
-              className={`flex-1 py-0 text-sm font-medium capitalize transition-colors ${
+              className={`flex-1 py-3 text-sm font-medium capitalize transition-colors ${
                 activeTab === tab
                   ? 'text-primary border-b-2 border-primary'
                   : 'text-gray-500'
@@ -239,14 +247,14 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
 
               <div>
                 <h3 className="font-semibold text-gray-900 mb-0">Features</h3>
-                <div className="grid grid-cols-2 gap-0">
+                <div className="grid grid-cols-2 gap-3">
                   {[
                     { icon: Stethoscope, label: 'Advanced Equipment' },
                     { icon: CheckCircle2, label: 'Certified Vets' },
                     { icon: Heart, label: 'Emergency Care' },
                     { icon: Clock, label: 'Quick Service' }
                   ].map((feature, index) => (
-                    <div key={index} className="flex items-center gap-0 p-0 bg-gray-50 rounded-lg">
+                    <div key={index} className="flex items-center gap-3 p-0 bg-gray-50 rounded-lg">
                       <feature.icon className="w-5 h-5 text-primary" />
                       <span className="text-sm text-gray-700">{feature.label}</span>
                     </div>
@@ -257,25 +265,69 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
               <div>
                 <h3 className="font-semibold text-gray-900 mb-0">Contact Information</h3>
                 <div className="space-y-3">
-                  <div className="flex items-center gap-0 text-sm">
+                  <div className="flex items-center gap-3 text-sm">
                     <Phone className="w-5 h-5 text-gray-400" />
                     <span className="text-gray-700">{center.phone}</span>
                   </div>
-                  <div className="flex items-center gap-0 text-sm">
+                  <div className="flex items-center gap-3 text-sm">
                     <MapPin className="w-5 h-5 text-gray-400" />
                     <span className="text-gray-700">{facility.address || center.address}</span>
                   </div>
-                  <div className="flex items-center gap-0 text-sm">
+                  <div className="flex items-center gap-3 text-sm">
                     <Clock className="w-5 h-5 text-gray-400" />
-                    <span className="text-gray-700">{facility.operatingHours || 'Mon-Sat: 9AM-7PM, 24/7 Emergency'}</span>
+                    <span className="text-gray-700">{facility.operatingHours ? formatOperatingHours(facility.operatingHours) : 'Mon-Sat: 9AM-7PM, 24/7 Emergency'}</span>
                   </div>
                 </div>
               </div>
 
-              <button className="w-full px-4 py-0 border-2 border-primary text-primary rounded-lg font-semibold hover:bg-orange-50 transition-colors flex items-center justify-center gap-0">
+              <button 
+                onClick={() => {
+                  if (facility?.latitude && facility?.longitude) {
+                    const url = `https://www.google.com/maps/dir/?api=1&destination=${facility.latitude},${facility.longitude}`;
+                    window.open(url, '_blank');
+                  } else if (facility?.address || center?.address) {
+                    const address = facility?.address || center?.address;
+                    const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
+                    window.open(url, '_blank');
+                  } else {
+                    alert('Location not available');
+                  }
+                }}
+                className="w-full px-4 py-3 border-2 border-primary text-primary rounded-lg font-semibold hover:bg-orange-50 transition-colors flex items-center justify-center gap-3"
+              >
                 <Navigation className="w-4 h-4" />
                 Get Directions
               </button>
+              
+              {/* Call Button */}
+              <button
+                onClick={() => {
+                  const phoneNumber = center?.phone || facility?.phone;
+                  if (phoneNumber) {
+                    window.location.href = `tel:${phoneNumber}`;
+                  } else {
+                    alert('Phone number not available');
+                  }
+                }}
+                className="w-full px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-colors flex items-center justify-center gap-3"
+              >
+                <Phone className="w-4 h-4" />
+                Call Now
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'amenities' && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-4">
+                <Sparkles className="w-5 h-5 text-primary" />
+                <h3 className="font-semibold text-gray-900">Facilities & Amenities</h3>
+              </div>
+              <AmenitiesSection
+                amenities={facility?.amenities || []}
+                customAmenities={facility?.customAmenities || []}
+                showCategories={true}
+              />
             </div>
           )}
 
@@ -284,12 +336,12 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
               {services.length > 0 ? (
                 services.map((service) => (
                   <div key={service.id} className="bg-white p-4 rounded-xl border border-gray-200">
-                    <div className="flex items-start justify-between gap-0">
+                    <div className="flex items-start justify-between gap-3">
                       <div className="flex-1">
-                        <div className="flex items-center gap-0 mb-0">
+                        <div className="flex items-center gap-3 mb-0">
                           <h4 className="font-semibold text-gray-900">{service.name}</h4>
                           {service.popular && (
-                            <span className="px-0 py-0 bg-orange-100 text-orange-700 rounded-full text-xs flex items-center gap-0">
+                            <span className="px-0 py-0 bg-orange-100 text-orange-700 rounded-full text-xs flex items-center gap-3">
                               <TrendingUp className="w-3 h-3" />
                               Popular
                             </span>
@@ -298,8 +350,8 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
                         {service.description && (
                           <p className="text-sm text-gray-600 mb-0">{service.description}</p>
                         )}
-                        <div className="flex items-center gap-0 text-xs text-gray-500">
-                          <span className="flex items-center gap-0">
+                        <div className="flex items-center gap-3 text-xs text-gray-500">
+                          <span className="flex items-center gap-3">
                             <Clock className="w-3.5 h-3.5" />
                             {service.duration} mins
                           </span>
@@ -312,7 +364,8 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
               ) : (
                 <div className="text-center py-02">
                   <Stethoscope className="w-12 h-12 text-gray-300 mx-auto mb-0" />
-                  <p className="text-gray-500">No services available</p>
+                  <p className="text-gray-500">Services will be available soon</p>
+                  <p className="text-xs text-gray-400 mt-1">Please check back later or contact the clinic directly</p>
                 </div>
               )}
             </div>
@@ -323,7 +376,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
               {reviews.length > 0 ? (
                 reviews.map((review) => (
                   <div key={review.id} className="bg-white p-4 rounded-xl border border-gray-200">
-                    <div className="flex items-start gap-0 mb-0">
+                    <div className="flex items-start gap-3 mb-0">
                       <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary-dark rounded-full flex items-center justify-center text-white font-semibold">
                         {review.customerName.charAt(0)}
                       </div>
@@ -332,7 +385,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
                           <h4 className="font-semibold text-gray-900">{review.customerName}</h4>
                           <span className="text-xs text-gray-500">{new Date(review.date).toLocaleDateString()}</span>
                         </div>
-                        <div className="flex items-center gap-0 mb-0">
+                        <div className="flex items-center gap-3 mb-0">
                           {[...Array(5)].map((_, i) => (
                             <Star key={i} className={`w-4 h-4 ${i < review.rating ? 'fill-amber-500 text-amber-500' : 'text-gray-300'}`} />
                           ))}
@@ -356,7 +409,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
         <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-white border-t border-gray-200 p-4">
           <button
             onClick={() => onNavigate('select_service', { centerId })}
-            className="w-full py-1 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-0"
+            className="w-full py-1 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-3"
             disabled={services.length === 0}
           >
             <Calendar className="w-5 h-5" />

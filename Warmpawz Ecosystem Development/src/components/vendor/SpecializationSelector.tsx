@@ -7,7 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { Check, Loader2, AlertCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface SpecializationSelectorProps {
@@ -38,10 +38,10 @@ export function SpecializationSelector({
       console.log('[CENTER SPEC] Loading specializations for role:', cleanRoleId);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/problem-grid-specializations/${cleanRoleId}`,
+        `${getApiBaseUrl()}/vendor/problem-grid-specializations/${cleanRoleId}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

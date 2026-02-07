@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PromotionBanner } from './shared/PromotionBanner';
 
 interface InsuranceServicesLandingProps {
   phone: string;
@@ -35,7 +36,7 @@ export function InsuranceServicesLanding({ phone, onBack, onNavigate }: Insuranc
         activeProviders: providerList.length || 8,
         policiesIssued: '2K+',
         rating: providerList.length > 0 
-          ? (providerList.reduce((acc: number, p: any) => acc + (p.rating || 4.7), 0) / providerList.length).toFixed(1) 
+          ? Number(providerList.reduce((acc: number, p: any) => acc + Number(p.rating || 4.7), 0) / providerList.length).toFixed(1) 
           : '4.7'
       });
     } catch (error) {
@@ -138,37 +139,9 @@ export function InsuranceServicesLanding({ phone, onBack, onNavigate }: Insuranc
 
       {/* Main Content on White Background */}
       <div className="px-6 pb-24">
-        {/* Spotlight Offers */}
+        {/* Promotion Banner */}
         <div className="mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="w-5 h-5 text-orange-500" />
-            <h2 className="text-lg font-semibold">Spotlight Offers</h2>
-          </div>
-          
-          <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide -mx-6 px-6">
-            <Card className="min-w-[280px] flex-shrink-0 bg-white border border-gray-100 p-5 shadow-sm">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <Badge className="bg-green-100 text-green-600 border-none mb-2">New</Badge>
-                  <div className="text-3xl font-bold text-green-600 mb-1">20% OFF</div>
-                  <div className="text-gray-700 text-sm">First Month Premium</div>
-                </div>
-                <div className="p-3 bg-green-50 rounded-xl">
-                  <Shield className="w-6 h-6 text-green-600" />
-                </div>
-              </div>
-              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                <div className="text-sm text-gray-600">On annual plans</div>
-                <Button 
-                  size="sm" 
-                  className="bg-green-600 text-white hover:bg-green-700 h-8"
-                  onClick={() => onNavigate?.('insurance_policy_purchase', { discount: true })}
-                >
-                  Get Quote
-                </Button>
-              </div>
-            </Card>
-          </div>
+          <PromotionBanner service="insurance" maxPromotions={3} />
         </div>
 
         {/* Insurance Plans */}

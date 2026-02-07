@@ -309,7 +309,7 @@ function RefundDetailModal({
         {(refund.status as any) === 'pending' && (
           <div className="border-t pt-4">
             <h3 className="font-semibold mb-0">Take Action</h3>
-            <div className="flex gap-0 mb-4">
+            <div className="flex gap-3 mb-4">
               <button
                 onClick={() => setAction('approve')}
                 className={`px-4 py-0 rounded-lg font-medium ${
@@ -390,7 +390,7 @@ function RefundDetailModal({
           </div>
         )}
 
-        <div className="flex justify-end gap-0 mt-0 pt-4 border-t">
+        <div className="flex justify-end gap-3 mt-0 pt-4 border-t">
           <button
             onClick={onClose}
             className="px-4 py-0 border rounded-lg hover:bg-gray-50"

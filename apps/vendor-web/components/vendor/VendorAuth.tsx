@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ChevronLeft, CheckCircle2 } from 'lucide-react';
-import { storeSession } from '@/lib/session-manager'; // ✅ SECURITY FIX
+import { storeSession } from '@/lib/session-manager';
+import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
 
 const logoImage = '/logo.png';
 
@@ -22,8 +23,36 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   const [currentStep, setCurrentStep] = useState(1);
   const [pendingApproval, setPendingApproval] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [countryCode, setCountryCode] = useState('+91'); // Default to India
   const [otpCode, setOtpCode] = useState('');
   const [showOtpScreen, setShowOtpScreen] = useState(false);
+  const [rateLimitCooldown, setRateLimitCooldown] = useState<number | null>(null);
+  const [lastOtpRequestTime, setLastOtpRequestTime] = useState<number>(0);
+  const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
+  const [referralCode, setReferralCode] = useState('');
+  const [showReferralInput, setShowReferralInput] = useState(false);
+  const [referralApplied, setReferralApplied] = useState(false);
+  const otpInputRef = useRef<HTMLInputElement>(null);
+  
+  // Update cooldown countdown timer
+  useEffect(() => {
+    if (!rateLimitCooldown || rateLimitCooldown <= Date.now()) {
+      setCooldownSeconds(0);
+      return;
+    }
+    
+    const interval = setInterval(() => {
+      const remaining = Math.ceil((rateLimitCooldown - Date.now()) / 1000);
+      if (remaining > 0) {
+        setCooldownSeconds(remaining);
+      } else {
+        setCooldownSeconds(0);
+        setRateLimitCooldown(null);
+      }
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [rateLimitCooldown]);
   
   const [formData, setFormData] = useState({
     email: '',
@@ -58,6 +87,12 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
     'Pet Insurance',
     'Mating Services'
   ];
+
+  // Format phone number with spaces
+  const formatPhoneDisplay = (num: string) => {
+    if (num.length <= 5) return num;
+    return `${num.slice(0, 5)} ${num.slice(5)}`;
+  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,35 +147,107 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
 
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError('');
     
     if (!phoneNumber || phoneNumber.length < 10) {
       setError('Please enter a valid phone number');
-      setLoading(false);
       return;
     }
     
+    // Debounce: Prevent rapid clicks (minimum 2 seconds between requests)
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastOtpRequestTime;
+    const minInterval = 2000; // 2 seconds
+    
+    if (timeSinceLastRequest < minInterval && lastOtpRequestTime > 0) {
+      const remainingTime = Math.ceil((minInterval - timeSinceLastRequest) / 1000);
+      setError(`Please wait ${remainingTime} second${remainingTime > 1 ? 's' : ''} before requesting another OTP.`);
+      return;
+    }
+    
+    // Check if we're in a rate limit cooldown period
+    if (rateLimitCooldown && rateLimitCooldown > Date.now()) {
+      const remainingSeconds = Math.ceil((rateLimitCooldown - Date.now()) / 1000);
+      setError(`Too many requests. Please wait ${remainingSeconds} second${remainingSeconds > 1 ? 's' : ''} before trying again.`);
+      return;
+    }
+    
+    setLoading(true);
+    setLastOtpRequestTime(now);
+    
     try {
-      console.log('📤 [VendorAuth] Sending OTP to:', phoneNumber);
+      console.log('📤 [VendorAuth] Sending OTP to:', `${countryCode}${phoneNumber}`);
       
       // Send OTP using the correct endpoint
       const sendOtpData = await apiClient.post<any>('/auth/send-otp', {
-        phone: phoneNumber,
+        phone: `${countryCode}${phoneNumber}`,
         role: 'vendor'
       });
       
       console.log('✅ [VendorAuth] OTP sent successfully:', sendOtpData);
       
+      // Clear any rate limit cooldown on success
+      setRateLimitCooldown(null);
+      
+      // Store referral code for use after signup (optional)
+      if (referralCode && referralCode.trim()) {
+        localStorage.setItem('pendingReferralCode', referralCode.trim());
+      }
       // Show OTP screen
       setFormData({ ...formData, phone: phoneNumber });
       setShowOtpScreen(true);
       setLoading(false);
     } catch (error: any) {
       console.error('❌ [VendorAuth] Failed to send OTP:', error);
-      setError(error.message || 'Failed to send OTP. Please try again.');
+      
+      // Handle rate limiting specifically
+      if (error.statusCode === 429 || error.isRateLimit) {
+        const retryAfter = error.retryAfter || 5; // Default to 5 seconds if not provided
+        const cooldownUntil = Date.now() + (retryAfter * 1000);
+        setRateLimitCooldown(cooldownUntil);
+        
+        setError(`Too many requests. Please wait ${retryAfter} second${retryAfter > 1 ? 's' : ''} before trying again.`);
+        
+        // Clear cooldown after the period expires
+        setTimeout(() => {
+          setRateLimitCooldown(null);
+        }, retryAfter * 1000);
+      } else {
+        setError(error.message || 'Failed to send OTP. Please try again.');
+      }
+      
       setLoading(false);
     }
+  };
+
+  // Handler to preserve cursor position when filtering OTP input
+  const handleOtpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const cursorPosition = input.selectionStart || 0;
+    const oldValue = otpCode;
+    const newValue = input.value.replace(/[^0-9]/g, '');
+    
+    // Calculate new cursor position
+    // Count how many non-numeric characters were removed before the cursor
+    let removedBeforeCursor = 0;
+    for (let i = 0; i < Math.min(cursorPosition, input.value.length); i++) {
+      if (!/[0-9]/.test(input.value[i])) {
+        removedBeforeCursor++;
+      }
+    }
+    
+    const newCursorPosition = Math.max(0, cursorPosition - removedBeforeCursor);
+    
+    // Update state
+    setOtpCode(newValue);
+    
+    // Restore cursor position after React updates
+    setTimeout(() => {
+      if (otpInputRef.current) {
+        const finalPosition = Math.min(newCursorPosition, newValue.length);
+        otpInputRef.current.setSelectionRange(finalPosition, finalPosition);
+      }
+    }, 0);
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
@@ -148,16 +255,54 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
     setLoading(true);
     setError('');
     console.log('🔐 [VendorAuth] Verifying OTP:', otpCode);
-    console.log('🔐 [VendorAuth] Phone number:', phoneNumber);
+    console.log('🔐 [VendorAuth] Phone number:', `${countryCode}${phoneNumber}`);
     
     try {
       // Verify OTP using the correct endpoint
       console.log('🔐 [VendorAuth] Step 1: Verifying OTP...');
-      const verifyData = await apiClient.post<any>('/auth/verify-otp', {
-        phone: phoneNumber,
+      const verifyPayload: Record<string, string> = {
+        phone: `${countryCode}${phoneNumber}`,
         otp: otpCode,
         role: 'vendor'
-      });
+      };
+      if (referralCode && referralCode.trim()) {
+        verifyPayload.referralCode = referralCode.trim();
+        localStorage.setItem('pendingReferralCode', referralCode.trim());
+      }
+      
+      // ✅ FIX: Add retry logic for timeout/503 errors (max 2 retries)
+      let verifyData: any;
+      let lastError: any;
+      const maxRetries = 2;
+      
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          if (attempt > 0) {
+            console.log(`🔄 [VendorAuth] Retry attempt ${attempt} of ${maxRetries}...`);
+            // Wait before retry (exponential backoff: 1s, 2s)
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+          }
+          
+          verifyData = await apiClient.post<any>('/auth/verify-otp', verifyPayload);
+          // Success - break out of retry loop
+          break;
+        } catch (err: any) {
+          lastError = err;
+          const isTimeoutError = err.statusCode === 503 || 
+                                err.message?.includes('timeout') || 
+                                err.message?.includes('took too long') ||
+                                err.message?.includes('temporarily unavailable');
+          
+          // If it's a timeout error and we have retries left, continue
+          if (isTimeoutError && attempt < maxRetries) {
+            console.warn(`⚠️ [VendorAuth] Timeout error on attempt ${attempt + 1}, will retry...`);
+            continue;
+          }
+          
+          // If it's not a timeout error, or we're out of retries, throw
+          throw err;
+        }
+      }
       
       console.log('📋 [VendorAuth] OTP verification result:', verifyData);
       
@@ -208,6 +353,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       
       // ✅ FIX: Store onboarding status IMMEDIATELY from verify-otp response
       localStorage.setItem('vendorApplicationStatus', onboardingStatus);
+      localStorage.setItem('vendorCountryCode', countryCode);
       
       // Store session with access token IMMEDIATELY before any async calls
       // This ensures localStorage is set before redirect
@@ -224,6 +370,17 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         localStorage.setItem('vendorData', JSON.stringify(profile));
         if (profile.id) {
           localStorage.setItem('vendorId', profile.id);
+        }
+        const businessName = (profile as any).business_name || (profile as any).businessName || '';
+        if (businessName) {
+          localStorage.setItem('vendorName', businessName);
+          localStorage.setItem('businessName', businessName);
+        }
+        // ✅ FIX: Store roleId immediately to prevent race condition with useVendorCapabilities
+        if (profile.roleId || profile.role_id) {
+          const roleId = profile.roleId || profile.role_id;
+          localStorage.setItem('vendorRole', roleId);
+          console.log('🔐 [VendorAuth] Stored vendorRole:', roleId);
         }
       }
       
@@ -250,9 +407,11 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         localStorage.setItem('vendorUser', JSON.stringify(user));
       }
       
-      // Set sessionStorage flag to track that user is logged in
-      // This flag is cleared on hard refresh, allowing us to detect it
+      // Set sessionStorage flags to track that user is logged in
+      // These flags are cleared on hard refresh, allowing us to detect it
       sessionStorage.setItem('_warmpawz_vendor_has_session', 'true');
+      sessionStorage.setItem('_warmpawz_vendor_just_logged_in', 'true'); // ✅ FIX: Added for better detection
+      console.log('✅ [Vendor Session] sessionStorage flags set after login');
       
       // ✅ FIX: Use onboarding_status from verify-otp response directly (no separate API call needed)
       // The verify-otp endpoint already returns the correct onboarding_status
@@ -270,7 +429,17 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       });
     } catch (error: any) {
       console.error('❌ [VendorAuth] Login error:', error);
-      setError(error.message || 'Network error. Please try again.');
+      
+      // ✅ FIX: Provide better error messages for timeout/503 errors
+      let errorMessage = error.message || 'Network error. Please try again.';
+      
+      if (error.statusCode === 503 || error.message?.includes('timeout') || error.message?.includes('took too long')) {
+        errorMessage = 'The request took too long. Please check your connection and try again.';
+      } else if (error.message?.includes('temporarily unavailable')) {
+        errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
+      }
+      
+      setError(errorMessage);
       setLoading(false);
     }
   };
@@ -279,7 +448,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   const handleDebugCheck = async () => {
     console.log('🔍 DEBUG: Checking ALL vendor data...');
     try {
-      const data = await apiClient.get('/make-server-3dd53475/auth/diagnostic/all-vendors') as any;
+      const data = await apiClient.get('/admin/vendors/all') as any;
       
       console.log('📊 ========== RAW RESPONSE ==========');
       console.log('Full data:', JSON.stringify(data, null, 2));
@@ -359,47 +528,50 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   // OTP VERIFICATION SCREEN - PIXEL PERFECT
   if (showOtpScreen) {
     const formattedPhone = phoneNumber.length === 10 
-      ? `+91 ${phoneNumber.slice(0, 5)} ${phoneNumber.slice(5)}`
-      : `+91 ${phoneNumber}`;
+      ? `${countryCode} ${phoneNumber.slice(0, 5)} ${phoneNumber.slice(5)}`
+      : `${countryCode} ${phoneNumber}`;
 
     return (
-      <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
         {/* Status Bar */}
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center bg-[#FF8C42]">
-          <span className="text-sm text-white">9:41</span>
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center">
+          <span className="text-sm font-medium text-black">09:41</span>
           <div className="flex gap-1.5 items-center">
             <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-              <rect y="8" width="3" height="4" rx="0.5" fill="white"/>
-              <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="white"/>
-              <rect x="9" y="2" width="3" height="10" rx="0.5" fill="white"/>
-              <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="white"/>
+              <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
+              <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
+              <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
+              <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
             </svg>
             <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-              <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+              <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
             <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-              <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="white" strokeWidth="1.5"/>
-              <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="white"/>
-              <rect x="22" y="4" width="2.5" height="4" rx="1" fill="white"/>
+              <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
+              <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
+              <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
             </svg>
           </div>
         </div>
 
         {/* Orange Header Section */}
-        <div className="bg-[#FF8C42] px-6 pt-8 pb-12 flex flex-col items-center">
+        <div className="px-6 pt-8 pb-20 flex flex-col items-center">
           {/* Logo */}
-          <div className="w-20 h-20 mb-6">
+          <div className="w-28 h-28 bg-white rounded-full flex items-center justify-center shadow-xl mb-6 p-2">
             <img src={logoImage} alt="Warmpawz" className="w-full h-full object-contain" />
           </div>
 
           {/* Title */}
-          <h1 className="text-2xl font-bold text-black text-center">
-            Verify Your Number
+          <h1 className="text-2xl font-bold text-black italic text-center">
+            Verify Your
           </h1>
+          <h2 className="text-2xl font-bold text-black italic text-center">
+            Number
+          </h2>
         </div>
 
         {/* White Content Card */}
-        <div className="flex-1 -mt-8 bg-white rounded-t-[32px] px-6 pt-8 pb-12">
+        <div className="flex-1 -mt-8 bg-white rounded-t-[32px] px-6 pt-10 pb-12">
           <div className="text-center mb-8">
             <p className="text-gray-600 text-sm mb-1">
               Enter the OTP sent to
@@ -420,38 +592,43 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               <Label htmlFor="otp" className="text-gray-700 mb-2 block text-sm font-medium">
                 Verification Code
               </Label>
-              <Input
-                id="otp"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
-                className="w-full h-14 text-center text-lg tracking-widest border-[#FF8C42]/30 focus:border-[#FF8C42] focus:ring-[#FF8C42] rounded-xl"
-                placeholder="Enter 6-digit code"
-                required
-                autoFocus
-              />
+              <div className="flex items-center border-2 border-gray-200 rounded-2xl overflow-hidden focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 transition-all bg-white">
+                <input
+                  ref={otpInputRef}
+                  id="otp"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  value={otpCode}
+                  onChange={handleOtpChange}
+                  className="flex-1 py-4 px-4 text-lg text-center tracking-widest outline-none"
+                  placeholder="Enter 6-digit code"
+                  required
+                  autoFocus
+                />
+              </div>
             </div>
 
-            <Button
+            <button
               type="submit"
               disabled={loading || otpCode.length !== 6}
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A29] text-white h-14 rounded-xl text-base font-bold disabled:opacity-50"
+              className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30"
             >
               {loading ? 'Verifying...' : 'Verify & Continue'}
-            </Button>
+            </button>
           </form>
 
           <div className="mt-8 space-y-4 text-center">
             <button
               type="button"
               onClick={handleSendCode}
-              disabled={loading}
-              className="w-full text-[#FF8C42] hover:text-[#FF7A29] text-sm underline disabled:opacity-50"
+              disabled={loading || cooldownSeconds > 0}
+              className="w-full text-[#FF8C42] hover:text-[#FF7A29] text-sm underline disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Resend Code
+              {cooldownSeconds > 0
+                ? `Resend Code (Wait ${cooldownSeconds}s)`
+                : 'Resend Code'}
             </button>
 
             <div className="space-y-2">
@@ -485,45 +662,48 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   // PHONE NUMBER ENTRY SCREEN
   if (isSignUp && currentStep === 1 && !showOtpScreen) {
     return (
-      <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
         {/* Status Bar */}
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center bg-[#FF8C42]">
-          <span className="text-sm text-white">9:41</span>
+        <div className="px-6 pt-3 pb-2 flex justify-between items-center">
+          <span className="text-sm font-medium text-black">09:41</span>
           <div className="flex gap-1.5 items-center">
             <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-              <rect y="8" width="3" height="4" rx="0.5" fill="white"/>
-              <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="white"/>
-              <rect x="9" y="2" width="3" height="10" rx="0.5" fill="white"/>
-              <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="white"/>
+              <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
+              <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
+              <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
+              <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
             </svg>
             <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-              <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+              <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
             </svg>
             <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-              <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="white" strokeWidth="1.5"/>
-              <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="white"/>
-              <rect x="22" y="4" width="2.5" height="4" rx="1" fill="white"/>
+              <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
+              <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
+              <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
             </svg>
           </div>
         </div>
 
         {/* Orange Header Section */}
-        <div className="bg-[#FF8C42] px-6 pt-8 pb-16 flex flex-col items-center">
+        <div className="px-6 pt-8 pb-20 flex flex-col items-center">
           {/* Logo */}
-          <div className="w-24 h-24 mb-6">
+          <div className="w-28 h-28 bg-white rounded-full flex items-center justify-center shadow-xl mb-6 p-2">
             <img src={logoImage} alt="Warmpawz" className="w-full h-full object-contain" />
           </div>
 
           {/* Welcome Message */}
-          <h1 className="text-3xl font-bold text-white mb-2 text-center">
-            Welcome to WARMPAWZ!
+          <h1 className="text-2xl font-bold text-black italic text-center">
+            Welcome to
           </h1>
+          <h2 className="text-3xl font-extrabold text-black tracking-wide">
+            WARMPAWZ!
+          </h2>
         </div>
 
         {/* White Content Card */}
-        <div className="flex-1 -mt-8 bg-white rounded-t-[32px] px-6 pt-8 pb-12">
-          <p className="text-gray-600 text-center mb-8 text-base">
-            Join our community of professional pet care providers
+        <div className="flex-1 -mt-8 bg-white rounded-t-[32px] px-6 pt-10 pb-12">
+          <p className="text-gray-600 text-center mb-8 text-base leading-relaxed">
+            Join our community of professional<br />pet care providers
           </p>
 
           {error && (
@@ -537,28 +717,89 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               <Label htmlFor="phone" className="text-gray-700 mb-2 block text-sm font-medium">
                 Phone Number
               </Label>
-              <Input
-                id="phone"
-                type="tel"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={10}
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value.replace(/[^0-9]/g, ''))}
-                className="w-full h-14 border-[#FF8C42]/30 focus:border-[#FF8C42] focus:ring-[#FF8C42] rounded-xl text-base"
-                placeholder="+91 74493 38923"
-                required
-                autoFocus
-              />
+              <div className="flex items-stretch border-2 border-gray-200 rounded-2xl overflow-hidden focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 transition-all bg-white">
+                <CountryCodeSelector
+                  selectedCode={countryCode}
+                  onSelect={setCountryCode}
+                  disabled={false}
+                />
+                <input
+                  id="phone"
+                  type="tel"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={10}
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value.replace(/[^0-9]/g, ''))}
+                  className="flex-1 py-4 px-4 text-lg outline-none"
+                  placeholder="74493 38923"
+                  required
+                  autoFocus
+                />
+              </div>
             </div>
 
-            <Button
+            {/* Referral Code (optional) */}
+            <div>
+              {!showReferralInput ? (
+                <button
+                  type="button"
+                  onClick={() => setShowReferralInput(true)}
+                  className="text-sm text-[#FF8C42] hover:underline"
+                >
+                  Have a referral code?
+                </button>
+              ) : (
+                <div className="space-y-2 p-3 bg-gray-50 rounded-2xl border border-gray-100">
+                  <Label className="text-gray-700 text-sm font-medium">Referral Code (Optional)</Label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={referralCode}
+                      onChange={(e) => {
+                        setReferralCode(e.target.value.toUpperCase());
+                        setReferralApplied(false);
+                      }}
+                      placeholder="Enter referral code"
+                      className="flex-1 py-2.5 px-3 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-[#FF8C42] focus:ring-2 focus:ring-[#FF8C42]/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowReferralInput(false)}
+                      className="text-gray-500 hover:text-gray-700 text-sm"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  {referralCode && !referralApplied && (
+                    <button
+                      type="button"
+                      onClick={() => setReferralApplied(true)}
+                      className="text-xs text-[#FF8C42] font-medium"
+                    >
+                      Apply
+                    </button>
+                  )}
+                  {referralApplied && referralCode && (
+                    <p className="text-xs text-green-600 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Referral code will be applied after signup.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <button
               type="submit"
-              disabled={loading || phoneNumber.length !== 10}
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A29] text-white h-14 rounded-xl text-base font-bold disabled:opacity-50"
+              disabled={loading || phoneNumber.length !== 10 || cooldownSeconds > 0}
+              className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30"
             >
-              {loading ? 'Sending...' : 'Send Verification Code'}
-            </Button>
+              {loading 
+                ? 'Sending...' 
+                : cooldownSeconds > 0
+                ? `Please wait ${cooldownSeconds}s`
+                : 'Send Verification Code'}
+            </button>
           </form>
 
           <div className="mt-8 space-y-4 text-center">

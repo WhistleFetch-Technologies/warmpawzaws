@@ -40,7 +40,7 @@ import {
 
 import { toast, Toaster } from "sonner";
 
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 
 interface CustomService {
 	id: string;
@@ -71,7 +71,7 @@ export function CustomServiceApproval() {
 	const [adminNote, setAdminNote] = useState("");
 	const [processing, setProcessing] = useState(false);
 
-	const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+	const API_BASE = `${getApiBaseUrl()}`;
 
 	useEffect(() => {
 		loadPendingServices();
@@ -83,7 +83,7 @@ export function CustomServiceApproval() {
 			const response = await fetch(
 				`${API_BASE}/admin/custom-services/pending`,
 				{
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 
@@ -110,7 +110,7 @@ export function CustomServiceApproval() {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 					body: JSON.stringify({
 						adminId: "admin", // TODO: Get from session
@@ -149,7 +149,7 @@ export function CustomServiceApproval() {
 					method: "POST",
 					headers: {
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 					body: JSON.stringify({
 						adminId: "admin", // TODO: Get from session

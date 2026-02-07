@@ -19,7 +19,7 @@ import { Input } from '../../ui/input';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface ResortManagementDashboardProps {
   vendorId: string;
@@ -83,8 +83,8 @@ export function ResortManagementDashboard({
 
       // Load resort rooms
       const roomsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/resort-rooms`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/resort-rooms`,
+        { headers: getAuthHeaders() }
       );
 
       if (roomsRes.ok) {
@@ -94,8 +94,8 @@ export function ResortManagementDashboard({
 
       // Load bookings
       const bookingsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/resort-bookings`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/resort-bookings`,
+        { headers: getAuthHeaders() }
       );
 
       if (bookingsRes.ok) {

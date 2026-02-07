@@ -26,7 +26,7 @@ import {
 	RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import { copyTextToClipboard } from "@repo/utils/shareUtils";
 
 interface PaymentGatewaySettingsProps {
@@ -130,12 +130,12 @@ export function PaymentGatewaySettings({
 		try {
 			// In production: PUT /make-server-3dd53475/admin/payment-gateways/{id}
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/payment-gateways/${gateway.id}`,
+				`${getApiBaseUrl()}/admin/payment-gateways/${gateway.id}`,
 				{
 					method: "PUT",
 					headers: {
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 					body: JSON.stringify(gateway),
 				}
@@ -632,7 +632,7 @@ export function PaymentGatewaySettings({
 											<Label>Webhook URL</Label>
 											<div className="flex gap-2 mt-2">
 												<Input
-													value={`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/webhooks/${selectedGateway.provider}`}
+													value={`${getApiBaseUrl()}/webhooks/${selectedGateway.provider}`}
 													disabled
 													className="flex-1 text-sm"
 												/>
@@ -641,7 +641,7 @@ export function PaymentGatewaySettings({
 													variant="outline"
 													onClick={() => {
 														copyTextToClipboard(
-															`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/webhooks/${selectedGateway.provider}`
+															`${getApiBaseUrl()}/webhooks/${selectedGateway.provider}`
 														);
 													}}
 												>

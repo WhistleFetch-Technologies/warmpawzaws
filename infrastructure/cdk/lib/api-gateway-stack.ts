@@ -64,44 +64,23 @@ export class ApiGatewayStack extends Construct {
     );
 
     // Create HTTP API v2 (better performance and lower cost than REST API)
+    // FIXED: When using wildcard origins, we cannot use allowCredentials
+    // For dev, use specific origins without credentials to avoid CORS issues
     const allowedOrigins = props.environment === 'prod'
       ? ['https://warmpawz.com', 'https://www.warmpawz.com', 'https://customer.warmpawz.com', 'https://vendor.warmpawz.com', 'https://admin.warmpawz.com']
-      : ['*']; // Allow all origins in dev/test for easier development
-
+      : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001', 'http://127.0.0.1:3002']; // Specific origins for dev
+    
+    // Create API without CORS preflight (CORS handled in Lambda function)
+    // This avoids CDK validation errors with allowCredentials and wildcard origins
     this.api = new apigateway.HttpApi(this, 'WarmpawzApi', {
       apiName: `warmpawz-api-${props.environment || 'dev'}`,
       description: 'Warmpawz Platform API Gateway',
-      corsPreflight: {
-        allowOrigins: allowedOrigins,
-        allowMethods: [
-          apigateway.CorsHttpMethod.GET,
-          apigateway.CorsHttpMethod.POST,
-          apigateway.CorsHttpMethod.PUT,
-          apigateway.CorsHttpMethod.DELETE,
-          apigateway.CorsHttpMethod.PATCH,
-          apigateway.CorsHttpMethod.OPTIONS,
-          apigateway.CorsHttpMethod.HEAD,
-        ],
-        allowHeaders: [
-          'Content-Type',
-          'Authorization',
-          'X-Amz-Date',
-          'X-Api-Key',
-          'X-Amz-Security-Token',
-          'X-Requested-With',
-          'X-Request-Id',
-          'X-Client-Info',
-          'X-User-Role',
-          'X-UAT-Mode',
-          'X-UAT-Token',
-        ],
-        allowCredentials: true,
-        maxAge: cdk.Duration.days(1),
-      },
+      // CORS is handled in the Lambda function to avoid CDK validation issues
     });
 
-    // Create custom domain if Route53 stack is provided
-    if (props.route53Stack && props.route53Stack.certificate) {
+    // Create custom domain if Route53 stack is provided and enabled
+    if (props.route53Stack && props.route53Stack.isCustomDomainEnabled && props.route53Stack.certificate) {
+      console.log('[ApiGatewayStack] Creating custom domain:', props.route53Stack.apiDomainName);
       this.apiDomain = new apigatewayv2.DomainName(this, 'ApiDomain', {
         domainName: props.route53Stack.apiDomainName,
         certificate: props.route53Stack.certificate,
@@ -113,6 +92,8 @@ export class ApiGatewayStack extends Construct {
         domainName: this.apiDomain,
         stage: this.api.defaultStage,
       });
+    } else {
+      console.log('[ApiGatewayStack] Custom domain not configured - using default API Gateway URL');
     }
   }
 
@@ -147,7 +128,14 @@ export class ApiGatewayStack extends Construct {
    * Called after Route53 stack is created
    */
   public addCustomDomain(route53Stack: Route53Stack): void {
+    // Only create custom domain if Route53 is properly configured
+    if (!route53Stack.isCustomDomainEnabled || !route53Stack.certificate) {
+      console.log('[ApiGatewayStack] Skipping custom domain - Route53 not fully configured');
+      return;
+    }
+    
     if (!this.apiDomain) {
+      console.log('[ApiGatewayStack] Adding custom domain:', route53Stack.apiDomainName);
       this.apiDomain = new apigatewayv2.DomainName(this, 'ApiDomain', {
         domainName: route53Stack.apiDomainName,
         certificate: route53Stack.certificate,

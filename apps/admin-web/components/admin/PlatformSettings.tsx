@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, Loader2, Globe, Shield, Bell, DollarSign, Clock, MapPin } from 'lucide-react';
+import { Settings, Save, Loader2, Globe, Shield, Bell, IndianRupee, Clock, MapPin } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 interface PlatformConfig {
@@ -147,7 +147,7 @@ export function PlatformSettings() {
 
   const tabs = [
     { id: 'general', label: 'General', icon: Globe },
-    { id: 'business', label: 'Business', icon: DollarSign },
+    { id: 'business', label: 'Business', icon: IndianRupee },
     { id: 'booking', label: 'Booking', icon: Clock },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'security', label: 'Security', icon: Shield },
@@ -165,7 +165,7 @@ export function PlatformSettings() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <div className="p-0 bg-orange-100 rounded-xl">
             <Settings className="w-6 h-6 text-orange-600" />
           </div>
@@ -177,7 +177,7 @@ export function PlatformSettings() {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-0 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
+          className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
         >
           {saving ? (
             <>
@@ -202,7 +202,7 @@ export function PlatformSettings() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-0 px-0 py-4 border-b-2 font-medium transition-colors whitespace-nowrap ${
+                  className={`flex items-center gap-3 px-0 py-4 border-b-2 font-medium transition-colors whitespace-nowrap ${
                     activeTab === tab.id
                       ? 'border-orange-600 text-orange-600'
                       : 'border-transparent text-gray-600 hover:text-gray-900'
@@ -251,7 +251,7 @@ export function PlatformSettings() {
               </div>
 
               <div>
-                <label className="flex items-center gap-0">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={config.general.maintenanceMode}
@@ -320,7 +320,7 @@ export function PlatformSettings() {
               </div>
 
               <div>
-                <label className="flex items-center gap-0">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={config.business.taxEnabled}
@@ -396,7 +396,7 @@ export function PlatformSettings() {
               </div>
 
               <div className="space-y-3">
-                <label className="flex items-center gap-0">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={config.booking.autoConfirmBookings}
@@ -405,7 +405,7 @@ export function PlatformSettings() {
                   />
                   <span className="text-sm font-medium text-gray-700">Auto-confirm Bookings</span>
                 </label>
-                <label className="flex items-center gap-0">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={config.booking.allowGuestBooking}
@@ -421,7 +421,7 @@ export function PlatformSettings() {
           {activeTab === 'notifications' && (
             <div className="space-y-4">
               <label className="flex items-center justify-between p-4 border-2 border-gray-200 rounded-lg">
-                <div className="flex items-center gap-0">
+                <div className="flex items-center gap-3">
                   <Bell className="w-5 h-5 text-gray-600" />
                   <div>
                     <p className="font-medium text-gray-900">Email Notifications</p>
@@ -437,7 +437,7 @@ export function PlatformSettings() {
               </label>
 
               <label className="flex items-center justify-between p-4 border-2 border-gray-200 rounded-lg">
-                <div className="flex items-center gap-0">
+                <div className="flex items-center gap-3">
                   <Bell className="w-5 h-5 text-gray-600" />
                   <div>
                     <p className="font-medium text-gray-900">SMS Notifications</p>
@@ -453,7 +453,7 @@ export function PlatformSettings() {
               </label>
 
               <label className="flex items-center justify-between p-4 border-2 border-gray-200 rounded-lg">
-                <div className="flex items-center gap-0">
+                <div className="flex items-center gap-3">
                   <Bell className="w-5 h-5 text-gray-600" />
                   <div>
                     <p className="font-medium text-gray-900">Push Notifications</p>
@@ -469,7 +469,7 @@ export function PlatformSettings() {
               </label>
 
               <label className="flex items-center justify-between p-4 border-2 border-gray-200 rounded-lg">
-                <div className="flex items-center gap-0">
+                <div className="flex items-center gap-3">
                   <Bell className="w-5 h-5 text-gray-600" />
                   <div>
                     <p className="font-medium text-gray-900">WhatsApp Notifications</p>
@@ -522,7 +522,7 @@ export function PlatformSettings() {
               </div>
 
               <div>
-                <label className="flex items-center gap-0">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={config.security.requireMFA}

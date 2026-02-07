@@ -7,6 +7,8 @@ import { useRouter } from 'next/navigation';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 import { AddProductModal } from '@/components/vendor/products/AddProductModal';
 import { EditProductModal } from '@/components/vendor/products/EditProductModal';
+import { BulkProductUpload } from '@/components/vendor/products/BulkProductUpload';
+import ProductVariationsEditor from '@/components/vendor/products/ProductVariationsEditor';
 
 // ============================================================================
 // TYPES
@@ -50,7 +52,10 @@ export default function ProductsPage() {
   // UI States
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [showVariationsEditor, setShowVariationsEditor] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [variationsProductId, setVariationsProductId] = useState<string | null>(null);
   
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -194,6 +199,12 @@ export default function ProductsPage() {
                 ← Back
               </button>
               <button
+                onClick={() => setShowBulkUpload(true)}
+                className="px-4 py-2 border border-orange-500 text-orange-600 rounded-lg font-medium hover:bg-orange-50 transition"
+              >
+                📤 Bulk Upload
+              </button>
+              <button
                 onClick={handleAddProduct}
                 className="px-6 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
               >
@@ -315,12 +326,22 @@ export default function ProductsPage() {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     <button
                       onClick={() => handleEditProduct(product)}
                       className="flex-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition"
                     >
                       Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        setVariationsProductId(product.id);
+                        setShowVariationsEditor(true);
+                      }}
+                      className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium hover:bg-purple-200 transition"
+                      title="Manage Variations"
+                    >
+                      Variants
                     </button>
                     <button
                       onClick={() => handleToggleStatus(product)}
@@ -377,6 +398,24 @@ export default function ProductsPage() {
         product={editingProduct}
         categories={categories}
       />
+
+      <BulkProductUpload
+        isOpen={showBulkUpload}
+        onClose={() => setShowBulkUpload(false)}
+        onSuccess={handleSuccess}
+      />
+
+      {showVariationsEditor && variationsProductId && (
+        <ProductVariationsEditor
+          productId={variationsProductId}
+          vendorId={localStorage.getItem('vendorId') || ''}
+          onClose={() => {
+            setShowVariationsEditor(false);
+            setVariationsProductId(null);
+          }}
+          onSave={() => loadData()}
+        />
+      )}
     </div>
   );
 }

@@ -22,41 +22,22 @@ echo -e "${CYAN}║   DEPLOY CUSTOMER WEB TO AWS SERVERLESS DEV              ║
 echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 
-# Configuration
+# Configuration - ONLY official CloudFront URLs (do not create or discover new URLs)
+# Official Customer: https://d2aoyjj8ine0wk.cloudfront.net
 REGION="ap-south-1"
 ENVIRONMENT="dev"
+CLOUDFRONT_DIST_ID="E2RDORGXSWJJ87"
+CLOUDFRONT_URL="https://d2aoyjj8ine0wk.cloudfront.net"
+S3_BUCKET="warmpawz-dev-customer-frontend-ap-south-1"
 
-# Try to detect S3 bucket name
-S3_BUCKET=""
-CLOUDFRONT_ID=""
-
-# Check for existing bucket
-echo -e "${BLUE}🔍 Detecting AWS Resources...${NC}"
-BUCKETS=$(aws s3 ls --region $REGION 2>/dev/null | grep -iE "customer|warmpawz|web" | awk '{print $3}' | head -1)
-if [ -n "$BUCKETS" ]; then
-  S3_BUCKET="$BUCKETS"
-  echo -e "   Found bucket: ${GREEN}$S3_BUCKET${NC}"
+# Verify bucket exists
+echo -e "${BLUE}🔍 Verifying S3 bucket...${NC}"
+if aws s3 ls "s3://${S3_BUCKET}" --region $REGION >/dev/null 2>&1; then
+  echo -e "   Bucket: ${GREEN}$S3_BUCKET${NC}"
 else
-  # Try common naming patterns
-  POTENTIAL_BUCKETS=(
-    "warmpawz-customer-web-dev"
-    "warmpawz-customer-web-$ENVIRONMENT"
-    "warmpawz-dev-customer-web"
-    "customer-web-$ENVIRONMENT"
-  )
-  
-  for bucket in "${POTENTIAL_BUCKETS[@]}"; do
-    if aws s3 ls "s3://$bucket" --region $REGION >/dev/null 2>&1; then
-      S3_BUCKET="$bucket"
-      echo -e "   Found bucket: ${GREEN}$S3_BUCKET${NC}"
-      break
-    fi
-  done
-fi
-
-if [ -z "$S3_BUCKET" ]; then
-  echo -e "${YELLOW}⚠️  S3 bucket not found. Please provide bucket name:${NC}"
-  read -p "   S3 Bucket Name: " S3_BUCKET
+  echo -e "${YELLOW}⚠️  Bucket ${S3_BUCKET} not found or no access.${NC}"
+  read -p "   S3 Bucket Name [${S3_BUCKET}]: " INPUT_BUCKET
+  [ -n "$INPUT_BUCKET" ] && S3_BUCKET="$INPUT_BUCKET"
 fi
 
 # Step 1: Test Backend Build
@@ -155,34 +136,20 @@ fi
 
 # Step 5: Invalidate CloudFront (if distribution exists)
 echo ""
-echo -e "${BLUE}🔄 Step 5: Invalidating CloudFront Cache${NC}"
+echo -e "${BLUE}🔄 Step 5: Invalidating CloudFront Cache (official Customer URL only)${NC}"
 echo "────────────────────────────────────────────────────────────"
 
-# Try to find CloudFront distribution
-DISTRIBUTIONS=$(aws cloudfront list-distributions --region $REGION --query "DistributionList.Items[?contains(Origins.Items[0].DomainName, '$S3_BUCKET')].Id" --output text 2>/dev/null || echo "")
+INVALIDATION_ID=$(aws cloudfront create-invalidation \
+  --distribution-id "$CLOUDFRONT_DIST_ID" \
+  --paths "/*" \
+  --query "Invalidation.Id" \
+  --output text 2>/dev/null || echo "")
 
-if [ -z "$DISTRIBUTIONS" ]; then
-  # Try alternative method
-  DISTRIBUTIONS=$(aws cloudfront list-distributions --query "DistributionList.Items[?Comment && contains(Comment, 'customer') || contains(Comment, 'Customer')].Id" --output text 2>/dev/null || echo "")
-fi
-
-if [ -n "$DISTRIBUTIONS" ]; then
-  DIST_ID=$(echo $DISTRIBUTIONS | awk '{print $1}')
-  echo "   Found CloudFront distribution: $DIST_ID"
-  
-  INVALIDATION_ID=$(aws cloudfront create-invalidation \
-    --distribution-id "$DIST_ID" \
-    --paths "/*" \
-    --query "Invalidation.Id" \
-    --output text 2>/dev/null || echo "")
-  
-  if [ -n "$INVALIDATION_ID" ]; then
-    echo -e "${GREEN}✅ CloudFront cache invalidation created: $INVALIDATION_ID${NC}"
-  else
-    echo -e "${YELLOW}⚠️  Could not create CloudFront invalidation${NC}"
-  fi
+if [ -n "$INVALIDATION_ID" ]; then
+  echo -e "${GREEN}✅ CloudFront cache invalidation created: $INVALIDATION_ID${NC}"
+  echo -e "   URL: ${CLOUDFRONT_URL}"
 else
-  echo -e "${YELLOW}⚠️  CloudFront distribution not found. Skipping cache invalidation.${NC}"
+  echo -e "${YELLOW}⚠️  Could not create CloudFront invalidation${NC}"
 fi
 
 # Step 6: Summary
@@ -198,8 +165,6 @@ echo -e "${GREEN}✅ CloudFront invalidation: ${INVALIDATION_ID:-Skipped}${NC}"
 echo ""
 echo -e "📦 S3 Bucket: ${BLUE}$S3_BUCKET${NC}"
 echo -e "🌐 Region: ${BLUE}$REGION${NC}"
-if [ -n "$DIST_ID" ]; then
-  echo -e "☁️  CloudFront: ${BLUE}$DIST_ID${NC}"
-fi
+echo -e "☁️  CloudFront: ${BLUE}${CLOUDFRONT_URL}${NC} (official)"
 echo ""
 echo -e "${GREEN}✅ Deployment complete!${NC}"

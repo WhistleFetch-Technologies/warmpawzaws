@@ -416,8 +416,8 @@ async function seedBookings() {
           serviceTypeValue = 'at_vendor';
         } else if (constraintDef.includes("'at_home'")) {
           serviceTypeValue = 'at_home';
-        } else if (constraintDef.includes("'online'")) {
-          serviceTypeValue = 'online';
+        } else if (constraintDef.includes("'tele'")) {
+          serviceTypeValue = 'tele';
         } else if (constraintDef.includes("'at_center'")) {
           serviceTypeValue = 'at_center';
         }

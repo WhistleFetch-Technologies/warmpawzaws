@@ -89,12 +89,12 @@ export function SoloProviderOnboarding({ roleId, onBack, onSuccess }: SoloProvid
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10 px-4 py-4">
         {onBack && (
-          <button onClick={onBack} className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-0">
+          <button onClick={onBack} className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-3">
             <ArrowLeft className="w-4 h-4" />
             Back
           </button>
         )}
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <div className="p-0 bg-orange-100 rounded-lg">
             <User className="w-6 h-6 text-orange-600" />
           </div>
@@ -171,7 +171,7 @@ export function SoloProviderOnboarding({ roleId, onBack, onSuccess }: SoloProvid
         <button
           onClick={handleSubmit}
           disabled={loading}
-          className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
+          className="w-full py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50"
         >
           {loading ? (
             <>

@@ -3,7 +3,7 @@ import { Package, Plus, Edit, Trash2, TrendingUp, Clock, CheckCircle, XCircle, A
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { Card } from '../../ui/card';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface PackageItem {
   id: string;
@@ -43,9 +43,9 @@ export function PackageList({
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/packages`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/packages`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -65,10 +65,10 @@ export function PackageList({
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/packages/${packageId}`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/packages/${packageId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

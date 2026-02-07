@@ -18,6 +18,8 @@
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { select, insert, update, query, deleteRows } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // GET DISTANCE PRICING RULES

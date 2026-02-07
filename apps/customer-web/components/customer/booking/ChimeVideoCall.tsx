@@ -1,0 +1,1296 @@
+'use client';
+
+/**
+ * ============================================================================
+ * AWS CHIME VIDEO CALL COMPONENT - PRODUCTION IMPLEMENTATION
+ * ============================================================================
+ * 
+ * Full-featured video consultation using AWS Chime SDK for JavaScript
+ * 
+ * Features:
+ * - HD video calling with echo cancellation
+ * - Real-time chat during call using Chime Data Messages
+ * - Screen sharing support
+ * - Call duration tracking
+ * - Waiting room with status updates
+ * - Responsive design matching Warmpawz theme
+ * - Typing indicators
+ * - Unread message badges
+ * - Message persistence to backend
+ * 
+ * Date: 2026-01-20
+ * Updated: 2026-01-27 - Replaced CDN loading with npm package imports
+ * Updated: 2026-01-27 - Added real-time chat via Chime Data Messages
+ * ============================================================================
+ */
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { 
+  Video, VideoOff, Phone, PhoneOff, Mic, MicOff, 
+  MessageSquare, Settings, Maximize2, Minimize2,
+  RotateCcw, User, Clock, Send, X, AlertCircle,
+  Monitor, MonitorOff, Loader2, Users, Check, Circle
+} from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+
+// Chat data message topics
+const CHAT_TOPIC = 'chat-message';
+const TYPING_TOPIC = 'typing-indicator';
+
+// Message lifetime in milliseconds (messages expire after this time in Chime)
+const MESSAGE_LIFETIME_MS = 300000; // 5 minutes
+
+// Chime SDK types for meeting data
+interface ChimeMeetingData {
+  MeetingId: string;
+  MediaPlacement: {
+    AudioHostUrl: string;
+    AudioFallbackUrl: string;
+    SignalingUrl: string;
+    TurnControlUrl: string;
+    ScreenDataUrl?: string;
+    ScreenViewingUrl?: string;
+    ScreenSharingUrl?: string;
+    EventIngestionUrl?: string;
+  };
+  MediaRegion: string;
+}
+
+interface ChimeAttendeeData {
+  AttendeeId: string;
+  JoinToken: string;
+  ExternalUserId?: string;
+}
+
+interface ChimeVideoCallProps {
+  bookingId: string;
+  participantType: 'customer' | 'vendor' | 'staff';
+  participantId: string;
+  vendorName?: string;
+  customerName?: string;
+  serviceName?: string;
+  onEndCall?: (duration: number) => void;
+  onPrescriptionUpload?: () => void;
+}
+
+type CallStatus = 'loading' | 'ready' | 'waiting' | 'connecting' | 'active' | 'reconnecting' | 'ended' | 'error';
+
+interface ChatMessage {
+  id: string;
+  sender: 'customer' | 'vendor' | 'system';
+  senderName: string;
+  message: string;
+  timestamp: Date;
+  persisted?: boolean; // Whether this message has been saved to backend
+}
+
+// Data message payload structure
+interface ChatDataMessage {
+  type: 'message';
+  id: string;
+  sender: 'customer' | 'vendor';
+  senderName: string;
+  message: string;
+  timestamp: string;
+}
+
+interface TypingDataMessage {
+  type: 'typing';
+  sender: 'customer' | 'vendor';
+  senderName: string;
+  isTyping: boolean;
+}
+
+interface AttendeeStatus {
+  customerJoined: boolean;
+  vendorJoined: boolean;
+}
+
+export function ChimeVideoCall({ 
+  bookingId, 
+  participantType,
+  participantId,
+  vendorName = 'Doctor',
+  customerName = 'Customer',
+  serviceName = 'Tele Consultation',
+  onEndCall,
+  onPrescriptionUpload
+}: ChimeVideoCallProps) {
+  // Call state
+  const [status, setStatus] = useState<CallStatus>('loading');
+  const [error, setError] = useState<string | null>(null);
+  const [callDuration, setCallDuration] = useState(0);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+  
+  // Media controls
+  const [isMuted, setIsMuted] = useState(false);
+  const [isVideoOff, setIsVideoOff] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  
+  // Chat
+  const [showChat, setShowChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [otherTypingName, setOtherTypingName] = useState('');
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastTypingSentRef = useRef<number>(0);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  
+  // Attendee status
+  const [attendeeStatus, setAttendeeStatus] = useState<AttendeeStatus>({
+    customerJoined: false,
+    vendorJoined: false,
+  });
+  
+  // Meeting data
+  const [meetingData, setMeetingData] = useState<any>(null);
+  const [attendeeData, setAttendeeData] = useState<any>(null);
+  
+  // Refs for Chime SDK objects
+  const meetingSessionRef = useRef<any>(null);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const audioElementRef = useRef<HTMLAudioElement>(null);
+  const callTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const statusPollerRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectingToastShownRef = useRef(false);
+  const hasAutoJoinedRef = useRef(false);
+
+  // Auto-join when SDK is ready (e.g. customer accepted call or opened video from booking)
+  useEffect(() => {
+    if (status !== 'ready' || !bookingId || !participantId || hasAutoJoinedRef.current) return;
+    hasAutoJoinedRef.current = true;
+    joinMeeting();
+  }, [status, bookingId, participantId]);
+
+  // Show toast when entering reconnecting state (once per reconnection cycle)
+  useEffect(() => {
+    if (status === 'reconnecting') {
+      if (!reconnectingToastShownRef.current) {
+        reconnectingToastShownRef.current = true;
+        toast.info('Reconnecting...');
+      }
+    } else {
+      reconnectingToastShownRef.current = false;
+    }
+  }, [status]);
+
+  // ============================================================================
+  // INITIALIZATION
+  // ============================================================================
+
+  useEffect(() => {
+    loadChimeSDK();
+    return () => {
+      cleanup();
+    };
+  }, []);
+
+  // Store the loaded Chime SDK module
+  const chimeSDKRef = useRef<any>(null);
+
+  const loadChimeSDK = async (retryCount = 0) => {
+    const MAX_RETRIES = 2;
+    
+    try {
+      // Check if SDK is already loaded
+      if (chimeSDKRef.current) {
+        setStatus('ready');
+        return;
+      }
+
+      // Dynamically import AWS Chime SDK from npm package
+      // This is the recommended approach instead of CDN loading
+      const ChimeSDK = await import('amazon-chime-sdk-js');
+      
+      if (!ChimeSDK || !ChimeSDK.DefaultMeetingSession) {
+        throw new Error('Chime SDK modules not available');
+      }
+
+      chimeSDKRef.current = ChimeSDK;
+      setStatus('ready');
+      console.log('✅ AWS Chime SDK loaded successfully from npm package');
+      
+    } catch (err: any) {
+      console.error('Error loading Chime SDK:', err);
+      
+      // Retry on failure
+      if (retryCount < MAX_RETRIES) {
+        console.log(`Retrying SDK load (attempt ${retryCount + 2}/${MAX_RETRIES + 1})...`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return loadChimeSDK(retryCount + 1);
+      }
+      
+      const msg = `Failed to load video call SDK. Please check your internet connection and try again.`;
+      setError(msg);
+      setStatus('error');
+      toast.error(msg);
+    }
+  };
+
+  const cleanup = () => {
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+    }
+    if (statusPollerRef.current) {
+      clearInterval(statusPollerRef.current);
+    }
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    if (meetingSessionRef.current) {
+      try {
+        meetingSessionRef.current.audioVideo.stop();
+      } catch (e) {
+        console.warn('Error stopping meeting session:', e);
+      }
+    }
+  };
+
+  // ============================================================================
+  // MEETING FUNCTIONS
+  // ============================================================================
+
+  const joinMeeting = async (retryCount = 0) => {
+    const MAX_RETRIES = 2;
+    
+    try {
+      setStatus('connecting');
+      setError(null);
+
+      // Request meeting credentials from backend
+      const response = await apiClient.post<{
+        success: boolean;
+        meeting: ChimeMeetingData;
+        attendee: ChimeAttendeeData;
+        meetingId: string;
+        error?: string;
+        session?: { id: string; status: string };
+      }>('/video-call/join', {
+        bookingId,
+        participantId,
+        participantType,
+      });
+
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to get meeting credentials');
+      }
+
+      if (!response.meeting || !response.attendee) {
+        throw new Error('Invalid response: missing meeting or attendee data');
+      }
+
+      // Validate MediaPlacement is present (required for Chime SDK)
+      if (!response.meeting.MediaPlacement) {
+        throw new Error('Invalid meeting data: MediaPlacement is missing. The meeting may have expired.');
+      }
+
+      if (!response.meeting.MediaPlacement.AudioHostUrl || !response.meeting.MediaPlacement.SignalingUrl) {
+        throw new Error('Invalid meeting data: MediaPlacement is incomplete');
+      }
+
+      // Validate attendee data
+      if (!response.attendee.AttendeeId || !response.attendee.JoinToken) {
+        throw new Error('Invalid attendee data: AttendeeId or JoinToken is missing');
+      }
+
+      setMeetingData(response.meeting);
+      setAttendeeData(response.attendee);
+
+      // Initialize Chime meeting session
+      await initializeChimeMeeting(response.meeting, response.attendee);
+
+      // Start polling for attendee status
+      startStatusPolling();
+
+      // Add system message
+      addChatMessage('system', 'System', 'Connected to video call');
+
+    } catch (err: any) {
+      console.error('Error joining meeting:', err);
+      
+      // Retry on network errors
+      if (retryCount < MAX_RETRIES && (err.code === 'network' || err.message?.includes('fetch'))) {
+        console.log(`Retrying join (attempt ${retryCount + 2}/${MAX_RETRIES + 1})...`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+        return joinMeeting(retryCount + 1);
+      }
+      
+      // Provide user-friendly error messages (API returns error in body; ApiError has message + statusCode)
+      const status = err.status ?? err.statusCode;
+      let errorMessage = err.response?.error || err.responseData?.error || err.message || 'Failed to join video call';
+      if (status === 404) {
+        errorMessage = 'Meeting not found. Please ask the other participant to start the call first.';
+      } else if (status === 400) {
+        errorMessage = err.response?.error || err.responseData?.error || err.message || 'Unable to join this meeting. It may not be scheduled yet.';
+      } else if (err.code === 'network' || err.code === 'offline') {
+        errorMessage = 'Network error. Please check your internet connection and try again.';
+      }
+      
+      setError(errorMessage);
+      setStatus('error');
+      toast.error(errorMessage);
+    }
+  };
+
+  const initializeChimeMeeting = async (meeting: ChimeMeetingData, attendee: ChimeAttendeeData) => {
+    try {
+      const ChimeSDK = chimeSDKRef.current;
+      
+      if (!ChimeSDK) {
+        throw new Error('Chime SDK not loaded. Please refresh and try again.');
+      }
+
+      const {
+        DefaultMeetingSession,
+        MeetingSessionConfiguration,
+        ConsoleLogger,
+        LogLevel,
+        DefaultDeviceController,
+      } = ChimeSDK;
+
+      // Validate meeting data has required MediaPlacement
+      if (!meeting.MediaPlacement || !meeting.MediaPlacement.AudioHostUrl) {
+        throw new Error('Invalid meeting data: MediaPlacement is missing or incomplete');
+      }
+
+      // Create meeting session configuration with PROPER structure
+      // MeetingSessionConfiguration expects:
+      // - meeting: { MeetingId, MediaPlacement, MediaRegion }
+      // - attendee: { AttendeeId, JoinToken }
+      const configuration = new MeetingSessionConfiguration(
+        {
+          MeetingId: meeting.MeetingId,
+          MediaPlacement: meeting.MediaPlacement,
+          MediaRegion: meeting.MediaRegion,
+        },
+        {
+          AttendeeId: attendee.AttendeeId,
+          JoinToken: attendee.JoinToken,
+        }
+      );
+
+      // Create logger
+      const logger = new ConsoleLogger('ChimeVideoCall', LogLevel.WARN);
+
+      // Create device controller
+      const deviceController = new DefaultDeviceController(logger);
+
+      // Create meeting session
+      const meetingSession = new DefaultMeetingSession(
+        configuration,
+        logger,
+        deviceController
+      );
+
+      meetingSessionRef.current = meetingSession;
+
+      // Set up audio and video
+      await setupMediaDevices(meetingSession);
+
+      // Set up event observers
+      setupObservers(meetingSession);
+
+      // Bind audio element for remote audio BEFORE starting
+      if (audioElementRef.current) {
+        meetingSession.audioVideo.bindAudioElement(audioElementRef.current);
+      }
+
+      // Start the meeting
+      meetingSession.audioVideo.start();
+
+      setStatus('waiting');
+      console.log('✅ Chime meeting initialized successfully');
+
+    } catch (err: any) {
+      console.error('Error initializing Chime meeting:', err);
+      throw new Error('Failed to initialize video call: ' + (err.message || 'Unknown error'));
+    }
+  };
+
+  const setupMediaDevices = async (meetingSession: any) => {
+    try {
+      // Get available devices
+      const audioInputDevices = await meetingSession.audioVideo.listAudioInputDevices();
+      const videoInputDevices = await meetingSession.audioVideo.listVideoInputDevices();
+      const audioOutputDevices = await meetingSession.audioVideo.listAudioOutputDevices();
+
+      // Select first available devices
+      if (audioInputDevices.length > 0) {
+        await meetingSession.audioVideo.startAudioInput(audioInputDevices[0].deviceId);
+      }
+
+      if (audioOutputDevices.length > 0) {
+        await meetingSession.audioVideo.chooseAudioOutput(audioOutputDevices[0].deviceId);
+      }
+
+      if (videoInputDevices.length > 0) {
+        await meetingSession.audioVideo.startVideoInput(videoInputDevices[0].deviceId);
+      }
+
+    } catch (err) {
+      console.error('Error setting up media devices:', err);
+      toast.error('Camera or microphone access denied');
+    }
+  };
+
+  const setupObservers = (meetingSession: any) => {
+    const audioVideo = meetingSession.audioVideo;
+
+    // Audio video observer
+    const observer = {
+      audioVideoDidStart: () => {
+        console.log('Audio/Video started');
+        // Start local video tile
+        audioVideo.startLocalVideoTile();
+      },
+      audioVideoDidStop: (sessionStatus: any) => {
+        console.log('Audio/Video stopped:', sessionStatus.statusCode());
+        if (status !== 'ended') {
+          setStatus('ended');
+        }
+      },
+      audioVideoDidStartConnecting: (reconnecting: boolean) => {
+        if (reconnecting) {
+          setStatus('reconnecting');
+        }
+      },
+      videoTileDidUpdate: (tileState: any) => {
+        if (tileState.localTile) {
+          // Bind local video
+          if (localVideoRef.current) {
+            audioVideo.bindVideoElement(tileState.tileId, localVideoRef.current);
+          }
+        } else {
+          // Bind remote video
+          if (remoteVideoRef.current) {
+            audioVideo.bindVideoElement(tileState.tileId, remoteVideoRef.current);
+          }
+          // Remote participant joined
+          setStatus('active');
+          startCallTimer();
+          
+          if (participantType === 'customer') {
+            setAttendeeStatus(prev => ({ ...prev, vendorJoined: true }));
+          } else {
+            setAttendeeStatus(prev => ({ ...prev, customerJoined: true }));
+          }
+        }
+      },
+      videoTileWasRemoved: (tileId: number) => {
+        console.log('Video tile removed:', tileId);
+      },
+    };
+
+    audioVideo.addObserver(observer);
+
+    // Attendee presence observer
+    const attendeeObserver = {
+      attendeeIdDidJoin: (attendeeId: string) => {
+        console.log('Attendee joined:', attendeeId);
+        addChatMessage('system', 'System', `${participantType === 'customer' ? vendorName : customerName} joined the call`);
+      },
+      attendeeIdDidLeave: (attendeeId: string) => {
+        console.log('Attendee left:', attendeeId);
+        addChatMessage('system', 'System', `${participantType === 'customer' ? vendorName : customerName} left the call`);
+      },
+    };
+
+    audioVideo.realtimeSubscribeToAttendeeIdPresence(attendeeObserver.attendeeIdDidJoin);
+
+    // =========================================================================
+    // REAL-TIME CHAT VIA DATA MESSAGES
+    // =========================================================================
+    
+    // Subscribe to chat messages
+    audioVideo.realtimeSubscribeToReceiveDataMessage((dataMessage: any) => {
+      try {
+        const topic = dataMessage.topic;
+        const data = JSON.parse(new TextDecoder().decode(dataMessage.data));
+        
+        if (topic === CHAT_TOPIC) {
+          handleReceivedChatMessage(data as ChatDataMessage);
+        } else if (topic === TYPING_TOPIC) {
+          handleReceivedTypingIndicator(data as TypingDataMessage);
+        }
+      } catch (err) {
+        console.error('Error processing data message:', err);
+      }
+    });
+  };
+
+  // Handle received chat message from other participant
+  const handleReceivedChatMessage = (data: ChatDataMessage) => {
+    // Don't add our own messages (they're already added locally)
+    if (data.sender === participantType) return;
+    
+    const newMsg: ChatMessage = {
+      id: data.id,
+      sender: data.sender,
+      senderName: data.senderName,
+      message: data.message,
+      timestamp: new Date(data.timestamp),
+    };
+    
+    setChatMessages(prev => {
+      // Avoid duplicate messages
+      if (prev.some(m => m.id === data.id)) return prev;
+      return [...prev, newMsg];
+    });
+    
+    // Increment unread count if chat panel is hidden
+    if (!showChat) {
+      setUnreadCount(prev => prev + 1);
+    }
+    
+    // Clear typing indicator when message received
+    setIsOtherTyping(false);
+    
+    // Play notification sound (optional)
+    playNotificationSound();
+  };
+
+  // Handle received typing indicator
+  const handleReceivedTypingIndicator = (data: TypingDataMessage) => {
+    // Don't show our own typing indicator
+    if (data.sender === participantType) return;
+    
+    setIsOtherTyping(data.isTyping);
+    setOtherTypingName(data.senderName);
+    
+    // Auto-clear typing indicator after 3 seconds
+    if (data.isTyping) {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      typingTimeoutRef.current = setTimeout(() => {
+        setIsOtherTyping(false);
+      }, 3000);
+    }
+  };
+
+  // Play notification sound for new message
+  const playNotificationSound = () => {
+    try {
+      const audio = new Audio('/sounds/notification.mp3');
+      audio.volume = 0.3;
+      audio.play().catch(() => {}); // Ignore if sound can't play
+    } catch (e) {
+      // Ignore sound errors
+    }
+  };
+
+  const startStatusPolling = () => {
+    if (statusPollerRef.current) {
+      clearInterval(statusPollerRef.current);
+    }
+
+    statusPollerRef.current = setInterval(async () => {
+      try {
+        const response = await apiClient.get<any>(`/video-call/${bookingId}/attendees`);
+        if (response.success) {
+          setAttendeeStatus({
+            customerJoined: response.customerJoined,
+            vendorJoined: response.vendorJoined,
+          });
+
+          if (response.customerJoined && response.vendorJoined && status === 'waiting') {
+            setStatus('active');
+            startCallTimer();
+          }
+        }
+      } catch (e) {
+        // Silent fail for polling
+      }
+    }, 5000);
+  };
+
+  const startCallTimer = () => {
+    if (callTimerRef.current) return;
+
+    callTimerRef.current = setInterval(() => {
+      setCallDuration(prev => prev + 1);
+    }, 1000);
+  };
+
+  const endCall = async () => {
+    try {
+      // Stop local media
+      if (meetingSessionRef.current) {
+        meetingSessionRef.current.audioVideo.stopLocalVideoTile();
+        meetingSessionRef.current.audioVideo.stop();
+      }
+
+      // Clear timers
+      if (callTimerRef.current) {
+        clearInterval(callTimerRef.current);
+        callTimerRef.current = null;
+      }
+      if (statusPollerRef.current) {
+        clearInterval(statusPollerRef.current);
+        statusPollerRef.current = null;
+      }
+
+      // Notify backend
+      await apiClient.post(`/video-call/${bookingId}/end`, {
+        duration: callDuration,
+        participantType,
+      });
+
+      setStatus('ended');
+      
+      if (onEndCall) {
+        onEndCall(callDuration);
+      }
+    } catch (err) {
+      console.error('Error ending call:', err);
+      setStatus('ended');
+    }
+  };
+
+  // ============================================================================
+  // MEDIA CONTROLS
+  // ============================================================================
+
+  const toggleMute = () => {
+    if (meetingSessionRef.current) {
+      const audioVideo = meetingSessionRef.current.audioVideo;
+      if (isMuted) {
+        audioVideo.realtimeUnmuteLocalAudio();
+      } else {
+        audioVideo.realtimeMuteLocalAudio();
+      }
+      setIsMuted(!isMuted);
+    }
+  };
+
+  const toggleVideo = () => {
+    if (meetingSessionRef.current) {
+      const audioVideo = meetingSessionRef.current.audioVideo;
+      if (isVideoOff) {
+        audioVideo.startLocalVideoTile();
+      } else {
+        audioVideo.stopLocalVideoTile();
+      }
+      setIsVideoOff(!isVideoOff);
+    }
+  };
+
+  const toggleScreenShare = async () => {
+    if (meetingSessionRef.current) {
+      const audioVideo = meetingSessionRef.current.audioVideo;
+      try {
+        if (isScreenSharing) {
+          await audioVideo.stopContentShare();
+        } else {
+          await audioVideo.startContentShareFromScreenCapture();
+        }
+        setIsScreenSharing(!isScreenSharing);
+      } catch (err) {
+        console.error('Screen share error:', err);
+        toast.error('Failed to share screen');
+      }
+    }
+  };
+
+  // ============================================================================
+  // CHAT
+  // ============================================================================
+
+  const addChatMessage = (sender: 'customer' | 'vendor' | 'system', senderName: string, message: string, id?: string) => {
+    const newMsg: ChatMessage = {
+      id: id || Date.now().toString(),
+      sender,
+      senderName,
+      message,
+      timestamp: new Date(),
+    };
+    
+    setChatMessages(prev => [...prev, newMsg]);
+    
+    // Auto-scroll to latest message
+    setTimeout(() => {
+      if (chatScrollRef.current) {
+        chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+      }
+    }, 100);
+    
+    return newMsg;
+  };
+
+  const sendMessage = async () => {
+    if (!newMessage.trim()) return;
+    if (!meetingSessionRef.current) return;
+
+    const senderName = participantType === 'customer' ? customerName : vendorName;
+    const messageId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const messageText = newMessage.trim();
+    const timestamp = new Date();
+    
+    // Add message locally first (optimistic update)
+    addChatMessage(participantType as 'customer' | 'vendor', senderName, messageText, messageId);
+    setNewMessage('');
+    
+    // Send via Chime Data Messages for real-time delivery
+    try {
+      const audioVideo = meetingSessionRef.current.audioVideo;
+      
+      const chatData: ChatDataMessage = {
+        type: 'message',
+        id: messageId,
+        sender: participantType as 'customer' | 'vendor',
+        senderName,
+        message: messageText,
+        timestamp: timestamp.toISOString(),
+      };
+      
+      const payload = new TextEncoder().encode(JSON.stringify(chatData));
+      audioVideo.realtimeSendDataMessage(CHAT_TOPIC, payload, MESSAGE_LIFETIME_MS);
+      
+      console.log('📤 Chat message sent via Chime data channel');
+    } catch (err) {
+      console.error('Error sending chat message via Chime:', err);
+      toast.error('Failed to send message');
+    }
+    
+    // Persist message to backend for records
+    persistMessageToBackend(messageId, messageText, senderName, timestamp);
+  };
+
+  // Persist message to backend (fire and forget)
+  const persistMessageToBackend = async (
+    messageId: string,
+    message: string,
+    senderName: string,
+    timestamp: Date
+  ) => {
+    try {
+      await apiClient.post(`/chat/${bookingId}/send`, {
+        message,
+        senderType: participantType,
+        senderId: participantId,
+        senderName,
+        timestamp: timestamp.toISOString(),
+      });
+      
+      // Mark message as persisted
+      setChatMessages(prev => 
+        prev.map(msg => 
+          msg.id === messageId ? { ...msg, persisted: true } : msg
+        )
+      );
+    } catch (err) {
+      console.error('Error persisting message to backend:', err);
+      // Don't show error to user - message was still sent via Chime
+    }
+  };
+
+  // Send typing indicator
+  const sendTypingIndicator = (isTyping: boolean) => {
+    if (!meetingSessionRef.current) return;
+    
+    // Throttle typing indicators to once per second
+    const now = Date.now();
+    if (isTyping && now - lastTypingSentRef.current < 1000) return;
+    lastTypingSentRef.current = now;
+    
+    try {
+      const audioVideo = meetingSessionRef.current.audioVideo;
+      const senderName = participantType === 'customer' ? customerName : vendorName;
+      
+      const typingData: TypingDataMessage = {
+        type: 'typing',
+        sender: participantType as 'customer' | 'vendor',
+        senderName,
+        isTyping,
+      };
+      
+      const payload = new TextEncoder().encode(JSON.stringify(typingData));
+      audioVideo.realtimeSendDataMessage(TYPING_TOPIC, payload, 3000); // Short lifetime for typing indicators
+    } catch (err) {
+      // Ignore typing indicator errors
+    }
+  };
+
+  // Handle input change with typing indicator
+  const handleMessageInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setNewMessage(value);
+    
+    // Send typing indicator when user starts typing
+    if (value.length > 0) {
+      sendTypingIndicator(true);
+    }
+  };
+
+  // Clear typing indicator when user stops typing
+  useEffect(() => {
+    if (newMessage.length === 0) {
+      sendTypingIndicator(false);
+    }
+  }, [newMessage]);
+
+  // Clear unread count when chat is opened
+  useEffect(() => {
+    if (showChat) {
+      setUnreadCount(0);
+    }
+  }, [showChat]);
+
+  // ============================================================================
+  // UTILITIES
+  // ============================================================================
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const toggleFullScreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+      setIsFullScreen(true);
+    } else {
+      document.exitFullscreen();
+      setIsFullScreen(false);
+    }
+  };
+
+  const otherParticipantName = participantType === 'customer' ? vendorName : customerName;
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
+  // Loading state
+  if (status === 'loading') {
+    return (
+      <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-8 shadow-xl min-h-[400px] flex flex-col items-center justify-center">
+        <Loader2 className="w-12 h-12 animate-spin text-[#FF8C42] mb-4" />
+        <h3 className="text-lg font-semibold text-white mb-2">Loading Video Call</h3>
+        <p className="text-slate-400 text-sm">Initializing secure connection...</p>
+      </div>
+    );
+  }
+
+  // Error state
+  if (status === 'error') {
+    return (
+      <div className="bg-white rounded-2xl p-8 shadow-lg border border-gray-100">
+        <div className="text-center py-6">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <AlertCircle className="w-8 h-8 text-red-500" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Connection Error</h3>
+          <p className="text-gray-600 mb-6">{error || 'Failed to connect to video call'}</p>
+          <div className="flex gap-3 justify-center">
+            <Button variant="outline" onClick={() => onEndCall?.(0)}>
+              Go Back
+            </Button>
+            <Button 
+              onClick={() => {
+                setStatus('ready');
+                setError(null);
+              }}
+              className="bg-[#FF8C42] hover:bg-[#FF7A2E]"
+            >
+              <RotateCcw className="w-4 h-4 mr-2" />
+              Try Again
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Ready state - Join button
+  if (status === 'ready') {
+    return (
+      <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-8 shadow-xl">
+        <div className="text-center">
+          <div className="w-24 h-24 bg-gradient-to-br from-[#FF8C42] to-[#FF6B1A] rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-[#FF8C42]/30">
+            <Video className="w-12 h-12 text-white" />
+          </div>
+          <h2 className="text-2xl font-bold text-white mb-2">Ready to Join</h2>
+          <p className="text-slate-400 mb-6">{serviceName} with {otherParticipantName}</p>
+          
+          <Button
+            onClick={() => joinMeeting()}
+            className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-8 py-6 rounded-xl font-semibold text-lg shadow-lg shadow-green-500/30"
+          >
+            <Phone className="w-5 h-5 mr-2" />
+            Join Video Call
+          </Button>
+          
+          <p className="text-slate-500 text-xs mt-6">
+            Camera and microphone access will be requested
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Connecting state
+  if (status === 'connecting') {
+    return (
+      <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-8 shadow-xl min-h-[400px] flex flex-col items-center justify-center">
+        <div className="relative mb-6">
+          <div className="w-20 h-20 border-4 border-[#FF8C42]/30 rounded-full"></div>
+          <div className="absolute inset-0 w-20 h-20 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin"></div>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Video className="w-8 h-8 text-[#FF8C42]" />
+          </div>
+        </div>
+        <h3 className="text-lg font-semibold text-white mb-2">Connecting...</h3>
+        <p className="text-slate-400 text-sm">Setting up your video call with {otherParticipantName}</p>
+      </div>
+    );
+  }
+
+  // Waiting state
+  if (status === 'waiting') {
+    return (
+      <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-8 shadow-xl">
+        <div className="text-center mb-8">
+          <div className="w-20 h-20 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Users className="w-10 h-10 text-blue-400" />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Waiting for {otherParticipantName}</h2>
+          <p className="text-slate-400">They will join shortly...</p>
+        </div>
+
+        {/* Local video preview */}
+        <div className="aspect-video bg-slate-800 rounded-xl overflow-hidden mb-6 relative">
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover scale-x-[-1]"
+          />
+          {isVideoOff && (
+            <div className="absolute inset-0 bg-slate-800 flex items-center justify-center">
+              <VideoOff className="w-12 h-12 text-slate-500" />
+            </div>
+          )}
+          <div className="absolute bottom-4 left-4 bg-black/50 px-3 py-1 rounded-full text-white text-sm">
+            You
+          </div>
+        </div>
+
+        {/* Controls */}
+        <div className="flex justify-center gap-4">
+          <button
+            onClick={toggleVideo}
+            className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${
+              isVideoOff ? 'bg-red-500 text-white' : 'bg-slate-700 text-white hover:bg-slate-600'
+            }`}
+          >
+            {isVideoOff ? <VideoOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
+          </button>
+          <button
+            onClick={toggleMute}
+            className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${
+              isMuted ? 'bg-red-500 text-white' : 'bg-slate-700 text-white hover:bg-slate-600'
+            }`}
+          >
+            {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+          </button>
+          <button
+            onClick={endCall}
+            className="w-14 h-14 rounded-2xl bg-red-500 hover:bg-red-600 text-white flex items-center justify-center"
+          >
+            <PhoneOff className="w-6 h-6" />
+          </button>
+        </div>
+
+        <audio ref={audioElementRef} autoPlay />
+      </div>
+    );
+  }
+
+  // Ended state
+  if (status === 'ended') {
+    return (
+      <div className="bg-white rounded-2xl p-8 shadow-lg border border-gray-100">
+        <div className="text-center">
+          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Check className="w-10 h-10 text-green-500" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Call Ended</h2>
+          <p className="text-gray-600 mb-1">Duration: {formatDuration(callDuration)}</p>
+          <p className="text-gray-500 text-sm mb-6">Thank you for using Warmpawz</p>
+          
+          <div className="flex gap-3 justify-center">
+            {participantType === 'vendor' && onPrescriptionUpload && (
+              <Button
+                onClick={onPrescriptionUpload}
+                variant="outline"
+                className="border-[#FF8C42] text-[#FF8C42]"
+              >
+                Upload Prescription
+              </Button>
+            )}
+            <Button
+              onClick={() => onEndCall?.(callDuration)}
+              className="bg-[#FF8C42] hover:bg-[#FF7A2E] px-6 py-3 rounded-xl"
+            >
+              Done
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Active call
+  return (
+    <div className="bg-slate-900 rounded-2xl overflow-hidden shadow-xl relative">
+      {/* Header */}
+      <div className="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-slate-900/90 to-transparent p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
+              <User className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="text-white font-medium text-sm">{otherParticipantName}</p>
+              <p className="text-slate-400 text-xs">{serviceName}</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            {/* Duration */}
+            <div className="bg-slate-800/80 backdrop-blur px-3 py-1.5 rounded-full flex items-center gap-2">
+              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+              <span className="text-white text-sm font-mono">{formatDuration(callDuration)}</span>
+            </div>
+            
+            {/* Fullscreen */}
+            <button
+              onClick={toggleFullScreen}
+              className="p-2 bg-slate-800/80 backdrop-blur rounded-full hover:bg-slate-700 transition-colors"
+            >
+              {isFullScreen ? <Minimize2 className="w-4 h-4 text-white" /> : <Maximize2 className="w-4 h-4 text-white" />}
+            </button>
+            
+            {/* Chat with unread badge */}
+            <button
+              onClick={() => setShowChat(!showChat)}
+              className={`p-2 rounded-full transition-colors relative ${
+                showChat ? 'bg-[#FF8C42]' : 'bg-slate-800/80 backdrop-blur hover:bg-slate-700'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4 text-white" />
+              {unreadCount > 0 && !showChat && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 animate-pulse">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Video Container */}
+      <div className="aspect-[4/3] bg-slate-800 relative">
+        {/* Remote Video */}
+        <video
+          ref={remoteVideoRef}
+          autoPlay
+          playsInline
+          className="w-full h-full object-cover"
+        />
+        
+        {/* Remote Placeholder */}
+        {!attendeeStatus.vendorJoined && participantType === 'customer' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
+            <div className="text-center">
+              <div className="w-20 h-20 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-3">
+                <User className="w-10 h-10 text-slate-500" />
+              </div>
+              <p className="text-slate-400 text-sm">Waiting for {otherParticipantName}...</p>
+            </div>
+          </div>
+        )}
+
+        {/* Local Video PIP */}
+        <div className="absolute bottom-20 right-4 w-28 h-36 rounded-xl overflow-hidden shadow-2xl border-2 border-slate-600 bg-slate-800">
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            className="w-full h-full object-cover scale-x-[-1]"
+          />
+          {isVideoOff && (
+            <div className="absolute inset-0 bg-slate-800 flex items-center justify-center">
+              <VideoOff className="w-6 h-6 text-slate-500" />
+            </div>
+          )}
+        </div>
+
+        {/* Reconnecting Overlay */}
+        {status === 'reconnecting' && (
+          <div className="absolute inset-0 bg-slate-900/80 flex flex-col items-center justify-center">
+            <RotateCcw className="w-10 h-10 text-yellow-400 animate-spin mb-3" />
+            <p className="text-white">Reconnecting...</p>
+          </div>
+        )}
+      </div>
+
+      {/* Controls */}
+      <div className="p-4 bg-slate-800/90 backdrop-blur-lg border-t border-slate-700">
+        <div className="flex justify-center items-center gap-4">
+          <button
+            onClick={toggleVideo}
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${
+              isVideoOff ? 'bg-red-500 text-white' : 'bg-slate-700 text-white hover:bg-slate-600'
+            }`}
+          >
+            {isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+          </button>
+          
+          <button
+            onClick={toggleMute}
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${
+              isMuted ? 'bg-red-500 text-white' : 'bg-slate-700 text-white hover:bg-slate-600'
+            }`}
+          >
+            {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+          </button>
+
+          <button
+            onClick={toggleScreenShare}
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${
+              isScreenSharing ? 'bg-blue-500 text-white' : 'bg-slate-700 text-white hover:bg-slate-600'
+            }`}
+          >
+            {isScreenSharing ? <MonitorOff className="w-5 h-5" /> : <Monitor className="w-5 h-5" />}
+          </button>
+          
+          <button
+            onClick={endCall}
+            className="w-14 h-14 rounded-2xl bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-all shadow-lg shadow-red-500/30"
+          >
+            <PhoneOff className="w-6 h-6" />
+          </button>
+          
+          <button className="w-12 h-12 rounded-2xl bg-slate-700 text-white hover:bg-slate-600 flex items-center justify-center">
+            <Settings className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Audio element for remote audio */}
+      <audio ref={audioElementRef} autoPlay />
+
+      {/* Chat Panel */}
+      {showChat && (
+        <div className="absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-lg flex flex-col">
+          <div className="p-4 border-b border-slate-700 flex items-center justify-between">
+            <div>
+              <h3 className="text-white font-semibold">Chat with {otherParticipantName}</h3>
+              {isOtherTyping && (
+                <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                  <span className="flex gap-0.5">
+                    <Circle className="w-1.5 h-1.5 fill-slate-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <Circle className="w-1.5 h-1.5 fill-slate-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <Circle className="w-1.5 h-1.5 fill-slate-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </span>
+                  {otherTypingName} is typing...
+                </p>
+              )}
+            </div>
+            <button onClick={() => setShowChat(false)} className="p-2 hover:bg-slate-700 rounded-xl">
+              <X className="w-5 h-5 text-white" />
+            </button>
+          </div>
+          
+          <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+            {chatMessages.length === 0 ? (
+              <div className="text-center py-8 text-slate-500">
+                <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No messages yet</p>
+                <p className="text-xs mt-1">Messages sent during the call will appear here</p>
+              </div>
+            ) : (
+              <>
+                {chatMessages.map((msg) => (
+                  <div key={msg.id} className={`flex ${
+                    msg.sender === 'system' ? 'justify-center' :
+                    msg.sender === participantType ? 'justify-end' : 'justify-start'
+                  }`}>
+                    {msg.sender === 'system' ? (
+                      <span className="text-xs text-slate-500 bg-slate-800 px-3 py-1 rounded-full">
+                        {msg.message}
+                      </span>
+                    ) : (
+                      <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl ${
+                        msg.sender === participantType 
+                          ? 'bg-[#FF8C42] text-white rounded-br-none' 
+                          : 'bg-slate-700 text-white rounded-bl-none'
+                      }`}>
+                        {msg.sender !== participantType && (
+                          <p className="text-[10px] font-medium opacity-80 mb-0.5">{msg.senderName}</p>
+                        )}
+                        <p className="text-sm">{msg.message}</p>
+                        <p className="text-[10px] opacity-70 mt-1 flex items-center gap-1">
+                          {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {msg.sender === participantType && msg.persisted && (
+                            <Check className="w-3 h-3" />
+                          )}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                
+                {/* Typing indicator in message area */}
+                {isOtherTyping && (
+                  <div className="flex justify-start">
+                    <div className="bg-slate-700 text-white px-4 py-2.5 rounded-2xl rounded-bl-none">
+                      <div className="flex gap-1 py-1">
+                        <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          
+          <div className="p-4 border-t border-slate-700">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={handleMessageInputChange}
+                onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                onBlur={() => sendTypingIndicator(false)}
+                placeholder="Type a message..."
+                className="flex-1 bg-slate-700 text-white px-4 py-3 rounded-xl border-0 focus:ring-2 focus:ring-[#FF8C42] outline-none"
+              />
+              <button
+                onClick={sendMessage}
+                disabled={!newMessage.trim()}
+                className="w-12 h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl flex items-center justify-center transition-colors"
+              >
+                <Send className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default ChimeVideoCall;

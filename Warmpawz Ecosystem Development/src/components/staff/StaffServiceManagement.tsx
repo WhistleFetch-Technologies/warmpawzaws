@@ -12,7 +12,7 @@ import {
   Briefcase,
   Search
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
 import { Input } from '../ui/input';
@@ -65,9 +65,9 @@ export function StaffServiceManagement({ staff, onBack }: StaffServiceManagement
 
       // ✅ STEP 1: Check if sync is needed
       const syncCheckRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/check-sync-needed`,
+        `${getApiBaseUrl()}/staff/${staff.id}/check-sync-needed`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -80,10 +80,10 @@ export function StaffServiceManagement({ staff, onBack }: StaffServiceManagement
           toast.info('Syncing services from clinic...');
           
           const syncRes = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/sync-services`,
+            `${getApiBaseUrl()}/staff/${staff.id}/sync-services`,
             {
               method: 'POST',
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+              headers: getAuthHeaders()
             }
           );
           
@@ -97,9 +97,9 @@ export function StaffServiceManagement({ staff, onBack }: StaffServiceManagement
 
       // ✅ STEP 3: Load staff's services
       const servicesRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/services`,
+        `${getApiBaseUrl()}/staff/${staff.id}/services`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -112,9 +112,9 @@ export function StaffServiceManagement({ staff, onBack }: StaffServiceManagement
       // Load available clinic services if staff is associated with a clinic
       if (staff.vendorId) {
         const clinicServicesRes = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${staff.vendorId}/services`,
+          `${getApiBaseUrl()}/vendor/${staff.vendorId}/services`,
           {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            headers: getAuthHeaders()
           }
         );
 
@@ -154,9 +154,9 @@ export function StaffServiceManagement({ staff, onBack }: StaffServiceManagement
 
       // Load staff locations/clinics
       const locationsRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/locations`,
+        `${getApiBaseUrl()}/staff/${staff.id}/locations`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -498,11 +498,11 @@ export function StaffServiceManagement({ staff, onBack }: StaffServiceManagement
                   // Add all selected services
                   for (const service of selectedClinicServices) {
                     const response = await fetch(
-                      `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/services/add-clinic-service`,
+                      `${getApiBaseUrl()}/staff/${staff.id}/services/add-clinic-service`,
                       {
                         method: 'POST',
                         headers: {
-                          'Authorization': `Bearer ${publicAnonKey}`,
+                          ...getAuthHeaders(),
                           'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({

@@ -1,5 +1,5 @@
 {
-  "name": "Warmpawz Ecosystem Development",
+  "name": "warmpawzecodev",
   "version": "0.1.0",
   "private": true,
   "dependencies": {
@@ -69,12 +69,17 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react-swc": "^3.10.2",
+    "pg": "^8.17.2",
+    "playwright": "^1.57.0",
     "vite": "^6.4.1"
   },
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "npm run dev --prefix apps/admin-web",
+    "dev:admin": "npm run dev --prefix apps/admin-web",
+    "build": "npm run build --prefix apps/admin-web",
+    "build:admin": "npm run build --prefix apps/admin-web",
     "preview": "vite preview --host --port 3000",
-    "serve": "vite preview --host --port 3000"
+    "serve": "vite preview --host --port 3000",
+    "dev:legacy-vite": "npm run dev --prefix \"Warmpawz Ecosystem Development\""
   }
 }

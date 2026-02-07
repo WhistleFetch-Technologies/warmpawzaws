@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Building2, Plus, Edit2, Trash2, Loader2, Save, X, Users, DollarSign } from 'lucide-react';
+import { Building2, Plus, Edit2, Trash2, Loader2, Save, X, Users, IndianRupee } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 interface EnterpriseClient {
@@ -211,7 +211,7 @@ export function EnterpriseLogicTab() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <div className="p-0 bg-orange-100 rounded-xl">
             <Building2 className="w-6 h-6 text-orange-600" />
           </div>
@@ -222,7 +222,7 @@ export function EnterpriseLogicTab() {
         </div>
         <button
           onClick={() => handleOpenModal()}
-          className="flex items-center gap-0 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+          className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
         >
           <Plus className="w-4 h-4" />
           Add Client
@@ -240,7 +240,7 @@ export function EnterpriseLogicTab() {
                     <Building2 className="w-6 h-6 text-white" />
                   </div>
                   <div>
-                    <div className="flex items-center gap-0 mb-0">
+                    <div className="flex items-center gap-3 mb-0">
                       <h3 className="font-semibold text-gray-900 text-lg">{client.companyName}</h3>
                       <span className={`px-0 py-0 text-xs font-medium rounded ${planConfig?.color}`}>
                         {planConfig?.name}
@@ -252,7 +252,7 @@ export function EnterpriseLogicTab() {
                     <p className="text-sm text-gray-600">{client.contactPerson} • {client.email}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-0">
+                <div className="flex items-center gap-3">
                   <button
                     onClick={() => handleOpenModal(client)}
                     className="p-0 hover:bg-gray-100 rounded-lg"
@@ -270,15 +270,15 @@ export function EnterpriseLogicTab() {
 
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
                 <div className="p-0 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-0 mb-0">
+                  <div className="flex items-center gap-3 mb-0">
                     <Users className="w-4 h-4 text-gray-400" />
                     <p className="text-xs text-gray-600">Employees</p>
                   </div>
                   <p className="font-semibold text-gray-900">{client.employeeCount}</p>
                 </div>
                 <div className="p-0 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-0 mb-0">
-                    <DollarSign className="w-4 h-4 text-gray-400" />
+                  <div className="flex items-center gap-3 mb-0">
+                    <IndianRupee className="w-4 h-4 text-gray-400" />
                     <p className="text-xs text-gray-600">Monthly Budget</p>
                   </div>
                   <p className="font-semibold text-gray-900">₹{client.monthlyBudget.toLocaleString()}</p>
@@ -297,7 +297,7 @@ export function EnterpriseLogicTab() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-0">
+              <div className="flex flex-wrap gap-3">
                 {client.features.map(feature => (
                   <span key={feature} className="px-0 py-0 bg-indigo-100 text-indigo-700 text-xs font-medium rounded">
                     {feature}
@@ -440,11 +440,11 @@ export function EnterpriseLogicTab() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-0">Features</label>
-                <div className="grid grid-cols-2 gap-0">
+                <div className="grid grid-cols-2 gap-3">
                   {ENTERPRISE_FEATURES.map(feature => (
                     <label
                       key={feature}
-                      className="flex items-center gap-0 p-0 border-2 border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
+                      className="flex items-center gap-3 p-0 border-2 border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer"
                     >
                       <input
                         type="checkbox"
@@ -459,7 +459,7 @@ export function EnterpriseLogicTab() {
               </div>
             </div>
 
-            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-0 py-4 flex gap-0">
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-0 py-4 flex gap-3">
               <button
                 onClick={() => setShowModal(false)}
                 className="flex-1 px-4 py-0 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
@@ -469,7 +469,7 @@ export function EnterpriseLogicTab() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
+                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50"
               >
                 {saving ? (
                   <>

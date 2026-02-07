@@ -1,0 +1,2410 @@
+'use client';
+
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  ArrowLeft, CreditCard, Wallet, Tag, ChevronRight, 
+  CheckCircle2, Shield, X, Percent, Info, MapPin,
+  Clock, Calendar, User, Plus, Smartphone, Building2,
+  Home, Video, Gift, Sparkles, AlertCircle, Loader2
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { apiClient } from '@/lib/api-client';
+import { toast } from 'sonner';
+import { AddPaymentMethodModal } from './AddPaymentMethodModal';
+import { PolicyAcceptanceModal } from '../PolicyAcceptanceModal';
+
+// Razorpay type declaration
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
+
+interface UniversalPaymentPageProps {
+  // Booking/Order details
+  bookingId?: string;
+  orderId?: string;
+  type: 'booking' | 'order';
+  
+  // Service/Product details
+  serviceId?: string;
+  productId?: string;
+  serviceName?: string;
+  productName?: string;
+  serviceDescription?: string;
+  serviceStyle?: 'at_home' | 'at_center' | 'at_vendor' | 'tele' | 'ecom' | 'hybrid' | 'product';
+  category?: string; // For promotions/spotlights
+  
+  // Vendor/Seller
+  vendorId: string;
+  vendorName: string;
+  vendorAddress?: string; // ✅ NEW: Vendor/clinic address for at_center services
+  staffName?: string; // ✅ NEW: Staff name for at_home services
+  staffPhoto?: string; // ✅ NEW: Staff photo for at_home services
+  
+  // Schedule (for bookings)
+  bookingDate?: string;
+  bookingTime?: string;
+  
+  // Pet (for bookings)
+  petId?: string;
+  petName?: string;
+  petBreed?: string;
+  
+  // Address (for home services/orders)
+  addressId?: string;
+  address?: {
+    id?: string;
+    label?: string;
+    addressLine1?: string;
+    city?: string;
+    pincode?: string;
+    state?: string;
+  };
+  showAddressSelection?: boolean; // Show address selector on top
+  
+  // Pricing
+  baseAmount: number;
+  duration?: number;
+  quantity?: number;
+  selectedServices?: any[]; // ✅ NEW: Selected services for multi-service bookings
+  
+  // Customer
+  customerPhone: string;
+  customerId?: string;
+  
+  // Navigation
+  onBack: () => void;
+  onSuccess: (bookingId: string, orderId?: string, otpCode?: string) => void;
+}
+
+interface CouponResult {
+  valid: boolean;
+  code: string;
+  discountType: 'percentage' | 'fixed';
+  discountValue: number;
+  discountAmount: number;
+  message?: string;
+  minAmount?: number;
+  maxDiscount?: number;
+}
+
+interface WalletInfo {
+  balance: number;
+  currency: string;
+  loyaltyPoints?: number;
+  rewardsBalance?: number;
+}
+
+interface SavedPaymentMethod {
+  id: string;
+  type: 'card' | 'upi' | 'netbanking' | 'wallet';
+  last4?: string;
+  brand?: string;
+  upiId?: string;
+  bankName?: string;
+  isDefault: boolean;
+  expiryMonth?: number;
+  expiryYear?: number;
+}
+
+interface TaxBreakdown {
+  subtotal: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  totalTax: number;
+  total: number;
+  taxRate: number;
+  isInterState: boolean;
+  taxDetails?: {
+    type: string;
+    rate: number;
+    amount: number;
+  }[];
+}
+
+interface PlatformFees {
+  platformFee: number;
+  convenienceFee: number;
+  deliveryFee: number;
+  packagingFee: number;
+  total: number;
+}
+
+interface PromotionOffer {
+  id: string;
+  type: 'spotlight' | 'category_discount' | 'service_discount' | 'flash_sale';
+  title: string;
+  description: string;
+  discountType: 'percentage' | 'fixed';
+  discountValue: number;
+  discountAmount: number;
+  minAmount?: number;
+  maxDiscount?: number;
+  applicable: boolean;
+}
+
+interface RazorpayOffer {
+  id: string;
+  title: string;
+  description: string;
+  discountType: 'cashback' | 'discount';
+  discountValue: number;
+  applicable: boolean;
+  paymentMethod?: string; // 'card', 'upi', etc.
+}
+
+export function UniversalPaymentPage({
+  bookingId,
+  orderId,
+  type,
+  serviceId,
+  productId,
+  serviceName,
+  productName,
+  serviceDescription,
+  serviceStyle,
+  category,
+  vendorId,
+  vendorName,
+  bookingDate,
+  bookingTime,
+  petId,
+  petName,
+  petBreed,
+  addressId,
+  address,
+  showAddressSelection = false,
+  baseAmount,
+  duration,
+  quantity = 1,
+  selectedServices, // ✅ FIX: Add missing prop destructuring
+  customerPhone,
+  customerId,
+  onBack,
+  onSuccess,
+}: UniversalPaymentPageProps) {
+  // State
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
+  const [wallet, setWallet] = useState<WalletInfo | null>(null);
+  const [useWallet, setUseWallet] = useState(false);
+  const [savedMethods, setSavedMethods] = useState<SavedPaymentMethod[]>([]);
+  const [selectedMethod, setSelectedMethod] = useState<string>('razorpay');
+  const [showAddPaymentModal, setShowAddPaymentModal] = useState(false);
+  const [addresses, setAddresses] = useState<any[]>([]);
+  const [selectedAddress, setSelectedAddress] = useState<any>(address);
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  
+  // ✅ CRITICAL: Resolved serviceId (UUID) - resolved early to avoid issues
+  const [resolvedServiceId, setResolvedServiceId] = useState<string | undefined>(serviceId);
+  const [serviceIdResolving, setServiceIdResolving] = useState(false);
+  
+  // Coupon state
+  const [couponCode, setCouponCode] = useState('');
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponResult | null>(null);
+  const [showCouponInput, setShowCouponInput] = useState(false);
+  
+  // Promotions & Offers
+  const [promotions, setPromotions] = useState<PromotionOffer[]>([]);
+  const [appliedPromotion, setAppliedPromotion] = useState<PromotionOffer | null>(null);
+  const [razorpayOffers, setRazorpayOffers] = useState<RazorpayOffer[]>([]);
+  const [selectedRazorpayOffer, setSelectedRazorpayOffer] = useState<RazorpayOffer | null>(null);
+  const [paymentPolicies, setPaymentPolicies] = useState<Record<string, { title: string; description: string; details?: string[] }> | null>(null);
+  const [refundPolicySummary, setRefundPolicySummary] = useState<string | null>(null);
+  
+  // Tax state
+  const [taxBreakdown, setTaxBreakdown] = useState<TaxBreakdown>({
+    subtotal: baseAmount,
+    cgst: 0,
+    sgst: 0,
+    igst: 0,
+    totalTax: 0,
+    total: baseAmount,
+    taxRate: 18,
+    isInterState: false,
+  });
+
+  // Platform fees state
+  const [platformFees, setPlatformFees] = useState<PlatformFees>({
+    platformFee: 0,
+    convenienceFee: 0,
+    deliveryFee: 0,
+    packagingFee: 0,
+    total: 0,
+  });
+
+  // Policy acceptance state
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [policyAccepted, setPolicyAccepted] = useState(false);
+  
+  // ✅ NEW: Subscription coverage state
+  const [subscriptionCovered, setSubscriptionCovered] = useState(false);
+  const [activeSubscription, setActiveSubscription] = useState<any>(null);
+  const [checkingSubscription, setCheckingSubscription] = useState(false);
+
+  useEffect(() => {
+    loadPaymentData();
+    loadRazorpayScript();
+    calculateTax();
+    loadPromotions();
+    loadRazorpayOffers();
+    loadPlatformFees();
+    loadPaymentAndRefundPolicies();
+  }, [customerPhone, baseAmount, category, serviceStyle]);
+  
+  // ✅ NEW: Check if customer has active subscription that covers this booking
+  useEffect(() => {
+    const checkSubscriptionCoverage = async () => {
+      if (type !== 'booking' || !customerId || !vendorId) {
+        return;
+      }
+      
+      setCheckingSubscription(true);
+      
+      try {
+        const coverageRes = await apiClient.post<any>('/subscriptions/check-coverage', {
+          customerId: customerId || customerPhone,
+          vendorId,
+          serviceId: resolvedServiceId || serviceId,
+          serviceStyle,
+          category,
+        });
+        
+        if (coverageRes.success && coverageRes.covered) {
+          console.log('✅ [SUBSCRIPTION] Booking covered by subscription:', coverageRes.subscription);
+          setSubscriptionCovered(true);
+          setActiveSubscription(coverageRes.subscription);
+          
+          // If subscription covers this booking, set amount to 0
+          // The payment will be processed as a subscription booking
+        }
+      } catch (error: any) {
+        // Subscription check failed - proceed with normal payment; surface so it's not silent
+        console.log('ℹ️ [SUBSCRIPTION] No active subscription or check failed:', error.message);
+        setSubscriptionCovered(false);
+        setActiveSubscription(null);
+        toast.info('Subscription check unavailable; you can pay normally.');
+      } finally {
+        setCheckingSubscription(false);
+      }
+    };
+    
+    checkSubscriptionCoverage();
+  }, [type, customerId, vendorId, resolvedServiceId, serviceId, serviceStyle, category, customerPhone]);
+
+  useEffect(() => {
+    if (showAddressSelection) {
+      loadAddresses();
+    }
+  }, [showAddressSelection, customerPhone]);
+
+  // ✅ CRITICAL: Resolve serviceId early (before payment flow)
+  useEffect(() => {
+    const resolveServiceId = async () => {
+      if (!serviceId || !vendorId || type !== 'booking') {
+        return; // Only resolve for bookings with serviceId
+      }
+
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      
+      // If already a UUID, no need to resolve
+      if (uuidRegex.test(serviceId)) {
+        setResolvedServiceId(serviceId);
+        return;
+      }
+
+      // If numeric, try to resolve
+      console.log(`🔄 Resolving serviceId "${serviceId}" to UUID...`);
+      setServiceIdResolving(true);
+
+      try {
+        // Try multiple endpoints to get vendor services
+        let vendorServicesRes: any = null;
+        const endpoints = [
+          `/vendor/${vendorId}/services`,
+          `/vendor/services/${vendorId}`,
+          `/vendor-services?vendorId=${vendorId}`
+        ];
+        
+        for (const endpoint of endpoints) {
+          try {
+            vendorServicesRes = await apiClient.get<any>(endpoint);
+            // Check if response has services in any format
+            if (vendorServicesRes?.allServices || 
+                vendorServicesRes?.services || 
+                vendorServicesRes?.data?.services || 
+                Array.isArray(vendorServicesRes)) {
+              console.log(`✅ [SERVICE-RESOLUTION] Found services from endpoint: ${endpoint}`);
+              break;
+            }
+          } catch (e: any) {
+            console.warn(`⚠️ [SERVICE-RESOLUTION] Endpoint ${endpoint} failed:`, e.message);
+            continue; // Try next endpoint
+          }
+        }
+        
+        if (vendorServicesRes) {
+          // ✅ CRITICAL: Handle different API response formats
+          let services: any[] = [];
+          
+          // Format 1: { services: { at_home: { services: [...] }, ... }, allServices: [...] }
+          if (vendorServicesRes.allServices && Array.isArray(vendorServicesRes.allServices)) {
+            services = vendorServicesRes.allServices;
+          }
+          // Format 2: { services: { at_home: { services: [...] }, ... } }
+          else if (vendorServicesRes.services && typeof vendorServicesRes.services === 'object' && !Array.isArray(vendorServicesRes.services)) {
+            // Flatten servicesByStyle object
+            services = Object.values(vendorServicesRes.services).flatMap((style: any) => 
+              (style?.services && Array.isArray(style.services)) ? style.services : []
+            );
+          }
+          // Format 3: { services: [...] } (direct array)
+          else if (vendorServicesRes.services && Array.isArray(vendorServicesRes.services)) {
+            services = vendorServicesRes.services;
+          }
+          // Format 4: { data: { services: [...] } }
+          else if (vendorServicesRes.data?.services && Array.isArray(vendorServicesRes.data.services)) {
+            services = vendorServicesRes.data.services;
+          }
+          // Format 5: Direct array response
+          else if (Array.isArray(vendorServicesRes)) {
+            services = vendorServicesRes;
+          }
+          
+          console.log('📦 [SERVICE-RESOLUTION-EARLY] Extracted services:', {
+            count: services.length,
+            sample: services[0],
+            responseKeys: Object.keys(vendorServicesRes),
+          });
+          
+          // Ensure services is an array before calling .find()
+          if (!Array.isArray(services)) {
+            console.error('❌ [SERVICE-RESOLUTION-EARLY] Services is not an array:', typeof services, services);
+            // Don't throw - will be caught during payment
+            return;
+          }
+          
+          // Look for service with matching numeric ID
+          const matchingService = services.find((s: any) => 
+            s.id === serviceId || 
+            s.serviceId === serviceId ||
+            s.service_id === serviceId ||
+            String(s.id) === String(serviceId) ||
+            String(s.serviceId) === String(serviceId) ||
+            String(s.service_id) === String(serviceId)
+          );
+          
+          if (matchingService) {
+            // Use service_id (UUID) from the vendor service
+            const resolved = matchingService.service_id || matchingService.serviceId;
+            if (uuidRegex.test(resolved)) {
+              setResolvedServiceId(resolved);
+              console.log(`✅ Resolved serviceId "${serviceId}" to UUID: "${resolved}"`);
+            } else if (uuidRegex.test(matchingService.id)) {
+              setResolvedServiceId(matchingService.id);
+              console.log(`✅ Resolved serviceId "${serviceId}" to UUID: "${matchingService.id}"`);
+            } else {
+              console.warn(`⚠️ Could not resolve serviceId "${serviceId}" - service found but no UUID available`);
+            }
+          } else {
+            console.warn(`⚠️ Service "${serviceId}" not found in vendor services`);
+          }
+        }
+      } catch (error: any) {
+        console.warn(`⚠️ Failed to resolve serviceId "${serviceId}":`, error.message);
+        // Don't set error - will be caught during booking creation
+      } finally {
+        setServiceIdResolving(false);
+      }
+    };
+
+    resolveServiceId();
+  }, [serviceId, vendorId, type]);
+
+  const loadRazorpayScript = () => {
+    if (typeof window !== 'undefined' && !window.Razorpay) {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      document.body.appendChild(script);
+    }
+  };
+
+  const loadAddresses = async () => {
+    try {
+      const data = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(customerPhone)}`);
+      const addressList = data.addresses || [];
+      setAddresses(addressList);
+      
+      if (address) {
+        // Find matching address or use provided
+        const matched = addressList.find((a: any) => a.id === address.id || a.id === addressId);
+        setSelectedAddress(matched || address);
+      } else {
+        // Select default or first
+        const defaultAddr = addressList.find((a: any) => a.isDefault) || addressList[0];
+        setSelectedAddress(defaultAddr);
+      }
+    } catch (error) {
+      console.error('Error loading addresses:', error);
+    }
+  };
+
+  const loadPaymentData = async () => {
+    try {
+      setLoading(true);
+      
+      // Load wallet balance
+      try {
+        const walletRes = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`);
+        if (walletRes.wallet) {
+          setWallet(walletRes.wallet);
+        }
+      } catch (e) {
+        console.log('No wallet found');
+      }
+      
+      // Load saved payment methods
+      try {
+        const methodsRes = await apiClient.get<any>(`/customer/payment-methods?phone=${encodeURIComponent(customerPhone)}`);
+        if (methodsRes.methods) {
+          setSavedMethods(methodsRes.methods);
+          const defaultMethod = methodsRes.methods.find((m: SavedPaymentMethod) => m.isDefault);
+          if (defaultMethod) {
+            setSelectedMethod(defaultMethod.id);
+          }
+        }
+      } catch (e) {
+        console.log('No saved payment methods');
+      }
+      
+    } catch (error) {
+      console.error('Error loading payment data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadPromotions = async () => {
+    try {
+      // Load applicable promotions from Admin Marketing
+      const promoRes = await apiClient.get<any>(
+        `/admin/promotions/applicable?category=${category || ''}&serviceStyle=${serviceStyle || ''}&amount=${baseAmount}`
+      );
+      
+      if (promoRes.success && promoRes.promotions) {
+        const applicablePromos = promoRes.promotions
+          .filter((p: any) => p.published && (p.is_spotlight || p.target_service_dashboard === category))
+          .map((p: any) => ({
+            id: p.id,
+            type: p.promotion_type,
+            title: p.title || p.name,
+            description: p.description,
+            discountType: p.discount_type,
+            discountValue: p.discount_value,
+            discountAmount: calculateDiscountAmount(p.discount_type, p.discount_value, baseAmount, p.min_amount, p.max_discount),
+            minAmount: p.min_amount,
+            maxDiscount: p.max_discount,
+            applicable: true,
+          }));
+        
+        setPromotions(applicablePromos);
+        
+        // Auto-apply spotlight promotion if available
+        const spotlight = applicablePromos.find((p: PromotionOffer) => p.type === 'spotlight');
+        if (spotlight && spotlight.applicable) {
+          setAppliedPromotion(spotlight);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading promotions:', error);
+    }
+  };
+
+  const loadRazorpayOffers = async () => {
+    try {
+      // Load Razorpay offers (card offers, cashback, etc.)
+      const offersRes = await apiClient.get<any>(
+        `/razorpay/offers?amount=${baseAmount}`
+      );
+      
+      if (offersRes.success && offersRes.offers) {
+        setRazorpayOffers(offersRes.offers);
+      }
+    } catch (error) {
+      console.error('Error loading Razorpay offers:', error);
+    }
+  };
+
+  const loadPlatformFees = async () => {
+    try {
+      // Load platform and convenience fees from fee config endpoint
+      const feesRes = await apiClient.get<any>(
+        `/config/fees?serviceStyle=${serviceStyle || ''}&amount=${baseAmount}&type=${type}`
+      );
+      
+      if (feesRes.success) {
+        const platformFee = feesRes.platformFee || 0;
+        const convenienceFee = feesRes.convenienceFee || 0;
+        // Delivery fee is usually calculated separately by logistics
+        const deliveryFee = serviceStyle === 'at_home' || type === 'order' ? (feesRes.deliveryFee || 0) : 0;
+        const packagingFee = type === 'order' ? (feesRes.packagingFee || 0) : 0;
+        
+        console.log('[FEES] Loaded fee configuration:', {
+          platformFee,
+          convenienceFee,
+          deliveryFee,
+          packagingFee,
+          breakdown: feesRes.breakdown,
+        });
+        
+        setPlatformFees({
+          platformFee,
+          convenienceFee,
+          deliveryFee,
+          packagingFee,
+          total: platformFee + convenienceFee + deliveryFee + packagingFee,
+        });
+      }
+    } catch (error) {
+      console.error('Error loading platform fees:', error);
+      // Resilience-only fallback when /config/fees fails; production should use backend as single source of truth
+      if (baseAmount > 0) {
+        let defaultPlatformFee = Math.round((baseAmount * 2) / 100);
+        defaultPlatformFee = Math.min(defaultPlatformFee, 200);
+        const defaultConvenienceFee = type === 'booking' ? 10 : 0;
+        setPlatformFees({
+          platformFee: defaultPlatformFee,
+          convenienceFee: defaultConvenienceFee,
+          deliveryFee: 0,
+          packagingFee: 0,
+          total: defaultPlatformFee + defaultConvenienceFee,
+        });
+      }
+    }
+  };
+
+  const loadPaymentAndRefundPolicies = async () => {
+    try {
+      const serviceType = type === 'booking' ? 'booking' : (category || 'default');
+      const policiesRes = await apiClient.get<{ success?: boolean; policies?: Record<string, { title: string; description: string; details?: string[] }> }>(
+        `/config/policies?service_type=${encodeURIComponent(serviceType)}&policies=payment,cancellation,refund`
+      );
+      if (policiesRes?.policies && typeof policiesRes.policies === 'object') {
+        setPaymentPolicies(policiesRes.policies);
+      }
+    } catch (e) {
+      console.warn('Could not load payment policies:', e);
+    }
+    try {
+      const refundRes = await apiClient.get<{ success?: boolean; policy?: { refundPercentages?: Array<{ withinHours: number; percentage: number }>; cancellationWindowHours?: number } }>(
+        `/customer/refund-policy?vendorId=${encodeURIComponent(vendorId || '')}&serviceId=${encodeURIComponent(serviceId || '')}`
+      );
+      if (refundRes?.policy?.refundPercentages?.length) {
+        const parts = refundRes.policy.refundPercentages
+          .filter((p: { withinHours: number; percentage: number }) => p.withinHours != null && p.percentage != null)
+          .map((p: { withinHours: number; percentage: number }) => `${p.percentage}% refund if cancelled ${p.withinHours}h+ before`);
+        setRefundPolicySummary(parts.length ? parts.join('; ') : null);
+      }
+    } catch (e) {
+      console.warn('Could not load refund policy:', e);
+    }
+  };
+
+  const calculateDiscountAmount = (
+    type: 'percentage' | 'fixed',
+    value: number,
+    amount: number,
+    minAmount?: number,
+    maxDiscount?: number
+  ): number => {
+    if (minAmount && amount < minAmount) return 0;
+    
+    let discount = type === 'percentage' 
+      ? (amount * value) / 100 
+      : value;
+    
+    if (maxDiscount && discount > maxDiscount) {
+      discount = maxDiscount;
+    }
+    
+    return Math.min(discount, amount);
+  };
+
+  const calculateTax = async () => {
+    try {
+      // Get customer and vendor locations for tax calculation
+      const taxRes = await apiClient.post<any>('/tax/calculate', {
+        items: [{
+          id: serviceId || productId || 'item',
+          type: type === 'booking' ? 'service' : 'product',
+          serviceId: type === 'booking' ? serviceId : undefined,
+          productId: type === 'order' ? productId : undefined,
+          amount: baseAmount,
+          quantity,
+          category: category || 'pet_services',
+          serviceStyle: serviceStyle,
+        }],
+        vendorId,
+        customerId,
+        customerPhone,
+      });
+      
+      if (taxRes.success) {
+        const cgst = taxRes.totalCGST || 0;
+        const sgst = taxRes.totalSGST || 0;
+        const igst = taxRes.totalIGST || 0;
+        const totalTax = taxRes.totalTax || cgst + sgst + igst;
+        
+        setTaxBreakdown({
+          subtotal: baseAmount,
+          cgst,
+          sgst,
+          igst,
+          totalTax,
+          total: baseAmount + totalTax,
+          taxRate: taxRes.items?.[0]?.taxRate || 18,
+          isInterState: igst > 0,
+          taxDetails: taxRes.breakdown || [],
+        });
+      }
+    } catch (error) {
+      console.error('Tax calculation error, using default 18%:', error);
+      // Fallback to 18% GST
+      const taxRate = 18;
+      const totalTax = (baseAmount * taxRate) / 100;
+      setTaxBreakdown({
+        subtotal: baseAmount,
+        cgst: totalTax / 2,
+        sgst: totalTax / 2,
+        igst: 0,
+        totalTax,
+        total: baseAmount + totalTax,
+        taxRate,
+        isInterState: false,
+      });
+    }
+  };
+
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) {
+      toast.error('Please enter a coupon code');
+      return;
+    }
+    
+    setCouponLoading(true);
+    try {
+      // First try the unified promotion validation (includes vendor promotions)
+      const promoRes = await apiClient.post<any>('/promotions/validate-code', {
+        code: couponCode.toUpperCase(),
+        vendorId: vendorId,
+        orderAmount: type === 'order' ? taxBreakdown.total : undefined,
+        bookingAmount: type === 'booking' ? taxBreakdown.total : undefined,
+        orderType: type === 'booking' ? 'service' : 'product'
+      });
+      
+      if (promoRes.valid) {
+        const discountAmount = promoRes.discount_amount || calculateDiscountAmount(
+          promoRes.promotion?.discount_type,
+          promoRes.promotion?.discount_value,
+          taxBreakdown.total,
+          promoRes.promotion?.min_order_value || promoRes.promotion?.min_booking_value,
+          promoRes.promotion?.max_discount_amount
+        );
+        
+        setAppliedCoupon({
+          valid: true,
+          code: couponCode.toUpperCase(),
+          discountType: promoRes.promotion?.discount_type || 'percentage',
+          discountValue: promoRes.promotion?.discount_value || 0,
+          discountAmount,
+          message: promoRes.promotion?.description || `You save ₹${discountAmount}!`,
+          minAmount: promoRes.promotion?.min_order_value || promoRes.promotion?.min_booking_value,
+          maxDiscount: promoRes.promotion?.max_discount_amount,
+        });
+        toast.success(`Coupon applied! You save ₹${discountAmount.toFixed(2)}`);
+        setShowCouponInput(false);
+        return;
+      }
+      
+      // Fallback to legacy coupon validation
+      const res = await apiClient.get<any>(
+        `/coupons/validate/${couponCode.toUpperCase()}?amount=${taxBreakdown.total}`
+      );
+      
+      if (res.valid) {
+        const discountAmount = calculateDiscountAmount(
+          res.coupon.discount_type,
+          res.coupon.discount_value,
+          taxBreakdown.total,
+          res.coupon.min_amount,
+          res.coupon.max_discount
+        );
+        
+        setAppliedCoupon({
+          valid: true,
+          code: couponCode.toUpperCase(),
+          discountType: res.coupon.discount_type,
+          discountValue: res.coupon.discount_value,
+          discountAmount,
+          message: res.message,
+          minAmount: res.coupon.min_amount,
+          maxDiscount: res.coupon.max_discount,
+        });
+        toast.success(`Coupon applied! You save ₹${discountAmount.toFixed(2)}`);
+        setShowCouponInput(false);
+      } else {
+        toast.error(promoRes.message || res.error || 'Invalid coupon code');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to validate coupon');
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCode('');
+    toast.info('Coupon removed');
+  };
+
+  const applyPromotion = (promotion: PromotionOffer) => {
+    if (appliedPromotion?.id === promotion.id) {
+      setAppliedPromotion(null);
+      toast.info('Promotion removed');
+    } else {
+      setAppliedPromotion(promotion);
+      toast.success(`Promotion applied! You save ₹${promotion.discountAmount.toFixed(2)}`);
+    }
+  };
+
+  const applyRazorpayOffer = (offer: RazorpayOffer) => {
+    if (selectedRazorpayOffer?.id === offer.id) {
+      setSelectedRazorpayOffer(null);
+      toast.info('Offer removed');
+    } else {
+      setSelectedRazorpayOffer(offer);
+      toast.success(`Offer selected! ${offer.description}`);
+    }
+  };
+
+  // Calculate final amounts
+  const promotionDiscount = appliedPromotion?.discountAmount || 0;
+  const couponDiscount = appliedCoupon?.discountAmount || 0;
+  const razorpayOfferDiscount = selectedRazorpayOffer?.discountValue || 0;
+  
+  // Apply discounts to subtotal (before tax for some, after tax for others - following standard practice)
+  const subtotalAfterDiscounts = Math.max(0, taxBreakdown.subtotal - promotionDiscount - couponDiscount);
+  
+  // Recalculate tax on discounted amount if needed (or keep original tax - business logic)
+  const finalTax = taxBreakdown.totalTax; // Or recalculate on discounted amount
+  const totalAfterDiscounts = subtotalAfterDiscounts + finalTax + platformFees.total;
+  
+  const walletAmount = useWallet && wallet ? Math.min(wallet.balance, totalAfterDiscounts - razorpayOfferDiscount) : 0;
+  
+  // ✅ NEW: If subscription covers this booking, final amount is 0
+  const finalAmount = subscriptionCovered ? 0 : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
+
+  const handlePayment = async (skipPolicyCheck: boolean = false) => {
+    // Check if policies have been accepted (for bookings)
+    // ✅ FIX: Allow skipping policy check when called from modal acceptance
+    if (type === 'booking' && !skipPolicyCheck && !policyAccepted) {
+      setShowPolicyModal(true);
+      return;
+    }
+
+    // Validate address if needed
+    if (showAddressSelection && !selectedAddress) {
+      toast.error('Please select a delivery address');
+      return;
+    }
+    
+    setProcessing(true);
+    
+    try {
+      // Step 1: Create booking/order if not already created
+      let currentBookingId = bookingId;
+      let currentOrderId = orderId;
+      
+      if (type === 'booking' && !currentBookingId) {
+        // Validate required fields
+        if (!customerId) {
+          toast.error('Customer ID is required. Please try again.');
+          setProcessing(false);
+          return;
+        }
+
+        if (!serviceId) {
+          toast.error('Service ID is required.');
+          setProcessing(false);
+          return;
+        }
+
+        if (!vendorId) {
+          toast.error('Vendor ID is required.');
+          setProcessing(false);
+          return;
+        }
+
+        // ✅ CRITICAL: Resolve serviceId to UUID BEFORE creating booking
+        // This MUST happen synchronously here to ensure we have the UUID
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        let finalServiceId = resolvedServiceId || serviceId;
+        
+        // If not a UUID, resolve it NOW (synchronously)
+        if (!uuidRegex.test(finalServiceId)) {
+          console.log(`🔄 Resolving serviceId "${finalServiceId}" to UUID synchronously...`);
+          
+          try {
+            // Try multiple endpoints to get vendor services
+            let vendorServicesRes: any = null;
+            const endpoints = [
+              `/vendor/${vendorId}/services`,
+              `/vendor/services/${vendorId}`,
+              `/vendor-services?vendorId=${vendorId}`
+            ];
+            
+            for (const endpoint of endpoints) {
+              try {
+                vendorServicesRes = await apiClient.get<any>(endpoint);
+                // Check if response has services in any format
+                if (vendorServicesRes?.allServices || 
+                    vendorServicesRes?.services || 
+                    vendorServicesRes?.data?.services || 
+                    Array.isArray(vendorServicesRes)) {
+                  console.log(`✅ [SERVICE-RESOLUTION-SYNC] Found services from endpoint: ${endpoint}`);
+                  break;
+                }
+              } catch (e: any) {
+                console.warn(`⚠️ [SERVICE-RESOLUTION-SYNC] Endpoint ${endpoint} failed:`, e.message);
+                continue; // Try next endpoint
+              }
+            }
+            
+            if (vendorServicesRes) {
+              // ✅ CRITICAL: Handle different API response formats
+              let services: any[] = [];
+              
+              // Format 1: { services: { at_home: { services: [...] }, ... }, allServices: [...] }
+              if (vendorServicesRes.allServices && Array.isArray(vendorServicesRes.allServices)) {
+                services = vendorServicesRes.allServices;
+              }
+              // Format 2: { services: { at_home: { services: [...] }, ... } }
+              else if (vendorServicesRes.services && typeof vendorServicesRes.services === 'object' && !Array.isArray(vendorServicesRes.services)) {
+                // Flatten servicesByStyle object
+                services = Object.values(vendorServicesRes.services).flatMap((style: any) => 
+                  (style?.services && Array.isArray(style.services)) ? style.services : []
+                );
+              }
+              // Format 3: { services: [...] } (direct array)
+              else if (vendorServicesRes.services && Array.isArray(vendorServicesRes.services)) {
+                services = vendorServicesRes.services;
+              }
+              // Format 4: { data: { services: [...] } }
+              else if (vendorServicesRes.data?.services && Array.isArray(vendorServicesRes.data.services)) {
+                services = vendorServicesRes.data.services;
+              }
+              // Format 5: Direct array response
+              else if (Array.isArray(vendorServicesRes)) {
+                services = vendorServicesRes;
+              }
+              
+              console.log('📦 [SERVICE-RESOLUTION] Extracted services:', {
+                count: services.length,
+                sample: services[0],
+                responseKeys: Object.keys(vendorServicesRes),
+              });
+              
+              // Ensure services is an array before calling .find()
+              if (!Array.isArray(services)) {
+                console.error('❌ [SERVICE-RESOLUTION] Services is not an array:', typeof services, services);
+                throw new Error('Invalid services response format from API');
+              }
+              
+              // Look for service with matching numeric ID
+              const matchingService = services.find((s: any) => 
+                String(s.id) === String(finalServiceId) || 
+                String(s.serviceId) === String(finalServiceId) ||
+                String(s.service_id) === String(finalServiceId) ||
+                s.id === finalServiceId ||
+                s.serviceId === finalServiceId ||
+                s.service_id === finalServiceId
+              );
+              
+              if (matchingService) {
+                // Use service_id (UUID) from the vendor service
+                const resolved = matchingService.service_id || matchingService.serviceId;
+                if (uuidRegex.test(resolved)) {
+                  finalServiceId = resolved;
+                  setResolvedServiceId(resolved);
+                  console.log(`✅ Synchronously resolved serviceId "${serviceId}" to UUID: "${resolved}"`);
+                } else if (uuidRegex.test(matchingService.id)) {
+                  finalServiceId = matchingService.id;
+                  setResolvedServiceId(matchingService.id);
+                  console.log(`✅ Synchronously resolved serviceId "${serviceId}" to UUID: "${matchingService.id}"`);
+                } else {
+                  throw new Error(`Service found but no valid UUID available. Service ID: ${serviceId}`);
+                }
+              } else {
+                throw new Error(`Service "${serviceId}" not found in vendor services`);
+              }
+            } else {
+              throw new Error('Could not fetch vendor services');
+            }
+          } catch (resolveError: any) {
+            console.error('❌ Failed to resolve serviceId:', resolveError);
+            toast.error(
+              `Invalid service ID. Please go back and select the service again. ` +
+              `Error: ${resolveError.message || 'Service not found'}`
+            );
+            setProcessing(false);
+            return;
+          }
+        }
+        
+        // Final validation - MUST be UUID at this point
+        if (!uuidRegex.test(finalServiceId)) {
+          toast.error(
+            `Invalid service ID format. Please go back and select the service again. ` +
+            `Received: ${serviceId}, Resolved: ${finalServiceId}`
+          );
+          setProcessing(false);
+          return;
+        }
+
+        // Format address for API (can be string or object with coordinates)
+        let addressValue: string | undefined = undefined;
+        let addressCity: string | undefined;
+        let addressState: string | undefined;
+        let addressPincode: string | undefined;
+        let addressLat: number | undefined;
+        let addressLng: number | undefined;
+        if (serviceStyle === 'at_home' && (selectedAddress || address)) {
+          const addr = selectedAddress || address;
+          if (typeof addr === 'string') {
+            addressValue = addr;
+          } else if (addr?.addressLine1 || addr?.address) {
+            const addrLine = addr.addressLine1 || addr.address || '';
+            const city = addr.city || '';
+            const pincode = addr.pincode || '';
+            addressValue = `${addrLine}${city ? `, ${city}` : ''}${pincode ? ` - ${pincode}` : ''}`;
+            addressCity = addr.city;
+            addressState = addr.state;
+            addressPincode = addr.pincode;
+            if (typeof addr.latitude === 'number' && typeof addr.longitude === 'number') {
+              addressLat = addr.latitude;
+              addressLng = addr.longitude;
+            }
+          }
+        }
+
+        // Map serviceStyle to serviceType enum (must match CreateBookingRequestSchema.serviceType)
+        const validServiceTypes = ['at_vendor', 'at_home', 'online', 'at_center', 'tele', 'hybrid', 'product'] as const;
+        const serviceTypeMap: Record<string, string> = {
+          'at_home': 'at_home',
+          'at_center': 'at_center',
+          'at_vendor': 'at_vendor',
+          'tele': 'tele',
+          'online': 'tele',
+          'ecom': 'product',
+          'hybrid': 'hybrid',
+          'product': 'product',
+        };
+        const rawServiceType = serviceTypeMap[serviceStyle || ''] || serviceStyle || 'at_center';
+        const serviceTypeValue = validServiceTypes.includes(rawServiceType as any) ? rawServiceType : 'at_center';
+
+        // ✅ NEW: Check if subscription covers this booking
+        if (subscriptionCovered && activeSubscription) {
+          console.log('📋 Creating subscription-covered booking (0 payment)...');
+          
+          try {
+            const subscriptionBookingRes = await apiClient.post<any>('/subscriptions/create-booking', {
+              subscriptionId: activeSubscription.id,
+              customerId,
+              vendorId,
+              serviceId: finalServiceId,
+              serviceName,
+              bookingDate,
+              bookingTime,
+              serviceType: serviceStyle || 'at_center',
+              petId,
+              petName,
+              customerPhone,
+              address: selectedAddress?.addressLine1 || address?.addressLine1,
+            });
+            
+            if (subscriptionBookingRes.success && subscriptionBookingRes.booking) {
+              toast.success('Booking confirmed with your subscription!');
+              onSuccess(
+                subscriptionBookingRes.booking.id,
+                undefined,
+                subscriptionBookingRes.booking.otp || subscriptionBookingRes.bookingOtp
+              );
+              return;
+            }
+          } catch (subError: any) {
+            console.warn('⚠️ Subscription booking failed, proceeding with normal payment:', subError);
+            // Fall through to normal payment flow
+            setSubscriptionCovered(false);
+          }
+        }
+        
+        // Create booking with correct API format
+        // ✅ CRITICAL: CreateBookingRequestSchema requires customerId (UUID). Resolve from customerPhone if missing.
+        let resolvedCustomerId = customerId;
+        if (!resolvedCustomerId && customerPhone) {
+          try {
+            const byPhoneRes = await apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`) as any;
+            resolvedCustomerId = byPhoneRes?.customer?.id ?? byPhoneRes?.id;
+            if (!resolvedCustomerId) {
+              const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(customerPhone)}`) as any;
+              const profile = profileRes?.profile ?? profileRes;
+              resolvedCustomerId = profile?.id ?? profile?.customerId;
+            }
+          } catch (e) {
+            console.warn('Could not resolve customerId from customerPhone:', e);
+          }
+        }
+        if (!resolvedCustomerId) {
+          toast.error('Could not load your profile. Please sign in and try again.');
+          setProcessing(false);
+          return;
+        }
+        
+        let bookingRes: any;
+        
+        // Get customer name from profile
+        let customerNameValue = '';
+        try {
+          const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(customerPhone)}`) as any;
+          if (profileResponse?.profile || profileResponse) {
+            const profile = profileResponse.profile || profileResponse;
+            customerNameValue = profile.name || profile.fullName || '';
+          }
+        } catch (e) {
+          console.log('Could not fetch customer name for booking');
+        }
+        
+        // ✅ finalServiceId is already resolved and validated above
+
+        // Normalize bookingTime to HH:MM or HH:MM:SS (backend schema expects this)
+        const timeMatch = typeof bookingTime === 'string' && bookingTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+        const normalizedBookingTime = timeMatch
+          ? (timeMatch[3] !== undefined ? `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}:${timeMatch[3]}` : `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`)
+          : bookingTime;
+
+        const bookingPayload: Record<string, unknown> = {
+          customerId: resolvedCustomerId, // ✅ Required UUID (resolved above)
+          vendorId: vendorId, // ✅ Required UUID
+          serviceId: finalServiceId, // ✅ Required UUID (resolved above)
+          serviceName: serviceName, // ✅ Service name for booking
+          bookingDate: bookingDate, // ✅ Format: YYYY-MM-DD
+          bookingTime: normalizedBookingTime, // ✅ Format: HH:MM or HH:MM:SS
+          serviceType: serviceTypeValue, // ✅ Required enum
+          amount: taxBreakdown.total, // ✅ Number (schema allows >= 0)
+          petId: petId || undefined, // ✅ Optional UUID
+          petName: petName || undefined, // ✅ Pet name for booking
+          customerPhone: customerPhone, // ✅ Customer phone
+          customerName: customerNameValue, // ✅ Customer name
+          address: addressValue, // ✅ Optional string
+          notes: '', // ✅ Optional string
+          // ✅ NEW: Pass selected services for multi-service bookings
+          selectedServices: selectedServices && selectedServices.length > 0 
+            ? selectedServices.map(s => ({
+                id: s.id || s.serviceId,
+                serviceId: s.service_id || s.serviceId || s.id,
+                name: s.name || s.serviceName,
+                price: Number(s.price) || Number(s.custom_price) || 0,
+                duration: Number(s.duration) || Number(s.duration_minutes) || 30,
+                quantity: Number(s.quantity) || 1,
+              }))
+            : undefined,
+        };
+        // ✅ at_home: pass city, state, pincode, latitude, longitude for commute and backend (CreateBookingRequestSchema)
+        if (addressCity !== undefined) bookingPayload.city = addressCity;
+        if (addressState !== undefined) bookingPayload.state = addressState;
+        if (addressPincode !== undefined) bookingPayload.pincode = addressPincode;
+        if (addressLat !== undefined) bookingPayload.latitude = addressLat;
+        if (addressLng !== undefined) bookingPayload.longitude = addressLng;
+        
+        console.log('📋 Creating booking with validated payload:', {
+          ...bookingPayload,
+          originalServiceId: serviceId, // Log original
+          resolvedServiceId: finalServiceId, // Log resolved UUID
+        });
+        
+        // ✅ Try all possible booking creation endpoints
+        // CRITICAL: Lambda may not be deployed with latest code, try all variations
+        const endpoints = [
+          '/bookings/create',
+          '/booking/create', 
+          '/customer/booking/create',
+          '/customer/bookings/create'
+        ];
+        
+        let lastError: any = null;
+        for (const endpoint of endpoints) {
+          try {
+            console.log(`🔄 Trying booking endpoint: ${endpoint}`);
+            bookingRes = await apiClient.post<any>(endpoint, bookingPayload);
+            console.log(`✅ Booking created with endpoint: ${endpoint}`);
+            break; // Success, exit loop
+          } catch (error: any) {
+            lastError = error;
+            const is404 = error?.statusCode === 404 || 
+                         error?.status === 404 || 
+                         error?.response?.status === 404 ||
+                         (error?.message && error.message.includes('404'));
+            
+            if (is404) {
+              console.warn(`⚠️ ${endpoint} returned 404, trying next endpoint...`);
+              continue; // Try next endpoint
+            } else {
+              // Not a 404, might be validation error - log details and throw
+              const err = error as any;
+              const errorResponse = err?.response ?? err?.responseData ?? err?.responseBody;
+              console.error(`❌ ${endpoint} failed with non-404 error:`, error);
+              console.error('❌ Error response:', errorResponse);
+              console.error('❌ Error status:', err?.status ?? err?.statusCode);
+              console.error('❌ Error message:', error?.message);
+
+              // Extract message from backend shape: { success: false, error: { code, message, details } }
+              let errorMessage =
+                errorResponse?.error?.message ??
+                (typeof errorResponse?.error === 'string' ? errorResponse.error : null) ??
+                errorResponse?.message ??
+                error?.message ??
+                'Failed to create booking. Please check all required fields and try again.';
+
+              // If backend sent validation errors (Zod), append first path/message for clarity
+              const details = errorResponse?.error?.details ?? errorResponse?.details;
+              const validationErrors = details?.errors;
+              if (Array.isArray(validationErrors) && validationErrors.length > 0) {
+                const first = validationErrors[0];
+                const path = first?.path?.join?.('.') ?? first?.path ?? '';
+                const msg = first?.message ?? '';
+                errorMessage = path ? `${errorMessage} (${path}: ${msg})` : `${errorMessage} — ${msg}`;
+              }
+
+              throw new Error(errorMessage);
+            }
+          }
+        }
+        
+        // If we exhausted all endpoints, throw the last error
+        if (!bookingRes) {
+          console.error('❌ All booking creation endpoints failed');
+          throw lastError || new Error('All booking creation endpoints returned 404. Lambda may need redeployment.');
+        }
+        
+        // P2: Treat 200-with-error as failure (resilient parsing)
+        if (bookingRes?.error || bookingRes?.success === false) {
+          const errMsg = typeof bookingRes?.error === 'string' ? bookingRes.error : (bookingRes?.error?.message ?? bookingRes?.error ?? 'Booking creation failed');
+          throw new Error(errMsg);
+        }
+        
+        // Handle response format (can be in data.bookingId or bookingId)
+        const bookingIdValue = bookingRes.data?.bookingId || 
+                               bookingRes.data?.booking?.id ||
+                               bookingRes.bookingId || 
+                               bookingRes.booking_id || 
+                               bookingRes.id;
+        
+        console.log('📋 Booking creation response:', {
+          fullResponse: bookingRes,
+          extractedBookingId: bookingIdValue,
+          hasData: !!bookingRes.data,
+          dataKeys: bookingRes.data ? Object.keys(bookingRes.data) : [],
+        });
+        
+        if (!bookingIdValue) {
+          console.error('❌ No booking ID in response:', bookingRes);
+          throw new Error('Failed to create booking: No booking ID returned');
+        }
+        
+        // ✅ Validate bookingId is a UUID (reuse the regex defined above)
+        if (!uuidRegex.test(bookingIdValue)) {
+          console.error('❌ Invalid bookingId format from API:', bookingIdValue);
+          throw new Error('Invalid booking ID format received from server');
+        }
+        
+        currentBookingId = bookingIdValue;
+        console.log('✅ Booking ID set:', currentBookingId);
+      } else if (type === 'order' && !currentOrderId) {
+        const orderRes = await apiClient.post<any>('/customer/orders', {
+          productId: productId,
+          vendorId: vendorId,
+          quantity,
+          address: selectedAddress,
+          shippingAddress: selectedAddress,
+          customerPhone,
+          customerId,
+          subtotal: taxBreakdown.subtotal,
+          taxAmount: taxBreakdown.totalTax,
+          total: taxBreakdown.total,
+        });
+        
+        if (!orderRes.orderId && !orderRes.id) {
+          throw new Error('Failed to create order');
+        }
+        currentOrderId = orderRes.orderId || orderRes.id;
+      }
+      
+      // Step 2: Create payment record
+      // ✅ FIX: Schema requires bookingId (UUID), amount (positive), paymentMethod (optional enum)
+      // orderId is not in schema - backend only handles bookings for now
+      if (!currentBookingId) {
+        // For orders, skip payment creation (order handles payment separately)
+        // Or we could create payment without bookingId if backend supports it
+        if (type === 'order') {
+          console.log('⚠️ Order payment - skipping payment record creation (order handles payment)');
+          // For orders, proceed directly to Razorpay
+        } else {
+          throw new Error('Booking ID is required to create payment');
+        }
+      }
+      
+      // ✅ FIX: Schema requires bookingId (UUID), amount (positive), paymentMethod (optional enum)
+      const paymentPayload: any = {
+        amount: taxBreakdown.total, // ✅ Required: positive number
+        paymentMethod: selectedMethod === 'razorpay' ? 'razorpay' : (selectedMethod || 'razorpay'), // ✅ Optional enum
+        bookingId: currentBookingId, // ✅ Required UUID (only for bookings)
+      };
+      
+      // ✅ Optional fields (not in schema but backend may handle)
+      if (customerId) {
+        paymentPayload.customerId = customerId; // ✅ Optional UUID
+      }
+      if (vendorId) {
+        paymentPayload.vendorId = vendorId; // ✅ Optional UUID
+      }
+      
+      // ✅ Wallet fields (extracted from raw body by backend)
+      if (useWallet) {
+        paymentPayload.useWallet = useWallet;
+        paymentPayload.walletAmount = walletAmount || 0;
+      }
+      
+      // ✅ Additional fields (not in schema, but backend may handle from raw body)
+      // These are sent but not validated by schema
+      if (appliedCoupon?.code) {
+        paymentPayload.couponCode = appliedCoupon.code;
+        paymentPayload.couponDiscount = couponDiscount || 0;
+      }
+      if (appliedPromotion?.id) {
+        paymentPayload.promotionId = appliedPromotion.id;
+        paymentPayload.promotionDiscount = promotionDiscount || 0;
+      }
+      if (selectedRazorpayOffer?.id) {
+        paymentPayload.razorpayOfferId = selectedRazorpayOffer.id;
+        paymentPayload.razorpayOfferDiscount = razorpayOfferDiscount || 0;
+      }
+      
+      console.log('📤 Creating payment with payload:', paymentPayload);
+      
+      // ✅ Only create payment record if we have a bookingId (required by schema)
+      let paymentRes: any = null;
+      if (currentBookingId) {
+        // ✅ Validate bookingId is a UUID before sending
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidRegex.test(currentBookingId)) {
+          console.error('❌ Invalid bookingId format:', currentBookingId);
+          throw new Error('Invalid booking ID format. Please try again.');
+        }
+        
+        // ✅ Validate amount is a non-negative number (0 allowed for full wallet payment)
+        if (paymentPayload.amount == null || paymentPayload.amount < 0 || isNaN(paymentPayload.amount)) {
+          console.error('❌ Invalid amount:', paymentPayload.amount);
+          throw new Error('Invalid payment amount. Please try again.');
+        }
+        
+        // ✅ Validate paymentMethod is one of the allowed values
+        const allowedMethods = ['razorpay', 'wallet', 'cash', 'card', 'upi', 'netbanking'];
+        if (paymentPayload.paymentMethod && !allowedMethods.includes(paymentPayload.paymentMethod)) {
+          console.error('❌ Invalid paymentMethod:', paymentPayload.paymentMethod);
+          // Default to razorpay if invalid
+          paymentPayload.paymentMethod = 'razorpay';
+        }
+        
+        // ✅ Validate customerId and vendorId are UUIDs if provided
+        if (paymentPayload.customerId && !uuidRegex.test(paymentPayload.customerId)) {
+          console.warn('⚠️ Invalid customerId format, removing from payload:', paymentPayload.customerId);
+          delete paymentPayload.customerId;
+        }
+        if (paymentPayload.vendorId && !uuidRegex.test(paymentPayload.vendorId)) {
+          console.warn('⚠️ Invalid vendorId format, removing from payload:', paymentPayload.vendorId);
+          delete paymentPayload.vendorId;
+        }
+        
+        console.log('📤 Creating payment with validated payload:', {
+          bookingId: paymentPayload.bookingId,
+          amount: paymentPayload.amount,
+          amountType: typeof paymentPayload.amount,
+          paymentMethod: paymentPayload.paymentMethod,
+          customerId: paymentPayload.customerId,
+          vendorId: paymentPayload.vendorId,
+          hasWallet: !!paymentPayload.useWallet,
+          hasCoupon: !!paymentPayload.couponCode,
+          hasPromotion: !!paymentPayload.promotionId,
+        });
+        console.log('📤 Full payment payload (for debugging):', JSON.stringify(paymentPayload, null, 2));
+        
+        try {
+          paymentRes = await apiClient.post<any>('/payments/create', paymentPayload);
+        } catch (paymentError: any) {
+          // ✅ Enhanced error logging to see validation errors
+          console.error('❌ Payment creation failed:', paymentError);
+          console.error('❌ Error response:', paymentError?.response || paymentError?.responseData);
+          console.error('❌ Error data:', paymentError?.responseData);
+          console.error('❌ Error status:', paymentError?.statusCode || paymentError?.status);
+          console.error('❌ Raw response:', paymentError?.rawResponse);
+          console.error('❌ Request payload that failed:', paymentPayload);
+          
+          // Log full error object for debugging
+          if (paymentError) {
+            console.error('❌ Full error object:', {
+              message: paymentError.message,
+              code: paymentError.code,
+              statusCode: paymentError.statusCode,
+              status: paymentError.status,
+              response: paymentError.response,
+              responseData: paymentError.responseData,
+              rawResponse: paymentError.rawResponse,
+              stack: paymentError.stack
+            });
+          }
+          
+          // Extract validation errors from backend
+          // Check multiple possible locations for error data
+          const errorData = paymentError?.responseData || paymentError?.response || paymentError?.data || {};
+          let errorMessage = 'Failed to create payment';
+          
+          // Check for validation errors in different formats
+          if (errorData?.error?.details?.errors && Array.isArray(errorData.error.details.errors)) {
+            // Format: { success: false, error: { code: 'VALIDATION_ERROR', details: { errors: [...] } } }
+            const validationErrors = errorData.error.details.errors.map((e: any) => {
+              const path = e.path?.join('.') || e.path || 'unknown';
+              return `${path}: ${e.message}`;
+            }).join(', ');
+            errorMessage = `Payment validation failed: ${validationErrors}`;
+            console.error('❌ Validation errors:', errorData.error.details.errors);
+          } else if (errorData?.data?.errors && Array.isArray(errorData.data.errors)) {
+            // Format: { data: { errors: [...] } }
+            const validationErrors = errorData.data.errors.map((e: any) => {
+              const path = e.path?.join('.') || e.path || 'unknown';
+              return `${path}: ${e.message}`;
+            }).join(', ');
+            errorMessage = `Payment validation failed: ${validationErrors}`;
+            console.error('❌ Validation errors:', errorData.data.errors);
+          } else if (errorData?.errors && Array.isArray(errorData.errors)) {
+            // Format: { errors: [...] }
+            const validationErrors = errorData.errors.map((e: any) => {
+              const path = e.path?.join('.') || e.path || 'unknown';
+              return `${path}: ${e.message}`;
+            }).join(', ');
+            errorMessage = `Payment validation failed: ${validationErrors}`;
+            console.error('❌ Validation errors:', errorData.errors);
+          } else if (errorData?.error?.message) {
+            // Format: { success: false, error: { code, message, details } } (backend 500)
+            const step = errorData.error?.details?.step;
+            errorMessage = errorData.error.message;
+            if (step) errorMessage += ` (step: ${step})`;
+          } else if (errorData?.error) {
+            // Format: { error: '...' }
+            errorMessage = typeof errorData.error === 'string' ? errorData.error : errorData.error.message || errorMessage;
+          } else if (errorData?.message) {
+            // Format: { message: '...' }
+            errorMessage = errorData.message;
+          } else if (paymentError?.message) {
+            // Fallback to ApiError message
+            errorMessage = paymentError.message;
+          }
+          
+          toast.error(errorMessage);
+          setProcessing(false);
+          return;
+        }
+      } else {
+        // For orders, create a mock payment response to proceed
+        paymentRes = {
+          id: `payment-${Date.now()}`,
+          status: 'pending',
+          razorpayOrderId: null,
+        };
+      }
+      
+      // If fully paid with wallet
+      if (paymentRes.status === 'completed' || finalAmount === 0) {
+        // Apply promotions and coupons
+        if (appliedCoupon) {
+          await apiClient.post('/coupons/apply', {
+            couponCode: appliedCoupon.code,
+            bookingId: currentBookingId,
+            orderId: currentOrderId,
+            customerId,
+            amount: taxBreakdown.total,
+          });
+        }
+        
+        if (appliedPromotion) {
+          await apiClient.post('/promotions/apply', {
+            promotionId: appliedPromotion.id,
+            bookingId: currentBookingId,
+            orderId: currentOrderId,
+            customerId,
+            amount: taxBreakdown.total,
+          });
+        }
+        
+        // Generate OTP for eligible bookings
+        const otpCode = type === 'booking' && serviceStyle !== 'tele' 
+          ? await generateBookingOTP(currentBookingId || '', customerId) 
+          : undefined;
+        
+        toast.success(type === 'booking' ? 'Booking confirmed!' : 'Order confirmed!');
+        onSuccess(currentBookingId || '', currentOrderId, otpCode);
+        return;
+      }
+      
+      // Step 3: Create Razorpay order
+      // ✅ FIX: Use longer timeout (45s) for payment operations
+      console.log('🔄 [PAYMENT] Creating Razorpay order...');
+      const orderRes = await apiClient.post<any>('/razorpay/create-order', {
+        bookingId: currentBookingId,
+        orderId: currentOrderId,
+        amount: finalAmount,
+        customerId,
+        offerId: selectedRazorpayOffer?.id,
+      }, undefined, 45000); // ✅ FIX: 45 second timeout for payment operations
+      
+      console.log('✅ [PAYMENT] Razorpay order created:', orderRes.orderId);
+      
+      if (!orderRes.orderId) {
+        throw new Error('Failed to create payment order');
+      }
+      
+      // Step 4: Open Razorpay checkout
+      const options = {
+        key: orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
+        amount: finalAmount * 100,
+        currency: 'INR',
+        name: 'Warmpawz',
+        description: `${serviceName || productName} - ${vendorName}`,
+        order_id: orderRes.orderId,
+        handler: async (response: any) => {
+          try {
+            console.log('✅ [RAZORPAY] Payment response received:', {
+              order_id: response.razorpay_order_id,
+              payment_id: response.razorpay_payment_id,
+              has_signature: !!response.razorpay_signature,
+            });
+
+            // ✅ Step 1: Verify payment with backend
+            console.log('🔄 [RAZORPAY] Verifying payment...');
+            const verifyRes = await apiClient.post('/razorpay/verify-payment', {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+            
+            console.log('✅ [RAZORPAY] Payment verified:', verifyRes);
+            
+            // ✅ Step 2: Apply coupon if used
+            if (appliedCoupon) {
+              try {
+                await apiClient.post('/coupons/apply', {
+                  couponCode: appliedCoupon.code,
+                  bookingId: currentBookingId,
+                  orderId: currentOrderId,
+                  customerId,
+                  amount: taxBreakdown.total,
+                });
+                console.log('✅ [COUPON] Applied successfully');
+              } catch (couponErr) {
+                console.warn('⚠️ [COUPON] Failed to apply:', couponErr);
+                // Don't block payment success if coupon fails
+              }
+            }
+            
+            // ✅ Step 3: Apply promotion if used
+            if (appliedPromotion) {
+              try {
+                await apiClient.post('/promotions/apply', {
+                  promotionId: appliedPromotion.id,
+                  bookingId: currentBookingId,
+                  orderId: currentOrderId,
+                  customerId,
+                  amount: taxBreakdown.total,
+                });
+                console.log('✅ [PROMOTION] Applied successfully');
+              } catch (promoErr) {
+                console.warn('⚠️ [PROMOTION] Failed to apply:', promoErr);
+                // Don't block payment success if promotion fails
+              }
+            }
+            
+            // ✅ Step 4: Generate OTP for eligible bookings
+            let otpCode: string | undefined = undefined;
+            if (type === 'booking' && serviceStyle !== 'tele') {
+              try {
+                otpCode = await generateBookingOTP(currentBookingId || '', customerId);
+                console.log('✅ [OTP] Generated successfully');
+              } catch (otpErr) {
+                console.warn('⚠️ [OTP] Failed to generate:', otpErr);
+                // Don't block payment success if OTP fails
+              }
+            }
+            
+            // ✅ Step 5: Success - booking is now confirmed
+            console.log('✅ [PAYMENT] Complete! Booking confirmed:', currentBookingId);
+            toast.success('Payment successful! Booking confirmed.');
+            setProcessing(false);
+            onSuccess(currentBookingId || '', currentOrderId, otpCode);
+          } catch (err: any) {
+            console.error('❌ [PAYMENT] Verification failed:', err);
+            const errorMessage = err?.response?.data?.error || err?.message || 'Payment verification failed';
+            toast.error(`${errorMessage}. Please contact support with order ID: ${response.razorpay_order_id}`);
+            setProcessing(false);
+          }
+        },
+        prefill: {
+          contact: customerPhone,
+        },
+        theme: {
+          color: '#FF8C42',
+        },
+        offers: selectedRazorpayOffer ? [selectedRazorpayOffer.id] : [],
+        modal: {
+          ondismiss: () => {
+            setProcessing(false);
+            toast.info('Payment cancelled');
+          },
+        },
+      };
+      
+      if (window.Razorpay) {
+        const razorpay = new window.Razorpay(options);
+        razorpay.open();
+      } else {
+        throw new Error('Payment gateway not loaded');
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Payment error:', error);
+      console.error('❌ Error response:', error?.response);
+      console.error('❌ Error data:', error?.response?.data);
+      console.error('❌ Error status:', error?.status);
+      console.error('❌ Error message:', error?.message);
+      
+      // Extract detailed error message
+      const errorData = error?.response?.data || error?.data;
+      let errorMessage = error.message || 'Payment failed';
+      
+      if (errorData?.data?.errors && Array.isArray(errorData.data.errors)) {
+        const validationErrors = errorData.data.errors.map((e: any) => {
+          const path = e.path?.join('.') || e.path || 'unknown';
+          return `${path}: ${e.message}`;
+        }).join(', ');
+        errorMessage = `Payment validation failed: ${validationErrors}`;
+        console.error('❌ Validation errors:', errorData.data.errors);
+      } else if (errorData?.errors && Array.isArray(errorData.errors)) {
+        const validationErrors = errorData.errors.map((e: any) => {
+          const path = e.path?.join('.') || e.path || 'unknown';
+          return `${path}: ${e.message}`;
+        }).join(', ');
+        errorMessage = `Payment validation failed: ${validationErrors}`;
+        console.error('❌ Validation errors:', errorData.errors);
+      } else if (errorData?.error || errorData?.message) {
+        errorMessage = errorData.error || errorData.message;
+      }
+      
+      toast.error(errorMessage);
+      setProcessing(false);
+    }
+  };
+
+  const generateBookingOTP = async (bookingId: string, customerIdParam?: string): Promise<string | undefined> => {
+    // Only generate OTP for home and center services
+    if (serviceStyle === 'tele' || serviceStyle === 'ecom') {
+      return undefined;
+    }
+    
+    try {
+      const otpRes = await apiClient.post<any>('/bookings/generate-otp', {
+        bookingId,
+        serviceStyle,
+        customerId: customerIdParam || customerId || undefined,
+      });
+      
+      if (otpRes.success && otpRes.otp) {
+        return otpRes.otp;
+      }
+    } catch (error) {
+      console.error('Error generating OTP:', error);
+    }
+    
+    // Generate a fallback 4-digit OTP
+    return Math.floor(1000 + Math.random() * 9000).toString();
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="w-12 h-12 animate-spin text-[#FF8C42]" />
+      </div>
+    );
+  }
+
+  // ✅ Derive display values from selectedServices when available (universal payment for all flows)
+  const effectiveSelectedServices = selectedServices && selectedServices.length > 0
+    ? selectedServices
+    : null;
+  const firstServiceFromArray = effectiveSelectedServices?.[0];
+  
+  const displayName = serviceName || productName 
+    || firstServiceFromArray?.name || firstServiceFromArray?.serviceName 
+    || 'Service';
+  const displayDescription = serviceDescription || firstServiceFromArray?.description || '';
+  const displayAmount = Number(baseAmount) || (effectiveSelectedServices 
+    ? effectiveSelectedServices.reduce((sum: number, s: any) => sum + (Number(s.price) || 0), 0)
+    : 0);
+  const displayDuration = (duration != null && (typeof duration !== 'string' || duration !== '')) 
+    ? Number(duration) 
+    : (effectiveSelectedServices 
+        ? effectiveSelectedServices.reduce((sum: number, s: any) => sum + (Number(s.duration) || 0), 0)
+        : firstServiceFromArray?.duration);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-orange-50 pb-48">
+      {/* Header */}
+      <header className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-lg sticky top-0 z-40">
+        <div className="max-w-lg mx-auto px-4 pt-4 pb-4 flex items-center gap-4">
+          <button onClick={onBack} className="text-white/90 hover:text-white">
+            <ArrowLeft className="w-6 h-6" />
+          </button>
+          <div className="flex-1">
+            <h1 className="text-lg font-bold">Payment</h1>
+            <p className="text-sm text-white/80">Secure checkout</p>
+          </div>
+          <Shield className="w-6 h-6 text-white/90" />
+        </div>
+      </header>
+
+      <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
+        {/* Address Selection (if needed and on top) */}
+        {showAddressSelection && (
+          <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-5 h-5 text-[#FF8C42]" />
+                <h2 className="font-semibold text-gray-900">Delivery Address</h2>
+              </div>
+              <button
+                onClick={() => setShowAddressModal(true)}
+                className="text-sm text-[#FF8C42] font-medium hover:underline"
+              >
+                Change
+              </button>
+            </div>
+            
+            {selectedAddress ? (
+              <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
+                <p className="font-medium text-gray-900">{selectedAddress.label || 'Home'}</p>
+                <p className="text-sm text-gray-600">
+                  {selectedAddress.addressLine1 || selectedAddress.address}, {selectedAddress.city} - {selectedAddress.pincode}
+                </p>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowAddressModal(true)}
+                className="w-full p-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-600 hover:border-[#FF8C42] transition"
+              >
+                <Plus className="w-4 h-4 inline mr-2" />
+                Add Address
+              </button>
+            )}
+          </Card>
+        )}
+
+        {/* Booking/Order Summary - Universal display for all service booking flows */}
+        <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h2 className="text-lg font-bold text-gray-900 mb-4">
+            {type === 'booking' ? 'Booking Summary' : 'Order Summary'}
+          </h2>
+          
+          {/* Multi-service or single service display */}
+          {effectiveSelectedServices && effectiveSelectedServices.length > 0 ? (
+            <div className="space-y-3 pb-4 border-b border-gray-100">
+              {effectiveSelectedServices.map((svc: any, idx: number) => {
+                const svcName = svc.name || svc.serviceName || 'Service';
+                const svcPrice = Number(svc.price) || 0;
+                const svcDuration = svc.duration != null ? Number(svc.duration) : null;
+                const svcStyle = svc.serviceStyle || svc.service_style || serviceStyle;
+                return (
+                  <div key={svc.id || svc.serviceId || idx} className="flex items-start gap-4">
+                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${
+                      svcStyle === 'tele' ? 'bg-blue-100' :
+                      svcStyle === 'at_home' ? 'bg-green-100' : 
+                      svcStyle === 'at_center' ? 'bg-purple-100' : 'bg-orange-100'
+                    }`}>
+                      {svcStyle === 'tele' ? '📱' : svcStyle === 'at_home' ? '🏠' : svcStyle === 'at_center' ? '🏥' : '🛒'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-gray-900">{svcName}</h3>
+                      {idx === 0 && <p className="text-sm text-gray-500">{vendorName}</p>}
+                      {svcDuration != null && svcDuration > 0 && (
+                        <p className="text-sm text-gray-400 flex items-center gap-1 mt-1">
+                          <Clock className="w-3 h-3" /> {svcDuration} mins
+                        </p>
+                      )}
+                    </div>
+                    <p className="font-bold text-[#FF8C42]">₹{svcPrice.toLocaleString('en-IN')}</p>
+                  </div>
+                );
+              })}
+              {effectiveSelectedServices.length > 1 && (
+                <div className="flex justify-between items-center pt-2 font-bold">
+                  <span>Subtotal</span>
+                  <span className="text-[#FF8C42]">₹{displayAmount.toLocaleString('en-IN')}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-start gap-4 pb-4 border-b border-gray-100">
+              <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${
+                serviceStyle === 'tele' ? 'bg-blue-100' :
+                serviceStyle === 'at_home' ? 'bg-green-100' : 
+                serviceStyle === 'at_center' ? 'bg-purple-100' : 'bg-orange-100'
+              }`}>
+                {serviceStyle === 'tele' ? '📱' : serviceStyle === 'at_home' ? '🏠' : serviceStyle === 'at_center' ? '🏥' : '🛒'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-gray-900">{displayName}</h3>
+                <p className="text-sm text-gray-500">{vendorName}</p>
+                {displayDescription && (
+                  <p className="text-sm text-gray-400 mt-1 line-clamp-2">{displayDescription}</p>
+                )}
+                {displayDuration != null && displayDuration > 0 && (
+                  <p className="text-sm text-gray-400 flex items-center gap-1 mt-1">
+                    <Clock className="w-3 h-3" /> {displayDuration} mins
+                  </p>
+                )}
+                {quantity > 1 && (
+                  <p className="text-sm text-gray-400 mt-1">Quantity: {quantity}</p>
+                )}
+              </div>
+              <p className="font-bold text-[#FF8C42]">₹{displayAmount.toLocaleString('en-IN')}</p>
+            </div>
+          )}
+          
+          {/* Schedule (for bookings) */}
+          {type === 'booking' && (bookingDate || bookingTime) && (
+            <div className="flex items-center gap-3 py-3 border-b border-gray-100">
+              <Calendar className="w-5 h-5 text-gray-400" />
+              <div className="flex-1">
+                <p className="text-sm text-gray-500">Schedule</p>
+                <p className="font-medium">
+                  {bookingDate && new Date(bookingDate).toLocaleDateString('en-IN', { 
+                    weekday: 'short', day: 'numeric', month: 'short' 
+                  })}
+                  {bookingTime && ` at ${bookingTime}`}
+                </p>
+              </div>
+            </div>
+          )}
+          
+          {/* Pet (for bookings) */}
+          {type === 'booking' && petName && (
+            <div className="flex items-center gap-3 py-3 border-b border-gray-100">
+              <User className="w-5 h-5 text-gray-400" />
+              <div className="flex-1">
+                <p className="text-sm text-gray-500">Pet</p>
+                <p className="font-medium">{petName}{petBreed && ` (${petBreed})`}</p>
+              </div>
+            </div>
+          )}
+          
+          {/* Address (for home services/orders) */}
+          {((serviceStyle === 'at_home' && type === 'booking') || type === 'order') && selectedAddress && (
+            <div className="flex items-center gap-3 py-3">
+              <MapPin className="w-5 h-5 text-gray-400" />
+              <div className="flex-1">
+                <p className="text-sm text-gray-500">Delivery Address</p>
+                <p className="font-medium">{selectedAddress.label || 'Home'}</p>
+                <p className="text-sm text-gray-500">
+                  {selectedAddress.addressLine1 || selectedAddress.address}, {selectedAddress.city} - {selectedAddress.pincode}
+                </p>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* Promotions & Spotlight Offers */}
+        {promotions.length > 0 && (
+          <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="w-5 h-5 text-[#FF8C42]" />
+              <h2 className="font-semibold text-gray-900">Available Offers</h2>
+            </div>
+            
+            <div className="space-y-2">
+              {promotions.map((promo) => (
+                <button
+                  key={promo.id}
+                  onClick={() => applyPromotion(promo)}
+                  className={`w-full text-left p-3 rounded-xl border-2 transition ${
+                    appliedPromotion?.id === promo.id
+                      ? 'border-green-500 bg-green-50'
+                      : 'border-gray-200 hover:border-[#FF8C42]'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-medium text-gray-900">{promo.title}</h3>
+                        {promo.type === 'spotlight' && (
+                          <Badge className="bg-[#FF8C42] text-white text-xs">Spotlight</Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-600">{promo.description}</p>
+                      <p className="text-sm font-medium text-green-600 mt-1">
+                        Save ₹{promo.discountAmount.toFixed(2)}
+                      </p>
+                    </div>
+                    {appliedPromotion?.id === promo.id && (
+                      <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Coupon Section */}
+        <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Tag className="w-5 h-5 text-[#FF8C42]" />
+              <h2 className="font-semibold text-gray-900">Coupons & Discounts</h2>
+            </div>
+          </div>
+          
+          {appliedCoupon ? (
+            <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-xl">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-green-500" />
+                <div>
+                  <p className="font-medium text-green-700">{appliedCoupon.code}</p>
+                  <p className="text-sm text-green-600">You save ₹{appliedCoupon.discountAmount.toFixed(2)}</p>
+                </div>
+              </div>
+              <button onClick={removeCoupon} className="text-red-500 hover:text-red-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          ) : showCouponInput ? (
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                  placeholder="Enter coupon code"
+                  className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none uppercase"
+                />
+                <Button
+                  onClick={handleApplyCoupon}
+                  disabled={couponLoading}
+                  className="bg-[#FF8C42] hover:bg-[#E67A35] text-white px-6"
+                >
+                  {couponLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Apply'}
+                </Button>
+              </div>
+              <button 
+                onClick={() => setShowCouponInput(false)}
+                className="text-sm text-gray-500 hover:text-gray-700"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowCouponInput(true)}
+              className="w-full flex items-center justify-between p-3 border-2 border-dashed border-gray-200 rounded-xl hover:border-[#FF8C42] transition"
+            >
+              <span className="text-gray-600">Have a coupon code?</span>
+              <ChevronRight className="w-5 h-5 text-gray-400" />
+            </button>
+          )}
+        </Card>
+
+        {/* Razorpay Offers */}
+        {razorpayOffers.length > 0 && (
+          <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <div className="flex items-center gap-2 mb-3">
+              <Gift className="w-5 h-5 text-blue-500" />
+              <h2 className="font-semibold text-gray-900">Payment Offers</h2>
+            </div>
+            
+            <div className="space-y-2">
+              {razorpayOffers.map((offer) => (
+                <button
+                  key={offer.id}
+                  onClick={() => applyRazorpayOffer(offer)}
+                  className={`w-full text-left p-3 rounded-xl border-2 transition ${
+                    selectedRazorpayOffer?.id === offer.id
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-blue-300'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h3 className="font-medium text-gray-900">{offer.title}</h3>
+                      <p className="text-sm text-gray-600">{offer.description}</p>
+                      {offer.discountType === 'cashback' && (
+                        <p className="text-sm font-medium text-blue-600 mt-1">
+                          Get ₹{offer.discountValue} cashback
+                        </p>
+                      )}
+                    </div>
+                    {selectedRazorpayOffer?.id === offer.id && (
+                      <CheckCircle2 className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Wallet Section */}
+        {wallet && wallet.balance > 0 && (
+          <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <button
+              onClick={() => setUseWallet(!useWallet)}
+              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition ${
+                useWallet ? 'border-green-500 bg-green-50' : 'border-gray-200'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                  useWallet ? 'bg-green-100' : 'bg-orange-100'
+                }`}>
+                  <Wallet className={`w-5 h-5 ${useWallet ? 'text-green-600' : 'text-[#FF8C42]'}`} />
+                </div>
+                <div className="text-left">
+                  <p className="font-medium text-gray-900">Warmpawz Wallet</p>
+                  <p className="text-sm text-gray-500">
+                    Balance: ₹{wallet.balance.toFixed(2)}
+                    {wallet.loyaltyPoints && ` • ${wallet.loyaltyPoints} points`}
+                  </p>
+                </div>
+              </div>
+              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                useWallet ? 'border-green-500 bg-green-500 text-white' : 'border-gray-300'
+              }`}>
+                {useWallet && <CheckCircle2 className="w-4 h-4" />}
+              </div>
+            </button>
+            {useWallet && (
+              <p className="text-sm text-green-600 mt-2 flex items-center gap-1">
+                <CheckCircle2 className="w-4 h-4" />
+                ₹{walletAmount.toFixed(2)} will be deducted from wallet
+              </p>
+            )}
+          </Card>
+        )}
+
+        {/* Price Breakdown */}
+        <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h2 className="font-semibold text-gray-900 mb-4">Price Details</h2>
+          
+          <div className="space-y-3">
+            <div className="flex justify-between text-gray-600">
+              <span>Subtotal</span>
+              <span>₹{taxBreakdown.subtotal.toFixed(2)}</span>
+            </div>
+            
+            {/* ✅ FIX: Vendor Discount - Applied directly by vendor at service level */}
+            {appliedPromotion && (
+              <div className="flex justify-between text-green-600">
+                <span className="flex items-center gap-1">
+                  <Sparkles className="w-4 h-4" />
+                  <span className="font-medium">Vendor Offer:</span> {appliedPromotion.title}
+                </span>
+                <span className="font-medium">-₹{promotionDiscount.toFixed(2)}</span>
+              </div>
+            )}
+            
+            {/* ✅ FIX: Platform Coupon - Applied at checkout level by platform */}
+            {appliedCoupon && (
+              <div className="flex justify-between text-blue-600">
+                <span className="flex items-center gap-1">
+                  <Percent className="w-4 h-4" />
+                  <span className="font-medium">Platform Coupon:</span> {appliedCoupon.code}
+                </span>
+                <span className="font-medium">-₹{couponDiscount.toFixed(2)}</span>
+              </div>
+            )}
+            
+            {/* GST Breakdown */}
+            {taxBreakdown.isInterState ? (
+              <div className="flex justify-between text-gray-600">
+                <span className="flex items-center gap-1">
+                  IGST ({taxBreakdown.taxRate}%)
+                  <Info className="w-3 h-3 text-gray-400" />
+                </span>
+                <span>₹{taxBreakdown.igst.toFixed(2)}</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex justify-between text-gray-600">
+                  <span className="flex items-center gap-1">
+                    CGST ({taxBreakdown.taxRate / 2}%)
+                  </span>
+                  <span>₹{taxBreakdown.cgst.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-gray-600">
+                  <span className="flex items-center gap-1">
+                    SGST ({taxBreakdown.taxRate / 2}%)
+                  </span>
+                  <span>₹{taxBreakdown.sgst.toFixed(2)}</span>
+                </div>
+              </>
+            )}
+            
+            {/* ✅ FIX GAP-7.1: Platform Discount (shown separately from vendor discount) */}
+            {appliedPromotion && promotionDiscount > 0 && (
+              <div className="flex justify-between text-blue-600">
+                <span className="flex items-center gap-1">
+                  <Gift className="w-4 h-4" />
+                  Platform Discount
+                </span>
+                <span>-₹{promotionDiscount.toFixed(2)}</span>
+              </div>
+            )}
+            
+            {/* Platform Fees */}
+            {platformFees.platformFee > 0 && (
+              <div className="flex justify-between text-gray-600">
+                <span className="flex items-center gap-1">
+                  Platform Fee
+                  <Info className="w-3 h-3 text-gray-400 cursor-help" aria-label="Platform service charge" />
+                </span>
+                <span>₹{platformFees.platformFee.toFixed(2)}</span>
+              </div>
+            )}
+            
+            {platformFees.convenienceFee > 0 && (
+              <div className="flex justify-between text-gray-600">
+                <span className="flex items-center gap-1">
+                  Convenience Fee
+                  <Info className="w-3 h-3 text-gray-400 cursor-help" aria-label="Online booking convenience charge" />
+                </span>
+                <span>₹{platformFees.convenienceFee.toFixed(2)}</span>
+              </div>
+            )}
+            
+            {platformFees.deliveryFee > 0 && (
+              <div className="flex justify-between text-gray-600">
+                <span className="flex items-center gap-1">
+                  Delivery Fee
+                </span>
+                <span>₹{platformFees.deliveryFee.toFixed(2)}</span>
+              </div>
+            )}
+            
+            {platformFees.packagingFee > 0 && (
+              <div className="flex justify-between text-gray-600">
+                <span className="flex items-center gap-1">
+                  Packaging Fee
+                </span>
+                <span>₹{platformFees.packagingFee.toFixed(2)}</span>
+              </div>
+            )}
+
+            {/* Razorpay Offer Discount */}
+            {selectedRazorpayOffer && (
+              <div className="flex justify-between text-blue-600">
+                <span className="flex items-center gap-1">
+                  <Gift className="w-4 h-4" />
+                  {selectedRazorpayOffer.title}
+                </span>
+                <span>-₹{razorpayOfferDiscount.toFixed(2)}</span>
+              </div>
+            )}
+            
+            {/* Wallet */}
+            {useWallet && walletAmount > 0 && (
+              <div className="flex justify-between text-green-600">
+                <span className="flex items-center gap-1">
+                  <Wallet className="w-4 h-4" />
+                  Wallet
+                </span>
+                <span>-₹{walletAmount.toFixed(2)}</span>
+              </div>
+            )}
+            
+            <div className="border-t border-gray-200 pt-3 mt-3">
+              <div className="flex justify-between text-lg font-bold">
+                <span className="text-gray-900">Total Amount</span>
+                <span className="text-[#FF8C42]">₹{finalAmount.toFixed(2)}</span>
+              </div>
+              {(promotionDiscount > 0 || couponDiscount > 0 || walletAmount > 0 || razorpayOfferDiscount > 0) && (
+                <p className="text-sm text-green-600 mt-1">
+                  You save ₹{(promotionDiscount + couponDiscount + walletAmount + razorpayOfferDiscount).toFixed(2)} on this {type}!
+                </p>
+              )}
+            </div>
+          </div>
+        </Card>
+
+        {/* Payment & refund policy summary (dynamic from backend) */}
+        {(refundPolicySummary || (paymentPolicies && Object.keys(paymentPolicies).length > 0)) && (
+          <Card className="bg-gray-50 rounded-2xl p-4 shadow-sm border border-gray-100">
+            {refundPolicySummary && (
+              <p className="text-xs text-gray-600 mb-2">
+                <span className="font-medium text-gray-700">Cancellation: </span>
+                {refundPolicySummary}
+              </p>
+            )}
+            {paymentPolicies?.payment && (
+              <p className="text-xs text-gray-600">
+                <span className="font-medium text-gray-700">Payment: </span>
+                {paymentPolicies.payment.description}
+              </p>
+            )}
+          </Card>
+        )}
+
+        {/* Saved Payment Methods */}
+        {savedMethods.length > 0 && (
+          <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-gray-900">Saved Payment Methods</h2>
+              <button
+                onClick={() => setShowAddPaymentModal(true)}
+                className="text-sm text-[#FF8C42] font-medium hover:underline flex items-center gap-1"
+              >
+                <Plus className="w-4 h-4" />
+                Add New
+              </button>
+            </div>
+            
+            <div className="space-y-3">
+              {savedMethods.map((method) => (
+                <button
+                  key={method.id}
+                  onClick={() => setSelectedMethod(method.id)}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition ${
+                    selectedMethod === method.id ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                      {method.type === 'card' ? (
+                        <CreditCard className="w-5 h-5 text-gray-600" />
+                      ) : method.type === 'upi' ? (
+                        <Smartphone className="w-5 h-5 text-gray-600" />
+                      ) : (
+                        <CreditCard className="w-5 h-5 text-gray-600" />
+                      )}
+                    </div>
+                    <div className="text-left">
+                      <p className="font-medium text-gray-900">
+                        {method.type === 'card' 
+                          ? `${method.brand || 'Card'} •••• ${method.last4}`
+                          : method.type === 'upi'
+                          ? method.upiId
+                          : method.bankName}
+                      </p>
+                      {method.isDefault && (
+                        <span className="text-xs text-[#FF8C42]">Default</span>
+                      )}
+                    </div>
+                  </div>
+                  {selectedMethod === method.id && (
+                    <CheckCircle2 className="w-5 h-5 text-[#FF8C42]" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Pay with Razorpay (default) */}
+        <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <button
+            onClick={() => setSelectedMethod('razorpay')}
+            className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition ${
+              selectedMethod === 'razorpay' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                <CreditCard className="w-5 h-5 text-blue-600" />
+              </div>
+              <div className="text-left">
+                <p className="font-medium text-gray-900">Pay with Razorpay</p>
+                <p className="text-xs text-gray-500">Cards, UPI, NetBanking, Wallets</p>
+              </div>
+            </div>
+            {selectedMethod === 'razorpay' && (
+              <CheckCircle2 className="w-5 h-5 text-[#FF8C42]" />
+            )}
+          </button>
+          
+          {selectedMethod === 'razorpay' && (
+            <button
+              onClick={() => setShowAddPaymentModal(true)}
+              className="mt-3 w-full text-sm text-[#FF8C42] font-medium hover:underline flex items-center justify-center gap-1"
+            >
+              <Plus className="w-4 h-4" />
+              Save card for faster checkout
+            </button>
+          )}
+        </Card>
+
+        {/* OTP Notice for Home/Center services */}
+        {type === 'booking' && serviceStyle !== 'tele' && serviceStyle !== 'ecom' && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <div className="flex items-start gap-3">
+              <Info className="w-5 h-5 text-blue-500 mt-0.5" />
+              <div>
+                <p className="font-medium text-blue-900">Booking OTP</p>
+                <p className="text-sm text-blue-700">
+                  After payment, you'll receive a 4-digit OTP. Share this with the service provider 
+                  {serviceStyle === 'at_home' ? ' when they arrive at your location' : ' at the clinic'} 
+                  to start the service. This OTP completes the booking and releases payment to the provider.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Fixed Bottom Payment Button */}
+      {/* Increased z-index to ensure it's above footer navigation (footer typically uses z-50) */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg z-[100]">
+        <div className="max-w-lg mx-auto">
+          <Button
+            onClick={() => handlePayment()}
+            disabled={processing || serviceIdResolving || (showAddressSelection && !selectedAddress)}
+            className="w-full py-4 bg-gradient-to-r from-[#FF8C42] to-[#FF7029] hover:from-[#E67A35] hover:to-[#D66A25] text-white rounded-xl font-bold text-lg disabled:opacity-50"
+          >
+            {processing || serviceIdResolving ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                {serviceIdResolving ? 'Preparing...' : 'Processing...'}
+              </span>
+            ) : (
+              <>
+                <Shield className="w-5 h-5 mr-2" />
+                {finalAmount === 0 ? `Confirm ${type === 'booking' ? 'Booking' : 'Order'}` : `Pay ₹${finalAmount.toFixed(2)}`}
+              </>
+            )}
+          </Button>
+          <p className="text-center text-xs text-gray-500 mt-2 flex items-center justify-center gap-1">
+            <Shield className="w-3 h-3" />
+            Secured by Razorpay • 100% Safe Payments
+          </p>
+        </div>
+      </div>
+
+      {/* Address Selection Modal */}
+      {showAddressModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end">
+          <div className="bg-white rounded-t-3xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between">
+              <h3 className="font-bold text-lg">Select Address</h3>
+              <button onClick={() => setShowAddressModal(false)}>
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              {addresses.map((addr) => (
+                <button
+                  key={addr.id}
+                  onClick={() => {
+                    setSelectedAddress(addr);
+                    setShowAddressModal(false);
+                  }}
+                  className={`w-full text-left p-4 rounded-xl border-2 transition ${
+                    selectedAddress?.id === addr.id
+                      ? 'border-[#FF8C42] bg-orange-50'
+                      : 'border-gray-200 hover:border-[#FF8C42]'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">{addr.label || 'Address'}</p>
+                      <p className="text-sm text-gray-600 mt-1">
+                        {addr.addressLine1 || addr.address}, {addr.city} - {addr.pincode}
+                      </p>
+                    </div>
+                    {selectedAddress?.id === addr.id && (
+                      <CheckCircle2 className="w-5 h-5 text-[#FF8C42] flex-shrink-0" />
+                    )}
+                  </div>
+                </button>
+              ))}
+              <button
+                onClick={() => {
+                  // Navigate to add address
+                  setShowAddressModal(false);
+                  // onNavigate('add-address') - would need navigation handler
+                }}
+                className="w-full p-4 border-2 border-dashed border-gray-300 rounded-xl text-[#FF8C42] font-medium hover:border-[#FF8C42] transition"
+              >
+                <Plus className="w-5 h-5 inline mr-2" />
+                Add New Address
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Payment Method Modal */}
+      {showAddPaymentModal && (
+        <AddPaymentMethodModal
+          customerPhone={customerPhone}
+          customerId={customerId}
+          onClose={() => setShowAddPaymentModal(false)}
+          onSuccess={() => {
+            // Refresh payment methods after saving
+            loadPaymentData();
+            setShowAddPaymentModal(false);
+          }}
+        />
+      )}
+
+      {/* Policy Acceptance Modal */}
+      <PolicyAcceptanceModal
+        isOpen={showPolicyModal}
+        onClose={() => setShowPolicyModal(false)}
+        onAccept={() => {
+          // ✅ FIX: Close modal first, then set policy accepted and proceed with payment
+          // This ensures the modal closes immediately and payment proceeds without double-click
+          setShowPolicyModal(false);
+          setPolicyAccepted(true);
+          // Call handlePayment with skipPolicyCheck=true to bypass the policy check
+          // since we just accepted it in the modal
+          handlePayment(true);
+        }}
+        bookingType={type === 'booking' ? 'service' : 'order'}
+        vendorId={vendorId}
+        serviceId={resolvedServiceId || serviceId} // Use resolved serviceId if available
+        customerId={customerId}
+      />
+    </div>
+  );
+}
+
+export default UniversalPaymentPage;

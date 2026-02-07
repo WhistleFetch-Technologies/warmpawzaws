@@ -16,7 +16,7 @@ import {
   ShieldCheck,
   Clock
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface PharmacyServicesLandingProps {
   onBack: () => void;
@@ -30,7 +30,7 @@ export function PharmacyServicesLanding({ onBack, onNavigate, customerId, phone 
   const [featuredPharmacies, setFeaturedPharmacies] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadPharmacyData();

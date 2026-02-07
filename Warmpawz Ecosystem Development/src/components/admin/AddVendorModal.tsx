@@ -4,7 +4,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface AddVendorModalProps {
   isOpen: boolean;
@@ -73,9 +73,9 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
     try {
       setRolesLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`,
+        `${getApiBaseUrl()}/config/roles`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -111,11 +111,11 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/create`,
+        `${getApiBaseUrl()}/admin/vendors/create`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

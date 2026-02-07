@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, MapPin } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 /**
  * 🏖️ HOLIDAY PACKAGE VENDOR MANAGEMENT
@@ -32,8 +32,8 @@ export default function HolidayPackageManagement({ vendorId }: { vendorId: strin
   const fetchPackages = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/holiday-packages`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/holiday-packages`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
       const data = await response.json();
       if (data.success) setPackages(data.data.packages || []);
@@ -46,12 +46,12 @@ export default function HolidayPackageManagement({ vendorId }: { vendorId: strin
     e.preventDefault();
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/holiday-packages/create`,
+        `${getApiBaseUrl()}/holiday-packages/create`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({
             vendorId,

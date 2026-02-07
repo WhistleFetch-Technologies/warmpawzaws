@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Eye, Phone } from "lucide-react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import { CustomDropdown } from "../CustomDropdown";
 
 interface ComplianceIssue {
@@ -29,10 +29,10 @@ export function ComplianceIssuesTab() {
 			setLoading(true);
 
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/compliance/issues`,
+				`${getApiBaseUrl()}/admin/vendors/compliance/issues`,
 				{
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 				}
 			);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, Target, Calendar, Award, Star, ChevronRight, Image as ImageIcon, BarChart3, Download, Trophy, TrendingDown, Minus } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { Button } from '../ui/button';
 
 interface TrainingSession {
@@ -59,8 +59,8 @@ export function TrainingProgressDashboard({
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/training/package/${packageId}/progress`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/training/package/${packageId}/progress`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {

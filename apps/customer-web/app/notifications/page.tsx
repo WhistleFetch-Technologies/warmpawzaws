@@ -31,10 +31,20 @@ export default function NotificationsPage() {
   const loadNotifications = async () => {
     try {
       const customerId = localStorage.getItem('customerId');
+      const phone = localStorage.getItem('customerPhone');
       if (customerId) {
+        // Backend: GET /notifications?userId=&userType=customer (or GET /customer/notifications?phone=)
         const response = await apiClient.get<{ notifications: Notification[] }>(
-          `/notifications/customer/${customerId}`
-        );
+          `/notifications?userId=${encodeURIComponent(customerId)}&userType=customer`
+        ).catch(async () => {
+          if (phone) {
+            return apiClient.get<{ notifications: Notification[] }>(`/customer/notifications?phone=${encodeURIComponent(phone)}`);
+          }
+          return { notifications: [] };
+        });
+        setNotifications(response.notifications || (response as any).notifications || []);
+      } else if (phone) {
+        const response = await apiClient.get<{ notifications: Notification[] }>(`/customer/notifications?phone=${encodeURIComponent(phone)}`);
         setNotifications(response.notifications || []);
       }
     } catch (err) {

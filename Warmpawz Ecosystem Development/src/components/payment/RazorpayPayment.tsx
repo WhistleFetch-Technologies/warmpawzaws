@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { CreditCard, Lock, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
-const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const BASE_URL = `${getApiBaseUrl()}`;
 
 interface RazorpayPaymentProps {
   amount: number;
@@ -60,7 +60,7 @@ export function RazorpayPayment({
       const response = await fetch(`${BASE_URL}/payment/razorpay/create-order`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -128,7 +128,7 @@ export function RazorpayPayment({
             const verifyResponse = await fetch(`${BASE_URL}/payment/razorpay/verify`, {
               method: 'POST',
               headers: {
-                'Authorization': `Bearer ${publicAnonKey}`,
+                ...getAuthHeaders(),
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({

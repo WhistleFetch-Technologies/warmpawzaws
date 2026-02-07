@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Filter, X, Star, MapPin, DollarSign, Briefcase } from 'lucide-react';
+import { Filter, X, Star, MapPin, IndianRupee, Briefcase } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
@@ -268,7 +268,7 @@ export function SearchFilters({ query, type = 'all', onFilterChange, className =
           {facets.priceRange && (
             <div>
               <h3 className="flex items-center gap-2 mb-3">
-                <DollarSign className="w-4 h-4 text-orange-500" />
+                <IndianRupee className="w-4 h-4 text-orange-500" />
                 <span>Price Range</span>
               </h3>
               <div className="flex gap-4 items-center">

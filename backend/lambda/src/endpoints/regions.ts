@@ -19,6 +19,8 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // REGION TYPE DEFINITIONS
@@ -991,7 +993,10 @@ export function registerRegionEndpoints(app: Hono) {
    */
   app.post("/admin/regions/init-:templateId", async (c) => {
     try {
-      const { templateId } = c.req.param();
+      const templateId = c.req.param('templateId');
+      if (!templateId) {
+        return c.json({ error: 'Template ID is required' }, 400);
+      }
 
       const template = REGION_TEMPLATES[templateId.toLowerCase()];
       if (!template) {

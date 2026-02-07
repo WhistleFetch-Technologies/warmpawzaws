@@ -77,17 +77,23 @@ export default function RewardsPage() {
       setLoading(true);
       setError(null);
       
-      const [balanceRes, rewardsRes, historyRes, redeemedRes] = await Promise.all([
-        apiClient.get<any>('/rewards/balance'),
-        apiClient.get<any>('/rewards/catalog'),
-        apiClient.get<any>('/rewards/history'),
-        apiClient.get<any>('/rewards/redeemed'),
+      const customerId = localStorage.getItem('customerId');
+      if (!customerId) {
+        setError('Please log in to view rewards');
+        setLoading(false);
+        return;
+      }
+      
+      const [balanceRes, rewardsRes, historyRes] = await Promise.all([
+        apiClient.get<any>(`/customer/${customerId}/rewards/points`),
+        apiClient.get<any>(`/customer/${customerId}/rewards/available`),
+        apiClient.get<any>(`/customer/${customerId}/rewards/history`),
       ]);
       
       setBalance(balanceRes.balance || balanceRes);
       setRewards(rewardsRes.rewards || rewardsRes || []);
       setHistory(historyRes.history || historyRes || []);
-      setRedeemed(redeemedRes.rewards || redeemedRes || []);
+      setRedeemed(historyRes.history?.filter((h: any) => h.type === 'redemption') || []);
     } catch (err: any) {
       console.error('Error loading rewards:', err);
       setError(err.message || 'Failed to load rewards');
@@ -112,7 +118,16 @@ export default function RewardsPage() {
       setRedeeming(reward.id);
       setError(null);
       
-      await apiClient.post('/rewards/redeem', { reward_id: reward.id });
+      const customerId = localStorage.getItem('customerId');
+      if (!customerId) {
+        setError('Please log in to redeem rewards');
+        return;
+      }
+      
+      await apiClient.post(`/customer/${customerId}/rewards/redeem`, { 
+        rewardId: reward.id,
+        points: reward.points_required 
+      });
       
       setSuccess(`Successfully redeemed: ${reward.name}! Check "My Rewards" tab.`);
       loadData();

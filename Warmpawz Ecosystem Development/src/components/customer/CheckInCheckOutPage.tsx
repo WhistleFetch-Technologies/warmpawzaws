@@ -13,7 +13,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { LogIn, LogOut, Clock, User, Camera, FileText, Key, CheckCircle, AlertCircle, Calendar } from 'lucide-react';
 
 interface Booking {
@@ -64,10 +64,10 @@ export function CheckInCheckOutPage({ customerPhone, customerId, bookingId }: Ch
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${id}`,
+        `${getApiBaseUrl()}/bookings/${id}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -100,10 +100,10 @@ export function CheckInCheckOutPage({ customerPhone, customerId, bookingId }: Ch
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/customer/${customerId}`,
+        `${getApiBaseUrl()}/bookings/customer/${customerId}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -140,11 +140,11 @@ export function CheckInCheckOutPage({ customerPhone, customerId, bookingId }: Ch
       setError(null);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${selectedBooking.id}/check-in`,
+        `${getApiBaseUrl()}/bookings/${selectedBooking.id}/check-in`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -194,11 +194,11 @@ export function CheckInCheckOutPage({ customerPhone, customerId, bookingId }: Ch
       setError(null);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${selectedBooking.id}/check-out`,
+        `${getApiBaseUrl()}/bookings/${selectedBooking.id}/check-out`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

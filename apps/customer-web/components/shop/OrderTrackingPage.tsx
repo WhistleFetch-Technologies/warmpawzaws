@@ -1,6 +1,7 @@
 "use client";
 
-// Placeholder component - to be implemented
+import { OrderTrackingView } from '@/components/customer/OrderTrackingView';
+
 interface OrderTrackingPageProps {
   orderId: string;
   onBack?: () => void;
@@ -8,13 +9,10 @@ interface OrderTrackingPageProps {
 
 export function OrderTrackingPage({ orderId, onBack }: OrderTrackingPageProps) {
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Order Tracking</h1>
-      <p className="text-gray-500">Order tracking page coming soon</p>
-      {onBack && (
-        <button onClick={onBack} className="mt-4 text-blue-600">Back</button>
-      )}
-    </div>
+    <OrderTrackingView 
+      orderId={orderId} 
+      onBack={onBack || (() => window.history.back())} 
+    />
   );
 }
 

@@ -12,7 +12,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Eye, X, Save, AlertCircle, Info } from 'lucide-react';
 import { Button } from '@warmpawz/ui';
 import { Input } from '@warmpawz/ui';
@@ -22,11 +22,80 @@ import { Textarea } from '@warmpawz/ui';
 import { Switch } from '@warmpawz/ui';
 import { Badge } from '@warmpawz/ui';
 import { useFlexibleTaxRules } from '../../../hooks/useFlexibleTaxRules';
+import { useTaxCategories } from '../../../hooks/useTaxCategories';
+import { apiClient } from '@/lib/api-client';
 import { TaxRule, TaxType, TaxCalculationMethod, TransactionType } from '../../../types/tax-system';
+import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 // Note: Toast notifications - using alert for now, can be replaced with toast library
+
+const SERVICE_STYLE_OPTIONS = [
+  { value: '', label: '— Any —' },
+  { value: 'at_center', label: 'At Center' },
+  { value: 'at_home', label: 'At Home' },
+  { value: 'tele', label: 'Tele' },
+  { value: 'hybrid', label: 'Hybrid' },
+  { value: 'ecom', label: 'E-commerce' },
+  { value: 'product', label: 'Product' },
+];
 
 export function FlexibleTaxRulesManager() {
   const { taxRules, loading, error, createTaxRule, updateTaxRule, deleteTaxRule, reload } = useFlexibleTaxRules({});
+  const { taxCategories: taxCategoriesFromHook } = useTaxCategories({ isActive: true });
+  const [taxCategories, setTaxCategories] = useState<{ id: string; category_name?: string; name?: string }[]>([]);
+  const [roles, setRoles] = useState<{ id: string; name: string }[]>([]);
+
+  // Load tax categories: prefer GST Configuration source (same as hint), fallback to useTaxCategories
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const r = await apiClient.get<any>('/admin/finance/gst/tax-categories');
+        const raw = r.data?.categories ?? r.categories ?? r.data ?? [];
+        const arr = Array.isArray(raw) ? raw : [];
+        if (arr.length > 0) {
+          setTaxCategories(arr.map((c: any) => ({
+            id: c.id,
+            category_name: c.category_name ?? c.name,
+            name: c.name ?? c.category_name,
+          })));
+          return;
+        }
+      } catch {
+        /* fallback to hook */
+      }
+      setTaxCategories(taxCategoriesFromHook.map((c) => ({
+        id: c.id,
+        category_name: c.category_name,
+        name: c.category_name,
+      })));
+    };
+    load();
+  }, [taxCategoriesFromHook]);
+
+  // Load vendor roles: /config/roles (widely used), fallback to /admin/vendor-roles
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const r = await apiClient.get<any>('/config/roles').catch(() => null);
+        const raw = r?.roles ?? [];
+        if (Array.isArray(raw) && raw.length > 0) {
+          setRoles(raw.map((rr: any) => ({
+            id: rr.id,
+            name: rr.display_name ?? rr.name ?? rr.id,
+          })));
+          return;
+        }
+      } catch {
+        /* fallback */
+      }
+      try {
+        const r = await apiClient.get<{ roles?: { id: string; name: string }[] }>('/admin/vendor-roles');
+        setRoles(r.roles ?? []);
+      } catch {
+        setRoles([]);
+      }
+    };
+    load();
+  }, []);
   const [showModal, setShowModal] = useState(false);
   const [editingRule, setEditingRule] = useState<TaxRule | null>(null);
   const [formData, setFormData] = useState<Partial<TaxRule>>({
@@ -161,11 +230,14 @@ export function FlexibleTaxRulesManager() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900">Flexible Tax Rules</h3>
-          <p className="text-sm text-gray-600 mt-1">
-            Manage tax rules with flexible conditions, exemptions, and compound taxes
-          </p>
+        <div className="flex items-center gap-2">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Flexible Tax Rules</h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Manage tax rules with flexible conditions, exemptions, and compound taxes
+            </p>
+          </div>
+          <PolicyHelpButton docKey="finance-flexible-tax-system" />
         </div>
         <Button onClick={() => handleOpenModal()} className="bg-orange-500 hover:bg-orange-600">
           <Plus className="w-4 h-4 mr-2" />
@@ -178,9 +250,13 @@ export function FlexibleTaxRulesManager() {
         <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
         <div className="flex-1">
           <p className="text-sm text-blue-900 font-medium mb-1">How Tax Rules Work</p>
-          <p className="text-sm text-blue-700">
+          <p className="text-sm text-blue-700 mb-2">
             Rules are matched by priority (lower number = higher priority). Each rule can have conditions 
-            (categories, service types, amounts) and exemptions. Compound taxes calculate on top of base taxes.
+            (Tax Category from GST Configuration, Service Style, Vendor Role) and exemptions. Compound taxes calculate on top of base taxes.
+          </p>
+          <p className="text-xs text-blue-600">
+            <strong>Tax resolution order:</strong> 1) HSN Code (GST Config) → 2) Tax Category (GST Config) → 3) Flexible Tax Rule → 4) 18% default. 
+            Tax Category and Vendor Role options come from GST Configuration and platform roles respectively.
           </p>
         </div>
       </div>
@@ -484,47 +560,87 @@ export function FlexibleTaxRulesManager() {
                 </div>
 
                 <div>
-                  <label htmlFor="categoryIds" className="block text-sm font-medium text-gray-700 mb-1">
-                    Category IDs (comma-separated)
+                  <label htmlFor="taxCategoryId" className="block text-sm font-medium text-gray-700 mb-1">
+                    Tax Category
                   </label>
-                  <input
-                    id="categoryIds"
-                    type="text"
-                    value={formData.conditions?.categoryIds?.join(', ') || ''}
-                    onChange={(e) => 
-                      setFormData({ 
-                        ...formData, 
-                        conditions: { 
-                          ...formData.conditions, 
-                          categoryIds: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                        }
-                      })
-                    }
-                    placeholder="medicines, healthcare_products"
+                  <select
+                    id="taxCategoryId"
+                    value={formData.conditions?.categoryIds?.[0] || (formData as any).tax_category_id || ''}
+                    onChange={(e) => {
+                      const v = e.target.value || undefined;
+                      setFormData({
+                        ...formData,
+                        conditions: {
+                          ...formData.conditions,
+                          categoryIds: v ? [v] : undefined,
+                        },
+                      });
+                    }}
                     className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                  />
+                  >
+                    <option value="">— Any —</option>
+                    {taxCategories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.category_name ?? cat.id}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Select from GST Configuration tax categories</p>
                 </div>
 
                 <div>
-                  <label htmlFor="serviceTypes" className="block text-sm font-medium text-gray-700 mb-1">
-                    Service Types (comma-separated)
+                  <label htmlFor="serviceStyle" className="block text-sm font-medium text-gray-700 mb-1">
+                    Service Style
                   </label>
-                  <input
-                    id="serviceTypes"
-                    type="text"
-                    value={formData.conditions?.serviceTypes?.join(', ') || ''}
-                    onChange={(e) => 
-                      setFormData({ 
-                        ...formData, 
-                        conditions: { 
-                          ...formData.conditions, 
-                          serviceTypes: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                        }
-                      })
-                    }
-                    placeholder="at_center, at_home, tele"
+                  <select
+                    id="serviceStyle"
+                    value={formData.conditions?.serviceTypes?.[0] || (formData as any).service_style || ''}
+                    onChange={(e) => {
+                      const v = e.target.value || undefined;
+                      setFormData({
+                        ...formData,
+                        conditions: {
+                          ...formData.conditions,
+                          serviceTypes: v ? [v] : undefined,
+                        },
+                      });
+                    }}
                     className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                  />
+                  >
+                    {SERVICE_STYLE_OPTIONS.map((o) => (
+                      <option key={o.value || 'any'} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="roleId" className="block text-sm font-medium text-gray-700 mb-1">
+                    Vendor Role
+                  </label>
+                  <select
+                    id="roleId"
+                    value={formData.conditions?.vendorRoles?.[0] || (formData as any).role_id || ''}
+                    onChange={(e) => {
+                      const v = e.target.value || undefined;
+                      setFormData({
+                        ...formData,
+                        conditions: {
+                          ...formData.conditions,
+                          vendorRoles: v ? [v] : undefined,
+                        },
+                      });
+                    }}
+                    className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  >
+                    <option value="">— Any —</option>
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 

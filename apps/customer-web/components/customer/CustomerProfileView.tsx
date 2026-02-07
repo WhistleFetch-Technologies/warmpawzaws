@@ -2,8 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, Camera, Edit2, Save, X } from 'lucide-react';
+import { ChevronLeft, Camera, Edit2, Save, X, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { uploadCustomerPhotoWithProgress } from '@/lib/photo-upload-enhanced';
+import { toast } from 'sonner';
+import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 
 interface UserProfile {
   firstName: string;
@@ -12,6 +15,8 @@ interface UserProfile {
   phone: string;
   address: string;
   pincode: string;
+  city?: string;
+  state?: string;
   photo?: string;
   created_at?: string;
 }
@@ -26,7 +31,10 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
   const [editMode, setEditMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [photoPreview, setPhotoPreview] = useState<string>('');
+  const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -46,15 +54,50 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
     }
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && profile) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoPreview(reader.result as string);
-        setProfile({ ...profile, photo: reader.result as string });
-      };
-      reader.readAsDataURL(file);
+    if (!file || !profile) return;
+
+    // Show preview immediately
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPhotoPreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+
+    // Upload photo with progress
+    setUploadingPhoto(true);
+    setUploadProgress(0);
+
+    try {
+      const result = await uploadCustomerPhotoWithProgress(
+        file,
+        phone,
+        {
+          onProgress: (progress) => {
+            setUploadProgress(progress);
+          },
+          verifyUpload: true,
+        }
+      );
+
+      if (result.success && result.publicUrl) {
+        setUploadedPhotoUrl(result.publicUrl);
+        setPhotoPreview(result.publicUrl);
+        setProfile({ ...profile, photo: result.publicUrl });
+        toast.success('Photo uploaded successfully!');
+      } else {
+        toast.error(result.error || 'Failed to upload photo. Please try again.');
+        // Reset preview on error
+        setPhotoPreview(profile.photo || '');
+      }
+    } catch (error: any) {
+      console.error('Photo upload error:', error);
+      toast.error(error.message || 'Failed to upload photo. Please try again.');
+      setPhotoPreview(profile.photo || '');
+    } finally {
+      setUploadingPhoto(false);
+      setUploadProgress(0);
     }
   };
 
@@ -80,16 +123,23 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
 
     setSaving(true);
     try {
+      // Use uploaded photo URL if available, otherwise keep existing
+      const profileToSave = {
+        ...profile,
+        photo: uploadedPhotoUrl || profile.photo,
+      };
+
       await apiClient.post('/customer/profile', {
         phone: phone,
-        profile: profile,
+        profile: profileToSave,
       });
 
       setEditMode(false);
-      alert('Profile updated successfully! 🎉');
+      setUploadedPhotoUrl(''); // Reset after save
+      toast.success('Profile updated successfully! 🎉');
     } catch (error) {
       console.error('Error saving profile:', error);
-      alert('Error saving profile. Please try again.');
+      toast.error('Error saving profile. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -166,13 +216,19 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
           {/* Profile Photo */}
           <div className="flex flex-col items-center mb-8">
             <div 
-              onClick={() => editMode && fileInputRef.current?.click()}
-              className={`w-32 h-32 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full overflow-hidden flex items-center justify-center border-4 border-white shadow-lg mb-3 relative group ${editMode ? 'cursor-pointer' : ''}`}
+              onClick={() => editMode && !uploadingPhoto && fileInputRef.current?.click()}
+              className={`w-32 h-32 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full overflow-hidden flex items-center justify-center border-4 border-white shadow-lg mb-3 relative group ${editMode && !uploadingPhoto ? 'cursor-pointer' : ''} ${uploadingPhoto ? 'opacity-75' : ''}`}
             >
               {photoPreview ? (
                 <>
                   <img src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
-                  {editMode && (
+                  {uploadingPhoto && (
+                    <div className="absolute inset-0 bg-black bg-opacity-50 flex flex-col items-center justify-center">
+                      <Loader2 className="w-8 h-8 text-white animate-spin mb-2" />
+                      <span className="text-white text-xs">{uploadProgress}%</span>
+                    </div>
+                  )}
+                  {editMode && !uploadingPhoto && (
                     <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <Camera className="w-8 h-8 text-white" />
                     </div>
@@ -180,9 +236,16 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
                 </>
               ) : (
                 <div className="flex flex-col items-center text-white">
-                  <span className="text-4xl font-bold">
-                    {profile.firstName?.charAt(0)}{profile.lastName?.charAt(0)}
-                  </span>
+                  {uploadingPhoto ? (
+                    <>
+                      <Loader2 className="w-8 h-8 animate-spin mb-2" />
+                      <span className="text-xs">{uploadProgress}%</span>
+                    </>
+                  ) : (
+                    <span className="text-4xl font-bold">
+                      {profile.firstName?.charAt(0)}{profile.lastName?.charAt(0)}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -191,12 +254,23 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
               type="file"
               accept="image/*"
               onChange={handlePhotoUpload}
+              disabled={uploadingPhoto}
               className="hidden"
             />
             {editMode && (
-              <p className="text-xs text-gray-500 text-center">
-                Click photo to change
-              </p>
+              <div className="text-center">
+                <p className="text-xs text-gray-500">
+                  {uploadingPhoto ? 'Uploading...' : 'Click photo to change'}
+                </p>
+                {uploadingPhoto && (
+                  <div className="mt-2 w-48 bg-gray-200 rounded-full h-1.5">
+                    <div
+                      className="bg-orange-500 h-1.5 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -269,17 +343,27 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
               </p>
             </div>
 
-            {/* Address */}
+            {/* Address - Same EnhancedAddressAutocomplete as Add Address for consistency */}
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-2">
                 Address
               </label>
               {editMode ? (
-                <textarea
+                <EnhancedAddressAutocomplete
                   value={profile.address}
-                  onChange={(e) => setProfile({ ...profile, address: e.target.value })}
-                  rows={3}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none"
+                  onChange={(address: string, components?: AddressComponents) => {
+                    setProfile(prev => {
+                      if (!prev) return null;
+                      const updated: UserProfile = { ...prev, address };
+                      if (components?.pincode) updated.pincode = components.pincode;
+                      if (components?.city) updated.city = components.city;
+                      if (components?.state) updated.state = components.state;
+                      return updated;
+                    });
+                  }}
+                  placeholder="Search address, landmark, city..."
+                  className="w-full"
+                  required
                 />
               ) : (
                 <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">

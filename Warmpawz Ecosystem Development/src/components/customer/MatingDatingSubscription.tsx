@@ -4,7 +4,7 @@ import {
   ChevronLeft, Check, Crown, Sparkles, Heart, 
   MessageCircle, Calendar, Star, Zap, Shield
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface MatingDatingSubscriptionProps {
@@ -41,8 +41,8 @@ export function MatingDatingSubscription({ phone, onBack, onSuccess }: MatingDat
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/subscription-tiers?tierType=p2p_service&isActive=true`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/admin/subscription-tiers?tierType=p2p_service&isActive=true`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -72,11 +72,11 @@ export function MatingDatingSubscription({ phone, onBack, onSuccess }: MatingDat
 
       // Create Razorpay order
       const orderResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/payment/create-order`,
+        `${getApiBaseUrl()}/payment/create-order`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -116,11 +116,11 @@ export function MatingDatingSubscription({ phone, onBack, onSuccess }: MatingDat
           // Payment successful, activate subscription
           try {
             const subResponse = await fetch(
-              `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/subscriptions/user/subscribe`,
+              `${getApiBaseUrl()}/subscriptions/user/subscribe`,
               {
                 method: 'POST',
                 headers: {
-                  'Authorization': `Bearer ${publicAnonKey}`,
+                  ...getAuthHeaders(),
                   'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({

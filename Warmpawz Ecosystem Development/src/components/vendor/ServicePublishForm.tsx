@@ -12,7 +12,7 @@ import { Switch } from '../ui/switch';
 import { Checkbox } from '../ui/checkbox';
 import { Card } from '../ui/card';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface ServicePublishFormProps {
   vendorId: string;
@@ -103,9 +103,9 @@ export function ServicePublishForm({
       
       // Load role configuration to determine allowed service categories
       const roleRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`,
+        `${getApiBaseUrl()}/config/roles`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -206,9 +206,9 @@ export function ServicePublishForm({
   const loadCentres = async () => {
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/centres`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/centres`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -224,9 +224,9 @@ export function ServicePublishForm({
   const loadCentreServices = async (centreId: string) => {
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/centre/${centreId}/services`,
+        `${getApiBaseUrl()}/centre/${centreId}/services`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -285,11 +285,11 @@ export function ServicePublishForm({
       };
 
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/services/publish`,
+        `${getApiBaseUrl()}/vendor/services/publish`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(payload)

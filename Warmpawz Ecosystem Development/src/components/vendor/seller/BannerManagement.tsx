@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Image as ImageIcon, Plus } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface BannerManagementProps {
   sellerId: string;
@@ -18,8 +18,8 @@ export function BannerManagement({ sellerId }: BannerManagementProps) {
     try {
       setLoading(true);
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/banners?sellerId=${sellerId}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/ecommerce/banners?sellerId=${sellerId}`,
+        { headers: getAuthHeaders() }
       );
       
       if (res.ok) {

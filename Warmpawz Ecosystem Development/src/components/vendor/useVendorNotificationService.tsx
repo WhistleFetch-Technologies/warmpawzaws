@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface VendorNotificationServiceProps {
   vendorId: string;
@@ -8,7 +8,7 @@ interface VendorNotificationServiceProps {
   onNewNotification?: (notification: any) => void;
 }
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 export function useVendorNotificationService({ vendorId, enabled, onNewNotification }: VendorNotificationServiceProps) {
   const lastNotificationIdRef = useRef<string | null>(null);
@@ -36,7 +36,7 @@ export function useVendorNotificationService({ vendorId, enabled, onNewNotificat
         const response = await fetch(
           `${API_BASE}/vendor/notifications/${vendorId}?limit=10`,
           {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            headers: getAuthHeaders()
           }
         );
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, Clock, TrendingUp, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom'; // Assuming react-router
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { Badge } from '../ui/badge';
 
 interface SearchResult {
@@ -52,11 +52,11 @@ export function ElasticSearchBar() {
     try {
         // Parallel fetch for autocomplete and results
         const [autoRes, searchRes] = await Promise.all([
-            fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/search/autocomplete?q=${searchTerm}`, {
-                headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            fetch(`${getApiBaseUrl()}/search/autocomplete?q=${searchTerm}`, {
+                headers: getAuthHeaders()
             }),
-            fetch(`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/search/elastic?q=${searchTerm}`, {
-                headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            fetch(`${getApiBaseUrl()}/search/elastic?q=${searchTerm}`, {
+                headers: getAuthHeaders()
             })
         ]);
 

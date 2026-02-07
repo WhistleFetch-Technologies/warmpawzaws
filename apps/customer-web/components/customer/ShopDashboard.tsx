@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PromotionBanner } from './shared/PromotionBanner';
 
 interface ShopDashboardProps {
   phone?: string;
@@ -44,19 +45,10 @@ export function ShopDashboard({ phone, product, onBack, onNavigate, onReviewsCli
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [loading, setLoading] = useState(false);
-  const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [apiCategories, setApiCategories] = useState<any[]>([]);
   const { itemCount } = useCart();
-
-  // Auto-slide banners every 4 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentBannerIndex((prev) => (prev + 1) % banners.length);
-    }, 4000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Load categories on mount
   useEffect(() => {
@@ -163,27 +155,6 @@ export function ShopDashboard({ phone, product, onBack, onNavigate, onReviewsCli
     setFilteredProducts(filtered);
   };
 
-  const banners = [
-    {
-      title: '🎉 MEGA SALE',
-      subtitle: 'Up to 50% OFF on Pet Food',
-      bg: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      cta: 'Shop Now'
-    },
-    {
-      title: '🏃 FREE DELIVERY',
-      subtitle: 'On orders above ₹999',
-      bg: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-      cta: 'Explore'
-    },
-    {
-      title: '🎁 NEW ARRIVALS',
-      subtitle: 'Latest toys & accessories',
-      bg: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-      cta: 'View All'
-    }
-  ];
-
   const categories = [
     { id: 'all', label: 'All', icon: <Store className="w-5 h-5 text-gray-600" />, color: 'bg-gray-100 text-gray-700' },
     { id: 'food', label: 'Food', icon: <Bone className="w-5 h-5 text-orange-600" />, color: 'bg-orange-100 text-orange-700' },
@@ -257,49 +228,11 @@ export function ShopDashboard({ phone, product, onBack, onNavigate, onReviewsCli
       </div>
 
       <div className="pb-24">
-        {/* Hero Banner Carousel */}
+        {/* PHASE 1.3: Promotion Banners (from Admin Marketing) */}
         <div className="p-4">
-          <div className="relative h-44 rounded-3xl overflow-hidden shadow-lg">
-            {/* Banner slides */}
-            <div 
-              className="flex transition-transform duration-500 ease-in-out h-full"
-              style={{ transform: `translateX(-${currentBannerIndex * 100}%)` }}
-            >
-              {banners.map((banner, index) => (
-                <div
-                  key={index}
-                  className="min-w-full h-full"
-                  style={{ background: banner.bg }}
-                >
-                  <div className="h-full flex items-center justify-between px-6">
-                    <div className="flex-1">
-                      <h2 className="text-white text-xl font-bold mb-1">{banner.title}</h2>
-                      <p className="text-white/90 mb-3 text-sm">{banner.subtitle}</p>
-                      <button className="bg-white text-gray-900 px-6 py-2 rounded-full font-medium hover:shadow-lg transition-shadow text-sm">
-                        {banner.cta}
-                      </button>
-                    </div>
-                    <div className="text-6xl">🛍️</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Navigation dots */}
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-2">
-              {banners.map((_, index) => (
-                <button
-                  key={index}
-                  onClick={() => setCurrentBannerIndex(index)}
-                  className={`transition-all ${
-                    index === currentBannerIndex
-                      ? 'w-6 h-2 bg-white'
-                      : 'w-2 h-2 bg-white/50'
-                  } rounded-full`}
-                />
-              ))}
-            </div>
-          </div>
+          <PromotionBanner 
+            service="shop"
+          />
         </div>
 
         {/* Quick Features */}
@@ -393,9 +326,26 @@ export function ShopDashboard({ phone, product, onBack, onNavigate, onReviewsCli
                     </div>
                   )}
                   <button 
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
-                      // TODO: Add to wishlist
+                      try {
+                        const customerId = localStorage.getItem('warmpawz_customer_id');
+                        if (!customerId) {
+                          toast.info('Please login to add items to wishlist');
+                          return;
+                        }
+                        await apiClient.post('/customer/wishlist', {
+                          customerId,
+                          productId: product.id,
+                          productName: product.name,
+                          price: product.price,
+                          image: product.image,
+                        });
+                        toast.success('Added to wishlist');
+                      } catch (error: any) {
+                        console.error('Error adding to wishlist:', error);
+                        toast.error('Failed to add to wishlist');
+                      }
                     }}
                     className="absolute bottom-2 right-2 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
                   >
@@ -520,9 +470,26 @@ export function ShopDashboard({ phone, product, onBack, onNavigate, onReviewsCli
                   <div className="h-36 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-5xl relative">
                     {product.image || '🐾'}
                     <button 
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        // TODO: Add to wishlist
+                        try {
+                          const customerId = localStorage.getItem('warmpawz_customer_id');
+                          if (!customerId) {
+                            toast.info('Please login to add items to wishlist');
+                            return;
+                          }
+                          await apiClient.post('/customer/wishlist', {
+                            customerId,
+                            productId: product.id,
+                            productName: product.name,
+                            price: product.price,
+                            image: product.image,
+                          });
+                          toast.success('Added to wishlist');
+                        } catch (error: any) {
+                          console.error('Error adding to wishlist:', error);
+                          toast.error('Failed to add to wishlist');
+                        }
                       }}
                       className="absolute top-2 right-2 w-7 h-7 bg-white rounded-full flex items-center justify-center shadow-md hover:scale-110 transition-transform"
                     >

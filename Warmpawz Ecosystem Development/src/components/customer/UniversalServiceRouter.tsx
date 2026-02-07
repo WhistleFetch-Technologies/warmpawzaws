@@ -4,7 +4,7 @@ import { VetClinicListViewEnhanced } from './vet/VetClinicListViewEnhanced'; // 
 import { VetCenterProfileView } from './vet/VetCenterProfileView'; // We can reuse this or make a universal profile view
 import { VendorDiscoveryByProblem } from './VendorDiscoveryByProblem';
 import { ProblemGridSelector } from './ProblemGridSelector';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 // Reusing Vet/Grooming components for booking flow for now
 // ideally we should have UniversalBookingFlow
@@ -43,7 +43,7 @@ export function UniversalServiceRouter({
   const [bookingFlow, setBookingFlow] = useState<any>({});
   const [loading, setLoading] = useState(true);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadCustomerData();

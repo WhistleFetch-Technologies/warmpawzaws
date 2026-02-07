@@ -15,7 +15,7 @@ import {
 import {
   Clock,
   Calendar,
-  DollarSign,
+  IndianRupee,
   Settings as SettingsIcon,
   Play,
   Pause,
@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 
 interface SettlementSchedule {
   enabled: boolean;
@@ -64,8 +65,9 @@ export function SettlementScheduleSettings() {
     setLoading(true);
     try {
       const data = await apiClient.get<any>('/admin/finance/settlement-schedule');
-      if ((data as any).data?.settings || (data as any).settings) {
-        setSettings((data as any).data?.settings || (data as any).settings);
+      const raw = (data as any).data?.settings ?? (data as any).settings;
+      if (raw) {
+        setSettings({ ...raw, settlementPeriodDays: raw.settlementPeriodDays ?? 7 });
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -91,13 +93,18 @@ export function SettlementScheduleSettings() {
   const handleProcessNow = async () => {
     setProcessing(true);
     try {
-      const data = await apiClient.post<any>('/admin/finance/process-settlements', { force: false });
+      const data = await apiClient.post<any>('/settlements/calculate-daily', {});
+      const created = (data as any).settlementsCreated ?? (data as any).data?.settlementsCreated ?? 0;
+      const total = (data as any).totalAmount ?? (data as any).data?.totalAmount ?? 0;
       toast.success(
-        `Processed ${(data as any).data?.processed || (data as any).processed || 0} settlements successfully`
+        created > 0
+          ? `Created ${created} settlement(s), total ₹${Number(total).toLocaleString()}. Process payouts from Payout Management.`
+          : 'No new settlements (no eligible bookings).'
       );
       loadSettings();
-    } catch (error) {
-      toast.error('Failed to process settlements');
+    } catch (error: any) {
+      const msg = (error?.response?.data as any)?.error ?? error?.message ?? 'Failed to run settlement calculation';
+      toast.error(msg);
     } finally {
       setProcessing(false);
     }
@@ -113,6 +120,11 @@ export function SettlementScheduleSettings() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <h2 className="text-black text-xl font-semibold">Schedule Settings</h2>
+        <PolicyHelpButton docKey="finance-schedule-settings" />
+      </div>
       {/* Status Card */}
       <Card>
         <CardHeader>
@@ -230,13 +242,13 @@ export function SettlementScheduleSettings() {
               <Input
                 type="number"
                 value={settings.settlementPeriodDays}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    settlementPeriodDays: parseInt(e.target.value),
-                  })
-                }
+                readOnly
+                className="bg-gray-100 cursor-not-allowed"
+                title="Read-only: defined by default tier in Tier Management (single source of truth)"
               />
+              <p className="text-xs text-gray-500">
+                From default tier (Finance → Tier Management). Edit payout period there.
+              </p>
             </div>
           </div>
 
@@ -289,7 +301,11 @@ export function SettlementScheduleSettings() {
       </Card>
 
       {/* Actions */}
-      <div className="flex items-center justify-end gap-3">
+      <div className="flex flex-col items-end gap-2">
+        <p className="text-xs text-gray-500 text-right max-w-md">
+          Scheduled runs create settlements as per tier. Process Now runs calculation now; send to bank from Payout Management (including retry for failed payouts).
+        </p>
+        <div className="flex items-center gap-3">
         <Button onClick={handleProcessNow} disabled={processing} variant="outline">
           <Play className="w-4 h-4 mr-2" />
           {processing ? 'Processing...' : 'Process Now'}
@@ -302,6 +318,7 @@ export function SettlementScheduleSettings() {
           <Save className="w-4 h-4 mr-2" />
           {saving ? 'Saving...' : 'Save Settings'}
         </Button>
+        </div>
       </div>
     </div>
   );

@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { VendorChatModal } from './VendorChatModal';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
+import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
 import { 
   ArrowLeft, 
   Search, 
@@ -24,11 +26,18 @@ import {
   RefreshCw, 
   X 
 } from 'lucide-react';
+import { getVendorRoleId, hasVendorRole, isSoloVendor } from '@/lib/vendor-utils';
 
 interface VendorBookingManagementProps {
   vendorId: string;
   vendorData?: any;
   onBack: () => void;
+  /** Whether chat capability is enabled for this vendor's role (from role config) */
+  chatEnabled?: boolean;
+  /** Vendor phone for chat identification */
+  vendorPhone?: string;
+  /** Vendor name for chat display */
+  vendorName?: string;
 }
 
 interface Booking {
@@ -43,6 +52,7 @@ interface Booking {
   consultationType: 'instant' | 'scheduled';
   communicationType: 'call' | 'video' | 'clinic' | 'at_home'; // ✅ UPDATE
   serviceType?: 'at_center' | 'at_home' | 'tele'; // ✅ ADD
+  service_type?: string; // snake_case from API
   status: 'confirmed' | 'pending' | 'cancelled' | 'completed' | 'in_progress';
   phone: string;
   date: string;
@@ -60,6 +70,13 @@ interface Booking {
   hasPrescription?: boolean;
   prescriptionUrl?: string;
   prescriptionNotes?: string;
+  
+  // ✅ Meeting/video call fields
+  meetingId?: string;
+  meeting_id?: string;
+  
+  // Allow any additional properties from API
+  [key: string]: any;
 }
 
 interface TimeSlot {
@@ -68,7 +85,41 @@ interface TimeSlot {
   booked?: boolean;
 }
 
-export function VendorBookingManagement({ vendorId, vendorData, onBack }: VendorBookingManagementProps) {
+/** Format DB time (e.g. "10:00:00" or "10:00") to 12h (e.g. "10:00 AM") */
+function formatDbTimeTo12h(raw: string): string {
+  if (!raw || typeof raw !== 'string') return '10:00 AM';
+  if (raw.includes('AM') || raw.includes('PM')) return raw.trim();
+  const parts = raw.replace(/\.\d+$/, '').split(':');
+  const h = parseInt(parts[0] || '10', 10);
+  const m = parseInt(parts[1] || '0', 10);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 || 12;
+  return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
+export function VendorBookingManagement({ 
+  vendorId, 
+  vendorData, 
+  onBack,
+  chatEnabled = true,
+  vendorPhone,
+  vendorName
+}: VendorBookingManagementProps) {
+  const router = useRouter();
+  
+  // ✅ FIX: Check if vendor is solo groomer (groomer_solo) - they only do at_home, no tele
+  const isSoloGroomer = hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']) && 
+                        (vendorData?.vendorConfiguration === 'solo' || 
+                         vendorData?.vendorType === 'solo' || 
+                         vendorData?.vendor_type === 'solo' ||
+                         isSoloVendor(vendorData));
+  
+  // Get allowed service styles - solo groomers only have at_home
+  const allowedServiceStyles = vendorData?.allowedServiceStyles || 
+                               vendorData?.serviceStyles?.selected || 
+                               vendorData?.serviceStyles?.solo || 
+                               [];
+  const hasTeleService = !isSoloGroomer && allowedServiceStyles.includes('tele');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [activeFilter, setActiveFilter] = useState<'today' | 'week' | 'month'>('today');
   const [activeView, setActiveView] = useState<'consultations' | 'locations'>('consultations');
@@ -76,10 +127,54 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
-    calls: 243,
+    calls: 0,
     online: 0,
     phone: 0
   });
+  
+  // Earnings State
+  const [earningsData, setEarningsData] = useState<{
+    today: number;
+    thisWeek: number;
+    thisMonth: number;
+    pending: number;
+    total: number;
+    transactions: Array<{
+      id: string;
+      date: string;
+      service: string;
+      amount: number;
+      status: string;
+      customer: string;
+    }>;
+    dailyTrend: Array<{
+      day: string;
+      amount: number;
+    }>;
+  } | null>(null);
+  const [earningsLoading, setEarningsLoading] = useState(false);
+  
+  // Payouts State
+  const [payoutsData, setPayoutsData] = useState<{
+    availableForPayout: number;
+    pending: number;
+    paidOut: number;
+    bankAccount: {
+      bankName: string;
+      accountNumber: string;
+      accountHolder: string;
+      verified: boolean;
+    } | null;
+    payoutHistory: Array<{
+      id: string;
+      date: string;
+      amount: number;
+      status: string;
+      txnId: string;
+    }>;
+    payoutSchedule: string;
+  } | null>(null);
+  const [payoutsLoading, setPayoutsLoading] = useState(false);
   
   // OTP Modal State
   const [showOTPModal, setShowOTPModal] = useState(false);
@@ -99,25 +194,77 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
   // ✅ Appointment Detail Modal State
   const [showAppointmentDetail, setShowAppointmentDetail] = useState(false);
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
+  
+  // ✅ Prescription Modal State
+  const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
+  const [prescriptionBookingId, setPrescriptionBookingId] = useState<string | null>(null);
 
-  // Generate time slots for the day (10:00 AM to 6:00 PM)
-  const generateTimeSlots = (): TimeSlot[] => {
+  // ✅ FIX: Load time slots from vendor operating hours and actual bookings
+  const generateTimeSlots = (operatingHours?: any, existingBookings?: Booking[]): TimeSlot[] => {
     const slots: TimeSlot[] = [];
-    for (let hour = 10; hour <= 18; hour++) {
-      slots.push({
-        time: `${hour}:00`,
-        available: Math.random() > 0.3, // Random availability for demo
-        booked: Math.random() > 0.7
-      });
+    
+    // Get operating hours for selected date
+    const selectedDateObj = new Date(selectedDate);
+    const dayOfWeek = selectedDateObj.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+    
+    let startHour = 9;
+    let endHour = 18;
+    
+    // Use operating hours if available
+    if (operatingHours && operatingHours[dayOfWeek]) {
+      const dayHours = operatingHours[dayOfWeek];
+      if (dayHours.isOpen && dayHours.open && dayHours.close) {
+        const [openH] = dayHours.open.split(':').map(Number);
+        const [closeH] = dayHours.close.split(':').map(Number);
+        startHour = openH;
+        endHour = closeH;
+      } else if (!dayHours.isOpen) {
+        // Clinic closed on this day
+        return [];
+      }
     }
+    
+    // Generate slots with 30-minute intervals
+    for (let hour = startHour; hour < endHour; hour++) {
+      for (let minute = 0; minute < 60; minute += 30) {
+        const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+        
+        // Check if this slot is booked
+        const isBooked = existingBookings?.some(b => {
+          const bookingTime = b.time.replace(/\s*(AM|PM)/, '');
+          return bookingTime === timeStr;
+        }) || false;
+        
+        slots.push({
+          time: timeStr,
+          available: !isBooked,
+          booked: isBooked
+        });
+      }
+    }
+    
     return slots;
   };
 
-  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>(generateTimeSlots());
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
 
   useEffect(() => {
     loadBookings();
   }, [selectedDate, activeFilter]);
+  
+  // Load earnings data when earnings tab is active
+  useEffect(() => {
+    if (activeTab === 'earnings') {
+      loadEarningsData();
+    }
+  }, [activeTab, activeFilter]);
+  
+  // Load payouts data when payouts tab is active
+  useEffect(() => {
+    if (activeTab === 'payouts') {
+      loadPayoutsData();
+    }
+  }, [activeTab]);
 
   const loadBookings = async () => {
     try {
@@ -129,33 +276,56 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         vendorId
       });
       
-      // Don't pass activeFilter (today/week/month) as status filter - it's just for UI display
-      // Pass empty string to get all statuses
-      const data = await apiClient.get(`/vendor/bookings/${vendorId}?date=${selectedDate}&filter=all`) as any;
+      // ✅ FIX: Load both bookings and operating hours
+      // Use startDate for week/month filters, date for today filter
+      let dateParam = '';
+      if (activeFilter === 'today') {
+        dateParam = `date=${selectedDate}`;
+      } else if (activeFilter === 'week') {
+        dateParam = `startDate=${selectedDate}`;
+      } else if (activeFilter === 'month') {
+        dateParam = `startDate=${selectedDate}`;
+      }
+      
+      const [bookingsData, facilityData] = await Promise.all([
+        apiClient.get(`/vendor/bookings/${vendorId}?${dateParam}&filter=all`) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/facility`).catch(() => null) as Promise<any>
+      ]);
 
-      if (data && data.success) {
-        // data already available
+      if (bookingsData && bookingsData.success) {
+        console.log('📦 [VENDOR-UI] Raw booking data from API:', bookingsData);
+        console.log('📊 [VENDOR-UI] Debug info:', bookingsData.debug);
         
-        console.log('📦 [VENDOR-UI] Raw booking data from API:', data);
-        console.log('📊 [VENDOR-UI] Debug info:', data.debug);
-        
-        // Map bookings to expected format
-        const mappedBookings = (data.bookings || []).map((booking: any) => ({
+        // Map bookings to expected format - use booking-specific data (not vendor address for all)
+        const mappedBookings = (bookingsData.bookings || []).map((booking: any) => {
+          // Format time: DB returns booking_time (e.g. "10:00:00") or scheduledTime
+          const rawTime = booking.booking_time || booking.scheduledTime || booking.time || booking.scheduled_time;
+          const timeStr = typeof rawTime === 'string' 
+            ? (rawTime.includes('AM') || rawTime.includes('PM') ? rawTime : formatDbTimeTo12h(rawTime))
+            : '10:00 AM';
+          // Location: booking address first (customer/destination), fallback to vendor for at_center
+          const isAtHome = (booking.service_type || booking.serviceType || '').toString().toLowerCase().includes('home') || 
+            (booking.service_style || booking.serviceStyle || '').toString().toLowerCase().includes('home');
+          const location = (isAtHome ? (booking.address || booking.destination_address || booking.location || booking.delivery_address) : null)
+            || (booking.address || booking.destination_address || booking.location || booking.delivery_address)
+            || vendorData?.address || vendorData?.location || 'Clinic Location';
+          return {
           id: booking.id,
-          time: booking.scheduledTime || booking.time || '10:00 AM',
-          customerName: booking.customerName || 'Customer',
-          customerId: booking.customerId || null, // ✅ ADD: Customer ID for chat
-          petName: booking.petName || 'Pet',
-          petType: booking.petType || booking.petBreed || 'Pet',
-          location: vendorData?.address || vendorData?.location || 'Clinic Location',
-          consultationType: booking.serviceType || 'scheduled',
-          communicationType: booking.serviceType === 'tele' ? 'video' : 'in-person',
-          serviceType: booking.serviceType || 'at_center', // ✅ ADD
+          bookingId: booking.id,
+          time: timeStr,
+          customerName: booking.customer?.name || booking.customer_name || booking.customerName || 'Customer',
+          customerId: booking.customer_id || booking.customerId || booking.customer?.id || null,
+          petName: booking.pet_name || booking.petName || 'Pet',
+          petType: booking.pet_type || booking.petType || booking.pet_breed || booking.petBreed || 'Pet',
+          location,
+          consultationType: booking.service_type || booking.serviceType || 'scheduled',
+          communicationType: (booking.service_type || booking.serviceType) === 'tele' ? 'video' : 'in-person',
+          serviceType: booking.service_type || booking.serviceType || 'at_center',
           status: booking.status || 'confirmed',
-          phone: booking.customerPhone || '+91 0000000000',
-          date: booking.scheduledDate || booking.date || selectedDate,
+          phone: booking.customer?.phone || booking.customer_phone || booking.customerPhone || '+91 0000000000',
+          date: booking.booking_date || booking.scheduledDate || booking.date || selectedDate,
           price: booking.price || 0,
-          serviceName: booking.serviceName || 'Service',
+          serviceName: booking.service?.name || booking.service_name || booking.serviceName || 'Service',
           duration: booking.duration || 30,
           
           // ✅ NEW: Chat fields
@@ -167,20 +337,260 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
           // ✅ NEW: Prescription fields (vet only)
           hasPrescription: booking.hasPrescription || false,
           prescriptionUrl: booking.prescriptionUrl || null,
-          prescriptionNotes: booking.prescriptionNotes || null
-        }));
+          prescriptionNotes: booking.prescriptionNotes || null,
+          // Preserve meetingId, service_type etc. for downstream
+          meetingId: booking.meeting_id || booking.meetingId,
+          meeting_id: booking.meeting_id || booking.meetingId,
+        };
+        });
         
         setBookings(mappedBookings);
         console.log(`✅ Loaded ${mappedBookings.length} bookings for vendor ${vendorId}`);
+        
+        // ✅ FIX: Calculate instant consultation stats from filtered bookings (respects activeFilter: today/week/month)
+        // Stats should match what's shown on the dashboard for the selected period
+        // Check both serviceType and service_type (from raw booking data) to identify tele consultations
+        const teleBookings = mappedBookings.filter((b: Booking) => {
+          const serviceType = (b.serviceType || (b as any).service_type || '').toString().toLowerCase();
+          return serviceType === 'tele' || 
+                 serviceType === 'teleconsultation' || 
+                 serviceType.includes('tele') ||
+                 b.communicationType === 'video';
+        });
+        
+        // Separate phone calls from video consultations
+        const phoneCalls = teleBookings.filter((b: Booking) => 
+          b.communicationType === 'call' || 
+          (b.serviceType === 'tele' && b.communicationType !== 'video') // Tele without video = phone
+        );
+        
+        const videoCalls = teleBookings.filter((b: Booking) => 
+          b.communicationType === 'video' || 
+          ((b as any).service_type && (b as any).service_type.toString().toLowerCase() === 'teleconsultation')
+        );
+        
+        // Calculate stats for the selected period (today/week/month)
+        setStats({
+          calls: teleBookings.length, // Total tele consultations (phone + video)
+          online: videoCalls.length, // Video/online consultations
+          phone: phoneCalls.length, // Phone consultations
+        });
+        
+        console.log(`📊 [VENDOR-UI] Stats for ${activeFilter}:`, {
+          totalTele: teleBookings.length,
+          video: videoCalls.length,
+          phone: phoneCalls.length,
+          totalBookings: mappedBookings.length
+        });
+        
+        // ✅ FIX: Load operating hours and regenerate time slots based on real data
+        let operatingHours = null;
+        if (facilityData && facilityData.facility && facilityData.facility.operatingHours) {
+          operatingHours = facilityData.facility.operatingHours;
+        }
+        
+        // Generate time slots based on operating hours and existing bookings
+        const newSlots = generateTimeSlots(operatingHours, mappedBookings);
+        setTimeSlots(newSlots);
       } else {
-        console.error('Failed to load bookings:', data);
+        console.error('Failed to load bookings:', bookingsData);
         setBookings([]);
+        setTimeSlots([]);
+        // ✅ FIX: Reset stats to 0 when no bookings are found for the selected period
+        setStats({
+          calls: 0,
+          online: 0,
+          phone: 0,
+        });
       }
     } catch (error) {
       console.error('Error loading bookings:', error);
       setBookings([]);
+      setTimeSlots([]);
+      // ✅ FIX: Reset stats to 0 on error
+      setStats({
+        calls: 0,
+        online: 0,
+        phone: 0,
+      });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadEarningsData = async () => {
+    try {
+      setEarningsLoading(true);
+      console.log('💰 [VENDOR-UI] Loading earnings data for vendor:', vendorId);
+      
+      // Fetch earnings data for different periods in parallel
+      const [todayData, weekData, monthData, totalData, transactionsData] = await Promise.all([
+        apiClient.get(`/vendor/${vendorId}/earnings?period=day`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/earnings?period=week`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/earnings?period=month`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/earnings?period=lifetime`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/transactions?period=month&limit=10`).catch(() => null) as Promise<any>,
+      ]);
+      
+      console.log('📊 [VENDOR-UI] Earnings API responses:', { todayData, weekData, monthData, totalData, transactionsData });
+      
+      // Calculate daily trend from week data
+      const dailyTrend = weekData?.dailyBreakdown || weekData?.dailyEarnings || [
+        { day: 'Mon', amount: 0 },
+        { day: 'Tue', amount: 0 },
+        { day: 'Wed', amount: 0 },
+        { day: 'Thu', amount: 0 },
+        { day: 'Fri', amount: 0 },
+        { day: 'Sat', amount: 0 },
+        { day: 'Sun', amount: 0 },
+      ];
+      
+      // Map transactions to display format
+      const transactions = (transactionsData?.transactions || transactionsData?.data || []).slice(0, 5).map((t: any) => ({
+        id: t.id || t.transactionId,
+        date: t.date || t.createdAt || new Date().toISOString().split('T')[0],
+        service: t.serviceName || t.service || 'Service',
+        amount: t.amount || t.price || 0,
+        status: t.status || 'completed',
+        customer: t.customerName || t.customer || 'Customer',
+      }));
+      
+      // API returns { success, earnings: { totalEarnings, thisPeriod, ... }, period } - extract numbers only
+      const eNum = (res: any, field: 'thisPeriod' | 'totalEarnings') => {
+        const earn = res?.earnings;
+        if (earn && typeof earn === 'object') return Number(earn[field]) || 0;
+        return Number(res?.[field] ?? res?.totalEarnings) || 0;
+      };
+      setEarningsData({
+        today: eNum(todayData, 'thisPeriod') || eNum(todayData, 'totalEarnings'),
+        thisWeek: eNum(weekData, 'thisPeriod') || eNum(weekData, 'totalEarnings'),
+        thisMonth: eNum(monthData, 'thisPeriod') || eNum(monthData, 'totalEarnings'),
+        pending: Number(totalData?.earnings?.pendingSettlement ?? totalData?.pendingSettlement ?? totalData?.pending ?? monthData?.earnings?.pendingSettlement ?? 0) || 0,
+        total: eNum(totalData, 'totalEarnings'),
+        transactions,
+        dailyTrend: dailyTrend.map((d: any, index: number) => ({
+          day: d.day || d.date || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index],
+          amount: d.amount || d.earnings || 0,
+        })),
+      });
+      
+      console.log('✅ [VENDOR-UI] Earnings data loaded successfully');
+    } catch (error) {
+      console.error('❌ Error loading earnings:', error);
+      // Set empty data on error
+      setEarningsData({
+        today: 0,
+        thisWeek: 0,
+        thisMonth: 0,
+        pending: 0,
+        total: 0,
+        transactions: [],
+        dailyTrend: [],
+      });
+    } finally {
+      setEarningsLoading(false);
+    }
+  };
+
+  const loadPayoutsData = async () => {
+    try {
+      setPayoutsLoading(true);
+      console.log('🏦 [VENDOR-UI] Loading payouts data for vendor:', vendorId);
+      
+      // Fetch settlements/payouts data and bank details in parallel
+      const [settlementsData, settlementsSummary, bankData, policyData] = await Promise.all([
+        apiClient.get(`/vendor/${vendorId}/settlements?limit=10`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/settlements?summary=true`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/bank-details`).catch(() => apiClient.get(`/vendor/${vendorId}/bank-account`).catch(() => null)) as Promise<any>,
+        apiClient.get(`/settlements/policy`).catch(() => null) as Promise<any>,
+      ]);
+      
+      console.log('📊 [VENDOR-UI] Payouts API responses:', { settlementsData, settlementsSummary, bankData, policyData });
+      
+      // Extract summary totals
+      const summary = settlementsSummary?.summary || settlementsData?.summary || {};
+      
+      // Map payout history
+      const payoutHistory = (settlementsData?.settlements || settlementsData?.data || []).slice(0, 5).map((s: any) => ({
+        id: s.id || s.settlementId,
+        date: s.date || s.createdAt || s.processedAt || new Date().toISOString().split('T')[0],
+        amount: s.amount || s.netAmount || s.payout || 0,
+        status: s.status || 'completed',
+        txnId: s.transactionId || s.txnId || s.utr || `TXN${s.id?.slice(0, 8)?.toUpperCase() || 'XXXXXX'}`,
+      }));
+      
+      // Extract bank account info (bankDetails from GET /vendor/:id/bank-details)
+      const bankAccount = bankData?.bankDetails || bankData?.bankAccount || bankData?.bank || bankData?.data;
+      
+      const policy = policyData?.policy ?? policyData;
+      const payoutDays = policy?.holdPeriodDays ?? policy?.payoutPeriodDays ?? 7;
+      const payoutScheduleText =
+        policy?.description ||
+        policyData?.schedule ||
+        policyData?.payoutSchedule ||
+        `Earnings are held for ${payoutDays} days (per your tier) before becoming eligible for settlement. Minimum payout and schedule are set by Finance.`;
+
+      setPayoutsData({
+        availableForPayout: summary.availableForPayout || summary.available || summary.pendingAmount || 0,
+        pending: summary.pending || summary.holdAmount || summary.onHold || 0,
+        paidOut: summary.paidOut || summary.totalPaidOut || summary.completed || 0,
+        bankAccount: bankAccount ? {
+          bankName: bankAccount.bankName || bankAccount.bank_name || 'Bank',
+          accountNumber: bankAccount.accountNumber || bankAccount.account_number || '••••••••••',
+          accountHolder: bankAccount.accountHolder || bankAccount.account_holder || vendorData?.fullName || 'Account Holder',
+          verified: bankAccount.verified || bankAccount.isVerified || false,
+        } : null,
+        payoutHistory,
+        payoutSchedule: payoutScheduleText,
+      });
+      
+      console.log('✅ [VENDOR-UI] Payouts data loaded successfully');
+    } catch (error) {
+      console.error('❌ Error loading payouts:', error);
+      // Set empty data on error
+      setPayoutsData({
+        availableForPayout: 0,
+        pending: 0,
+        paidOut: 0,
+        bankAccount: null,
+        payoutHistory: [],
+        payoutSchedule: 'Payouts are processed every Friday.',
+      });
+    } finally {
+      setPayoutsLoading(false);
+    }
+  };
+
+  const handleRequestPayout = async () => {
+    if (!payoutsData?.availableForPayout || payoutsData.availableForPayout <= 0) {
+      alert('No amount available for payout');
+      return;
+    }
+    if (!payoutsData?.bankAccount?.verified) {
+      alert('Please add and verify your bank account in Settings first. Automatic settlement requires a verified bank account.');
+      router.push('/settings?tab=bank');
+      return;
+    }
+    
+    if (!confirm(`Request payout of ₹${payoutsData.availableForPayout.toLocaleString('en-IN')}?`)) {
+      return;
+    }
+    
+    try {
+      const response = await apiClient.post('/settlements/request', {
+        vendorId,
+        amount: payoutsData.availableForPayout,
+      }) as any;
+      
+      if (response?.success) {
+        alert('✅ Payout request submitted successfully!');
+        loadPayoutsData(); // Refresh data
+      } else {
+        alert(`❌ Failed to request payout: ${response?.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error requesting payout:', error);
+      alert('❌ Error requesting payout. Please try again.');
     }
   };
 
@@ -379,53 +789,12 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
     setShowChatModal(true);
   };
   
-  // ✅ Handle Open Prescription
-  const handleOpenPrescription = async (booking: Booking) => {
+  // ✅ Handle Open Prescription - Opens prescription modal for viewing/uploading
+  const handleOpenPrescription = (booking: Booking) => {
     console.log('💊 Opening prescription for booking:', booking.bookingId || booking.id);
-    
     const bookingId = booking.bookingId || booking.id;
-    
-    if (booking.hasPrescription) {
-      // View existing prescription
-      try {
-        const data = await apiClient.get(`/vendor/prescription/${bookingId}`) as any;
-        
-        if (data && data.success) {
-          // data already available
-          const prescription = data.prescription;
-          alert(`📋 Prescription Details\n\nPet: ${booking.petName}\nCustomer: ${booking.customerName}\n\nNotes:\n${prescription.notes}\n\nUploaded: ${new Date(prescription.uploadedAt).toLocaleString()}`);
-        } else {
-          alert('❌ Failed to load prescription');
-        }
-      } catch (error) {
-        console.error('❌ Error fetching prescription:', error);
-        alert('❌ Error loading prescription');
-      }
-    } else {
-      // Upload new prescription
-      const notes = prompt(`Enter prescription notes for ${booking.petName}:\n\n(e.g., Take 2 tablets daily after meals for 7 days)`);
-      if (!notes || notes.trim() === '') return;
-      
-      try {
-        const data = await apiClient.post('/vendor/prescription/upload', {
-          bookingId,
-          vendorId,
-          prescriptionNotes: notes.trim(),
-          prescriptionFile: null // TODO: Add file upload
-        }) as any;
-        
-        if (data && data.success) {
-          alert('✅ Prescription uploaded successfully!');
-          loadBookings(); // Reload to show prescription badge
-        } else {
-          // data already available
-          alert('❌ Failed to upload prescription:\n' + (data.error || 'Unknown error'));
-        }
-      } catch (error) {
-        console.error('❌ Error uploading prescription:', error);
-        alert('❌ Error uploading prescription');
-      }
-    }
+    setPrescriptionBookingId(bookingId);
+    setShowPrescriptionModal(true);
   };
 
   return (
@@ -535,59 +904,63 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
         {/* BOOKINGS TAB CONTENT */}
         {activeTab === 'bookings' && (
           <>
-            {/* View Toggle */}
-            <div className="p-4 bg-white border-b border-gray-100">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setActiveView('consultations')}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    activeView === 'consultations'
-                      ? 'bg-gray-900 text-white'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  All Consultations
-                </button>
-                <button
-                  onClick={() => setActiveView('locations')}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    activeView === 'locations'
-                      ? 'bg-gray-900 text-white'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  All Locations
-                </button>
+            {/* View Toggle - Hide for solo groomers (no tele consultations) */}
+            {hasTeleService && (
+              <div className="p-4 bg-white border-b border-gray-100">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setActiveView('consultations')}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      activeView === 'consultations'
+                        ? 'bg-gray-900 text-white'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    All Consultations
+                  </button>
+                  <button
+                    onClick={() => setActiveView('locations')}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      activeView === 'locations'
+                        ? 'bg-gray-900 text-white'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    All Locations
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Instant Consultations Stats */}
-            <div className="p-4 bg-white border-b border-gray-100">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Instant Consultations</h3>
-              <div className="flex items-center justify-between">
-                <div className="text-center flex-1">
-                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-1 flex items-center justify-center">
-                    <Phone className="w-6 h-6 text-gray-600" />
+            {/* Instant Consultations Stats - Hide for solo groomers (no tele services) */}
+            {hasTeleService && (
+              <div className="p-4 bg-white border-b border-gray-100">
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">Instant Consultations</h3>
+                <div className="flex items-center justify-between">
+                  <div className="text-center flex-1">
+                    <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-1 flex items-center justify-center">
+                      <Phone className="w-6 h-6 text-gray-600" />
+                    </div>
+                    <div className="font-semibold text-gray-900">{stats.calls}</div>
+                    <div className="text-xs text-gray-500">Calls</div>
                   </div>
-                  <div className="font-semibold text-gray-900">{stats.calls}</div>
-                  <div className="text-xs text-gray-500">Calls</div>
-                </div>
-                <div className="text-center flex-1">
-                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-1 flex items-center justify-center">
-                    <Video className="w-6 h-6 text-gray-600" />
+                  <div className="text-center flex-1">
+                    <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-1 flex items-center justify-center">
+                      <Video className="w-6 h-6 text-gray-600" />
+                    </div>
+                    <div className="font-semibold text-gray-900">{stats.online}</div>
+                    <div className="text-xs text-gray-500">Online</div>
                   </div>
-                  <div className="font-semibold text-gray-900">{stats.online}</div>
-                  <div className="text-xs text-gray-500">Online</div>
-                </div>
-                <div className="text-center flex-1">
-                  <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-1 flex items-center justify-center">
-                    <Phone className="w-6 h-6 text-gray-600" />
+                  <div className="text-center flex-1">
+                    <div className="w-12 h-12 bg-gray-100 rounded-lg mx-auto mb-1 flex items-center justify-center">
+                      <Phone className="w-6 h-6 text-gray-600" />
+                    </div>
+                    <div className="font-semibold text-gray-900">{stats.phone}</div>
+                    <div className="text-xs text-gray-500">Phone</div>
                   </div>
-                  <div className="font-semibold text-gray-900">{stats.phone}</div>
-                  <div className="text-xs text-gray-500">Phone</div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Today's Appointments */}
             <div className="p-4 bg-white">
@@ -737,8 +1110,8 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
                           </button>
                         )}
                         
-                        {/* Chat Button - ALL BOOKINGS */}
-                        {booking.chatEnabled !== false && (
+                        {/* Chat Button - Only show if chat capability is enabled for this role */}
+                        {chatEnabled && booking.chatEnabled !== false && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -854,194 +1227,294 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
               </div>
             </div>
 
-            {/* Emergency Availability Toggle */}
-            <div className="p-4 bg-white border-t border-gray-100">
-              <div className="flex items-center justify-between p-4 bg-red-50 border border-red-200 rounded-xl">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center">
-                    <span className="text-white text-xl">🚨</span>
+            {/* Emergency Availability Toggle - Only show for ambulance and vet roles, not for solo business types */}
+            {hasVendorRole(vendorData, ['ambulance', 'veterinarian', 'vet_clinic', 'veterinary_clinic', 'vet', 'pet_clinic', 'animal_hospital']) && (
+              <div className="p-4 bg-white border-t border-gray-100">
+                <div className="flex items-center justify-between p-4 bg-red-50 border border-red-200 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xl">🚨</span>
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900">Emergency Availability</h3>
+                      <p className="text-xs text-gray-600">24x7 on-call service</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">Emergency Availability</h3>
-                    <p className="text-xs text-gray-600">24x7 on-call service</p>
-                  </div>
+                  <button className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium">
+                    Enable
+                  </button>
                 </div>
-                <button className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium">
-                  Enable
-                </button>
               </div>
-            </div>
+            )}
           </>
         )}
 
         {/* EARNINGS TAB CONTENT */}
         {activeTab === 'earnings' && (
           <>
-            {/* Earnings Summary */}
-            <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-b border-green-200">
-              <div className="grid grid-cols-3 gap-3 mb-3">
-                <div className="bg-white p-3 rounded-lg text-center">
-                  <div className="text-2xl font-bold text-green-600">₹12,450</div>
-                  <div className="text-xs text-gray-600">Today</div>
-                </div>
-                <div className="bg-white p-3 rounded-lg text-center">
-                  <div className="text-2xl font-bold text-green-600">₹89,320</div>
-                  <div className="text-xs text-gray-600">This Week</div>
-                </div>
-                <div className="bg-white p-3 rounded-lg text-center">
-                  <div className="text-2xl font-bold text-green-600">₹3,45,680</div>
-                  <div className="text-xs text-gray-600">This Month</div>
-                </div>
+            {earningsLoading ? (
+              <div className="p-8 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42]"></div>
               </div>
-              <div className="bg-white p-3 rounded-lg">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm text-gray-600">Pending Earnings</span>
-                  <span className="text-lg font-bold text-orange-600">₹24,580</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Total Earnings</span>
-                  <span className="text-lg font-bold text-green-600">₹4,67,230</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Recent Transactions */}
-            <div className="p-4">
-              <h3 className="font-semibold text-gray-900 mb-3">Recent Transactions</h3>
-              <div className="space-y-2">
-                {[
-                  { id: '1', date: '2024-11-15', service: 'Home Visit - Vaccination', amount: 1500, status: 'completed', customer: 'Priya Sharma' },
-                  { id: '2', date: '2024-11-15', service: 'Tele Consultation', amount: 500, status: 'completed', customer: 'Arjun Patel' },
-                  { id: '3', date: '2024-11-14', service: 'Clinic Visit - Checkup', amount: 800, status: 'pending', customer: 'Nitika Verma' },
-                  { id: '4', date: '2024-11-14', service: 'Home Visit - Grooming', amount: 1200, status: 'completed', customer: 'Rajesh Kumar' },
-                  { id: '5', date: '2024-11-13', service: 'Tele Consultation', amount: 500, status: 'completed', customer: 'Meera Singh' },
-                ].map((transaction) => (
-                  <div key={transaction.id} className="border border-gray-200 rounded-xl p-3">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900 text-sm">{transaction.service}</div>
-                        <div className="text-xs text-gray-500">{transaction.customer} • {transaction.date}</div>
+            ) : (
+              <>
+                {/* Earnings Summary */}
+                <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-b border-green-200">
+                  <div className="grid grid-cols-3 gap-3 mb-3">
+                    <div className="bg-white p-3 rounded-lg text-center">
+                      <div className="text-2xl font-bold text-green-600">
+                        ₹{(earningsData?.today || 0).toLocaleString('en-IN')}
                       </div>
-                      <div className="text-right">
-                        <div className="font-bold text-green-600">₹{transaction.amount.toLocaleString()}</div>
-                        <div className={`text-xs px-2 py-0.5 rounded-full inline-block mt-1 ${
-                          transaction.status === 'completed' 
-                            ? 'bg-green-100 text-green-700' 
-                            : 'bg-orange-100 text-orange-700'
-                        }`}>
-                          {transaction.status}
-                        </div>
+                      <div className="text-xs text-gray-600">Today</div>
+                    </div>
+                    <div className="bg-white p-3 rounded-lg text-center">
+                      <div className="text-2xl font-bold text-green-600">
+                        ₹{(earningsData?.thisWeek || 0).toLocaleString('en-IN')}
                       </div>
+                      <div className="text-xs text-gray-600">This Week</div>
+                    </div>
+                    <div className="bg-white p-3 rounded-lg text-center">
+                      <div className="text-2xl font-bold text-green-600">
+                        ₹{(earningsData?.thisMonth || 0).toLocaleString('en-IN')}
+                      </div>
+                      <div className="text-xs text-gray-600">This Month</div>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
+                  <div className="bg-white p-3 rounded-lg">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-gray-600">Pending Earnings</span>
+                      <span className="text-lg font-bold text-orange-600">
+                        ₹{(earningsData?.pending || 0).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">Total Earnings</span>
+                      <span className="text-lg font-bold text-green-600">
+                        ₹{(earningsData?.total || 0).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-            {/* Earnings Chart Placeholder */}
-            <div className="p-4 bg-white border-t border-gray-100">
-              <h3 className="font-semibold text-gray-900 mb-3">Earnings Trend</h3>
-              <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-6 text-center">
-                <div className="text-4xl mb-2">📈</div>
-                <p className="text-sm text-gray-600">Earnings chart coming soon</p>
-              </div>
-            </div>
+                {/* Recent Transactions */}
+                <div className="p-4">
+                  <h3 className="font-semibold text-gray-900 mb-3">Recent Transactions</h3>
+                  {(!earningsData?.transactions || earningsData.transactions.length === 0) ? (
+                    <div className="text-center py-8 text-gray-500 text-sm">
+                      No transactions yet
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {earningsData.transactions.map((transaction) => (
+                        <div key={transaction.id} className="border border-gray-200 rounded-xl p-3">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900 text-sm">{transaction.service}</div>
+                              <div className="text-xs text-gray-500">{transaction.customer} • {new Date(transaction.date).toLocaleDateString('en-IN')}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-bold text-green-600">₹{transaction.amount.toLocaleString('en-IN')}</div>
+                              <div className={`text-xs px-2 py-0.5 rounded-full inline-block mt-1 ${
+                                transaction.status === 'completed' 
+                                  ? 'bg-green-100 text-green-700' 
+                                  : 'bg-orange-100 text-orange-700'
+                              }`}>
+                                {transaction.status}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Earnings Chart */}
+                <div className="p-4 bg-white border-t border-gray-100">
+                  <h3 className="font-semibold text-gray-900 mb-3">Earnings Trend (Last 7 Days)</h3>
+                  <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-4">
+                    {(!earningsData?.dailyTrend || earningsData.dailyTrend.length === 0) ? (
+                      <div className="text-center py-8 text-gray-500 text-sm">
+                        No earnings data for this period
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-end justify-between h-32 gap-2">
+                          {(() => {
+                            const maxAmount = Math.max(...earningsData.dailyTrend.map(d => d.amount), 1);
+                            return earningsData.dailyTrend.map((item, index) => {
+                              const heightPercent = maxAmount > 0 ? Math.max((item.amount / maxAmount) * 100, 5) : 5;
+                              return (
+                                <div key={index} className="flex-1 flex flex-col items-center gap-1">
+                                  <div className="text-xs text-gray-600 font-medium">₹{item.amount.toLocaleString('en-IN')}</div>
+                                  <div 
+                                    className="w-full bg-gradient-to-t from-green-500 to-green-400 rounded-t-md transition-all hover:from-green-600 hover:to-green-500"
+                                    style={{ height: `${heightPercent}%`, minHeight: '8px' }}
+                                  />
+                                  <div className="text-xs text-gray-500">{item.day}</div>
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-gray-200 flex justify-between text-sm">
+                          <span className="text-gray-600">Weekly Total</span>
+                          <span className="font-bold text-green-600">
+                            ₹{earningsData.dailyTrend.reduce((sum, d) => sum + d.amount, 0).toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
           </>
         )}
 
         {/* PAYOUTS TAB CONTENT */}
         {activeTab === 'payouts' && (
           <>
-            {/* Payout Summary */}
-            <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-b border-blue-200">
-              <div className="bg-white p-4 rounded-lg mb-3">
-                <div className="text-center mb-3">
-                  <div className="text-3xl font-bold text-blue-600">₹1,23,450</div>
-                  <div className="text-sm text-gray-600">Available for Payout</div>
-                </div>
-                <button className="w-full bg-[#FF8C42] hover:bg-[#ff7a28] text-white rounded-xl h-11 font-medium">
-                  Request Payout
-                </button>
+            {payoutsLoading ? (
+              <div className="p-8 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42]"></div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white p-3 rounded-lg text-center">
-                  <div className="text-xl font-bold text-gray-900">₹24,580</div>
-                  <div className="text-xs text-gray-600">Pending</div>
-                </div>
-                <div className="bg-white p-3 rounded-lg text-center">
-                  <div className="text-xl font-bold text-gray-900">₹4,42,650</div>
-                  <div className="text-xs text-gray-600">Paid Out</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Bank Account Info */}
-            <div className="p-4 bg-white border-b border-gray-100">
-              <h3 className="font-semibold text-gray-900 mb-3">Bank Account</h3>
-              <div className="border border-gray-200 rounded-xl p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <span className="text-xl">🏦</span>
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-medium text-gray-900">HDFC Bank</div>
-                    <div className="text-sm text-gray-600">••••  ••••  ••••  4532</div>
-                  </div>
-                  <button className="text-sm text-[#FF8C42] font-medium">
-                    Change
-                  </button>
-                </div>
-                <div className="text-xs text-gray-500">
-                  Account Holder: {vendorData?.fullName || 'Vendor Name'}
-                </div>
-              </div>
-            </div>
-
-            {/* Payout History */}
-            <div className="p-4">
-              <h3 className="font-semibold text-gray-900 mb-3">Payout History</h3>
-              <div className="space-y-2">
-                {[
-                  { id: '1', date: '2024-11-10', amount: 45000, status: 'completed', txnId: 'TXN123456789' },
-                  { id: '2', date: '2024-11-03', amount: 38500, status: 'completed', txnId: 'TXN123456788' },
-                  { id: '3', date: '2024-10-27', amount: 52300, status: 'completed', txnId: 'TXN123456787' },
-                  { id: '4', date: '2024-10-20', amount: 41200, status: 'completed', txnId: 'TXN123456786' },
-                  { id: '5', date: '2024-10-13', amount: 39800, status: 'completed', txnId: 'TXN123456785' },
-                ].map((payout) => (
-                  <div key={payout.id} className="border border-gray-200 rounded-xl p-3">
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900 text-sm">Payout - {payout.date}</div>
-                        <div className="text-xs text-gray-500">TXN ID: {payout.txnId}</div>
+            ) : (
+              <>
+                {/* Payout Summary */}
+                <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 border-b border-blue-200">
+                  <div className="bg-white p-4 rounded-lg mb-3">
+                    <div className="text-center mb-3">
+                      <div className="text-3xl font-bold text-blue-600">
+                        ₹{(payoutsData?.availableForPayout || 0).toLocaleString('en-IN')}
                       </div>
-                      <div className="text-right">
-                        <div className="font-bold text-blue-600">₹{payout.amount.toLocaleString()}</div>
-                        <div className="text-xs px-2 py-0.5 rounded-full inline-block mt-1 bg-green-100 text-green-700">
-                          {payout.status}
+                      <div className="text-sm text-gray-600">Available for Payout</div>
+                    </div>
+                    <button 
+                      onClick={handleRequestPayout}
+                      disabled={!payoutsData?.availableForPayout || payoutsData.availableForPayout <= 0}
+                      className="w-full bg-[#FF8C42] hover:bg-[#ff7a28] text-white rounded-xl h-11 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Request Payout
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white p-3 rounded-lg text-center">
+                      <div className="text-xl font-bold text-gray-900">
+                        ₹{(payoutsData?.pending || 0).toLocaleString('en-IN')}
+                      </div>
+                      <div className="text-xs text-gray-600">On Hold</div>
+                    </div>
+                    <div className="bg-white p-3 rounded-lg text-center">
+                      <div className="text-xl font-bold text-gray-900">
+                        ₹{(payoutsData?.paidOut || 0).toLocaleString('en-IN')}
+                      </div>
+                      <div className="text-xs text-gray-600">Total Paid Out</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bank Account Info */}
+                <div className="p-4 bg-white border-b border-gray-100">
+                  <h3 className="font-semibold text-gray-900 mb-3">Bank Account</h3>
+                  {payoutsData?.bankAccount ? (
+                    <div className="border border-gray-200 rounded-xl p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                          <span className="text-xl">🏦</span>
                         </div>
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900">{payoutsData.bankAccount.bankName}</div>
+                          <div className="text-sm text-gray-600">
+                            {payoutsData.bankAccount.accountNumber?.includes('*') || payoutsData.bankAccount.accountNumber?.includes('•')
+                              ? payoutsData.bankAccount.accountNumber
+                              : `****${String(payoutsData.bankAccount.accountNumber || '').slice(-4)}`}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          {payoutsData.bankAccount.verified && (
+                            <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">Verified</span>
+                          )}
+                          <button
+                            onClick={() => router.push('/settings?tab=bank')}
+                            className="text-sm text-[#FF8C42] font-medium hover:underline"
+                          >
+                            Change
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Account Holder: {payoutsData.bankAccount.accountHolder}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border border-dashed border-gray-300 rounded-xl p-4 text-center">
+                      <div className="text-gray-500 mb-2">No bank account linked</div>
+                      <button
+                        onClick={() => router.push('/settings?tab=bank')}
+                        className="text-sm text-[#FF8C42] font-medium hover:underline"
+                      >
+                        + Add Bank Account
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Payout History */}
+                <div className="p-4">
+                  <h3 className="font-semibold text-gray-900 mb-3">Payout History</h3>
+                  {(!payoutsData?.payoutHistory || payoutsData.payoutHistory.length === 0) ? (
+                    <div className="text-center py-8 text-gray-500 text-sm">
+                      No payouts yet
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {payoutsData.payoutHistory.map((payout) => (
+                        <div key={payout.id} className="border border-gray-200 rounded-xl p-3">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1">
+                              <div className="font-medium text-gray-900 text-sm">
+                                Payout - {new Date(payout.date).toLocaleDateString('en-IN')}
+                              </div>
+                              <div className="text-xs text-gray-500">TXN ID: {payout.txnId}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="font-bold text-blue-600">₹{payout.amount.toLocaleString('en-IN')}</div>
+                              <div className={`text-xs px-2 py-0.5 rounded-full inline-block mt-1 ${
+                                payout.status === 'completed' || payout.status === 'processed'
+                                  ? 'bg-green-100 text-green-700'
+                                  : payout.status === 'pending' || payout.status === 'processing'
+                                  ? 'bg-yellow-100 text-yellow-700'
+                                  : 'bg-gray-100 text-gray-700'
+                              }`}>
+                                {payout.status}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Payout Schedule Info */}
+                <div className="p-4 bg-white border-t border-gray-100">
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-xl">ℹ️</span>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-900 mb-1">Payout Schedule</h4>
+                        <p className="text-sm text-gray-600">
+                          {payoutsData?.payoutSchedule || 'Payouts are processed every Friday. Earnings from completed bookings are held for 48 hours before becoming available for payout.'}
+                        </p>
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Payout Schedule Info */}
-            <div className="p-4 bg-white border-t border-gray-100">
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-white text-xl">ℹ️</span>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-gray-900 mb-1">Payout Schedule</h4>
-                    <p className="text-sm text-gray-600">
-                      Payouts are processed every <strong>Friday</strong>. Earnings from completed bookings are held for 48 hours before becoming available for payout.
-                    </p>
-                  </div>
                 </div>
-              </div>
-            </div>
+              </>
+            )}
           </>
         )}
       </div>
@@ -1138,15 +1611,32 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
       {/* CHAT MODAL */}
       {showChatModal && chatBooking && (
         <VendorChatModal
-          bookingId={chatBooking.id}
-          vendorPhone={vendorData?.phone || vendorData?.mobile || '+91'}
-          vendorName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
+          bookingId={chatBooking.bookingId || chatBooking.id}
+          vendorId={vendorId}
+          vendorPhone={vendorPhone || vendorData?.phone || vendorData?.mobile}
+          vendorName={vendorName || vendorData?.fullName || vendorData?.businessName || 'Vendor'}
           customerPhone={chatBooking.phone}
           customerName={chatBooking.customerName}
+          bookingStatus={chatBooking.status}
+          serviceName={chatBooking.serviceName}
+          serviceType={chatBooking.serviceType || chatBooking.service_type} // ✅ CRITICAL FIX: Pass service type
+          meetingId={chatBooking.meetingId || chatBooking.meeting_id} // ✅ CRITICAL FIX: Pass meeting ID
           onClose={() => {
             setShowChatModal(false);
             setChatBooking(null);
             loadBookings(); // Reload to clear unread badges
+          }}
+          onSupportHandoff={(bookingId, reason) => {
+            // Handle support handoff - redirect to support ticket creation
+            setShowChatModal(false);
+            setChatBooking(null);
+            // Could navigate to support page or open support modal
+            console.log('Support handoff requested for booking:', bookingId, reason);
+          }}
+          onVideoCallStart={(bookingId, meetingId) => {
+            // ✅ CRITICAL FIX: Handle video call start
+            console.log('Video call started for booking:', bookingId, 'Meeting:', meetingId);
+            // Could update booking state or show notification
           }}
         />
       )}
@@ -1161,6 +1651,20 @@ export function VendorBookingManagement({ vendorId, vendorData, onBack }: Vendor
             setDetailBookingId(null);
           }}
           onRefresh={() => loadBookings()}
+        />
+      )}
+
+      {/* PRESCRIPTION HISTORY MODAL */}
+      {showPrescriptionModal && prescriptionBookingId && (
+        <PrescriptionHistoryModal
+          bookingId={prescriptionBookingId}
+          vendorId={vendorId}
+          vendorPhone={vendorPhone || ''}
+          onClose={() => {
+            setShowPrescriptionModal(false);
+            setPrescriptionBookingId(null);
+          }}
+          onUploadSuccess={() => loadBookings()}
         />
       )}
     </div>

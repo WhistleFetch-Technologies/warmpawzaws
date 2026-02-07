@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Tag, Plus, Edit2, Trash2, Calendar, X, Loader2 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface PromotionsManagementProps {
@@ -21,8 +21,8 @@ export function PromotionsManagement({ sellerId }: PromotionsManagementProps) {
       setLoading(true);
       // Use the admin endpoint to see all promotions (active and inactive)
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/admin/promotions?limit=100`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/ecommerce/admin/promotions?limit=100`,
+        { headers: getAuthHeaders() }
       );
       
       if (res.ok) {
@@ -144,11 +144,11 @@ function CreatePromotionModal({ sellerId, onClose, onSuccess }: { sellerId: stri
       };
 
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/admin/promotions/create`,
+        `${getApiBaseUrl()}/ecommerce/admin/promotions/create`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(payload)

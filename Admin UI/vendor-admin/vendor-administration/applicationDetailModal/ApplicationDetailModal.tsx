@@ -11,7 +11,7 @@ import {
 	XCircle,
 } from "lucide-react";
 import { Button } from "@repo/ui";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 interface ApplicationDetailModalProps {
 	isOpen: boolean;
 	onClose: () => void;
@@ -53,11 +53,11 @@ export function ApplicationDetailModal({
 		try {
 			setApproving(true);
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor/application/${appId}/approve`,
+				`${getApiBaseUrl()}/admin/vendor/application/${appId}/approve`,
 				{
 					method: "POST",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({
@@ -92,11 +92,11 @@ export function ApplicationDetailModal({
 		try {
 			setRejecting(true);
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor/application/${appId}/reject`,
+				`${getApiBaseUrl()}/admin/vendor/application/${appId}/reject`,
 				{
 					method: "POST",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({
@@ -127,11 +127,11 @@ export function ApplicationDetailModal({
 		try {
 			setRequesting(true);
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor/application/${appId}/request-clarification`,
+				`${getApiBaseUrl()}/admin/vendor/application/${appId}/request-clarification`,
 				{
 					method: "POST",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({
@@ -156,11 +156,11 @@ export function ApplicationDetailModal({
 		try {
 			setRequesting(true);
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor/application/${appId}/request-document-reupload`,
+				`${getApiBaseUrl()}/admin/vendor/application/${appId}/request-document-reupload`,
 				{
 					method: "POST",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({

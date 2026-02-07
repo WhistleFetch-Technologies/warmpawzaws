@@ -9,8 +9,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
 
-// Default capabilities for fallback
+// Default capabilities for fallback (only used when API fails)
+// ⚠️ Keep this minimal - actual capabilities MUST come from database
 const DEFAULT_CAPABILITIES: Record<string, boolean> = {
+  dashboard: true,
+  profile: true,
+};
+
+// Full default capabilities - only used as absolute last resort after API failure
+const FULL_DEFAULT_CAPABILITIES: Record<string, boolean> = {
   dashboard: true,
   profile: true,
   bookings: true,
@@ -27,6 +34,7 @@ export interface VendorCapabilities {
   roleId: string | null;
   roleName: string | null;
   refresh: () => void;
+  initialLoadComplete: boolean; // ✅ NEW: Indicates first DB load completed (prevents flickering)
 }
 
 interface RoleResponse {
@@ -49,14 +57,67 @@ interface RoleResponse {
  */
 function capabilitiesToMap(capabilities: string[]): Record<string, boolean> {
   const map: Record<string, boolean> = {};
-  capabilities.forEach(cap => {
+  
+  // ✅ FIX: Map common plural/singular capability aliases
+  const aliases: Record<string, string[]> = {
+    'bookings': ['booking', 'bookings'],
+    'services': ['service', 'services', 'catalog'], // Also treat services as catalog capability
+    'prescriptions': ['prescription', 'prescriptions', 'rx', 'prescription_create'],
+    'notifications': ['notification', 'notifications'],
+    'medical_records': ['medical_record', 'medical_records', 'medicalRecords', 'medicalRecord'],
+    'custom_services': ['custom_service', 'custom_services', 'customServices', 'customService'],
+    'staff_management': ['staff', 'staff_management', 'staffManagement', 'manage_staff', 'staff_create'],
+    'package_management': ['packages', 'package_management', 'packageManagement'],
+    'schedule_management': ['schedule', 'schedule_management', 'scheduleManagement'],
+    'facility_management': ['facility', 'facility_management', 'facilityManagement'],
+    'inventory': ['inventory', 'inventory_manage', 'inventoryManagement', 'stock_management'],
+    'orders': ['orders', 'order_management', 'order_dispatch', 'order_broadcast'],
+    'delivery': ['delivery', 'delivery_management', 'order_dispatch'],
+    'prescription_verification': ['prescription_verification', 'rx_verification', 'verify_prescription'],
+    'expiry_management': ['expiry_management', 'expiry_tracking', 'expiry_monitoring'],
+    'product_catalog': ['product_catalog', 'catalog', 'products', 'product_management'],
+    'diagnostic_results': ['diagnostic_results', 'diagnostics', 'test_catalog', 'diagnostic_lab'],
+    'diagnostics': ['diagnostics', 'diagnostic_results', 'test_catalog'],
+  };
+  
+  // ✅ FIX: Filter out null/undefined capabilities before processing
+  capabilities.filter(Boolean).forEach(cap => {
+    if (!cap) return; // Extra safety check
     // Normalize capability names (handle both snake_case and camelCase)
-    const normalized = cap.toLowerCase().replace(/-/g, '_');
+    const normalized = (cap || '').toLowerCase().replace(/-/g, '_');
     map[normalized] = true;
+    
     // Also add camelCase version
     const camelCase = normalized.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
     map[camelCase] = true;
+    
+    // ✅ FIX: Add all aliases for this capability
+    if (aliases[normalized]) {
+      aliases[normalized].forEach(alias => {
+        map[alias] = true;
+      });
+    }
+    
+    // ✅ PHARMACY FIX: Map backend capability names to frontend capability names
+    // e.g., inventory_manage -> inventory, product_catalog -> catalog
+    if (normalized === 'inventory_manage') {
+      map['inventory'] = true;
+      map['catalog'] = true; // Inventory implies catalog management
+    }
+    if (normalized === 'product_catalog') {
+      map['catalog'] = true;
+      map['products'] = true;
+    }
+    if (normalized === 'prescription_create') {
+      map['prescriptions'] = true;
+      map['prescription'] = true;
+    }
+    if (normalized === 'order_dispatch' || normalized === 'order_broadcast') {
+      map['orders'] = true;
+      map['delivery'] = true;
+    }
   });
+  
   return map;
 }
 
@@ -75,11 +136,13 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
   } else {
     roleId = roleIdOrVendorData;
   }
-  const [capabilities, setCapabilities] = useState<Record<string, boolean>>(DEFAULT_CAPABILITIES);
+  // ✅ FIX: Start with empty capabilities - wait for DB response
+  const [capabilities, setCapabilities] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [roleName, setRoleName] = useState<string | null>(null);
   const [resolvedRoleId, setResolvedRoleId] = useState<string | null>(null);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   const loadCapabilities = useCallback(async () => {
     // If capabilities were pre-loaded (e.g., from vendor dashboard response), use them
@@ -92,6 +155,7 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
       setCapabilities(mergedCapabilities);
       setResolvedRoleId(roleId || null);
       setLoading(false);
+      setInitialLoadComplete(true);
       console.log('[useVendorCapabilities] Using pre-loaded capabilities:', preloadedCapabilities.length);
       return;
     }
@@ -114,9 +178,11 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
     }
     
     if (!effectiveRoleId) {
-      console.warn('[useVendorCapabilities] No roleId provided and none in localStorage, using default capabilities');
+      console.warn('[useVendorCapabilities] No roleId provided and none in localStorage, using minimal fallback');
+      // ✅ FIX: Only use minimal defaults, actual capabilities MUST come from DB
       setCapabilities(DEFAULT_CAPABILITIES);
       setLoading(false);
+      setInitialLoadComplete(true);
       return;
     }
 
@@ -134,31 +200,47 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectiveRoleId);
       
       if (isUuid) {
-        // Load by role UUID
-        response = await apiClient.get<RoleResponse>(`/config/roles/${effectiveRoleId}`);
-      } else {
-        // Try to find role by code/name - load all roles and filter
+        // Load by role UUID - may 404 if role was deleted or UUID is from another env
+        try {
+          response = await apiClient.get<RoleResponse>(`/config/roles/${effectiveRoleId}`);
+        } catch (uuidErr: any) {
+          const is404 = uuidErr?.statusCode === 404 || uuidErr?.status === 404 || (uuidErr?.message && String(uuidErr.message).includes('Role not found'));
+          if (is404 && typeof window !== 'undefined') {
+            const storedRole = localStorage.getItem('vendorRole');
+            if (storedRole === effectiveRoleId) {
+              localStorage.removeItem('vendorRole');
+              console.warn('[useVendorCapabilities] Cleared stale vendorRole (404):', effectiveRoleId);
+            }
+          }
+          response = null;
+        }
+      }
+      if (!response) {
+        // Non-UUID or UUID 404: load all roles and use first/match
         const rolesResponse = await apiClient.get<{ success: boolean; roles: any[] }>('/config/roles');
-        if (rolesResponse.success && rolesResponse.roles) {
-          const normalizedRoleId = effectiveRoleId.toLowerCase().replace(/\s+/g, '_');
-          const matchedRole = rolesResponse.roles.find((r: any) => 
-            r.name?.toLowerCase() === normalizedRoleId ||
-            r.roleCode?.toLowerCase() === normalizedRoleId ||
-            r.display_name?.toLowerCase() === normalizedRoleId.replace(/_/g, ' ') ||
-            r.id === effectiveRoleId
-          );
-          
-          if (matchedRole) {
-            response = {
-              success: true,
-              roleId: matchedRole.id,
-              roleName: matchedRole.display_name || matchedRole.name,
-              roleCode: matchedRole.name,
-              capabilities: matchedRole.capabilities || [],
-              vendorTypes: matchedRole.vendorTypes || [],
-              serviceStyles: matchedRole.serviceStyles || [],
-              pricingControl: matchedRole.pricingControl,
-            };
+        if (rolesResponse?.success && Array.isArray(rolesResponse.roles) && rolesResponse.roles.length > 0) {
+          const normalizedRoleId = effectiveRoleId?.toLowerCase().replace(/\s+/g, '_');
+          const matchedRole = normalizedRoleId
+            ? rolesResponse.roles.find((r: any) =>
+                r.name?.toLowerCase() === normalizedRoleId ||
+                r.roleCode?.toLowerCase() === normalizedRoleId ||
+                r.display_name?.toLowerCase() === normalizedRoleId.replace(/_/g, ' ') ||
+                r.id === effectiveRoleId
+              )
+            : null;
+          const roleToUse = matchedRole || rolesResponse.roles[0];
+          response = {
+            success: true,
+            roleId: roleToUse.id,
+            roleName: roleToUse.display_name || roleToUse.name,
+            roleCode: roleToUse.name,
+            capabilities: roleToUse.capabilities || [],
+            vendorTypes: roleToUse.vendorTypes || [],
+            serviceStyles: roleToUse.serviceStyles || [],
+            pricingControl: roleToUse.pricingControl,
+          };
+          if (!matchedRole && effectiveRoleId) {
+            console.log('[useVendorCapabilities] Role not found by ID, using first available role:', roleToUse.name || roleToUse.id);
           }
         }
       }
@@ -166,7 +248,7 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
       if (response?.success && response.capabilities) {
         const capsMap = capabilitiesToMap(response.capabilities);
         
-        // Merge with defaults to ensure basic capabilities are available
+        // ✅ FIX: Merge with minimal defaults, DB is source of truth
         const mergedCapabilities = {
           ...DEFAULT_CAPABILITIES,
           ...capsMap,
@@ -176,24 +258,25 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
         setRoleName(response.roleName || null);
         setResolvedRoleId(response.roleId || effectiveRoleId);
         
-        console.log('[useVendorCapabilities] Loaded capabilities:', {
+        console.log('[useVendorCapabilities] ✅ Loaded capabilities from DATABASE:', {
           roleId: response.roleId,
           roleName: response.roleName,
           capabilitiesCount: response.capabilities.length,
           capabilities: response.capabilities,
         });
       } else {
-        // Fallback to default capabilities
-        console.warn('[useVendorCapabilities] Could not load role, using defaults for:', effectiveRoleId);
-        setCapabilities(DEFAULT_CAPABILITIES);
+        // Fallback to full default capabilities only after API failure
+        console.warn('[useVendorCapabilities] ⚠️ Could not load role from DB, using full defaults for:', effectiveRoleId);
+        setCapabilities(FULL_DEFAULT_CAPABILITIES);
       }
     } catch (err: any) {
-      console.error('[useVendorCapabilities] Error loading capabilities:', err);
+      console.error('[useVendorCapabilities] ❌ Error loading capabilities from DB:', err);
       setError(err.message || 'Failed to load capabilities');
-      // Use default capabilities on error
-      setCapabilities(DEFAULT_CAPABILITIES);
+      // Use full default capabilities on API error
+      setCapabilities(FULL_DEFAULT_CAPABILITIES);
     } finally {
       setLoading(false);
+      setInitialLoadComplete(true);
     }
   }, [roleId, preloadedCapabilities]);
 
@@ -202,22 +285,8 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
     loadCapabilities();
   }, [loadCapabilities]);
 
-  // Also try to load from vendor session/storage for offline support
-  useEffect(() => {
-    if (typeof window !== 'undefined' && !loading) {
-      const cached = sessionStorage.getItem(`vendor_capabilities_${roleId}`);
-      if (cached && Object.keys(capabilities).length <= Object.keys(DEFAULT_CAPABILITIES).length) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (parsed.timestamp && Date.now() - parsed.timestamp < 300000) { // 5 min cache
-            setCapabilities(prev => ({ ...prev, ...parsed.capabilities }));
-          }
-        } catch (e) {
-          // Ignore cache errors
-        }
-      }
-    }
-  }, [roleId, loading, capabilities]);
+  // ✅ REMOVED: Secondary cache loading was causing flickering
+  // The API call is the single source of truth now
 
   // Cache capabilities for offline use
   useEffect(() => {
@@ -240,5 +309,6 @@ export function useVendorCapabilities(roleIdOrVendorData: string | undefined | n
     roleId: resolvedRoleId,
     roleName,
     refresh: loadCapabilities,
+    initialLoadComplete, // ✅ NEW: Indicates first DB load completed
   };
 }

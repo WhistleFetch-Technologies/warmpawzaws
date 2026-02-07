@@ -37,31 +37,33 @@ export function TrendingProblems({
     try {
       // AWS Serverless compatible - use apiClient
       const data = await apiClient.get<{ trending?: TrendingProblem[]; data?: { trending?: TrendingProblem[] } }>('/customer/problems/trending');
-      setTrending(data.data?.trending || data.trending || []);
+      const rawTrending = data.data?.trending || data.trending || [];
+      
+      // Filter out any items without valid titles (safety check)
+      const validTrending = rawTrending.filter((item: any) => 
+        item && 
+        typeof item === 'object' && 
+        item.title && 
+        typeof item.title === 'string' && 
+        item.title.trim() !== ''
+      );
+      
+      setTrending(validTrending);
     } catch (error) {
       console.error('Error fetching trending problems:', error);
+      setTrending([]);
     } finally {
       setLoading(false);
     }
   };
 
+  // Don't render anything while loading - avoids flash of skeleton on fast loads
   if (loading) {
-    return (
-      <div className={`${className}`}>
-        <div className="flex items-center gap-2 mb-4">
-          <TrendingUp className="w-5 h-5 text-orange-500" />
-          <h3 className="text-gray-900">Trending Now</h3>
-        </div>
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse"></div>
-          ))}
-        </div>
-      </div>
-    );
+    return null;
   }
 
-  if (trending.length === 0) {
+  // Don't render if no valid trending items
+  if (!trending || trending.length === 0) {
     return null;
   }
 
@@ -94,14 +96,14 @@ export function TrendingProblems({
             {/* Problem Info */}
             <div className="flex-1 text-left min-w-0">
               <h4 className="text-sm text-gray-900 mb-1 line-clamp-1">
-                {problem.title}
+                {String(problem.title || '')}
               </h4>
               <div className="flex items-center gap-2 text-xs text-gray-500">
-                <span>{problem.searchCount} searches</span>
+                <span>{Number(problem.searchCount || 0)} searches</span>
                 {problem.category && (
                   <>
                     <span>•</span>
-                    <span className="capitalize">{problem.category}</span>
+                    <span className="capitalize">{String(problem.category || '')}</span>
                   </>
                 )}
               </div>

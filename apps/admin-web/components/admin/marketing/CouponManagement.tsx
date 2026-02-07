@@ -6,7 +6,7 @@ import {
 	Download,
 	Copy,
 	Calendar,
-	DollarSign,
+	IndianRupee,
 	Percent,
 	Check,
 	X,

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { ChevronDown, ChevronUp, RotateCcw, Plus } from "lucide-react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import { Button } from "@repo/ui";
 
 interface RefundTier {
@@ -47,10 +47,10 @@ export function VendorSettingsTab() {
 	const loadRefundPolicies = async () => {
 		try {
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings/refund-policies`,
+				`${getApiBaseUrl()}/admin/vendor-settings/refund-policies`,
 				{
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 				}
 			);
@@ -72,11 +72,11 @@ export function VendorSettingsTab() {
 		try {
 			setSaving(true);
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings/refund-policies`,
+				`${getApiBaseUrl()}/admin/vendor-settings/refund-policies`,
 				{
 					method: "POST",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify(refundPolicies),

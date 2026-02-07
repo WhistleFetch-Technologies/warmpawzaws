@@ -100,15 +100,35 @@ export default function InsurancePage() {
       setLoading(true);
       setError(null);
       
-      const [plansRes, policiesRes, claimsRes] = await Promise.all([
-        apiClient.get<any>('/insurance/plans'),
-        apiClient.get<any>('/insurance/policies'),
-        apiClient.get<any>('/insurance/claims'),
-      ]);
+      // Get customer ID from localStorage
+      const customerId = localStorage.getItem('customerId');
+      
+      const requests: Promise<any>[] = [apiClient.get<any>('/insurance/plans')];
+      
+      // Only fetch policies and claims if we have a customerId
+      if (customerId) {
+        requests.push(apiClient.get<any>(`/insurance/policies/customer/${customerId}`));
+        // For claims, we need to get them from policies
+      } else {
+        requests.push(Promise.resolve({ policies: [] }));
+      }
+      
+      const [plansRes, policiesRes] = await Promise.all(requests);
       
       setPlans(plansRes.plans || plansRes || []);
       setPolicies(policiesRes.policies || policiesRes || []);
-      setClaims(claimsRes.claims || claimsRes || []);
+      
+      // Load claims for each policy
+      if (policiesRes.policies?.length > 0) {
+        const claimsPromises = policiesRes.policies.map((p: any) => 
+          apiClient.get<any>(`/insurance/claims/policy/${p.id}`).catch(() => ({ claims: [] }))
+        );
+        const claimsResults = await Promise.all(claimsPromises);
+        const allClaims = claimsResults.flatMap((r: any) => r.claims || []);
+        setClaims(allClaims);
+      } else {
+        setClaims([]);
+      }
     } catch (err: any) {
       console.error('Error loading insurance data:', err);
       setError(err.message || 'Failed to load insurance data');
@@ -125,7 +145,8 @@ export default function InsurancePage() {
     if (!confirm('Purchase this insurance plan?')) return;
     
     try {
-      await apiClient.post('/insurance/policies', { plan_id: planId });
+      const customerId = localStorage.getItem('customerId');
+      await apiClient.post('/insurance/policies', { planId, customerId });
       setSuccess('Insurance policy purchased successfully!');
       loadData();
       setActiveTab('policies');

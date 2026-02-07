@@ -18,6 +18,8 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 export function registerInsuranceEndpoints(app: Hono) {
   /**
@@ -308,6 +310,398 @@ export function registerInsuranceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching vendor insurance policies:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  // ============================================
+  // VENDOR INSURANCE MANAGEMENT ENDPOINTS
+  // ============================================
+
+  /**
+   * GET /vendor/:vendorId/insurance/plans
+   * Get insurance plans offered by a vendor (alias for policies)
+   */
+  app.get("/vendor/:vendorId/insurance/plans", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      const plans = await query(
+        `SELECT * FROM insurance_plans
+         WHERE vendor_id = $1
+         ORDER BY created_at DESC`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        plans: plans.rows,
+        total: plans.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendor plans:', error);
+      return c.json({ success: true, plans: [], total: 0 });
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/insurance/plans
+   * Create a new insurance plan
+   */
+  app.post("/vendor/:vendorId/insurance/plans", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const planData = await c.req.json();
+
+      const plan = await insert('insurance_plans', {
+        vendor_id: vendorId,
+        plan_name: planData.name || planData.plan_name,
+        description: planData.description,
+        coverage_type: planData.coverageType || planData.coverage_type || 'basic',
+        coverage_amount: parseFloat(String(planData.coverage || planData.coverage_amount || '50000').replace(/[^0-9.]/g, '')),
+        premium_monthly: planData.price || planData.premium_monthly,
+        premium_yearly: planData.premium_yearly || (planData.price ? planData.price * 12 : 0),
+        coverage_details: { features: planData.features || [] },
+        waiting_period_days: parseInt(planData.waitingPeriod || planData.waiting_period_days || '30', 10),
+        is_active: planData.isActive !== false,
+      });
+
+      return c.json({
+        success: true,
+        plan: plan[0],
+        message: 'Plan created successfully',
+      });
+    } catch (error: any) {
+      console.error('Error creating insurance plan:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/insurance/plans/:planId
+   * Update an insurance plan
+   */
+  app.put("/vendor/:vendorId/insurance/plans/:planId", async (c) => {
+    try {
+      const { vendorId, planId } = c.req.param();
+      const planData = await c.req.json();
+
+      const updated = await update('insurance_plans', 
+        { id: planId },
+        {
+          plan_name: planData.name || planData.plan_name,
+          description: planData.description,
+          coverage_type: planData.coverageType || planData.coverage_type,
+          coverage_amount: planData.coverage ? parseFloat(String(planData.coverage).replace(/[^0-9.]/g, '')) : undefined,
+          premium_monthly: planData.price || planData.premium_monthly,
+          premium_yearly: planData.premium_yearly,
+          coverage_details: planData.features ? { features: planData.features } : undefined,
+          waiting_period_days: planData.waitingPeriod ? parseInt(planData.waitingPeriod, 10) : undefined,
+          is_active: planData.isActive,
+          updated_at: new Date().toISOString(),
+        }
+      );
+
+      return c.json({
+        success: true,
+        plan: updated[0],
+        message: 'Plan updated successfully',
+      });
+    } catch (error: any) {
+      console.error('Error updating insurance plan:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  /**
+   * DELETE /vendor/:vendorId/insurance/plans/:planId
+   * Delete an insurance plan
+   */
+  app.delete("/vendor/:vendorId/insurance/plans/:planId", async (c) => {
+    try {
+      const { vendorId, planId } = c.req.param();
+
+      await query(
+        `DELETE FROM insurance_plans WHERE id = $1 AND vendor_id = $2`,
+        [planId, vendorId]
+      );
+
+      return c.json({
+        success: true,
+        message: 'Plan deleted successfully',
+      });
+    } catch (error: any) {
+      console.error('Error deleting insurance plan:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/insurance/stats
+   * Get insurance statistics for a vendor
+   */
+  app.get("/vendor/:vendorId/insurance/stats", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      // Get total plans
+      const plansCount = await query(
+        `SELECT COUNT(*) as count FROM insurance_plans WHERE vendor_id = $1 AND is_active = true`,
+        [vendorId]
+      ).catch(() => ({ rows: [{ count: 0 }] }));
+
+      // Get active policies count
+      const policiesCount = await query(
+        `SELECT COUNT(*) as count FROM insurance_policies ip
+         JOIN insurance_plans ipl ON ip.plan_id = ipl.id
+         WHERE ipl.vendor_id = $1 AND ip.status = 'active'`,
+        [vendorId]
+      ).catch(() => ({ rows: [{ count: 0 }] }));
+
+      // Get pending claims
+      const claimsCount = await query(
+        `SELECT COUNT(*) as count FROM insurance_claims ic
+         JOIN insurance_policies ip ON ic.policy_id = ip.id
+         JOIN insurance_plans ipl ON ip.plan_id = ipl.id
+         WHERE ipl.vendor_id = $1 AND ic.status = 'pending'`,
+        [vendorId]
+      ).catch(() => ({ rows: [{ count: 0 }] }));
+
+      // Get total revenue
+      const revenue = await query(
+        `SELECT COALESCE(SUM(ip.premium_amount), 0) as total FROM insurance_policies ip
+         JOIN insurance_plans ipl ON ip.plan_id = ipl.id
+         WHERE ipl.vendor_id = $1`,
+        [vendorId]
+      ).catch(() => ({ rows: [{ total: 0 }] }));
+
+      return c.json({
+        success: true,
+        stats: {
+          totalPlans: parseInt(plansCount.rows[0]?.count || 0),
+          activePolicies: parseInt(policiesCount.rows[0]?.count || 0),
+          pendingClaims: parseInt(claimsCount.rows[0]?.count || 0),
+          totalRevenue: parseFloat(revenue.rows[0]?.total || 0),
+        }
+      });
+    } catch (error: any) {
+      console.error('Error fetching insurance stats:', error);
+      return c.json({ 
+        success: true, 
+        stats: { totalPlans: 0, activePolicies: 0, pendingClaims: 0, totalRevenue: 0 } 
+      });
+    }
+  });
+
+  /**
+   * POST /customer/insurance/purchase
+   * Customer purchases an insurance policy
+   */
+  app.post("/customer/insurance/purchase", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { planId, petId, customerId, paymentId, paymentMethod } = body;
+
+      if (!planId || !petId || !customerId) {
+        return c.json({ success: false, error: 'planId, petId, and customerId are required' }, 400);
+      }
+
+      // Get plan details
+      const plans = await query(
+        `SELECT * FROM insurance_plans WHERE id = $1 AND is_active = true`,
+        [planId]
+      );
+
+      if (plans.rows.length === 0) {
+        return c.json({ success: false, error: 'Plan not found or inactive' }, 404);
+      }
+
+      const plan = plans.rows[0];
+
+      // Generate policy number
+      const policyNumber = `POL-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+
+      // Create policy
+      const policy = await insert('insurance_policies', {
+        policy_number: policyNumber,
+        plan_id: planId,
+        customer_id: customerId,
+        pet_id: petId,
+        start_date: new Date().toISOString(),
+        end_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year
+        premium_amount: plan.premium_yearly || plan.premium_monthly * 12,
+        status: 'active',
+        payment_id: paymentId,
+        payment_method: paymentMethod || 'online',
+      });
+
+      return c.json({
+        success: true,
+        policy: policy[0],
+        policyNumber,
+        message: 'Policy purchased successfully',
+      });
+    } catch (error: any) {
+      console.error('Error purchasing insurance:', error);
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/insurance/policies
+   * Get policies managed by a vendor
+   */
+  app.get("/vendor/:vendorId/insurance/policies", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      const policies = await query(
+        `SELECT * FROM insurance_plans
+         WHERE vendor_id = $1
+         ORDER BY created_at DESC`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        policies: policies.rows,
+        total: policies.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendor policies:', error);
+      return c.json({ success: true, policies: [], total: 0 });
+    }
+  });
+
+  /**
+   * POST /vendor/:vendorId/insurance/policies
+   * Create a new insurance policy/plan
+   */
+  app.post("/vendor/:vendorId/insurance/policies", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const policyData = await c.req.json();
+
+      const plan = await insert('insurance_plans', {
+        vendor_id: vendorId,
+        plan_name: policyData.name,
+        description: policyData.description,
+        coverage_type: policyData.coverage || 'basic',
+        coverage_amount: parseFloat(policyData.coverage?.replace(/[^0-9.]/g, '') || '50000'),
+        premium_monthly: policyData.price,
+        premium_yearly: policyData.period === 'year' ? policyData.price : policyData.price * 12,
+        coverage_details: { features: policyData.features || [] },
+        waiting_period_days: parseInt(policyData.deductible || '30', 10),
+        is_active: true,
+      });
+
+      return c.json({
+        success: true,
+        policy: plan[0],
+        message: 'Policy created successfully',
+      });
+    } catch (error: any) {
+      console.error('Error creating insurance policy:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/insurance/claims
+   * Get claims for policies managed by a vendor
+   */
+  app.get("/vendor/:vendorId/insurance/claims", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      const claims = await query(
+        `SELECT ic.*, ip.policy_number, ipl.plan_name, p.name as pet_name
+         FROM insurance_claims ic
+         INNER JOIN insurance_policies ip ON ic.policy_id = ip.id
+         INNER JOIN insurance_plans ipl ON ip.plan_id = ipl.id
+         LEFT JOIN pets p ON ic.pet_id = p.id
+         WHERE ipl.vendor_id = $1
+         ORDER BY ic.created_at DESC`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        claims: claims.rows.map((c: any) => ({
+          id: c.id,
+          policyName: c.plan_name,
+          petName: c.pet_name,
+          status: c.status,
+          amount: c.claim_amount,
+          claimType: c.claim_type,
+          createdAt: c.created_at,
+        })),
+        total: claims.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching vendor claims:', error);
+      return c.json({ success: true, claims: [], total: 0 });
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/relocation/quotes
+   * Get relocation quotes for a vendor
+   */
+  app.get("/vendor/:vendorId/relocation/quotes", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+
+      const quotes = await query(
+        `SELECT b.*, c.name as customer_name, c.phone as customer_phone
+         FROM bookings b
+         LEFT JOIN customers c ON b.customer_id = c.id
+         WHERE b.vendor_id = $1
+         AND b.service_type IN ('pet_relocation', 'relocation')
+         ORDER BY b.created_at DESC`,
+        [vendorId]
+      ).catch(() => ({ rows: [] }));
+
+      return c.json({
+        success: true,
+        quotes: quotes.rows.map((q: any) => ({
+          id: q.id,
+          customerName: q.customer_name,
+          customerPhone: q.customer_phone,
+          fromLocation: q.address,
+          toLocation: q.destination_address,
+          petCount: 1,
+          distance: q.distance || 0,
+          estimatedPrice: q.total_amount,
+          status: q.status,
+          createdAt: q.created_at,
+        })),
+        total: quotes.rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching relocation quotes:', error);
+      return c.json({ success: true, quotes: [], total: 0 });
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/relocation/quotes/:quoteId
+   * Update a relocation quote status
+   */
+  app.put("/vendor/:vendorId/relocation/quotes/:quoteId", async (c) => {
+    try {
+      const { vendorId, quoteId } = c.req.param();
+      const body = await c.req.json();
+
+      const updateData: any = { updated_at: new Date() };
+      if (body.status) updateData.status = body.status;
+      if (body.finalPrice) updateData.total_amount = body.finalPrice;
+
+      await update('bookings', { id: quoteId, vendor_id: vendorId }, updateData);
+
+      return c.json({ success: true, message: 'Quote updated successfully' });
+    } catch (error: any) {
+      console.error('Error updating relocation quote:', error);
       return c.json({ error: error.message }, 500);
     }
   });

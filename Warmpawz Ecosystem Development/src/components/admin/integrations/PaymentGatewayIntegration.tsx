@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Save, Check, AlertCircle, Key, CreditCard } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface PaymentSettings {
@@ -75,10 +75,10 @@ export default function PaymentGatewayIntegration() {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/settings/payment-gateway`,
+        `${getApiBaseUrl()}/admin/settings/payment-gateway`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -138,12 +138,12 @@ export default function PaymentGatewayIntegration() {
       toast.info('Saving payment settings...');
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/settings/payment-gateway`,
+        `${getApiBaseUrl()}/admin/settings/payment-gateway`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(settings)
         }
@@ -547,8 +547,8 @@ export default function PaymentGatewayIntegration() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Settlement Period (Days)
+            <label className="block text-sm font-medium text-gray-700 mb-2" title="When the gateway credits the platform; vendor payout period is in Finance → Tier Management">
+              Gateway settlement cycle (days)
             </label>
             <input
               type="number"
@@ -558,6 +558,7 @@ export default function PaymentGatewayIntegration() {
               max="30"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
+            <p className="text-xs text-gray-500 mt-1">When the gateway credits the platform. Vendor payout period is in Finance → Tier Management.</p>
           </div>
         </div>
       </div>

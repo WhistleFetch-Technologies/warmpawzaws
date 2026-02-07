@@ -3,7 +3,7 @@ import { X, Check, CheckCheck, Trash2, Bell, Sparkles, MessageSquare, XCircle } 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface NotificationItem {
@@ -28,7 +28,7 @@ export function VendorNotificationModal({ vendorId, open, onClose, onNotificatio
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     if (open) {
@@ -40,7 +40,7 @@ export function VendorNotificationModal({ vendorId, open, onClose, onNotificatio
     try {
       setLoading(true);
       const response = await fetch(`${API_BASE}/vendor/notifications/${vendorId}?limit=50`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {

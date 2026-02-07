@@ -7,7 +7,7 @@ import {
   Video, Eye, Sparkles, TrendingUp, ChevronDown
 } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import logoImage from '../../public/logo.png';
 import { AssetLibraryTab } from './content/AssetLibraryTab';
 import { AllPostsTab } from './content/AllPostsTab';
@@ -39,10 +39,10 @@ export function ContentManagement() {
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/content/stats`,
+        `${getApiBaseUrl()}/admin/content/stats`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

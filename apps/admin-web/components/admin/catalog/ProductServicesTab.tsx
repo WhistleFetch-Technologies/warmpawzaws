@@ -53,7 +53,7 @@ export function ProductServicesTab() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <div className="flex-1 flex gap-0">
+        <div className="flex-1 flex gap-3">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-0/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
@@ -75,7 +75,7 @@ export function ProductServicesTab() {
           </select>
         </div>
         <Button className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
-          <Plus className="w-4 h-4 mr-0" />
+          <Plus className="w-4 h-4 mr-2" />
           Add Item
         </Button>
       </div>
@@ -88,7 +88,7 @@ export function ProductServicesTab() {
             <div key={item.id} className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center gap-0 mb-0">
+                  <div className="flex items-center gap-3 mb-0">
                     <Package className="w-5 h-5 text-gray-400" />
                     <h4 className="font-semibold text-gray-900">{item.name}</h4>
                     <StatusBadge status={item.status} />
@@ -119,13 +119,13 @@ export function ProductServicesTab() {
                   </div>
                 </div>
                 
-                <div className="flex gap-0 ml-4">
+                <div className="flex gap-3 ml-4">
                   <Button size="sm" variant="outline">
-                    <Edit className="w-4 h-4 mr-0" />
+                    <Edit className="w-4 h-4 mr-2" />
                     Edit
                   </Button>
                   <Button size="sm" variant="outline" className="text-red-600 hover:bg-red-50">
-                    <Trash2 className="w-4 h-4 mr-0" />
+                    <Trash2 className="w-4 h-4 mr-2" />
                     Delete
                   </Button>
                 </div>

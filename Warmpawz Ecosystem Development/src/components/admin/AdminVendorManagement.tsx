@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import logoImage from '../../public/logo.png';
 import { CustomDropdown } from './CustomDropdown';
 import { DeactivationRequestsTab } from './DeactivationRequestsTab';
@@ -142,10 +142,10 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
       console.log('🏥 Checking server health...');
       try {
         const healthResponse = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/health`,
+          `${getApiBaseUrl()}/health`,
           {
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`
+              ...getAuthHeaders()
             }
           }
         );
@@ -163,10 +163,10 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
       
       // Load stats
       const statsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/stats`,
+        `${getApiBaseUrl()}/admin/vendors/stats`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -180,10 +180,10 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
       
       // Load ALL vendors (not just pending) - NEW!
       const allVendorsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/all`,
+        `${getApiBaseUrl()}/admin/vendors/all`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -217,10 +217,10 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
       
       // Load quality alerts
       const alertsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/quality/alerts`,
+        `${getApiBaseUrl()}/quality/alerts`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -277,11 +277,11 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
     try {
       console.log('🔄 Resetting and seeding vendors...');
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/seed/reset-and-seed`,
+        `${getApiBaseUrl()}/admin/seed/reset-and-seed`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -317,11 +317,11 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
     try {
       console.log('🗑️ Clearing all vendors...');
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/seed/clear-vendors`,
+        `${getApiBaseUrl()}/admin/seed/clear-vendors`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -354,10 +354,10 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
     try {
       console.log(`🔍 Debugging vendor lookup for: ${phone}`);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/debug/vendor-lookup/${phone}`,
+        `${getApiBaseUrl()}/debug/vendor-lookup/${phone}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -450,11 +450,11 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
       console.log('🚀 Sending approve request with vendorId:', vendor.vendorId);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor/approve`,
+        `${getApiBaseUrl()}/admin/vendor/approve`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -506,11 +506,11 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
       });
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor/reject`,
+        `${getApiBaseUrl()}/admin/vendor/reject`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -555,11 +555,11 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
       });
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor/request-info`,
+        `${getApiBaseUrl()}/admin/vendor/request-info`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -617,11 +617,11 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor/flush-all`,
+        `${getApiBaseUrl()}/admin/vendor/flush-all`,
         {
           method: 'DELETE',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -665,11 +665,11 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/seed-vendors`,
+        `${getApiBaseUrl()}/admin/seed-vendors`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -714,11 +714,11 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/fix-vendor-categories`,
+        `${getApiBaseUrl()}/admin/fix-vendor-categories`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -765,11 +765,11 @@ export function AdminVendorManagement({ onNavigate }: AdminVendorManagementProps
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/fix-indexes`,
+        `${getApiBaseUrl()}/admin/vendors/fix-indexes`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }

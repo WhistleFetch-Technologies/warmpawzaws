@@ -21,6 +21,8 @@
 import { Hono } from 'hono';
 import { query, select } from '../database/rds-connection';
 import { checkDbHealth } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 interface HealthCheckResult {
   name: string;

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Check, X, Eye, Download, AlertCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface DeactivationRequest {
   id: string;
@@ -30,9 +30,9 @@ export function DeactivationRequestsTab() {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/deactivation-requests`,
+        `${getApiBaseUrl()}/admin/vendors/deactivation-requests`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -52,12 +52,12 @@ export function DeactivationRequestsTab() {
     
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/deactivation/${request.id}/approve`,
+        `${getApiBaseUrl()}/admin/vendors/deactivation/${request.id}/approve`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({ adminNote: adminNote || '' })
         }
@@ -85,12 +85,12 @@ export function DeactivationRequestsTab() {
     
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/deactivation/${request.id}/reject`,
+        `${getApiBaseUrl()}/admin/vendors/deactivation/${request.id}/reject`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({ adminNote })
         }

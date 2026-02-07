@@ -81,7 +81,7 @@ export function ScheduleSettingsManagement() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <div className="p-0 bg-purple-100 rounded-xl">
             <Clock className="w-6 h-6 text-purple-600" />
           </div>
@@ -93,7 +93,7 @@ export function ScheduleSettingsManagement() {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-0 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
+          className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
         >
           {saving ? (
             <>
@@ -188,7 +188,7 @@ export function ScheduleSettingsManagement() {
         </div>
 
         <div className="border-t pt-4 space-y-3">
-          <label className="flex items-center gap-0">
+          <label className="flex items-center gap-3">
             <input
               type="checkbox"
               checked={settings.allowOverlapping}
@@ -197,7 +197,7 @@ export function ScheduleSettingsManagement() {
             />
             <span className="text-sm font-medium text-gray-700">Allow Overlapping Bookings</span>
           </label>
-          <label className="flex items-center gap-0">
+          <label className="flex items-center gap-3">
             <input
               type="checkbox"
               checked={settings.autoConfirmBookings}

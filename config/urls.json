@@ -1,0 +1,30 @@
+{
+  "_comment": "Reference only. Do NOT hardcode in app or Lambda code. Use env: API_URL, ADMIN_URL, VENDOR_URL, CUSTOMER_URL, ALLOWED_ORIGINS. Deploy/CI should set these from here.",
+  "_official": "Admin: dfof7mguaa0a5.cloudfront.net, Vendor: d1s6ykkj381k58.cloudfront.net, Customer: d2aoyjj8ine0wk.cloudfront.net",
+  "apiGatewayDefaultUrl": "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
+  "apiGatewayCdkUrl": "https://rrg9107m3d.execute-api.ap-south-1.amazonaws.com",
+  "cloudfront": {
+    "admin": "https://dfof7mguaa0a5.cloudfront.net",
+    "vendor": "https://d1s6ykkj381k58.cloudfront.net",
+    "customer": "https://d2aoyjj8ine0wk.cloudfront.net"
+  },
+  "allowedOrigins": [
+    "https://dfof7mguaa0a5.cloudfront.net",
+    "https://d1s6ykkj381k58.cloudfront.net",
+    "https://d2aoyjj8ine0wk.cloudfront.net",
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://localhost:3003",
+    "http://localhost:5173",
+    "https://admin.dev.warmpawz.com",
+    "https://vendor.dev.warmpawz.com",
+    "https://customer.dev.warmpawz.com",
+    "https://admin.warmpawz.com",
+    "https://vendor.warmpawz.com",
+    "https://customer.warmpawz.com",
+    "https://warmpawz.com",
+    "https://www.warmpawz.com"
+  ],
+  "_usage": "CloudFront = app URLs (browser). apiGatewayDefaultUrl = API base for apps (UAT-supporting). apiGatewayCdkUrl = CDK stack API (Cognito-only). allowedOrigins = CORS origins for Lambda."
+}

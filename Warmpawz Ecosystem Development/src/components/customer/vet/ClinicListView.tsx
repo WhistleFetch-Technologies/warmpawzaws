@@ -14,7 +14,7 @@ import {
   X,
   Navigation
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '../../ui/sheet';
 
 interface ClinicListViewProps {
@@ -53,7 +53,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
   const [openNowOnly, setOpenNowOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'distance' | 'rating' | 'reviews'>('distance');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadClinics();
@@ -72,7 +72,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
         `${API_BASE}/customer/services?serviceStyle=at_center&roleId=veterinarian`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

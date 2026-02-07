@@ -1,0 +1,13 @@
+---
+description: Use system git at /usr/bin/git for all git CLI commands
+alwaysApply: true
+---
+
+# Git CLI
+
+When running git in the terminal (e.g. status, pull, push, merge), use the system git explicitly:
+
+- **Path**: `/usr/bin/git`
+- Example: `/usr/bin/git status`, `/usr/bin/git pull origin main`
+
+This ensures git is found even when xcode-select or PATH differs in the agent's shell.

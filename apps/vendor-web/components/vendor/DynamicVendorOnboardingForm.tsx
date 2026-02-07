@@ -10,17 +10,20 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Upload, MapPin, AlertCircle, CheckCircle2, ArrowLeft, X, User, Check } from 'lucide-react';
-// Using apiClient instead of Supabase
+// Uses apiClient (API Gateway)
 import { toast } from 'sonner';
+// KYC verification components
+import { AadhaarOTPVerification, PANVerification, GSTVerification, DeclarationField } from './kyc';
 
 interface FormField {
   id: string;
   name: string;
   label: string;
-  type: 'text' | 'number' | 'email' | 'tel' | 'textarea' | 'select' | 'multiselect' | 'checkbox' | 'radio' | 'date' | 'file' | 'map_pin';
+  type: 'text' | 'number' | 'email' | 'tel' | 'textarea' | 'select' | 'multiselect' | 'checkbox' | 'radio' | 'date' | 'file' | 'map_pin' | 'aadhaar-otp' | 'pan-verify' | 'gst-verify' | 'declaration';
   section: string;
   placeholder?: string;
   helpText?: string;
+  defaultValue?: any;
   validation?: {
     required?: boolean;
     minLength?: number;
@@ -36,6 +39,12 @@ interface FormField {
   acceptedFileTypes?: string[];
   order: number;
   isActive: boolean;
+  // KYC-specific fields
+  requiresVerification?: boolean;
+  verificationEndpoint?: string;
+  declarationText?: string;
+  declarationType?: string;
+  softBlock?: boolean;
 }
 
 interface FormSection {
@@ -69,6 +78,51 @@ interface DynamicVendorOnboardingFormProps {
   isEditMode?: boolean; // ✅ NEW: Flag for edit vs create
 }
 
+// ✅ FIX: Extract default policies as a constant to avoid TDZ (Temporal Dead Zone) issues
+// This prevents "Cannot access 'p' before initialization" errors when fetchPolicies references policies
+const DEFAULT_POLICIES = {
+  vendorOnboardingAgreement: {
+    title: 'Vendor Onboarding Agreement',
+    content: `VENDOR ONBOARDING AGREEMENT
+
+1. SERVICE STANDARDS
+   - The vendor agrees to provide services as per the platform standards and guidelines.
+   - All services must meet the quality benchmarks set by the platform.
+
+2. INFORMATION ACCURACY
+   - All information provided during onboarding must be accurate, complete, and verifiable.
+   - Any misrepresentation may result in immediate termination of the vendor account.
+
+3. DOCUMENTATION REQUIREMENTS
+   - The vendor must complete all required documents and certifications as mandated by applicable laws.
+   - Professional licenses and certifications must be kept current and valid.
+
+4. SERVICE ACTIVATION
+   - Services will be activated only after successful verification and admin approval.
+   - The platform reserves the right to conduct periodic reviews of vendor credentials.`,
+  },
+  termsOfService: {
+    title: 'Terms of Service',
+    content: `TERMS OF SERVICE
+
+1. PLATFORM RIGHTS
+   - The platform reserves the right to approve or reject vendor applications at its sole discretion.
+   - Approval decisions are final and may not be appealed.
+
+2. BOOKING VERIFICATION
+   - All bookings are subject to customer OTP verification before service commencement.
+   - Services must not begin until proper verification is completed.
+
+3. SERVICE REPORTING
+   - Vendors must provide detailed service reports after each booking completion.
+   - Failure to submit reports may delay payment processing.
+
+4. PAYMENT SETTLEMENTS
+   - Payment settlements are processed as per the platform's payment policy.
+   - Standard settlement cycle is 7 business days from service completion.`,
+  },
+};
+
 export function DynamicVendorOnboardingForm({ 
   roleId, 
   onSubmit, 
@@ -88,6 +142,13 @@ export function DynamicVendorOnboardingForm({
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   
+  // Dynamic policies from backend - use DEFAULT_POLICIES constant to avoid TDZ issues
+  const [policies, setPolicies] = useState<{
+    vendorOnboardingAgreement: { title: string; content: string };
+    termsOfService: { title: string; content: string };
+  }>(DEFAULT_POLICIES);
+  const [loadingPolicies, setLoadingPolicies] = useState(false);
+  
   // Map location
   const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(null);
   const mapRef = useRef<HTMLDivElement>(null);
@@ -97,13 +158,47 @@ export function DynamicVendorOnboardingForm({
   const [detectingLocation, setDetectingLocation] = useState(false);
   const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string>('');
 
-  // ✅ NEW: Specialization selection for center/vendor
-  const [availableSpecializations, setAvailableSpecializations] = useState<any[]>([]);
-  const [selectedSpecializations, setSelectedSpecializations] = useState<string[]>([]);
-  const [loadingSpecializations, setLoadingSpecializations] = useState(false);
-  const [showSpecializationDialog, setShowSpecializationDialog] = useState(false);
+  // Specialization selection removed - now handled via admin-defined form fields only
 
   // Using apiClient instead of API_BASE
+
+  // Fetch policies when agreement dialog is opened
+  // ✅ FIX: Use DEFAULT_POLICIES constant instead of policies state to avoid TDZ error
+  const fetchPolicies = async () => {
+    if (loadingPolicies) return;
+    
+    try {
+      setLoadingPolicies(true);
+      const response = await apiClient.get<any>('/vendor/policies');
+      
+      if (response.success && response.policies) {
+        const vendorAgreement = response.policies.find((p: any) => p.policyType === 'vendor_onboarding_agreement');
+        const terms = response.policies.find((p: any) => p.policyType === 'terms_of_service');
+        
+        setPolicies({
+          vendorOnboardingAgreement: {
+            title: vendorAgreement?.title || DEFAULT_POLICIES.vendorOnboardingAgreement.title,
+            content: vendorAgreement?.content || DEFAULT_POLICIES.vendorOnboardingAgreement.content,
+          },
+          termsOfService: {
+            title: terms?.title || DEFAULT_POLICIES.termsOfService.title,
+            content: terms?.content || DEFAULT_POLICIES.termsOfService.content,
+          },
+        });
+      }
+    } catch (error) {
+      console.warn('Failed to fetch policies, using defaults:', error);
+    } finally {
+      setLoadingPolicies(false);
+    }
+  };
+
+  // Fetch policies when dialog is opened
+  useEffect(() => {
+    if (showAgreement) {
+      fetchPolicies();
+    }
+  }, [showAgreement]);
 
   useEffect(() => {
     if (initialData) {
@@ -120,6 +215,51 @@ export function DynamicVendorOnboardingForm({
       }
     }
   }, [initialData]);
+
+  // ✅ NEW: Load saved form data from localStorage on mount (before initialData overrides)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !initialData && !isEditMode) {
+      try {
+        const savedFormKey = `vendorOnboardingForm_${roleId}`;
+        const savedFormData = localStorage.getItem(savedFormKey);
+        if (savedFormData) {
+          const parsed = JSON.parse(savedFormData);
+          console.log('📝 [DYNAMIC FORM] Restoring saved form data from localStorage:', Object.keys(parsed.formData || {}).length, 'fields');
+          
+          if (parsed.formData) {
+            setFormData(prev => ({ ...prev, ...parsed.formData }));
+          }
+          if (parsed.coordinates) {
+            setCoordinates(parsed.coordinates);
+          }
+          if (parsed.agreedToTerms) {
+            setAgreedToTerms(parsed.agreedToTerms);
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ [DYNAMIC FORM] Error loading saved form data:', error);
+      }
+    }
+  }, [roleId, initialData, isEditMode]);
+
+  // ✅ NEW: Auto-save form data to localStorage on change
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !isEditMode && roleId && Object.keys(formData).length > 0) {
+      try {
+        const savedFormKey = `vendorOnboardingForm_${roleId}`;
+        const dataToSave = {
+          formData,
+          coordinates,
+          agreedToTerms,
+          savedAt: new Date().toISOString(),
+        };
+        localStorage.setItem(savedFormKey, JSON.stringify(dataToSave));
+        console.log('💾 [DYNAMIC FORM] Auto-saved form data to localStorage');
+      } catch (error) {
+        console.warn('⚠️ [DYNAMIC FORM] Error saving form data:', error);
+      }
+    }
+  }, [formData, coordinates, agreedToTerms, roleId, isEditMode]);
 
   useEffect(() => {
     console.log('🚀 [INIT] Component mounted, starting initialization...');
@@ -152,58 +292,26 @@ export function DynamicVendorOnboardingForm({
     }
     
     fetchForm();
-    loadSpecializations(); // ✅ NEW: Load specializations when component mounts
   }, [roleId]);
-
-  // ✅ NEW: Load available specializations from backend
-  const loadSpecializations = async () => {
-    try {
-      setLoadingSpecializations(true);
-      console.log('[DYNAMIC FORM] Loading specializations for roleId:', roleId);
-      
-      const data = await apiClient.get(`/vendor/problem-grid-specializations/${roleId}`) as any;
-      
-      console.log('[DYNAMIC FORM] Specializations loaded:', data);
-      if (data && data.specializations) {
-        setAvailableSpecializations(data.specializations || []);
-        
-        // Pre-select specializations from initialData if editing
-        if (initialData?.specializations) {
-          setSelectedSpecializations(initialData.specializations);
-        }
-      }
-    } catch (error) {
-      console.error('[DYNAMIC FORM] Error loading specializations:', error);
-    } finally {
-      setLoadingSpecializations(false);
-    }
-  };
-
-  // ✅ NEW: Toggle specialization selection
-  const toggleSpecialization = (specId: string) => {
-    setSelectedSpecializations(prev => {
-      if (prev.includes(specId)) {
-        return prev.filter(id => id !== specId);
-      } else {
-        return [...prev, specId];
-      }
-    });
-  };
 
   const fetchGoogleMapsKey = async () => {
     console.log('🔑 [API KEY] Fetching Google Maps API key from backend...');
     try {
-      const data = await apiClient.get('/vendor/endpoint') as any;
+      const data = await apiClient.get('/config/google-maps-key') as any;
       
       console.log('🔑 [API KEY] Response data:', data);
       
-      if (data && data.settings?.googleMaps?.apiKey) {
+      if (data && data.apiKey) {
         console.log('✅ [API KEY] Found API key in backend settings');
+        console.log('🔑 [API KEY] Key length:', data.apiKey.length);
+        setGoogleMapsApiKey(data.apiKey);
+      } else if (data && data.settings?.googleMaps?.apiKey) {
+        console.log('✅ [API KEY] Found API key in backend settings (legacy)');
         console.log('🔑 [API KEY] Key length:', data.settings.googleMaps.apiKey.length);
         setGoogleMapsApiKey(data.settings.googleMaps.apiKey);
       } else {
         console.warn('⚠️ [API KEY] No Google Maps API key found in backend settings');
-        console.warn('⚠️ [API KEY] Settings structure:', JSON.stringify(data.settings, null, 2));
+        console.warn('⚠️ [API KEY] Settings structure:', JSON.stringify(data, null, 2));
         toast.warning('Google Maps not configured. Please contact administrator.');
       }
     } catch (error) {
@@ -244,9 +352,9 @@ export function DynamicVendorOnboardingForm({
   const checkServerHealth = async () => {
     try {
       console.log('[DYNAMIC FORM] 🏥 Checking server health...');
-      const data = await apiClient.get('/vendor/endpoint') as any;
+      const data = await apiClient.get('/health') as any;
       
-      if (data && data.success) {
+      if (data && data.status === 'ok') {
         console.log('[DYNAMIC FORM] ✅ Server is healthy:', data);
       } else {
         console.error('[DYNAMIC FORM] ⚠️ Server health check failed');
@@ -254,8 +362,8 @@ export function DynamicVendorOnboardingForm({
       }
     } catch (error) {
       console.error('[DYNAMIC FORM] ❌ Server unreachable:', error);
-      console.error('[DYNAMIC FORM] 💡 Tip: Edge Function may not be deployed to Supabase');
-      toast.error('Cannot connect to backend server. Please check Supabase Edge Functions.');
+      console.error('[DYNAMIC FORM] 💡 Tip: API Gateway may not be deployed correctly');
+      toast.error('Cannot connect to backend server. Please check API Gateway.');
     }
   };
 
@@ -310,16 +418,31 @@ export function DynamicVendorOnboardingForm({
       // ✅ FIX: Handle new response structure (fields, sections, schema)
       if (data && (data.schema || data.fields || data.sections)) {
         // ✅ FIX: Transform fields to use 'name' instead of 'fieldName' (backend uses fieldName)
-        const transformField = (f: any) => ({
-          ...f,
-          name: f.name || f.fieldName || f.id, // Use name, fallback to fieldName, then id
-          isActive: f.isActive !== false && f.is_active !== false, // Handle both casing
-          validation: {
-            required: f.isMandatory || f.validation?.required,
-            ...f.validation
+        const transformField = (f: any) => {
+          // Normalize options - convert string arrays to {value, label} objects for multiselect/select fields
+          let normalizedOptions = f.options;
+          if (f.options && Array.isArray(f.options) && f.options.length > 0) {
+            if (typeof f.options[0] === 'string') {
+              // Convert string array to object array: ["opt1"] => [{value: "opt1", label: "opt1"}]
+              normalizedOptions = f.options.map((opt: string) => ({
+                value: opt,
+                label: opt
+              }));
+            }
+            // If already objects, keep as-is (support both formats)
           }
-        });
-        
+          
+          return {
+            ...f,
+            name: f.name || f.fieldName || f.id,
+            isActive: f.isActive !== false && f.is_active !== false,
+            options: normalizedOptions, // Add normalized options
+            validation: {
+              required: f.isMandatory || f.validation?.required,
+              ...f.validation
+            }
+          };
+        };
         // Transform sections to have properly named fields
         const transformedSections = (data.sections || []).map((section: any) => ({
           ...section,
@@ -345,6 +468,19 @@ export function DynamicVendorOnboardingForm({
         })));
         
         setForm(formStructure);
+        
+        // ✅ NEW: Initialize default values for fields (including multiselect)
+        const defaultFormData: Record<string, any> = {};
+        formStructure.sections.forEach(section => {
+          section.fields.forEach(field => {
+            if (field.defaultValue !== undefined) {
+              defaultFormData[field.name] = field.defaultValue;
+            }
+          });
+        });
+        
+        // Merge with existing formData (initialData takes precedence)
+        setFormData(prev => ({ ...prev, ...defaultFormData }));
         
         if (data.existingApplication && data.existingApplication.application_payload) {
           setFormData(data.existingApplication.application_payload);
@@ -668,11 +804,17 @@ export function DynamicVendorOnboardingForm({
   };
 
   const handleFieldChange = (fieldName: string, value: any) => {
-    setFormData({ ...formData, [fieldName]: value });
-    // Clear error when user types
-    if (errors[fieldName]) {
-      setErrors({ ...errors, [fieldName]: '' });
-    }
+    // ✅ FIX: Use functional state update to avoid stale closure issues
+    setFormData(prev => ({ ...prev, [fieldName]: value }));
+    // ✅ FIX: Clear error using functional update to ensure latest state
+    setErrors(prev => {
+      if (prev[fieldName]) {
+        const updated = { ...prev };
+        delete updated[fieldName]; // Actually delete the error, not just set to empty string
+        return updated;
+      }
+      return prev;
+    });
   };
 
   const handleFileUpload = (fieldName: string, file: File) => {
@@ -707,19 +849,25 @@ export function DynamicVendorOnboardingForm({
     console.log('✅ [UPLOAD] File upload handler completed for:', fieldName);
   };
 
-  const validateForm = (): boolean => {
+  const validateForm = (): { isValid: boolean; errors: Record<string, string> } => {
     console.log('🔍 [VALIDATION] Starting form validation...');
+    console.log('🔍 [VALIDATION] Current formData:', formData);
     console.log('🔍 [VALIDATION] Current documents state:', documents);
     console.log('🔍 [VALIDATION] Document keys:', Object.keys(documents));
     console.log('🔍 [VALIDATION] Document values:', Object.values(documents).map(d => d?.name || 'null'));
+    console.log('🔍 [VALIDATION] agreedToTerms:', agreedToTerms);
     
     const newErrors: Record<string, string> = {};
 
-    if (!form) return false;
+    if (!form) return { isValid: false, errors: { form: 'Form not loaded' } };
 
     // Validate all sections
     form.sections.forEach(section => {
+      console.log(`🔍 [VALIDATION] Checking section: ${section.id || section.name}, isActive: ${section.isActive}`);
+      if (!section.isActive) return;
+      
       section.fields.forEach(field => {
+        console.log(`🔍 [VALIDATION] Field: ${field.name}, isActive: ${field.isActive}, required: ${field.validation?.required || field.isMandatory}`);
         if (!field.isActive) return;
 
         let value = formData[field.name];
@@ -731,16 +879,36 @@ export function DynamicVendorOnboardingForm({
           value = coordinates;
         }
         
-        // Required validation
-        const isEmpty = !value || value === '' || (Array.isArray(value) && value.length === 0);
+        console.log(`🔍 [VALIDATION] Field ${field.name} value:`, value, 'type:', typeof value);
         
-        if (field.validation?.required && isEmpty) {
-          console.log(`❌ [VALIDATION] Required field missing: ${field.name}`);
-          newErrors[field.name] = `${field.label} is required`;
-        } else if (field.type === 'file' && value) {
-          console.log(`✅ [VALIDATION] File field present: ${field.name}`);
-        } else if (field.type === 'map_pin' && value) {
-          console.log(`✅ [VALIDATION] Location present: ${field.name}`, value);
+        // Required validation - check both validation.required and isMandatory
+        const isRequired = field.validation?.required || (field as any).isMandatory;
+        // Trim strings and check for empty values - whitespace-only is considered empty
+        const trimmedValue = typeof value === 'string' ? value.trim() : value;
+        
+        // ✅ FIX: Special handling for checkbox and declaration fields
+        // For these types, only `true` means the field is filled
+        if (field.type === 'checkbox' || field.type === 'declaration') {
+          if (isRequired && value !== true) {
+            console.log(`❌ [VALIDATION] Required checkbox/declaration not checked: ${field.name} (label: ${field.label})`);
+            newErrors[field.name] = `${field.label || field.name} is required`;
+          } else if (value === true) {
+            console.log(`✅ [VALIDATION] Checkbox/declaration checked: ${field.name}`);
+          }
+        } else {
+          // Standard empty check for other field types
+          const isEmpty = trimmedValue === undefined || trimmedValue === null || trimmedValue === '' || (Array.isArray(trimmedValue) && trimmedValue.length === 0);
+          
+          if (isRequired && isEmpty) {
+            console.log(`❌ [VALIDATION] Required field missing: ${field.name} (label: ${field.label})`);
+            newErrors[field.name] = `${field.label || field.name} is required`;
+          } else if (field.type === 'file' && value) {
+            console.log(`✅ [VALIDATION] File field present: ${field.name}`);
+          } else if (field.type === 'map_pin' && value) {
+            console.log(`✅ [VALIDATION] Location present: ${field.name}`, value);
+          } else if (value) {
+            console.log(`✅ [VALIDATION] Field ${field.name} has value:`, value);
+          }
         }
 
         // Min/Max length validation (only for text fields)
@@ -778,9 +946,9 @@ export function DynamicVendorOnboardingForm({
 
     // Validate document sections
     console.log('🔍 [VALIDATION] Validating document sections...');
-    if (form.documentSections) {
+    if (form.documentSections && form.documentSections.length > 0) {
       form.documentSections.forEach(section => {
-        console.log(`🔍 [VALIDATION] Checking section: ${section.name}`);
+        console.log(`🔍 [VALIDATION] Checking document section: ${section.name}`);
         section.fields.forEach(field => {
           console.log(`🔍 [VALIDATION] Checking document field: ${field.name}`);
           console.log(`🔍 [VALIDATION] Is required: ${field.validation?.required}`);
@@ -800,7 +968,6 @@ export function DynamicVendorOnboardingForm({
     // Check terms agreement
     if (!agreedToTerms) {
       console.log('❌ [VALIDATION] Terms not agreed');
-      toast.error('Please accept the terms and conditions');
       newErrors['terms'] = 'You must accept the terms';
     } else {
       console.log('✅ [VALIDATION] Terms agreed');
@@ -810,7 +977,7 @@ export function DynamicVendorOnboardingForm({
     console.log('🔍 [VALIDATION] Error details:', newErrors);
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return { isValid: Object.keys(newErrors).length === 0, errors: newErrors };
   };
 
   // Helper to upload a single file
@@ -882,8 +1049,38 @@ export function DynamicVendorOnboardingForm({
   };
 
   const handleSubmit = async () => {
-    if (!validateForm()) {
-      toast.error('Please fill all required fields');
+    const { isValid, errors: validationErrors } = validateForm();
+    if (!isValid) {
+      // Show specific error messages for better UX
+      const errorFields = Object.entries(validationErrors).filter(([key, value]) => value && key !== 'terms');
+      
+      if (errorFields.length > 0) {
+        const missingFields = errorFields.map(([key, msg]) => msg).slice(0, 3).join(', ');
+        toast.error(`Missing: ${missingFields}`);
+        console.log('❌ [SUBMIT] Validation failed. Missing fields:', errorFields);
+        
+        // Scroll to first error field
+        const firstErrorField = errorFields[0][0];
+        const element = document.querySelector(`[name="${firstErrorField}"]`) || 
+                        document.querySelector(`[id="${firstErrorField}"]`) ||
+                        document.querySelector(`[data-field="${firstErrorField}"]`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Add focus for accessibility
+          if (element instanceof HTMLElement) {
+            element.focus();
+          }
+        }
+      } else if (!agreedToTerms) {
+        toast.error('Please accept the terms and conditions');
+        // Scroll to terms checkbox
+        const termsSection = document.querySelector('[data-field="terms"]') || document.getElementById('terms-checkbox');
+        if (termsSection) {
+          termsSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } else {
+        toast.error('Please fill all required fields');
+      }
       return;
     }
 
@@ -926,7 +1123,6 @@ export function DynamicVendorOnboardingForm({
         documents: uploadedDocuments, // Send the object with URLs
         serviceStyles,
         location: coordinates,
-        specializations: selectedSpecializations, // ✅ NEW: Include specializations
         agreedToTerms,
         formVersion: form?.version,
         vendorId: vendorId, // ✅ NEW: Include vendorId for edit mode
@@ -934,8 +1130,18 @@ export function DynamicVendorOnboardingForm({
       };
 
       console.log('[DYNAMIC FORM] Submitting:', submissionData);
-      console.log('[DYNAMIC FORM] Selected specializations:', selectedSpecializations);
       await onSubmit(submissionData);
+      
+      // ✅ Clear saved form data from localStorage after successful submission
+      if (typeof window !== 'undefined') {
+        try {
+          const savedFormKey = `vendorOnboardingForm_${roleId}`;
+          localStorage.removeItem(savedFormKey);
+          console.log('🧹 [DYNAMIC FORM] Cleared saved form data after successful submission');
+        } catch (error) {
+          console.warn('⚠️ [DYNAMIC FORM] Error clearing saved form data:', error);
+        }
+      }
       
     } catch (error) {
       console.error('[DYNAMIC FORM] Submission error:', error);
@@ -980,6 +1186,73 @@ export function DynamicVendorOnboardingForm({
               ))}
             </SelectContent>
           </Select>
+        );
+
+      case 'multiselect':
+        const selectedValues = Array.isArray(value) ? value : (value ? [value] : []);
+        return (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2 min-h-[60px] p-3 rounded-2xl border border-gray-200 bg-white">
+              {selectedValues.length === 0 ? (
+                <span className="text-gray-400 text-sm">{field.placeholder || `Select ${field.label}`}</span>
+              ) : (
+                selectedValues.map((val: string) => {
+                  const option = field.options?.find(opt => opt.value === val);
+                  return (
+                    <div
+                      key={`${field.name}-${val}`}
+                      className="inline-flex items-center gap-2 bg-[#FF8C42] text-white px-3 py-1.5 rounded-full text-sm font-medium"
+                    >
+                      <span>{option?.label || val}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newValues = selectedValues.filter((v: string) => v !== val);
+                          handleFieldChange(field.name, newValues);
+                        }}
+                        className="hover:bg-white/20 rounded-full p-0.5 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto p-2 border border-gray-100 rounded-xl bg-gray-50">
+              {field.options?.map((opt, index) => {
+                const isSelected = selectedValues.includes(opt.value);
+                return (
+                  <button
+                    key={`${field.name}-${opt.value}-${index}`}
+                    type="button"
+                    onClick={() => {
+                      if (isSelected) {
+                        const newValues = selectedValues.filter((v: string) => v !== opt.value);
+                        handleFieldChange(field.name, newValues);
+                      } else {
+                        handleFieldChange(field.name, [...selectedValues, opt.value]);
+                      }
+                    }}
+                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${
+                      isSelected
+                        ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42]'
+                        : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                      isSelected
+                        ? 'border-[#FF8C42] bg-[#FF8C42]'
+                        : 'border-gray-300'
+                    }`}>
+                      {isSelected && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                    <span className="text-sm font-medium text-gray-900">{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         );
 
       case 'checkbox':
@@ -1134,6 +1407,88 @@ export function DynamicVendorOnboardingForm({
           </div>
         );
 
+      // ========================================
+      // KYC VERIFICATION FIELD TYPES
+      // ========================================
+      
+      case 'aadhaar-otp':
+        return (
+          <AadhaarOTPVerification
+            vendorId={vendorId || ''}
+            value={value}
+            onChange={(val) => handleFieldChange(field.name, val)}
+            onVerified={(data) => {
+              handleFieldChange(field.name, data.maskedAadhaar);
+              handleFieldChange(`${field.name}_verified`, true);
+              handleFieldChange(`${field.name}_name`, data.name);
+            }}
+            disabled={!vendorId}
+            label=""
+            helpText={field.helpText}
+            required={field.validation?.required}
+          />
+        );
+
+      case 'pan-verify':
+        return (
+          <PANVerification
+            vendorId={vendorId || ''}
+            value={value}
+            name={formData['fullName'] || formData['ownerName'] || formData['businessName']}
+            onChange={(val) => handleFieldChange(field.name, val)}
+            onVerified={(data) => {
+              handleFieldChange(field.name, data.panNumber);
+              handleFieldChange(`${field.name}_verified`, true);
+              handleFieldChange(`${field.name}_name`, data.name);
+              handleFieldChange(`${field.name}_status`, data.status);
+            }}
+            disabled={!vendorId}
+            label=""
+            helpText={field.helpText}
+            required={field.validation?.required}
+            autoVerify={true}
+          />
+        );
+
+      case 'gst-verify':
+        return (
+          <GSTVerification
+            vendorId={vendorId || ''}
+            value={value}
+            onChange={(val) => handleFieldChange(field.name, val)}
+            onVerified={(data) => {
+              handleFieldChange(field.name, data.gstin);
+              handleFieldChange(`${field.name}_verified`, true);
+              handleFieldChange(`${field.name}_legalName`, data.legalName);
+              handleFieldChange(`${field.name}_tradeName`, data.tradeName);
+              handleFieldChange(`${field.name}_status`, data.status);
+            }}
+            disabled={!vendorId}
+            label=""
+            helpText={field.helpText}
+            required={field.validation?.required}
+            conditional={!field.validation?.required}
+            autoVerify={true}
+          />
+        );
+
+      case 'declaration':
+        return (
+          <DeclarationField
+            vendorId={vendorId || ''}
+            declarationType={field.declarationType || field.name}
+            declarationText={field.declarationText || field.label}
+            value={!!value}
+            onChange={(accepted) => handleFieldChange(field.name, accepted)}
+            onAccepted={(data) => {
+              handleFieldChange(`${field.name}_accepted`, true);
+              handleFieldChange(`${field.name}_acceptedAt`, data.acceptedAt);
+            }}
+            disabled={!vendorId}
+            required={field.validation?.required}
+          />
+        );
+
       default: // text, number, email, tel
         return (
           <Input
@@ -1180,7 +1535,7 @@ export function DynamicVendorOnboardingForm({
       </div>
     );
   }
-
+console.log("------------------------------------->",formData);
   // ✅ Check if form has empty sections (no published form)
   if (form.sections.length === 0) {
     return (
@@ -1224,6 +1579,23 @@ export function DynamicVendorOnboardingForm({
         <p className="text-sm text-gray-500 font-medium">Vendor Onboarding</p>
       </div>
 
+      {/* Error Summary Panel - Shows all missing fields */}
+      {Object.keys(errors).length > 0 && (
+        <div className="mx-4 mb-4 p-4 bg-red-50 border border-red-200 rounded-2xl">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-red-800">Please fix the following:</p>
+              <ul className="text-xs text-red-600 mt-1 space-y-0.5">
+                {Object.entries(errors).map(([key, value]) => (
+                  <li key={key}>• {value}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Content Card */}
       <div className="bg-white rounded-t-[40px] px-6 py-8 flex-1 shadow-[0_-10px_40px_rgba(0,0,0,0.03)] min-h-[calc(100vh-220px)]">
         
@@ -1234,188 +1606,71 @@ export function DynamicVendorOnboardingForm({
            </p>
         </div>
 
-        {/* Form Sections */}
-        <div className="space-y-8 pb-32">
-          {form.sections.filter(s => s.isActive !== false).map((section) => {
-            const isProfessionalSection = section.id === 'professional' || section.name === 'professional';
-            
-            return (
-            <div key={section.id} className="space-y-6">
-              {/* Special Header for Professional Section */}
-              {isProfessionalSection && form.sections.length > 1 ? (
-                <div className="-mx-6 -mt-8 mb-6">
-                  {/* Orange Header Section */}
-                  <div className="bg-[#FF8C42] px-6 pt-8 pb-12 flex flex-col items-center rounded-b-[32px]">
-                    {/* Person Icon */}
-                    <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mb-4 border-4 border-white/30">
-                      <User className="w-10 h-10 text-white" strokeWidth={2} />
-                    </div>
-                    
-                    {/* Title */}
-                    <h2 className="text-2xl font-bold text-black text-center leading-tight">
-                      Your
-                      <br />
-                      <span className="text-3xl">Information</span>
-                    </h2>
-                  </div>
-                  
-                  {/* White Form Card */}
-                  <div className="bg-white rounded-t-[32px] px-6 pt-6 -mt-8">
-                    <p className="text-sm text-gray-500 mb-6 text-center">
-                      Your professional details as the lead veterinarian
-                    </p>
-                  </div>
-                </div>
-              ) : form.sections.length > 1 ? (
-                /* Regular Section Header */
-                <div className="flex items-center gap-3 pb-2 border-b border-gray-100">
-                  <h3 className="font-bold text-lg text-gray-900">{section.title}</h3>
-                </div>
-              ) : null}
-
-              <div className={`space-y-5 ${isProfessionalSection ? 'px-6' : ''}`}>
-                {section.fields
-                  .filter(f => f.isActive !== false)
-                  .sort((a, b) => a.order - b.order)
-                  .map((field) => (
-                    <div key={field.id}>
-                      {field.type !== 'checkbox' && (
-                        <Label className="text-sm font-semibold text-gray-900 mb-2 block">
-                          {field.label}
-                          {field.validation?.required && (
-                            <span className="text-red-500 ml-0.5">*</span>
-                          )}
-                        </Label>
-                      )}
-                      
-                      {renderField(field)}
-                      
-                      {field.helpText && (
-                        <p className="text-xs text-gray-400 mt-1.5">{field.helpText}</p>
-                      )}
-                      
-                      {errors[field.name] && (
-                        <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1 font-medium">
-                          {errors[field.name]}
-                        </p>
-                      )}
-                    </div>
-                  ))}
+        {/* Single Unified Onboarding Form */}
+        <div className="space-y-5 pb-32">
+          {/* Collect all fields from all sections into a single unified form */}
+          {form.sections
+            .filter(s => s.isActive !== false)
+            .flatMap(section => section.fields)
+            .filter(f => f.isActive !== false)
+            .sort((a, b) => a.order - b.order)
+            .map((field) => (
+              <div key={field.id}>
+                {field.type !== 'checkbox' && (
+                  <Label className="text-sm font-semibold text-gray-900 mb-2 block">
+                    {field.label}
+                    {field.validation?.required && (
+                      <span className="text-red-500 ml-1">*</span>
+                    )}
+                  </Label>
+                )}
+                
+                {renderField(field)}
+                
+                {field.helpText && (
+                  <p className="text-xs text-gray-400 mt-1.5">{field.helpText}</p>
+                )}
+                
+                {errors[field.name] && (
+                  <p className="text-xs text-red-500 mt-1.5 flex items-center gap-1 font-medium">
+                    {errors[field.name]}
+                  </p>
+                )}
               </div>
-            </div>
-          );
-          })}
+            ))}
 
-          {/* Document Sections */}
-          {form.documentSections?.map((section) => (
-            <div key={section.id} className="space-y-6 pt-2">
-              <div className="flex items-center gap-3 pb-2 border-b border-gray-100">
-                 <h3 className="font-bold text-lg text-gray-900">{section.title}</h3>
+          {/* Document Fields - Also integrated into single form */}
+          {form.documentSections?.flatMap(section => section.fields)
+            .filter(f => f.isActive !== false)
+            .sort((a, b) => a.order - b.order)
+            .map((field) => (
+              <div key={field.id}>
+                <Label className="text-sm font-semibold text-gray-900 mb-2 block">
+                  {field.label}
+                  {field.validation?.required && (
+                    <span className="text-red-500 ml-1">*</span>
+                  )}
+                </Label>
+                
+                {renderField(field)}
+                
+                {field.helpText && (
+                  <p className="text-xs text-gray-400 mt-1.5">{field.helpText}</p>
+                )}
+                
+                {errors[field.name] && (
+                  <p className="text-xs text-red-500 mt-1.5 font-medium">
+                    {errors[field.name]}
+                  </p>
+                )}
               </div>
-
-              <div className="space-y-5">
-                {section.fields
-                  .filter(f => f.isActive !== false)
-                  .sort((a, b) => a.order - b.order)
-                  .map((field) => (
-                    <div key={field.id}>
-                      <Label className="text-sm font-semibold text-gray-900 mb-2 block ml-1">
-                        {field.label}
-                        {field.validation?.required && (
-                          <span className="text-red-500 ml-0.5">*</span>
-                        )}
-                      </Label>
-                      
-                      {renderField(field)}
-                      
-                      {field.helpText && (
-                        <p className="text-xs text-gray-400 mt-1.5 ml-1">{field.helpText}</p>
-                      )}
-                      
-                      {errors[field.name] && (
-                        <p className="text-xs text-red-500 mt-1.5 ml-1 font-medium">
-                          {errors[field.name]}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-              </div>
-            </div>
-          ))}
-
-          {/* ✅ NEW: Specialization Selection (if available) */}
-          {availableSpecializations.length > 0 && (
-            <div className="space-y-6 pt-2">
-              <div className="flex items-center justify-between pb-2 border-b border-gray-100">
-                <h3 className="font-bold text-lg text-gray-900">Specializations</h3>
-                <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-medium">
-                  {selectedSpecializations.length} selected
-                </span>
-              </div>
-              
-              <p className="text-xs text-gray-600">
-                Select areas of expertise. Your center will appear in customer searches for these services.
-              </p>
-
-              {loadingSpecializations ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42] mx-auto mb-2"></div>
-                  <p className="text-sm text-gray-500">Loading specializations...</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {availableSpecializations.map((spec) => {
-                    const isSelected = selectedSpecializations.includes(spec.id);
-                    return (
-                      <div
-                        key={spec.id}
-                        onClick={() => toggleSpecialization(spec.id)}
-                        className={`p-4 rounded-2xl border cursor-pointer transition-all ${
-                          isSelected
-                            ? 'border-[#FF8C42] bg-orange-50'
-                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                            isSelected
-                              ? 'border-[#FF8C42] bg-[#FF8C42]'
-                              : 'border-gray-300'
-                          }`}>
-                            {isSelected && <Check className="w-3 h-3 text-white" />}
-                          </div>
-                          
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-900">{spec.name}</p>
-                            <p className="text-xs text-gray-600 mt-0.5">{spec.description}</p>
-                            
-                            {spec.helpsWithProblems && spec.helpsWithProblems.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-2">
-                                {spec.helpsWithProblems.map((problem: any) => (
-                                  <span
-                                    key={problem.id}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs"
-                                  >
-                                    <span>{problem.icon}</span>
-                                    <span>{problem.name}</span>
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+            ))}
 
           {/* Terms & Conditions */}
-          <div className="pt-4">
-            <div className="flex items-start gap-3 p-4 rounded-2xl bg-gray-50 border border-gray-100">
+          <div className="pt-4" id="terms-checkbox" data-field="terms">
+            <div className={`flex items-start gap-3 p-4 rounded-2xl bg-gray-50 border ${errors.terms ? 'border-red-300 bg-red-50' : 'border-gray-100'}`}>
               <Checkbox
+                id="agree-terms"
                 checked={agreedToTerms}
                 onCheckedChange={(checked) => setAgreedToTerms(!!checked)}
                 className="mt-1 data-[state=checked]:bg-[#FF8C42] data-[state=checked]:border-[#FF8C42]"
@@ -1470,34 +1725,37 @@ export function DynamicVendorOnboardingForm({
 
       {/* Terms Dialog */}
       <Dialog open={showAgreement} onOpenChange={setShowAgreement}>
-        <DialogContent className="max-w-[90%] rounded-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Vendor Agreements</DialogTitle>
-            <DialogDescription>
+        <DialogContent className="max-w-[90%] rounded-3xl max-h-[80vh] overflow-y-auto bg-white border border-gray-200 shadow-2xl z-[100]">
+          <DialogHeader className="bg-white">
+            <DialogTitle className="text-gray-900 text-xl font-bold">Vendor Agreements</DialogTitle>
+            <DialogDescription className="text-gray-600">
               Review the vendor onboarding agreement and terms of service.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-6 mt-4">
-            <div>
-              <h3 className="font-bold text-gray-800 mb-3">Vendor Onboarding Agreement</h3>
-              <div className="text-sm text-gray-600 space-y-2">
-                <p>1. The vendor agrees to provide services as per the platform standards.</p>
-                <p>2. All information provided must be accurate and verifiable.</p>
-                <p>3. The vendor must complete all required documents and certifications.</p>
-                <p>4. Services will be activated only after admin approval.</p>
+          
+          {loadingPolicies ? (
+            <div className="flex items-center justify-center py-8 bg-white">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42]"></div>
+              <p className="ml-3 text-gray-600">Loading policies...</p>
+            </div>
+          ) : (
+            <div className="space-y-6 mt-4 bg-white">
+              <div className="bg-white">
+                <h3 className="font-bold text-gray-800 mb-3">{policies.vendorOnboardingAgreement.title}</h3>
+                <div className="text-sm text-gray-600 whitespace-pre-wrap max-h-[200px] overflow-y-auto p-3 bg-gray-50 rounded-lg border border-gray-100">
+                  {policies.vendorOnboardingAgreement.content}
+                </div>
+              </div>
+              <div className="bg-white">
+                <h3 className="font-bold text-gray-800 mb-3">{policies.termsOfService.title}</h3>
+                <div className="text-sm text-gray-600 whitespace-pre-wrap max-h-[200px] overflow-y-auto p-3 bg-gray-50 rounded-lg border border-gray-100">
+                  {policies.termsOfService.content}
+                </div>
               </div>
             </div>
-            <div>
-              <h3 className="font-bold text-gray-800 mb-3">Terms of Service</h3>
-              <div className="text-sm text-gray-600 space-y-2">
-                <p>1. The platform reserves the right to approve or reject applications.</p>
-                <p>2. All bookings are subject to customer OTP verification.</p>
-                <p>3. Vendors must provide service reports after each booking.</p>
-                <p>4. Payment settlements are processed as per platform policy.</p>
-              </div>
-            </div>
-          </div>
-          <Button onClick={() => setShowAgreement(false)} className="w-full bg-[#FF8C42] rounded-full mt-4">
+          )}
+          
+          <Button onClick={() => setShowAgreement(false)} className="w-full bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-full mt-4 py-3 font-semibold">
             Close
           </Button>
         </DialogContent>

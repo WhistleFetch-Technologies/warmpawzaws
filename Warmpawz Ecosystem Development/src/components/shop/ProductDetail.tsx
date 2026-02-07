@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Star, Heart, ShoppingCart, Plus, Minus, Share2, MapPin, Truck, Shield, Award } from 'lucide-react';
 import { Button } from '../ui/button';
 import { authenticatedGet, authenticatedPost } from '../../utils/authenticatedFetch';
-import { projectId } from '../../utils/supabase/info';
+import { getApiBaseUrl } from '../../utils/api-config';
 
 interface Product {
   id: string;
@@ -58,7 +58,7 @@ export function ProductDetail() {
     try {
       setLoading(true);
       const data = await authenticatedGet(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/products/${productId}`,
+        `${getApiBaseUrl()}/products/${productId}`,
         false
       );
       setProduct(data.product);
@@ -72,7 +72,7 @@ export function ProductDetail() {
   const fetchReviews = async () => {
     try {
       const data = await authenticatedGet(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/products/${productId}/reviews`,
+        `${getApiBaseUrl()}/products/${productId}/reviews`,
         false
       );
       setReviews(data.reviews || []);
@@ -84,7 +84,7 @@ export function ProductDetail() {
   const checkWishlist = async () => {
     try {
       const data = await authenticatedGet(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/wishlist`,
+        `${getApiBaseUrl()}/customer/wishlist`,
         true
       );
       setIsInWishlist((data.productIds || []).includes(productId));
@@ -96,7 +96,7 @@ export function ProductDetail() {
   const toggleWishlist = async () => {
     try {
       await authenticatedPost(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/wishlist/${productId}/${isInWishlist ? 'remove' : 'add'}`,
+        `${getApiBaseUrl()}/customer/wishlist/${productId}/${isInWishlist ? 'remove' : 'add'}`,
         {},
         true
       );
@@ -110,7 +110,7 @@ export function ProductDetail() {
     try {
       setAddingToCart(true);
       await authenticatedPost(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/cart/add`,
+        `${getApiBaseUrl()}/customer/cart/add`,
         {
           productId,
           quantity

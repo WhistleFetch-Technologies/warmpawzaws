@@ -1,0 +1,47 @@
+﻿{
+    "events": [
+        {
+            "logStreamName": "2026/02/01/[$LATEST]63903e6c40ff424a8872491566de46d1",
+            "timestamp": 1769950641026,
+            "message": "2026-02-01T12:57:21.026Z\tf61ab575-dad4-4ad3-aeac-388c2fc528cd\tINFO\t[DB] Pool stats - Total: 0, Idle: 0, Waiting: 0\n",
+            "ingestionTime": 1769950641049,
+            "eventId": "39471218259496768064792113512157499538608599627401330688"
+        },
+        {
+            "logStreamName": "2026/02/01/[$LATEST]63903e6c40ff424a8872491566de46d1",
+            "timestamp": 1769950641026,
+            "message": "2026-02-01T12:57:21.026Z\tf61ab575-dad4-4ad3-aeac-388c2fc528cd\tINFO\t[DB] Pool stats - Total: 0, Idle: 0, Waiting: 0\n",
+            "ingestionTime": 1769950641049,
+            "eventId": "39471218259496768064792113512157499538608599627401330689"
+        },
+        {
+            "logStreamName": "2026/02/01/[$LATEST]38a87512ce8245a396c1ab96b7861893",
+            "timestamp": 1769950641027,
+            "message": "2026-02-01T12:57:21.027Z\t4a4d0a53-56ea-4690-b542-70aa70b24dee\tINFO\t[DB] Pool stats - Total: 0, Idle: 0, Waiting: 0\n",
+            "ingestionTime": 1769950641066,
+            "eventId": "39471218259519068809990644135319229337432755092721631232"
+        },
+        {
+            "logStreamName": "2026/02/01/[$LATEST]c7fafa559d5d4daf8aceea24c5f4b287",
+            "timestamp": 1769950641027,
+            "message": "2026-02-01T12:57:21.027Z\tc27ea198-4d45-4cca-bffe-2ee30e9503c9\tINFO\t[DB] Pool stats - Total: 0, Idle: 0, Waiting: 0\n",
+            "ingestionTime": 1769950641072,
+            "eventId": "39471218259519068809990644135326445170046650638061076480"
+        },
+        {
+            "logStreamName": "2026/02/01/[$LATEST]c7fafa559d5d4daf8aceea24c5f4b287",
+            "timestamp": 1769950641027,
+            "message": "2026-02-01T12:57:21.027Z\tc27ea198-4d45-4cca-bffe-2ee30e9503c9\tINFO\t[DB] Pool stats - Total: 0, Idle: 0, Waiting: 0\n",
+            "ingestionTime": 1769950641072,
+            "eventId": "39471218259519068809990644135326445170046650638061076481"
+        },
+        {
+            "logStreamName": "2026/02/01/[$LATEST]38a87512ce8245a396c1ab96b7861893",
+            "timestamp": 1769950641028,
+            "message": "2026-02-01T12:57:21.028Z\t4a4d0a53-56ea-4690-b542-70aa70b24dee\tINFO\t[DB] Pool stats - Total: 0, Idle: 0, Waiting: 0\n",
+            "ingestionTime": 1769950641066,
+            "eventId": "39471218259541369555189174758460765055705403454227611649"
+        }
+    ],
+    "searchedLogStreams": []
+}

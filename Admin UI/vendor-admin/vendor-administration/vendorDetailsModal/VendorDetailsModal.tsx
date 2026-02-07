@@ -8,7 +8,7 @@ import {
 	Shield,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 
 interface VendorDetails {
 	id: string;
@@ -75,10 +75,10 @@ export function VendorDetailsModal({
 			setLoading(true);
 
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/${vendorId}/details`,
+				`${getApiBaseUrl()}/admin/vendors/${vendorId}/details`,
 				{
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 					},
 				}
 			);

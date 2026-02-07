@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { AdminVendorManagement } from './admin/AdminVendorManagement';
 import { UnifiedAdminSidebar } from './admin/layout/UnifiedAdminSidebar';
+import { TaxManagement } from './admin/finance/TaxManagement';
 
 // ============================================================================
 // TYPES
@@ -550,7 +551,7 @@ export function AdminApp() {
             </h2>
             <p className="text-gray-500">Manage your platform</p>
           </div>
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-3">
             <button
               onClick={loadDashboard}
               className="px-4 py-0 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition"
@@ -572,7 +573,7 @@ export function AdminApp() {
               </h1>
               <p className="text-xs text-gray-500">Manage your platform</p>
             </div>
-            <div className="flex items-center gap-0">
+            <div className="flex items-center gap-3">
               <button
                 onClick={loadDashboard}
                 className="px-4 py-0 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition text-sm"
@@ -637,7 +638,7 @@ export function AdminApp() {
             ) : stats ? (
             <>
             {/* Stats Grid */}
-            <div className="grid grid-cols-4 gap-0">
+            <div className="grid grid-cols-4 gap-3">
               <StatCard icon="✅" value={stats.activeVendors.count} label="Active Vendors" sublabel={`${stats.activeVendors.percentage}% of total`} color="green" />
               <StatCard icon="⏳" value={stats.pendingApplications.count} label="Pending Applications" sublabel={`${stats.pendingApplications.todayCount} today`} color="yellow" />
               <StatCard icon="🚫" value={stats.deactivatedVendors.count} label="Deactivated" color="gray" />
@@ -668,7 +669,7 @@ export function AdminApp() {
                             <p className="text-sm text-gray-500">{vendor.phone} • {vendor.city}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-0">
+                        <div className="flex items-center gap-3">
                           <button
                             onClick={() => handleRequestClarification(vendor.id)}
                             className="px-0 py-0.5 bg-yellow-100 text-yellow-700 rounded-lg text-sm font-medium hover:bg-yellow-200 transition"
@@ -724,11 +725,11 @@ export function AdminApp() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {roles.map((role) => (
                 <div key={role.id} className="bg-white rounded-2xl shadow-sm p-0">
                   <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-0">
+                    <div className="flex items-center gap-3">
                       <span className="text-3xl">{role.icon || '👤'}</span>
                       <div>
                         <h4 className="font-semibold text-gray-900">{role.display_name}</h4>
@@ -744,7 +745,7 @@ export function AdminApp() {
                   
                   <div className="mb-4">
                     <p className="text-xs font-medium text-gray-500 mb-0">Service Styles</p>
-                    <div className="flex flex-wrap gap-0">
+                    <div className="flex flex-wrap gap-3">
                       {role.service_styles?.map((style) => (
                         <span key={style} className="px-0 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
                           {style}
@@ -755,7 +756,7 @@ export function AdminApp() {
                   
                   <div className="mb-4">
                     <p className="text-xs font-medium text-gray-500 mb-0">Capabilities ({role.capabilities?.length || 0})</p>
-                    <div className="flex flex-wrap gap-0 max-h-20 overflow-y-auto">
+                    <div className="flex flex-wrap gap-3 max-h-20 overflow-y-auto">
                       {role.capabilities?.slice(0, 10).map((cap) => (
                         <span key={cap} className="px-0 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
                           {cap}
@@ -794,7 +795,7 @@ export function AdminApp() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-0">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {tiers.map((tier) => (
                 <div key={tier.id} className="bg-white rounded-2xl shadow-sm p-0">
                   <div className="text-center mb-4">
@@ -812,7 +813,7 @@ export function AdminApp() {
                       <p className="text-xs font-medium text-gray-500 mb-0">Benefits:</p>
                       <ul className="text-sm text-gray-600 space-y-1">
                         {tier.benefits?.map((benefit, idx) => (
-                          <li key={idx} className="flex items-center gap-0">
+                          <li key={idx} className="flex items-center gap-3">
                             <span className="text-green-500">✓</span> {benefit}
                           </li>
                         ))}
@@ -862,7 +863,7 @@ export function AdminApp() {
                       <td className="px-0 py-4 font-mono text-sm font-medium">{promo.code}</td>
                       <td className="px-0 py-4 text-sm">
                         {promo.discount_type === 'percentage' ? `${promo.discount_value}%` : `₹${promo.discount_value}`}
-                        {promo.max_discount && <span className="text-gray-400 text-xs ml-0">(max ₹{promo.max_discount})</span>}
+                        {promo.max_discount && <span className="text-gray-400 text-xs ml-2">(max ₹{promo.max_discount})</span>}
                       </td>
                       <td className="px-0 py-4 text-sm text-gray-600">{promo.valid_until}</td>
                       <td className="px-0 py-4 text-sm">{promo.used_count}/{promo.usage_limit || '∞'}</td>
@@ -885,7 +886,7 @@ export function AdminApp() {
         {/* Settings Tab */}
         {activeTab === 'settings' && settings && (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Payment Settings */}
               <div className="bg-white rounded-2xl shadow-sm p-0">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">💳 Payment Settings</h3>
@@ -972,14 +973,8 @@ export function AdminApp() {
         {/* NOTE: All these tabs now have dedicated pages - navigation handled by AdminLayout/UnifiedAdminSidebar */}
         {/* Removed placeholder redirects - they were causing issues when CloudFront served index.html */}
 
-        {/* Other tabs placeholder */}
-        {activeTab === 'taxes' && (
-          <div className="bg-white rounded-2xl shadow-sm p-12 text-center">
-            <div className="text-5xl mb-4">🚧</div>
-            <h3 className="text-xl font-semibold text-gray-900">Coming Soon</h3>
-            <p className="text-gray-500 mt-0">Tax management is under development</p>
-          </div>
-        )}
+        {/* Tax Management */}
+        {activeTab === 'taxes' && <TaxManagement />}
         </div>
       </main>
 
@@ -1141,7 +1136,7 @@ function RoleEditModal({
           {/* Service Styles */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-0">Service Styles</label>
-            <div className="flex flex-wrap gap-0">
+            <div className="flex flex-wrap gap-3">
               {['centre', 'home', 'tele', 'ecommerce'].map((style) => (
                 <button
                   key={style}
@@ -1167,7 +1162,7 @@ function RoleEditModal({
               {Object.entries(groupedCapabilities).map(([category, caps]) => (
                 <div key={category}>
                   <p className="text-xs font-semibold text-gray-500 uppercase mb-0">{category}</p>
-                  <div className="flex flex-wrap gap-0">
+                  <div className="flex flex-wrap gap-3">
                     {caps.map((cap) => (
                       <button
                         key={cap.id}
@@ -1188,7 +1183,7 @@ function RoleEditModal({
           </div>
         </div>
         
-        <div className="p-1 border-t bg-gray-50 flex justify-end gap-0">
+        <div className="p-1 border-t bg-gray-50 flex justify-end gap-3">
           <button
             onClick={onClose}
             className="px-1 py-0 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition"

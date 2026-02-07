@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { CheckCircle, Calendar, Clock, MapPin, User, Share2, Download, Home, Phone, Copy, Scissors } from 'lucide-react';
+import { CheckCircle, Calendar, Clock, MapPin, User, Share2, Download, Home, Phone, Copy, Scissors, ShoppingCart } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { shareContent, copyTextToClipboard } from '../../../utils/shareUtils';
+import { useCart } from '../../../context/CartContext';
 
 interface BookingConfirmationProps {
   bookingData: {
@@ -23,10 +24,12 @@ interface BookingConfirmationProps {
   onViewBooking?: () => void; // ✅ OPTIONAL: Legacy support
   onViewAppointment?: (appointmentId: string) => void; // ✅ NEW: Navigate to appointment details
   onBackToDashboard: () => void;
+  onNavigate?: (screen: string, data?: any) => void;
 }
 
-export function BookingConfirmation({ bookingData, onViewBooking, onViewAppointment, onBackToDashboard }: BookingConfirmationProps) {
+export function BookingConfirmation({ bookingData, onViewBooking, onViewAppointment, onBackToDashboard, onNavigate }: BookingConfirmationProps) {
   const [otpCopied, setOtpCopied] = useState(false);
+  const { itemCount } = useCart();
 
   const handleCopyOTP = () => {
     if (bookingData.otp) {
@@ -75,7 +78,7 @@ export function BookingConfirmation({ bookingData, onViewBooking, onViewAppointm
   };
 
   return (
-    <div className="min-h-screen bg-white max-w-md mx-auto">
+    <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto pb-20">
       {/* Success Header */}
       <div className="bg-gradient-to-br from-green-500 to-green-600 text-white px-6 pt-12 pb-8 text-center">
         <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-4">
@@ -288,6 +291,51 @@ export function BookingConfirmation({ bookingData, onViewBooking, onViewAppointm
             <p className="text-blue-900">📧 Email: support@warmpawz.com</p>
           </div>
         </Card>
+      </div>
+
+      {/* Fixed Bottom Navigation - Matching Customer Home */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto z-50">
+        <div className="flex items-center justify-around">
+          <button 
+            onClick={() => onNavigate ? onNavigate('home') : onBackToDashboard()}
+            className="flex flex-col items-center gap-1"
+          >
+            <Home className="w-6 h-6 text-[#FF8C42]" />
+            <span className="text-xs font-medium text-[#FF8C42]">Home</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('cart')}
+            className="flex flex-col items-center gap-1 relative"
+          >
+            <div className="relative">
+              <ShoppingCart className="w-6 h-6 text-gray-400" />
+              {itemCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {itemCount}
+                </span>
+              )}
+            </div>
+            <span className="text-xs text-gray-400">Cart</span>
+          </button>
+          <button 
+            onClick={() => onViewBooking ? onViewBooking() : (onNavigate && onNavigate('bookings'))}
+            className="flex flex-col items-center gap-1"
+          >
+            <Calendar className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Bookings</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('profile')}
+            className="flex flex-col items-center gap-1"
+          >
+            <User className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Profile</span>
+          </button>
+        </div>
+        {/* Home Indicator */}
+        <div className="flex justify-center mt-2">
+          <div className="w-32 h-1 bg-black rounded-full"></div>
+        </div>
       </div>
     </div>
   );

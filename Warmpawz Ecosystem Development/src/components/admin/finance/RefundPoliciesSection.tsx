@@ -4,7 +4,7 @@ import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Checkbox } from '../../ui/checkbox';
 import { Plus, Edit, Trash2, Check, X, RefreshCw } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 // Hardcoded vendor types with icons - same as payment settings
@@ -51,9 +51,9 @@ export function RefundPoliciesSection() {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings-rules`,
+        `${getApiBaseUrl()}/admin/vendor-settings-rules`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -110,8 +110,8 @@ export function RefundPoliciesSection() {
     setSaving(true);
     try {
       const url = isCreatingNew
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings/refund-tiers`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings/refund-tiers/${editingTier.id}`;
+        ? `${getApiBaseUrl()}/admin/vendor-settings/refund-tiers`
+        : `${getApiBaseUrl()}/admin/vendor-settings/refund-tiers/${editingTier.id}`;
 
       const method = isCreatingNew ? 'POST' : 'PUT';
 
@@ -119,7 +119,7 @@ export function RefundPoliciesSection() {
         method,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify(editingTier)
       });
@@ -145,10 +145,10 @@ export function RefundPoliciesSection() {
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings/refund-tiers/${tierId}`,
+        `${getApiBaseUrl()}/admin/vendor-settings/refund-tiers/${tierId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

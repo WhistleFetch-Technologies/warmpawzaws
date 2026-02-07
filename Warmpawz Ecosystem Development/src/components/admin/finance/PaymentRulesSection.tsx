@@ -5,7 +5,7 @@ import { Label } from '../../ui/label';
 import { Switch } from '../../ui/switch';
 import { Checkbox } from '../../ui/checkbox';
 import { Save, RotateCcw, CreditCard, Plus, Edit, Trash2, Check, X } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 // Hardcoded vendor types - these are the categories for rules
@@ -61,9 +61,9 @@ export function PaymentRulesSection() {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings-rules`,
+        `${getApiBaseUrl()}/admin/vendor-settings-rules`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -119,8 +119,8 @@ export function PaymentRulesSection() {
     setSaving(true);
     try {
       const url = isCreatingNew
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings/payment-rules`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings/payment-rules/${editingRule.id}`;
+        ? `${getApiBaseUrl()}/admin/vendor-settings/payment-rules`
+        : `${getApiBaseUrl()}/admin/vendor-settings/payment-rules/${editingRule.id}`;
 
       const method = isCreatingNew ? 'POST' : 'PUT';
 
@@ -128,7 +128,7 @@ export function PaymentRulesSection() {
         method,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify(editingRule)
       });
@@ -154,10 +154,10 @@ export function PaymentRulesSection() {
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings/payment-rules/${ruleId}`,
+        `${getApiBaseUrl()}/admin/vendor-settings/payment-rules/${ruleId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

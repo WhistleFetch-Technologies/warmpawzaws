@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Search, Pill, ShoppingCart, AlertCircle, Upload, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Search, Pill, ShoppingCart, AlertCircle, Upload, CheckCircle2, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
 import { useCart } from '@/context/CartContext';
 import { toast } from 'sonner';
+import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 
 interface PharmacyStoreProps {
   phone?: string;
@@ -36,6 +37,7 @@ export function PharmacyStore({ phone, onBack, onNavigate }: PharmacyStoreProps)
   const [prescriptionFile, setPrescriptionFile] = useState<File | null>(null);
   const [prescriptionUploaded, setPrescriptionUploaded] = useState(false);
   const { addToCart, itemCount } = useCart();
+  const [stats, setStats] = useState({ totalMedicines: 0, orders: 0, rating: '4.8' });
 
   const categories = [
     { id: 'all', label: 'All', icon: Pill },
@@ -54,7 +56,14 @@ export function PharmacyStore({ phone, onBack, onNavigate }: PharmacyStoreProps)
       setLoading(true);
       const data = await apiClient.get<{ medicines?: Medicine[]; products?: Medicine[] }>('/customer/pharmacy/medicines');
       const medicineList = data.medicines || data.products || [];
-      setMedicines(medicineList.filter(m => m.in_stock !== false));
+      const filteredMedicines = medicineList.filter(m => m.in_stock !== false);
+      setMedicines(filteredMedicines);
+      // Update stats
+      setStats({
+        totalMedicines: filteredMedicines.length,
+        orders: 0, // Can be loaded from API if available
+        rating: '4.8'
+      });
     } catch (error) {
       console.error('Error loading medicines:', error);
       setMedicines([]);
@@ -125,52 +134,38 @@ export function PharmacyStore({ phone, onBack, onNavigate }: PharmacyStoreProps)
     );
   }
 
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const dashboardStats = [
+    { value: `${stats.totalMedicines}+`, label: 'Medicines', icon: <Pill className="w-4 h-4" /> },
+    { value: `${stats.orders}+`, label: 'Orders' },
+    { value: `${stats.rating}`, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
+
   return (
     <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-4 sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onBack}
-            className="rounded-full text-white hover:bg-white/20"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold">Pharmacy Store</h1>
-            <p className="text-white/90 text-sm">Pet medicines & supplements</p>
-          </div>
-          {itemCount > 0 && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onNavigate?.('cart')}
-              className="rounded-full text-white hover:bg-white/20 relative"
-            >
-              <ShoppingCart className="w-5 h-5" />
-              {itemCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                  {itemCount}
-                </span>
-              )}
-            </Button>
-          )}
-        </div>
-        
-        {/* Search Bar */}
-        <div className="mt-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-white/70" />
-            <input
-              type="text"
-              placeholder="Search medicines..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white/20 backdrop-blur rounded-lg text-white placeholder-white/70 border border-white/30 focus:outline-none focus:ring-2 focus:ring-white/50"
-            />
-          </div>
+      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
+      <ServiceDashboardHeader
+        serviceName="Pharmacy Store"
+        serviceSubtitle="Pet medicines & supplements"
+        serviceIcon={Pill}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
+      />
+      
+      {/* Search Bar - Below header */}
+      <div className="px-4 pt-4 pb-2 bg-white">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search medicines..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 rounded-lg text-gray-900 placeholder-gray-400 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+          />
         </div>
       </div>
 

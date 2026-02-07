@@ -15,6 +15,9 @@
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
+import { resolveVendorId } from '../utils/vendor-resolve';
 
 // ============================================================================
 // GET /vendor/analytics/dashboard - Dashboard analytics overview
@@ -23,13 +26,15 @@ import { query } from '../database/rds-connection';
 class GetDashboardAnalyticsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || 
-                      context.event.queryStringParameters?.vendorId ||
-                      context.userId;
+      const paramVendorId = context.event.pathParameters?.vendorId || 
+                            context.event.queryStringParameters?.vendorId ||
+                            context.userId;
 
-      if (!vendorId) {
+      if (!paramVendorId) {
         return this.error('Vendor ID is required', 401);
       }
+
+      const vendorId = await resolveVendorId(paramVendorId);
 
       // Handle test IDs - return empty analytics FIRST before any queries
       if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
@@ -241,13 +246,15 @@ class GetDashboardAnalyticsHandler extends BaseHandler {
 class GetRevenueAnalyticsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || 
-                      context.event.queryStringParameters?.vendorId ||
-                      context.userId;
+      const paramVendorId = context.event.pathParameters?.vendorId || 
+                            context.event.queryStringParameters?.vendorId ||
+                            context.userId;
 
-      if (!vendorId) {
+      if (!paramVendorId) {
         return this.error('Vendor ID is required', 401);
       }
+
+      const vendorId = await resolveVendorId(paramVendorId);
 
       // Handle test IDs - return empty analytics
       if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
@@ -374,13 +381,15 @@ class GetRevenueAnalyticsHandler extends BaseHandler {
 class GetBookingAnalyticsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || 
-                      context.event.queryStringParameters?.vendorId ||
-                      context.userId;
+      const paramVendorId = context.event.pathParameters?.vendorId || 
+                            context.event.queryStringParameters?.vendorId ||
+                            context.userId;
 
-      if (!vendorId) {
+      if (!paramVendorId) {
         return this.error('Vendor ID is required', 401);
       }
+
+      const vendorId = await resolveVendorId(paramVendorId);
 
       const startDate = context.event.queryStringParameters?.startDate || 
                        new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -489,6 +498,100 @@ class GetBookingAnalyticsHandler extends BaseHandler {
 }
 
 // ============================================================================
+// GET /vendor/:vendorId/staff-performance - Staff performance metrics
+// ============================================================================
+
+class GetStaffPerformanceHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    try {
+      const paramVendorId = context.event.pathParameters?.vendorId ||
+                            context.event.queryStringParameters?.vendorId;
+
+      if (!paramVendorId) {
+        return this.error('Vendor ID is required', 400);
+      }
+
+      // Resolve identity id → vendor id so staff-performance works when app sends identity id
+      const vendorId = await resolveVendorId(paramVendorId);
+
+      const period = (context.event.queryStringParameters?.period || 'month') as string;
+      const now = new Date();
+      let startDate: string;
+      let endDate: string;
+
+      if (period === 'week') {
+        const start = new Date(now);
+        start.setDate(start.getDate() - 7);
+        startDate = start.toISOString().split('T')[0];
+        endDate = now.toISOString().split('T')[0];
+      } else if (period === 'year') {
+        const start = new Date(now.getFullYear(), 0, 1);
+        startDate = start.toISOString().split('T')[0];
+        endDate = now.toISOString().split('T')[0];
+      } else {
+        const start = new Date(now.getFullYear(), now.getMonth(), 1);
+        startDate = start.toISOString().split('T')[0];
+        endDate = now.toISOString().split('T')[0];
+      }
+
+      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return this.success({ data: { staffPerformance: [], period } });
+      }
+
+      let staffPerformance;
+      try {
+        staffPerformance = await query(`
+          SELECT 
+            st.id,
+            st.name,
+            st.role,
+            COUNT(b.id) as bookings_count,
+            COUNT(*) FILTER (WHERE b.status = 'completed') as completed_count,
+            AVG(r.rating) as avg_rating,
+            SUM(b.total_amount) FILTER (WHERE b.status != 'cancelled') as revenue
+          FROM bookings b
+          LEFT JOIN staff st ON b.staff_id = st.id
+          LEFT JOIN reviews r ON b.id = r.booking_id
+          WHERE b.vendor_id = $1 
+            AND b.booking_date >= $2 
+            AND b.booking_date <= $3
+          GROUP BY st.id, st.name, st.role
+          HAVING st.id IS NOT NULL
+          ORDER BY bookings_count DESC
+          LIMIT 20
+        `, [vendorId, startDate, endDate]);
+      } catch (error: any) {
+        if (error.message?.includes('invalid input syntax for type uuid')) {
+          return this.success({ data: { staffPerformance: [], period } });
+        }
+        throw error;
+      }
+
+      const rows = (staffPerformance?.rows || []).map((row: any) => {
+        const total = Number(row.bookings_count) || 0;
+        const completed = Number(row.completed_count) || 0;
+        const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+        return {
+          staffId: row.id,
+          fullName: row.name || 'Unknown',
+          role: row.role || '',
+          photo: null,
+          rating: row.avg_rating != null ? parseFloat(Number(row.avg_rating).toFixed(1)) : 0,
+          totalAppointments: total,
+          totalEarnings: parseFloat(row.revenue || '0') || 0,
+          completionRate,
+        };
+      });
+
+      return this.success({ data: { staffPerformance: rows, period } });
+    } catch (error: any) {
+      console.error('Error fetching staff performance:', error);
+      return this.error(error.message || 'Failed to fetch staff performance', 500);
+    }
+  }
+}
+
+// ============================================================================
 // REGISTER ENDPOINTS
 // ============================================================================
 
@@ -499,13 +602,15 @@ class GetBookingAnalyticsHandler extends BaseHandler {
 class GetSalesAnalyticsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || 
-                      context.event.queryStringParameters?.vendorId ||
-                      context.userId;
+      const paramVendorId = context.event.pathParameters?.vendorId || 
+                            context.event.queryStringParameters?.vendorId ||
+                            context.userId;
 
-      if (!vendorId) {
+      if (!paramVendorId) {
         return this.error('Vendor ID is required', 401);
       }
+
+      const vendorId = await resolveVendorId(paramVendorId);
 
       // Handle test IDs - return empty analytics instead of error
       if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
@@ -665,16 +770,27 @@ class GetSalesAnalyticsHandler extends BaseHandler {
 class GetProductPerformanceHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const vendorId = context.event.pathParameters?.vendorId || 
-                      context.event.queryStringParameters?.vendorId ||
-                      context.userId;
+      const paramVendorId = context.event.pathParameters?.vendorId || 
+                            context.event.queryStringParameters?.vendorId ||
+                            context.userId;
 
-      if (!vendorId) {
+      if (!paramVendorId) {
         return this.error('Vendor ID is required', 401);
       }
 
+      const vendorId = await resolveVendorId(paramVendorId);
+
       const period = context.event.queryStringParameters?.period || 'month';
       const limit = parseInt(context.event.queryStringParameters?.limit || '10', 10);
+
+      // Handle test IDs - return empty analytics FIRST before any queries
+      if (vendorId === 'test-vendor-id' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(vendorId)) {
+        return this.success({
+          period,
+          topProducts: [],
+          productByCategory: [],
+        });
+      }
       
       // Build date filter
       let dateFilter = '';
@@ -745,6 +861,7 @@ export function registerVendorAnalyticsEndpoints(app: Hono) {
   const bookingHandler = new GetBookingAnalyticsHandler();
   const salesHandler = new GetSalesAnalyticsHandler();
   const productHandler = new GetProductPerformanceHandler();
+  const staffPerformanceHandler = new GetStaffPerformanceHandler();
 
   app.get('/vendor/analytics/dashboard', async (c) => {
     const event = createApiGatewayEvent(c.req);
@@ -771,10 +888,12 @@ export function registerVendorAnalyticsEndpoints(app: Hono) {
     try {
       const event = createApiGatewayEvent(c.req);
       event.pathParameters = { vendorId: c.req.param('vendorId') };
-      event.queryStringParameters = Object.fromEntries(c.req.query());
+      event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
       const context = createLambdaContext();
       const result = await salesHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const body = (result as any).body ? JSON.parse((result as any).body) : result;
+      const statusCode = (result as any).statusCode || 200;
+      return c.json(body, statusCode as 200 | 400 | 500);
     } catch (error: any) {
       console.error('Error in sales analytics endpoint:', error);
       // Handle test IDs gracefully
@@ -802,10 +921,23 @@ export function registerVendorAnalyticsEndpoints(app: Hono) {
   app.get('/vendor/:vendorId/analytics/products', async (c) => {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { vendorId: c.req.param('vendorId') };
-    event.queryStringParameters = Object.fromEntries(c.req.query());
+    event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
     const context = createLambdaContext();
     const result = await productHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const body = (result as any).body ? JSON.parse((result as any).body) : result;
+    const statusCode = (result as any).statusCode || 200;
+    return c.json(body, statusCode as 200 | 400 | 500);
+  });
+
+  app.get('/vendor/:vendorId/staff-performance', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    event.pathParameters = { vendorId: c.req.param('vendorId') };
+    event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
+    const context = createLambdaContext();
+    const result = await staffPerformanceHandler.execute(event, context);
+    const body = (result as any).body ? JSON.parse((result as any).body) : result;
+    const statusCode = (result as any).statusCode || 200;
+    return c.json(body, statusCode as 200 | 400 | 500);
   });
 }
 

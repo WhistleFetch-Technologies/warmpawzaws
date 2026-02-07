@@ -15,8 +15,11 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // PACKAGE SESSION HANDLERS
@@ -214,14 +217,14 @@ function createApiGatewayEvent(req: any): any {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'package-session-handler',
     functionVersion: '$LATEST',
   };

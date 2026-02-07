@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface NotificationServiceProps {
   phone: string;
@@ -8,7 +8,7 @@ interface NotificationServiceProps {
   onNewNotification?: (notification: any) => void;
 }
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 export function useNotificationService({ phone, enabled, onNewNotification }: NotificationServiceProps) {
   const lastNotificationIdRef = useRef<string | null>(null);
@@ -38,7 +38,7 @@ export function useNotificationService({ phone, enabled, onNewNotification }: No
         const response = await fetch(
           `${API_BASE}/customer/notifications/${cleanPhone}?limit=10`,
           {
-            headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+            headers: getAuthHeaders()
           }
         );
 

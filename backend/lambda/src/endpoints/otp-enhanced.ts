@@ -19,6 +19,8 @@ import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { getSnsClient } from '../utils/sns-client';
 import { PublishCommand } from '@aws-sdk/client-sns';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP

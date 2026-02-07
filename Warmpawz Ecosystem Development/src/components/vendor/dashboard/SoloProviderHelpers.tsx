@@ -13,9 +13,9 @@ import { Label } from '../../ui/label';
 import { Textarea } from '../../ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../ui/dialog';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
-const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const API_BASE = getApiBaseUrl();
 
 // ============================================
 // SERVICE AREA CONFIG MODAL
@@ -44,7 +44,7 @@ export function ServiceAreaConfigModal({ centerId, currentServiceArea, onClose, 
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({ serviceArea })
       });
@@ -164,7 +164,7 @@ export function OperatingHoursManager({ centerId, currentHours, onUpdate }: any)
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({ operatingHours: hours })
       });
@@ -243,7 +243,7 @@ export function BusinessInfoEditor({ vendorId, vendor, center, onUpdate }: any) 
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify(formData)
       });
@@ -356,7 +356,7 @@ export function AvailabilityToggle({ staffId, currentStatus, onUpdate }: any) {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({ availability: newStatus })
       });
@@ -449,7 +449,7 @@ export function StaffProfileEditor({ staffId, staff, onUpdate }: any) {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify(formData)
       });

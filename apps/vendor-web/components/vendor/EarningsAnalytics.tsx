@@ -10,7 +10,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { 
-  TrendingUp, DollarSign, Calendar, Package, Clock,
+  TrendingUp, IndianRupee, Calendar, Package, Clock,
   ChevronLeft, RefreshCw, Download, TrendingDown
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -62,11 +62,10 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(amount);
+    return `₹${new Intl.NumberFormat('en-IN', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount)}`;
   };
 
   const getPeriodLabel = () => {
@@ -78,6 +77,33 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
       case 'lifetime':
         return 'All Time';
     }
+  };
+
+  const handleExport = () => {
+    if (!earnings) return;
+
+    // Create CSV content
+    const csvContent = [
+      ['Earnings Report', getPeriodLabel()],
+      ['Generated', new Date().toLocaleString()],
+      [''],
+      ['Metric', 'Value'],
+      ['Total Bookings', earnings.totalBookings],
+      ['Total Revenue', `₹${earnings.totalRevenue}`],
+      ['Platform Fees', `₹${earnings.platformFees || 0}`],
+      ['Net Earnings', `₹${earnings.totalEarnings || earnings.totalRevenue}`],
+    ].map(row => row.join(',')).join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `earnings_${activePeriod}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -143,7 +169,7 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white rounded-xl p-4 border border-gray-200">
                   <div className="flex items-center gap-2 mb-2 text-gray-600">
-                    <DollarSign className="w-4 h-4" />
+                    <IndianRupee className="w-4 h-4" />
                     <span className="text-xs">Total Revenue</span>
                   </div>
                   <p className="text-xl font-semibold text-gray-900">
@@ -178,7 +204,7 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
 
               <div className="bg-white rounded-xl p-4 border border-gray-200">
                 <div className="flex items-center gap-2 mb-2 text-gray-600">
-                  <DollarSign className="w-4 h-4" />
+                  <IndianRupee className="w-4 h-4" />
                   <span className="text-xs">Avg. per Booking</span>
                 </div>
                 <p className="text-2xl font-semibold text-gray-900">
@@ -216,7 +242,7 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
             <div className="space-y-2">
               <Button
                 className="w-full bg-[#FF8C42] text-white hover:bg-[#FF7029]"
-                onClick={() => alert('Export feature coming soon!')}
+                onClick={handleExport}
               >
                 <Download className="w-4 h-4 mr-2" />
                 Export Report
@@ -225,7 +251,7 @@ export function EarningsAnalytics({ vendorId, staffId, userType, onBack }: Earni
           </>
         ) : (
           <div className="text-center py-20">
-            <DollarSign className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <IndianRupee className="w-12 h-12 text-gray-300 mx-auto mb-3" />
             <p className="text-gray-500">No earnings data available</p>
           </div>
         )}

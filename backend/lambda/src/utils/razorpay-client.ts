@@ -10,31 +10,93 @@
  */
 
 import { query, select } from '../database/rds-connection';
+import { getSecretJson } from './secrets-manager';
 
 export interface RazorpayConfig {
   keyId: string;
   keySecret: string;
-  webhookSecret: string;
+  webhookSecret?: string;
+  /** RazorpayX Current Account number (Customer Identifier) for Payouts API - from x.razorpay.com → Banking */
+  razorpayXAccountNumber?: string;
 }
 
 /**
- * Get Razorpay configuration from database
+ * Get Razorpay configuration from AWS Secrets Manager (primary) or database/env (fallback).
+ *
+ * AWS Secrets Manager (recommended for production):
+ * - Secret name: warmpawz/{STAGE}/razorpay (e.g. warmpawz/dev/razorpay)
+ * - Value (JSON): { "keyId": "rzp_...", "keySecret": "...", "webhookSecret": "..." }
+ * - Lambda must have IAM permission secretsmanager:GetSecretValue for this secret.
+ * - If Lambda runs in a VPC, ensure NAT Gateway or VPC endpoint for Secrets Manager.
  */
 export async function getRazorpayConfig(): Promise<RazorpayConfig> {
-  const integrations = await select('platform_integrations', {
-    integration_name: 'razorpay',
-  });
-
-  if (integrations.length === 0 || !integrations[0].integration_config) {
-    // Fallback to environment variables
-    const keyId = process.env.RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-
-    if (!keyId || !keySecret) {
-      throw new Error('Razorpay not configured. Please configure in Platform Settings.');
+  // ✅ PRIMARY: Try AWS Secrets Manager first (with timeout to prevent hangs)
+  try {
+    // ✅ FIX: Add timeout to Secrets Manager call to prevent Lambda timeout
+    const secretConfig = await Promise.race([
+      getSecretJson<{
+        keyId: string;
+        keySecret: string;
+        webhookSecret?: string;
+        razorpayXAccountNumber?: string;
+        xAccountNumber?: string;
+      }>('razorpay'),
+      new Promise<null>((_, reject) => 
+        setTimeout(() => reject(new Error('Secrets Manager timeout')), 5000) // 5s timeout
+      )
+    ]).catch((error) => {
+      // If timeout, return null to trigger fallback
+      if (error.message === 'Secrets Manager timeout') {
+        console.warn('[RAZORPAY-CONFIG] Secrets Manager timeout, using fallback');
+        return null;
+      }
+      throw error;
+    });
+    
+    if (secretConfig && secretConfig.keyId && secretConfig.keySecret) {
+      console.log('[RAZORPAY-CONFIG] Loaded from AWS Secrets Manager');
+      const xAccount = (secretConfig as any).razorpayXAccountNumber || (secretConfig as any).xAccountNumber || '';
+      return {
+        keyId: secretConfig.keyId,
+        keySecret: secretConfig.keySecret,
+        webhookSecret: secretConfig.webhookSecret || '',
+        razorpayXAccountNumber: xAccount?.trim() || undefined,
+      };
     }
+  } catch (error: any) {
+    console.warn('[RAZORPAY-CONFIG] Failed to load from Secrets Manager, trying fallback:', error.message);
+  }
 
+  // ✅ FALLBACK 1: Try database
+  try {
+    const integrations = await select('platform_integrations', {
+      integration_name: 'razorpay',
+    });
+
+    if (integrations.length > 0 && integrations[0].integration_config) {
+      const config = integrations[0].integration_config as any;
+      if (config.keyId && config.keySecret) {
+        console.log('[RAZORPAY-CONFIG] Loaded from database');
+        const xAccount = config.razorpayXAccountNumber || config.xAccountNumber || '';
+        return {
+          keyId: config.keyId,
+          keySecret: config.keySecret,
+          webhookSecret: config.webhookSecret || '',
+          razorpayXAccountNumber: xAccount?.trim() || undefined,
+        };
+      }
+    }
+  } catch (error: any) {
+    console.warn('[RAZORPAY-CONFIG] Failed to load from database, trying env vars:', error.message);
+  }
+
+  // ✅ FALLBACK 2: Try environment variables
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+  if (keyId && keySecret) {
+    console.log('[RAZORPAY-CONFIG] Loaded from environment variables');
     return {
       keyId,
       keySecret,
@@ -42,12 +104,7 @@ export async function getRazorpayConfig(): Promise<RazorpayConfig> {
     };
   }
 
-  const config = integrations[0].integration_config as any;
-  return {
-    keyId: config.keyId,
-    keySecret: config.keySecret,
-    webhookSecret: config.webhookSecret,
-  };
+  throw new Error('Razorpay not configured. Please configure in AWS Secrets Manager, Platform Settings, or environment variables.');
 }
 
 /**
@@ -60,31 +117,66 @@ export async function getRazorpayAuthHeader(): Promise<string> {
 }
 
 /**
- * Make Razorpay API request
+ * Make Razorpay API request with timeout handling
+ * @param extraHeaders - Optional headers (e.g. X-Payout-Idempotency for payouts)
  */
 export async function razorpayRequest(
   endpoint: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
-  body?: any
+  body?: any,
+  timeoutMs: number = 20000, // ✅ FIX: Increased default to 20 seconds
+  extraHeaders?: Record<string, string>
 ): Promise<any> {
   const authHeader = await getRazorpayAuthHeader();
   const url = `https://api.razorpay.com/v1${endpoint}`;
 
-  const response = await fetch(url, {
-    method,
-    headers: {
-      'Authorization': authHeader,
-      'Content-Type': 'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  console.log(`[RAZORPAY-REQUEST] ${method} ${endpoint} (timeout: ${timeoutMs}ms)`);
 
-  if (!response.ok) {
-    const error: any = await response.json().catch(() => ({}));
-    throw new Error(`Razorpay API error: ${error?.error?.description || response.statusText || 'Unknown error'}`);
+  const headers: Record<string, string> = {
+    'Authorization': authHeader,
+    'Content-Type': 'application/json',
+    ...extraHeaders,
+  };
+
+  // Create abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    console.warn(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`);
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    const startTime = Date.now();
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+    const duration = Date.now() - startTime;
+    console.log(`[RAZORPAY-REQUEST] Response received in ${duration}ms for ${endpoint}`);
+
+    if (!response.ok) {
+      const error: any = await response.json().catch(() => ({}));
+      const errorMsg = error?.error?.description || response.statusText || 'Unknown error';
+      console.error(`[RAZORPAY-REQUEST] API error (${response.status}): ${errorMsg}`);
+      throw new Error(`Razorpay API error: ${errorMsg}`);
+    }
+
+    const result = await response.json();
+    console.log(`[RAZORPAY-REQUEST] Success for ${endpoint}`);
+    return result;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+      console.error(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`);
+      throw new Error(`Razorpay API request timeout after ${timeoutMs}ms`);
+    }
+    console.error(`[RAZORPAY-REQUEST] Error for ${endpoint}:`, error.message);
+    throw error;
   }
-
-  return response.json();
 }
 
 /**
@@ -99,17 +191,78 @@ export function getRazorpayClient() {
   };
 
   const payouts = {
-    async create(body: any) {
-      return razorpayRequest('/payouts', 'POST', body);
+    /** Create payout (Composite API: pass account_number + fund_account with contact + bank_account). Optional idempotencyKey. */
+    async create(body: any, idempotencyKey?: string) {
+      const extraHeaders: Record<string, string> = {};
+      if (idempotencyKey) extraHeaders['X-Payout-Idempotency'] = idempotencyKey;
+      return razorpayRequest('/payouts', 'POST', body, 20000, Object.keys(extraHeaders).length ? extraHeaders : undefined);
     },
+  };
+
+  const validateBankAccount = async (params: {
+    account_number: string;
+    ifsc: string;
+    beneficiary_name: string;
+    contact_phone?: string;
+    contact_email?: string;
+    reference_id?: string;
+  }): Promise<{ valid: boolean; error?: string; validationId?: string }> => {
+    const sourceAccount = await getRazorpayXAccountNumber();
+    if (!sourceAccount?.trim()) {
+      return { valid: false, error: 'RazorpayX source account not configured (razorpayXAccountNumber in secret or RAZORPAY_X_ACCOUNT_NUMBER)' };
+    }
+    const ref = params.reference_id || `val-${Date.now()}`;
+    const body = {
+      source_account_number: sourceAccount,
+      validation_type: 'optimized',
+      reference_id: ref.slice(0, 40),
+      fund_account: {
+        account_type: 'bank_account',
+        bank_account: {
+          name: params.beneficiary_name,
+          ifsc: params.ifsc.toUpperCase(),
+          account_number: String(params.account_number).replace(/\s/g, ''),
+        },
+      },
+      contact: {
+        name: params.beneficiary_name,
+        email: params.contact_email || `vendor-${ref}@validation.warmpawz.com`,
+        contact: (params.contact_phone || '0000000000').replace(/\D/g, '').slice(-10) || '0000000000',
+        type: 'vendor',
+        reference_id: ref.slice(0, 40),
+      },
+    };
+    try {
+      const res = await razorpayRequest('/fund_accounts/validations', 'POST', body, 15000);
+      const status = res?.status;
+      const validationId = res?.id;
+      if (status === 'completed') return { valid: true, validationId };
+      if (status === 'failed') return { valid: false, error: res?.status_details?.description || 'Validation failed', validationId };
+      return { valid: false, error: status === 'created' ? 'Validation initiated; check RazorpayX dashboard for result' : 'Validation incomplete', validationId };
+    } catch (e: any) {
+      const msg = e?.message || 'Validation API error';
+      return { valid: false, error: msg };
+    }
+  };
+
+  /** Get RazorpayX Current Account number for Payouts API (from secret or env) */
+  const getRazorpayXAccountNumber = async (): Promise<string | null> => {
+    try {
+      const config = await getRazorpayConfig();
+      if ((config as any).razorpayXAccountNumber) return (config as any).razorpayXAccountNumber.trim();
+    } catch (_) {}
+    const env = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
+    return env || null;
   };
 
   return {
     request: razorpayRequest,
     getConfig: getRazorpayConfig,
     getAuthHeader: getRazorpayAuthHeader,
+    getRazorpayXAccountNumber,
     payments,
     payouts,
+    validateBankAccount,
   };
 }
 

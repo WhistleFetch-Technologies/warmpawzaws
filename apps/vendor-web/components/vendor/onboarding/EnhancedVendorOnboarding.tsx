@@ -148,26 +148,63 @@ export function EnhancedVendorOnboarding({
       }
 
       // ✅ FIX: Transform submissionData to match backend expected format
+      // ✅ FIX: Sanitize formData to remove invalid/placeholder fields
+      const invalidFieldPatterns = ['new_field', 'newfield', 'new-field'];
+      const invalidValuePatterns = ['xxxxxxxx', 'placeholder'];
+      
+      const sanitizedFormData: Record<string, any> = {};
+      for (const [key, value] of Object.entries(submissionData.formData || {})) {
+        // Skip fields with placeholder names
+        if (invalidFieldPatterns.some(pattern => key.toLowerCase().includes(pattern))) {
+          console.warn(`⚠️ [EnhancedOnboarding] Skipping invalid field: ${key}`);
+          continue;
+        }
+        // Skip boolean values for fields that should be strings (e.g., phone: true)
+        if (key === 'phone' && typeof value === 'boolean') {
+          continue;
+        }
+        // Skip placeholder values
+        if (typeof value === 'string' && invalidValuePatterns.some(pattern => value.toLowerCase().includes(pattern))) {
+          continue;
+        }
+        // Skip empty/null values
+        if (value === null || value === undefined || value === '') {
+          continue;
+        }
+        sanitizedFormData[key] = value;
+      }
+      
+      // ✅ FIX: Sanitize documents to only include valid entries with URLs
+      const validDocuments = Object.entries(submissionData.documents || {})
+        .filter(([key, doc]: [string, any]) => {
+          if (invalidFieldPatterns.some(pattern => key.toLowerCase().includes(pattern))) {
+            return false;
+          }
+          return doc?.url && doc.url.trim() !== '';
+        })
+        .map(([key, doc]: [string, any]) => ({
+          type: key,
+          name: doc?.name || key,
+          url: doc?.url || '',
+          size: doc?.size,
+          mime_type: doc?.type,
+        }));
+      
       const payload = {
         phone: vendorPhone,
         application_payload: {
-          ...submissionData.formData,
+          ...sanitizedFormData,
           roleId: submissionData.roleId || roleId,
           location: submissionData.location || submissionData.coordinates,
           coordinates: submissionData.coordinates || submissionData.location,
           serviceStyles: submissionData.serviceStyles || [],
-          specializations: submissionData.specializations || [],
           agreedToTerms: submissionData.agreedToTerms || false,
           formVersion: submissionData.formVersion || 1,
         },
-        uploaded_documents: Object.entries(submissionData.documents || {}).map(([key, doc]: [string, any]) => ({
-          type: key,
-          name: doc.name,
-          url: doc.url,
-          size: doc.size,
-          mime_type: doc.type,
-        })),
+        uploaded_documents: validDocuments,
       };
+      
+      console.log('📤 [EnhancedOnboarding] Sanitized payload:', JSON.stringify(payload, null, 2));
 
       // ✅ FIX: Use correct endpoint /vendor/onboarding/submit-application
       const response = await apiClient.post<any>('/vendor/onboarding/submit-application', payload);

@@ -42,7 +42,7 @@ import {
 	Tag,
 	Image as ImageIcon,
 } from "lucide-react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import { toast, Toaster } from "sonner";
 import {
 	CouponManagement,
@@ -93,7 +93,7 @@ export default function MarketingPromotionsTab() {
 	const [availableRoles, setAvailableRoles] = useState<any[]>([]);
 	const [configLoading, setConfigLoading] = useState(false);
 
-	const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+	const API_BASE = `${getApiBaseUrl()}`;
 
 	useEffect(() => {
 		if (activeTab === "promotions") {
@@ -117,7 +117,7 @@ export default function MarketingPromotionsTab() {
 	const loadRoles = async () => {
 		try {
 			const res = await fetch(`${API_BASE}/config/roles`, {
-				headers: { Authorization: `Bearer ${publicAnonKey}` },
+				headers: { ...getAuthHeaders() },
 			});
 			if (res.ok) {
 				const data = await res.json();
@@ -145,7 +145,7 @@ export default function MarketingPromotionsTab() {
 		setLoading(true);
 		try {
 			const res = await fetch(`${API_BASE}/marketing/spotlights`, {
-				headers: { Authorization: `Bearer ${publicAnonKey}` },
+				headers: { ...getAuthHeaders() },
 			});
 			if (res.ok) {
 				const data = await res.json();
@@ -162,7 +162,7 @@ export default function MarketingPromotionsTab() {
 		try {
 			// Fetch only active vendors
 			const res = await fetch(`${API_BASE}/admin/vendors`, {
-				headers: { Authorization: `Bearer ${publicAnonKey}` },
+				headers: { ...getAuthHeaders() },
 			});
 			if (res.ok) {
 				const data = await res.json();
@@ -200,7 +200,7 @@ export default function MarketingPromotionsTab() {
 			const res = await fetch(`${API_BASE}/marketing/spotlights`, {
 				method: "POST",
 				headers: {
-					Authorization: `Bearer ${publicAnonKey}`,
+					...getAuthHeaders(),
 					"Content-Type": "application/json",
 				},
 				body: JSON.stringify(payload),
@@ -226,7 +226,7 @@ export default function MarketingPromotionsTab() {
 		try {
 			const res = await fetch(`${API_BASE}/marketing/spotlights/${id}`, {
 				method: "DELETE",
-				headers: { Authorization: `Bearer ${publicAnonKey}` },
+				headers: { ...getAuthHeaders() },
 			});
 
 			if (res.ok) {
@@ -246,7 +246,7 @@ export default function MarketingPromotionsTab() {
 		setLoading(true);
 		try {
 			const res = await fetch(`${API_BASE}/marketing/promotions`, {
-				headers: { Authorization: `Bearer ${publicAnonKey}` },
+				headers: { ...getAuthHeaders() },
 			});
 			const data = await res.json();
 			if (data.success) {
@@ -270,7 +270,7 @@ export default function MarketingPromotionsTab() {
 			const res = await fetch(url, {
 				method,
 				headers: {
-					Authorization: `Bearer ${publicAnonKey}`,
+					...getAuthHeaders(),
 					"Content-Type": "application/json",
 				},
 				body: JSON.stringify(promoForm),
@@ -298,7 +298,7 @@ export default function MarketingPromotionsTab() {
 		try {
 			const res = await fetch(`${API_BASE}/marketing/promotions/${id}`, {
 				method: "DELETE",
-				headers: { Authorization: `Bearer ${publicAnonKey}` },
+				headers: { ...getAuthHeaders() },
 			});
 
 			if (res.ok) {
@@ -355,7 +355,7 @@ export default function MarketingPromotionsTab() {
 			const res = await fetch(
 				`${API_BASE}/config/ui/dashboard?roleId=${selectedRole}`,
 				{
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 			const data = await res.json();
@@ -382,7 +382,7 @@ export default function MarketingPromotionsTab() {
 			const res = await fetch(`${API_BASE}/config/ui/dashboard`, {
 				method: "PUT",
 				headers: {
-					Authorization: `Bearer ${publicAnonKey}`,
+					...getAuthHeaders(),
 					"Content-Type": "application/json",
 				},
 				body: JSON.stringify({
@@ -555,7 +555,7 @@ export default function MarketingPromotionsTab() {
 														{
 															method: "PUT",
 															headers: {
-																Authorization: `Bearer ${publicAnonKey}`,
+																...getAuthHeaders(),
 																"Content-Type": "application/json",
 															},
 															body: JSON.stringify({

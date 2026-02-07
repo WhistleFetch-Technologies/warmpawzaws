@@ -1,3 +1,14 @@
+/**
+ * ============================================================================
+ * AWS CDK STACK - ROUTE53 AND CUSTOM DOMAINS
+ * ============================================================================
+ *
+ * Defines Route53 hosted zones, certificates, and DNS records
+ * for custom domain configuration
+ *
+ * Date: 2026-01-20
+ * ============================================================================
+ */
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import { Construct } from 'constructs';
@@ -9,12 +20,13 @@ export interface Route53StackProps {
     environment: string;
 }
 export declare class Route53Stack extends Construct {
-    readonly hostedZone: route53.HostedZone;
-    readonly certificate: acm.Certificate;
+    readonly hostedZone?: route53.IHostedZone;
+    readonly certificate?: acm.ICertificate;
     readonly apiDomainName: string;
     readonly customerAppDomain: string;
     readonly vendorAppDomain: string;
     readonly adminDomain: string;
+    readonly isCustomDomainEnabled: boolean;
     private apiARecord?;
     private apiAaaaRecord?;
     constructor(scope: Construct, id: string, props: Route53StackProps);
@@ -24,3 +36,4 @@ export declare class Route53Stack extends Construct {
      */
     createApiGatewayRecords(apiGatewayStack: ApiGatewayStack): void;
 }
+//# sourceMappingURL=route53-stack.d.ts.map

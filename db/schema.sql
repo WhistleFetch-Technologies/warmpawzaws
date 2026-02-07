@@ -82,7 +82,8 @@ CREATE TABLE vendors (
     capacity INTEGER,
     specialization TEXT,
     
-    -- Metadata
+    -- Metadata & Settings
+    metadata JSONB DEFAULT '{}'::jsonb, -- Stores vacation mode, re-approval info, and other settings
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -94,6 +95,10 @@ COMMENT ON TABLE vendors IS 'Vendor profiles - maps from vendor:{id} KV keys';
 COMMENT ON COLUMN vendors.business_name IS 'From DynamicVendorOnboardingForm.businessName';
 COMMENT ON COLUMN vendors.owner_name IS 'From DynamicVendorOnboardingForm.ownerName';
 COMMENT ON COLUMN vendors.role_id IS 'From DynamicVendorOnboardingForm.roleId';
+COMMENT ON COLUMN vendors.metadata IS 'Stores vacation mode, re-approval info, and other vendor settings (JSONB)';
+
+-- Index for vendor metadata queries
+CREATE INDEX IF NOT EXISTS idx_vendors_metadata_gin ON vendors USING gin (metadata);
 
 -- Staff table
 -- Maps: staff:{staffId} KV keys
@@ -214,7 +219,10 @@ CREATE TABLE bookings (
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show', 'rescheduled')),
     
     -- Location
-    service_type TEXT NOT NULL CHECK (service_type IN ('at_vendor', 'at_home', 'online')),
+    -- Note: Updated in migration 307 to accept both legacy and new values
+    -- Legacy: 'at_vendor' (center)
+    -- New: 'at_center' (center), 'tele' (tele/video) - 'tele' is already used in DB schema
+    service_type TEXT NOT NULL CHECK (service_type IN ('at_vendor', 'at_center', 'at_home', 'tele')),
     address TEXT,
     city TEXT,
     state TEXT,

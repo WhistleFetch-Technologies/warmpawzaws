@@ -19,13 +19,14 @@ import {
   Trash2,
   Save,
   AlertCircle,
-  DollarSign,
+  IndianRupee,
   Calendar,
   TrendingUp,
   X,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 
 interface SettlementRule {
   id: string;
@@ -131,9 +132,12 @@ export function DynamicSettlementRulesManager() {
     <div className="p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-black text-xl font-semibold">Settlement Rules</h2>
-          <p className="text-gray-500 text-sm mt-1">Configure dynamic settlement rules</p>
+        <div className="flex items-center gap-2">
+          <div>
+            <h2 className="text-black text-xl font-semibold">Settlement Rules</h2>
+            <p className="text-gray-500 text-sm mt-1">Configure dynamic settlement rules</p>
+          </div>
+          <PolicyHelpButton docKey="finance-settlement-rules" />
         </div>
         <Button onClick={handleCreateRule} className="bg-[#FF8C42] text-white hover:bg-[#E67A32]">
           <Plus className="w-4 h-4 mr-2" />
@@ -274,7 +278,7 @@ export function DynamicSettlementRulesManager() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Settlement Period (days)</Label>
+                  <Label>Settlement Period (days) – override</Label>
                   <Input
                     type="number"
                     value={editingRule.settlement.periodDays}
@@ -288,6 +292,7 @@ export function DynamicSettlementRulesManager() {
                       })
                     }
                   />
+                  <p className="text-xs text-gray-500">Defaults to vendor&apos;s tier (Tier Management). This rule overrides for matching conditions.</p>
                 </div>
               </div>
 

@@ -48,7 +48,7 @@ export function PackageSessionView({ bookingId, packageId }: PackageSessionViewP
       <div className="bg-white rounded-2xl p-0 shadow-sm">
         <div className="flex items-center justify-center py-8">
           <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-          <span className="ml-0 text-gray-600">Loading sessions...</span>
+          <span className="ml-2 text-gray-600">Loading sessions...</span>
         </div>
       </div>
     );
@@ -114,7 +114,7 @@ export function PackageSessionView({ bookingId, packageId }: PackageSessionViewP
                   : 'border-gray-200 bg-gray-50'
               }`}
             >
-              <div className="flex items-start gap-0">
+              <div className="flex items-start gap-3">
                 <div className="flex-shrink-0 mt-0">
                   {isCompleted ? (
                     <CheckCircle className="w-5 h-5 text-green-600" />
@@ -142,7 +142,7 @@ export function PackageSessionView({ bookingId, packageId }: PackageSessionViewP
                     </span>
                   </div>
                   {session.scheduled_date && (
-                    <p className="text-sm text-gray-600 flex items-center gap-0">
+                    <p className="text-sm text-gray-600 flex items-center gap-3">
                       <Calendar className="w-4 h-4" />
                       {new Date(session.scheduled_date).toLocaleDateString()}
                       {session.scheduled_time && ` at ${session.scheduled_time}`}

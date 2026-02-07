@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, FileText, MessageCircle, Video, PhoneCall, CalendarPlus, Download, Share2, Star } from 'lucide-react';
+import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, FileText, MessageCircle, Video, PhoneCall, CalendarPlus, Download, Share2, Star, Navigation } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { copyTextToClipboard } from '@/lib/shareUtils';
 import { PrescriptionModal } from './PrescriptionModal';
+import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
 import { CommunicationHub } from '../communication/CommunicationHub';
 import { LiveTrackingMap } from '../tracking/LiveTrackingMap';
 import { FollowUpBookingModal } from './FollowUpBookingModal';
@@ -17,7 +18,32 @@ interface BookingDetailModalProps {
   petId: string;
   phone: string;
   onClose: () => void;
-  onReorderMedicine?: (medications: any[]) => void;
+  onReorderMedicine?: (medications: any[], prescriptionId?: string, bookingId?: string) => void;
+  onNavigate?: (screen: string, data?: any) => void; // ✅ FIX: Add navigation handler for video calls
+}
+
+// ✅ FIX: Helper function to format service style labels
+function getServiceStyleLabel(serviceStyle: string | null | undefined): string {
+  if (!serviceStyle) return '';
+  
+  const styleMap: Record<string, string> = {
+    'tele': 'Video Consultation',
+    'at_home': 'At Home',
+    'at_center': 'At Center',
+    'at_vendor': 'At Center',
+    'online': 'Video Consultation',
+  };
+  
+  return styleMap[serviceStyle] || serviceStyle.replace('_', ' ');
+}
+
+// Wireframe: Prescription and medical records only for vet, diagnostics, nutritionist (tele). Not for grooming, training, walker, behaviourist, sitter.
+const SERVICE_TYPES_WITH_PRESCRIPTION = ['vet', 'veterinarian', 'diagnostics', 'nutritionist', 'pet_nutritionist'];
+
+function showPrescriptionAndMedicalRecords(serviceType: string | undefined): boolean {
+  if (!serviceType) return false;
+  const normalized = (serviceType || '').toLowerCase().replace(/\s/g, '_');
+  return SERVICE_TYPES_WITH_PRESCRIPTION.some(t => normalized.includes(t) || t.includes(normalized));
 }
 
 interface Prescription {
@@ -36,7 +62,7 @@ interface Prescription {
   }>;
 }
 
-export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorderMedicine }: BookingDetailModalProps) {
+export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorderMedicine, onNavigate }: BookingDetailModalProps) {
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [copiedOtp, setCopiedOtp] = useState(false);
@@ -47,10 +73,47 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
   const [showRateModal, setShowRateModal] = useState(false);
   const [prescription, setPrescription] = useState<Prescription | null>(null);
   const [loadingPrescription, setLoadingPrescription] = useState(false);
+  const [medicalRecords, setMedicalRecords] = useState<any[]>([]);
+  const [loadingMedicalRecords, setLoadingMedicalRecords] = useState(false);
+  const [hasTracking, setHasTracking] = useState(false);
+  const [showPrescriptionHistory, setShowPrescriptionHistory] = useState(false);
 
   useEffect(() => {
     loadBookingDetails();
   }, [bookingId]);
+
+  // ✅ FIX: Listen for prescription view events from chat
+  useEffect(() => {
+    const handleViewPrescription = (event: CustomEvent) => {
+      const { prescriptionId } = event.detail;
+      if (prescriptionId) {
+        // Load prescription by ID and show modal
+        loadPrescriptionById(prescriptionId);
+        setShowPrescription(true);
+      }
+    };
+    
+    window.addEventListener('viewPrescription', handleViewPrescription as EventListener);
+    return () => {
+      window.removeEventListener('viewPrescription', handleViewPrescription as EventListener);
+    };
+  }, []);
+
+  // ✅ FIX: Load prescription by ID (for chat prescription links)
+  const loadPrescriptionById = async (prescriptionId: string) => {
+    try {
+      setLoadingPrescription(true);
+      const response = await apiClient.get(`/prescriptions/${prescriptionId}`) as any;
+      if (response.prescription) {
+        setPrescription(response.prescription);
+      }
+    } catch (error) {
+      console.error('Error loading prescription:', error);
+      toast.error('Failed to load prescription');
+    } finally {
+      setLoadingPrescription(false);
+    }
+  };
 
   const loadBookingDetails = async () => {
     try {
@@ -58,11 +121,134 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
       console.log('🔍 [BOOKING-DETAIL] Loading booking:', bookingId);
       // AWS Serverless compatible - use apiClient
       const result = await apiClient.get(`/customer/bookings/${bookingId}`) as any;
-      console.log('✅ [BOOKING-DETAIL] Booking loaded:', result.booking);
-      setBooking(result.booking);
+      // ✅ FIX: Handle both response formats (result.booking or result.data.booking)
+      const rawBooking = result.booking || result.data?.booking || result;
+      console.log('✅ [BOOKING-DETAIL] Raw booking loaded:', rawBooking);
+      
+      // ✅ FIX: Parse notes for diagnostic bookings to extract test names
+      let diagnosticTests: any[] = [];
+      let diagnosticTestNames: string[] = [];
+      // ✅ FIX: Enhanced diagnostic detection - check multiple fields and keywords
+      const serviceTypeLower = (rawBooking.serviceType || '').toLowerCase();
+      const serviceTypeLower2 = (rawBooking.service_type || '').toLowerCase();
+      const serviceCategoryLower = (rawBooking.serviceCategory || rawBooking.service_category || '').toLowerCase();
+      const serviceIdLower = (rawBooking.serviceId || '').toLowerCase();
+      const serviceNameLower = (rawBooking.serviceName || rawBooking.service_name || '').toLowerCase();
+      
+      const isDiagnostic = serviceTypeLower === 'diagnostics' || 
+                         serviceTypeLower2 === 'diagnostics' || 
+                         serviceCategoryLower === 'diagnostics' || 
+                         serviceIdLower === 'diagnostics' ||
+                         serviceIdLower.includes('diagnostic') ||
+                         serviceNameLower.includes('diagnostic') ||
+                         serviceNameLower.includes('lab') ||
+                         serviceNameLower.includes('test');
+      
+      // ✅ FIX: Try multiple ways to get diagnostic tests
+      if (isDiagnostic) {
+        try {
+          // Method 1: Parse notes.tests
+          if (rawBooking.notes) {
+            const notesData = typeof rawBooking.notes === 'string' 
+              ? JSON.parse(rawBooking.notes || '{}') 
+              : (rawBooking.notes || {});
+            if (Array.isArray(notesData.tests) && notesData.tests.length > 0) {
+              diagnosticTests = notesData.tests;
+              diagnosticTestNames = diagnosticTests.map((t: any) => t.name || t.testName || t.test_name).filter(Boolean);
+              console.log('✅ [BOOKING-DETAIL] Found diagnostic tests from notes.tests:', diagnosticTestNames);
+            }
+          }
+          
+          // Method 2: Check selected_services for diagnostic tests
+          if (diagnosticTests.length === 0 && rawBooking.selected_services) {
+            const selectedServices = Array.isArray(rawBooking.selected_services) 
+              ? rawBooking.selected_services 
+              : (typeof rawBooking.selected_services === 'string' ? JSON.parse(rawBooking.selected_services || '[]') : []);
+            if (selectedServices.length > 0) {
+              diagnosticTests = selectedServices;
+              diagnosticTestNames = diagnosticTests.map((s: any) => s.name || s.testName || s.test_name || s.serviceName).filter(Boolean);
+              console.log('✅ [BOOKING-DETAIL] Found diagnostic tests from selected_services:', diagnosticTestNames);
+            }
+          }
+          
+          // Method 3: Check selectedServices (camelCase)
+          if (diagnosticTests.length === 0 && rawBooking.selectedServices) {
+            const selectedServices = Array.isArray(rawBooking.selectedServices) 
+              ? rawBooking.selectedServices 
+              : [];
+            if (selectedServices.length > 0) {
+              diagnosticTests = selectedServices;
+              diagnosticTestNames = diagnosticTests.map((s: any) => s.name || s.testName || s.test_name || s.serviceName).filter(Boolean);
+              console.log('✅ [BOOKING-DETAIL] Found diagnostic tests from selectedServices:', diagnosticTestNames);
+            }
+          }
+        } catch (e) {
+          console.warn('⚠️ [BOOKING-DETAIL] Failed to parse diagnostic tests:', e);
+        }
+      }
+      
+      // ✅ FIX: Transform enriched booking data to flat fields the UI expects
+      const bookingData = {
+        ...rawBooking,
+        // Service fields - for diagnostics, use test names instead of service name
+        serviceName: (isDiagnostic && diagnosticTestNames.length > 0)
+          ? diagnosticTestNames.join(', ') // Use test names for diagnostics
+          : (rawBooking.serviceName || rawBooking.service?.name || rawBooking.service_name || 'Service'),
+        serviceType: rawBooking.serviceType || rawBooking.service?.category || rawBooking.service_type,
+        serviceCategory: rawBooking.serviceCategory || rawBooking.service?.category || rawBooking.service_category,
+        // ✅ FIX: Map service_type to serviceStyle, but don't default to 'at_center' for tele consultations
+        serviceStyle: rawBooking.serviceStyle || rawBooking.service_style || rawBooking.service_type || null,
+        duration: rawBooking.duration || rawBooking.service?.duration || rawBooking.duration_minutes || 60,
+        price: parseFloat(rawBooking.amount || rawBooking.total_amount || rawBooking.base_price || 0),
+        // Vendor fields
+        vendorName: rawBooking.vendorName || rawBooking.vendor?.businessName || rawBooking.vendor_name || 'Vendor',
+        vendorPhone: rawBooking.vendorPhone || rawBooking.vendor?.phone || rawBooking.vendor_phone,
+        vendorEmail: rawBooking.vendorEmail || rawBooking.vendor?.email || rawBooking.vendor_email,
+        vendorAddress: rawBooking.vendorAddress || rawBooking.vendor?.address || rawBooking.vendor_address,
+        vendorCity: rawBooking.vendorCity || rawBooking.vendor?.city || rawBooking.vendor_city,
+        // Customer fields
+        customerName: rawBooking.customerName || rawBooking.customer?.name || rawBooking.customer_name,
+        customerPhone: rawBooking.customerPhone || rawBooking.customer?.phone || rawBooking.customer_phone,
+        // Pet fields
+        petName: rawBooking.petName || rawBooking.pet?.name || 'Pet',
+        petBreed: rawBooking.petBreed || rawBooking.pet?.breed,
+        petType: rawBooking.petType || rawBooking.pet?.species,
+        petAge: rawBooking.petAge || rawBooking.pet?.age,
+        petPhoto: rawBooking.petPhoto || rawBooking.pet?.photo_url,
+        // OTP fields
+        completionOTP: rawBooking.completionOTP || rawBooking.otp_code,
+        otpVerified: rawBooking.otpVerified || rawBooking.otp_verified,
+        // Multi-service: pass through for list display and total
+        // ✅ FIX: For diagnostics, if no selectedServices but we have tests, create them
+        // Also ensure selectedServices is always populated for diagnostics with tests
+        selectedServices: (isDiagnostic && diagnosticTests.length > 0)
+          ? diagnosticTests.map((test: any) => ({
+              id: test.id || test.testId || test.test_id || `test-${Date.now()}-${Math.random()}`,
+              serviceId: test.serviceId || test.service_id || rawBooking.serviceId,
+              name: test.name || test.testName || test.test_name || test.serviceName || 'Diagnostic Test',
+              serviceName: test.name || test.testName || test.test_name || test.serviceName || 'Diagnostic Test',
+              price: parseFloat(test.price || test.amount || test.unitPrice || 0),
+              duration: parseInt(test.duration || test.duration_minutes || 30),
+              quantity: parseInt(test.quantity || 1),
+            }))
+          : (rawBooking.selectedServices ?? (Array.isArray(rawBooking.selected_services) ? rawBooking.selected_services : [])),
+        totalDurationMinutes: rawBooking.totalDurationMinutes ?? rawBooking.total_duration_minutes,
+        totalAmount: rawBooking.totalAmount ?? rawBooking.total_amount ?? rawBooking.amount,
+      };
+      console.log('✅ [BOOKING-DETAIL] Transformed booking:', bookingData);
+      setBooking(bookingData);
       
       // Always try to load prescription (will show "No prescription" if not found)
       loadPrescription(bookingId);
+      
+      // Load medical records linked to this booking
+      loadMedicalRecords(bookingId);
+      
+      // Check if tracking is available for home services
+      if (result.booking && (result.booking.serviceStyle === 'at_home' || result.booking.serviceType === 'at_home') && 
+          (result.booking.status === 'in_progress' || result.booking.status === 'active')) {
+        checkTrackingStatus(bookingId);
+      }
     } catch (error) {
       console.error('❌ [BOOKING-DETAIL] Error loading booking:', error);
     } finally {
@@ -75,8 +261,9 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
       setLoadingPrescription(true);
       // AWS Serverless compatible - use apiClient
       try {
-        const result = await apiClient.get(`/prescription/booking/${bookingId}`) as any;
-        setPrescription(result.prescription || null);
+        // ✅ FIX: Use correct endpoint path (plural "prescriptions")
+        const result = await apiClient.get(`/prescriptions/booking/${bookingId}`) as any;
+        setPrescription(result.prescription || result.prescriptions?.[0] || null);
       } catch {
         setPrescription(null);
         console.log('ℹ️  [PRESCRIPTION] No prescription found');
@@ -89,8 +276,60 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
     }
   };
 
+  const loadMedicalRecords = async (bookingId: string) => {
+    try {
+      setLoadingMedicalRecords(true);
+      try {
+        // ✅ FIX: Use correct endpoint path (remove "customer" prefix)
+        const result = await apiClient.get(`/bookings/${bookingId}/medical-records`) as any;
+        setMedicalRecords(result.medicalRecords || result.records || []);
+      } catch {
+        setMedicalRecords([]);
+        console.log('ℹ️  [MEDICAL-RECORDS] No medical records found');
+      }
+    } catch (error) {
+      setMedicalRecords([]);
+      console.error('❌ [MEDICAL-RECORDS] Error:', error);
+    } finally {
+      setLoadingMedicalRecords(false);
+    }
+  };
+
+  const checkTrackingStatus = async (bookingId: string) => {
+    try {
+      // Backend: GET /tracking/booking/:bookingId (gps-tracking.ts)
+      const result = await apiClient.get(`/tracking/booking/${bookingId}`) as any;
+      const active = result?.tracking && (result.tracking.status === 'in_transit' || result.tracking.status === 'active' || result.tracking.status === 'en_route');
+      setHasTracking(!!active);
+    } catch (error) {
+      console.debug('Tracking not available:', error);
+      setHasTracking(false);
+    }
+  };
+
+  // Poll for tracking status if booking is in progress
+  useEffect(() => {
+    if (booking && (booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home') && 
+        (booking.status === 'in_progress' || booking.status === 'active')) {
+      checkTrackingStatus(bookingId);
+      const interval = setInterval(() => {
+        checkTrackingStatus(bookingId);
+      }, 15000); // Poll every 15 seconds
+      return () => clearInterval(interval);
+    }
+  }, [booking, bookingId]);
+
+  // ✅ FIX #2: Enable chat for tele consultations during confirmed/in_progress, not just after completion
   const canChat = () => {
-    if (!booking || booking.status !== 'completed' || !booking.otpVerifiedAt) return false;
+    if (!booking) return false;
+    
+    // For tele consultations, allow chat during confirmed/in_progress status
+    if (booking.serviceStyle === 'tele' && (booking.status === 'confirmed' || booking.status === 'in_progress')) {
+      return true;
+    }
+    
+    // For other services, only allow chat after completion (within 7 days)
+    if (booking.status !== 'completed' || !booking.otpVerifiedAt) return false;
     const completedAt = new Date(booking.otpVerifiedAt);
     const now = new Date();
     const daysDiff = Math.floor((now.getTime() - completedAt.getTime()) / (1000 * 60 * 60 * 24));
@@ -161,13 +400,13 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         style={{ animation: 'slideUp 0.3s ease-out' }}
       >
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
-          <h2 className="font-bold text-gray-800">Booking Details</h2>
+        <div className="sticky top-0 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10 shadow-md">
+          <h2 className="font-bold text-white">Booking Details</h2>
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors text-white"
           >
-            <X className="w-5 h-5 text-gray-600" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -299,26 +538,79 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               </h3>
               
               <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 bg-gradient-to-br from-orange-100 to-pink-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
-                    {booking.serviceType === 'walker' ? '🐕' : 
-                     booking.serviceType === 'grooming' ? '✂️' : 
-                     booking.serviceType === 'vet' ? '🏥' : 
-                     booking.serviceType === 'boarding' ? '🏠' : '🐾'}
+                {(booking.selectedServices && Array.isArray(booking.selectedServices) && booking.selectedServices.length > 0) ? (
+                  <>
+                    {booking.selectedServices.map((s: any, i: number) => (
+                      <div key={s.id || s.serviceId || i} className="flex items-start gap-3">
+                        <div className="w-12 h-12 bg-gradient-to-br from-orange-100 to-pink-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
+                          {booking.serviceType === 'walker' ? '🐕' : 
+                           booking.serviceType === 'grooming' ? '✂️' : 
+                           booking.serviceType === 'vet' ? '🏥' : 
+                           booking.serviceType === 'boarding' ? '🏠' : '🐾'}
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-gray-800">{s.name || s.serviceName || 'Service'}</h4>
+                          <p className="text-sm text-gray-600">
+                            {s.duration != null ? `${s.duration} min` : ''}
+                            {booking.serviceStyle && ` • ${getServiceStyleLabel(booking.serviceStyle)}`}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold text-[#FF8C42]">₹{(s.price || 0) * (s.quantity || 1)}</p>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="flex justify-between items-center pt-2 border-t border-gray-100">
+                      <span className="font-semibold text-gray-800">
+                        {booking.totalDurationMinutes ? `Total: ${booking.totalDurationMinutes} min` : 'Total'}
+                      </span>
+                      <span className="font-bold text-[#FF8C42]">₹{booking.totalAmount ?? booking.selectedServices.reduce((sum: number, s: any) => sum + (s.price || 0) * (s.quantity || 1), 0)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-start gap-3">
+                    <div className="w-12 h-12 bg-gradient-to-br from-orange-100 to-pink-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
+                      {booking.serviceType === 'walker' ? '🐕' : 
+                       booking.serviceType === 'grooming' ? '✂️' : 
+                       booking.serviceType === 'vet' ? '🏥' : 
+                       booking.serviceType === 'diagnostics' ? '🧪' :
+                       booking.serviceType === 'boarding' ? '🏠' : '🐾'}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-800">
+                        {/* ✅ FIX: For diagnostics, show test names from notes if available, otherwise fallback to serviceName */}
+                        {(() => {
+                          const isDiagnostic = booking.serviceType === 'diagnostics' || 
+                                               (booking.serviceType || '').toLowerCase().includes('diagnostic');
+                          if (isDiagnostic && booking.notes) {
+                            try {
+                              const notesData = typeof booking.notes === 'string' 
+                                ? JSON.parse(booking.notes || '{}') 
+                                : (booking.notes || {});
+                              const tests = Array.isArray(notesData.tests) ? notesData.tests : [];
+                              if (tests.length > 0) {
+                                const testNames = tests.map((t: any) => t.name || t.testName || t.test_name).filter(Boolean);
+                                if (testNames.length > 0) {
+                                  return testNames.join(', ');
+                                }
+                              }
+                            } catch (e) {
+                              console.warn('Failed to parse notes for test names:', e);
+                            }
+                          }
+                          return booking.serviceName || 'Service';
+                        })()}
+                      </h4>
+                      <p className="text-sm text-gray-600">
+                        {booking.duration ? `${booking.duration} min` : ''} 
+                        {booking.serviceStyle && ` • ${getServiceStyleLabel(booking.serviceStyle)}`}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-[#FF8C42]">₹{booking.totalAmount ?? booking.price ?? 0}</p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-gray-800">
-                      {booking.serviceName || 'Service'}
-                    </h4>
-                    <p className="text-sm text-gray-600">
-                      {booking.duration ? `${booking.duration} min` : ''} 
-                      {booking.serviceStyle && ` • ${booking.serviceStyle.replace('_', ' ')}`}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-[#FF8C42]">₹{booking.price || 0}</p>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
 
@@ -421,6 +713,25 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                       </p>
                     )}
                   </div>
+                  {/* ✅ NEW: Call & Chat buttons */}
+                  <div className="flex gap-2">
+                    {booking.vendorPhone && (
+                      <button
+                        onClick={() => window.open(`tel:${booking.vendorPhone}`, '_self')}
+                        className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center hover:bg-green-200 transition-colors"
+                        title="Call Vendor"
+                      >
+                        <PhoneCall className="w-5 h-5 text-green-600" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setCommunicationMode('chat')}
+                      className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center hover:bg-blue-200 transition-colors"
+                      title="Chat"
+                    >
+                      <MessageCircle className="w-5 h-5 text-blue-600" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -522,9 +833,37 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               {/* Download Invoice Button - For completed bookings */}
               {booking.status === 'completed' && (
                 <Button
-                  onClick={() => {
-                    // TODO: Implement actual invoice download
-                    alert(`Invoice for booking ${booking.id.slice(0, 8)} will be generated. Coming soon!`);
+                  onClick={async () => {
+                    try {
+                      const apiBaseUrl = apiClient['baseUrl'] || process.env.NEXT_PUBLIC_API_BASE_URL || '';
+                      const token = localStorage.getItem('authToken') || localStorage.getItem('cognitoIdToken');
+                      const url = `${apiBaseUrl}/bookings/${booking.id}/invoice`;
+                      
+                      const response = await fetch(url, {
+                        headers: {
+                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                        },
+                      });
+                      
+                      if (!response.ok) {
+                        throw new Error('Failed to download invoice');
+                      }
+                      
+                      const blob = await response.blob();
+                      const downloadUrl = window.URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.href = downloadUrl;
+                      link.download = `invoice-${booking.id.slice(0, 8)}.pdf`;
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      window.URL.revokeObjectURL(downloadUrl);
+                      
+                      toast.success('Invoice downloaded successfully');
+                    } catch (error: any) {
+                      console.error('Error downloading invoice:', error);
+                      toast.error('Failed to download invoice. Please try again later.');
+                    }
                   }}
                   className="w-full bg-[#FF8C42] hover:bg-[#ff7a28] text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
                 >
@@ -533,16 +872,141 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 </Button>
               )}
 
-              {/* Prescription Button - Always visible */}
-              <Button
-                onClick={() => setShowPrescription(true)}
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
-                disabled={loadingPrescription}
-              >
-                <FileText className="w-5 h-5" />
-                {prescription ? 'View Prescription' : 'Prescription'}
-                {prescription && <span className="ml-auto bg-blue-700 px-2 py-0.5 rounded-full text-xs">Available</span>}
-              </Button>
+              {/* Live Tracking Button - For home services in progress */}
+              {hasTracking && booking.serviceStyle === 'at_home' && (
+                <Button
+                  onClick={() => setShowLiveTracking(true)}
+                  className="w-full bg-green-500 hover:bg-green-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors animate-pulse"
+                >
+                  <Navigation className="w-5 h-5" />
+                  Live Tracking Active
+                  <span className="ml-auto bg-green-700 px-2 py-0.5 rounded-full text-xs">Live</span>
+                </Button>
+              )}
+
+              {/* Prescription History - Only for vet, diagnostics, nutritionist (not grooming/training/walker/behaviourist/sitter) */}
+              {showPrescriptionAndMedicalRecords(booking.serviceType) && (
+                <Button
+                  onClick={() => setShowPrescriptionHistory(true)}
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                  disabled={loadingPrescription}
+                >
+                  <FileText className="w-5 h-5" />
+                  Prescription History
+                  {prescription && <span className="ml-auto bg-blue-700 px-2 py-0.5 rounded-full text-xs">Available</span>}
+                </Button>
+              )}
+
+              {/* Medical Records & Lab Reports - Only for vet/diagnostics/nutritionist */}
+              {showPrescriptionAndMedicalRecords(booking.serviceType) && medicalRecords.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-gray-700 px-1">Medical records & reports</p>
+                  {medicalRecords.map((rec: any) => (
+                    <div
+                      key={rec.id}
+                      className="flex items-center justify-between gap-2 p-3 rounded-xl bg-purple-50 border border-purple-100"
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <FileText className="w-5 h-5 text-purple-600 flex-shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-900 truncate">{rec.title || rec.record_type || 'Report'}</p>
+                          {rec.record_type && (
+                            <p className="text-xs text-gray-500 capitalize">{rec.record_type.replace('_', ' ')}</p>
+                          )}
+                        </div>
+                      </div>
+                      {(rec.document_url || rec.record_type === 'diagnostic_report') && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-shrink-0 border-purple-200 text-purple-700 hover:bg-purple-100"
+                          onClick={() => {
+                            const url = rec.document_url;
+                            if (url) {
+                              window.open(url, '_blank');
+                              toast.success('Opening report...');
+                            } else {
+                              toast.info('View in Medical Records');
+                              onNavigate?.('medical-records', {});
+                            }
+                          }}
+                        >
+                          <Download className="w-4 h-4 mr-1" />
+                          Download
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Diagnostics: View Reports Button - For diagnostics bookings with ready reports */}
+              {(() => {
+                // ✅ FIX: More robust detection of diagnostic bookings
+                const isDiagnostic = 
+                  booking.serviceId === 'diagnostics' || 
+                  booking.serviceType === 'diagnostics' ||
+                  booking.serviceCategory === 'diagnostics' ||
+                  booking.service_category === 'diagnostics' ||
+                  (booking.serviceName && booking.serviceName.toLowerCase().includes('diagnostic')) ||
+                  (booking.service?.category && booking.service.category.toLowerCase().includes('diagnostic')) ||
+                  (booking.service?.name && booking.service.name.toLowerCase().includes('diagnostic'));
+                
+                // ✅ FIX: Case-insensitive status check - handle multiple formats
+                const statusStr = (booking.status || '').toString();
+                const statusLower = statusStr.toLowerCase().replace(/\s/g, '_').replace(/-/g, '_');
+                const hasReportsReady = 
+                  statusLower === 'reports_ready' || 
+                  statusLower === 'reportsready' ||
+                  statusLower === 'completed' ||
+                  statusStr === 'Reports_ready' ||
+                  statusStr === 'Reports Ready' ||
+                  (statusLower.includes('report') && statusLower.includes('ready')) ||
+                  statusLower === 'ready';
+                
+                const shouldShow = isDiagnostic && hasReportsReady;
+                console.log('🔍 [BOOKING-DETAIL] View Reports Button Check:', {
+                  isDiagnostic,
+                  status: booking.status,
+                  statusLower,
+                  hasReportsReady,
+                  shouldShow,
+                  serviceId: booking.serviceId,
+                  serviceType: booking.serviceType,
+                  serviceCategory: booking.serviceCategory,
+                });
+                
+                return shouldShow;
+              })() && (
+                <Button
+                  onClick={() => {
+                    onNavigate?.('diagnostics-reports', { bookingId: booking.id });
+                    onClose();
+                  }}
+                  className="w-full bg-teal-500 hover:bg-teal-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors mb-3"
+                >
+                  <FileText className="w-5 h-5" />
+                  View Lab Reports
+                  <span className="ml-auto bg-teal-700 px-2 py-0.5 rounded-full text-xs">Ready</span>
+                </Button>
+              )}
+
+              {/* Diagnostics: Track Sample Collection - For home collection bookings */}
+              {(booking.serviceId === 'diagnostics' || booking.serviceType === 'diagnostics') && 
+               booking.serviceStyle === 'at_home' &&
+               ['scheduled', 'sample_collected'].includes(booking.status) && (
+                <Button
+                  onClick={() => {
+                    onNavigate?.('sample-collection-tracking', { bookingId: booking.id });
+                    onClose();
+                  }}
+                  className="w-full bg-amber-500 hover:bg-amber-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors animate-pulse"
+                >
+                  <Navigation className="w-5 h-5" />
+                  Track Sample Collection
+                  <span className="ml-auto bg-amber-700 px-2 py-0.5 rounded-full text-xs">Live</span>
+                </Button>
+              )}
 
               {/* Chat Button - Only for completed bookings within 7 days */}
               {canChat() && (
@@ -569,19 +1033,6 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 </Button>
               )}
 
-              {/* Live Tracking Button */}
-              {booking.status === 'in_progress' && (booking.serviceType === 'walker' || booking.serviceStyle === 'at_home') && (
-                <Button
-                  onClick={() => setShowLiveTracking(true)}
-                  className="w-full bg-[#FF8C42] hover:bg-[#FF7A2E] text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-md"
-                >
-                  <MapPin className="w-5 h-5" />
-                  Track Live Location
-                  <span className="ml-auto bg-white/20 px-2 py-0.5 rounded-full text-xs animate-pulse">
-                    LIVE
-                  </span>
-                </Button>
-              )}
 
               {/* Follow-up Button - Only for completed bookings within 7 days */}
               {canFollowUp() && (
@@ -622,15 +1073,42 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         <PrescriptionModal
           bookingId={bookingId}
           prescription={prescription}
+          customerPhone={phone}
           onClose={() => {
             setShowPrescription(false);
             loadPrescription(bookingId); // Reload in case it was added
           }}
-          onReorderMedicine={onReorderMedicine}
+          onReorderMedicine={(medications, prescriptionId, bid) => {
+            if (onReorderMedicine) onReorderMedicine(medications || [], prescriptionId, bid || bookingId);
+          }}
         />
       )}
 
-      {/* Communication Hub (Unified Chat/Video) */}
+      {/* Prescription History Modal */}
+      {showPrescriptionHistory && (
+        <PrescriptionHistoryModal
+          bookingId={bookingId}
+          petId={petId}
+          customerPhone={phone}
+          onClose={() => {
+            setShowPrescriptionHistory(false);
+            loadPrescription(bookingId); // Reload prescriptions
+            loadMedicalRecords(bookingId); // Reload medical records
+          }}
+          onUploadSuccess={() => {
+            loadPrescription(bookingId);
+            loadMedicalRecords(bookingId);
+          }}
+          onOrderMedicine={(prescriptionId, bookingId, medications) => {
+            // ✅ FIX: Handle pharmacy ordering from prescription
+            if (onReorderMedicine) {
+              onReorderMedicine(medications || [], prescriptionId, bookingId);
+            }
+          }}
+        />
+      )}
+
+      {/* Communication Hub (Unified Chat/Video) - Rule 2: Video from chat; customer start = create + notify vendor then navigate */}
       {communicationMode && booking && (
         <CommunicationHub
           mode={communicationMode}
@@ -641,6 +1119,30 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           userType="customer"
           onClose={() => setCommunicationMode(null)}
           onBookFollowUp={() => setShowFollowUp(true)}
+          onNavigate={onNavigate}
+          meetingId={booking.meetingId}
+          onStartVideoCall={async (bid, existingMeetingId) => {
+            try {
+              const createRes = await apiClient.post('/video-call/create-meeting', {
+                bookingId: bid,
+                customerId: booking.customerId || phone,
+                vendorId: booking.vendorId,
+              }) as any;
+              if (createRes?.success || createRes?.meetingId) {
+                await apiClient.post('/video-call/notify-ready', {
+                  bookingId: bid,
+                  participantType: 'customer',
+                  participantId: booking.customerId || phone,
+                }).catch(() => {});
+              } else {
+                const msg = createRes?.error || 'Could not start video call.';
+                toast.error(msg);
+              }
+            } catch (err: any) {
+              const msg = err?.response?.error || err?.responseData?.error || err?.message || 'Video call is not available for this appointment right now.';
+              toast.error(typeof msg === 'string' ? msg : 'Could not start video call.');
+            }
+          }}
         />
       )}
 

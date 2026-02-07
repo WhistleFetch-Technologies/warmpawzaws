@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../../ui/button';
 import { Calendar, Clock, User, MapPin, Phone, CheckCircle, XCircle, AlertCircle, Users, TrendingUp, Package, Activity } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface HomeSampleCollectionManagerProps {
   vendorId: string;
@@ -88,8 +88,8 @@ export function HomeSampleCollectionManager({ vendorId, vendorName }: HomeSample
   const loadStaff = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/staff`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/staff`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -110,10 +110,10 @@ export function HomeSampleCollectionManager({ vendorId, vendorName }: HomeSample
       setLoading(true);
       const statusFilter = activeTab === 'pending' ? '' : (activeTab === 'completed' ? 'completed' : 'assigned');
       
-      const url = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/sample-collection/assignments?date=${selectedDate}${statusFilter ? `&status=${statusFilter}` : ''}`;
+      const url = `${getApiBaseUrl()}/vendor/${vendorId}/sample-collection/assignments?date=${selectedDate}${statusFilter ? `&status=${statusFilter}` : ''}`;
       
       const response = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (response.ok) {
@@ -131,8 +131,8 @@ export function HomeSampleCollectionManager({ vendorId, vendorName }: HomeSample
   const loadStats = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/sample-collection/stats`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/sample-collection/stats`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -154,12 +154,12 @@ export function HomeSampleCollectionManager({ vendorId, vendorName }: HomeSample
       setLoading(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/sample-collection/assign`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/sample-collection/assign`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             bookingId: selectedBooking.id,
@@ -192,12 +192,12 @@ export function HomeSampleCollectionManager({ vendorId, vendorName }: HomeSample
   const handleReassign = async (assignmentId: string, newStaffId: string, reason: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/sample-collection/${assignmentId}/reassign`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/sample-collection/${assignmentId}/reassign`,
         {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({ newStaffId, reason })
         }

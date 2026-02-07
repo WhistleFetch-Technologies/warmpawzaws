@@ -47,7 +47,7 @@ import {
 	X,
 	AlertCircle,
 } from "lucide-react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 import { toast } from "sonner";
 
 interface HSNCode {
@@ -106,7 +106,7 @@ export function GSTConfigurationManagement() {
 	const [editingConfig, setEditingConfig] = useState<GSTConfig | null>(null);
 	const [searchQuery, setSearchQuery] = useState("");
 
-	const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+	const API_BASE = `${getApiBaseUrl()}`;
 
 	useEffect(() => {
 		loadData();
@@ -117,7 +117,7 @@ export function GSTConfigurationManagement() {
 		try {
 			// Load GST configurations
 			const configRes = await fetch(`${API_BASE}/admin/finance/gst-config`, {
-				headers: { Authorization: `Bearer ${publicAnonKey}` },
+				headers: { ...getAuthHeaders() },
 			});
 			if (configRes.ok) {
 				const configData = await configRes.json();
@@ -126,7 +126,7 @@ export function GSTConfigurationManagement() {
 
 			// Load HSN codes
 			const hsnRes = await fetch(`${API_BASE}/admin/finance/gst/hsn-codes`, {
-				headers: { Authorization: `Bearer ${publicAnonKey}` },
+				headers: { ...getAuthHeaders() },
 			});
 			if (hsnRes.ok) {
 				const hsnData = await hsnRes.json();
@@ -137,7 +137,7 @@ export function GSTConfigurationManagement() {
 			const categoryRes = await fetch(
 				`${API_BASE}/admin/finance/gst/tax-categories`,
 				{
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 			if (categoryRes.ok) {
@@ -169,7 +169,7 @@ export function GSTConfigurationManagement() {
 				method,
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${publicAnonKey}`,
+					...getAuthHeaders(),
 				},
 				body: JSON.stringify(editingHSN),
 			});
@@ -199,7 +199,7 @@ export function GSTConfigurationManagement() {
 				`${API_BASE}/admin/finance/gst/hsn-codes/${id}`,
 				{
 					method: "DELETE",
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 
@@ -231,7 +231,7 @@ export function GSTConfigurationManagement() {
 				method,
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${publicAnonKey}`,
+					...getAuthHeaders(),
 				},
 				body: JSON.stringify(editingCategory),
 			});
@@ -261,7 +261,7 @@ export function GSTConfigurationManagement() {
 				`${API_BASE}/admin/finance/gst/tax-categories/${id}`,
 				{
 					method: "DELETE",
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 

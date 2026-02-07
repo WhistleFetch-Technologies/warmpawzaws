@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Clock, CheckCircle, FileText, Mail, Phone } from 'lucide-react';
+import { ArrowLeft, Clock, CheckCircle, FileText, Mail, Phone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 // Removed unused imports - using apiClient instead
 
@@ -10,6 +10,7 @@ interface VendorApplicationStatusProps {
   vendorId: string;
   onApproved: () => void;
   onClarificationRequested?: (notes: string) => void;
+  onBack?: () => void;
 }
 
 interface Application {
@@ -21,7 +22,7 @@ interface Application {
   clarificationNotes?: string;
 }
 
-export function VendorApplicationStatus({ vendorId, onApproved, onClarificationRequested }: VendorApplicationStatusProps) {
+export function VendorApplicationStatus({ vendorId, onApproved, onClarificationRequested, onBack }: VendorApplicationStatusProps) {
   const [application, setApplication] = useState<Application | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -97,6 +98,13 @@ export function VendorApplicationStatus({ vendorId, onApproved, onClarificationR
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white w-full max-w-[430px] mx-auto px-6 py-12">
+      {onBack && (
+        <div className="flex justify-start -mt-2 mb-4">
+          <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full -ml-2">
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+        </div>
+      )}
       {/* Status Icon */}
       <div className="text-center mb-8">
         <div className="w-32 h-32 bg-[#FF8C42] rounded-full mx-auto mb-6 flex items-center justify-center shadow-xl animate-pulse">

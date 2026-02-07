@@ -4,7 +4,7 @@ import {
   ChevronLeft, MapPin, Star, Coffee, Clock,
   Calendar, Check, Navigation, Phone
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface MeetUpSchedulerProps {
@@ -55,8 +55,8 @@ export function MeetUpScheduler({ matchId, phone, onBack, onSuccess }: MeetUpSch
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/nearby-cafes?lat=${lat}&lng=${lng}&radius=5`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/dating/nearby-cafes?lat=${lat}&lng=${lng}&radius=5`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -87,11 +87,11 @@ export function MeetUpScheduler({ matchId, phone, onBack, onSuccess }: MeetUpSch
       const dateTime = `${selectedDate}T${selectedTime}:00`;
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/schedule-meetup`,
+        `${getApiBaseUrl()}/dating/schedule-meetup`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

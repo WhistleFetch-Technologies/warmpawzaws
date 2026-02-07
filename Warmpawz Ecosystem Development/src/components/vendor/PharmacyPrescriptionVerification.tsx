@@ -11,7 +11,7 @@ import {
   Search, Filter, Eye, Download, Pill, Calendar, User,
   AlertCircle, Shield, FileText, Phone
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface Prescription {
   id: string;
@@ -71,10 +71,10 @@ export function PharmacyPrescriptionVerification({ vendorId }: { vendorId: strin
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/prescriptions`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/prescriptions`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -120,11 +120,11 @@ export function PharmacyPrescriptionVerification({ vendorId }: { vendorId: strin
   const verifyPrescription = async (prescriptionId: string, approved: boolean) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/prescriptions/${prescriptionId}/verify`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/prescriptions/${prescriptionId}/verify`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/button';
 import { Calendar, Package, Truck, MapPin, Clock, Phone, ChevronRight, Navigation, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface NutritionistServiceRouterProps {
   customerId: string;
@@ -61,8 +61,8 @@ export function NutritionistServiceRouter({ customerId, petId, petName, onBack }
       const customerLocation = { lat: 28.6139, lng: 77.2090 }; // Delhi
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/hyperlocal/vendors?lat=${customerLocation.lat}&lng=${customerLocation.lng}&maxDistance=10`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/hyperlocal/vendors?lat=${customerLocation.lat}&lng=${customerLocation.lng}&maxDistance=10`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -82,8 +82,8 @@ export function NutritionistServiceRouter({ customerId, petId, petName, onBack }
       setLoading(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${selectedNutritionist.id}/meal-plans`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${selectedNutritionist.id}/meal-plans`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -113,12 +113,12 @@ export function NutritionistServiceRouter({ customerId, petId, petName, onBack }
       };
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings`,
+        `${getApiBaseUrl()}/bookings`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(bookingData)
         }
@@ -188,12 +188,12 @@ export function NutritionistServiceRouter({ customerId, petId, petName, onBack }
       };
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/hyperlocal/delivery/create`,
+        `${getApiBaseUrl()}/hyperlocal/delivery/create`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(deliveryData)
         }

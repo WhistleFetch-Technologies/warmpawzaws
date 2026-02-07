@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 
 export function SimpleBackendTest() {
   const [result, setResult] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   const testBackend = async () => {
     setIsLoading(true);
@@ -51,7 +51,7 @@ export function SimpleBackendTest() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify(testPayload)
       });

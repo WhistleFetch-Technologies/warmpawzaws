@@ -72,8 +72,20 @@ export const authorizer = async (
                      event.multiValueHeaders?.['x-uat-token']?.[0];
 
     // UAT Mode: Allow requests with valid UAT token
-    if (uatMode && uatToken && uatToken.startsWith('uat-token-')) {
-      console.log('🔧 [UAT Mode] Allowing request with UAT token');
+    // SECURITY: Only enabled in non-production environments
+    const isProduction = process.env.NODE_ENV === 'production' || 
+                         process.env.STAGE === 'prod' || 
+                         process.env.AWS_LAMBDA_FUNCTION_NAME?.includes('prod');
+    
+    if (!isProduction && uatMode && uatToken && uatToken.startsWith('uat-token-')) {
+      // Additional validation: UAT token must be sufficiently random (at least 20 chars after prefix)
+      const tokenSuffix = uatToken.replace('uat-token-', '');
+      if (tokenSuffix.length < 10) {
+        console.log('❌ [UAT Mode] UAT token too short, rejecting');
+        return generatePolicy('user', 'Deny', event.methodArn);
+      }
+      
+      console.log('🔧 [UAT Mode - DEV ONLY] Allowing request with UAT token');
       
       // Extract token from Authorization header if present, otherwise use UAT token
       const token = authHeader?.replace(/^Bearer /i, '') || uatToken;
@@ -90,6 +102,11 @@ export const authorizer = async (
           token: token,
         }
       );
+    }
+    
+    // In production, UAT mode is always disabled
+    if (isProduction && uatMode) {
+      console.warn('⚠️ [SECURITY] UAT mode attempted in production - denied');
     }
 
     // Normal Mode: Validate Cognito JWT token

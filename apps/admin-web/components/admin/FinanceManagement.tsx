@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { DollarSign, ArrowLeft } from 'lucide-react';
+import { IndianRupee, ArrowLeft } from 'lucide-react';
 import { PaymentsTab } from './finance/PaymentsTab';
 import { SettlementsTab } from './finance/SettlementsTab';
 import { TransactionsTab } from './finance/TransactionsTab';
@@ -21,13 +21,13 @@ export function FinanceManagement({ onBack }: FinanceManagementProps) {
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="px-4 py-4">
           {onBack && (
-            <button onClick={onBack} className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-0">
+            <button onClick={onBack} className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-3">
               <ArrowLeft className="w-4 h-4" /> Back
             </button>
           )}
-          <div className="flex items-center gap-0">
+          <div className="flex items-center gap-3">
             <div className="p-0 bg-orange-100 rounded-lg">
-              <DollarSign className="w-6 h-6 text-orange-600" />
+              <IndianRupee className="w-6 h-6 text-orange-600" />
             </div>
             <div>
               <h1 className="text-xl font-bold text-gray-900">Finance</h1>

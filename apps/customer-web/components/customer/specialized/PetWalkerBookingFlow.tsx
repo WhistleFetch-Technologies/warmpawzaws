@@ -57,32 +57,45 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
         throw new Error('Customer not found');
       }
 
+      // CreateBookingRequestSchema requires serviceId (UUID). Fetch vendor's walker service when possible.
+      let serviceIdValue: string | undefined;
+      try {
+        const servicesRes = await apiClient.get<any>(`/customer/vendor/${vendorId}/services`) as any;
+        const services = servicesRes?.services ?? servicesRes?.data ?? [];
+        const walkerService = Array.isArray(services) && services.find((s: any) => (s.service_type || s.serviceType || s.category || '').toLowerCase().includes('walk'));
+        serviceIdValue = walkerService?.id ?? walkerService?.serviceId ?? walkerService?.service_id ?? (services[0]?.id ?? services[0]?.serviceId ?? services[0]?.service_id);
+      } catch (_) {
+        /* ignore */
+      }
+      if (!serviceIdValue) {
+        setError('No walker service found for this vendor. Please book from the Walker service page.');
+        setProcessing(false);
+        return;
+      }
+
       const bookingData = {
-        serviceId: 'pet_walker',
-        vendorId,
         customerId,
+        vendorId,
+        serviceId: serviceIdValue,
         serviceType: 'at_home',
-        bookingType: 'scheduled',
         bookingDate: selectedDate,
         bookingTime: selectedTime,
         address: pickupAddress,
+        amount: calculatePrice(),
         notes: JSON.stringify({
           walkType,
           duration,
           petCount,
           specialInstructions,
         }),
-        totalAmount: calculatePrice(),
       };
 
       const bookingResponse = await apiClient.post<any>('/bookings/create', bookingData);
-
-      if (bookingResponse.success && bookingResponse.booking) {
-        if (onSuccess) {
-          onSuccess(bookingResponse.booking.id);
-        }
+      const bid = bookingResponse?.data?.bookingId ?? bookingResponse?.bookingId ?? bookingResponse?.booking?.id ?? bookingResponse?.id;
+      if (bid) {
+        if (onSuccess) onSuccess(bid);
       } else {
-        throw new Error(bookingResponse.error || 'Failed to create booking');
+        throw new Error(bookingResponse?.error || bookingResponse?.data?.error || 'Failed to create booking');
       }
     } catch (err: any) {
       console.error('Error creating booking:', err);
@@ -94,7 +107,7 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
 
   return (
     <div className="max-w-2xl mx-auto p-0">
-      <h2 className="text-2xl font-bold text-gray-900 mb-0 flex items-center gap-0">
+      <h2 className="text-2xl font-bold text-gray-900 mb-0 flex items-center gap-3">
         <Route className="text-orange-500" size={28} />
         Book Pet Walker
       </h2>
@@ -106,7 +119,7 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-0">
-                <Calendar className="inline mr-0" size={16} />
+                <Calendar className="inline mr-2" size={16} />
                 Date *
               </label>
               <input
@@ -120,7 +133,7 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-0">
-                <Clock className="inline mr-0" size={16} />
+                <Clock className="inline mr-2" size={16} />
                 Time *
               </label>
               <input
@@ -142,7 +155,7 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
             <label className="block text-sm font-medium text-gray-700 mb-0">
               Walk Type *
             </label>
-            <div className="grid grid-cols-3 gap-0">
+            <div className="grid grid-cols-3 gap-3">
               {(['regular', 'long', 'exercise'] as const).map((type) => (
                 <button
                   key={type}
@@ -195,7 +208,7 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
         {/* Pickup Address */}
         <div className="bg-white rounded-xl p-0 shadow-sm">
           <label className="block text-sm font-medium text-gray-700 mb-0">
-            <MapPin className="inline mr-0" size={16} />
+            <MapPin className="inline mr-2" size={16} />
             Pickup Address *
           </label>
           <textarea
@@ -242,7 +255,7 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
         )}
 
         {/* Actions */}
-        <div className="flex gap-0">
+        <div className="flex gap-3">
           {onCancel && (
             <button
               type="button"

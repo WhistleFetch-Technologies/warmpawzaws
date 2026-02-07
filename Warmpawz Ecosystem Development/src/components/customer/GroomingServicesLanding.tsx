@@ -16,7 +16,7 @@ import {
   Shield,
   Zap
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { GROOMING_NEEDS } from './ProblemGridSection';
 
 interface GroomingServicesLandingProps {
@@ -32,7 +32,7 @@ export function GroomingServicesLanding({ onBack, onNavigate, customerId, phone 
   const [stats, setStats] = useState<any>(null);
   const [userPets, setUserPets] = useState<any[]>([]);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadGroomingData();

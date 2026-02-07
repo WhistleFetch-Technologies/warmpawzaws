@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ArrowLeft, Check, CreditCard, Wallet, Building, ChevronRight, Calendar, Clock, MapPin } from 'lucide-react';
 import { Button } from '../ui/button';
 import { WalkerActiveSession } from './WalkerActiveSession';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface BookingDetails {
   petId: string;
@@ -48,12 +48,12 @@ export function WalkerBookingConfirm({
     try {
       // Save booking to backend
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/walker/booking`,
+        `${getApiBaseUrl()}/walker/booking`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             phone,

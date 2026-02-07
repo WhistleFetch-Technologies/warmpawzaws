@@ -1,0 +1,30 @@
+---
+description: Use specific deploy scripts only; never use CDK
+alwaysApply: true
+---
+
+# Deployment
+
+**Do not use CDK** for deployments. Use only the specific deploy scripts in the `scripts/` folder.
+
+## Scripts to Use
+
+| Component | Script |
+|-----------|--------|
+| Backend (Lambda) | `./scripts/deploy-lambda-direct.sh` |
+| Admin Web | `./scripts/deploy-admin-web.sh` |
+| Vendor Web | `./scripts/deploy-vendor-web.sh` |
+| Customer Web | `./scripts/deploy-customer-web.sh` |
+
+## Examples
+
+```bash
+# Deploy backend only
+./scripts/deploy-lambda-direct.sh
+
+# Deploy admin web only
+./scripts/deploy-admin-web.sh
+
+# Deploy both backend and admin web
+./scripts/deploy-lambda-direct.sh && ./scripts/deploy-admin-web.sh
+```

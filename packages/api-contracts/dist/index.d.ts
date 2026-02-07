@@ -14,4 +14,5 @@ export * from './bookings';
 export * from './vendors';
 export * from './customers';
 export * from './payments';
+export * from './discovery';
 //# sourceMappingURL=index.d.ts.map

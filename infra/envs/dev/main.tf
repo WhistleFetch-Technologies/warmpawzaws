@@ -7,6 +7,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
+    }
   }
 
   backend "s3" {
@@ -126,8 +130,8 @@ module "rds" {
   allowed_security_groups = [module.lambda.lambda_security_group_id]
   database_name           = "warmpawz"
   master_username         = "warmpawz_admin"
-  min_capacity            = 1.0  # Increased from 0.5 to 1.0 ACU to reduce scaling delays and improve response times
-  max_capacity            = 1.0
+  min_capacity            = 2.0  # Increased from 1.0 to 2.0 ACU to prevent database pausing and handle more connections
+  max_capacity            = 4.0  # Increased from 1.0 to 4.0 ACU to handle traffic bursts
   backup_retention_period = 1  # Free tier allows max 1 day
   availability_zones      = slice(module.vpc.availability_zones, 0, 2)
   deletion_protection     = false
@@ -172,10 +176,11 @@ module "sqs" {
 module "secrets" {
   source = "../../modules/secrets"
 
-  environment         = local.environment
-  razorpay_key_id     = var.razorpay_key_id
-  razorpay_key_secret = var.razorpay_key_secret
-  google_maps_api_key = var.google_maps_api_key
+  environment                = local.environment
+  razorpay_key_id            = var.razorpay_key_id
+  razorpay_key_secret        = var.razorpay_key_secret
+  razorpay_x_account_number  = var.razorpay_x_account_number
+  google_maps_api_key        = var.google_maps_api_key
   shiprocket_email    = var.shiprocket_email
   shiprocket_password = var.shiprocket_password
 }
@@ -195,12 +200,15 @@ module "lambda" {
 
   lambda_functions = {
     api-handler = {
-      handler     = "index.handler"
-      runtime     = "nodejs20.x"
-      timeout     = 60  # Increased from 30s to 60s to handle VPC cold starts and RDS scaling delays
-      memory_size = 512
-      zip_path    = "${path.module}/../../../backend/lambda/api-handler.zip"
-      env_vars    = {}
+      handler                 = "index.handler"
+      runtime                 = "nodejs20.x"
+      timeout                 = 60  # Increased from 30s to 60s to handle VPC cold starts and RDS scaling delays
+      memory_size             = 1024  # Increased from 512 to reduce cold start time
+      provisioned_concurrency = 5    # Increased from 2 to 5 to handle burst traffic and eliminate cold starts
+      zip_path                = "${path.module}/../../../backend/lambda/api-handler.zip"
+      env_vars                = {
+        DB_POOL_MAX = "10"  # Increase connection pool size
+      }
     }
   }
 
@@ -271,8 +279,8 @@ module "api_gateway" {
   stage_name                  = "$default"
   auto_deploy                 = true
   cors_allowed_origins        = local.cors_allowed_origins
-  throttle_burst_limit        = 100
-  throttle_rate_limit         = 50
+  throttle_burst_limit        = 5000   # Increased to prevent OPTIONS preflight rate limiting
+  throttle_rate_limit         = 10000   # Increased to prevent OPTIONS preflight rate limiting
   cognito_user_pool_arn       = module.cognito.user_pool_arn
   cognito_user_pool_id        = module.cognito.user_pool_id
   cognito_user_pool_client_id = module.cognito.customer_web_client_id

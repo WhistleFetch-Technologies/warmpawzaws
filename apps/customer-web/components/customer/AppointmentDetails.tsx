@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, Calendar, Clock, MapPin, User, Phone, Mail, CreditCard, FileText, Navigation, AlertCircle, XCircle, RefreshCw, Download, Star, Package, Pill, Video } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -22,6 +23,7 @@ interface AppointmentDetailsProps {
 }
 
 export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel, onReschedule }: AppointmentDetailsProps) {
+  const router = useRouter();
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +36,7 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
   const [showRateModal, setShowRateModal] = useState(false);
   const [showFollowUpModal, setShowFollowUpModal] = useState(false);
 
-  // Using apiClient instead of direct Supabase calls
+  // Uses apiClient (API Gateway)
 
   useEffect(() => {
     loadBookingDetails();
@@ -401,8 +403,8 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
           </Card>
         )}
 
-        {/* Prescription/Notes - If completed */}
-        {booking.status === 'completed' && (booking.prescriptionId || booking.notes) && (
+        {/* Prescription/Notes - Show for any status if prescription exists */}
+        {(booking.prescriptionId || booking.notes) && (
           <Card className="p-5 border border-gray-200">
             <h3 className="font-semibold mb-4">Service Notes</h3>
             {booking.diagnosis && (
@@ -431,8 +433,8 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
                   variant="outline" 
                   className="w-full mt-2 border-blue-200 text-blue-700 hover:bg-blue-50"
                   onClick={() => {
-                    // Order Medicine Flow
-                    alert('Navigating to pharmacy with prescription...');
+                    // Navigate to pharmacy order flow with prescription
+                    router.push(`/prescriptions/${booking.prescriptionId}/order`);
                   }}
                 >
                   <Pill className="w-4 h-4 mr-2" />
@@ -541,6 +543,8 @@ export function AppointmentDetails({ bookingId, customerPhone, onBack, onCancel,
           otherUserName={booking.vendorName}
           userType="customer"
           onClose={() => setCommunicationMode(null)}
+          // Note: onNavigate would need to be passed as prop if needed
+          meetingId={booking.meetingId}
         />
       )}
 

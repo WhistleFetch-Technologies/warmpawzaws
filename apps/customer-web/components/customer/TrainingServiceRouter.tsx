@@ -1,12 +1,15 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, GraduationCap, Building2, Home as HomeIcon, Star, Sparkles, ChevronRight, Heart, Trophy } from 'lucide-react';
+import { GraduationCap, Building2, Home as HomeIcon, Star, Sparkles, ChevronRight, Heart, Trophy, Package, TrendingUp, CheckCircle, Clock, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { TRAINING_GOALS } from './ProblemGridSection';
+import { useProblemGridByRole } from './useProblemGridByRole';
+import { PromotionBanner } from './shared/PromotionBanner';
+import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 
 interface TrainingServiceRouterProps {
   phone: string;
@@ -15,33 +18,173 @@ interface TrainingServiceRouterProps {
   onNavigate?: (screen: string, data?: any) => void;
 }
 
+interface ActiveTrainingPackage {
+  id: string;
+  packageName: string;
+  trainerName: string;
+  petName: string;
+  totalSessions: number;
+  completedSessions: number;
+  skillsLearned: string[];
+  nextSessionDate?: string;
+}
+
+interface PetSkillProgress {
+  skillName: string;
+  level: number; // 0-100
+  status: 'not_started' | 'in_progress' | 'mastered';
+}
+
 export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: TrainingServiceRouterProps) {
+  const trainingGoals = useProblemGridByRole('trainer');
   const [loading, setLoading] = useState(true);
   const [featuredTrainers, setFeaturedTrainers] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
+  const [activePackages, setActivePackages] = useState<ActiveTrainingPackage[]>([]);
+  const [petSkills, setPetSkills] = useState<PetSkillProgress[]>([]);
+  const [previousTrainer, setPreviousTrainer] = useState<any>(null);
 
   useEffect(() => {
     loadTrainingData();
+    loadActiveTrainingPackages();
+    loadPetSkills();
+    loadPreviousTrainer();
   }, []);
+
+  const loadPreviousTrainer = async () => {
+    try {
+      const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=training`).catch(() => null);
+      if (response?.provider) {
+        setPreviousTrainer({ id: response.provider.id, name: response.provider.businessName || response.provider.name, photo: response.provider.photo, rating: response.provider.rating || 4.8, lastVisit: response.provider.lastVisit, sessionsCount: response.provider.sessionsCount || 1 });
+      } else {
+        const pkgRes = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=training`).catch(() => null);
+        if (pkgRes?.packages?.length > 0) {
+          const pkg = pkgRes.packages[0];
+          if (pkg.vendorId && pkg.vendorName) setPreviousTrainer({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 4.8, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: pkg.sessionsUsed || 1 });
+        }
+      }
+    } catch { /* ignore */ }
+  };
+
+  const loadActiveTrainingPackages = async () => {
+    try {
+      const response = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=training`);
+      if (response?.packages && Array.isArray(response.packages)) {
+        setActivePackages(response.packages);
+      } else {
+        setActivePackages([]);
+      }
+    } catch (error: any) {
+      // Silently fail - no packages is not an error
+      console.log('No active training packages or error loading:', error?.message);
+      setActivePackages([]);
+    }
+  };
+
+  const loadPetSkills = async () => {
+    try {
+      const response = await apiClient.get<any>(`/customer/${phone}/pet-skills`);
+      if (response?.skills && Array.isArray(response.skills)) {
+        setPetSkills(response.skills);
+      } else {
+        setPetSkills([]);
+      }
+    } catch (error: any) {
+      // Silently fail - no skills data is not an error
+      console.log('No pet skills data or error loading:', error?.message);
+      setPetSkills([]);
+    }
+  };
 
   const loadTrainingData = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=training&roleId=pet_trainer`;
-      const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
-      const trainerServices = data.vendors || data.services || [];
+
+      let latitude: string | undefined;
+      let longitude: string | undefined;
+      try {
+        const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
+        const profile = profileRes?.profile || profileRes;
+        if (profile?.latitude != null && profile?.longitude != null) {
+          latitude = String(profile.latitude);
+          longitude = String(profile.longitude);
+        }
+      } catch (_) { /* ignore */ }
+      if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 300000 });
+          });
+          latitude = String(pos.coords.latitude);
+          longitude = String(pos.coords.longitude);
+        } catch (_) { /* ignore */ }
+      }
+      const locationParams = latitude && longitude ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}` : '';
+
+      // ✅ Align with Vet: discover by category (service discovery respects category/role from dashboard tiles)
+      let trainerServices: any[] = [];
+      
+      // Try 1: discover-services by category (same pattern as VetServiceRouter)
+      try {
+        const endpoint = `/customer/discover-services?category=training${locationParams}`;
+        const data = await apiClient.get<any>(endpoint);
+        console.log('🔵 [TrainingServiceRouter] discover-services response:', data);
+        
+        if (Array.isArray(data)) {
+          trainerServices = data;
+        } else if (data?.vendors && Array.isArray(data.vendors)) {
+          trainerServices = data.vendors;
+        } else if (data?.providers && Array.isArray(data.providers)) {
+          trainerServices = data.providers;
+        } else if (data?.services && Array.isArray(data.services)) {
+          trainerServices = data.services;
+        } else if (data?.results && Array.isArray(data.results)) {
+          trainerServices = data.results;
+        } else if (data?.data && Array.isArray(data.data)) {
+          trainerServices = data.data;
+        }
+      } catch (err) {
+        console.warn('⚠️ [TrainingServiceRouter] discover-services failed, trying alternatives:', err);
+      }
+      
+      // Try 2: services/by-style (at_home = at home training)
+      if (trainerServices.length === 0) {
+        try {
+          const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_home&category=training${locationParams}`);
+          const altData = (altRes as any)?.providers ?? (altRes as any)?.vendors ?? altRes;
+          if (Array.isArray(altData)) trainerServices = altData;
+          else if (altData?.services) trainerServices = altData.services;
+        } catch (err) {
+          console.warn('⚠️ [TrainingServiceRouter] services/by-style failed:', err);
+        }
+      }
+      
+      // Try 3: Fallback to /customer/vendors/search (GET /customer/vendors does not exist)
+      if (trainerServices.length === 0) {
+        try {
+          const vendorsData = await apiClient.get<any>(`/customer/vendors/search?roleId=pet_trainer&limit=50${locationParams}`);
+          if (Array.isArray(vendorsData)) trainerServices = vendorsData;
+          else if (vendorsData?.vendors) trainerServices = vendorsData.vendors;
+          else if (vendorsData?.results) trainerServices = vendorsData.results;
+        } catch (err) {
+          console.warn('⚠️ [TrainingServiceRouter] vendors/search fallback failed:', err);
+        }
+      }
+      
+      console.log('🔵 [TrainingServiceRouter] Final trainerServices length:', trainerServices.length);
       
       const vendorMap = new Map();
       trainerServices.forEach((service: any) => {
-        const vendorId = service.vendorId || service.id;
+        const vendorId = service.vendorId || service.vendor_id || service.id || service.providerId;
+        if (!vendorId) return;
         if (!vendorMap.has(vendorId)) {
           vendorMap.set(vendorId, {
             id: vendorId,
-            businessName: service.vendorName || service.businessName || service.name,
-            rating: service.vendorRating || service.rating || 4.5,
-            completedBookings: service.vendorReviewCount || service.reviewsCount || 0,
-            distance: service.distance || Math.random() * 5 + 0.5,
-            basePrice: service.price || 1500
+            businessName: service.vendorName || service.vendor_name || service.businessName || service.business_name || service.name,
+            rating: service.vendorRating || service.vendor_rating || service.rating || 4.5,
+            completedBookings: service.vendorReviewCount || service.vendor_review_count || service.reviewsCount || service.reviews_count || 0,
+            distance: service.distance ?? Math.random() * 5 + 0.5,
+            basePrice: service.price || service.base_price || 1500
           });
         }
       });
@@ -50,15 +193,16 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       setFeaturedTrainers(allTrainers.slice(0, 5));
       
       setStats({
-        activeTrainers: allTrainers.length || 45,
-        sessions: '2K+',
+        activeTrainers: allTrainers.length,
+        sessions: allTrainers.length > 0 ? `${Math.max(allTrainers.length * 40, 100)}+` : '0',
         rating: allTrainers.length > 0 
-          ? (allTrainers.reduce((acc: number, t: any) => acc + (t.rating || 4.5), 0) / allTrainers.length).toFixed(1) 
-          : '4.8'
+          ? Number(allTrainers.reduce((acc: number, t: any) => acc + Number(t.rating || 4.5), 0) / allTrainers.length).toFixed(1) 
+          : '-'
       });
     } catch (error) {
       console.error('Error loading training data:', error);
-      setStats({ activeTrainers: 45, sessions: '2K+', rating: '4.8' });
+      // Show zeros on error - no fake data
+      setStats({ activeTrainers: 0, sessions: '0', rating: '-' });
     } finally {
       setLoading(false);
     }
@@ -87,111 +231,254 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FF8C42] flex items-center justify-center max-w-md mx-auto">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+      <div className="flex items-center justify-center min-h-[200px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
   }
 
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const dashboardStats = stats ? [
+    { value: `${stats.activeTrainers || 0}+`, label: 'Trainers', icon: <GraduationCap className="w-4 h-4" /> },
+    { value: `${stats.sessions || 0}`, label: 'Sessions' },
+    { value: `${stats.rating || '-'}`, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ] : [
+    { value: '0+', label: 'Trainers', icon: <GraduationCap className="w-4 h-4" /> },
+    { value: '0', label: 'Sessions' },
+    { value: '-', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
+
   return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto pb-24">
-      {/* Header - Orange Background */}
-      <div className="px-6 pt-12 pb-6">
-        <div className="flex items-center gap-4 mb-6">
-           <button 
-            onClick={onBack}
-            className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-white" />
-          </button>
-          <h1 className="text-2xl font-bold text-white">Pet Training</h1>
-        </div>
+    <div className="min-h-screen bg-gray-50">
+      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
+      <ServiceDashboardHeader
+        serviceName="Training Services"
+        serviceSubtitle="Professional pet training"
+        serviceIcon={GraduationCap}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
+      />
 
-        {/* Stats Bar - Glassmorphism */}
-        {stats && (
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.activeTrainers}+</div>
-               <div className="text-xs text-white/80">Trainers</div>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.sessions}</div>
-               <div className="text-xs text-white/80">Sessions</div>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="flex items-center gap-1 text-2xl font-bold text-white">
-                 {stats.rating} <Star className="w-4 h-4 fill-white" />
-               </div>
-               <div className="text-xs text-white/80">Rating</div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Main Content - White Card with Top Radius */}
-      <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
+      {/* Main Content */}
+      <div className="max-w-md mx-auto px-4 pt-4 bg-white">
         <div className="space-y-8">
-          
-          {/* Spotlight Offers */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-orange-500" />
-              <h2 className="text-lg font-bold text-slate-900">Spotlight Offers</h2>
-            </div>
-            
-            <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-6 px-6">
-              <Card className="min-w-[280px] flex-shrink-0 bg-white border border-slate-100 p-5 shadow-sm rounded-2xl">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase mb-2 w-fit">New Puppy</div>
-                    <div className="text-2xl font-bold text-slate-900">25% OFF</div>
-                    <div className="text-slate-500 text-xs">Puppy Training Package</div>
+
+          {/* Phase 1: Book again with previous trainer */}
+          {previousTrainer && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-5 h-5 text-orange-500" />
+                <h2 className="text-lg font-bold text-slate-900">Book again</h2>
+              </div>
+              <Card className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200 p-4">
+                <div className="flex items-center gap-4">
+                  {previousTrainer.photo ? (
+                    <img src={previousTrainer.photo} alt={previousTrainer.name} className="w-16 h-16 rounded-xl object-cover border-2 border-orange-200" />
+                  ) : (
+                    <div className="w-16 h-16 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 font-bold text-xl border-2 border-orange-200">
+                      {previousTrainer.name?.charAt(0) || 'T'}
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <h3 className="font-bold text-slate-900 text-lg">{previousTrainer.name}</h3>
+                    <div className="flex items-center gap-2 text-sm text-slate-600 mt-1">
+                      <Star className="w-4 h-4 fill-orange-500" /> {previousTrainer.rating}
+                      <span>•</span>
+                      <span>Last visit: {previousTrainer.lastVisit || '3 weeks ago'}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">{previousTrainer.sessionsCount || 1} session(s) with you</p>
                   </div>
-                  <div className="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center">
-                    <GraduationCap className="w-5 h-5 text-orange-600" />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                  <div className="text-sm">
-                    <span className="line-through text-slate-400 text-xs">₹2999</span>
-                    <span className="ml-2 font-bold text-slate-900">₹2249</span>
-                  </div>
-                  <Button size="sm" className="bg-orange-600 text-white hover:bg-orange-700 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate?.('training_center')}>
+                  <Button className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white" onClick={() => onNavigate?.('training-booking', { vendorId: previousTrainer.id })}>
                     Book Now
                   </Button>
                 </div>
               </Card>
-
-              <Card className="min-w-[280px] flex-shrink-0 bg-white border border-slate-100 p-5 shadow-sm rounded-2xl">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase mb-2 w-fit">Popular</div>
-                    <div className="text-2xl font-bold text-slate-900">₹4999</div>
-                    <div className="text-slate-500 text-xs">Obedience Package</div>
-                  </div>
-                  <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center">
-                    <Heart className="w-5 h-5 text-slate-600" />
-                  </div>
+            </div>
+          )}
+          
+          {/* FREE TRIAL ENTRY POINT - As per Master Plan */}
+          {activePackages.length === 0 && (
+            <Card className="bg-gradient-to-br from-orange-50 via-amber-50 to-orange-100 border-2 border-orange-200 p-6 shadow-lg relative overflow-hidden">
+              <div className="absolute top-2 right-2">
+                <span className="bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" />
+                  FREE
+                </span>
+              </div>
+              <div className="flex items-start gap-4">
+                <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center shadow-md border-2 border-orange-200 flex-shrink-0">
+                  <GraduationCap className="w-8 h-8 text-orange-600" />
                 </div>
-                <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                  <div className="text-xs text-slate-500">8 Sessions</div>
-                  <Button size="sm" className="bg-slate-900 text-white hover:bg-slate-800 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate?.('training_center')}>
-                    Book
+                <div className="flex-1">
+                  <h2 className="text-2xl font-bold text-slate-900 mb-2">🎁 FREE TRIAL SESSION</h2>
+                  <p className="text-slate-700 mb-1">
+                    Meet a trainer, assess your dog's needs, and get a training plan!
+                  </p>
+                  <p className="text-sm text-slate-600 mb-4">
+                    ✅ 30 min evaluation session<br />
+                    ✅ Personalized training plan<br />
+                    ✅ No commitment required
+                  </p>
+                  <Button 
+                    className="bg-orange-600 text-white hover:bg-orange-700 font-bold text-base px-6 py-3 rounded-xl shadow-md"
+                    onClick={() => onNavigate?.('training-trial-booking')}
+                  >
+                    <GraduationCap className="w-5 h-5 mr-2" />
+                    Book Free Trial - 30 min
                   </Button>
                 </div>
+              </div>
+            </Card>
+          )}
+          
+          {/* Active Training Package with Progress */}
+          {activePackages.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Package className="w-5 h-5 text-orange-500" />
+                  <h2 className="text-lg font-bold text-slate-900">Your Training</h2>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-orange-500"
+                  onClick={() => onNavigate?.('training-progress', { packageId: activePackages[0].id })}
+                >
+                  View Progress
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+              
+              <Card className="border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 p-4">
+                <div className="flex items-start gap-4 mb-4">
+                  <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
+                    <Trophy className="w-6 h-6 text-orange-500" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900">{activePackages[0].packageName}</h3>
+                    <p className="text-sm text-orange-600">with {activePackages[0].trainerName}</p>
+                    <p className="text-xs text-gray-500 mt-1">{activePackages[0].petName}</p>
+                  </div>
+                </div>
+                
+                {/* Session Progress */}
+                <div className="mb-4">
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="text-gray-600">Sessions Completed</span>
+                    <span className="font-medium">{activePackages[0].completedSessions}/{activePackages[0].totalSessions}</span>
+                  </div>
+                  <div className="h-2 bg-orange-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-full transition-all"
+                      style={{ width: `${(activePackages[0].completedSessions / activePackages[0].totalSessions) * 100}%` }}
+                    />
+                  </div>
+                </div>
+                
+                {/* Skills Learned */}
+                {activePackages[0].skillsLearned && activePackages[0].skillsLearned.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs text-gray-500 mb-2">Skills Learned</p>
+                    <div className="flex flex-wrap gap-2">
+                      {activePackages[0].skillsLearned.map((skill, idx) => (
+                        <span key={idx} className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs">
+                          <CheckCircle className="w-3 h-3" />
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Next Session */}
+                {activePackages[0].nextSessionDate && (
+                  <div className="flex items-center justify-between pt-3 border-t border-orange-100">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Clock className="w-4 h-4" />
+                      <span>Next: {new Date(activePackages[0].nextSessionDate).toLocaleDateString()}</span>
+                    </div>
+                    <Button size="sm" className="bg-orange-500 hover:bg-orange-600">
+                      View Details
+                    </Button>
+                  </div>
+                )}
               </Card>
             </div>
-          </div>
+          )}
+
+          {/* Pet Skills Matrix Preview */}
+          {petSkills.length > 0 && (
+            <Card className="border-blue-200 bg-blue-50/50 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-blue-600" />
+                  <h3 className="font-semibold text-blue-900">Skill Progress</h3>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-blue-600"
+                  onClick={() => onNavigate?.('training-skill-matrix')}
+                >
+                  Full Matrix
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {petSkills.slice(0, 3).map((skill, idx) => (
+                  <div key={idx} className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-gray-700">{skill.skillName}</span>
+                        <span className={`text-xs font-medium ${
+                          skill.status === 'mastered' ? 'text-green-600' : 
+                          skill.status === 'in_progress' ? 'text-blue-600' : 'text-gray-400'
+                        }`}>
+                          {skill.status === 'mastered' ? '✓ Mastered' : 
+                           skill.status === 'in_progress' ? 'In Progress' : 'Not Started'}
+                        </span>
+                      </div>
+                      <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all ${
+                            skill.status === 'mastered' ? 'bg-green-500' : 
+                            skill.status === 'in_progress' ? 'bg-blue-500' : 'bg-gray-300'
+                          }`}
+                          style={{ width: `${skill.level}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Promotion Banner - Phase 0.1 Integration */}
+          <PromotionBanner service="training" maxPromotions={3} />
 
           {/* Service Types */}
           <div>
             <h2 className="text-lg font-bold text-slate-900 mb-4">Choose Training Type</h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3" style={{ position: 'relative', zIndex: 1 }}>
               {serviceTypes.map((service) => (
                 <button
                   key={service.id}
-                  onClick={() => onNavigate?.(service.id)}
-                  className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('🔵 [Training] Service style clicked:', service.id);
+                    onNavigate?.(service.id);
+                  }}
+                  className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden cursor-pointer"
+                  style={{ 
+                    pointerEvents: 'auto', 
+                    zIndex: 1,
+                    position: 'relative'
+                  }}
                 >
                   <div className={`w-10 h-10 rounded-xl ${service.bg} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
                     <service.icon className={`w-5 h-5 ${service.color}`} />
@@ -220,20 +507,28 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               </button>
             </div>
 
-            <div className="grid grid-cols-4 gap-3">
-              {TRAINING_GOALS.map((goal) => {
+            <div className="grid grid-cols-4 gap-3" style={{ position: 'relative', zIndex: 1 }}>
+              {(trainingGoals.length > 0 ? trainingGoals : TRAINING_GOALS).map((goal) => {
                 const isViewAll = goal.id === 'view_all';
                 return (
                   <button
                     key={goal.id}
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log('🔵 [Training] Goal clicked:', goal.id);
                       if (isViewAll) {
                         onNavigate?.('problem_grid');
                       } else {
                         onNavigate?.('problem_selected', { problemId: goal.id });
                       }
                     }}
-                    className="group flex flex-col items-center gap-2"
+                    className="group flex flex-col items-center gap-2 cursor-pointer"
+                    style={{ 
+                      pointerEvents: 'auto', 
+                      zIndex: 1,
+                      position: 'relative'
+                    }}
                   >
                     <div className={`
                       w-full aspect-square rounded-2xl flex items-center justify-center text-2xl shadow-sm transition-all duration-200
@@ -289,7 +584,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                         {trainer.rating || 4.8}
                       </span>
                       <span>•</span>
-                      <span>{trainer.distance ? `${trainer.distance.toFixed(1)} km` : 'Nearby'}</span>
+                      <span>{trainer.distance ? `${Number(trainer.distance).toFixed(1)} km` : 'Nearby'}</span>
                     </div>
                   </div>
                   <div className="text-right">

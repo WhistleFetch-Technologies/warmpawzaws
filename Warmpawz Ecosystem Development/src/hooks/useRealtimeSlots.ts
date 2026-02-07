@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { projectId } from '../utils/supabase/info';
+import { getApiBaseUrl } from '../utils/api-config';
 
 export interface SlotUpdate {
   type: 'slot_update' | 'availability_change' | 'connected' | 'subscribed' | 'error';
@@ -52,9 +52,10 @@ export function useRealtimeSlots(options: UseRealtimeSlotsOptions = {}) {
       setIsConnecting(true);
       setError(null);
 
-      // Construct WebSocket URL
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${projectId}.supabase.co/functions/v1/make-server-3dd53475/ws/slots`;
+      // Construct WebSocket URL from API base (API Gateway / custom WS endpoint)
+      const base = getApiBaseUrl();
+      const wsBase = base.replace(/^https:\/\//, 'wss://').replace(/^http:\/\//, 'ws://');
+      const wsUrl = `${wsBase}/ws/slots`;
       
       console.log('🔌 [WS] Connecting to:', wsUrl);
 

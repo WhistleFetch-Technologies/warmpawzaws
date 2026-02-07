@@ -1,6 +1,6 @@
 /**
  * API Client for Vendor Web App
- * Points to API Gateway instead of Supabase Functions
+ * Uses API Gateway (Lambda backend)
  */
 
 type RuntimeConfig = {
@@ -20,13 +20,9 @@ function getRuntimeConfig(): RuntimeConfig {
 }
 
 function getApiBaseUrl(): string {
-  // Priority: runtime-config.js (deploy-time) → build-time env (local dev)
+  // Priority: runtime-config.js (deploy-time) → build-time env (local dev) → API Gateway fallback
   const cfg = getRuntimeConfig();
-  return (
-    cfg.apiBaseUrl ||
-    process.env.NEXT_PUBLIC_API_BASE_URL ||
-    ''
-  );
+  return cfg.apiBaseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
 }
 
 // UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)
@@ -56,13 +52,20 @@ export class ApiClient {
   private getAuthToken(): string | null {
     if (typeof window !== 'undefined') {
       // Try Cognito token first (preferred for AWS Serverless)
-      const { getCognitoIdToken } = require('./cognito-auth');
-      const cognitoToken = getCognitoIdToken();
-      if (cognitoToken) {
-        return cognitoToken;
+      try {
+        const { getCognitoIdToken } = require('./cognito-auth');
+        const cognitoToken = getCognitoIdToken();
+        if (cognitoToken) return cognitoToken;
+      } catch {
+        // Cognito not used
       }
-      // Fallback to legacy token
-      return localStorage.getItem('vendorAuthToken');
+      // Vendor OTP flow stores in authToken; session-manager may use vendorSessionToken
+      return (
+        localStorage.getItem('vendorAuthToken') ||
+        localStorage.getItem('authToken') ||
+        localStorage.getItem('vendorSessionToken') ||
+        null
+      );
     }
     return null;
   }
@@ -89,30 +92,145 @@ export class ApiClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
     
+    // ✅ UAT Mode: Send header to backend so it knows to use mock data
+    if (UAT_MODE) {
+      headers['X-UAT-Mode'] = 'true';
+    }
+    
     // UAT Mode: Log API requests for debugging
     if (UAT_MODE && typeof window !== 'undefined') {
       console.log(`🌐 [UAT] API Request: ${options.method || 'GET'} ${endpoint}`);
       console.log('   Full URL:', url);
     }
     
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
+    // ✅ FIX: Add timeout to prevent requests from hanging indefinitely (30 seconds)
+    const REQUEST_TIMEOUT_MS = 30000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      
+      // Handle abort (timeout)
+      if (fetchError.name === 'AbortError' || controller.signal.aborted) {
+        const timeoutError = new Error('Request timed out. Please try again.');
+        (timeoutError as any).statusCode = 504;
+        (timeoutError as any).isTimeout = true;
+        throw timeoutError;
+      }
+      
+      // Re-throw other fetch errors
+      throw fetchError;
+    }
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
       
-      // Handle 401 by clearing token and redirecting to auth
+      // Handle 401: clear full vendor session so /auth shows login (prevents redirect loop)
+      // Skip clear/redirect when vendor just logged in (OTP) so dashboard can load; first 401 may be from role/profile fetch race
       if (response.status === 401) {
         if (typeof window !== 'undefined') {
-          localStorage.removeItem('vendorAuthToken');
-          localStorage.removeItem('vendorId');
-          window.location.href = '/auth';
+          const justLoggedIn = sessionStorage.getItem('_warmpawz_vendor_just_logged_in') === 'true';
+          if (justLoggedIn) {
+            sessionStorage.removeItem('_warmpawz_vendor_just_logged_in');
+            if (UAT_MODE) {
+              console.warn('[API Client] 401 after login – skipping clear/redirect so dashboard can load');
+            }
+            // Fall through to throw error; caller (e.g. useVendorCapabilities) will use fallback
+          } else {
+            const { clearVendorSession } = require('./session-utils');
+            clearVendorSession();
+            window.location.href = '/auth';
+          }
         }
       }
       
-      throw new Error(error.error || error.message || `HTTP ${response.status}`);
+      // Handle 429 (Rate Limiting) with retry-after information
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After');
+        const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : 5;
+        
+        // Create a more informative error message
+        let errorMessage = 'Too many requests. Please wait a moment before trying again.';
+        if (retryAfterSeconds > 0) {
+          errorMessage = `Too many requests. Please wait ${retryAfterSeconds} second${retryAfterSeconds > 1 ? 's' : ''} before trying again.`;
+        }
+        
+        // Log rate limit error with details
+        if (UAT_MODE && typeof window !== 'undefined') {
+          console.error('❌ [UAT] Rate Limit Error (429):', {
+            endpoint,
+            retryAfter: retryAfterSeconds,
+            errorData
+          });
+        }
+        
+        // Create error with retry information
+        const rateLimitError = new Error(errorMessage);
+        (rateLimitError as any).statusCode = 429;
+        (rateLimitError as any).retryAfter = retryAfterSeconds;
+        (rateLimitError as any).isRateLimit = true;
+        throw rateLimitError;
+      }
+      
+      // ✅ FIX: Ensure error message is always a string, not [object Object]
+      // ✅ FIX: Extract nested error details (handles error.details.details structure)
+      let errorMessage = `HTTP ${response.status}`;
+      
+      // Handle nested error structure: { error: { message, code, details: { details: "..." } } }
+      if (errorData.error && typeof errorData.error === 'object') {
+        // First try to get the detailed message from nested details
+        if (errorData.error.details) {
+          if (typeof errorData.error.details === 'string') {
+            errorMessage = errorData.error.details;
+          } else if (errorData.error.details.details && typeof errorData.error.details.details === 'string') {
+            errorMessage = errorData.error.details.details;
+          } else if (errorData.error.details.message && typeof errorData.error.details.message === 'string') {
+            errorMessage = errorData.error.details.message;
+          }
+        }
+        
+        // Fallback to error.message or error.code if details not found
+        if (errorMessage === `HTTP ${response.status}`) {
+          errorMessage = errorData.error.message || errorData.error.code || JSON.stringify(errorData.error);
+        }
+      } else if (typeof errorData.error === 'string') {
+        errorMessage = errorData.error;
+      } else if (typeof errorData.message === 'string') {
+        errorMessage = errorData.message;
+      } else if (typeof errorData === 'string') {
+        errorMessage = errorData;
+      }
+      
+      // ✅ FIX: Handle 503 Service Unavailable / timeout errors specifically
+      if (response.status === 503 || errorMessage.includes('timeout') || errorMessage.includes('Connection terminated')) {
+        // Provide user-friendly message for timeout errors
+        if (errorMessage.includes('timeout') || errorMessage.includes('Connection terminated')) {
+          errorMessage = 'The request took too long. Please try again. If this persists, the service may be temporarily unavailable.';
+        } else {
+          errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
+        }
+      }
+      
+      // Log the full error for debugging in UAT mode
+      if (UAT_MODE && typeof window !== 'undefined') {
+        console.error('❌ [UAT] API Error Response:', errorData);
+        console.error('❌ [UAT] Extracted error message:', errorMessage);
+      }
+      
+      // Attach status code to error for better handling
+      const error = new Error(errorMessage);
+      (error as any).statusCode = response.status;
+      (error as any).originalError = errorData;
+      throw error;
     }
 
     return response.json();

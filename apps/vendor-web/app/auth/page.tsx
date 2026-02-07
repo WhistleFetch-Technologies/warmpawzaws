@@ -2,157 +2,106 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState, useRef } from 'react';
 import { VendorAuth } from '@/components/vendor/VendorAuth';
+import { isTokenExpired, clearVendorSession, isStaleTempVendorSession } from '@/lib/session-utils';
 
 export default function AuthPage() {
-  const router = useRouter();
-  const pathname = usePathname();
   const [isCheckingSession, setIsCheckingSession] = useState(true);
-  const hasRedirected = useRef(false); // Prevent multiple redirects
+  const hasChecked = useRef(false);
+  const hasRedirected = useRef(false);
 
   useEffect(() => {
-    // Only check session once on mount
-    if (hasRedirected.current) return;
+    // Strict single-run check to prevent flickering
+    if (hasChecked.current) {
+      return;
+    }
+    hasChecked.current = true;
 
-    // Initialize session (clears on hard refresh)
-    const { initializeSession, isTokenExpired } = require('@/lib/session-utils');
-    initializeSession();
+    // Clear redirect flag when we're on auth page
+    sessionStorage.removeItem('_vendor_redirected_to_auth');
 
-    // Check if user is already authenticated
-    const checkSession = () => {
-      try {
-        const storedPhone = localStorage.getItem('vendorPhone');
-        const storedToken = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
-        
-        if (storedPhone && storedToken) {
-          // Check token expiry
-          if (!isTokenExpired(storedToken) && storedToken.length > 10) {
-            // User is already authenticated, redirect to onboarding
-            hasRedirected.current = true;
-            router.replace('/onboarding');
-            return;
-          } else {
-            // Token expired or invalid, clear stale data
-            const { clearVendorSession } = require('@/lib/session-utils');
-            clearVendorSession();
-          }
-        }
-        
-        // No valid session found, show auth UI
-        setIsCheckingSession(false);
-      } catch (error) {
-        console.error('Error checking session:', error);
-        setIsCheckingSession(false);
-      }
-    };
-
-    // Add small delay to ensure localStorage is available
-    const timer = setTimeout(checkSession, 100);
+    // Synchronous session check - no async, no delays
+    const storedPhone = localStorage.getItem('vendorPhone');
+    const storedToken = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
     
-    return () => clearTimeout(timer);
-  }, [router]);
+    // If no credentials, show login immediately
+    if (!storedPhone || !storedToken || storedToken.length < 10) {
+      setIsCheckingSession(false);
+      return;
+    }
+
+    // Check if token is valid
+    if (isTokenExpired(storedToken)) {
+      clearVendorSession();
+      setIsCheckingSession(false);
+      return;
+    }
+
+    // Stale temp_vendor_ session (e.g. leftover from previous visit) – clear and show login only when no valid token
+    if (isStaleTempVendorSession(storedToken)) {
+      clearVendorSession();
+      setIsCheckingSession(false);
+      return;
+    }
+
+    // Valid session exists - redirect based on status
+    const storedVendor = localStorage.getItem('vendorData');
+    const vendorData = storedVendor ? JSON.parse(storedVendor) : null;
+    const onboardingStatus = vendorData?.onboarding_status || localStorage.getItem('vendorApplicationStatus');
+    
+    // Route based on status
+    const isActiveVendor = ['ACTIVATED', 'APPROVED'].includes(onboardingStatus || '');
+    window.location.replace(isActiveVendor ? '/' : '/onboarding');
+  }, []);
 
   const handleAuthSuccess = (session: any) => {
     console.log('✅ [AuthPage] Authentication successful:', session);
     
-    // Prevent redirect loop
+    // Prevent duplicate redirects
     if (hasRedirected.current) {
       console.warn('⚠️ [AuthPage] Already redirected, ignoring duplicate call');
       return;
     }
-    
-    // Mark as redirected to prevent loops
     hasRedirected.current = true;
     
-    // Store session data immediately if not already stored
+    // Store session data (authToken + vendorAuthToken so api-client finds token on first request after redirect)
     if (session.phone && session.accessToken) {
       localStorage.setItem('vendorPhone', session.phone);
       localStorage.setItem('authToken', session.accessToken);
+      localStorage.setItem('vendorAuthToken', session.accessToken);
       
       if (session.vendorId) {
         localStorage.setItem('vendorId', session.vendorId);
       }
-      
       if (session.user) {
         localStorage.setItem('vendorUser', JSON.stringify(session.user));
       }
-      
       if (session.profile) {
         localStorage.setItem('vendorData', JSON.stringify(session.profile));
+        const bizName = (session.profile as any).business_name || (session.profile as any).businessName || '';
+        if (bizName) {
+          localStorage.setItem('vendorName', bizName);
+          localStorage.setItem('businessName', bizName);
+        }
       }
-      
       if (session.onboardingStatus) {
         localStorage.setItem('vendorApplicationStatus', session.onboardingStatus);
       }
-      
-      console.log('💾 [AuthPage] Session data stored directly:', {
-        phone: session.phone,
-        token: session.accessToken?.substring(0, 30) + '...',
-        vendorId: session.vendorId
-      });
     }
     
-    // Verify session was stored before redirecting
-    const storedPhone = localStorage.getItem('vendorPhone');
-    const storedToken = localStorage.getItem('authToken');
-    
-    console.log('🔍 [AuthPage] Verifying session storage:', {
-      storedPhone: !!storedPhone,
-      storedToken: !!storedToken,
-      tokenPreview: storedToken ? storedToken.substring(0, 30) + '...' : 'none'
-    });
-    
-    if (!storedPhone || !storedToken) {
-      console.error('❌ [AuthPage] Session not stored properly!', {
-        phone: storedPhone,
-        token: storedToken,
-        session: session
-      });
-      // Wait a bit more and try again
-      setTimeout(() => {
-        const retryPhone = localStorage.getItem('vendorPhone');
-        const retryToken = localStorage.getItem('authToken');
-        if (retryPhone && retryToken) {
-          console.log('✅ [AuthPage] Session found on retry, redirecting...');
-          router.replace('/onboarding');
-        } else {
-          console.error('❌ [AuthPage] Session still not found, redirecting anyway...');
-          router.replace('/onboarding');
-        }
-      }, 200);
-      return;
+    // Set session flags immediately before redirect so destination page sees them (avoids redirect back to login)
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('_warmpawz_vendor_just_logged_in', 'true');
+      sessionStorage.setItem('_warmpawz_vendor_has_session', 'true');
     }
     
-    // Check state from backend response to route appropriately
-    // Backend returns: { data: { state: 'new' | 'existing', profile: {...} } }
-    // Also check onboardingStatus from VendorAuth component
-    const responseState = session.state || session.data?.state;
-    const onboardingStatus = session.onboardingStatus || session.profile?.onboarding_status || session.data?.profile?.onboarding_status;
+    // Determine routing
+    const onboardingStatus = session.onboardingStatus || session.profile?.onboarding_status;
+    const isActiveVendor = ['ACTIVATED', 'APPROVED'].includes(onboardingStatus || '');
     
-    console.log('🔄 [AuthPage] Routing decision:', {
-      state: responseState,
-      onboardingStatus,
-      vendorId: session.vendorId,
-      sessionKeys: Object.keys(session)
-    });
-    
-    // Route based on state and onboarding status
-    // For active vendors, go directly to home page (which shows dashboard)
-    // ✅ FIX: Include 'APPROVED' as an active status (vendors are active once approved)
-    const isActiveVendor = ['ACTIVATED', 'APPROVED'].includes(onboardingStatus || '') || 
-                           (responseState === 'existing' && session.vendorId && !onboardingStatus);
-    
-    if (isActiveVendor) {
-      // Existing active vendor - go directly to home (dashboard)
-      console.log('✅ [AuthPage] Active vendor - routing to home (dashboard)');
-      router.replace('/');
-    } else {
-      // All other cases - go to onboarding (which will route based on status)
-      console.log('🔄 [AuthPage] Routing to onboarding (status:', onboardingStatus, ')');
-      router.replace('/onboarding');
-    }
+    // Use window.location.replace for clean navigation
+    window.location.replace(isActiveVendor ? '/' : '/onboarding');
   };
 
   // Show loading while checking session
@@ -174,4 +123,3 @@ export default function AuthPage() {
     </div>
   );
 }
-

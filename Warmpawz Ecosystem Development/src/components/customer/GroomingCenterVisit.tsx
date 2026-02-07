@@ -17,7 +17,7 @@ import {
   Heart,
   Check
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface GroomingCenterVisitProps {
   onBack: () => void;
@@ -51,10 +51,10 @@ export function GroomingCenterVisit({ onBack, customerId, customerData }: Groomi
       const lng = customerData?.coordinates?.lng || 77.5946;
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendors/by-role/groomer?lat=${lat}&lng=${lng}&serviceStyle=clinic`,
+        `${getApiBaseUrl()}/vendors/by-role/groomer?lat=${lat}&lng=${lng}&serviceStyle=clinic`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -73,10 +73,10 @@ export function GroomingCenterVisit({ onBack, customerId, customerData }: Groomi
   const loadPets = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${customerId}/pets`,
+        `${getApiBaseUrl()}/customer/${customerId}/pets`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -97,10 +97,10 @@ export function GroomingCenterVisit({ onBack, customerId, customerData }: Groomi
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${centerId}/services`,
+        `${getApiBaseUrl()}/vendor/${centerId}/services`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -168,12 +168,12 @@ export function GroomingCenterVisit({ onBack, customerId, customerData }: Groomi
       };
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/create`,
+        `${getApiBaseUrl()}/booking/create`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify(bookingPayload),
         }
@@ -204,12 +204,12 @@ export function GroomingCenterVisit({ onBack, customerId, customerData }: Groomi
       setLoading(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${bookingData.id}/complete`,
+        `${getApiBaseUrl()}/booking/${bookingData.id}/complete`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({ otp: otpInput }),
         }

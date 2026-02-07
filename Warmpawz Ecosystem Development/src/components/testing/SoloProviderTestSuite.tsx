@@ -3,7 +3,7 @@ import { CheckCircle, XCircle, Clock, Play, RefreshCw, AlertCircle } from 'lucid
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface TestResult {
@@ -37,7 +37,7 @@ export function SoloProviderTestSuite() {
     bookingId: '',
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   const updateTest = (index: number, updates: Partial<TestResult>) => {
     setTestResults(prev => {
@@ -60,7 +60,7 @@ export function SoloProviderTestSuite() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           ownerName: 'Test Solo Provider',
@@ -141,19 +141,19 @@ export function SoloProviderTestSuite() {
 
       // Fetch vendor
       const vendorRes = await fetch(`${API_BASE}/vendor/${testData.vendorId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       const vendorData = await vendorRes.json();
 
       // Fetch center
       const centerRes = await fetch(`${API_BASE}/center/${testData.centerId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       const centerData = await centerRes.json();
 
       // Fetch staff
       const staffRes = await fetch(`${API_BASE}/center/${testData.centerId}/staff/${testData.staffId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       const staffData = await staffRes.json();
 
@@ -208,7 +208,7 @@ export function SoloProviderTestSuite() {
       console.log(`[TEST 3] Expected vendorId: ${testData.vendorId}`);
 
       const response = await fetch(`${API_BASE}/vendor/phone/${encodeURIComponent(testData.phone)}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       const data = await response.json();
@@ -257,7 +257,7 @@ export function SoloProviderTestSuite() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({ phone: testData.phone })
       });
@@ -298,7 +298,7 @@ export function SoloProviderTestSuite() {
       }
 
       const response = await fetch(`${API_BASE}/vendor/${testData.vendorId}/solo-info`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       const data = await response.json();
@@ -351,7 +351,7 @@ export function SoloProviderTestSuite() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           vendorId: testData.vendorId,
@@ -376,7 +376,7 @@ export function SoloProviderTestSuite() {
 
       // Verify staff has service
       const staffRes = await fetch(`${API_BASE}/center/${testData.centerId}/staff/${testData.staffId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       const staffData = await staffRes.json();
 
@@ -424,7 +424,7 @@ export function SoloProviderTestSuite() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           price: 750,
@@ -440,7 +440,7 @@ export function SoloProviderTestSuite() {
 
       // Verify staff has updated service
       const staffRes = await fetch(`${API_BASE}/center/${testData.centerId}/staff/${testData.staffId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       const staffData = await staffRes.json();
 
@@ -484,7 +484,7 @@ export function SoloProviderTestSuite() {
         `${API_BASE}/vendor/services/${testData.serviceId}?vendorId=${testData.vendorId}&force=true`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -499,7 +499,7 @@ export function SoloProviderTestSuite() {
 
       // Verify staff no longer has service
       const staffRes = await fetch(`${API_BASE}/center/${testData.centerId}/staff/${testData.staffId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       const staffData = await staffRes.json();
 
@@ -542,7 +542,7 @@ export function SoloProviderTestSuite() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           vendorId: testData.vendorId,
@@ -564,7 +564,7 @@ export function SoloProviderTestSuite() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           customerId: 'test_customer_123',
@@ -620,7 +620,7 @@ export function SoloProviderTestSuite() {
       }
 
       const response = await fetch(`${API_BASE}/bookings/${testData.bookingId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       const data = await response.json();

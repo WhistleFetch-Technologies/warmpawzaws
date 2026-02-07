@@ -26,7 +26,7 @@ import {
 	AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 
 export function DelhiveryConfig() {
 	const [config, setConfig] = useState({
@@ -55,9 +55,9 @@ export function DelhiveryConfig() {
 	const loadConfig = async () => {
 		try {
 			const partners = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/integrations/logistics`,
+				`${getApiBaseUrl()}/admin/integrations/logistics`,
 				{
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			).then((r) => r.json());
 
@@ -100,11 +100,11 @@ export function DelhiveryConfig() {
 			};
 
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/integrations/logistics/partner`,
+				`${getApiBaseUrl()}/admin/integrations/logistics/partner`,
 				{
 					method: "POST",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify(partner),
@@ -136,9 +136,9 @@ export function DelhiveryConfig() {
 			setConnectionStatus("unknown");
 
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/delhivery/config`,
+				`${getApiBaseUrl()}/delhivery/config`,
 				{
-					headers: { Authorization: `Bearer ${publicAnonKey}` },
+					headers: { ...getAuthHeaders() },
 				}
 			);
 
@@ -167,11 +167,11 @@ export function DelhiveryConfig() {
 
 		try {
 			const response = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/delhivery/pincode/check`,
+				`${getApiBaseUrl()}/delhivery/pincode/check`,
 				{
 					method: "POST",
 					headers: {
-						Authorization: `Bearer ${publicAnonKey}`,
+						...getAuthHeaders(),
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({ pincode }),

@@ -91,7 +91,7 @@ export function CreateBulkOperationModal({ isOpen, onClose, onSuccess }: CreateB
           </div>
         </div>
 
-        <div className="border-t border-gray-200 px-0 py-4 flex gap-0">
+        <div className="border-t border-gray-200 px-0 py-4 flex gap-3">
           <button
             onClick={onClose}
             className="flex-1 px-4 py-0 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
@@ -101,7 +101,7 @@ export function CreateBulkOperationModal({ isOpen, onClose, onSuccess }: CreateB
           <button
             onClick={handleSubmit}
             disabled={!selectedFile || processing}
-            className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
+            className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50"
           >
             {processing ? (
               <>

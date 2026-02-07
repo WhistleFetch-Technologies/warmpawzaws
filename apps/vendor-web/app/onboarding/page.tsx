@@ -2,9 +2,14 @@
 
 export const dynamic = 'force-dynamic';
 
+import nextDynamic from 'next/dynamic';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { VendorApp } from '@/components/vendor/VendorApp';
+
+const VendorApp = nextDynamic(
+  () => import('@/components/vendor/VendorApp').then((m) => ({ default: m.VendorApp })),
+  { ssr: false }
+);
 
 interface VendorSession {
   phone: string;

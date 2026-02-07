@@ -14,7 +14,7 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-echo -e "${YELLOW}Running Care Plans Migration on AWS RDS${NC}"
+echo -e "${YELLOW}Running Vet Clinic Service Styles Migration on AWS RDS${NC}"
 echo "=============================================="
 echo ""
 
@@ -54,7 +54,7 @@ else
 fi
 
 # Migration file path
-MIGRATION_FILE="db/migrations/059_create_care_plans_tables.sql"
+MIGRATION_FILE="db/migrations/301_update_vet_clinic_service_styles.sql"
 
 if [ ! -f "$MIGRATION_FILE" ]; then
     echo -e "${RED}❌ Migration file not found: $MIGRATION_FILE${NC}"
@@ -85,24 +85,27 @@ if [ $? -eq 0 ]; then
         echo -e "${GREEN}✅ Migration completed successfully!${NC}"
         echo ""
         
-        # Verify tables created
-        echo "Verifying tables..."
+        # Verify role configuration updated
+        echo "Verifying role configuration..."
         psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "
-            SELECT table_name 
-            FROM information_schema.tables 
-            WHERE table_schema = 'public' 
-            AND table_name IN ('pet_care_plans', 'care_plan_items', 'care_plan_templates');
+            SELECT 
+                name,
+                config->'serviceStyles' as service_styles,
+                updated_at
+            FROM roles 
+            WHERE name = 'vet_clinic' AND is_active = true;
         "
         
-        # Verify templates seeded
-        TEMPLATE_COUNT=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c "SELECT COUNT(*) FROM care_plan_templates;")
+        # Verify service styles
+        SERVICE_STYLES=$(psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c "SELECT config->'serviceStyles' FROM roles WHERE name = 'vet_clinic' AND is_active = true;")
         echo ""
-        echo "Templates seeded: $TEMPLATE_COUNT (expected: 3)"
+        echo "Service styles configured: $SERVICE_STYLES"
+        echo "Expected: [\"at_center\", \"at_home\", \"tele\"]"
         
-        if [ "$TEMPLATE_COUNT" -ge 3 ]; then
+        if echo "$SERVICE_STYLES" | grep -q "at_center" && echo "$SERVICE_STYLES" | grep -q "at_home" && echo "$SERVICE_STYLES" | grep -q "tele"; then
             echo -e "${GREEN}✅ Migration verification successful!${NC}"
         else
-            echo -e "${YELLOW}⚠️  Warning: Expected 3 templates, found $TEMPLATE_COUNT${NC}"
+            echo -e "${YELLOW}⚠️  Warning: Service styles may not be correctly configured${NC}"
         fi
     else
         echo -e "${RED}❌ Migration failed${NC}"

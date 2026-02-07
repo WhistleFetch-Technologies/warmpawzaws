@@ -6,20 +6,59 @@
  * Provides atomic wallet operations with concurrency safety
  * 
  * Endpoints:
- * - GET /wallet/:customerId - Get wallet balance
+ * - GET /wallet/:customerId - Get wallet balance (by UUID)
+ * - GET /customer/wallet?phone=... - Get wallet balance (by phone)
  * - POST /wallet/:customerId/credit - Credit wallet (add funds)
  * - POST /wallet/:customerId/debit - Debit wallet (spend funds)
+ * - POST /customer/wallet/add-funds - Add funds (by phone)
+ * - POST /customer/wallet/use - Use wallet balance (by phone)
  * - GET /wallet/:customerId/transactions - Get transaction history
  * 
  * Date: 2026-01-03
+ * Updated: 2026-01-27 - Added phone-based lookup endpoints
  * ============================================================================
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, withTransaction, getClient } from '../database/rds-connection';
 import { logAuditEntry } from '../utils/audit-log';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
+
+// ============================================================================
+// HELPER: Look up customer by phone
+// ============================================================================
+
+async function getCustomerIdByPhone(phone: string): Promise<string | null> {
+  try {
+    // Normalize phone (remove spaces, ensure +91 prefix for Indian numbers)
+    let normalizedPhone = phone.replace(/\s+/g, '').replace(/^0+/, '');
+    if (!normalizedPhone.startsWith('+')) {
+      // Assume Indian number if no country code
+      if (normalizedPhone.length === 10) {
+        normalizedPhone = '+91' + normalizedPhone;
+      }
+    }
+    
+    // Try to find customer by phone
+    const result = await query(
+      `SELECT id FROM customers WHERE phone = $1 OR phone = $2 LIMIT 1`,
+      [phone, normalizedPhone]
+    );
+    
+    if (result.rows.length > 0) {
+      return result.rows[0].id;
+    }
+    
+    return null;
+  } catch (error: any) {
+    console.error('[WALLET] Error looking up customer by phone:', error.message);
+    return null;
+  }
+}
 
 // ============================================================================
 // WALLET HANDLERS
@@ -36,11 +75,15 @@ class GetWalletHandler extends BaseHandler {
     // Get or create wallet
     const wallet = await this.getOrCreateWallet(customerId);
 
+    // Get recent transactions
+    const transactions = await this.getRecentTransactions(customerId);
+
     return this.success({
       customerId: wallet.customer_id,
       balance: parseFloat(wallet.balance),
       currency: wallet.currency || 'INR',
       lastUpdated: wallet.updated_at,
+      recentTransactions: transactions,
     });
   }
 
@@ -91,7 +134,437 @@ class GetWalletHandler extends BaseHandler {
       throw error;
     }
   }
+
+  private async getRecentTransactions(customerId: string): Promise<any[]> {
+    try {
+      const result = await query(
+        `SELECT id, transaction_type, amount, balance_after, description, created_at
+         FROM wallet_transactions
+         WHERE customer_id = $1
+         ORDER BY created_at DESC
+         LIMIT 5`,
+        [customerId]
+      );
+      return result.rows.map(row => ({
+        id: row.id,
+        type: row.transaction_type,
+        amount: parseFloat(row.amount),
+        balanceAfter: parseFloat(row.balance_after),
+        description: row.description,
+        timestamp: row.created_at,
+      }));
+    } catch (error: any) {
+      // Table might not exist
+      return [];
+    }
+  }
 }
+
+// ============================================================================
+// GET WALLET BY PHONE HANDLER
+// ============================================================================
+
+class GetWalletByPhoneHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const phone = context.event.queryStringParameters?.phone;
+
+    if (!phone) {
+      return this.error('Phone number is required', 400);
+    }
+
+    // Look up customer by phone
+    const customerId = await getCustomerIdByPhone(phone);
+    
+    if (!customerId) {
+      // Return default wallet info for non-existent customer
+      return this.success({
+        wallet: {
+          customerId: null,
+          balance: 0,
+          currency: 'INR',
+          lastUpdated: new Date().toISOString(),
+        },
+        message: 'Customer not found, returning default wallet',
+      });
+    }
+
+    // Get or create wallet
+    const wallet = await this.getOrCreateWallet(customerId);
+
+    // Get recent transactions
+    const transactions = await this.getRecentTransactions(customerId);
+
+    return this.success({
+      wallet: {
+        customerId: wallet.customer_id,
+        balance: parseFloat(wallet.balance),
+        currency: wallet.currency || 'INR',
+        lastUpdated: wallet.updated_at,
+        recentTransactions: transactions,
+      },
+    });
+  }
+
+  private async getOrCreateWallet(customerId: string): Promise<any> {
+    try {
+      let wallets = await select('customer_wallets', { customer_id: customerId });
+      
+      if (wallets.length === 0) {
+        // Create new wallet
+        const result = await query(
+          `INSERT INTO customer_wallets (customer_id, balance, currency)
+           VALUES ($1, 0, 'INR')
+           ON CONFLICT (customer_id) DO NOTHING
+           RETURNING *`,
+          [customerId]
+        );
+        
+        if (result.rows.length > 0) {
+          return result.rows[0];
+        }
+        
+        wallets = await select('customer_wallets', { customer_id: customerId });
+      }
+
+      if (wallets.length === 0) {
+        return {
+          customer_id: customerId,
+          balance: 0,
+          currency: 'INR',
+          updated_at: new Date().toISOString(),
+        };
+      }
+
+      return wallets[0];
+    } catch (error: any) {
+      if (error.message?.includes('does not exist') || error.message?.includes('relation')) {
+        console.warn('[WALLET] customer_wallets table does not exist, returning default wallet');
+        return {
+          customer_id: customerId,
+          balance: 0,
+          currency: 'INR',
+          updated_at: new Date().toISOString(),
+        };
+      }
+      throw error;
+    }
+  }
+
+  private async getRecentTransactions(customerId: string): Promise<any[]> {
+    try {
+      const result = await query(
+        `SELECT id, transaction_type, amount, balance_after, description, created_at
+         FROM wallet_transactions
+         WHERE customer_id = $1
+         ORDER BY created_at DESC
+         LIMIT 5`,
+        [customerId]
+      );
+      return result.rows.map(row => ({
+        id: row.id,
+        type: row.transaction_type,
+        amount: parseFloat(row.amount),
+        balanceAfter: parseFloat(row.balance_after),
+        description: row.description,
+        timestamp: row.created_at,
+      }));
+    } catch (error: any) {
+      return [];
+    }
+  }
+}
+
+// ============================================================================
+// ADD FUNDS BY PHONE HANDLER
+// ============================================================================
+
+class AddFundsByPhoneHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const body = this.parseBody(context.event);
+    const { phone, amount, referenceType, referenceId, description, idempotencyKey } = body;
+    const requestId = context.event.requestContext?.requestId;
+
+    if (!phone) {
+      return this.error('Phone number is required', 400);
+    }
+
+    if (!amount || typeof amount !== 'number' || amount <= 0) {
+      return this.error('Amount must be a positive number', 400);
+    }
+
+    // Look up customer by phone
+    const customerId = await getCustomerIdByPhone(phone);
+    
+    if (!customerId) {
+      return this.error('Customer not found for the provided phone number', 404);
+    }
+
+    // Check idempotency
+    if (idempotencyKey) {
+      const existing = await checkIdempotencyKey(idempotencyKey);
+      if (existing.exists) {
+        return this.success({
+          ...existing.response,
+          cached: true,
+          message: 'Transaction already processed',
+        });
+      }
+    }
+
+    // Use transaction with row-level locking
+    const result = await withTransaction(async (client) => {
+      // Lock wallet row FOR UPDATE
+      const walletResult = await client.query(
+        `SELECT id, customer_id, balance, currency
+         FROM customer_wallets
+         WHERE customer_id = $1
+         FOR UPDATE`,
+        [customerId]
+      );
+
+      let wallet;
+      if (walletResult.rows.length === 0) {
+        // Create wallet if doesn't exist
+        const createResult = await client.query(
+          `INSERT INTO customer_wallets (customer_id, balance, currency)
+           VALUES ($1, $2, 'INR')
+           RETURNING *`,
+          [customerId, amount]
+        );
+        wallet = createResult.rows[0];
+      } else {
+        wallet = walletResult.rows[0];
+        
+        // Update balance atomically
+        const updateResult = await client.query(
+          `UPDATE customer_wallets
+           SET balance = balance + $1, updated_at = NOW()
+           WHERE customer_id = $2
+           RETURNING *`,
+          [amount, customerId]
+        );
+        wallet = updateResult.rows[0];
+      }
+
+      // Record transaction
+      const txnResult = await client.query(
+        `INSERT INTO wallet_transactions (
+          customer_id, transaction_type, amount, balance_after,
+          reference_type, reference_id, description
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *`,
+        [
+          customerId,
+          'credit',
+          amount,
+          wallet.balance,
+          referenceType || 'add_funds',
+          referenceId || null,
+          description || 'Wallet top-up',
+        ]
+      );
+
+      return {
+        wallet,
+        transaction: txnResult.rows[0],
+      };
+    });
+
+    // Log audit entry
+    await logAuditEntry({
+      entityType: 'wallet',
+      entityId: result.wallet.id,
+      action: 'add_funds',
+      newValues: {
+        amount,
+        balanceAfter: result.wallet.balance,
+        phone,
+      },
+      actorId: customerId,
+      actorType: 'customer',
+      requestId,
+    });
+
+    const response = {
+      success: true,
+      transactionId: result.transaction.id,
+      customerId,
+      amount: Number(amount),
+      newBalance: Number(result.wallet.balance),
+      transactionType: 'credit',
+      timestamp: result.transaction.created_at,
+      message: 'Funds added successfully',
+    };
+
+    // Store idempotency key
+    if (idempotencyKey) {
+      await storeIdempotencyKey(
+        idempotencyKey,
+        'wallet_transaction',
+        result.transaction.id,
+        response,
+        200
+      );
+    }
+
+    return this.success(response);
+  }
+}
+
+// ============================================================================
+// USE WALLET BY PHONE HANDLER
+// ============================================================================
+
+class UseWalletByPhoneHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const body = this.parseBody(context.event);
+    const { phone, amount, referenceType, referenceId, description, idempotencyKey } = body;
+    const requestId = context.event.requestContext?.requestId;
+
+    if (!phone) {
+      return this.error('Phone number is required', 400);
+    }
+
+    if (!amount || typeof amount !== 'number' || amount <= 0) {
+      return this.error('Amount must be a positive number', 400);
+    }
+
+    // Look up customer by phone
+    const customerId = await getCustomerIdByPhone(phone);
+    
+    if (!customerId) {
+      return this.error('Customer not found for the provided phone number', 404);
+    }
+
+    // Check idempotency
+    if (idempotencyKey) {
+      const existing = await checkIdempotencyKey(idempotencyKey);
+      if (existing.exists) {
+        return this.success({
+          ...existing.response,
+          cached: true,
+          message: 'Transaction already processed',
+        });
+      }
+    }
+
+    try {
+      // Use transaction with row-level locking
+      const result = await withTransaction(async (client) => {
+        // Lock wallet row FOR UPDATE
+        const walletResult = await client.query(
+          `SELECT id, customer_id, balance, currency
+           FROM customer_wallets
+           WHERE customer_id = $1
+           FOR UPDATE`,
+          [customerId]
+        );
+
+        if (walletResult.rows.length === 0) {
+          throw new Error('Wallet not found');
+        }
+
+        const wallet = walletResult.rows[0];
+
+        // Check sufficient balance
+        if (parseFloat(wallet.balance) < amount) {
+          throw new Error('Insufficient balance');
+        }
+
+        // Update balance atomically
+        const updateResult = await client.query(
+          `UPDATE customer_wallets
+           SET balance = balance - $1, updated_at = NOW()
+           WHERE customer_id = $2 AND balance >= $1
+           RETURNING *`,
+          [amount, customerId]
+        );
+
+        if (updateResult.rows.length === 0) {
+          throw new Error('Insufficient balance (race condition)');
+        }
+
+        const updatedWallet = updateResult.rows[0];
+
+        // Record transaction
+        const txnResult = await client.query(
+          `INSERT INTO wallet_transactions (
+            customer_id, transaction_type, amount, balance_after,
+            reference_type, reference_id, description
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+          RETURNING *`,
+          [
+            customerId,
+            'debit',
+            amount,
+            updatedWallet.balance,
+            referenceType || 'payment',
+            referenceId || null,
+            description || 'Wallet payment',
+          ]
+        );
+
+        return {
+          wallet: updatedWallet,
+          transaction: txnResult.rows[0],
+        };
+      });
+
+      // Log audit entry
+      await logAuditEntry({
+        entityType: 'wallet',
+        entityId: result.wallet.id,
+        action: 'use_wallet',
+        newValues: {
+          amount,
+          balanceAfter: result.wallet.balance,
+          phone,
+          referenceType,
+          referenceId,
+        },
+        actorId: customerId,
+        actorType: 'customer',
+        requestId,
+      });
+
+      const response = {
+        success: true,
+        transactionId: result.transaction.id,
+        customerId,
+        amount: Number(amount),
+        newBalance: Number(result.wallet.balance),
+        transactionType: 'debit',
+        timestamp: result.transaction.created_at,
+        message: 'Wallet balance used successfully',
+      };
+
+      // Store idempotency key
+      if (idempotencyKey) {
+        await storeIdempotencyKey(
+          idempotencyKey,
+          'wallet_transaction',
+          result.transaction.id,
+          response,
+          200
+        );
+      }
+
+      return this.success(response);
+    } catch (error: any) {
+      if (error.message.includes('Insufficient balance')) {
+        return this.error('Insufficient wallet balance', 400);
+      }
+      if (error.message.includes('Wallet not found')) {
+        return this.error('Wallet not found. Please add funds first.', 404);
+      }
+      throw error;
+    }
+  }
+}
+
+// ============================================================================
+// CREDIT WALLET HANDLER (by customerId)
+// ============================================================================
 
 class CreditWalletHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
@@ -365,6 +838,78 @@ class DebitWalletHandler extends BaseHandler {
   }
 }
 
+// ============================================================================
+// GET TRANSACTIONS BY PHONE HANDLER
+// ============================================================================
+
+class GetTransactionsByPhoneHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const phone = context.event.queryStringParameters?.phone;
+    const limit = parseInt(context.event.queryStringParameters?.limit || '50');
+    const offset = parseInt(context.event.queryStringParameters?.offset || '0');
+
+    if (!phone) {
+      return this.error('Phone number is required', 400);
+    }
+
+    // Look up customer by phone
+    const customerId = await getCustomerIdByPhone(phone);
+    
+    if (!customerId) {
+      return this.success({
+        transactions: [],
+        count: 0,
+        limit,
+        offset,
+        message: 'Customer not found',
+      });
+    }
+
+    try {
+      const result = await query(
+        `SELECT * FROM wallet_transactions
+         WHERE customer_id = $1
+         ORDER BY created_at DESC
+         LIMIT $2 OFFSET $3`,
+        [customerId, Math.min(limit, 100), offset]
+      );
+
+      const transactions = result.rows.map((row) => ({
+        id: row.id,
+        type: row.transaction_type,
+        amount: parseFloat(row.amount),
+        balanceAfter: parseFloat(row.balance_after),
+        referenceType: row.reference_type,
+        referenceId: row.reference_id,
+        description: row.description,
+        timestamp: row.created_at,
+      }));
+
+      return this.success({
+        transactions,
+        count: transactions.length,
+        limit,
+        offset,
+      });
+    } catch (error: any) {
+      if (error.message?.includes('does not exist') || error.message?.includes('relation')) {
+        return this.success({
+          transactions: [],
+          count: 0,
+          limit,
+          offset,
+          message: 'Wallet transactions table not found',
+        });
+      }
+      throw error;
+    }
+  }
+}
+
+// ============================================================================
+// GET TRANSACTIONS BY UUID HANDLER
+// ============================================================================
+
 class GetWalletTransactionsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const customerId = context.event.pathParameters?.customerId;
@@ -470,10 +1015,55 @@ class GetWalletTransactionsHandler extends BaseHandler {
 
 export function registerWalletEndpoints(app: Hono) {
   const getWalletHandler = new GetWalletHandler();
+  const getWalletByPhoneHandler = new GetWalletByPhoneHandler();
   const creditWalletHandler = new CreditWalletHandler();
   const debitWalletHandler = new DebitWalletHandler();
+  const addFundsByPhoneHandler = new AddFundsByPhoneHandler();
+  const useWalletByPhoneHandler = new UseWalletByPhoneHandler();
   const getTransactionsHandler = new GetWalletTransactionsHandler();
+  const getTransactionsByPhoneHandler = new GetTransactionsByPhoneHandler();
 
+  // =========================================================================
+  // PHONE-BASED ENDPOINTS (for frontend compatibility)
+  // =========================================================================
+
+  // GET /customer/wallet?phone=... - Get wallet by phone number
+  app.get('/customer/wallet', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result = await getWalletByPhoneHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // GET /customer/wallet/transactions?phone=... - Get transactions by phone number
+  app.get('/customer/wallet/transactions', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result = await getTransactionsByPhoneHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // POST /customer/wallet/add-funds - Add funds by phone number
+  app.post('/customer/wallet/add-funds', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result = await addFundsByPhoneHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // POST /customer/wallet/use - Use wallet balance by phone number
+  app.post('/customer/wallet/use', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result = await useWalletByPhoneHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // =========================================================================
+  // UUID-BASED ENDPOINTS (backwards compatible)
+  // =========================================================================
+
+  // GET /wallet/:customerId - Get wallet by customer UUID
   app.get('/wallet/:customerId', async (c) => {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { customerId: c.req.param('customerId') };
@@ -482,6 +1072,7 @@ export function registerWalletEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
+  // POST /wallet/:customerId/credit - Credit wallet by customer UUID
   app.post('/wallet/:customerId/credit', async (c) => {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { customerId: c.req.param('customerId') };
@@ -490,6 +1081,7 @@ export function registerWalletEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
+  // POST /wallet/:customerId/debit - Debit wallet by customer UUID
   app.post('/wallet/:customerId/debit', async (c) => {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { customerId: c.req.param('customerId') };
@@ -498,6 +1090,7 @@ export function registerWalletEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
+  // GET /wallet/:customerId/transactions - Get transactions by customer UUID
   app.get('/wallet/:customerId/transactions', async (c) => {
     const event = createApiGatewayEvent(c.req);
     event.pathParameters = { customerId: c.req.param('customerId') };
@@ -516,14 +1109,14 @@ function createApiGatewayEvent(req: any): any {
     pathParameters: {},
     queryStringParameters: Object.fromEntries(new URL(req.url, 'http://localhost').searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'wallet-handler',
     functionVersion: '$LATEST',
   };

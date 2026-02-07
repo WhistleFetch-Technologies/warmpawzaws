@@ -20,8 +20,10 @@ import {
   Trash2
 } from 'lucide-react';
 import { getAmenitiesForVendorType } from '@/lib/master-amenities';
+import { getApiBaseUrl } from '@/lib/api-config';
 import { toast } from 'sonner';
 import { SpecializationSelector } from './SpecializationSelector'; // ✅ NEW
+import { formatOperatingHours } from '@/lib/format-utils';
 
 interface FacilityManagementProps {
   vendorId: string;
@@ -61,6 +63,9 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
     photos: []
   });
   const [newPhotos, setNewPhotos] = useState<PhotoFile[]>([]); // New photos to upload
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadingPhotoIndex, setUploadingPhotoIndex] = useState<number | null>(null);
   const [customAmenityInput, setCustomAmenityInput] = useState('');
 
   // Using apiClient instead of API_BASE
@@ -74,13 +79,13 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
     const loadFacilityData = async () => {
       try {
         setLoading(true);
-        const data = await apiClient.get('/vendor/endpoint') as any;
+        const data = await apiClient.get(`/vendor/${vendorId}/facility`) as any;
 
         if (data && data.success && data.facility) {
           setFacility({
             description: data.facility.description || '',
             address: data.facility.address || '',
-            operatingHours: data.facility.operatingHours || 'Mon-Fri: 9AM-6PM',
+            operatingHours: formatOperatingHours(data.facility.operatingHours) || 'Mon-Fri: 9AM-6PM',
             amenities: data.facility.amenities || [],
             customAmenities: data.facility.customAmenities || [],
             photos: data.facility.photos || [],
@@ -131,6 +136,75 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
     setNewPhotos(prev => [...prev, ...newPhotoFiles]);
   };
 
+  // Helper function to upload facility photo with progress
+  const uploadFacilityPhotoWithProgress = async (
+    file: File,
+    vendorId: string,
+    onProgress: (progress: number) => void
+  ): Promise<{ success: boolean; publicUrl?: string; error?: string }> => {
+    return new Promise((resolve) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('userId', vendorId);
+      formData.append('userType', 'facility');
+      formData.append('folder', 'media');
+
+      const xhr = new XMLHttpRequest();
+      const apiBaseUrl = getApiBaseUrl();
+      const url = `${apiBaseUrl}/storage/upload-media`;
+
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          const percentComplete = Math.round((e.loaded / e.total) * 100);
+          onProgress(percentComplete);
+        }
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            if (response.success && response.publicUrl) {
+              resolve({
+                success: true,
+                publicUrl: response.publicUrl,
+              });
+            } else {
+              resolve({
+                success: false,
+                error: response.error || 'Upload failed',
+              });
+            }
+          } catch (error) {
+            resolve({
+              success: false,
+              error: 'Failed to parse response',
+            });
+          }
+        } else {
+          resolve({
+            success: false,
+            error: `Upload failed with status ${xhr.status}`,
+          });
+        }
+      });
+
+      xhr.addEventListener('error', () => {
+        resolve({
+          success: false,
+          error: 'Network error during upload',
+        });
+      });
+
+      xhr.open('POST', url);
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+      xhr.send(formData);
+    });
+  };
+
   // Remove photo before upload
   const removePhoto = (index: number) => {
     const photo = newPhotos[index];
@@ -151,28 +225,56 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
     try {
       setSaving(true);
 
-      // Upload new photos if any
+      // Upload new photos if any with progress tracking
       let uploadedUrls: string[] = [];
       
       if (newPhotos.length > 0) {
-        const formData = new FormData();
-        formData.append('vendorId', vendorId);
+        setUploadingPhotos(true);
+        setUploadProgress(0);
         
-        newPhotos.forEach((photo, index) => {
-          formData.append('photos', photo.file);
-        });
-
-        console.log('📤 Uploading facility photos...');
-        // Upload photos using apiClient
-        const uploadResult = await apiClient.post('/storage/upload-facility-photos', formData) as any;
-        console.log('✅ Photos uploaded:', uploadResult);
-        
-        if (uploadResult && uploadResult.uploads) {
-          uploadedUrls = uploadResult.uploads
-            .filter((u: any) => u.success)
-            .map((u: any) => u.url);
-        } else if (uploadResult && uploadResult.photoUrls) {
-          uploadedUrls = uploadResult.photoUrls;
+        try {
+          // Upload photos one by one with progress tracking
+          for (let i = 0; i < newPhotos.length; i++) {
+            setUploadingPhotoIndex(i);
+            const photo = newPhotos[i];
+            
+            // Create form data for single photo
+            const formData = new FormData();
+            formData.append('file', photo.file);
+            formData.append('userId', vendorId);
+            formData.append('userType', 'facility');
+            formData.append('folder', 'media');
+            
+            // Upload with progress using the generic upload function
+            // We'll use XMLHttpRequest directly for progress tracking
+            const uploadResult = await uploadFacilityPhotoWithProgress(
+              photo.file,
+              vendorId,
+              (progress) => {
+                // Calculate overall progress: (completed photos + current photo progress) / total
+                const overallProgress = Math.round(
+                  ((i * 100) + progress) / newPhotos.length
+                );
+                setUploadProgress(overallProgress);
+              }
+            );
+            
+            const result = uploadResult;
+            
+            if (result.success && result.publicUrl) {
+              uploadedUrls.push(result.publicUrl);
+            } else {
+              toast.error(`Failed to upload photo ${i + 1}: ${result.error || 'Unknown error'}`);
+            }
+          }
+          
+          setUploadingPhotoIndex(null);
+        } catch (error: any) {
+          console.error('Error uploading photos:', error);
+          toast.error(`Error uploading photos: ${error.message || 'Unknown error'}`);
+        } finally {
+          setUploadingPhotos(false);
+          setUploadProgress(0);
         }
       }
 
@@ -356,25 +458,60 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
           <div className="px-4 pb-4">
             <h3 className="text-sm font-medium text-gray-700 mb-3">New Photos to Upload</h3>
             <div className="grid grid-cols-2 gap-3">
-              {newPhotos.map((photo, index) => (
+              {newPhotos.map((photo, index) => {
+                const isUploading = uploadingPhotos && uploadingPhotoIndex === index;
+                const isUploaded = uploadingPhotos && uploadingPhotoIndex !== null && index < uploadingPhotoIndex;
+                
+                return (
                 <div key={`new-${index}`} className="relative aspect-square bg-gray-100 rounded-xl overflow-hidden group">
                   <img 
                     src={photo.preview}
                     alt={`New photo ${index + 1}`}
-                    className="w-full h-full object-cover"
+                      className={`w-full h-full object-cover ${isUploading ? 'opacity-50' : ''}`}
                   />
+                    {!uploadingPhotos && (
                   <button
                     onClick={() => removePhoto(index)}
                     className="absolute top-2 right-2 w-7 h-7 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
                   >
                     <X className="w-4 h-4" />
                   </button>
-                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-orange-500/80 to-transparent p-2">
-                    <span className="text-xs text-white font-medium">Ready to upload</span>
+                    )}
+                    {isUploading && (
+                      <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center">
+                        <div className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin mb-2" />
+                        <span className="text-white text-xs">{uploadProgress}%</span>
+                      </div>
+                    )}
+                    {isUploaded && (
+                      <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
+                        <Check className="w-8 h-8 text-green-500" />
+                      </div>
+                    )}
+                    <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t p-2 ${
+                      isUploaded ? 'from-green-500/80' : isUploading ? 'from-orange-500/80' : 'from-orange-500/80'
+                    } to-transparent`}>
+                      <span className="text-xs text-white font-medium">
+                        {isUploaded ? 'Uploaded' : isUploading ? `Uploading... ${uploadProgress}%` : 'Ready to upload'}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
+            {uploadingPhotos && (
+              <div className="mt-4 space-y-2">
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                  <div
+                    className="bg-orange-500 h-2.5 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-600 text-center">
+                  Uploading {uploadingPhotoIndex !== null ? uploadingPhotoIndex + 1 : 0} of {newPhotos.length} photos... {uploadProgress}%
+                </p>
+            </div>
+            )}
           </div>
         )}
 
@@ -538,13 +675,13 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
         <div className="px-4 pb-6">
           <Button
             onClick={handleSave}
-            disabled={saving || (newPhotos.length === 0 && facility.photos.length === 0)}
+            disabled={saving || uploadingPhotos}
             className="w-full bg-[#FF8C42] hover:bg-[#FF7A2F] text-white h-12"
           >
-            {saving ? (
+            {saving || uploadingPhotos ? (
               <>
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                Saving...
+                {uploadingPhotos ? `Uploading... ${uploadProgress}%` : 'Saving...'}
               </>
             ) : (
               <>

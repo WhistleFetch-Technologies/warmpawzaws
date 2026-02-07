@@ -222,55 +222,62 @@ export function AmbulanceSOS(props: AmbulanceSOSProps) {
 
   if (step === 'tracking') {
     return (
-      <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
-        <div className="bg-red-600 text-white p-4 sticky top-0 z-10">
-          <div className="flex items-center gap-3">
-            <button onClick={props.onBack}>
-              <ArrowLeft className="w-6 h-6" />
+      <div className="min-h-screen bg-gradient-to-br from-red-600 to-red-700 max-w-md mx-auto">
+        {/* Header with RED gradient theme matching AmbulanceServicesLanding */}
+        <div className="px-6 pt-12 pb-6">
+          <div className="flex items-center gap-4 mb-6">
+            <button 
+              onClick={props.onBack}
+              className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5 text-white" />
             </button>
-            <h1 className="font-bold text-lg">Live Tracking</h1>
+            <h1 className="text-2xl font-bold text-white">Live Tracking</h1>
           </div>
         </div>
+        
+        {/* Main Content - White Card with Top Radius */}
+        <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
+          <div className="space-y-4">
+            {/* Map Component */}
+            <MapPlaceholder userLocation={location ? { lat: location.lat || 12.9716, lng: location.lng || 77.5946 } : undefined} />
 
-        <div className="p-4 space-y-4">
-          {/* Map Component */}
-          <MapPlaceholder userLocation={location ? { lat: location.lat || 12.9716, lng: location.lng || 77.5946 } : undefined} />
+            {/* Driver Details */}
+            {selectedAmbulance && trackingData && (
+              <Card className="p-4 border-l-4 border-red-500">
+                <h3 className="font-bold text-gray-900 mb-3">Ambulance Details</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Driver:</span>
+                    <span className="font-semibold text-gray-900">{trackingData.driverName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Vehicle:</span>
+                    <span className="font-semibold text-gray-900">{trackingData.vehicleNumber}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">ETA:</span>
+                    <span className="font-semibold text-green-600">{trackingData.eta}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-200">
+                    <Button
+                      variant="outline"
+                      className="flex-1 border-red-200 text-red-600 hover:bg-red-50"
+                      onClick={() => handleEmergencyCall(trackingData.phone)}
+                    >
+                      <Phone className="w-4 h-4 mr-2" />
+                      Call Driver
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            )}
 
-          {/* Driver Details */}
-          {selectedAmbulance && trackingData && (
-            <Card className="p-4 border-l-4 border-red-500">
-              <h3 className="font-bold text-gray-900 mb-3">Ambulance Details</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Driver:</span>
-                  <span className="font-semibold text-gray-900">{trackingData.driverName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Vehicle:</span>
-                  <span className="font-semibold text-gray-900">{trackingData.vehicleNumber}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">ETA:</span>
-                  <span className="font-semibold text-green-600">{trackingData.eta}</span>
-                </div>
-                <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-200">
-                  <Button
-                    variant="outline"
-                    className="flex-1 border-red-200 text-red-600 hover:bg-red-50"
-                    onClick={() => handleEmergencyCall(trackingData.phone)}
-                  >
-                    <Phone className="w-4 h-4 mr-2" />
-                    Call Driver
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-            <p className="text-sm text-blue-800">
-              <strong>Emergency Status:</strong> Ambulance is on the way. You can track its location in real-time on the map above.
-            </p>
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <p className="text-sm text-blue-800">
+                <strong>Emergency Status:</strong> Ambulance is on the way. You can track its location in real-time on the map above.
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -278,19 +285,25 @@ export function AmbulanceSOS(props: AmbulanceSOSProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
-      <div className="bg-red-600 text-white p-4 sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          <button onClick={props.onBack}>
-            <ArrowLeft className="w-6 h-6" />
+    <div className="min-h-screen bg-gradient-to-br from-red-600 to-red-700 max-w-md mx-auto">
+      {/* Header with RED gradient theme matching AmbulanceServicesLanding */}
+      <div className="px-6 pt-12 pb-6">
+        <div className="flex items-center gap-4 mb-6">
+          <button 
+            onClick={props.onBack}
+            className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
+          >
+            <ArrowLeft className="w-5 h-5 text-white" />
           </button>
-          <h1 className="font-bold text-lg">Nearby Ambulances</h1>
+          <h1 className="text-2xl font-bold text-white">Nearby Ambulances</h1>
         </div>
       </div>
-
-      <div className="p-4">
-        {/* Map showing location */}
-        {location && (
+      
+      {/* Main Content - White Card with Top Radius */}
+      <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
+        <div>
+          {/* Map showing location */}
+          {location && (
           <div className="mb-4">
             <MapPlaceholder userLocation={location.lat && location.lng ? { lat: location.lat, lng: location.lng } : undefined} />
             <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-200 mt-2 flex items-center gap-3">
@@ -342,6 +355,7 @@ export function AmbulanceSOS(props: AmbulanceSOSProps) {
             </Card>
           ))}
         </div>
+      </div>
       </div>
     </div>
   );

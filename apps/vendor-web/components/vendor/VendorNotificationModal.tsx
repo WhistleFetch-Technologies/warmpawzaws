@@ -6,7 +6,7 @@ import { X, Check, CheckCheck, Trash2, Bell, Sparkles, MessageSquare, XCircle } 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+// Note: Using apiClient for API calls
 import { toast } from 'sonner';
 
 interface NotificationItem {
@@ -31,8 +31,6 @@ export function VendorNotificationModal({ vendorId, open, onClose, onNotificatio
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
-
   useEffect(() => {
     if (open) {
       fetchNotifications();
@@ -42,14 +40,23 @@ export function VendorNotificationModal({ vendorId, open, onClose, onNotificatio
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      const data = await apiClient.get('/vendor/endpoint') as any;
+      const data = await apiClient.get(`/vendor/notifications/${vendorId}?limit=50`) as any;
 
       if (data && data.success) {
-        // data already available
-        console.log('📬 Notifications loaded:', data.notifications?.length || 0);
-        setNotifications(data.notifications || []);
+        // Map database fields to component expected format
+        const mappedNotifications = (data.notifications || []).map((n: any) => ({
+          notificationId: n.id || n.notificationId,
+          type: n.notification_type || n.type,
+          title: n.title,
+          message: n.message,
+          createdAt: n.created_at || n.createdAt,
+          isRead: n.is_read || n.isRead || n.read || false,
+          data: n.data || n.metadata,
+        }));
+        console.log('📬 Notifications loaded:', mappedNotifications.length);
+        setNotifications(mappedNotifications);
       } else {
-        console.error('Failed to fetch notifications:', 200);
+        console.error('Failed to fetch notifications:', data);
       }
     } catch (error) {
       console.error('Error fetching notifications:', error);
@@ -143,7 +150,7 @@ export function VendorNotificationModal({ vendorId, open, onClose, onNotificatio
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-[430px] max-h-[85vh] overflow-hidden flex flex-col p-0">
+      <DialogContent className="max-w-[430px] max-h-[85vh] overflow-hidden flex flex-col p-0 bg-white border-2 border-[#FF8C42]/20 shadow-2xl">
         {/* Header */}
         <DialogHeader className="px-4 pt-4 pb-3 border-b border-gray-200">
           <DialogTitle className="sr-only">Notifications</DialogTitle>

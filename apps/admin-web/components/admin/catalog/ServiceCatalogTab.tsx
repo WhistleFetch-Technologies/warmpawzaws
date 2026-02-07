@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Search, Plus, Edit, Trash2, Eye, X } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Search, Plus, Edit, Trash2, Eye, Users, Package, Tag, Layout, IndianRupee, Clock, AlertCircle } from 'lucide-react';
 import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { StatusBadge } from './StatusBadge';
@@ -22,12 +22,22 @@ interface Service {
   serviceType?: string;
   duration?: number;
   applicableRoles?: string[];
+  specializationIds?: string[];
+  metadata?: Record<string, unknown>;
+  isPackage?: boolean;
+  taxCategoryId?: string;
+  hsnCodeId?: string;
 }
+
+export type FilterMissing = 'none' | 'roles' | 'specialization' | 'style' | 'price' | 'duration';
+export type FilterType = 'all' | 'package' | 'service';
 
 export function ServiceCatalogTab() {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState<FilterType>('all');
+  const [filterMissing, setFilterMissing] = useState<FilterMissing>('none');
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
@@ -84,14 +94,19 @@ export function ServiceCatalogTab() {
         name: s.service_name || s.display_name || s.name,
         category: s.category_name || s.category_id || 'General',
         status: (s.status === 'active' ? 'active' : s.publish_status === 'published' ? 'active' : 'inactive') as 'active' | 'inactive' | 'pending' | 'draft',
-        price: s.base_price || s.price || 0,
+        price: s.base_price ?? s.price ?? 0,
         description: s.description,
         createdAt: s.created_at || s.createdAt || new Date().toISOString(),
         categoryId: s.category_id,
         subCategoryId: s.sub_category_id,
         serviceType: s.service_style || s.serviceType,
-        duration: s.duration_minutes || s.duration,
+        duration: s.duration_minutes ?? s.duration,
         applicableRoles: s.applicable_roles || [],
+        specializationIds: s.specialization_ids || s.specializationIds || [],
+        metadata: s.metadata || {},
+        isPackage: !!(s.metadata?.isPackage ?? s.isPackage),
+        taxCategoryId: s.tax_category_id,
+        hsnCodeId: s.hsn_code_id,
       }));
       
       console.log('🔍 [ServiceCatalogTab] Mapped services:', mappedServices.length);
@@ -104,10 +119,53 @@ export function ServiceCatalogTab() {
     }
   };
 
-  const filteredServices = services.filter(service =>
-    service.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    service.category.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Analytics (click-to-list counts)
+  const analytics = useMemo(() => {
+    const activeRolesSet = new Set<string>();
+    let packageCount = 0;
+    let serviceCount = 0;
+    let missingRoles = 0;
+    let missingSpecialization = 0;
+    let missingStyle = 0;
+    let missingPrice = 0;
+    let missingDuration = 0;
+    for (const s of services) {
+      (s.applicableRoles || []).forEach((r: string) => activeRolesSet.add(r));
+      if (s.isPackage) packageCount++; else serviceCount++;
+      if (!(s.applicableRoles?.length)) missingRoles++;
+      if (!(s.specializationIds?.length)) missingSpecialization++;
+      if (!s.serviceType || String(s.serviceType).trim() === '') missingStyle++;
+      if (s.price == null || Number(s.price) <= 0) missingPrice++;
+      if (s.duration == null || Number(s.duration) <= 0) missingDuration++;
+    }
+    return {
+      activeRolesCount: activeRolesSet.size,
+      packageCount,
+      serviceCount,
+      missingRoles,
+      missingSpecialization,
+      missingStyle,
+      missingPrice,
+      missingDuration,
+    };
+  }, [services]);
+
+  const filteredServices = useMemo(() => {
+    return services.filter((service) => {
+      const search = searchQuery.toLowerCase().trim();
+      if (search && !service.name.toLowerCase().includes(search) && !service.category.toLowerCase().includes(search) && !(service.description || '').toLowerCase().includes(search)) return false;
+      if (filterType === 'package' && !service.isPackage) return false;
+      if (filterType === 'service' && service.isPackage) return false;
+      if (filterMissing !== 'none') {
+        if (filterMissing === 'roles' && (service.applicableRoles?.length ?? 0) > 0) return false;
+        if (filterMissing === 'specialization' && (service.specializationIds?.length ?? 0) > 0) return false;
+        if (filterMissing === 'style' && service.serviceType && String(service.serviceType).trim()) return false;
+        if (filterMissing === 'price' && service.price != null && Number(service.price) > 0) return false;
+        if (filterMissing === 'duration' && service.duration != null && Number(service.duration) > 0) return false;
+      }
+      return true;
+    });
+  }, [services, searchQuery, filterType, filterMissing]);
 
   const handleAddService = () => {
     setEditingService(null);
@@ -160,8 +218,129 @@ export function ServiceCatalogTab() {
         </Button>
       </div>
       
-      <div className="flex items-center justify-between mb-4 bg-white">
-        <div className="flex-1 relative max-w-md">
+      {/* Analytics widgets (click to filter list) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 mb-4">
+        <button
+          type="button"
+          onClick={() => { setFilterMissing('none'); setFilterType('all'); }}
+          className={`flex items-center gap-2 p-3 rounded-xl border text-left transition-all ${
+            filterMissing === 'none' && filterType === 'all'
+              ? 'border-orange-500 bg-orange-50 text-orange-800'
+              : 'border-gray-200 bg-white hover:border-gray-300 text-gray-700'
+          }`}
+        >
+          <span className="text-lg font-bold text-gray-900">{services.length}</span>
+          <span className="text-xs text-gray-600">Total</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => { setFilterType('all'); setFilterMissing('none'); setSearchQuery(''); }}
+          className={`flex items-center gap-2 p-3 rounded-xl border text-left transition-all ${
+            filterType === 'all' ? 'border-orange-500 bg-orange-50' : 'border-gray-200 bg-white hover:border-gray-300'
+          }`}
+          title="Click to see services with roles"
+        >
+          <Users className="w-4 h-4 text-blue-600 shrink-0" />
+          <div>
+            <span className="text-sm font-semibold text-gray-900">{analytics.activeRolesCount}</span>
+            <span className="block text-xs text-gray-500">Active roles</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => { setFilterType('package'); setFilterMissing('none'); }}
+          className={`flex items-center gap-2 p-3 rounded-xl border text-left transition-all ${
+            filterType === 'package' ? 'border-orange-500 bg-orange-50' : 'border-gray-200 bg-white hover:border-gray-300'
+          }`}
+        >
+          <Package className="w-4 h-4 text-purple-600 shrink-0" />
+          <div>
+            <span className="text-sm font-semibold text-gray-900">{analytics.packageCount}</span>
+            <span className="block text-xs text-gray-500">Packages</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => { setFilterType('service'); setFilterMissing('none'); }}
+          className={`flex items-center gap-2 p-3 rounded-xl border text-left transition-all ${
+            filterType === 'service' ? 'border-orange-500 bg-orange-50' : 'border-gray-200 bg-white hover:border-gray-300'
+          }`}
+        >
+          <Tag className="w-4 h-4 text-green-600 shrink-0" />
+          <div>
+            <span className="text-sm font-semibold text-gray-900">{analytics.serviceCount}</span>
+            <span className="block text-xs text-gray-500">Services</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilterMissing(analytics.missingRoles ? 'roles' : filterMissing)}
+          className={`flex items-center gap-2 p-3 rounded-xl border text-left transition-all ${
+            filterMissing === 'roles' ? 'border-amber-500 bg-amber-50' : 'border-gray-200 bg-white hover:border-gray-300'
+          }`}
+          title="Missing applicable roles"
+        >
+          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+          <div>
+            <span className="text-sm font-semibold text-gray-900">{analytics.missingRoles}</span>
+            <span className="block text-xs text-gray-500">Missing roles</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilterMissing(analytics.missingSpecialization ? 'specialization' : filterMissing)}
+          className={`flex items-center gap-2 p-3 rounded-xl border text-left transition-all ${
+            filterMissing === 'specialization' ? 'border-amber-500 bg-amber-50' : 'border-gray-200 bg-white hover:border-gray-300'
+          }`}
+          title="Missing specializations"
+        >
+          <Tag className="w-4 h-4 text-amber-600 shrink-0" />
+          <div>
+            <span className="text-sm font-semibold text-gray-900">{analytics.missingSpecialization}</span>
+            <span className="block text-xs text-gray-500">Missing spec</span>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilterMissing(analytics.missingStyle ? 'style' : filterMissing)}
+          className={`flex items-center gap-2 p-3 rounded-xl border text-left transition-all ${
+            filterMissing === 'style' ? 'border-amber-500 bg-amber-50' : 'border-gray-200 bg-white hover:border-gray-300'
+          }`}
+          title="Missing service style"
+        >
+          <Layout className="w-4 h-4 text-amber-600 shrink-0" />
+          <div>
+            <span className="text-sm font-semibold text-gray-900">{analytics.missingStyle}</span>
+            <span className="block text-xs text-gray-500">Missing style</span>
+          </div>
+        </button>
+      </div>
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <button
+          type="button"
+          onClick={() => setFilterMissing(analytics.missingPrice ? 'price' : filterMissing)}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm ${
+            filterMissing === 'price' ? 'border-amber-500 bg-amber-50' : 'border-gray-200 bg-white hover:border-gray-300'
+          }`}
+        >
+          <IndianRupee className="w-4 h-4 text-amber-600" />
+          <span>Missing price: {analytics.missingPrice}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilterMissing(analytics.missingDuration ? 'duration' : filterMissing)}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm ${
+            filterMissing === 'duration' ? 'border-amber-500 bg-amber-50' : 'border-gray-200 bg-white hover:border-gray-300'
+          }`}
+        >
+          <Clock className="w-4 h-4 text-amber-600" />
+          <span>Missing duration: {analytics.missingDuration}</span>
+        </button>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3 mb-4 bg-gray-50 p-3 rounded-xl border border-gray-200">
+        <div className="flex-1 min-w-[200px] relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
           <input
             type="text"
@@ -171,7 +350,41 @@ export function ServiceCatalogTab() {
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900"
           />
         </div>
+        <select
+          value={filterType}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterType(e.target.value as FilterType)}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900"
+        >
+          <option value="all">All types</option>
+          <option value="package">Package only</option>
+          <option value="service">Service only</option>
+        </select>
+        <select
+          value={filterMissing}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterMissing(e.target.value as FilterMissing)}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900"
+        >
+          <option value="none">No missing filter</option>
+          <option value="roles">Missing roles</option>
+          <option value="specialization">Missing specialization</option>
+          <option value="style">Missing style</option>
+          <option value="price">Missing price</option>
+          <option value="duration">Missing duration</option>
+        </select>
+        {(filterType !== 'all' || filterMissing !== 'none') && (
+          <button
+            type="button"
+            onClick={() => { setFilterType('all'); setFilterMissing('none'); }}
+            className="px-3 py-2 text-sm text-orange-600 hover:text-orange-700 font-medium"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
+      <p className="text-sm text-gray-500 mb-3">
+        Showing <strong>{filteredServices.length}</strong> of {services.length} services
+        {(filterType !== 'all' || filterMissing !== 'none') && ' (filtered)'}.
+      </p>
 
       {filteredServices.length === 0 ? (
         <div className="p-8 text-center bg-white border border-gray-300 rounded-lg">
@@ -189,9 +402,12 @@ export function ServiceCatalogTab() {
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-3">
+                  <div className="flex items-center gap-3 mb-3 flex-wrap">
                     <h4 className="text-lg font-semibold text-gray-900">{service.name}</h4>
                     <StatusBadge status={service.status} />
+                    <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full border bg-purple-50 text-purple-700 border-purple-200">
+                      {service.isPackage ? 'Package' : 'Service'}
+                    </span>
                     <span className="px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full border border-gray-200">
                       {service.category}
                     </span>
@@ -201,10 +417,18 @@ export function ServiceCatalogTab() {
                     <p className="text-sm text-gray-600 mb-3 line-clamp-2">{service.description}</p>
                   )}
                   
-                  <div className="flex items-center gap-6 text-sm">
+                  <div className="flex items-center gap-6 text-sm flex-wrap">
                     <div className="flex items-center gap-2">
                       <span className="text-gray-500">Price:</span>
-                      <span className="font-bold text-[#FF8C42] text-base">₹{service.price}</span>
+                      <span className={`font-bold text-base ${(service.price == null || Number(service.price) <= 0) ? 'text-amber-600' : 'text-[#FF8C42]'}`}>
+                        {(service.price != null && Number(service.price) > 0) ? `₹${Number(service.price).toFixed(2)}` : '—'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <span>Duration:</span>
+                      <span className={`font-medium ${(service.duration == null || Number(service.duration) <= 0) ? 'text-amber-600' : 'text-gray-900'}`}>
+                        {(service.duration != null && Number(service.duration) > 0) ? `${service.duration} min` : '—'}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2 text-gray-500">
                       <span>Created:</span>
@@ -302,8 +526,11 @@ export function ServiceCatalogTab() {
           <div className="space-y-5">
             <div className="bg-gradient-to-r from-gray-50 to-white p-4 rounded-lg border border-gray-200">
               <h4 className="text-lg font-bold text-gray-900 mb-1">{viewingService.name}</h4>
-              <div className="flex items-center gap-3 mt-2">
+              <div className="flex items-center gap-3 mt-2 flex-wrap">
                 <StatusBadge status={viewingService.status} />
+                <span className={`px-2.5 py-0.5 text-xs font-semibold rounded-full border ${viewingService.isPackage ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
+                  {viewingService.isPackage ? 'Package' : 'Service'}
+                </span>
                 <span className="px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full">
                   {viewingService.category}
                 </span>
@@ -320,14 +547,16 @@ export function ServiceCatalogTab() {
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-gray-50 p-3 rounded-lg">
                 <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Price</label>
-                <p className="text-xl font-bold text-[#FF8C42]">₹{viewingService.price}</p>
+                <p className={`text-xl font-bold ${(viewingService.price != null && Number(viewingService.price) > 0) ? 'text-[#FF8C42]' : 'text-amber-600'}`}>
+                  {(viewingService.price != null && Number(viewingService.price) > 0) ? `₹${Number(viewingService.price).toFixed(2)}` : '— Not set'}
+                </p>
               </div>
-              {viewingService.duration && (
-                <div className="bg-gray-50 p-3 rounded-lg">
-                  <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Duration</label>
-                  <p className="text-lg font-semibold text-gray-900">{viewingService.duration} minutes</p>
-                </div>
-              )}
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">Duration</label>
+                <p className={`text-lg font-semibold ${(viewingService.duration != null && Number(viewingService.duration) > 0) ? 'text-gray-900' : 'text-amber-600'}`}>
+                  {(viewingService.duration != null && Number(viewingService.duration) > 0) ? `${viewingService.duration} minutes` : '— Not set'}
+                </p>
+              </div>
             </div>
 
             {viewingService.serviceType && (

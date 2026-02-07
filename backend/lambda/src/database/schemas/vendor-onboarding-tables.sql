@@ -14,12 +14,50 @@ CREATE TABLE IF NOT EXISTS vendor_identity (
   email VARCHAR(255),
   selected_role_id UUID REFERENCES roles(id),
   vendor_type VARCHAR(50), -- 'solo' or 'center'
+  user_type VARCHAR(20) DEFAULT 'vendor', -- 'vendor' or 'staff' - NEW: distinguishes staff from vendors
   onboarding_status VARCHAR(50) DEFAULT 'ROLE_PENDING',
   application_id UUID,
   vendor_id UUID REFERENCES vendors(id),
+  full_name VARCHAR(255), -- NEW: for staff member name
+  business_name VARCHAR(255), -- NEW: for business name
+  metadata JSONB DEFAULT '{}', -- NEW: flexible metadata storage
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
+
+-- Add user_type column if it doesn't exist (for existing databases)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'vendor_identity' AND column_name = 'user_type'
+  ) THEN
+    ALTER TABLE vendor_identity ADD COLUMN user_type VARCHAR(20) DEFAULT 'vendor';
+  END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'vendor_identity' AND column_name = 'full_name'
+  ) THEN
+    ALTER TABLE vendor_identity ADD COLUMN full_name VARCHAR(255);
+  END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'vendor_identity' AND column_name = 'business_name'
+  ) THEN
+    ALTER TABLE vendor_identity ADD COLUMN business_name VARCHAR(255);
+  END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'vendor_identity' AND column_name = 'metadata'
+  ) THEN
+    ALTER TABLE vendor_identity ADD COLUMN metadata JSONB DEFAULT '{}';
+  END IF;
+EXCEPTION WHEN OTHERS THEN
+  NULL; -- Ignore errors
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_vendor_identity_phone ON vendor_identity(phone);
 CREATE INDEX IF NOT EXISTS idx_vendor_identity_status ON vendor_identity(onboarding_status);

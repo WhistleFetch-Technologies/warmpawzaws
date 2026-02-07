@@ -47,7 +47,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.LambdaStack = void 0;
 const cdk = __importStar(require("aws-cdk-lib"));
 const lambda = __importStar(require("aws-cdk-lib/aws-lambda"));
+const lambdaEventSources = __importStar(require("aws-cdk-lib/aws-lambda-event-sources"));
 const ec2 = __importStar(require("aws-cdk-lib/aws-ec2"));
+const logs = __importStar(require("aws-cdk-lib/aws-logs"));
 const constructs_1 = require("constructs");
 class LambdaStack extends constructs_1.Construct {
     constructor(scope, id, props) {
@@ -71,13 +73,13 @@ class LambdaStack extends constructs_1.Construct {
         this.apiFunction = new lambda.Function(this, 'ApiFunction', {
             functionName: `warmpawz-api-${environment}`,
             runtime: lambda.Runtime.NODEJS_20_X,
-            handler: 'dist/src/handler.handler',
+            handler: 'dist/handler.handler',
             code: lambda.Code.fromAsset('../../backend/lambda', {
                 // Exclude source files - only include dist and node_modules
                 exclude: ['node_modules', '*.ts', '!*.d.ts', 'tsconfig.json', '.git'],
             }),
             layers: sharedLayer ? [sharedLayer] : undefined,
-            timeout: cdk.Duration.seconds(30),
+            timeout: cdk.Duration.seconds(60), // Increased from 30s to 60s to handle complex queries and reduce timeout errors
             memorySize: 512,
             role: props.iamStack.lambdaExecutionRole,
             vpc: props.vpc, // Single VPC used for all resources
@@ -88,10 +90,15 @@ class LambdaStack extends constructs_1.Construct {
             },
             allowPublicSubnet: true, // Required for Lambda in public subnets
             securityGroups: [props.securityStack.lambdaSecurityGroup],
+            logRetention: environment === 'prod'
+                ? logs.RetentionDays.THREE_MONTHS
+                : environment === 'stage'
+                    ? logs.RetentionDays.ONE_MONTH
+                    : logs.RetentionDays.ONE_WEEK,
             environment: {
                 NODE_ENV: environment === 'prod' ? 'production' : 'development',
-                // Database (using RDS Proxy)
-                AURORA_PROXY_ENDPOINT: props.auroraStack.proxy.endpoint,
+                // Database (using RDS Proxy or direct cluster)
+                AURORA_PROXY_ENDPOINT: props.auroraStack.proxy?.endpoint || props.auroraStack.cluster.clusterEndpoint.hostname,
                 AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,
                 AURORA_DATABASE: 'warmpawz',
                 // Cognito
@@ -148,20 +155,215 @@ class LambdaStack extends constructs_1.Construct {
         props.dynamoDbStack.reportsTable.grantReadWriteData(this.apiFunction);
         props.dynamoDbStack.chatMessagesTable.grantReadWriteData(this.apiFunction);
         props.dynamoDbStack.aiConversationsTable.grantReadWriteData(this.apiFunction);
+        // ============================================================================
+        // QUEUE PROCESSOR LAMBDA FUNCTIONS
+        // ============================================================================
+        // These functions process messages from SQS queues
+        // Notification Queue Processor
+        this.notificationProcessor = new lambda.Function(this, 'NotificationProcessor', {
+            functionName: `warmpawz-notification-processor-${environment}`,
+            runtime: lambda.Runtime.NODEJS_20_X,
+            handler: 'dist/src/jobs/notification-processor.handler',
+            code: lambda.Code.fromAsset('../../backend/lambda', {
+                exclude: ['node_modules', '*.ts', '!*.d.ts', 'tsconfig.json', '.git'],
+            }),
+            layers: sharedLayer ? [sharedLayer] : undefined,
+            timeout: cdk.Duration.seconds(30),
+            memorySize: 256,
+            role: props.iamStack.lambdaExecutionRole,
+            vpc: props.vpc,
+            vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+            allowPublicSubnet: true,
+            securityGroups: [props.securityStack.lambdaSecurityGroup],
+            logRetention: environment === 'prod'
+                ? logs.RetentionDays.THREE_MONTHS
+                : environment === 'stage'
+                    ? logs.RetentionDays.ONE_MONTH
+                    : logs.RetentionDays.ONE_WEEK,
+            environment: {
+                NODE_ENV: environment === 'prod' ? 'production' : 'development',
+                AURORA_PROXY_ENDPOINT: props.auroraStack.proxy?.endpoint || props.auroraStack.cluster.clusterEndpoint.hostname,
+                AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,
+                AURORA_DATABASE: 'warmpawz',
+                // AWS_REGION is automatically set by Lambda runtime
+                NOTIFICATION_QUEUE_URL: props.sqsStack.notificationQueue.queueUrl,
+            },
+            description: 'Processes notifications from notification queue',
+        });
+        // Email Queue Processor
+        this.emailProcessor = new lambda.Function(this, 'EmailProcessor', {
+            functionName: `warmpawz-email-processor-${environment}`,
+            runtime: lambda.Runtime.NODEJS_20_X,
+            handler: 'dist/src/jobs/email-processor.handler',
+            code: lambda.Code.fromAsset('../../backend/lambda', {
+                exclude: ['node_modules', '*.ts', '!*.d.ts', 'tsconfig.json', '.git'],
+            }),
+            layers: sharedLayer ? [sharedLayer] : undefined,
+            timeout: cdk.Duration.seconds(60),
+            memorySize: 256,
+            role: props.iamStack.lambdaExecutionRole,
+            vpc: props.vpc,
+            vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+            allowPublicSubnet: true,
+            securityGroups: [props.securityStack.lambdaSecurityGroup],
+            logRetention: environment === 'prod'
+                ? logs.RetentionDays.THREE_MONTHS
+                : environment === 'stage'
+                    ? logs.RetentionDays.ONE_MONTH
+                    : logs.RetentionDays.ONE_WEEK,
+            environment: {
+                NODE_ENV: environment === 'prod' ? 'production' : 'development',
+                AURORA_PROXY_ENDPOINT: props.auroraStack.proxy?.endpoint || props.auroraStack.cluster.clusterEndpoint.hostname,
+                AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,
+                AURORA_DATABASE: 'warmpawz',
+                // AWS_REGION is automatically set by Lambda runtime
+                SES_FROM_EMAIL: process.env.SES_FROM_EMAIL || 'noreply@warmpawz.com',
+            },
+            description: 'Processes emails from email queue',
+        });
+        // SMS Queue Processor
+        this.smsProcessor = new lambda.Function(this, 'SmsProcessor', {
+            functionName: `warmpawz-sms-processor-${environment}`,
+            runtime: lambda.Runtime.NODEJS_20_X,
+            handler: 'dist/src/jobs/sms-processor.handler',
+            code: lambda.Code.fromAsset('../../backend/lambda', {
+                exclude: ['node_modules', '*.ts', '!*.d.ts', 'tsconfig.json', '.git'],
+            }),
+            layers: sharedLayer ? [sharedLayer] : undefined,
+            timeout: cdk.Duration.seconds(30),
+            memorySize: 256,
+            role: props.iamStack.lambdaExecutionRole,
+            vpc: props.vpc,
+            vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+            allowPublicSubnet: true,
+            securityGroups: [props.securityStack.lambdaSecurityGroup],
+            logRetention: environment === 'prod'
+                ? logs.RetentionDays.THREE_MONTHS
+                : environment === 'stage'
+                    ? logs.RetentionDays.ONE_MONTH
+                    : logs.RetentionDays.ONE_WEEK,
+            environment: {
+                NODE_ENV: environment === 'prod' ? 'production' : 'development',
+                AURORA_PROXY_ENDPOINT: props.auroraStack.proxy?.endpoint || props.auroraStack.cluster.clusterEndpoint.hostname,
+                AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,
+                AURORA_DATABASE: 'warmpawz',
+                // AWS_REGION is automatically set by Lambda runtime
+                SMS_QUEUE_URL: props.sqsStack.smsQueue.queueUrl,
+            },
+            description: 'Processes SMS from SMS queue',
+        });
+        // Analytics Queue Processor
+        this.analyticsProcessor = new lambda.Function(this, 'AnalyticsProcessor', {
+            functionName: `warmpawz-analytics-processor-${environment}`,
+            runtime: lambda.Runtime.NODEJS_20_X,
+            handler: 'dist/src/jobs/analytics-processor.handler',
+            code: lambda.Code.fromAsset('../../backend/lambda', {
+                exclude: ['node_modules', '*.ts', '!*.d.ts', 'tsconfig.json', '.git'],
+            }),
+            layers: sharedLayer ? [sharedLayer] : undefined,
+            timeout: cdk.Duration.seconds(30),
+            memorySize: 256,
+            role: props.iamStack.lambdaExecutionRole,
+            vpc: props.vpc,
+            vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+            allowPublicSubnet: true,
+            securityGroups: [props.securityStack.lambdaSecurityGroup],
+            logRetention: environment === 'prod'
+                ? logs.RetentionDays.THREE_MONTHS
+                : environment === 'stage'
+                    ? logs.RetentionDays.ONE_MONTH
+                    : logs.RetentionDays.ONE_WEEK,
+            environment: {
+                NODE_ENV: environment === 'prod' ? 'production' : 'development',
+                AURORA_PROXY_ENDPOINT: props.auroraStack.proxy?.endpoint || props.auroraStack.cluster.clusterEndpoint.hostname,
+                AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,
+                AURORA_DATABASE: 'warmpawz',
+                // AWS_REGION is automatically set by Lambda runtime
+                ANALYTICS_QUEUE_URL: props.sqsStack.analyticsQueue.queueUrl,
+            },
+            description: 'Processes analytics events from analytics queue',
+        });
+        // Settlement Queue Processor
+        this.settlementProcessor = new lambda.Function(this, 'SettlementProcessor', {
+            functionName: `warmpawz-settlement-processor-${environment}`,
+            runtime: lambda.Runtime.NODEJS_20_X,
+            handler: 'dist/src/jobs/settlement-processor.handler',
+            code: lambda.Code.fromAsset('../../backend/lambda', {
+                exclude: ['node_modules', '*.ts', '!*.d.ts', 'tsconfig.json', '.git'],
+            }),
+            layers: sharedLayer ? [sharedLayer] : undefined,
+            timeout: cdk.Duration.seconds(60),
+            memorySize: 512,
+            role: props.iamStack.lambdaExecutionRole,
+            vpc: props.vpc,
+            vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+            allowPublicSubnet: true,
+            securityGroups: [props.securityStack.lambdaSecurityGroup],
+            logRetention: environment === 'prod'
+                ? logs.RetentionDays.THREE_MONTHS
+                : environment === 'stage'
+                    ? logs.RetentionDays.ONE_MONTH
+                    : logs.RetentionDays.ONE_WEEK,
+            environment: {
+                NODE_ENV: environment === 'prod' ? 'production' : 'development',
+                AURORA_PROXY_ENDPOINT: props.auroraStack.proxy?.endpoint || props.auroraStack.cluster.clusterEndpoint.hostname,
+                AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,
+                AURORA_DATABASE: 'warmpawz',
+                // AWS_REGION is automatically set by Lambda runtime
+                SETTLEMENT_QUEUE_URL: props.sqsStack.settlementQueue.queueUrl,
+                RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID || '',
+                RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET || '',
+            },
+            description: 'Processes settlements from settlement queue',
+        });
+        // ============================================================================
+        // EVENT SOURCE MAPPINGS - Connect SQS Queues to Lambda Functions
+        // ============================================================================
+        // Notification Queue → Notification Processor
+        this.notificationProcessor.addEventSource(new lambdaEventSources.SqsEventSource(props.sqsStack.notificationQueue, {
+            batchSize: 10,
+            maxBatchingWindow: cdk.Duration.seconds(5),
+        }));
+        props.sqsStack.notificationQueue.grantConsumeMessages(this.notificationProcessor);
+        // Email Queue → Email Processor
+        this.emailProcessor.addEventSource(new lambdaEventSources.SqsEventSource(props.sqsStack.emailQueue, {
+            batchSize: 10,
+            maxBatchingWindow: cdk.Duration.seconds(5),
+        }));
+        props.sqsStack.emailQueue.grantConsumeMessages(this.emailProcessor);
+        // SMS Queue → SMS Processor
+        this.smsProcessor.addEventSource(new lambdaEventSources.SqsEventSource(props.sqsStack.smsQueue, {
+            batchSize: 10,
+            maxBatchingWindow: cdk.Duration.seconds(5),
+        }));
+        props.sqsStack.smsQueue.grantConsumeMessages(this.smsProcessor);
+        // Analytics Queue → Analytics Processor
+        this.analyticsProcessor.addEventSource(new lambdaEventSources.SqsEventSource(props.sqsStack.analyticsQueue, {
+            batchSize: 10,
+            maxBatchingWindow: cdk.Duration.seconds(5),
+        }));
+        props.sqsStack.analyticsQueue.grantConsumeMessages(this.analyticsProcessor);
+        // Settlement Queue → Settlement Processor
+        this.settlementProcessor.addEventSource(new lambdaEventSources.SqsEventSource(props.sqsStack.settlementQueue, {
+            batchSize: 5,
+            maxBatchingWindow: cdk.Duration.seconds(10),
+        }));
+        props.sqsStack.settlementQueue.grantConsumeMessages(this.settlementProcessor);
+        // Grant additional permissions
+        // SNS permissions for notification processor (for push notifications)
+        props.snsStack.notificationTopic.grantPublish(this.notificationProcessor);
+        // SES permissions for email processor
+        // Note: SES permissions should be added via IAM role policies
+        // SNS permissions for SMS processor
+        // Note: SNS SMS permissions should be added via IAM role policies
         // Store functions in map for easy access
         this.functions = new Map();
         this.functions.set('api', this.apiFunction);
-        // Note: Additional service-specific Lambda functions can be added here
-        // For now, using a single monolithic function as per existing handler.ts structure
-        // Future decomposition can split into:
-        // - booking-service
-        // - payment-service
-        // - vendor-service
-        // - customer-service
-        // - admin-service
-        // - notification-service
-        // - ai-service
-        // - video-service
+        this.functions.set('notification-processor', this.notificationProcessor);
+        this.functions.set('email-processor', this.emailProcessor);
+        this.functions.set('sms-processor', this.smsProcessor);
+        this.functions.set('analytics-processor', this.analyticsProcessor);
+        this.functions.set('settlement-processor', this.settlementProcessor);
     }
 }
 exports.LambdaStack = LambdaStack;

@@ -16,7 +16,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { Coins, User, Calendar, Wallet, CheckCircle, XCircle, Loader2 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface TestStep {
@@ -55,11 +55,11 @@ export function LoyaltyFlowTestPage() {
 
   const apiCall = async (endpoint: string, options: RequestInit = {}) => {
     const response = await fetch(
-      `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475${endpoint}`,
+      `${getApiBaseUrl()}${endpoint}`,
       {
         ...options,
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json',
           ...options.headers,
         }
@@ -149,11 +149,11 @@ export function LoyaltyFlowTestPage() {
       
       // Directly save to KV (simulating booking creation)
       await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/test/kv-set`,
+        `${getApiBaseUrl()}/test/kv-set`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ key: `booking:${newBookingId}`, value: booking })

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PromotionBanner } from './shared/PromotionBanner';
 
 interface PhotographyServicesLandingProps {
   phone: string;
@@ -34,7 +35,7 @@ export function PhotographyServicesLanding({ phone, onBack, onNavigate }: Photog
         activePhotographers: photographerList.length || 85,
         sessions: '2K+',
         rating: photographerList.length > 0 
-          ? (photographerList.reduce((acc: number, p: any) => acc + (p.rating || 4.8), 0) / photographerList.length).toFixed(1) 
+          ? Number(photographerList.reduce((acc: number, p: any) => acc + Number(p.rating || 4.8), 0) / photographerList.length).toFixed(1) 
           : '4.8'
       });
     } catch (error) {
@@ -47,7 +48,7 @@ export function PhotographyServicesLanding({ phone, onBack, onNavigate }: Photog
   };
 
   const handlePhotographerSelect = (photographer: any) => {
-    onNavigate?.('create-booking', { vendorId: photographer.id || photographer.vendorId, serviceId: 'pet_photographer' });
+    onNavigate?.('photography-booking', { vendorId: photographer.id || photographer.vendorId, serviceId: 'pet_photographer' });
   };
 
   const photographyTypes = [
@@ -104,37 +105,8 @@ export function PhotographyServicesLanding({ phone, onBack, onNavigate }: Photog
       <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
         <div className="space-y-8">
           
-          {/* Spotlight Offers */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-orange-500" />
-              <h2 className="text-lg font-bold text-slate-900">Spotlight Offers</h2>
-            </div>
-            
-            <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-6 px-6">
-              <Card className="min-w-[280px] flex-shrink-0 bg-white border border-slate-100 p-5 shadow-sm rounded-2xl">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase mb-2 w-fit">New Client</div>
-                    <div className="text-2xl font-bold text-slate-900">25% OFF</div>
-                    <div className="text-slate-500 text-xs">First Photo Session</div>
-                  </div>
-                  <div className="w-10 h-10 bg-purple-50 rounded-full flex items-center justify-center">
-                    <Camera className="w-5 h-5 text-purple-600" />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                  <div className="text-sm">
-                    <span className="line-through text-slate-400 text-xs">₹2999</span>
-                    <span className="ml-2 font-bold text-slate-900">₹2249</span>
-                  </div>
-                  <Button size="sm" className="bg-purple-600 text-white hover:bg-purple-700 h-8 text-xs px-4 rounded-lg" onClick={() => onNavigate?.('create-booking', { serviceId: 'pet_photographer' })}>
-                    Book Now
-                  </Button>
-                </div>
-              </Card>
-            </div>
-          </div>
+          {/* Promotion Banner */}
+          <PromotionBanner service="photography" maxPromotions={3} />
 
           {/* Photography Types */}
           <div>
@@ -143,7 +115,7 @@ export function PhotographyServicesLanding({ phone, onBack, onNavigate }: Photog
               {photographyTypes.map((type, idx) => (
                 <button
                   key={idx}
-                  onClick={() => onNavigate?.('create-booking', { serviceId: 'pet_photographer', serviceType: type.label })}
+                  onClick={() => onNavigate?.('photography-booking', { serviceId: 'pet_photographer', serviceType: type.label })}
                   className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
                 >
                   <div className={`w-10 h-10 rounded-xl ${type.color.split(' ')[0]} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
@@ -162,7 +134,7 @@ export function PhotographyServicesLanding({ phone, onBack, onNavigate }: Photog
               <h2 className="text-lg font-bold text-slate-900">Top Photographers</h2>
               <button 
                 className="text-sm text-orange-600 flex items-center gap-1 font-medium"
-                onClick={() => onNavigate?.('create-booking', { serviceId: 'pet_photographer' })}
+                onClick={() => onNavigate?.('photography-booking', { serviceId: 'pet_photographer' })}
               >
                 View All <ChevronRight className="w-4 h-4" />
               </button>

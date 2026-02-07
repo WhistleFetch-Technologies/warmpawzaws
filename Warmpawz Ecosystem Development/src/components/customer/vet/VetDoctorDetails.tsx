@@ -15,26 +15,32 @@ import {
   Home as HomeIcon,
   ChevronRight,
   Search,
-  Check
+  Check,
+  ShoppingCart,
+  User
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
+import { useCart } from '../../../context/CartContext';
 
 interface VetDoctorDetailsProps {
   phone: string;
   doctor?: any; // Pre-loaded doctor object (optional)
   doctorId?: string; // Doctor ID to load (optional)
   preSelectedService?: any; // Pre-selected service (optional)
+  vendorId?: string; // Vendor/Clinic ID for loading doctors from clinic
+  clinicId?: string; // Clinic ID (alias for vendorId)
   onBack: () => void;
   onNavigate?: (screen: string, data?: any) => void;
   onBookService?: (service: any) => void; // For booking flow
 }
 
-export function VetDoctorDetails({ phone, doctor: propsDoctor, doctorId, preSelectedService, onBack, onNavigate, onBookService }: VetDoctorDetailsProps) {
+export function VetDoctorDetails({ phone, doctor: propsDoctor, doctorId, preSelectedService, vendorId, clinicId, onBack, onNavigate, onBookService }: VetDoctorDetailsProps) {
   const [loading, setLoading] = useState(true);
   const [doctor, setDoctor] = useState<any>(propsDoctor || null);
   const [services, setServices] = useState<any[]>([]);
   const [selectedService, setSelectedService] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const { itemCount } = useCart();
 
   useEffect(() => {
     if (propsDoctor) {
@@ -66,8 +72,8 @@ export function VetDoctorDetails({ phone, doctor: propsDoctor, doctorId, preSele
       
       // Fetch doctor details from backend
       const doctorRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/doctors/${doctorId}`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/doctors/${doctorId}`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
 
       if (!doctorRes.ok) {
@@ -134,8 +140,8 @@ export function VetDoctorDetails({ phone, doctor: propsDoctor, doctorId, preSele
       
       // Fetch doctor details (which includes services) from backend
       const doctorRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/doctors/${doctorId}`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/doctors/${doctorId}`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
 
       if (!doctorRes.ok) {
@@ -221,7 +227,7 @@ export function VetDoctorDetails({ phone, doctor: propsDoctor, doctorId, preSele
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-md mx-auto">
+      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
@@ -229,7 +235,7 @@ export function VetDoctorDetails({ phone, doctor: propsDoctor, doctorId, preSele
 
   if (!doctor) {
     return (
-      <div className="min-h-screen bg-white max-w-md mx-auto">
+      <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto">
         <div className="px-6 py-12 text-center">
           <h3 className="text-xl font-semibold mb-2">Doctor Not Found</h3>
           <p className="text-gray-600 mb-6">Unable to load doctor details.</p>
@@ -315,7 +321,7 @@ export function VetDoctorDetails({ phone, doctor: propsDoctor, doctorId, preSele
   };
 
   return (
-    <div className="min-h-screen bg-white max-w-md mx-auto pb-32">
+    <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto pb-32">
       {/* Header */}
       <div className="bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white px-6 pt-8 pb-20 relative">
         <button onClick={onBack} className="mb-4 flex items-center gap-2">
@@ -497,30 +503,73 @@ export function VetDoctorDetails({ phone, doctor: propsDoctor, doctorId, preSele
 
       {/* Fixed Bottom Button - Book Service */}
       {selectedService && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 shadow-lg">
-          <div className="max-w-md mx-auto">
-            <div className="mb-3 p-3 bg-orange-50 rounded-lg border border-orange-100">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-600 mb-1">Selected Service</p>
-                  <p className="font-semibold text-sm">{selectedService.name}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-lg font-bold text-[#FF8C42]">₹{selectedService.price}</p>
-                  <p className="text-xs text-gray-500">{selectedService.duration} mins</p>
-                </div>
+        <div className="fixed bottom-16 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 shadow-lg max-w-[430px] mx-auto z-40">
+          <div className="mb-3 p-3 bg-orange-50 rounded-lg border border-orange-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-600 mb-1">Selected Service</p>
+                <p className="font-semibold text-sm">{selectedService.name}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-bold text-[#FF8C42]">₹{selectedService.price}</p>
+                <p className="text-xs text-gray-500">{selectedService.duration} mins</p>
               </div>
             </div>
-            <Button
-              onClick={handleBookService}
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7029] text-white h-12"
-            >
-              <Calendar className="w-5 h-5 mr-2" />
-              Book Service
-            </Button>
           </div>
+          <Button
+            onClick={handleBookService}
+            className="w-full bg-[#FF8C42] hover:bg-[#FF7029] text-white h-12"
+          >
+            <Calendar className="w-5 h-5 mr-2" />
+            Book Service
+          </Button>
         </div>
       )}
+
+      {/* Fixed Bottom Navigation - Matching Customer Home */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto z-50">
+        <div className="flex items-center justify-around">
+          <button 
+            onClick={() => onNavigate && onNavigate('home')}
+            className="flex flex-col items-center gap-1"
+          >
+            <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
+            <span className="text-xs font-medium text-[#FF8C42]">Home</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('cart')}
+            className="flex flex-col items-center gap-1 relative"
+          >
+            <div className="relative">
+              <ShoppingCart className="w-6 h-6 text-gray-400" />
+              {itemCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {itemCount}
+                </span>
+              )}
+            </div>
+            <span className="text-xs text-gray-400">Cart</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('bookings')}
+            className="flex flex-col items-center gap-1"
+          >
+            <Calendar className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Bookings</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('profile')}
+            className="flex flex-col items-center gap-1"
+          >
+            <User className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Profile</span>
+          </button>
+        </div>
+        {/* Home Indicator */}
+        <div className="flex justify-center mt-2">
+          <div className="w-32 h-1 bg-black rounded-full"></div>
+        </div>
+      </div>
     </div>
   );
 }

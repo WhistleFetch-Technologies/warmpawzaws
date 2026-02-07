@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { X, Calendar, DollarSign } from 'lucide-react';
+import { X, Calendar, IndianRupee } from 'lucide-react';
 
 interface ServiceSubscriptionPreviewProps {
   isOpen: boolean;
@@ -31,11 +31,11 @@ export function ServiceSubscriptionPreview({ isOpen, subscription, onClose }: Se
           <div>
             <h4 className="text-xl font-bold text-gray-900 mb-0">{subscription.name}</h4>
             <div className="flex items-center gap-4 text-gray-600">
-              <div className="flex items-center gap-0">
-                <DollarSign className="w-4 h-4" />
+              <div className="flex items-center gap-3">
+                <IndianRupee className="w-4 h-4" />
                 <span>₹{subscription.price.toLocaleString()}</span>
               </div>
-              <div className="flex items-center gap-0">
+              <div className="flex items-center gap-3">
                 <Calendar className="w-4 h-4" />
                 <span>{subscription.duration}</span>
               </div>
@@ -46,7 +46,7 @@ export function ServiceSubscriptionPreview({ isOpen, subscription, onClose }: Se
             <h5 className="font-semibold text-gray-900 mb-0">Features</h5>
             <ul className="space-y-2">
               {subscription.features.map((feature, index) => (
-                <li key={index} className="flex items-center gap-0 text-gray-700">
+                <li key={index} className="flex items-center gap-3 text-gray-700">
                   <span className="w-1.5 h-1.5 bg-orange-600 rounded-full"></span>
                   {feature}
                 </li>

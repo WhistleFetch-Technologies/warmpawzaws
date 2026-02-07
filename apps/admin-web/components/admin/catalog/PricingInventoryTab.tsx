@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Search, Edit, DollarSign, Package } from 'lucide-react';
+import { Search, Edit, IndianRupee, Package } from 'lucide-react';
 import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 
@@ -74,7 +74,7 @@ export function PricingInventoryTab() {
               }`}>
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center gap-0 mb-0">
+                    <div className="flex items-center gap-3 mb-0">
                       <h4 className="font-semibold text-gray-900">{item.name}</h4>
                       <span className="px-0 py-0 text-xs bg-gray-100 text-gray-700 rounded-full">
                         {item.category}
@@ -89,15 +89,15 @@ export function PricingInventoryTab() {
                     <div className="grid grid-cols-4 gap-4 text-sm">
                       <div>
                         <span className="text-gray-600">Base Price:</span>
-                        <span className="ml-0 font-semibold text-gray-900">₹{item.basePrice}</span>
+                        <span className="ml-2 font-semibold text-gray-900">₹{item.basePrice}</span>
                       </div>
                       <div>
                         <span className="text-gray-600">Current Price:</span>
-                        <span className="ml-0 font-semibold text-green-600">₹{item.currentPrice}</span>
+                        <span className="ml-2 font-semibold text-green-600">₹{item.currentPrice}</span>
                       </div>
                       <div>
                         <span className="text-gray-600">Stock:</span>
-                        <span className={`ml-0 font-semibold ${
+                        <span className={`ml-2 font-semibold ${
                           isLowStock ? 'text-orange-600' : 'text-gray-900'
                         }`}>
                           {item.stock}
@@ -106,15 +106,15 @@ export function PricingInventoryTab() {
                       {item.discount && (
                         <div>
                           <span className="text-gray-600">Discount:</span>
-                          <span className="ml-0 font-semibold text-red-600">{item.discount}%</span>
+                          <span className="ml-2 font-semibold text-red-600">{item.discount}%</span>
                         </div>
                       )}
                     </div>
                   </div>
                   
-                  <div className="flex gap-0 ml-4">
+                  <div className="flex gap-3 ml-4">
                     <Button size="sm" variant="outline">
-                      <Edit className="w-4 h-4 mr-0" />
+                      <Edit className="w-4 h-4 mr-2" />
                       Edit Pricing
                     </Button>
                   </div>

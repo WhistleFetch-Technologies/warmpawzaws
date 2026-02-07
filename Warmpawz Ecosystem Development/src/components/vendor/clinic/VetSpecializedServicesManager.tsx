@@ -20,7 +20,7 @@ import { Input } from '../../ui/input';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { VetPharmacyManager } from './VetPharmacyManager'; // ✅ NEW: Import pharmacy manager
 import { AmbulanceEditModal } from './modals/AmbulanceEditModal'; // ✅ Import edit modals
 import { DiagnosticEditModal } from './modals/DiagnosticEditModal';
@@ -94,8 +94,8 @@ export function VetSpecializedServicesManager({
       
       // Load ambulance services
       const ambulanceRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/ambulance-services`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/ambulance-services`,
+        { headers: getAuthHeaders() }
       );
       
       if (ambulanceRes.ok) {
@@ -105,8 +105,8 @@ export function VetSpecializedServicesManager({
 
       // Load diagnostic tests
       const diagRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/diagnostic-tests`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/diagnostic-tests`,
+        { headers: getAuthHeaders() }
       );
       
       if (diagRes.ok) {
@@ -116,8 +116,8 @@ export function VetSpecializedServicesManager({
 
       // Load emergency protocols
       const emergRes = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/emergency-protocols`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/emergency-protocols`,
+        { headers: getAuthHeaders() }
       );
       
       if (emergRes.ok) {
@@ -143,14 +143,14 @@ export function VetSpecializedServicesManager({
   const handleSaveAmbulance = async (ambulanceData: Partial<AmbulanceService>) => {
     try {
       const url = editingAmbulance
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/ambulance-services/${editingAmbulance.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/ambulance-services`;
+        ? `${getApiBaseUrl()}/vendor/${vendorId}/ambulance-services/${editingAmbulance.id}`
+        : `${getApiBaseUrl()}/vendor/${vendorId}/ambulance-services`;
 
       const response = await fetch(url, {
         method: editingAmbulance ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify(ambulanceData)
       });
@@ -178,10 +178,10 @@ export function VetSpecializedServicesManager({
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/ambulance-services/${ambulanceId}`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/ambulance-services/${ambulanceId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -208,14 +208,14 @@ export function VetSpecializedServicesManager({
   const handleSaveDiagnostic = async (diagnosticData: Partial<DiagnosticTest>) => {
     try {
       const url = editingDiagnostic
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/diagnostic-tests/${editingDiagnostic.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/diagnostic-tests`;
+        ? `${getApiBaseUrl()}/vendor/${vendorId}/diagnostic-tests/${editingDiagnostic.id}`
+        : `${getApiBaseUrl()}/vendor/${vendorId}/diagnostic-tests`;
 
       const response = await fetch(url, {
         method: editingDiagnostic ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify(diagnosticData)
       });
@@ -243,10 +243,10 @@ export function VetSpecializedServicesManager({
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/diagnostic-tests/${testId}`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/diagnostic-tests/${testId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -273,14 +273,14 @@ export function VetSpecializedServicesManager({
   const handleSaveProtocol = async (protocolData: Partial<EmergencyProtocol>) => {
     try {
       const url = editingProtocol
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/emergency-protocols/${editingProtocol.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/emergency-protocols`;
+        ? `${getApiBaseUrl()}/vendor/${vendorId}/emergency-protocols/${editingProtocol.id}`
+        : `${getApiBaseUrl()}/vendor/${vendorId}/emergency-protocols`;
 
       const response = await fetch(url, {
         method: editingProtocol ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify(protocolData)
       });
@@ -308,10 +308,10 @@ export function VetSpecializedServicesManager({
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/emergency-protocols/${protocolId}`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/emergency-protocols/${protocolId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

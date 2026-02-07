@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Calendar, Clock, ChevronRight, AlertCircle, MapPin, User, ChevronLeft } from 'lucide-react';
+import { ArrowLeft, Calendar, Clock, ChevronRight, AlertCircle, MapPin, User, ChevronLeft, Home as HomeIcon, ShoppingCart, User as UserIcon } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
+import { useCart } from '../../../context/CartContext';
 
 interface SmartTimeSlotSelectionProps {
   serviceType: string;
@@ -13,6 +14,7 @@ interface SmartTimeSlotSelectionProps {
   vendorRoleId?: string; // ✅ NEW: Vendor role (veterinarian, groomer, etc.)
   onBack: () => void;
   onSelectSlot: (date: string, time: string, slotData?: any) => void;
+  onNavigate?: (screen: string, data?: any) => void;
 }
 
 interface TimeSlot {
@@ -39,7 +41,8 @@ export function SmartTimeSlotSelection({
   selectedStaffId,
   vendorRoleId,
   onBack, 
-  onSelectSlot 
+  onSelectSlot,
+  onNavigate
 }: SmartTimeSlotSelectionProps) {
   
   const [selectedDate, setSelectedDate] = useState<string>('');
@@ -51,8 +54,9 @@ export function SmartTimeSlotSelection({
   const [selectedStaff, setSelectedStaff] = useState<string>(selectedStaffId || '');
   const [locationInfo, setLocationInfo] = useState<any>(null);
   const [autoSelectingDate, setAutoSelectingDate] = useState(false); // ✅ NEW: Track auto-selection
+  const { itemCount } = useCart();
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   const serviceDuration = selectedService?.duration || selectedService?.customDuration || 30;
 
@@ -104,7 +108,7 @@ export function SmartTimeSlotSelection({
       const response = await fetch(
         `${API_BASE}/vendor/${vendorId}/staff`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -121,7 +125,7 @@ export function SmartTimeSlotSelection({
           const staffServicesRes = await fetch(
             `${API_BASE}/staff/${staff.id}/services`,
             {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+              headers: getAuthHeaders()
             }
           );
 
@@ -177,7 +181,7 @@ export function SmartTimeSlotSelection({
       }
       
       const res = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       console.log('📡 Response status:', res.status);
@@ -239,7 +243,7 @@ export function SmartTimeSlotSelection({
         }
         
         const res = await fetch(url, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         });
 
         if (res.ok) {
@@ -341,6 +345,47 @@ export function SmartTimeSlotSelection({
       </div>
 
       <div className="p-4 space-y-6">
+        {/* ✅ Scheduling Policy Info Card */}
+        <Card className="p-4 bg-blue-50 border-blue-200">
+          <div className="flex items-start gap-3 mb-3">
+            <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
+              <Clock className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-blue-900 mb-1">
+                {vendorName} Booking Info
+              </h3>
+              <p className="text-xs text-blue-700">Review the scheduling policy before booking</p>
+            </div>
+          </div>
+          
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center gap-2 text-blue-800">
+              <span className="text-blue-600">⏰</span>
+              <span className="font-medium">Duration:</span>
+              <span>{serviceDuration} minutes</span>
+            </div>
+            
+            <div className="flex items-center gap-2 text-blue-800">
+              <span className="text-blue-600">📅</span>
+              <span className="font-medium">Booking Window:</span>
+              <span>Up to 30 days ahead</span>
+            </div>
+            
+            <div className="flex items-center gap-2 text-blue-800">
+              <span className="text-blue-600">❌</span>
+              <span className="font-medium">Cancellation:</span>
+              <span>Free up to 4 hours before</span>
+            </div>
+            
+            <div className="flex items-center gap-2 text-blue-800">
+              <span className="text-blue-600">✅</span>
+              <span className="font-medium">Confirmation:</span>
+              <span>Instant confirmation</span>
+            </div>
+          </div>
+        </Card>
+
         {/* Staff Selection */}
         {availableStaff.length > 1 && (
           <div>
@@ -557,7 +602,7 @@ export function SmartTimeSlotSelection({
 
       {/* Continue Button */}
       {selectedDate && selectedTime && (
-        <div className="fixed bottom-0 left-0 right-0 w-full max-w-[430px] mx-auto bg-white border-t border-gray-200 p-4 shadow-lg">
+        <div className="fixed bottom-16 left-0 right-0 w-full max-w-[430px] mx-auto bg-white border-t border-gray-200 p-4 shadow-lg z-40">
           <div className="mb-3 text-center">
             <p className="text-sm text-gray-600">Selected Slot</p>
             <p className="text-gray-900 text-sm">
@@ -579,6 +624,51 @@ export function SmartTimeSlotSelection({
           </Button>
         </div>
       )}
+
+      {/* Fixed Bottom Navigation - Matching Customer Home */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto z-50">
+        <div className="flex items-center justify-around">
+          <button 
+            onClick={() => onNavigate && onNavigate('home')}
+            className="flex flex-col items-center gap-1"
+          >
+            <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
+            <span className="text-xs font-medium text-[#FF8C42]">Home</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('cart')}
+            className="flex flex-col items-center gap-1 relative"
+          >
+            <div className="relative">
+              <ShoppingCart className="w-6 h-6 text-gray-400" />
+              {itemCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {itemCount}
+                </span>
+              )}
+            </div>
+            <span className="text-xs text-gray-400">Cart</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('bookings')}
+            className="flex flex-col items-center gap-1"
+          >
+            <Calendar className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Bookings</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('profile')}
+            className="flex flex-col items-center gap-1"
+          >
+            <UserIcon className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Profile</span>
+          </button>
+        </div>
+        {/* Home Indicator */}
+        <div className="flex justify-center mt-2">
+          <div className="w-32 h-1 bg-black rounded-full"></div>
+        </div>
+      </div>
     </div>
   );
 }

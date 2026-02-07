@@ -5,7 +5,7 @@ import { Label } from '../../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../ui/select';
 import { Switch } from '../../ui/switch';
 import { ArrowLeft, Save, RotateCcw, Clock, Package, AlertCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface BookingSettings {
@@ -49,9 +49,9 @@ export function BookingRulesManagement({ onBack }: BookingRulesManagementProps) 
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings`,
+        `${getApiBaseUrl()}/admin/vendor-settings`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -73,12 +73,12 @@ export function BookingRulesManagement({ onBack }: BookingRulesManagementProps) 
     setSaving(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendor-settings/booking`,
+        `${getApiBaseUrl()}/admin/vendor-settings/booking`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(settings)
         }

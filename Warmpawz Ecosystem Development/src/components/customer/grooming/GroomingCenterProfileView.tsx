@@ -17,7 +17,7 @@ import {
 import { Button } from '../../ui/button';
 import { Badge } from '../../ui/badge';
 import { Card } from '../../ui/card';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { shareContent } from '../../../utils/shareUtils';
 
 interface GroomingCenterProfileViewProps {
@@ -58,7 +58,7 @@ export function GroomingCenterProfileView({ phone, centerId, onBack, onNavigate 
   const [isFavorite, setIsFavorite] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'services' | 'reviews'>('overview');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadCenterData();
@@ -73,7 +73,7 @@ export function GroomingCenterProfileView({ phone, centerId, onBack, onNavigate 
       // Fetch facility data
       const facilityResponse = await fetch(`${API_BASE}/customer/facility/${centerId}`, {
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         }
       });
 
@@ -94,7 +94,7 @@ export function GroomingCenterProfileView({ phone, centerId, onBack, onNavigate 
         `${API_BASE}/customer/services?roleId=pet_groomer&serviceStyle=at_center`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

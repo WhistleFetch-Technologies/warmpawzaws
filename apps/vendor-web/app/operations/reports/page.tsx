@@ -83,8 +83,53 @@ export default function ReportsPage() {
 
   const handleExport = async (reportId: string, format: 'csv' | 'pdf') => {
     try {
-      // TODO: Implement export endpoint
-      toast.info(`Export ${format.toUpperCase()} functionality coming soon!`);
+      const report = reports.find(r => r.id === reportId);
+      if (!report) {
+        toast.error('Report not found');
+        return;
+      }
+
+      // Fetch report data
+      const response = await apiClient.get<any>(`/vendor/${vendorId}/reports/${reportId}/data`);
+      const data = response.data || [];
+
+      if (format === 'csv') {
+        // Generate CSV
+        const headers = Object.keys(data[0] || {});
+        const csvContent = [
+          headers.join(','),
+          ...data.map((row: any) => headers.map(h => row[h]).join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${report.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        toast.success('Report exported successfully!');
+      } else {
+        // For PDF, open in new window for print
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write(`
+            <html>
+              <head><title>${report.name}</title></head>
+              <body>
+                <h1>${report.name}</h1>
+                <p>Generated: ${new Date(report.created_at).toLocaleDateString()}</p>
+                <table border="1" cellpadding="8">
+                  <thead><tr>${Object.keys(data[0] || {}).map(h => `<th>${h}</th>`).join('')}</tr></thead>
+                  <tbody>${data.map((row: any) => `<tr>${Object.values(row).map(v => `<td>${v}</td>`).join('')}</tr>`).join('')}</tbody>
+                </table>
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+          printWindow.print();
+          toast.success('Report ready for printing!');
+        }
+      }
     } catch (err: any) {
       console.error('Error exporting report:', err);
       toast.error('Failed to export report');

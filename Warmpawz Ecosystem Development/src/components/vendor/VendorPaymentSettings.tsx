@@ -8,7 +8,7 @@ import { Separator } from '../ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Crown, Building2, Wallet, CheckCircle2, AlertCircle, ChevronRight, Edit2, Landmark, Settings as SettingsIcon } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { TierUpgradeModal } from './TierUpgradeModal';
 import { BankAccountValidation } from './BankAccountValidation';
 import { CenterProfileManager } from './CenterProfileManager';
@@ -34,7 +34,7 @@ export function VendorPaymentSettings({ vendorId, vendorData }: VendorPaymentSet
   const { capabilities } = useVendorCapabilities(vendorData?.roleId);
   const hasFacilityCapability = capabilities.facility || false;
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadData();
@@ -44,9 +44,9 @@ export function VendorPaymentSettings({ vendorId, vendorData }: VendorPaymentSet
     setLoading(true);
     try {
       const [tierRes, bankRes, earningsRes] = await Promise.all([
-        fetch(`${API_BASE}/vendor/${vendorId}/payment-tier`, { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }),
-        fetch(`${API_BASE}/vendor/${vendorId}/bank-details`, { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }),
-        fetch(`${API_BASE}/ecommerce/payments/vendor/${vendorId}/earnings`, { headers: { 'Authorization': `Bearer ${publicAnonKey}` } })
+        fetch(`${API_BASE}/vendor/${vendorId}/payment-tier`, { headers: getAuthHeaders() }),
+        fetch(`${API_BASE}/vendor/${vendorId}/bank-details`, { headers: getAuthHeaders() }),
+        fetch(`${API_BASE}/ecommerce/payments/vendor/${vendorId}/earnings`, { headers: getAuthHeaders() })
       ]);
 
       if (tierRes.ok) {

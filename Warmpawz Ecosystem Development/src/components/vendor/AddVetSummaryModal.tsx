@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { X, FileText, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface AddVetSummaryModalProps {
   appointmentId: string;
@@ -69,11 +69,11 @@ export function AddVetSummaryModal({
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/appointments/${appointmentId}/vet-summary`,
+        `${getApiBaseUrl()}/appointments/${appointmentId}/vet-summary`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json',
             'X-User-Id': vendorId,
             'X-User-Role': 'vendor'

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Star, Search, Heart } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { ImageWithFallback } from '../../figma/ImageWithFallback';
 
 interface SunsetServiceListViewProps {
@@ -15,7 +15,7 @@ export function SunsetServiceListView({ phone, serviceType, onBack, onNavigate }
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadProviders();

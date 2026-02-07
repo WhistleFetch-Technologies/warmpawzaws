@@ -16,8 +16,58 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
+
+// ============================================================================
+// CANONICAL SERVICE STYLES (Phase 1 - single source of truth)
+// ============================================================================
+const CANONICAL_SERVICE_STYLE_CODES = ['at_home', 'at_center', 'tele'] as const;
+const LABEL_BY_CODE: Record<string, string> = {
+  at_home: 'At Home',
+  at_center: 'At Center',
+  tele: 'Tele Consultation',
+};
+const ALIAS_TO_CODE: Record<string, string> = {
+  at_center: 'at_center',
+  at_clinic: 'at_center',
+  at_vendor: 'at_center',
+  at_home: 'at_home',
+  home_visit: 'at_home',
+  home_service: 'at_home',
+  tele: 'tele',
+  video_consultation: 'tele',
+  tele_consultation: 'tele',
+  online: 'tele',
+  video: 'tele',
+  // Label strings (from legacy or display) -> canonical
+  'at home': 'at_home',
+  'at center': 'at_center',
+  'tele consultation': 'tele',
+};
+
+/** Extract canonical service style codes only (at_home, at_center, tele). No labels, no unknown values. */
+function getCanonicalServiceStyles(config: any): string[] {
+  const raw = config?.serviceStyles ?? config?.service_styles;
+  const arr = Array.isArray(raw)
+    ? raw
+    : (raw && typeof raw === 'object' && (raw.selected || raw.solo)
+        ? (raw.selected ?? raw.solo ?? [])
+        : []);
+  const codes = arr
+    .map((s: string) => {
+      if (!s || typeof s !== 'string') return null;
+      const key = s.toLowerCase().trim().replace(/\s+/g, '_');
+      const keyWithSpaces = s.toLowerCase().trim();
+      const code = ALIAS_TO_CODE[key] ?? ALIAS_TO_CODE[keyWithSpaces] ?? (CANONICAL_SERVICE_STYLE_CODES.includes(key as any) ? key : null);
+      return code;
+    })
+    .filter((c: string | null): c is string => !!c && CANONICAL_SERVICE_STYLE_CODES.includes(c as any));
+  return [...new Set(codes)];
+}
 
 // ============================================================================
 // ROLE HANDLERS
@@ -80,17 +130,21 @@ class GetRolesHandler extends BaseHandler {
         // Extract config fields from JSONB config column
         const config = role.config || {};
         const vendorTypes = config.vendorTypes || config.vendor_types || [];
-        const serviceStyles = config.serviceStyles || config.service_styles || [];
+        const vendorConfiguration = config.vendorConfiguration || null;
+        const customerService = (role as any).customer_service || config.customer_service || null;
         const pricingControl = config.pricingControl || config.pricing_control || {
           canControlPrice: false,
           canControlDuration: false,
         };
         const category = config.category || 'general';
         const icon = config.icon || role.icon || null;
+        // Phase 1: Canonical codes only (at_home, at_center, tele). Labels separate.
+        const serviceStyles = getCanonicalServiceStyles(config);
+        const serviceStylesLabels = Object.fromEntries(
+          serviceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
+        );
         
         // Parse vendorTypes to match reference (organization, Service Provider, Seller, Healthcare Provider)
-        // Backend stores: healthcare_provider, service_provider, seller, ngo, organization, business
-        // Frontend displays: Healthcare Provider, Service Provider, Seller, NGO, organization, Business
         const normalizedVendorTypes = Array.isArray(vendorTypes) 
           ? vendorTypes.map((vt: string) => {
               const mapping: Record<string, string> = {
@@ -107,27 +161,6 @@ class GetRolesHandler extends BaseHandler {
             })
           : [];
         
-        // Parse serviceStyles to match reference (At Center, At Home, Tele Consultation)
-        // Backend stores: at_clinic, at_center, at_home, video_consultation, tele, online, delivery, pickup
-        // Frontend displays: At Center, At Home, Tele Consultation, Video Consultation, Online, Delivery, Pickup
-        const normalizedServiceStyles = Array.isArray(serviceStyles)
-          ? serviceStyles.map((ss: string) => {
-              const mapping: Record<string, string> = {
-                'at_center': 'At Center',
-                'at_clinic': 'At Center',
-                'at_home': 'At Home',
-                'home_visit': 'At Home',
-                'tele': 'Tele Consultation',
-                'video_consultation': 'Video Consultation',
-                'online': 'Online',
-                'delivery': 'Delivery',
-                'pickup': 'Pickup',
-                'outdoor': 'Outdoor',
-              };
-              return mapping[ss] || ss;
-            })
-          : [];
-        
         return {
           ...role,
           id: role.id,
@@ -139,8 +172,11 @@ class GetRolesHandler extends BaseHandler {
           description: role.description || '',
           category,
           icon,
+          customer_service: customerService,
+          vendorConfiguration: vendorConfiguration,
           vendorTypes: normalizedVendorTypes,
-          serviceStyles: normalizedServiceStyles,
+          serviceStyles,
+          serviceStylesLabels,
           pricingControl: {
             canControlPrice: pricingControl.canControlPrice || pricingControl.can_control_price || false,
             canControlDuration: pricingControl.canControlDuration || pricingControl.can_control_duration || false,
@@ -150,6 +186,8 @@ class GetRolesHandler extends BaseHandler {
           isSystem: role.is_system_role || false,
           userCount: 0, // TODO: Count users with this role
           createdAt: role.created_at || new Date().toISOString(),
+          // ✅ NEW: Return full config object so frontend can access capabilityRules, serviceStyles structure, etc.
+          config: role.config || {},
         };
     });
 
@@ -161,36 +199,74 @@ class GetRolesHandler extends BaseHandler {
   }
 }
 
+/** Normalize role id from path: trim and strip optional { } so UUID matches DB. */
+function normalizeRoleIdFromPath(roleId: string): string {
+  const s = (roleId || '').trim();
+  if (s.length >= 38 && s.startsWith('{') && s.endsWith('}')) {
+    return s.slice(1, -1).trim();
+  }
+  return s;
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 class GetRoleByIdHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const roleId = context.event.pathParameters?.roleId;
+    const rawRoleId = context.event.pathParameters?.roleId;
+    const roleId = normalizeRoleIdFromPath(rawRoleId ?? '');
 
     if (!roleId) {
       return this.error('Role ID is required', 400);
     }
 
-    const roles = await select('roles', { id: roleId });
-    
+    let roles: any[] = [];
+    const isUuid = UUID_REGEX.test(roleId);
+
+    if (isUuid) {
+      // API contract: GET /config/roles/:id — resolve by primary key from DB (active roles only, same as list)
+      const byId = await query(
+        `SELECT * FROM roles WHERE id = $1::uuid AND is_active = true LIMIT 1`,
+        [roleId]
+      );
+      if (byId?.rows?.length) roles = byId.rows;
+    }
+
+    if (roles.length === 0) {
+      // Fallback: lookup by name (role code) — canonical names e.g. groomer_solo, vet_clinic
+      const roleNameNorm = roleId.toLowerCase().replace(/\s+/g, '_');
+      roles = await select('roles', { name: roleNameNorm, is_active: true });
+    }
+    if (roles.length === 0) {
+      const byName = await query(
+        `SELECT * FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1`,
+        [roleId]
+      );
+      if (byName?.rows?.length) roles = byName.rows;
+    }
     if (roles.length === 0) {
       return this.error('Role not found', 404);
     }
 
     const role = roles[0];
-    const permissions = await select('role_permissions', { role_id: roleId });
+    const effectiveRoleId = role.id; // Use role's UUID for role_permissions (FK references roles.id)
+    const permissions = await select('role_permissions', { role_id: effectiveRoleId });
     const capabilities = permissions.map(p => p.permission_name);
     
     // Extract config fields from JSONB config column (same as GetRolesHandler)
     const config = role.config || {};
     const vendorTypes = config.vendorTypes || config.vendor_types || [];
-    const serviceStyles = config.serviceStyles || config.service_styles || [];
     const pricingControl = config.pricingControl || config.pricing_control || {
       canControlPrice: false,
       canControlDuration: false,
     };
     const category = config.category || 'general';
     const icon = config.icon || role.icon || null;
+    // Phase 1: Canonical codes only (at_home, at_center, tele). Labels separate.
+    const serviceStyles = getCanonicalServiceStyles(config);
+    const serviceStylesLabels = Object.fromEntries(
+      serviceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
+    );
     
-    // Normalize vendorTypes and serviceStyles to match reference screens
     const normalizedVendorTypes = Array.isArray(vendorTypes) 
       ? vendorTypes.map((vt: string) => {
           const mapping: Record<string, string> = {
@@ -206,24 +282,6 @@ class GetRoleByIdHandler extends BaseHandler {
           return mapping[vt] || vt;
         })
       : [];
-    
-    const normalizedServiceStyles = Array.isArray(serviceStyles)
-      ? serviceStyles.map((ss: string) => {
-          const mapping: Record<string, string> = {
-            'at_center': 'At Center',
-            'at_clinic': 'At Center',
-            'at_home': 'At Home',
-            'home_visit': 'At Home',
-            'tele': 'Tele Consultation',
-            'video_consultation': 'Video Consultation',
-            'online': 'Online',
-            'delivery': 'Delivery',
-            'pickup': 'Pickup',
-            'outdoor': 'Outdoor',
-          };
-          return mapping[ss] || ss;
-        })
-      : [];
 
     return this.success({
       success: true,
@@ -234,7 +292,8 @@ class GetRoleByIdHandler extends BaseHandler {
       category,
       icon,
       vendorTypes: normalizedVendorTypes,
-      serviceStyles: normalizedServiceStyles,
+      serviceStyles,
+      serviceStylesLabels,
       pricingControl: {
         canControlPrice: pricingControl.canControlPrice || pricingControl.can_control_price || false,
         canControlDuration: pricingControl.canControlDuration || pricingControl.can_control_duration || false,
@@ -242,6 +301,9 @@ class GetRoleByIdHandler extends BaseHandler {
       capabilities,
       isActive: role.is_active !== false,
       isSystem: role.is_system_role || false,
+      updated_at: (role as any).updated_at || null,
+      // ✅ Return full config object so frontend can access capabilityRules, etc. config.serviceStyles in DB may be object; API exposes canonical serviceStyles above.
+      config: role.config || {},
     });
   }
 }
@@ -263,7 +325,10 @@ class CreateRoleHandler extends BaseHandler {
       pricingControl,
       icon,
       isActive,
-      is_active
+      is_active,
+      vendorConfiguration,
+      customer_service,
+      capabilityRules
     } = body;
 
     // Validation - support both naming conventions
@@ -281,17 +346,38 @@ class CreateRoleHandler extends BaseHandler {
     }
 
     try {
-      // Build config object
-      const roleConfig: any = config || {
-        category: category || 'general',
-        icon: icon || null,
-        vendorTypes: vendorTypes || [],
-        serviceStyles: serviceStyles || [],
-        pricingControl: pricingControl || {
+      // Build config object - merge provided config with explicit fields
+      const baseConfig: any = config || {};
+      const roleConfig: any = {
+        category: category || baseConfig.category || 'general',
+        icon: icon || baseConfig.icon || null,
+        vendorTypes: vendorTypes || baseConfig.vendorTypes || [],
+        serviceStyles: serviceStyles || baseConfig.serviceStyles || [],
+        pricingControl: pricingControl || baseConfig.pricingControl || {
           canControlPrice: false,
           canControlDuration: false,
         },
       };
+
+      // Add vendorConfiguration if provided
+      if (vendorConfiguration !== undefined) {
+        roleConfig.vendorConfiguration = vendorConfiguration;
+      }
+
+      // Add customer_service if provided
+      if (customer_service !== undefined) {
+        roleConfig.customer_service = customer_service;
+      }
+
+      // Add capabilityRules if provided
+      if (capabilityRules !== undefined) {
+        roleConfig.capabilityRules = capabilityRules;
+      }
+
+      // Merge any additional fields from provided config object
+      if (config && typeof config === 'object') {
+        Object.assign(roleConfig, config);
+      }
 
       // Insert role
       const roleData: any = {
@@ -318,6 +404,13 @@ class CreateRoleHandler extends BaseHandler {
         }
       }
 
+      // Phase 1: Response returns canonical serviceStyles only; labels separate
+      // Use distinct name to avoid TDZ: body.serviceStyles is used above; do not shadow with same name
+      const canonicalServiceStyles = getCanonicalServiceStyles(roleConfig);
+      const serviceStylesLabels = Object.fromEntries(
+        canonicalServiceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
+      );
+
       return this.success({
         success: true,
         message: 'Role created successfully',
@@ -327,13 +420,15 @@ class CreateRoleHandler extends BaseHandler {
           roleName: newRole[0].display_name || newRole[0].name,
           roleCode: newRole[0].name,
           vendorTypes: roleConfig.vendorTypes || [],
-          serviceStyles: roleConfig.serviceStyles || [],
+          serviceStyles: canonicalServiceStyles,
+          serviceStylesLabels,
           pricingControl: roleConfig.pricingControl || {
             canControlPrice: false,
             canControlDuration: false,
           },
           capabilities: capabilities || [],
           isActive: newRole[0].is_active !== false,
+          updated_at: (newRole[0] as any).updated_at || null,
         },
       });
     } catch (error: any) {
@@ -359,7 +454,10 @@ class UpdateRoleHandler extends BaseHandler {
       serviceStyles,
       pricingControl,
       category,
-      icon
+      icon,
+      vendorConfiguration,
+      customer_service,
+      capabilityRules
     } = body;
 
     if (!roleId) {
@@ -388,6 +486,21 @@ class UpdateRoleHandler extends BaseHandler {
           canControlDuration: false,
         }),
       };
+
+      // Save vendorConfiguration to config if provided
+      if (vendorConfiguration !== undefined) {
+        updatedConfig.vendorConfiguration = vendorConfiguration;
+      }
+
+      // Save customer_service to config if provided
+      if (customer_service !== undefined) {
+        updatedConfig.customer_service = customer_service;
+      }
+
+      // Save capabilityRules to config if provided
+      if (capabilityRules !== undefined) {
+        updatedConfig.capabilityRules = capabilityRules;
+      }
 
       // If config object provided directly, merge it
       if (config && typeof config === 'object') {
@@ -433,7 +546,7 @@ class UpdateRoleHandler extends BaseHandler {
       const caps = permissions.map(p => p.permission_name);
       const roleConfig = updatedRole[0].config || {};
 
-      // Normalize vendor types and service styles for response
+      // Normalize vendor types for response
       const normalizedVendorTypes = Array.isArray(roleConfig.vendorTypes) 
         ? roleConfig.vendorTypes.map((vt: string) => {
             const mapping: Record<string, string> = {
@@ -450,23 +563,12 @@ class UpdateRoleHandler extends BaseHandler {
           })
         : [];
 
-      const normalizedServiceStyles = Array.isArray(roleConfig.serviceStyles)
-        ? roleConfig.serviceStyles.map((ss: string) => {
-            const mapping: Record<string, string> = {
-              'at_center': 'At Center',
-              'at_clinic': 'At Center',
-              'at_home': 'At Home',
-              'home_visit': 'At Home',
-              'tele': 'Tele Consultation',
-              'video_consultation': 'Video Consultation',
-              'online': 'Online',
-              'delivery': 'Delivery',
-              'pickup': 'Pickup',
-              'outdoor': 'Outdoor',
-            };
-            return mapping[ss] || ss;
-          })
-        : [];
+      // Phase 1: Return canonical codes only; labels separate (same as GetRoleByIdHandler)
+      // Use distinct var name to avoid TDZ: body.serviceStyles shadows until we compute canonical
+      const canonicalServiceStyles = getCanonicalServiceStyles(roleConfig);
+      const serviceStylesLabels = Object.fromEntries(
+        canonicalServiceStyles.map((c) => [c, LABEL_BY_CODE[c] || c])
+      );
 
       return this.success({
         success: true,
@@ -477,13 +579,15 @@ class UpdateRoleHandler extends BaseHandler {
           roleName: updatedRole[0].display_name || updatedRole[0].name,
           roleCode: updatedRole[0].name,
           vendorTypes: normalizedVendorTypes,
-          serviceStyles: normalizedServiceStyles,
+          serviceStyles: canonicalServiceStyles,
+          serviceStylesLabels,
           pricingControl: roleConfig.pricingControl || {
             canControlPrice: false,
             canControlDuration: false,
           },
           capabilities: caps,
           isActive: updatedRole[0].is_active !== false,
+          updated_at: (updatedRole[0] as any).updated_at || null,
         },
       });
     } catch (error: any) {
@@ -496,6 +600,8 @@ class UpdateRoleHandler extends BaseHandler {
 class DeleteRoleHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const roleId = context.event.pathParameters?.roleId;
+    const queryParams = context.event.queryStringParameters || {};
+    const permanent = queryParams.permanent === 'true';
 
     if (!roleId) {
       return this.error('Role ID is required', 400);
@@ -511,16 +617,51 @@ class DeleteRoleHandler extends BaseHandler {
 
     // Prevent deletion of system roles
     if (role.is_system_role) {
-      return this.error('Cannot delete system roles', 403);
+      return this.error('Cannot delete system roles. System roles are protected.', 403);
     }
 
     try {
-      // Soft delete: deactivate instead of deleting
-      await update('roles', { id: roleId }, { is_active: false });
+      if (permanent) {
+        // HARD DELETE: Permanently remove the role and its permissions
+        // First check if any vendors are using this role
+        const vendorsUsingRole = await query(
+          `SELECT COUNT(*) as count FROM vendors WHERE role_id = $1 OR role = $2`,
+          [roleId, role.name]
+        );
+        
+        const vendorCount = parseInt(vendorsUsingRole.rows[0]?.count || '0', 10);
+        if (vendorCount > 0) {
+          return this.error(
+            `Cannot permanently delete this role. ${vendorCount} vendor(s) are currently using it. Please reassign them first or use soft delete.`,
+            400
+          );
+        }
 
-      return this.success({
-        message: 'Role deactivated successfully',
-      });
+        // Delete role permissions first (due to foreign key constraint)
+        await query('DELETE FROM role_permissions WHERE role_id = $1', [roleId]);
+        
+        // Delete the role
+        await query('DELETE FROM roles WHERE id = $1', [roleId]);
+
+        console.log(`[Roles] Role permanently deleted: ${role.name} (${roleId})`);
+
+        return this.success({
+          message: 'Role permanently deleted',
+          roleName: role.display_name || role.name,
+          deleteType: 'permanent',
+        });
+      } else {
+        // SOFT DELETE: Deactivate instead of deleting
+        await update('roles', { id: roleId }, { is_active: false });
+
+        console.log(`[Roles] Role deactivated: ${role.name} (${roleId})`);
+
+        return this.success({
+          message: 'Role deactivated successfully',
+          roleName: role.display_name || role.name,
+          deleteType: 'soft',
+        });
+      }
     } catch (error: any) {
       console.error('Error deleting role:', error);
       return this.error(error.message || 'Failed to delete role', 500);
@@ -640,6 +781,28 @@ class GetCapabilitiesHandler extends BaseHandler {
       { id: 'memorial', name: 'Memorial', category: 'Specialized Services', description: 'Memorial services' },
       { id: 'claims_management', name: 'Claims Management', category: 'Specialized Services', description: 'Insurance claims management' },
       { id: 'policy_management', name: 'Policy Management', category: 'Specialized Services', description: 'Insurance policy management' },
+      
+      // ============================================================================
+      // VERIFICATION & COMPLIANCE (Required for ALL vendors)
+      // ============================================================================
+      { id: 'bank_verification', name: 'Bank Verification', category: 'Verification & Compliance', description: 'Bank account verification via Razorpay Marketplace API' },
+      { id: 'location_verification', name: 'Location Verification', category: 'Verification & Compliance', description: 'Google location/address verification for vendor profile' },
+      { id: 'address_verification', name: 'Address Verification', category: 'Verification & Compliance', description: 'Verify vendor address using Google Maps API' },
+      { id: 'live_location', name: 'Live Location', category: 'Operations', description: 'Real-time location tracking for home/mobile services' },
+      { id: 'kyc_verification', name: 'KYC Verification', category: 'Verification & Compliance', description: 'Know Your Customer verification for vendors' },
+      
+      // ============================================================================
+      // PHARMACY & DELIVERY SPECIFIC
+      // ============================================================================
+      { id: 'order_dispatch', name: 'Order Dispatch', category: 'Pharmacy', description: 'Receive and dispatch orders from nearby customers (Uber-like)' },
+      { id: 'availability_check', name: 'Availability Check', category: 'Pharmacy', description: 'Confirm medicine/product availability before accepting order' },
+      { id: 'invoice_generation', name: 'Invoice Generation', category: 'Finance & Payments', description: 'Generate proforma and final invoices' },
+      { id: 'delivery_partner', name: 'Delivery Partner', category: 'Delivery', description: 'Integration with delivery partners for order fulfillment' },
+      { id: 'eta_tracking', name: 'ETA Tracking', category: 'Delivery', description: 'Real-time ETA calculation and tracking' },
+      { id: 'cod_payment', name: 'COD Payment', category: 'Finance & Payments', description: 'Accept Cash on Delivery payments' },
+      { id: 'online_payment', name: 'Online Payment', category: 'Finance & Payments', description: 'Accept online payments via Razorpay' },
+      { id: 'order_broadcast', name: 'Order Broadcast', category: 'Pharmacy', description: 'Receive order broadcasts from nearby customers' },
+      { id: 'radius_service', name: 'Radius Service', category: 'Operations', description: 'Define service radius for order acceptance' },
     ];
 
     return this.success({
@@ -670,49 +833,35 @@ export function registerRoleEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
-  // Default dashboard buttons by role
+  // All available customer services - used as default for all roles
+  // These represent the services shown in the customer app
+  const ALL_CUSTOMER_SERVICES = [
+    { id: 'vet', label: 'Vet Care', icon: '🩺', enabled: true, serviceId: 'vet', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'grooming', label: 'Grooming', icon: '✂️', enabled: true, serviceId: 'grooming', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'shop', label: 'Shop', icon: '🛍️', enabled: true, serviceId: 'shop', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'training', label: 'Training', icon: '🎓', enabled: true, serviceId: 'training', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'walker', label: 'Walker', icon: '🚶', enabled: true, serviceId: 'walker', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'boarding', label: 'Boarding', icon: '🏠', enabled: true, serviceId: 'boarding', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'adoption', label: 'Adoption', icon: '❤️', enabled: true, serviceId: 'adoption', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'mating', label: 'Mating & Dating', icon: '💕', enabled: true, serviceId: 'mating-dating-hub', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'cafes', label: 'Pet Cafes', icon: '☕', enabled: true, serviceId: 'cafes', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'photography', label: 'Photography', icon: '📷', enabled: true, serviceId: 'photography', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'insurance', label: 'Insurance', icon: '🛡️', enabled: true, serviceId: 'insurance', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'breeder', label: 'Breeder', icon: '🐕', enabled: true, serviceId: 'breeder', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'ambulance', label: 'Ambulance', icon: '🚑', enabled: true, serviceId: 'ambulance', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'nutritionist', label: 'Nutritionist', icon: '🥗', enabled: true, serviceId: 'nutritionist', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'relocation', label: 'Relocation', icon: '✈️', enabled: true, serviceId: 'relocation', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'resort', label: 'Pet Resort', icon: '🏖️', enabled: true, serviceId: 'resort', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'holiday', label: 'Pet Holiday', icon: '🌴', enabled: true, serviceId: 'holiday', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'sunset', label: 'Sunset Care', icon: '🌅', enabled: true, serviceId: 'sunset', launchPhase: 'full', rolloutPercentage: 100 },
+  ];
+
+  // Default dashboard buttons by role - returns ALL customer services
+  // The Dashboard UI tab allows admins to enable/disable specific services per role
   function getDefaultButtonsForRole(roleId: string): any[] {
-    const roleLower = roleId.toLowerCase();
-    
-    const defaultButtons: Record<string, any[]> = {
-      veterinarian: [
-        { id: 'vet_consultation', label: 'Book Consultation', icon: '🩺', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-        { id: 'vet_emergency', label: 'Emergency Care', icon: '🚨', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-        { id: 'vet_vaccination', label: 'Vaccination', icon: '💉', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-        { id: 'vet_checkup', label: 'Health Checkup', icon: '📋', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      ],
-      groomer: [
-        { id: 'grooming_booking', label: 'Book Grooming', icon: '✂️', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-        { id: 'grooming_spa', label: 'Pet Spa', icon: '🛁', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-        { id: 'grooming_nail', label: 'Nail Trimming', icon: '💅', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      ],
-      walker: [
-        { id: 'walk_booking', label: 'Book Walk', icon: '🚶', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-        { id: 'walk_sitting', label: 'Pet Sitting', icon: '🏠', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      ],
-      trainer: [
-        { id: 'training_booking', label: 'Book Training', icon: '🎓', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-        { id: 'training_behavior', label: 'Behavior Training', icon: '🐕', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      ],
-    };
-
-    // Try exact match first
-    if (defaultButtons[roleLower]) {
-      return defaultButtons[roleLower];
-    }
-
-    // Try partial match
-    for (const [key, buttons] of Object.entries(defaultButtons)) {
-      if (roleLower.includes(key) || key.includes(roleLower)) {
-        return buttons;
-      }
-    }
-
-    // Default generic buttons
-    return [
-      { id: 'book_service', label: 'Book Service', icon: '📅', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-      { id: 'view_services', label: 'View Services', icon: '🔍', enabled: true, launchPhase: 'full', rolloutPercentage: 100 },
-    ];
+    // For all roles, return ALL customer services enabled by default
+    // Admins can then disable specific services via the Dashboard UI tab
+    return [...ALL_CUSTOMER_SERVICES];
   }
 
   app.get('/config/ui/dashboard', async (c) => {
@@ -804,15 +953,34 @@ export function registerRoleEndpoints(app: Hono) {
         return c.json({ error: 'Invalid config format' }, 400);
       }
 
-      await upsert('platform_settings',
-        {
+      // Check if config exists
+      const existing = await select('platform_settings', {
+        setting_key: `platform:ui:dashboard:${roleId}`
+      });
+
+      if (existing.length > 0) {
+        // Update existing
+        await update(
+          'platform_settings',
+          { setting_key: `platform:ui:dashboard:${roleId}` },
+          {
+            setting_value: configToSave,
+            setting_type: 'object',  // Must be one of: string, number, boolean, object, array
+            description: `Dashboard UI configuration for role ${roleId}`,
+            updated_at: new Date().toISOString(),
+          }
+        );
+      } else {
+        // Insert new
+        await insert('platform_settings', {
           setting_key: `platform:ui:dashboard:${roleId}`,
           setting_value: configToSave,
-          setting_type: 'json',
+          setting_type: 'object',  // Must be one of: string, number, boolean, object, array
           description: `Dashboard UI configuration for role ${roleId}`,
-        },
-        'setting_key'
-      );
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
 
       return c.json({
         success: true,
@@ -888,7 +1056,7 @@ function createApiGatewayEvent(req: any): any {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
@@ -903,14 +1071,14 @@ async function createApiGatewayEventWithBody(c: any): Promise<any> {
     pathParameters: {},
     queryStringParameters: {},
     requestContext: {
-      requestId: crypto.randomUUID(),
+      requestId: randomUUID(),
     },
   };
 }
 
 function createLambdaContext(): any {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     functionName: 'role-handler',
     functionVersion: '$LATEST',
   };

@@ -12,7 +12,7 @@ import {
   TrendingUp, DollarSign, Users, Calendar, Filter, Download, CheckCircle2 
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface Settlement {
   id: string;
@@ -37,7 +37,7 @@ export function SettlementDashboard() {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
   const COLORS = ['#FF8C42', '#4F46E5', '#10B981', '#F59E0B'];
 
   useEffect(() => {
@@ -49,12 +49,12 @@ export function SettlementDashboard() {
     try {
       // Load Settlements
       const settlementsRes = await fetch(`${API_BASE}/admin/payments/settlements`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       // Load Analytics
       const analyticsRes = await fetch(`${API_BASE}/admin/payments/analytics`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (settlementsRes.ok && analyticsRes.ok) {
@@ -85,7 +85,7 @@ export function SettlementDashboard() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({ settlementIds: dueSettlements })
       });

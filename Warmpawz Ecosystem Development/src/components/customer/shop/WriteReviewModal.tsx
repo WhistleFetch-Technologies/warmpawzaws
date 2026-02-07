@@ -5,7 +5,7 @@ import { Textarea } from '../ui/textarea';
 import { Label } from '../ui/label';
 import { Star } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { cn } from '../../../lib/utils';
 
 interface WriteReviewModalProps {
@@ -46,11 +46,11 @@ export function WriteReviewModal({
     setSubmitting(true);
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/reviews/create`,
+        `${getApiBaseUrl()}/reviews/create`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

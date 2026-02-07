@@ -8,7 +8,7 @@ import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Textarea } from '../ui/textarea';
 import { format, addDays, differenceInDays } from 'date-fns';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface ResortBookingFlowProps {
@@ -57,7 +57,7 @@ export function ResortBoardingBookingEnhanced({ phone, onBack, onSuccess, preSel
     agressiveBehavior: false
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     if (preSelectedVendorId) {

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ModeSwitcherCompact, VendorMode } from './ModeSwitcher';
 import { CenterModeContent } from './CenterModeContent';
 import { StaffModeContent } from './StaffModeContent';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface SoloProviderDashboardProps {
   session: {
@@ -25,7 +25,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const [staff, setStaff] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   // Fetch solo provider data
   useEffect(() => {
@@ -41,7 +41,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         `${API_BASE}/vendor/${session.vendorId}/solo-info`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

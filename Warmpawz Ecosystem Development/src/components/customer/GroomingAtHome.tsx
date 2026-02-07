@@ -16,7 +16,7 @@ import {
   Check,
   User
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface GroomingAtHomeProps {
   onBack: () => void;
@@ -59,10 +59,10 @@ export function GroomingAtHome({ onBack, customerId, customerData, phone, onNavi
       const lng = customerData?.coordinates?.lng || 77.5946;
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendors/by-role/groomer?lat=${lat}&lng=${lng}&serviceStyle=home`,
+        `${getApiBaseUrl()}/vendors/by-role/groomer?lat=${lat}&lng=${lng}&serviceStyle=home`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -81,10 +81,10 @@ export function GroomingAtHome({ onBack, customerId, customerData, phone, onNavi
   const loadPets = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${customerId}/pets`,
+        `${getApiBaseUrl()}/customer/${customerId}/pets`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -105,10 +105,10 @@ export function GroomingAtHome({ onBack, customerId, customerData, phone, onNavi
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${groomerId}/services`,
+        `${getApiBaseUrl()}/vendor/${groomerId}/services`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -176,12 +176,12 @@ export function GroomingAtHome({ onBack, customerId, customerData, phone, onNavi
       };
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/create`,
+        `${getApiBaseUrl()}/booking/create`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify(bookingPayload),
         }
@@ -212,12 +212,12 @@ export function GroomingAtHome({ onBack, customerId, customerData, phone, onNavi
       setLoading(true);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${bookingData.id}/complete`,
+        `${getApiBaseUrl()}/booking/${bookingData.id}/complete`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({ otp: otpInput }),
         }

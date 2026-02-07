@@ -34,7 +34,7 @@ export function PetHolidayServicesLanding({ phone, onBack, onNavigate }: PetHoli
         activePackages: packageList.length || 30,
         bookings: '800+',
         rating: packageList.length > 0 
-          ? (packageList.reduce((acc: number, p: any) => acc + (p.rating || 4.8), 0) / packageList.length).toFixed(1) 
+          ? Number(packageList.reduce((acc: number, p: any) => acc + Number(p.rating || 4.8), 0) / packageList.length).toFixed(1) 
           : '4.8'
       });
     } catch (error) {

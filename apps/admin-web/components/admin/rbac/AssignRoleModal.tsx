@@ -67,7 +67,7 @@ export function AssignRoleModal({ user, onClose, onSuccess }: AssignRoleModalPro
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg w-full max-w-md">
         <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-0 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-0">
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-3">
             <Users className="w-5 h-5 text-orange-600" />
             Assign Role
           </h2>
@@ -91,7 +91,7 @@ export function AssignRoleModal({ user, onClose, onSuccess }: AssignRoleModalPro
               {roles.map((role) => (
                 <label
                   key={role.id}
-                  className={`flex items-start gap-0 p-0 border-2 rounded-lg cursor-pointer transition-colors ${
+                  className={`flex items-start gap-3 p-0 border-2 rounded-lg cursor-pointer transition-colors ${
                     selectedRole === role.name
                       ? 'border-orange-500 bg-orange-50'
                       : 'border-gray-200 hover:border-gray-300'
@@ -113,11 +113,11 @@ export function AssignRoleModal({ user, onClose, onSuccess }: AssignRoleModalPro
             </div>
           </div>
 
-          <div className="flex gap-0 pt-4 border-t">
+          <div className="flex gap-3 pt-4 border-t">
             <button
               onClick={handleSubmit}
               disabled={loading}
-              className="flex-1 py-0.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
+              className="flex-1 py-0.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50"
             >
               {loading ? (
                 <>

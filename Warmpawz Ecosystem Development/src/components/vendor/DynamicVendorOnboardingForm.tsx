@@ -7,7 +7,7 @@ import { Checkbox } from '../ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
 import { MapPin, Upload, CheckCircle2, X, AlertCircle, ArrowLeft, ChevronRight, User } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 // Google Maps API Key removed - fetching from backend
@@ -93,7 +93,7 @@ export function DynamicVendorOnboardingForm({
   const [detectingLocation, setDetectingLocation] = useState(false);
   const [googleMapsApiKey, setGoogleMapsApiKey] = useState<string>('');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     if (initialData) {
@@ -121,7 +121,7 @@ export function DynamicVendorOnboardingForm({
   const fetchGoogleMapsKey = async () => {
     try {
       const response = await fetch(`${API_BASE}/admin/integrations/settings`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       if (response.ok) {
         const data = await response.json();
@@ -177,7 +177,7 @@ export function DynamicVendorOnboardingForm({
     try {
       console.log('[DYNAMIC FORM] 🏥 Checking server health...');
       const response = await fetch(`${API_BASE}/health`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (response.ok) {
@@ -189,8 +189,8 @@ export function DynamicVendorOnboardingForm({
       }
     } catch (error) {
       console.error('[DYNAMIC FORM] ❌ Server unreachable:', error);
-      console.error('[DYNAMIC FORM] 💡 Tip: Edge Function may not be deployed to Supabase');
-      toast.error('Cannot connect to backend server. Please check Supabase Edge Functions.');
+      console.error('[DYNAMIC FORM] 💡 Tip: API Gateway / Lambda may not be reachable');
+      toast.error('Cannot connect to backend. Please check API Gateway and Lambda.');
     }
   };
 
@@ -203,7 +203,7 @@ export function DynamicVendorOnboardingForm({
       // Add cache-busting to ensure we get the latest published version
       const response = await fetch(`${API_BASE}/vendor/onboarding-form/${roleId}?t=${Date.now()}`, {
         headers: { 
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache'
         }
@@ -235,7 +235,7 @@ export function DynamicVendorOnboardingForm({
         roleId,
         apiBase: API_BASE
       });
-      toast.error('Cannot connect to backend server. Please check Supabase Edge Functions.');
+      toast.error('Cannot connect to backend server. Please check API Gateway / Lambda.');
     } finally {
       setLoading(false);
     }
@@ -526,11 +526,17 @@ export function DynamicVendorOnboardingForm({
   };
 
   const handleFieldChange = (fieldName: string, value: any) => {
-    setFormData({ ...formData, [fieldName]: value });
-    // Clear error when user types
-    if (errors[fieldName]) {
-      setErrors({ ...errors, [fieldName]: '' });
-    }
+    // ✅ FIX: Use functional state update to avoid stale closure issues
+    setFormData(prev => ({ ...prev, [fieldName]: value }));
+    // ✅ FIX: Clear error using functional update to ensure latest state
+    setErrors(prev => {
+      if (prev[fieldName]) {
+        const updated = { ...prev };
+        delete updated[fieldName]; // Actually delete the error, not just set to empty string
+        return updated;
+      }
+      return prev;
+    });
   };
 
   const handleFileUpload = (fieldName: string, file: File) => {
@@ -589,12 +595,23 @@ export function DynamicVendorOnboardingForm({
           value = coordinates;
         }
         
-        // Required validation
-        const isEmpty = !value || value === '' || (Array.isArray(value) && value.length === 0);
-        
-        if (field.validation?.required && isEmpty) {
-          console.log(`❌ [VALIDATION] Required field missing: ${field.name}`);
-          newErrors[field.name] = `${field.label} is required`;
+        // ✅ FIX: Special handling for checkbox fields
+        // For checkbox types, only `true` means the field is filled
+        if (field.type === 'checkbox') {
+          if (field.validation?.required && value !== true) {
+            console.log(`❌ [VALIDATION] Required checkbox not checked: ${field.name}`);
+            newErrors[field.name] = `${field.label} is required`;
+          } else if (value === true) {
+            console.log(`✅ [VALIDATION] Checkbox checked: ${field.name}`);
+          }
+        } else {
+          // Standard empty check for other field types
+          const isEmpty = !value || value === '' || (Array.isArray(value) && value.length === 0);
+          
+          if (field.validation?.required && isEmpty) {
+            console.log(`❌ [VALIDATION] Required field missing: ${field.name}`);
+            newErrors[field.name] = `${field.label} is required`;
+          }
         } else if (field.type === 'file' && value) {
           console.log(`✅ [VALIDATION] File field present: ${field.name}`);
         } else if (field.type === 'map_pin' && value) {
@@ -680,7 +697,7 @@ export function DynamicVendorOnboardingForm({
     const response = await fetch(`${API_BASE}/upload/unified`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${publicAnonKey}`
+        ...getAuthHeaders()
       },
       body: formData
     });

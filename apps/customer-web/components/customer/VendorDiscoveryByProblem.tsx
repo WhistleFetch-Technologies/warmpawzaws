@@ -571,7 +571,7 @@ function VendorCard({
                   <span className="text-gray-300">•</span>
                   <div className="flex items-center gap-1 text-gray-500">
                     <MapPin className="w-4 h-4" />
-                    <span className="text-sm">{vendor.distance.toFixed(1)} km</span>
+                    <span className="text-sm">{Number(vendor.distance || 0).toFixed(1)} km</span>
                   </div>
                 </>
               )}

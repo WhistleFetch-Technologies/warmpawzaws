@@ -4,13 +4,18 @@
  * Vendor Landing Page - Main Entry Point for Vendor Portal
  * Handles all vendor lifecycle states from onboarding to active operations
  */
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-// ✅ AWS Serverless: Removed Supabase dependencies - using apiClient with Cognito auth
+// AWS Serverless: apiClient with Cognito auth
 import { useVendorNotificationService } from './useVendorNotificationService';
-import { VendorStaffPage } from './VendorStaffPage';
-import { DoctorManagement } from './clinic/DoctorManagement'; // ✅ FIX: Use actual Figma UI for doctor management
+import { useVendorCapabilities } from './hooks/useVendorCapabilities';
+import { getVendorRoleId, isDiagnosticsCenter } from '@/lib/vendor-utils';
+// ❌ REMOVED: Staff management has been decommissioned
+// import { VendorStaffPage } from './VendorStaffPage';
+// import { DoctorManagement } from './clinic/DoctorManagement';
+import { DoctorManagement } from './clinic/DoctorManagement'; // Keep for reference but not used
 import { VendorBusinessHub } from './business/VendorBusinessHub'; // ✅ NEW
 import { VetSpecializedServicesManager } from './clinic/VetSpecializedServicesManager'; // ✅ NEW: Vet-specific services
 import { ResortManagementDashboard } from './resort/ResortManagementDashboard'; // ✅ NEW: Pet resort management
@@ -20,28 +25,44 @@ import { VendorApplicationSubmitted } from './VendorApplicationSubmitted';
 import { VendorApplicationUnderReview } from './VendorApplicationUnderReview';
 import { VendorClarificationRequested } from './VendorClarificationRequested';
 import { VendorApprovedSetup } from './VendorApprovedSetup';
-import { VendorAvailabilitySetup } from './VendorAvailabilitySetup';
+// ✅ REMOVED: VendorAvailabilitySetup - Using AdvancedAvailabilityManager as standard
+// import { VendorAvailabilitySetup } from './VendorAvailabilitySetup';
 import { VendorSetupCompleted } from './VendorSetupCompleted';
 import { VendorApplicationRejected } from './VendorApplicationRejected';
-import { VendorDashboard } from './VendorDashboard'; // ✅ FIX: Use actual Figma UI component, not the placeholder VendorDashboardScreen
-import { VendorScheduleManagement } from './VendorScheduleManagement';
+// Lazy-load VendorDashboard so heavy chunk loads only when active vendor view is shown
+const VendorDashboard = React.lazy(() =>
+  import('./dashboard/BussinesProvider/VendorDashboard').then((m) => ({ default: m.VendorDashboard }))
+);
+// ✅ REMOVED: VendorScheduleManagement - Using AdvancedAvailabilityManager as standard
+// import { VendorScheduleManagement } from './VendorScheduleManagement';
 import { VendorServiceManagementComplete } from './VendorServiceManagementComplete';
 import { VendorConsultationScreen } from './VendorConsultationScreen';
 import { VendorBookingManagement } from './VendorBookingManagement';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
 import { FacilityManagement } from './FacilityManagement';
-import { CenterProfileManager } from './CenterProfileManager'; // ✅ NEW: Center Profile with timing
+import { ProfileManager } from './CenterProfileManager'; // ✅ RENAMED: CenterProfileManager -> ProfileManager
+import { AdvancedAvailabilityManager } from './AdvancedAvailabilityManager'; // ✅ NEW: Advanced Availability System
 import { CafeVendorDashboard } from './cafe/CafeVendorDashboard';
 import { SunsetServicesVendorDashboard } from './sunset/SunsetServicesVendorDashboard';
 import { InsuranceVendorContainer } from './insurance/InsuranceVendorContainer';
+import { PhotographyVendorDashboard } from './photography/PhotographyVendorDashboard';
+import { AmbulanceVendorDashboard } from './ambulance/AmbulanceVendorDashboard';
+import { RelocationVendorDashboard } from './relocation/RelocationVendorDashboard';
 import { VendorGalleryManagement } from './VendorGalleryManagement'; // ✅ FIX: Gallery component
 import { VendorPortfolioManagement } from './VendorPortfolioManagement'; // ✅ FIX: Portfolio component
 import { VendorCCTVAccess } from './VendorCCTVAccess'; // ✅ FIX: CCTV component
 import { VendorControlledSubstances } from './VendorControlledSubstances'; // ✅ FIX: Controlled substances component
-import { VendorPrescriptionBuilder } from './VendorPrescriptionBuilder'; // ✅ FIX: Prescription builder
+// import { VendorPrescriptionBuilder } from './VendorPrescriptionBuilder'; // ❌ DEPRECATED - Use VendorPrescriptionModal instead
+import { PrescriptionCreate } from './prescription/PrescriptionCreate'; // ✅ Prescription creation standalone
+import { PrescriptionList } from './prescription/PrescriptionList'; // ✅ NEW: Prescription list
+import { DiagnosticResults } from './diagnostics/DiagnosticResults'; // ✅ NEW: Diagnostic management
+import { DiagnosticsOrderDashboard } from './diagnostics/DiagnosticsOrderDashboard'; // ✅ Diagnostics center: lab orders
+import { AppointmentDetailModal } from './AppointmentDetailModal'; // ✅ Diagnostics booking detail
+import { ServicePricing } from './pricing/ServicePricing'; // ✅ NEW: Service pricing
 import { ProgressTrackingDashboard } from './ProgressTrackingDashboard'; // ✅ FIX: Progress tracking - CORRECTED PATH
-import { PackageManagementContainer } from './packages/PackageManagementContainer'; // ✅ FIX: Package management
-import { VendorCustomServiceCreation } from './VendorCustomServiceCreation'; // ✅ FIX: Custom services
+// DETACHED: PackageManagementContainer - 500 errors, will fix later
+import { VendorCustomServiceCreationEnhanced as VendorCustomServiceCreation } from './VendorCustomServiceCreationEnhanced'; // ✅ ENHANCED: Role-based custom services
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { ShelterAdoptionSystem } from './ShelterAdoptionSystem'; // ✅ FIX: Adoption management
 import { VendorMemorialServices } from './VendorMemorialServices'; // ✅ FIX: Memorial services
 import { VendorExpiryManagement } from './VendorExpiryManagement'; // ✅ NEW: Expiry management
@@ -55,6 +76,11 @@ import { VendorDietCharts } from './VendorDietCharts'; // ✅ NEW: Diet charts
 import { VendorCounseling } from './VendorCounseling'; // ✅ NEW: Counseling services
 import { VendorPolicyManagement } from './VendorPolicyManagement'; // ✅ NEW: Policy management
 import { VendorDistancePricing } from './VendorDistancePricing'; // ✅ NEW: Distance pricing
+import { VendorSupportDashboard } from './VendorSupportDashboard'; // ✅ NEW: Support tickets
+import { ServicePromotionsManagement } from './ServicePromotionsManagement'; // ✅ NEW: Service Promotions
+import { ArrowLeft } from 'lucide-react'; // ✅ NEW: For navigation
+import { TeleCallNotification } from './TeleCallNotification'; // ✅ P2P Video Call Notification
+import { VendorNewBookingOrderAlert } from './VendorNewBookingOrderAlert'; // Rule 4: Large new appointment/order alert
 
 interface VendorLandingPageProps {
   vendorId: string;
@@ -96,7 +122,8 @@ interface VendorData {
   previousStatus?: string;
   wasApprovedBefore?: boolean;
   reapprovalReason?: string;
-  roleId?: string; // ✅ Add roleId to VendorData
+  roleId?: string; // ✅ Role UUID
+  roleName?: string; // ✅ Role name (e.g., 'veterinary_clinic', 'groomer_center')
   submittedAt?: string; // Application submission timestamp
   createdAt?: string; // Record creation timestamp
   infoRequestMessage?: string; // Clarification/info request message
@@ -122,6 +149,7 @@ export function VendorLandingPage({
   onComplete,
   justSubmitted
 }: VendorLandingPageProps) {
+  const router = useRouter();
   const [status, setStatus] = useState<VendorStatus>('new');
   const [loading, setLoading] = useState(true);
   const [vendorData, setVendorData] = useState<VendorData | null>(null);
@@ -130,11 +158,15 @@ export function VendorLandingPage({
   const [showServiceManagement, setShowServiceManagement] = useState(false);
   const [showBookingManagement, setShowBookingManagement] = useState(false);
   const [showTeleConsultation, setShowTeleConsultation] = useState(false);
-  const [showScheduleManagement, setShowScheduleManagement] = useState(false);
+  // ✅ REMOVED: showScheduleManagement - Using only AdvancedAvailabilityManager as standard
+  // const [showScheduleManagement, setShowScheduleManagement] = useState(false);
+  const [showAdvancedAvailability, setShowAdvancedAvailability] = useState(false); // ✅ STANDARD: Advanced Availability Manager
   const [showFacilityManagement, setShowFacilityManagement] = useState(false);
-  const [showCenterProfile, setShowCenterProfile] = useState(false); // ✅ NEW: Center Profile Manager
-  const [showStaffManagement, setShowStaffManagement] = useState(false);
+  const [showProfile, setShowProfile] = useState(false); // ✅ RENAMED: Center Profile -> Profile (generic)
+  // ❌ REMOVED: Staff management has been decommissioned
+  // const [showStaffManagement, setShowStaffManagement] = useState(false);
   const [showBusinessHub, setShowBusinessHub] = useState(false); // ✅ NEW
+  const [showSupportDashboard, setShowSupportDashboard] = useState(false); // ✅ NEW: Support tickets
   
   // ✅ NEW: Specialized vendor-specific screens
   const [showVetSpecialized, setShowVetSpecialized] = useState(false); // Vet-specific services
@@ -147,6 +179,11 @@ export function VendorLandingPage({
   const [showCCTV, setShowCCTV] = useState(false);
   const [showControlledSubstances, setShowControlledSubstances] = useState(false);
   const [showPrescription, setShowPrescription] = useState(false);
+  const [showPrescriptionList, setShowPrescriptionList] = useState(false); // ✅ NEW: Prescription list view
+  const [showDiagnostics, setShowDiagnostics] = useState(false); // ✅ NEW: Diagnostic management (Test catalog)
+  const [showDiagnosticsOrders, setShowDiagnosticsOrders] = useState(false); // ✅ Diagnostics center: Lab orders dashboard
+  const [selectedDiagnosticsBookingId, setSelectedDiagnosticsBookingId] = useState<string | null>(null); // ✅ View Details modal
+  const [showPricing, setShowPricing] = useState(false); // ✅ NEW: Service pricing
   const [showProgressTracking, setShowProgressTracking] = useState(false);
   const [showPackages, setShowPackages] = useState(false);
   const [showCustomServices, setShowCustomServices] = useState(false);
@@ -157,22 +194,46 @@ export function VendorLandingPage({
   const [showEventManagement, setShowEventManagement] = useState(false); // ✅ NEW: Event management
   const [showPatientMonitoring, setShowPatientMonitoring] = useState(false); // ✅ NEW: Patient monitoring
   const [showCafeMenuManagement, setShowCafeMenuManagement] = useState(false); // ✅ NEW: Cafe menu management
+  const [showCafeTables, setShowCafeTables] = useState(false); // ✅ NEW: Cafe tables management
   const [showPrescriptionVerification, setShowPrescriptionVerification] = useState(false); // ✅ NEW: Prescription verification
   const [showDeliveryManagement, setShowDeliveryManagement] = useState(false); // ✅ NEW: Delivery management
   const [showDietCharts, setShowDietCharts] = useState(false); // ✅ NEW: Diet charts
   const [showCounseling, setShowCounseling] = useState(false); // ✅ NEW: Counseling services
   const [showPolicyManagement, setShowPolicyManagement] = useState(false); // ✅ NEW: Policy management
   const [showDistancePricing, setShowDistancePricing] = useState(false); // ✅ NEW: Distance pricing
+  const [showServicePromotions, setShowServicePromotions] = useState(false); // ✅ NEW: Service Promotions
   const [showLiveTracking, setShowLiveTracking] = useState(false); // ✅ FIX: Live tracking
   const [showSpecializedServices, setShowSpecializedServices] = useState(false); // ✅ FIX: Specialized services
   
-  // ✅ NEW: Track navigation context for better UX flow
-  const [returnToStaffManagement, setReturnToStaffManagement] = useState(false);
+  // ✅ P2P VIDEO CALL: Incoming call notification state
+  const [incomingCall, setIncomingCall] = useState<{
+    bookingId: string;
+    meetingId?: string;
+    customer: {
+      id: string;
+      name: string;
+      photo?: string;
+      phone?: string;
+    };
+    serviceName?: string;
+    petName?: string;
+    isInstant?: boolean;
+  } | null>(null);
+
+  // Rule 4: Large on-screen notification for new appointment/order
+  const [newBookingAlert, setNewBookingAlert] = useState<any>(null);
+  
+  // ❌ REMOVED: Staff navigation context (staff has been decommissioned)
+  // const [returnToStaffManagement, setReturnToStaffManagement] = useState(false);
   
   // ✅ NEW: Re-onboarding state
   const [isReEditing, setIsReEditing] = useState(false);
   const [existingApplicationData, setExistingApplicationData] = useState<any>(null);
   const [reEditMode, setReEditMode] = useState<'correction' | 'clarification' | null>(null);
+  
+  // ✅ FIX: Prevent multiple status checks causing infinite loops/flickering
+  const hasCheckedStatus = useRef(false);
+  const isCheckingStatus = useRef(false);
 
   // 🔔 Enable vendor notification service - works throughout the landing page
   useVendorNotificationService({
@@ -180,11 +241,28 @@ export function VendorLandingPage({
     enabled: !!vendorId, // ✅ Enable whenever we have vendorId (not just when active)
     onNewNotification: (notification) => {
       console.log('📬 [VENDOR-LANDING] Notification received:', notification);
+      // Rule 4: Show large on-screen alert for new appointment/order (loud notification)
+      const type = notification.type || notification.notification_type;
+      if (type === 'new_booking' || type === 'new_order') {
+        setNewBookingAlert(notification);
+      }
       // Toast and sound will be shown automatically by the service
     }
   });
+
+  // 🔒 Get vendor capabilities from role configuration
+  // ✅ CRITICAL FIX: Pass both roleId formats (camelCase and snake_case) to useVendorCapabilities
+  const effectiveRoleId = vendorData?.roleId || vendorData?.role_id || (vendorData as any)?.selected_role_id;
+  const { capabilities } = useVendorCapabilities(effectiveRoleId);
   
   useEffect(() => {
+    // ✅ FIX: Prevent multiple status checks causing flickering
+    if (hasCheckedStatus.current) {
+      console.log('⚠️ [VendorLandingPage] Status already checked, skipping');
+      return;
+    }
+    hasCheckedStatus.current = true;
+    
     // 🔒 Fast-path: if localStorage already knows we're approved/activated, show dashboard immediately
     if (typeof window !== 'undefined') {
       const storedStatus = localStorage.getItem('vendorApplicationStatus');
@@ -195,12 +273,10 @@ export function VendorLandingPage({
         if (storedVendor) {
           try {
             const vendor = JSON.parse(storedVendor);
-            setVendorData(vendor);
             // Ensure vendor data has active status
-            if (!vendor.status || vendor.status !== 'active') {
-              vendor.status = 'active';
-              vendor.isActive = true;
-            }
+            vendor.status = 'active';
+            vendor.isActive = true;
+            setVendorData(vendor);
           } catch {
             // ignore parse errors
           }
@@ -215,12 +291,129 @@ export function VendorLandingPage({
       console.log('📦 Using initial vendor data:', initialVendorData);
       console.log('🔍 Initial vendor STATUS:', initialVendorData.status);
       console.log('🔍 Initial vendor SETUP COMPLETED:', initialVendorData.setupCompleted);
+      console.log('🔍 Initial vendor ROLE ID:', initialVendorData.roleId || initialVendorData.role_id);
       processVendorData(initialVendorData);
       setLoading(false);
     } else {
       checkVendorStatus();
     }
-  }, [vendorId, phone, initialVendorData]);
+  }, []); // ✅ FIX: Empty dependency array - only run on mount
+  
+  // ✅ CRITICAL FIX: Sync vendorData when initialVendorData updates (e.g., after profile fetch)
+  useEffect(() => {
+    if (initialVendorData && initialVendorData.roleId && !vendorData?.roleId) {
+      console.log('🔄 [VendorLandingPage] Syncing roleId from initialVendorData:', initialVendorData.roleId);
+      setVendorData(prev => ({
+        ...prev,
+        ...initialVendorData,
+        roleId: initialVendorData.roleId || initialVendorData.role_id,
+      }));
+    }
+  }, [initialVendorData?.roleId, initialVendorData?.role_id]);
+
+  // ✅ Fetch vendor profile when status is active but vendorData is null (e.g. fast-path with missing localStorage vendorData)
+  useEffect(() => {
+    if (status !== 'active' || vendorData || !vendorId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.get<any>(`/vendor/${vendorId}/profile`);
+        const profile = res?.vendor ?? res?.profile ?? res;
+        if (cancelled || !profile) return;
+        const v = { ...profile, id: profile.id || vendorId, status: 'active', isActive: true };
+        setVendorData(v);
+        try {
+          localStorage.setItem('vendorData', JSON.stringify(v));
+          if (profile.role_id || profile.roleId) {
+            localStorage.setItem('vendorRole', profile.role_id || profile.roleId);
+          }
+        } catch (_) {}
+      } catch (err) {
+        if (!cancelled) console.warn('[VendorLandingPage] Profile fetch failed (active but no vendorData):', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [status, vendorData, vendorId]);
+
+  // ✅ P2P VIDEO CALL: Check for incoming calls periodically (for tele consultations)
+  useEffect(() => {
+    if (!vendorId || status !== 'active') return;
+    
+    const checkIncomingCalls = async () => {
+      try {
+        // Check for unread tele_call_incoming notifications
+        const response = await apiClient.get<any>(
+          `/notifications?userId=${vendorId}&userType=vendor&isRead=false`
+        );
+        
+        if (response.success && response.notifications?.length > 0) {
+          // Filter for tele_call_incoming (backend returns notification_type, is_read)
+          const callNotifications = response.notifications.filter((n: any) => 
+            (n.notification_type || n.type) === 'tele_call_incoming' && !n.is_read
+          );
+          
+          if (callNotifications.length === 0) return;
+          
+          const callNotification = callNotifications[0];
+          const notificationData = typeof callNotification.data === 'string' 
+            ? JSON.parse(callNotification.data) 
+            : callNotification.data || {};
+          
+          if (notificationData.booking_id && notificationData.call_type === 'incoming') {
+            // Show incoming call immediately from notification data (don't block on GET /bookings 404)
+            const baseIncoming = {
+              bookingId: notificationData.booking_id,
+              meetingId: notificationData.meeting_id,
+              customer: {
+                id: '',
+                name: 'Customer',
+                photo: undefined as string | undefined,
+                phone: undefined as string | undefined,
+              },
+              serviceName: undefined as string | undefined,
+              petName: undefined as string | undefined,
+              isInstant: false,
+            };
+            setIncomingCall(baseIncoming);
+
+            // Enrich with booking details if GET /bookings succeeds (pass vendorId for backend auth)
+            try {
+              const bookingResponse = await apiClient.get<any>(
+                `/bookings/${notificationData.booking_id}?vendorId=${encodeURIComponent(vendorId)}`
+              );
+              if (bookingResponse?.success && bookingResponse?.booking) {
+                const booking = bookingResponse.booking;
+                setIncomingCall({
+                  ...baseIncoming,
+                  customer: {
+                    id: booking.customer_id || '',
+                    name: booking.customer_name || 'Customer',
+                    photo: booking.customer_photo,
+                    phone: booking.customer_phone,
+                  },
+                  serviceName: booking.service_name,
+                  petName: booking.pet_name,
+                  isInstant: booking.service_type === 'instant_tele',
+                });
+              }
+            } catch (_) {
+              // Keep base incoming call; UI already shows Accept/Reject
+            }
+
+            await apiClient.put(`/notifications/${callNotification.id}/read`, {}).catch(() => {});
+          }
+        }
+      } catch (error) {
+        console.error('[VendorLandingPage] Error checking incoming calls:', error);
+      }
+    };
+    
+    // Check immediately and then every 5 seconds
+    checkIncomingCalls();
+    const interval = setInterval(checkIncomingCalls, 5000);
+    
+    return () => clearInterval(interval);
+  }, [vendorId, status]);
   
   const processVendorData = (vendor: any) => {
     setVendorData(vendor);
@@ -300,6 +493,13 @@ export function VendorLandingPage({
   };
 
   const checkVendorStatus = async () => {
+    // ✅ FIX: Prevent concurrent status checks
+    if (isCheckingStatus.current) {
+      console.log('⚠️ [VendorLandingPage] Status check already in progress, skipping');
+      return;
+    }
+    isCheckingStatus.current = true;
+    
     try {
       setLoading(true);
       
@@ -367,6 +567,7 @@ export function VendorLandingPage({
       setStatus('new');
     } finally {
       setLoading(false);
+      isCheckingStatus.current = false;
     }
   };
 
@@ -403,7 +604,7 @@ export function VendorLandingPage({
       // ✅ LEGACY CODE BELOW - Only runs for old onboarding flow (if any)
       console.log('📤 Starting profile submission with document upload...');
       
-      // STEP 1: Upload all documents to Supabase Storage
+      // STEP 1: Upload all documents to S3 (via API Gateway / Lambda)
       const formData = new FormData();
       formData.append('vendorId', vendorId);
       
@@ -496,10 +697,10 @@ export function VendorLandingPage({
         createdAt: new Date().toISOString()
       };
 
-      const profileResponse = await apiClient.post('/vendor/profile/save', vendorProfile) as any;
+      const profileResponse = await apiClient.put(`/vendor/${vendorId}/profile`, vendorProfile) as any;
 
-      if (!profileResponse || !profileResponse.success) {
-        toast.error('Failed to save profile');
+      if (!profileResponse || profileResponse.error) {
+        toast.error(profileResponse?.error || 'Failed to save profile');
         return;
       }
 
@@ -516,7 +717,7 @@ export function VendorLandingPage({
         address: profileData.address,
         city: profileData.city || '',
         state: profileData.state || '',
-        pincode: profileData.pincode || '',
+        pincode: (profileData.pincode && profileData.pincode !== '000000') ? profileData.pincode : '',
         gstNumber: profileData.gstNumber || '',
         panNumber: profileData.panNumber || '',
         licenseNumber: profileData.licenseNumber || '',
@@ -537,7 +738,7 @@ export function VendorLandingPage({
         documents: applicationPayload.documents
       });
 
-      const result = await apiClient.post('/vendor/application/submit', applicationPayload) as any;
+      const result = await apiClient.post('/vendor/onboarding/submit-application', applicationPayload) as any;
 
       if (result && result.success) {
         console.log('✅ Application submitted successfully:', result.applicationId);
@@ -600,33 +801,35 @@ export function VendorLandingPage({
     setStatus('new');
   };
 
-  // ✅ NEW: Handler for correcting and resubmitting after rejection or clarification
+  // ✅ Handler for "Go back to onboarding form" – load existing application and show form for correction/clarification
+  const applicationIdForStatus = vendorData?.applicationId || applicationData?.id || vendorId;
   const handleCorrectAndResubmit = async (mode: 'correction' | 'clarification') => {
+    if (!applicationIdForStatus) {
+      toast.error('Application ID not found. Please refresh and try again.');
+      return;
+    }
     try {
       console.log(`📝 Starting re-onboarding in ${mode} mode...`);
       setLoading(true);
-      
-      // Load existing application data
-      const data = await apiClient.get(`/make-server-3dd53475/vendor/application`) as any;
-      
-      if (data && data.success) {
-        // data already available
-        console.log('✅ Loaded existing application data:', data.application);
-        
-        setExistingApplicationData(data.application);
+
+      const data = await apiClient.get(`/vendor/application/status/${applicationIdForStatus}`) as any;
+
+      if (data?.application) {
+        const app = data.application;
+        const payload = app.form_data ?? app.application_payload ?? app ?? {};
+        setExistingApplicationData(typeof payload === 'object' && payload !== null ? payload : {});
         setReEditMode(mode);
         setIsReEditing(true);
         setLoading(false);
-        
         toast.success('Application loaded. Please update the required information.');
       } else {
         console.error('❌ Failed to load application:', data?.error);
-        toast.error('Failed to load application data. Please try again.');
+        toast.error(data?.error || 'Failed to load application data. Please try again.');
         setLoading(false);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading application:', error);
-      toast.error('An error occurred. Please try again.');
+      toast.error(error?.message || 'An error occurred. Please try again.');
       setLoading(false);
     }
   };
@@ -661,12 +864,10 @@ export function VendorLandingPage({
     );
   }
 
-  // ✅ NEW: Show re-onboarding screen if in edit mode
-  if (isReEditing && existingApplicationData && vendorData) {
+  // ✅ Show re-onboarding screen when user clicked "Go back to onboarding form" (correction or clarification)
+  if (isReEditing && existingApplicationData !== null) {
+    const roleIdForForm = vendorData?.roleId ?? (applicationData as any)?.roleId ?? (existingApplicationData as any)?.roleId ?? (existingApplicationData as any)?.selected_role_id;
     console.log('📝 Rendering re-onboarding screen with mode:', reEditMode);
-    
-    // For re-submissions, use the regular VendorOnboarding flow
-    // The vendor will need to go through service selection and form again
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="w-full max-w-[430px] mx-auto p-4 bg-blue-50 border-b-2 border-blue-200">
@@ -684,12 +885,11 @@ export function VendorLandingPage({
             </div>
           </div>
         </div>
-        
         <EnhancedVendorOnboarding
           phone={phone}
-          roleId={vendorData?.roleId} // ✅ Pass roleId for re-submissions
+          roleId={roleIdForForm}
           onComplete={handleResubmitComplete}
-          initialData={existingApplicationData} // ✅ Pass existing data for pre-filling
+          initialData={existingApplicationData}
         />
       </div>
     );
@@ -768,10 +968,21 @@ export function VendorLandingPage({
       );
 
     case 'approved_availability':
+      // ✅ STANDARDIZED: Using AdvancedAvailabilityManager for all availability setup
+      // This replaces the basic VendorAvailabilitySetup with full features:
+      // - Multiple slots per day
+      // - Multiple service styles per slot
+      // - Breaks (lunch, tea, custom)
+      // - Holidays and vacation management
+      // - Online/offline toggle for solo providers
       return (
-        <VendorAvailabilitySetup
+        <AdvancedAvailabilityManager
           vendorId={vendorId}
-          onComplete={handleSetupComplete}
+          vendorData={vendorData}
+          onBack={() => {
+            // During onboarding, "back" should mark completion since there's no previous screen
+            handleSetupComplete();
+          }}
         />
       );
 
@@ -790,6 +1001,14 @@ export function VendorLandingPage({
           allowResubmit={applicationData?.allowResubmit !== false}
           onResubmit={handleResubmit}
           onCorrectAndResubmit={() => handleCorrectAndResubmit('correction')}
+          onGoBack={() => {
+            if (typeof window !== 'undefined') {
+              localStorage.removeItem('vendorData');
+              localStorage.removeItem('vendorApplicationStatus');
+              localStorage.removeItem('vendorRole');
+              window.location.href = '/';
+            }
+          }}
         />
       );
 
@@ -798,15 +1017,20 @@ export function VendorLandingPage({
       // This provides a clean dashboard experience with stats, schedule, and quick actions
       
       console.log('🎯 Vendor is ACTIVE - showing VendorDashboardScreen');
-      console.log('   Vendor Role:', vendorData?.roleId);
+      const roleId = getVendorRoleId(vendorData);
+      console.log('   Vendor Role:', roleId);
       console.log('   Vendor Type:', vendorData?.vendorType);
       
-      // Show schedule management screen if requested
-      if (showScheduleManagement) {
+      // ✅ REMOVED: VendorScheduleManagement - Using AdvancedAvailabilityManager as standard
+      // All schedule/availability management now goes through AdvancedAvailabilityManager
+      
+      // ✅ STANDARD: Show advanced availability manager for ALL availability/schedule operations
+      if (showAdvancedAvailability) {
         return (
-          <VendorScheduleManagement
+          <AdvancedAvailabilityManager
             vendorId={vendorId}
-            onBack={() => setShowScheduleManagement(false)}
+            vendorData={vendorData}
+            onBack={() => setShowAdvancedAvailability(false)}
           />
         );
       }
@@ -817,14 +1041,7 @@ export function VendorLandingPage({
           <VendorServiceManagementComplete
             vendorId={vendorId}
             vendorData={vendorData}
-            fromStaffManagement={returnToStaffManagement}
-            onBack={() => {
-              setShowServiceManagement(false);
-              if (returnToStaffManagement) {
-                setReturnToStaffManagement(false);
-                setShowStaffManagement(true);
-              }
-            }}
+            onBack={() => router.push('/dashboard')}
           />
         );
       }
@@ -845,8 +1062,11 @@ export function VendorLandingPage({
         return (
           <VendorBookingManagement
             vendorId={vendorId}
-            
+            vendorData={vendorData}
             onBack={() => setShowBookingManagement(false)}
+            chatEnabled={!!capabilities?.chat}
+            vendorPhone={vendorData?.phone}
+            vendorName={vendorData?.fullName || vendorData?.businessName}
           />
         );
       }
@@ -867,66 +1087,25 @@ export function VendorLandingPage({
         return (
           <FacilityManagement
             vendorId={vendorId}
-            
+            vendorData={vendorData}
             onBack={() => setShowFacilityManagement(false)}
           />
         );
       }
       
       // ✅ NEW: Show Center Profile Manager screen if requested
-      if (showCenterProfile) {
+      if (showProfile) {
         return (
-          <CenterProfileManager
+          <ProfileManager
             vendorId={vendorId}
-            
-            onBack={() => setShowCenterProfile(false)}
+            vendorData={vendorData}
+            onBack={() => setShowProfile(false)}
           />
         );
       }
       
-      // Show staff management screen if requested
-      // ✅ FIX: Use DoctorManagement for clinic/vet roles (full Figma UI)
-      if (showStaffManagement) {
-        // Check roleId or role_id fields
-        const roleIdValue = vendorData?.roleId || (vendorData as any)?.role_id || '';
-        const isClinicRoleId = ['veterinary_clinic', 'pet_clinic', 'veterinarian'].includes(roleIdValue);
-        
-        // Fallback: Detect clinic from business_name if roleId is not set
-        const businessName = (vendorData?.businessName || (vendorData as any)?.business_name || '').toLowerCase();
-        const isClinicByName = businessName.includes('veterinary') || 
-                               businessName.includes('clinic') || 
-                               businessName.includes('hospital') ||
-                               businessName.includes('vet ');
-        
-        const isClinicRole = isClinicRoleId || isClinicByName;
-        
-        if (isClinicRole) {
-          return (
-            <DoctorManagement
-              clinicId={vendorId}
-              clinicData={vendorData}
-              onBack={() => setShowStaffManagement(false)}
-            />
-          );
-        }
-        
-        // Non-clinic vendors use VendorStaffPage
-        return (
-          <div className="min-h-screen bg-gray-50">
-            <VendorStaffPage
-              vendorId={vendorId}
-            />
-            <div className="fixed bottom-4 left-4">
-              <button
-                onClick={() => setShowStaffManagement(false)}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-              >
-                ← Back
-              </button>
-            </div>
-          </div>
-        );
-      }
+      // ❌ REMOVED: Staff management has been decommissioned
+      // Staff functionality has been replaced by vendor-level availability and scheduling
 
       // ✅ NEW: Render VendorBusinessHub
       if (showBusinessHub) {
@@ -937,6 +1116,11 @@ export function VendorLandingPage({
             onBack={() => setShowBusinessHub(false)}
           />
         );
+      }
+      
+      // ✅ NEW: Support Tickets Dashboard
+      if (showSupportDashboard) {
+        return <VendorSupportDashboard vendorId={vendorId} />;
       }
       
       // ✅ NEW: Vet Specialized Services Manager
@@ -1005,14 +1189,115 @@ export function VendorLandingPage({
         );
       }
       
-      // ✅ FIX: Prescription Builder
+      // ✅ FIX: Prescription Builder (Enhanced)
       if (showPrescription) {
         return (
-          <VendorPrescriptionBuilder
+          <PrescriptionCreate
             vendorId={vendorId}
-            
             onBack={() => setShowPrescription(false)}
+            onSuccess={() => {
+              setShowPrescription(false);
+              setShowPrescriptionList(true);
+            }}
           />
+        );
+      }
+      
+      // ✅ NEW: Prescription List
+      if (showPrescriptionList) {
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <div className="bg-white border-b sticky top-0 z-10">
+              <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-4">
+                <button onClick={() => setShowPrescriptionList(false)} className="p-2 hover:bg-gray-100 rounded-full">
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                <h1 className="text-xl font-bold">Prescriptions</h1>
+                <button
+                  onClick={() => {
+                    setShowPrescriptionList(false);
+                    setShowPrescription(true);
+                  }}
+                  className="ml-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  Create New
+                </button>
+              </div>
+            </div>
+            <div className="max-w-4xl mx-auto px-4 py-6">
+              <PrescriptionList vendorId={vendorId} />
+            </div>
+          </div>
+        );
+      }
+      
+      // ✅ Diagnostics center: Lab orders dashboard first; Test catalog secondary
+      if (showDiagnosticsOrders) {
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <div className="max-w-6xl mx-auto px-4 py-6">
+              <DiagnosticsOrderDashboard
+                vendorId={vendorId}
+                onBack={() => setShowDiagnosticsOrders(false)}
+                onSelectBooking={(bookingId) => setSelectedDiagnosticsBookingId(bookingId)}
+              />
+              {selectedDiagnosticsBookingId && (
+                <AppointmentDetailModal
+                  bookingId={selectedDiagnosticsBookingId}
+                  vendorData={vendorData}
+                  onClose={() => setSelectedDiagnosticsBookingId(null)}
+                  onRefresh={() => setSelectedDiagnosticsBookingId(null)}
+                />
+              )}
+              <div className="mt-4 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => { setShowDiagnosticsOrders(false); setShowDiagnostics(true); }}
+                  className="text-sm text-teal-600 hover:text-teal-700 font-medium"
+                >
+                  Manage Test Catalog →
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+      // ✅ NEW: Diagnostic Results (Test catalog)
+      if (showDiagnostics) {
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <div className="max-w-6xl mx-auto px-4 py-6">
+              <DiagnosticResults
+                vendorId={vendorId}
+                vendorData={vendorData}
+                onBack={() => {
+                  setShowDiagnostics(false);
+                  // ✅ FIX: Use proper role detection helper
+                  if (isDiagnosticsCenter(vendorData)) {
+                    setShowDiagnosticsOrders(true);
+                  }
+                }}
+                onNavigateToOrders={() => {
+                  setShowDiagnostics(false);
+                  setShowDiagnosticsOrders(true);
+                }}
+              />
+            </div>
+          </div>
+        );
+      }
+      
+      // ✅ NEW: Service Pricing
+      if (showPricing) {
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <div className="max-w-6xl mx-auto px-4 py-6">
+              <ServicePricing
+                vendorId={vendorId}
+                onBack={() => setShowPricing(false)}
+              />
+            </div>
+          </div>
         );
       }
       
@@ -1032,27 +1317,13 @@ export function VendorLandingPage({
         return (
           <PackageManagementContainer
             vendorId={vendorId}
-            
+            vendorData={vendorData}
             onBack={() => setShowPackages(false)}
           />
         );
       }
       
-      // ✅ FIX: Custom Service Creation
-      if (showCustomServices) {
-        return (
-          <VendorCustomServiceCreation
-            vendorId={vendorId}
-            
-            serviceStyle={vendorData?.serviceStyle === 'both' ? 'both' : 'at_center'}
-            onClose={() => setShowCustomServices(false)}
-            onServiceCreated={() => {
-              setShowCustomServices(false);
-              // Refresh services if needed
-            }}
-          />
-        );
-      }
+      // ✅ FIX: Custom Service Creation - no early return; rendered as modal overlay below
       
       // ✅ FIX: Adoption System
       if (showAdoptionSystem) {
@@ -1186,6 +1457,17 @@ export function VendorLandingPage({
         );
       }
       
+      // ✅ NEW: Service Promotions Management
+      if (showServicePromotions) {
+        return (
+          <ServicePromotionsManagement
+            vendorId={vendorId}
+            vendorRole={vendorData?.vendorType}
+            onBack={() => setShowServicePromotions(false)}
+          />
+        );
+      }
+      
       // ✅ NEW: Distance Pricing (uses onClose)
       if (showDistancePricing) {
         return (
@@ -1260,48 +1542,169 @@ export function VendorLandingPage({
           />
         );
       }
+
+      // 7. Photography Services
+      if (vendorData?.roleId === 'pet_photography' || vendorData?.roleId === 'photography') {
+        console.log('📸 Rendering PhotographyVendorDashboard');
+        return (
+          <PhotographyVendorDashboard
+            vendorId={vendorId}
+          />
+        );
+      }
+
+      // 8. Ambulance Services
+      if (vendorData?.roleId === 'pet_ambulance' || vendorData?.roleId === 'ambulance') {
+        console.log('🚑 Rendering AmbulanceVendorDashboard');
+        return (
+          <AmbulanceVendorDashboard
+            vendorId={vendorId}
+          />
+        );
+      }
+
+      // 9. Pet Relocation Services
+      if (vendorData?.roleId === 'pet_relocation' || vendorData?.roleId === 'relocation') {
+        console.log('🚚 Rendering RelocationVendorDashboard');
+        return (
+          <RelocationVendorDashboard
+            vendorId={vendorId}
+          />
+        );
+      }
+
+      // 10. Pet Products Store / Retailer - Redirect to Seller Hub (E-Commerce Dashboard)
+      // Check role by name OR by UUID (pet_products_store UUID = 5056756d-3b05-457a-9725-3f922800b520)
+      const vendorRoleId = vendorData?.roleId || (vendorData as any)?.role_id || (vendorData as any)?.selected_role_id;
+      const roleName = (vendorData as any)?.roleName || (vendorData as any)?.role_name || '';
+      const PET_PRODUCTS_STORE_UUID = '5056756d-3b05-457a-9725-3f922800b520';
+      const PET_PHARMACY_UUID = ''; // Add if known
+      const isRetailVendor = vendorRoleId === 'pet_products_store' || vendorRoleId === 'product_seller' || 
+                             vendorRoleId === 'pet_pharmacy' || vendorRoleId === PET_PRODUCTS_STORE_UUID ||
+                             roleName === 'pet_products_store' || roleName === 'Pet Store / Retailer' ||
+                             vendorRoleId?.includes('retail') || vendorRoleId?.includes('store') ||
+                             (vendorData as any)?.vendor_type === 'seller';
+      if (isRetailVendor) {
+        console.log('🏪 Pet Products Store detected - redirecting to Seller Hub. RoleId:', vendorRoleId, 'RoleName:', roleName);
+        router.push('/seller');
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
+              <p className="mt-4 text-gray-600">Loading Seller Hub...</p>
+            </div>
+          </div>
+        );
+      }
       
-      // ✅ FIX: Use VendorDashboard (actual Figma UI) instead of VendorDashboardScreen (placeholder)
-      // VendorDashboard is the comprehensive 1200+ line component with all capabilities
+      // ✅ Full VendorDashboard (Figma UI) – all options, appointment models, navigation
       console.log('🎯 Rendering VendorDashboard (Figma UI) for vendor:', vendorId);
       
       return (
-        <VendorDashboard
-          vendorId={vendorId}
+        <>
+          <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4" />
+              <p className="text-gray-600 mt-4">Loading dashboard...</p>
+            </div>
+          }>
+            <VendorDashboard
+              vendorId={vendorId}
+              vendorData={vendorData}
+              onNavigateToConsultation={() => setShowConsultation(true)}
+              onNavigateToServiceManagement={() => setShowServiceManagement(true)}
+              onNavigateToBookingManagement={() => setShowBookingManagement(true)}
+              onNavigateToTeleConsultation={() => setShowTeleConsultation(true)}
+              onNavigateToScheduleManagement={() => setShowAdvancedAvailability(true)}
+              onNavigateToAdvancedAvailability={() => setShowAdvancedAvailability(true)}
+              onNavigateToProfile={() => setShowProfile(true)}
+              onNavigateToFacilityManagement={() => setShowFacilityManagement(true)}
+              onNavigateToBusinessHub={() => setShowBusinessHub(true)}
+              onNavigateToSupport={() => setShowSupportDashboard(true)}
+              onNavigateToLiveTracking={() => setShowLiveTracking(true)}
+              onNavigateToSpecializedServices={() => setShowSpecializedServices(true)}
+              onNavigateToGallery={() => setShowGallery(true)}
+              onNavigateToPortfolio={() => setShowPortfolio(true)}
+              onNavigateToCCTV={() => setShowCCTV(true)}
+              onNavigateToControlledSubstances={() => setShowControlledSubstances(true)}
+              onNavigateToPrescription={() => setShowPrescription(true)}
+              onNavigateToPrescriptionList={() => setShowPrescriptionList(true)}
+              onNavigateToDiagnostics={() => {
+                const roleName = vendorData?.role?.name || vendorData?.roleName || vendorData?.role_name;
+                const isDiagnosticsCenterDirect = roleName && (
+                  roleName.toLowerCase().includes('diagnostics_center') ||
+                  roleName.toLowerCase().includes('diagnostic_center') ||
+                  roleName.toLowerCase() === 'diagnostics'
+                );
+                const vendorDataWithCapabilities = { ...vendorData, capabilities: capabilities || [] };
+                const isDiagnosticsCenterHelper = isDiagnosticsCenter(vendorDataWithCapabilities);
+                const shouldShowOrders = isDiagnosticsCenterDirect || isDiagnosticsCenterHelper;
+                if (shouldShowOrders) setShowDiagnosticsOrders(true);
+                else setShowDiagnostics(true);
+              }}
+              onNavigateToPricing={() => setShowPricing(true)}
+              onNavigateToProgressTracking={() => setShowProgressTracking(true)}
+              onNavigateToPackages={undefined}
+              onNavigateToCustomServices={() => setShowCustomServices(true)}
+              onNavigateToAdoptionSystem={() => setShowAdoptionSystem(true)}
+              onNavigateToMemorialServices={() => setShowMemorialServices(true)}
+              onNavigateToExpiryManagement={() => setShowExpiryManagement(true)}
+              onNavigateToDonationManagement={() => setShowDonationManagement(true)}
+              onNavigateToEventManagement={() => setShowEventManagement(true)}
+              onNavigateToPatientMonitoring={() => setShowPatientMonitoring(true)}
+              onNavigateToCafeMenuManagement={() => setShowCafeMenuManagement(true)}
+              onNavigateToCafeTables={() => router.push('/cafe/tables')}
+              onNavigateToPrescriptionVerification={() => setShowPrescriptionVerification(true)}
+              onNavigateToDeliveryManagement={() => setShowDeliveryManagement(true)}
+              onNavigateToDietCharts={() => router.push('/nutrition/dashboard')}
+              onNavigateToCounseling={() => setShowCounseling(true)}
+              onNavigateToDistancePricing={() => setShowDistancePricing(true)}
+              onNavigateToPolicyManagement={() => setShowPolicyManagement(true)}
+              onNavigateToServicePromotions={() => setShowServicePromotions(true)}
+            />
+          </Suspense>
           
-          onNavigateToConsultation={() => setShowConsultation(true)}
-          onNavigateToServiceManagement={() => setShowServiceManagement(true)}
-          onNavigateToBookingManagement={() => setShowBookingManagement(true)}
-          onNavigateToTeleConsultation={() => setShowTeleConsultation(true)}
-          onNavigateToScheduleManagement={() => setShowScheduleManagement(true)}
-          onNavigateToCenterProfile={() => setShowCenterProfile(true)}
-          onNavigateToFacilityManagement={() => setShowFacilityManagement(true)}
-          onNavigateToStaffManagement={() => setShowStaffManagement(true)}
-          onNavigateToBusinessHub={() => setShowBusinessHub(true)}
-          onNavigateToLiveTracking={() => setShowLiveTracking(true)}
-          onNavigateToSpecializedServices={() => setShowSpecializedServices(true)}
-          onNavigateToGallery={() => setShowGallery(true)}
-          onNavigateToPortfolio={() => setShowPortfolio(true)}
-          onNavigateToCCTV={() => setShowCCTV(true)}
-          onNavigateToControlledSubstances={() => setShowControlledSubstances(true)}
-          onNavigateToPrescription={() => setShowPrescription(true)}
-          onNavigateToProgressTracking={() => setShowProgressTracking(true)}
-          onNavigateToPackages={() => setShowPackages(true)}
-          onNavigateToCustomServices={() => setShowCustomServices(true)}
-          onNavigateToAdoptionSystem={() => setShowAdoptionSystem(true)}
-          onNavigateToMemorialServices={() => setShowMemorialServices(true)}
-          onNavigateToExpiryManagement={() => setShowExpiryManagement(true)}
-          onNavigateToDonationManagement={() => setShowDonationManagement(true)}
-          onNavigateToEventManagement={() => setShowEventManagement(true)}
-          onNavigateToPatientMonitoring={() => setShowPatientMonitoring(true)}
-          onNavigateToCafeMenuManagement={() => setShowCafeMenuManagement(true)}
-          onNavigateToPrescriptionVerification={() => setShowPrescriptionVerification(true)}
-          onNavigateToDeliveryManagement={() => setShowDeliveryManagement(true)}
-          onNavigateToDietCharts={() => setShowDietCharts(true)}
-          onNavigateToCounseling={() => setShowCounseling(true)}
-          onNavigateToDistancePricing={() => setShowDistancePricing(true)}
-          onNavigateToPolicyManagement={() => setShowPolicyManagement(true)}
-        />
+          {showCustomServices && (
+            <Dialog open={true} onOpenChange={(open) => !open && setShowCustomServices(false)}>
+              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto p-0">
+                <VendorCustomServiceCreation
+                  vendorId={vendorId}
+                  vendorData={vendorData}
+                  serviceStyle={vendorData?.serviceStyle === 'both' ? 'both' : 'at_center'}
+                  onClose={() => setShowCustomServices(false)}
+                  onServiceCreated={() => setShowCustomServices(false)}
+                />
+              </DialogContent>
+            </Dialog>
+          )}
+          {newBookingAlert && (
+            <VendorNewBookingOrderAlert
+              notification={newBookingAlert}
+              onView={(bookingId) => {
+                setNewBookingAlert(null);
+                setShowBookingManagement(true);
+              }}
+              onDismiss={() => setNewBookingAlert(null)}
+              playSound={true}
+            />
+          )}
+          {incomingCall && (
+            <TeleCallNotification
+              callType="incoming"
+              customer={incomingCall.customer}
+              bookingId={incomingCall.bookingId}
+              meetingId={incomingCall.meetingId}
+              serviceName={incomingCall.serviceName}
+              petName={incomingCall.petName}
+              onAccept={(bookingId, meetingId) => {
+                router.push(`/video/${bookingId}${meetingId ? `?meetingId=${meetingId}` : ''}`);
+                setIncomingCall(null);
+              }}
+              onReject={() => { setIncomingCall(null); toast.info('Call declined'); }}
+              onDismiss={() => setIncomingCall(null)}
+            />
+          )}
+        </>
       );
 
     default:

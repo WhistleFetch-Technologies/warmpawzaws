@@ -190,7 +190,7 @@ export function PetHealthRecords({ phone, petId, onBack }: PetHealthRecordsProps
                 .map((record) => (
                   <div key={record.id} className="bg-gray-50 rounded-xl p-4 border border-gray-200">
                     <div className="flex items-start justify-between mb-0">
-                      <div className="flex items-center gap-0">
+                      <div className="flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl ${getRecordTypeColor(record.type)}`}>
                           {getRecordTypeIcon(record.type)}
                         </div>
@@ -204,7 +204,7 @@ export function PetHealthRecords({ phone, petId, onBack }: PetHealthRecordsProps
                     </div>
                     <p className="text-sm text-gray-600 mb-0">{record.description}</p>
                     <div className="flex items-center gap-4 text-xs text-gray-500">
-                      <div className="flex items-center gap-0">
+                      <div className="flex items-center gap-3">
                         <Calendar className="w-3 h-3" />
                         <span>{formatDate(record.date)}</span>
                       </div>

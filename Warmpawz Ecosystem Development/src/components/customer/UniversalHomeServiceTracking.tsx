@@ -10,7 +10,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../ui/dialog";
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 declare global {
@@ -118,10 +118,10 @@ export function UniversalHomeServiceTracking({
       if (!trackingSessionId) return;
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/tracking/${trackingSessionId}`,
+        `${getApiBaseUrl()}/tracking/${trackingSessionId}`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );
@@ -261,12 +261,12 @@ export function UniversalHomeServiceTracking({
       setReassigning(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${bookingId}/emergency-reassign`,
+        `${getApiBaseUrl()}/booking/${bookingId}/emergency-reassign`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({
             requestedBy: customerName,

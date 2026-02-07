@@ -1,7 +1,7 @@
 // Region Utilities for Multi-Region Support
 // Frontend utilities for managing region-specific configurations
 
-import { projectId, publicAnonKey } from './supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from './api-config';
 
 export interface Region {
   regionId: string;
@@ -91,7 +91,7 @@ export interface Region {
   updatedAt: string;
 }
 
-const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const BASE_URL = `${getApiBaseUrl()}`;
 
 // 🇮🇳 HARDCODED: Get current region - always returns 'india' for this deployment
 export function getCurrentRegionId(): string {
@@ -110,7 +110,7 @@ export async function fetchRegion(regionId: string): Promise<Region | null> {
   try {
     const response = await fetch(`${BASE_URL}/regions/${regionId}`, {
       headers: {
-        'Authorization': `Bearer ${publicAnonKey}`,
+        ...getAuthHeaders(),
       },
     });
     
@@ -132,7 +132,7 @@ export async function fetchActiveRegions(): Promise<Region[]> {
   try {
     const response = await fetch(`${BASE_URL}/regions/active`, {
       headers: {
-        'Authorization': `Bearer ${publicAnonKey}`,
+        ...getAuthHeaders(),
       },
     });
     
@@ -262,7 +262,7 @@ export async function initializeIndiaRegion(): Promise<boolean> {
     const response = await fetch(`${BASE_URL}/admin/regions/init-india`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${publicAnonKey}`,
+        ...getAuthHeaders(),
         'Content-Type': 'application/json',
       },
     });

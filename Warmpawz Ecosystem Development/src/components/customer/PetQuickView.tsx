@@ -4,7 +4,7 @@ import {
   Clock, MapPin, Star, Navigation, Route, Timer, TrendingUp, Package
 } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { copyTextToClipboard } from '../../utils/shareUtils';
 import { LiveTracking } from './LiveTracking';
 import { BookingActions } from './BookingActions';
@@ -78,8 +78,8 @@ export function PetQuickView({
       
       // Load pet details
       const petResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/pet/${petId}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/pet/${petId}`,
+        { headers: getAuthHeaders() }
       );
 
       if (petResponse.ok) {
@@ -92,8 +92,8 @@ export function PetQuickView({
       // Load bookings for this pet
       console.log(`[PetQuickView] Fetching bookings for phone: ${phone}`);
       const bookingsResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${phone}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/bookings/${phone}`,
+        { headers: getAuthHeaders() }
       );
 
       if (bookingsResponse.ok) {
@@ -106,8 +106,8 @@ export function PetQuickView({
         const bookingsWithSessions = await Promise.all(
           petBookings.map(async (booking: any) => {
             const sessionResponse = await fetch(
-              `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/${booking.id}`,
-              { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+              `${getApiBaseUrl()}/bookings/${booking.id}`,
+              { headers: getAuthHeaders() }
             );
             
             if (sessionResponse.ok) {

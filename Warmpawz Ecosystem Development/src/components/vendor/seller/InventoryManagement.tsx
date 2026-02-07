@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Package, AlertTriangle, TrendingUp, Search, Download, Edit2, Check, Upload } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface InventoryManagementProps {
@@ -23,8 +23,8 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
     try {
       setLoading(true);
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/inventory/${sellerId}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/ecommerce/inventory/${sellerId}`,
+        { headers: getAuthHeaders() }
       );
       
       if (res.ok) {
@@ -166,11 +166,11 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
         if (updates.length > 0) {
           const toastId = toast.loading('Updating inventory...');
           const res = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/inventory/bulk-update`,
+            `${getApiBaseUrl()}/ecommerce/inventory/bulk-update`,
             {
               method: 'POST',
               headers: {
-                'Authorization': `Bearer ${publicAnonKey}`,
+                ...getAuthHeaders(),
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({ updates })
@@ -211,11 +211,11 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
       if (newStock === undefined || newStock === '') return;
 
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/inventory/${productId}`,
+        `${getApiBaseUrl()}/ecommerce/inventory/${productId}`,
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ stock: parseInt(newStock) })

@@ -5,7 +5,7 @@ import { Badge } from '../ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
 import { Ambulance, Microscope, Pill, MapPin, Clock, Star, Navigation, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface ServiceProvider {
@@ -67,8 +67,8 @@ export function IntegratedServicesSelector({
       });
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/integrated-services/available?${query}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/integrated-services/available?${query}`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -89,12 +89,12 @@ export function IntegratedServicesSelector({
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/integrated-services/request`,
+        `${getApiBaseUrl()}/integrated-services/request`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             customerId,

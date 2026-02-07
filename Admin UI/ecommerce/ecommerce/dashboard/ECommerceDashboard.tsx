@@ -12,7 +12,7 @@ import {
 	ArrowUp,
 	ArrowDown,
 } from "lucide-react";
-import { projectId, publicAnonKey } from "@repo/utils/supabase/info";
+import { getApiBaseUrl, getAuthHeaders } from "@repo/utils/api-config";
 
 export function ECommerceDashboard() {
 	const [analytics, setAnalytics] = useState<any>(null);
@@ -26,8 +26,8 @@ export function ECommerceDashboard() {
 		try {
 			setLoading(true);
 			const res = await fetch(
-				`https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/analytics/platform`,
-				{ headers: { Authorization: `Bearer ${publicAnonKey}` } }
+				`${getApiBaseUrl()}/ecommerce/analytics/platform`,
+				{ headers: { ...getAuthHeaders() } }
 			);
 
 			if (res.ok) {

@@ -147,6 +147,11 @@ export const VendorApi = {
     return ApiService.get(`/vendor/${vendorId}/services${query}`);
   },
   
+  // ✅ NEW: Get vendor services with role configuration
+  // Returns allowedServiceStyles based on vendor's role from database
+  getVendorServicesWithRoleConfig: (vendorId: string) => 
+    ApiService.get(`/vendor/${vendorId}/services`),
+  
   // Bookings
   getBookings: (vendorId: string) => ApiService.get(`/vendor/bookings/${vendorId}`), // ✅ Fixed: Changed from /vendor/:vendorId/bookings to /vendor/bookings/:vendorId
   acceptBooking: (bookingId: string, vendorId: string) => 

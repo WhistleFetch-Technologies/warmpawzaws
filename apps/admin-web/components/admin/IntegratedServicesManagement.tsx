@@ -210,7 +210,7 @@ export function IntegratedServicesManagement() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <div className="p-0 bg-indigo-100 rounded-xl">
             <Zap className="w-6 h-6 text-indigo-600" />
           </div>
@@ -221,7 +221,7 @@ export function IntegratedServicesManagement() {
         </div>
         <button
           onClick={() => handleOpenModal()}
-          className="flex items-center gap-0 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+          className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
         >
           <Plus className="w-4 h-4" />
           Add Integration
@@ -235,7 +235,7 @@ export function IntegratedServicesManagement() {
 
           return (
             <div key={category.id} className="bg-white rounded-xl border-2 border-gray-200 p-0">
-              <div className="flex items-center gap-0 mb-4">
+              <div className="flex items-center gap-3 mb-4">
                 <span className="text-2xl">{category.icon}</span>
                 <h3 className="font-semibold text-gray-900">{category.name}</h3>
                 <span className="ml-auto text-sm text-gray-600">{categoryServices.length} service(s)</span>
@@ -249,15 +249,15 @@ export function IntegratedServicesManagement() {
                         <h4 className="font-medium text-gray-900">{service.serviceName}</h4>
                         <p className="text-sm text-gray-600">{service.provider}</p>
                       </div>
-                      <div className="flex items-center gap-0">
+                      <div className="flex items-center gap-3">
                         {service.status === 'connected' && (
-                          <span className="flex items-center gap-0 px-0 py-0 bg-green-100 text-green-700 text-xs font-medium rounded">
+                          <span className="flex items-center gap-3 px-0 py-0 bg-green-100 text-green-700 text-xs font-medium rounded">
                             <CheckCircle className="w-3 h-3" />
                             Connected
                           </span>
                         )}
                         {service.status === 'error' && (
-                          <span className="flex items-center gap-0 px-0 py-0 bg-red-100 text-red-700 text-xs font-medium rounded">
+                          <span className="flex items-center gap-3 px-0 py-0 bg-red-100 text-red-700 text-xs font-medium rounded">
                             <AlertCircle className="w-3 h-3" />
                             Error
                           </span>
@@ -280,7 +280,7 @@ export function IntegratedServicesManagement() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-0">
+                    <div className="flex items-center gap-3">
                       <button
                         onClick={() => handleTestConnection(service.serviceId)}
                         disabled={testing === service.serviceId}
@@ -401,7 +401,7 @@ export function IntegratedServicesManagement() {
               </div>
 
               <div>
-                <label className="flex items-center gap-0">
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={formData.isActive}
@@ -413,7 +413,7 @@ export function IntegratedServicesManagement() {
               </div>
             </div>
 
-            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-0 py-4 flex gap-0">
+            <div className="sticky bottom-0 bg-white border-t border-gray-200 px-0 py-4 flex gap-3">
               <button
                 onClick={() => setShowModal(false)}
                 className="flex-1 px-4 py-0 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium"
@@ -423,7 +423,7 @@ export function IntegratedServicesManagement() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50"
+                className="flex-1 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50"
               >
                 {saving ? (
                   <>

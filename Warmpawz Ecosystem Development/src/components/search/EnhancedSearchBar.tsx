@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, Clock, TrendingUp, Mic, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
-const BASE_URL = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+const BASE_URL = `${getApiBaseUrl()}`;
 
 interface Suggestion {
   id: string;
@@ -91,7 +91,7 @@ export function EnhancedSearchBar({
       const response = await fetch(
         `${BASE_URL}/search/autocomplete?q=${encodeURIComponent(query)}&index=${index}&size=8`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -112,7 +112,7 @@ export function EnhancedSearchBar({
       const response = await fetch(
         `${BASE_URL}/search/analytics/popular?limit=5`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -148,7 +148,7 @@ export function EnhancedSearchBar({
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

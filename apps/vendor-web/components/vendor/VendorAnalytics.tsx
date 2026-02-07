@@ -5,25 +5,65 @@
  * Copied from Figma Design System
  * Source: Warmpawz Ecosystem Development/src/components/vendor/VendorAnalytics.tsx
  * Updated to use apiClient instead of direct fetch
+ * ENHANCED: Now includes comprehensive Earnings & Settlements Dashboard
+ * FIX: Load Earnings dashboard via dynamic import (ssr: false) to avoid 500 when embedded in Reporting
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Component, type ReactNode } from 'react';
+import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   ArrowLeft,
   TrendingUp,
-  DollarSign,
+  IndianRupee,
   Users,
   Calendar,
   Star,
   BarChart3,
   PieChart,
   TrendingDown,
-  Award
+  Award,
+  Wallet
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+
+const VendorEarningsSettlementDashboard = dynamic(
+  () => import('./VendorEarningsSettlementDashboard').then((m) => ({ default: m.VendorEarningsSettlementDashboard })),
+  { ssr: false, loading: () => (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4" />
+        <p className="text-gray-600">Loading Earnings & Settlements...</p>
+      </div>
+    </div>
+  ) }
+);
+
+class EarningsTabErrorBoundary extends Component<{ onBack?: () => void; children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError = () => ({ hasError: true });
+  componentDidCatch(err: unknown) {
+    console.error('[VendorAnalytics] Earnings tab error:', err);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-gray-50 p-4 flex items-center justify-center">
+          <div className="text-center max-w-sm">
+            <p className="text-gray-700 mb-2">Something went wrong loading Earnings & Settlements.</p>
+            <p className="text-sm text-gray-500 mb-4">Please try again or use the Earnings page from the menu.</p>
+            {this.props.onBack && (
+              <Button onClick={this.props.onBack} variant="outline">Back to Reporting</Button>
+            )}
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface VendorAnalyticsProps {
   vendorId: string;
@@ -37,6 +77,7 @@ export function VendorAnalytics({ vendorId, vendorData, onBack, onClose }: Vendo
   const [staffPerformance, setStaffPerformance] = useState<any[]>([]);
   const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month');
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'performance' | 'earnings'>('performance');
 
   useEffect(() => {
     loadAnalytics();
@@ -45,21 +86,44 @@ export function VendorAnalytics({ vendorId, vendorData, onBack, onClose }: Vendo
   const loadAnalytics = async () => {
     try {
       setLoading(true);
+      setStaffPerformance([]);
 
       // Load vendor analytics
-      const analyticsRes = await apiClient.get<{ data?: { analytics?: any } }>(`/vendor/${vendorId}/analytics?period=${period}`) as { data?: { analytics?: any } };
+      const analyticsRes = await apiClient.get<{ data?: { analytics?: any }; analytics?: any }>(`/vendor/${vendorId}/analytics?period=${period}`) as { data?: { analytics?: any }; analytics?: any };
 
-      if (analyticsRes?.data?.analytics) {
-        setAnalytics(analyticsRes.data.analytics);
+      let raw = analyticsRes?.data?.analytics ?? analyticsRes?.analytics;
+      if (raw) {
+        if (!raw.overview && (raw.totalRevenue !== undefined || raw.totalBookings !== undefined)) {
+          raw = {
+            ...raw,
+            overview: {
+              totalEarnings: raw.totalRevenue ?? 0,
+              avgBookingValue: raw.averageBookingValue ?? 0,
+              totalBookings: raw.totalBookings ?? 0,
+              completed: raw.completed ?? 0,
+              uniqueCustomers: raw.uniqueCustomers ?? 0,
+              returningCustomers: raw.returningCustomers ?? 0,
+              avgRating: raw.totalReviews > 0 ? raw.rating : 'N/A',
+              reviewCount: raw.totalReviews ?? 0,
+              completionRate: raw.completionRate ?? 0,
+              cancellationRate: raw.cancellationRate ?? 0,
+              customerRetentionRate: raw.customerRetentionRate ?? 0,
+            },
+          };
+        }
+        setAnalytics(raw);
       }
 
-      // Load staff performance
-      const staffRes = await apiClient.get<{ data?: { staffPerformance?: any[] } }>(`/vendor/${vendorId}/staff-performance?period=${period}`);
-
-      if (staffRes.data?.staffPerformance) {
-        setStaffPerformance(staffRes.data.staffPerformance || []);
+      // Load staff performance (non-blocking; 404 or failure leaves list empty)
+      try {
+        const staffRes = await apiClient.get<{ data?: { staffPerformance?: any[] }; staffPerformance?: any[] }>(`/vendor/${vendorId}/staff-performance?period=${period}`);
+        const list = staffRes?.data?.staffPerformance ?? staffRes?.staffPerformance;
+        if (Array.isArray(list)) {
+          setStaffPerformance(list);
+        }
+      } catch (e) {
+        console.warn('Staff performance unavailable:', e);
       }
-
     } catch (error) {
       console.error('Error loading analytics:', error);
       toast.error('Failed to load analytics');
@@ -93,6 +157,34 @@ export function VendorAnalytics({ vendorId, vendorData, onBack, onClose }: Vendo
     );
   }
 
+  // If user selects Earnings & Settlements tab, show the comprehensive dashboard (client-only via dynamic import)
+  if (activeTab === 'earnings') {
+    if (!vendorId || typeof vendorId !== 'string' || vendorId.trim() === '') {
+      return (
+        <div className="min-h-screen bg-gray-50 p-4 flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-gray-600 mb-4">Vendor session not found.</p>
+            {onBack && (
+              <Button onClick={onBack} variant="outline">Back to Reporting</Button>
+            )}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="min-h-screen bg-gray-50 w-full flex justify-center">
+        <div className="w-full max-w-[430px] mx-auto">
+          <EarningsTabErrorBoundary onBack={onBack}>
+            <VendorEarningsSettlementDashboard
+              vendorId={vendorId.trim()}
+              onBack={onBack}
+            />
+          </EarningsTabErrorBoundary>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
@@ -114,39 +206,67 @@ export function VendorAnalytics({ vendorId, vendorData, onBack, onClose }: Vendo
           </div>
         </div>
 
-        {/* Period Selector */}
-        <div className="flex gap-2">
+        {/* Tab Selector */}
+        <div className="flex gap-2 mb-3">
           <button
-            onClick={() => setPeriod('week')}
-            className={`px-4 py-2 rounded-lg text-sm ${
-              period === 'week'
+            onClick={() => setActiveTab('performance')}
+            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
+              activeTab === 'performance'
                 ? 'bg-white text-[#FF8C42]'
                 : 'bg-white/20 text-white'
             }`}
           >
-            Week
+            <BarChart3 className="w-4 h-4 inline mr-1" />
+            Performance
           </button>
           <button
-            onClick={() => setPeriod('month')}
-            className={`px-4 py-2 rounded-lg text-sm ${
-              period === 'month'
+            onClick={() => setActiveTab('earnings')}
+            className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition ${
+              activeTab === 'earnings'
                 ? 'bg-white text-[#FF8C42]'
                 : 'bg-white/20 text-white'
             }`}
           >
-            Month
-          </button>
-          <button
-            onClick={() => setPeriod('year')}
-            className={`px-4 py-2 rounded-lg text-sm ${
-              period === 'year'
-                ? 'bg-white text-[#FF8C42]'
-                : 'bg-white/20 text-white'
-            }`}
-          >
-            Year
+            <Wallet className="w-4 h-4 inline mr-1" />
+            Earnings & Settlements
           </button>
         </div>
+
+        {/* Period Selector - Only for Performance tab */}
+        {activeTab === 'performance' && (
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPeriod('week')}
+              className={`px-4 py-2 rounded-lg text-sm ${
+                period === 'week'
+                  ? 'bg-white text-[#FF8C42]'
+                  : 'bg-white/20 text-white'
+              }`}
+            >
+              Week
+            </button>
+            <button
+              onClick={() => setPeriod('month')}
+              className={`px-4 py-2 rounded-lg text-sm ${
+                period === 'month'
+                  ? 'bg-white text-[#FF8C42]'
+                  : 'bg-white/20 text-white'
+              }`}
+            >
+              Month
+            </button>
+            <button
+              onClick={() => setPeriod('year')}
+              className={`px-4 py-2 rounded-lg text-sm ${
+                period === 'year'
+                  ? 'bg-white text-[#FF8C42]'
+                  : 'bg-white/20 text-white'
+              }`}
+            >
+              Year
+            </button>
+          </div>
+        )}
       </div>
 
       {analytics && (
@@ -157,7 +277,7 @@ export function VendorAnalytics({ vendorId, vendorData, onBack, onClose }: Vendo
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-white rounded-xl p-4 border border-gray-200">
                 <div className="flex items-center gap-2 mb-2">
-                  <DollarSign className="w-5 h-5 text-green-600" />
+                  <IndianRupee className="w-5 h-5 text-green-600" />
                   <span className="text-xs text-gray-600">Total Earnings</span>
                 </div>
                 <p className="text-2xl text-gray-900">

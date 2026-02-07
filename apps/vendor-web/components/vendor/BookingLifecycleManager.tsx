@@ -164,8 +164,8 @@ export function BookingLifecycleManager() {
   async function verifyCompletionOTP() {
     if (!selectedBooking) return;
     
-    if (otpInput.length !== 6) {
-      toast.error('Please enter a valid 6-digit OTP');
+    if (otpInput.length !== 4) {
+      toast.error('Please enter a valid 4-digit OTP');
       return;
     }
 
@@ -547,7 +547,7 @@ export function BookingLifecycleManager() {
             </Button>
             <Button
               onClick={verifyCompletionOTP}
-              disabled={verifying || otpInput.length !== 6}
+              disabled={verifying || otpInput.length !== 4}
               className="bg-green-600 hover:bg-green-700"
             >
               {verifying ? 'Verifying...' : 'Verify & Complete'}

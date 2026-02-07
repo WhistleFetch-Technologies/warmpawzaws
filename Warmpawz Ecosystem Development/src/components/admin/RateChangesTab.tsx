@@ -3,7 +3,7 @@ import { Button } from '../ui/button';
 import { Check, X, Eye, Download, Sparkles, MessageSquare } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
 import { Textarea } from '../ui/textarea';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface RateChangeRequest {
@@ -54,9 +54,9 @@ export function RateChangesTab() {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/rate-changes`,
+        `${getApiBaseUrl()}/admin/vendors/rate-changes`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -104,12 +104,12 @@ export function RateChangesTab() {
     setActionLoading(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/rate-changes/${requestId}/approve`,
+        `${getApiBaseUrl()}/admin/vendors/rate-changes/${requestId}/approve`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({ adminNote: adminNote || '' })
         }
@@ -151,12 +151,12 @@ export function RateChangesTab() {
     setActionLoading(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/rate-changes/${requestId}/reject`,
+        `${getApiBaseUrl()}/admin/vendors/rate-changes/${requestId}/reject`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({ adminNote: rejectionReason })
         }
@@ -198,12 +198,12 @@ export function RateChangesTab() {
     setActionLoading(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/rate-changes/${requestId}/clarification`,
+        `${getApiBaseUrl()}/admin/vendors/rate-changes/${requestId}/clarification`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({ adminNote: clarificationMessage })
         }

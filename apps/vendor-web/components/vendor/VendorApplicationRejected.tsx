@@ -1,6 +1,6 @@
 'use client';
 
-import { X, AlertCircle, RefreshCw, Edit } from 'lucide-react';
+import { X, AlertCircle, RefreshCw, Edit, LogOut, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface VendorApplicationRejectedProps {
@@ -9,6 +9,7 @@ interface VendorApplicationRejectedProps {
   allowResubmit: boolean;
   onResubmit: () => void;
   onCorrectAndResubmit: () => void;
+  onGoBack?: () => void;
 }
 
 export function VendorApplicationRejected({ 
@@ -16,7 +17,8 @@ export function VendorApplicationRejected({
   rejectionReason, 
   allowResubmit,
   onResubmit,
-  onCorrectAndResubmit 
+  onCorrectAndResubmit,
+  onGoBack,
 }: VendorApplicationRejectedProps) {
   return (
     <div className="min-h-screen bg-gradient-to-b from-red-50 to-white w-full max-w-[430px] mx-auto px-6 py-12">
@@ -27,17 +29,20 @@ export function VendorApplicationRejected({
         </div>
         
         <h1 className="text-2xl font-bold text-gray-900 mb-2">
-          Application<br/>Needs Revision
+          Application Rejected
         </h1>
       </div>
 
-      {/* Rejection Reason */}
+      {/* Rejection Reason – shown to vendor so they can correct and re-submit */}
       <div className="bg-white rounded-2xl border-2 border-red-200 p-6 mb-6 shadow-sm">
         <div className="flex items-start gap-3 mb-4">
           <AlertCircle className="w-6 h-6 text-red-500 flex-shrink-0 mt-0.5" />
           <div>
-            <h3 className="font-semibold text-gray-900 mb-2">Reason for Revision</h3>
+            <h3 className="font-semibold text-gray-900 mb-2">Reason</h3>
             <p className="text-sm text-gray-700 leading-relaxed">{rejectionReason}</p>
+            {rejectionReason === 'No reason provided' && (
+              <p className="text-xs text-gray-500 mt-2">The admin did not add additional details. You can still correct and resubmit or choose another role.</p>
+            )}
           </div>
         </div>
       </div>
@@ -49,10 +54,10 @@ export function VendorApplicationRejected({
         </p>
       </div>
 
-      {/* Next Actions */}
+      {/* Next Actions when resubmit allowed */}
       {allowResubmit && (
         <div className="bg-orange-50 rounded-2xl p-6 mb-6">
-          <h3 className="text-[#FF8C42] font-semibold mb-4">What's Next?</h3>
+          <h3 className="text-[#FF8C42] font-semibold mb-4">What&apos;s Next?</h3>
           
           <div className="space-y-3">
             <div className="flex items-start gap-3">
@@ -118,6 +123,54 @@ export function VendorApplicationRejected({
             </Button>
           </div>
         )}
+
+        {/* Go back: choose your role and re-submit, or log out – always shown */}
+        <div className="pt-4 border-t border-gray-200">
+          <p className="text-xs text-gray-500 mb-3">You can choose your role again and submit a new application, or log out.</p>
+          {onGoBack ? (
+            <Button
+              variant="outline"
+              onClick={onGoBack}
+              className="w-full h-12 border-2 border-gray-300 text-gray-700 hover:bg-gray-50 rounded-xl font-semibold"
+            >
+              <User className="w-5 h-5 mr-2" />
+              Go back – Choose your role
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  localStorage.removeItem('vendorData');
+                  localStorage.removeItem('vendorApplicationStatus');
+                  localStorage.removeItem('vendorPhone');
+                  localStorage.removeItem('vendorRole');
+                  window.location.href = '/';
+                }
+              }}
+              className="w-full h-12 border-2 border-gray-300 text-gray-700 hover:bg-gray-50 rounded-xl font-semibold"
+            >
+              <User className="w-5 h-5 mr-2" />
+              Go back – Choose your role
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('vendorData');
+                localStorage.removeItem('vendorApplicationStatus');
+                localStorage.removeItem('vendorPhone');
+                localStorage.removeItem('vendorRole');
+                window.location.href = '/';
+              }
+            }}
+            className="w-full h-11 mt-2 text-gray-600 hover:text-gray-800"
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            Log out
+          </Button>
+        </div>
       </div>
 
       {/* Support Message */}

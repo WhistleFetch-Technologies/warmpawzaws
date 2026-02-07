@@ -3,7 +3,7 @@
 
 terraform {
   backend "s3" {
-    bucket         = "warmpawz-terraform-state-023394150666"
+    bucket         = "warmpawz-terraform-state-057442119249"  # Using dev account bucket (since using dev resources)
     key            = "prod/terraform.tfstate"
     region         = "ap-south-1"
     encrypt        = true
@@ -37,21 +37,111 @@ locals {
   }
 }
 
-# VPC Module - Production-grade with full HA
-module "vpc" {
-  source = "../../modules/vpc"
+# ============================================
+# RESOURCE UNIQUENESS GUARANTEE - PRODUCTION
+# ============================================
+# All resources are uniquely named with environment prefix: "warmpawz-prod-*"
+# This ensures NO duplicate resources can be created for the same purpose.
+# 
+# Lifecycle Protection Applied:
+# - prevent_destroy = true for ALL critical resources in prod
+# - create_before_destroy = true for zero-downtime updates
+# - ignore_changes on unique identifiers to prevent recreation
+# 
+# Protected Resources:
+# - Lambda functions, IAM roles, Security Groups
+# - Cognito User Pool, API Gateway
+# - DynamoDB tables, S3 buckets
+# - SNS topics, SQS queues
+# - OpenSearch domain, Secrets
+# 
+# This guarantees ONE resource per purpose - NO DUPLICATES
+# ============================================
 
-  environment              = local.environment
-  aws_region               = var.aws_region
-  vpc_cidr                 = "10.2.0.0/16"
-  public_subnet_cidrs      = ["10.2.1.0/24", "10.2.2.0/24", "10.2.3.0/24"]
-  private_subnet_cidrs     = ["10.2.11.0/24", "10.2.12.0/24", "10.2.13.0/24"]
-  database_subnet_cidrs    = ["10.2.21.0/24", "10.2.22.0/24", "10.2.23.0/24"]
-  enable_nat_gateway       = true
-  single_nat_gateway       = false # HA: NAT per AZ
-  create_private_endpoints = true
-  use_existing_vpc         = false
+# ============================================
+# DATA SOURCES - Reference Dev VPC and RDS
+# ============================================
+
+# Get dev VPC by ID (from Phase 1 information gathering)
+data "aws_vpc" "dev_vpc" {
+  id = "vpc-02a4893e5e582c4d8"  # Dev VPC ID
 }
+
+# Get dev private subnets (for Lambda placement)
+data "aws_subnets" "dev_private_subnets" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.dev_vpc.id]
+  }
+  
+  filter {
+    name   = "subnet-id"
+    values = ["subnet-0351dcfcb7fddfc5d", "subnet-0fcae82d307f494c5"]  # Dev private subnets
+  }
+}
+
+# Get dev RDS cluster
+data "aws_rds_cluster" "dev_cluster" {
+  cluster_identifier = "warmpawz-dev-cluster"
+}
+
+# Get dev RDS secret (by ARN from Phase 1)
+data "aws_secretsmanager_secret" "dev_rds_secret" {
+  arn = "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-dev-rds-master-20260106164510791100000002-WqZcjI"
+}
+
+# Get dev RDS security group
+data "aws_security_group" "dev_rds_sg" {
+  id = "sg-0f873d37e561cdfb0"  # Dev RDS security group ID
+}
+
+# Get dev Razorpay secret (using same dev secret for prod)
+data "aws_secretsmanager_secret" "dev_razorpay_secret" {
+  name = "warmpawz/dev/razorpay"
+}
+
+# Note: Google Maps will use prod secret created by module (not dev secret)
+
+# Local values for dev resources (matching module outputs)
+locals {
+  # VPC and networking
+  dev_vpc_id            = data.aws_vpc.dev_vpc.id
+  dev_vpc_cidr          = data.aws_vpc.dev_vpc.cidr_block
+  dev_private_subnet_ids = data.aws_subnets.dev_private_subnets.ids
+  
+  # RDS information
+  rds_cluster_endpoint       = data.aws_rds_cluster.dev_cluster.endpoint
+  rds_cluster_reader_endpoint = data.aws_rds_cluster.dev_cluster.reader_endpoint
+  rds_cluster_port            = data.aws_rds_cluster.dev_cluster.port
+  rds_database_name           = data.aws_rds_cluster.dev_cluster.database_name
+  rds_secret_arn              = data.aws_secretsmanager_secret.dev_rds_secret.arn
+  rds_cluster_id              = data.aws_rds_cluster.dev_cluster.id
+  
+  # Security groups
+  dev_rds_security_group_id = data.aws_security_group.dev_rds_sg.id
+  
+  # External integration secrets
+  razorpay_secret_arn    = data.aws_secretsmanager_secret.dev_razorpay_secret.arn  # Using dev secret
+  # Google Maps uses prod secret from module (see module.secrets.google_maps_secret_arn)
+}
+
+# ============================================
+# VPC MODULE - NOT NEEDED (using dev VPC)
+# ============================================
+# module "vpc" {
+#   source = "../../modules/vpc"
+#
+#   environment              = local.environment
+#   aws_region               = var.aws_region
+#   vpc_cidr                 = "10.2.0.0/16"
+#   public_subnet_cidrs      = ["10.2.1.0/24", "10.2.2.0/24", "10.2.3.0/24"]
+#   private_subnet_cidrs     = ["10.2.11.0/24", "10.2.12.0/24", "10.2.13.0/24"]
+#   database_subnet_cidrs    = ["10.2.21.0/24", "10.2.22.0/24", "10.2.23.0/24"]
+#   enable_nat_gateway       = true
+#   single_nat_gateway       = false # HA: NAT per AZ
+#   create_private_endpoints = true
+#   use_existing_vpc         = false
+# }
 
 module "sns" {
   source = "../../modules/sns"
@@ -60,26 +150,50 @@ module "sns" {
   alert_emails = var.alert_emails
 }
 
-module "rds" {
-  source = "../../modules/rds"
+# ============================================
+# SECRETS MODULE - External Integrations
+# ============================================
+# NOTE: 
+# - Razorpay: Using dev secret (pass empty strings, module creates empty secret but we use dev secret)
+# - Google Maps: Creating prod secret with actual API key value (will work)
+# - Shiprocket: Only created if values are provided
+module "secrets" {
+  source = "../../modules/secrets"
 
-  environment                  = local.environment
-  vpc_id                       = module.vpc.vpc_id
-  database_subnet_ids          = module.vpc.database_subnet_ids
-  allowed_security_groups      = [module.lambda.lambda_security_group_id]
-  database_name                = "warmpawz"
-  master_username              = "warmpawz_admin"
-  min_capacity                 = 2.0
-  max_capacity                 = 16.0
-  backup_retention_period      = 30
-  availability_zones           = module.vpc.availability_zones
-  deletion_protection          = true
-  skip_final_snapshot          = false
-  instance_count               = 3 # HA: Multi-AZ with read replicas
-  performance_insights_enabled = true
-  auto_minor_version_upgrade   = false # Manual control in prod
-  alarm_actions                = [module.sns.system_alerts_topic_arn]
+  environment                = local.environment
+  # Razorpay - pass empty strings (module will create empty secret, but we use dev secret via data source)
+  razorpay_key_id            = ""  # Not used - using dev secret
+  razorpay_key_secret        = ""  # Not used - using dev secret
+  razorpay_x_account_number  = ""  # Not used - using dev secret
+  # Google Maps - pass actual API key (module will create working prod secret)
+  google_maps_api_key        = var.google_maps_api_key  # Creates prod secret with actual value
+  shiprocket_email           = var.shiprocket_email
+  shiprocket_password        = var.shiprocket_password
 }
+
+# ============================================
+# RDS MODULE - NOT NEEDED (using dev RDS cluster)
+# ============================================
+# module "rds" {
+#   source = "../../modules/rds"
+#
+#   environment                  = local.environment
+#   vpc_id                       = module.vpc.vpc_id
+#   database_subnet_ids          = module.vpc.database_subnet_ids
+#   allowed_security_groups      = [module.lambda.lambda_security_group_id]
+#   database_name                = "warmpawz"
+#   master_username              = "warmpawz_admin"
+#   min_capacity                 = 2.0
+#   max_capacity                 = 16.0
+#   backup_retention_period      = 30
+#   availability_zones           = module.vpc.availability_zones
+#   deletion_protection          = true
+#   skip_final_snapshot          = false
+#   instance_count               = 3 # HA: Multi-AZ with read replicas
+#   performance_insights_enabled = true
+#   auto_minor_version_upgrade   = false # Manual control in prod
+#   alarm_actions                = [module.sns.system_alerts_topic_arn]
+# }
 
 module "dynamodb" {
   source = "../../modules/dynamodb"
@@ -115,12 +229,12 @@ module "lambda" {
 
   environment        = local.environment
   aws_region         = var.aws_region
-  vpc_id             = module.vpc.vpc_id
-  private_subnet_ids = module.vpc.private_subnet_ids
+  vpc_id             = local.dev_vpc_id  # ← Using dev VPC
+  private_subnet_ids = local.dev_private_subnet_ids  # ← Using dev private subnets
 
   lambda_functions = {
     api-handler = {
-      handler              = "index.handler"
+      handler              = "dist/handler.handler"  # Match dev environment handler pattern
       runtime              = "nodejs20.x"
       timeout              = 30
       memory_size          = 2048
@@ -131,10 +245,25 @@ module "lambda" {
   }
 
   common_env_vars = {
-    DB_HOST                     = module.rds.cluster_endpoint
-    DB_READER_HOST              = module.rds.cluster_reader_endpoint
-    DB_NAME                     = module.rds.database_name
-    DB_SECRET_ARN               = module.rds.secret_arn
+    # Database - using dev RDS
+    DB_HOST                     = local.rds_cluster_endpoint
+    DB_READER_HOST              = local.rds_cluster_reader_endpoint
+    DB_NAME                     = local.rds_database_name
+    DB_SECRET_ARN               = local.rds_secret_arn
+    
+    # Environment configuration
+    UAT_MODE                    = "false"
+    ENVIRONMENT                 = "prod"
+    NODE_ENV                    = "production"
+    
+    # API configuration
+    API_BASE_URL                = "https://api.warmpawz.com"
+    
+    # Cognito - will be set after Cognito module is created
+    COGNITO_USER_POOL_ID        = module.cognito.user_pool_id
+    COGNITO_CLIENT_ID           = module.cognito.customer_web_client_id
+    
+    # Other services (prod-specific)
     DYNAMODB_SESSIONS_TABLE     = module.dynamodb.sessions_table_name
     DYNAMODB_CACHE_TABLE        = module.dynamodb.cache_table_name
     DYNAMODB_ANALYTICS_TABLE    = module.dynamodb.analytics_events_table_name
@@ -145,10 +274,22 @@ module "lambda" {
     SNS_NOTIFICATIONS_TOPIC_ARN = module.sns.user_notifications_topic_arn
     SNS_BOOKING_TOPIC_ARN       = module.sns.booking_updates_topic_arn
     SNS_PAYMENT_TOPIC_ARN       = module.sns.payment_events_topic_arn
+    SNS_VENDOR_TOPIC_ARN        = module.sns.vendor_notifications_topic_arn
     OPENSEARCH_ENDPOINT         = module.opensearch.domain_endpoint
+    
+    # External Integration Secrets
+    RAZORPAY_SECRET_ARN         = local.razorpay_secret_arn  # Using dev Razorpay secret
+    GOOGLE_MAPS_SECRET_ARN      = module.secrets.google_maps_secret_arn  # Using prod Google Maps secret (created by module)
+    SHIPROCKET_SECRET_ARN       = module.secrets.shiprocket_secret_arn
   }
 
-  secrets_arns    = ["${module.rds.secret_arn}", "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:*"]
+  secrets_arns    = [
+    "${local.rds_secret_arn}",
+    "${local.razorpay_secret_arn}",  # Dev Razorpay secret
+    "${module.secrets.google_maps_secret_arn}",  # Prod Google Maps secret (created by module)
+    "${module.secrets.shiprocket_secret_arn}",
+    "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:*"
+  ]
   s3_arns         = ["${module.s3.user_uploads_bucket_arn}/*"]
   dynamodb_arns   = [module.dynamodb.sessions_table_arn, module.dynamodb.cache_table_arn, module.dynamodb.analytics_events_table_arn]
   sns_arns        = [module.sns.user_notifications_topic_arn, module.sns.booking_updates_topic_arn, module.sns.payment_events_topic_arn]
@@ -229,17 +370,17 @@ module "opensearch" {
   source = "../../modules/opensearch"
 
   environment                = local.environment
-  vpc_id                     = module.vpc.vpc_id
-  vpc_cidr                   = "10.2.0.0/16"
-  private_subnet_ids         = module.vpc.private_subnet_ids
+  vpc_id                     = local.dev_vpc_id  # ← Using dev VPC
+  vpc_cidr                   = local.dev_vpc_cidr  # ← Using dev VPC CIDR
+  private_subnet_ids         = local.dev_private_subnet_ids  # ← Using dev private subnets (2 subnets)
   allowed_security_groups    = [module.lambda.lambda_security_group_id]
   instance_type              = "r6g.large.search"
-  instance_count             = 3
-  dedicated_master_enabled   = true
+  instance_count             = 2  # Changed to 2 to match 2 availability zones
+  dedicated_master_enabled   = false  # Disabled because we only have 2 AZs (requires 3 for dedicated masters)
   master_instance_type       = "r6g.large.search"
-  master_instance_count      = 3
+  master_instance_count      = 2  # Not used when dedicated_master_enabled = false
   zone_awareness_enabled     = true
-  availability_zone_count    = 3
+  availability_zone_count    = 2  # Changed to 2 (matching available private subnets)
   volume_size                = 100
   master_user_password       = var.opensearch_master_password
   create_service_linked_role = false

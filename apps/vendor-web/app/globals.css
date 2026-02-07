@@ -1,17 +1,17 @@
 /**
  * Warmpawz Vendor Web - Global Styles
  * Using unified design system
+ * @import must be at top per CSS spec; then @tailwind
  */
+
+/* Baloo 2 Font - Primary typeface */
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&display=swap');
+/* Material Symbols - Icon font */
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* Baloo 2 Font - Primary typeface */
-@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&display=swap');
-
-/* Material Symbols - Icon font */
-@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 
 /* CSS Custom Properties - Warmpawz Design System */
 :root {
@@ -158,4 +158,101 @@ body {
 
 .earnings-gradient {
   background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+}
+
+/* ============================================================================
+ * UNIFIED CARD STYLES
+ * ============================================================================
+ * Standard card styles for consistent spacing and appearance
+ */
+
+/* Base card - clean white with subtle border and shadow */
+.card {
+  background: var(--color-white);
+  border: 1px solid var(--color-gray-100);
+  border-radius: var(--radius-xl);
+  padding: 1rem;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.card-interactive {
+  cursor: pointer;
+}
+
+.card-interactive:hover {
+  transform: translateY(-2px);
+}
+
+/* Card sizes */
+.card-sm {
+  padding: 0.75rem;
+  border-radius: var(--radius-lg);
+}
+
+.card-lg {
+  padding: 1.5rem;
+  border-radius: var(--radius-2xl);
+}
+
+/* ============================================================================
+ * LIST ITEM STYLES
+ * ============================================================================
+ */
+
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  transition: background-color 0.15s ease;
+}
+
+.list-item:hover {
+  background: var(--color-gray-50);
+}
+
+.list-item-bordered {
+  border-bottom: 1px solid var(--color-gray-100);
+  border-radius: 0;
+}
+
+.list-item-bordered:last-child {
+  border-bottom: none;
+}
+
+/* ============================================================================
+ * SPACING UTILITIES
+ * ============================================================================
+ */
+
+/* Section spacing */
+.section {
+  margin-bottom: 1.5rem;
+}
+
+.section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-gray-900);
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Hide scrollbar but allow scrolling */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }

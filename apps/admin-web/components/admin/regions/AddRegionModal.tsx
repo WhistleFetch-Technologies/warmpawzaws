@@ -93,7 +93,7 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
         <div className="p-4 space-y-4">
           {/* Template Selection */}
           <div>
-            <label className="flex items-center gap-0 mb-0">
+            <label className="flex items-center gap-3 mb-0">
               <input
                 type="radio"
                 checked={useTemplate}
@@ -118,7 +118,7 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
                         : 'border-gray-200 hover:border-gray-300'
                     } disabled:opacity-50 disabled:cursor-not-allowed`}
                   >
-                    <div className="flex items-center gap-0">
+                    <div className="flex items-center gap-3">
                       <span className="text-2xl">{template.flag}</span>
                       <div className="flex-1">
                         <div className="font-medium text-gray-900">{template.name}</div>
@@ -135,7 +135,7 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
 
           {/* Custom Region */}
           <div>
-            <label className="flex items-center gap-0 mb-0">
+            <label className="flex items-center gap-3 mb-0">
               <input
                 type="radio"
                 checked={!useTemplate}
@@ -171,7 +171,7 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
                     maxLength={2}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-0">
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-0">
                       Currency Code
@@ -194,14 +194,14 @@ export function AddRegionModal({ onClose, onSuccess }: AddRegionModalProps) {
                       value={formData.currencySymbol}
                       onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, currencySymbol: e.target.value }))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                      placeholder="$"
+                      placeholder="₹"
                     />
                   </div>
                 </div>
                 <button
                   onClick={handleCreateCustom}
                   disabled={loading}
-                  className="w-full py-0.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full py-0.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? (
                     <>

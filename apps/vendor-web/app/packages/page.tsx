@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 
 // ============================================================================
@@ -43,6 +44,7 @@ interface Enrollment {
 // ============================================================================
 
 export default function PackagesPage() {
+  const router = useRouter();
   const [packages, setPackages] = useState<Package[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [availableServices, setAvailableServices] = useState<Array<{ id: string; name: string; price: number }>>([]);
@@ -231,10 +233,18 @@ export default function PackagesPage() {
       <div className="bg-white/80 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <div>
-              {/* ✅ FIX: Match consistency - text-2xl font-bold */}
-              <h1 className="text-2xl font-bold text-gray-800">Service Packages</h1>
-              <p className="text-sm text-gray-500 mt-1">Create bundled service packages for customers</p>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => router.back()}
+                className="px-3 py-2 text-gray-600 hover:text-gray-800 transition rounded-lg hover:bg-gray-100"
+              >
+                ← Back
+              </button>
+              <div>
+                {/* ✅ FIX: Match consistency - text-2xl font-bold */}
+                <h1 className="text-2xl font-bold text-gray-800">Service Packages</h1>
+                <p className="text-sm text-gray-500 mt-1">Create bundled service packages for customers</p>
+              </div>
             </div>
             <button
               onClick={handleCreatePackage}

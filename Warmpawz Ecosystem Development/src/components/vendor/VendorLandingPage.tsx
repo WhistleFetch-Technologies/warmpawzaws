@@ -4,7 +4,7 @@
  */
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { useVendorNotificationService } from './useVendorNotificationService';
 import { StaffManagement } from './StaffManagement';
 import { VendorBusinessHub } from './business/VendorBusinessHub'; // ✅ NEW
@@ -261,9 +261,9 @@ export function VendorLandingPage({
       
       // Try to load vendor profile
       const profileResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/profile/${vendorId}`,
+        `${getApiBaseUrl()}/vendor/profile/${vendorId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -275,9 +275,9 @@ export function VendorLandingPage({
         if (profileData.vendor?.applicationId) {
           // Load application status
           const appResponse = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/application/status/${vendorId}`,
+            `${getApiBaseUrl()}/vendor/application/status/${vendorId}`,
             {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+              headers: getAuthHeaders()
             }
           );
 
@@ -394,11 +394,11 @@ export function VendorLandingPage({
       // Upload all documents
       console.log('☁️ Uploading documents to storage...');
       const uploadResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/storage/upload-multiple`,
+        `${getApiBaseUrl()}/storage/upload-multiple`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: formData
         }
@@ -459,12 +459,12 @@ export function VendorLandingPage({
       };
 
       const profileResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/profile/save`,
+        `${getApiBaseUrl()}/vendor/profile/save`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(vendorProfile)
         }
@@ -510,12 +510,12 @@ export function VendorLandingPage({
       });
 
       const appResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/application/submit`,
+        `${getApiBaseUrl()}/vendor/application/submit`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(applicationPayload)
         }
@@ -559,9 +559,9 @@ export function VendorLandingPage({
     // Refetch vendor data to get updated status
     try {
       const profileResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/profile/${vendorId}`,
+        `${getApiBaseUrl()}/vendor/profile/${vendorId}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -598,9 +598,9 @@ export function VendorLandingPage({
       
       // Load existing application data
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/application`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/application`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
       

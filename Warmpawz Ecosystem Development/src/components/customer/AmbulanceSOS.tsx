@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Phone, Siren, MapPin, Clock, ShieldAlert } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface AmbulanceSOSProps {
@@ -16,7 +16,7 @@ export function AmbulanceSOS({ phone, onBack }: AmbulanceSOSProps) {
   const [location, setLocation] = useState<string>('Locating...');
   const [ambulances, setAmbulances] = useState<any[]>([]);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     if (step === 'locating') {

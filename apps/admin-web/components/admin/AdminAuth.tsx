@@ -36,9 +36,11 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
         // Store token if provided
         if (result.token) {
           apiClient.setAuthToken(result.token);
-          // Set sessionStorage flag to track that user is logged in
-          // This flag is cleared on hard refresh, allowing us to detect it
+          // Set sessionStorage flags to track that user is logged in
+          // These flags are cleared on hard refresh, allowing us to detect it
           sessionStorage.setItem('_warmpawz_admin_has_session', 'true');
+          sessionStorage.setItem('_warmpawz_admin_just_logged_in', 'true'); // ✅ FIX: Added for better detection
+          console.log('✅ [Admin Session] sessionStorage flags set after login');
         }
         onAuthSuccess(result.session);
       } else {
@@ -47,40 +49,8 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
     } catch (err: any) {
       let errorMessage = err.message || 'Failed to sign in';
       
-      // Check if this is the test account failing to login
-      if (errorMessage.includes('Invalid login credentials') && formData.email === 'admin@warmpawz.com') {
-        console.log('Test account login failed, attempting auto-creation/reset...');
-        
-        try {
-          // Attempt to auto-create OR reset the test account
-          const response = await apiClient.post<any>('/admin/auth/signup', {
-            email: 'admin@warmpawz.com',
-            password: 'warmpawz2025',
-            name: 'Admin User',
-            masterKey: 'warmpawz2025'
-          });
-
-          if (response.success) {
-            console.log('Test account created/reset successfully, retrying login...');
-            
-            // Retry login immediately
-            const retryResult = await apiClient.post<any>('/admin/auth/login', {
-              email: 'admin@warmpawz.com',
-              password: 'warmpawz2025',
-            });
-
-            if (retryResult.success && retryResult.session) {
-              if (retryResult.token) {
-                apiClient.setAuthToken(retryResult.token);
-              }
-              onAuthSuccess(retryResult.session);
-              return;
-            }
-          }
-        } catch (createErr) {
-          console.error('Auto-creation failed:', createErr);
-        }
-      }
+      // Note: Auto-creation of test accounts has been removed for security
+      // Test accounts should be created through proper admin setup procedures
 
       if (errorMessage.includes('Invalid login credentials')) {
         errorMessage = 'Invalid credentials.';
@@ -93,29 +63,8 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
     }
   };
 
-  const handleResetTestUser = async () => {
-    if (!window.confirm('Are you sure you want to reset the test user? This will delete the existing admin@warmpawz.com account so it can be recreated.')) {
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      const result = await apiClient.post<any>('/admin/auth/reset-test-user', {
-        masterKey: 'warmpawz2025'
-      });
-      
-      if (result.success) {
-        alert('Test user reset successfully. Please try signing in again (it will be auto-created).');
-        setError('');
-      } else {
-        alert('Failed to reset: ' + (result.error || 'Unknown error'));
-      }
-    } catch (e: any) {
-      alert('Error: ' + e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Note: Test user reset functionality has been removed for security
+  // Use proper admin setup procedures instead
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -181,19 +130,7 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
             </div>
           )}
 
-          {error && formData.email === 'admin@warmpawz.com' && (
-            <div className="mb-4 text-center">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={handleResetTestUser}
-                className="text-red-600 border-red-200 hover:bg-red-50"
-              >
-                🔄 Reset Test Account (Fix Login)
-              </Button>
-              <p className="text-[10px] text-gray-500 mt-0">Use this if "Invalid credentials" persists for the test account</p>
-            </div>
-          )}
+{/* Test user reset button removed for security - use proper admin setup procedures */}
 
           {!isSignUp && !error && (
             <div className="mb-4 p-0 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm">

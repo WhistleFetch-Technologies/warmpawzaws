@@ -1,0 +1,2073 @@
+'use client';
+
+import { useState, useEffect, useCallback, ReactNode } from 'react';
+import { CustomerHomeComplete as CustomerHome } from '../CustomerHomeComplete';
+import { UserAccountSidebar } from '../UserAccountSidebar';
+import { CustomerPetDetails } from '../CustomerPetDetails';
+import { CustomerPetProfile } from '../CustomerPetProfile';
+import { WalkerService } from '../WalkerService';
+import { WalkerDashboard } from '../walker/WalkerDashboard';
+import { WalkerBookingRouter } from '../walker/WalkerBookingRouter';
+import { WalkLiveTrackingView } from '../walker/WalkLiveTrackingView';
+import { CustomerSidebar } from '../CustomerSidebar';
+import { PetBookingDetails } from '../PetBookingDetails';
+import { PetQuickView } from '../PetQuickView';
+import { AddPetModal } from '../AddPetModal';
+import { NotAvailable } from '../NotAvailable';
+import { VetServiceRouter } from '../VetServiceRouter';
+import { VetBookingFlow } from '../vet/VetBookingFlow';
+import { VetBookingRouter } from '../vet/VetBookingRouter';
+import { VetDoctorDetails } from '../vet/VetDoctorDetails';
+import { ClinicListView } from '../vet/ClinicListView';
+import { ClinicProfileView } from '../vet/ClinicProfileView';
+import { VetServicesByStyle } from '../vet/VetServicesByStyle';
+import { TeleConsultationRouter } from '../vet/TeleConsultationRouter';
+import { HomeVisitRouter } from '../vet/HomeVisitRouter';
+import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { GroomingServiceRouter } from '../GroomingServiceRouter';
+import { GroomingServicesByStyle } from '../grooming/GroomingServicesByStyle';
+import { TrainingServiceRouter } from '../TrainingServiceRouter';
+import { TrainingBookingRouter } from '../training/TrainingBookingRouter';
+import { GroomingBookingRouter } from '../grooming/GroomingBookingRouter';
+import { UniversalServicesByStyle } from '../shared/UniversalServicesByStyle';
+import { BoardingServiceRouter } from '../BoardingServiceRouter';
+import { BoardingBookingRouter } from '../boarding/BoardingBookingRouter';
+import { AdoptionServiceRouter } from '../AdoptionServiceRouter';
+import { SunsetServiceRouter } from '../SunsetServiceRouter';
+import { CustomerProfile } from '../CustomerProfile';
+import { PetProfile } from '../PetProfile';
+import { PetProfileDashboard } from '../PetProfileDashboard';
+import { InsuranceServicesLanding } from '../InsuranceServicesLanding';
+import { PetCafeServicesLanding } from '../PetCafeServicesLanding';
+import { PharmacyServicesLanding } from '../PharmacyServicesLanding';
+import { PharmacyStore } from '../PharmacyStore';
+import { PharmacyCheckout } from '../PharmacyCheckout';
+import { PhotographyServicesLanding } from '../PhotographyServicesLanding';
+import { BreederServicesLanding } from '../BreederServicesLanding';
+import { AmbulanceServicesLanding } from '../AmbulanceServicesLanding';
+import { RelocationServicesLanding } from '../RelocationServicesLanding';
+import { ResortServicesLanding } from '../ResortServicesLanding';
+import { PetHolidayServicesLanding } from '../PetHolidayServicesLanding';
+import { ShopDashboard } from '../ShopDashboard';
+import { ProductDetailPage } from '../ProductDetailPage';
+import { ShoppingCartView } from '../ShoppingCartView';
+import { CheckoutView } from '../CheckoutView';
+import { OrderSuccessView } from '../OrderSuccessView';
+import { OrderHistoryPage } from '../../shop/OrderHistoryPage';
+import { AddressBookPage } from '../../shop/AddressBookPage';
+import { WalletPage } from '../../shop/WalletPage';
+import { OrderDetailView } from '../OrderDetailView';
+import { ProductReviewsView } from '../ProductReviewsView';
+import { VendorProfileDetail } from '../VendorProfileDetail';
+import { SupportHelpCenter } from '../SupportHelpCenter';
+import { OrderTrackingView } from '../OrderTrackingView';
+import { ProblemCategoryMapper } from '../../admin/ProblemCategoryMapper';
+import { apiClient } from '@/lib/api-client';
+import { useNotificationService } from '../useNotificationService';
+import { toast } from 'sonner';
+import { useCart } from '@/context/CartContext';
+import { MyBookings } from '../MyBookings';
+import { AppointmentsList } from '../AppointmentsList';
+import { AppointmentDetailsView } from '../AppointmentDetailsView';
+import { RescheduleAppointmentView } from '../RescheduleAppointmentView';
+// import { WalletView } from './WalletView';
+
+// ✅ NEW IMPORTS FOR GAP FIXES
+import { PetCafeListingZomatoStyle } from '../PetCafeListingZomatoStyle';
+import { ResortBoardingBookingEnhanced } from '../ResortBoardingBookingEnhanced';
+import { CafeReservationFlow } from '../CafeReservationFlow';
+import { BreederCatalogView } from '../BreederCatalogView';
+import { AmbulanceSOS } from '../AmbulanceSOS';
+import { AdoptionQuestionnaire } from '../AdoptionQuestionnaire';
+import { CustomerServicesPage } from '../CustomerServicesPage';
+import { CustomerBookingsPage } from '../CustomerBookingsPage';
+import { CreateBookingPage } from '../booking/CreateBookingPage';
+import { CustomerPetsPage } from '../CustomerPetsPage';
+import { OrderTrackingPage } from '../../shop/OrderTrackingPage';
+
+// ✅ P2 CUSTOMER APP ENHANCEMENTS - Recently Developed UI Components
+import { MultiPetBookingPage } from '../MultiPetBookingPage';
+import { ReturnRequestPage } from '../ReturnRequestPage';
+import { RewardsLoyaltyPage } from '../RewardsLoyaltyPage';
+import { ReferralSystemPage } from '../ReferralSystemPage';
+import { PackageBookingPage } from '../PackageBookingPage';
+import { EmergencyBookingPage } from '../EmergencyBookingPage';
+import { CheckInCheckOutPage } from '../CheckInCheckOutPage';
+import { MedicalRecordsPage } from '../MedicalRecordsPage';
+import { WalletPage as CustomerWalletPage } from '../WalletPage';
+
+// ✅ MATING & DATING SERVICE - P2P Matchmaking
+import { MatingDatingHub } from '../MatingDatingHub';
+import { HomeServiceSelectionEnhanced } from '../HomeServiceSelectionEnhanced';
+import { IntegratedServicesHub } from '../../IntegratedServicesHub';
+import { ProblemGridSelector } from '../ProblemGridSelector';
+import { ServicesByProblem } from '../ServicesByProblem';
+import { ProblemGridFlowRouter } from '../ProblemGridFlowRouter';
+import { NutritionistServicesLanding } from '../nutrition/landingPage/NutritionistServicesLanding';
+import { MealPlansList } from '../nutrition/landingPage/mealplans/MealPlansList';
+import { MealOrderCheckout } from '../nutrition/MealOrderCheckout';
+import { NutritionistTeleRouter } from '../nutritionist/NutritionistTeleRouter';
+import { NutritionistBookingRouter } from '../nutritionist/NutritionistBookingRouter';
+import { OrderTrackingScreen } from '../tracking/OrderTrackingScreen';
+import { DiagnosticsServicesLanding } from '../DiagnosticsServicesLanding';
+import { DiagnosticsReportViewer, SampleCollectionTracker } from '../diagnostics';
+import { DiagnosticsBookingFlow } from '../specialized/DiagnosticsBookingFlow';
+import { PharmacyOrderFlow } from '../specialized/PharmacyOrderFlow';
+import { PharmacyOrderStatus } from '../pharmacy/PharmacyOrderStatus';
+import { CustomerScreenWrapper } from '../CustomerScreenWrapper';
+import { StandardizedHeader } from '../shared/StandardizedHeader'; // ✅ FIX: Import for consistent UI
+import { TrackingPageClient } from '@/app/tracking/[bookingId]/TrackingPageClient'; // ✅ GPS Live Tracking
+import dynamic from 'next/dynamic';
+
+// ✅ Dynamically import video call component to avoid SSR issues with Chime SDK
+const ChimeVideoCall = dynamic(
+  () => import('../booking/ChimeVideoCall').then(mod => mod.ChimeVideoCall),
+  { ssr: false, loading: () => <div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div></div> }
+);
+
+type ScreenType = 
+  | 'home' 
+  | 'user-profile' 
+  | 'customer-profile'
+  | 'pet-profile'
+  | 'pet-profile-dashboard'
+  | 'pet-quick' 
+  | 'pet-details' 
+  | 'add-pet' 
+  | 'walker' 
+  | 'walker-booking' 
+  | 'vet'
+  | 'category-mapper'
+  | 'vet-booking'
+  | 'vet-doctor-details'
+  | 'vet-clinic-list'
+  | 'vet-clinic-profile'
+  | 'vet-clinic-booking'
+  | 'vet-services-by-style'
+  | 'vet-tele-consultation'
+  | 'vet-home-visit'
+  | 'grooming'
+  | 'training'
+  | 'training_center'
+  | 'training_home'
+  | 'boarding'
+  | 'boarding_facility'
+  | 'adoption'
+  | 'sunset'
+  | 'insurance'
+  | 'insurance_provider'
+  | 'cafes'
+  | 'cafe_detail'
+  | 'cafe_reservation'
+  | 'shop'
+  | 'product_detail'
+  | 'cart'
+  | 'checkout'
+  | 'order_success'
+  | 'order_history'
+  | 'order_detail'
+  | 'order_tracking'
+  | 'pharmacy_store'
+  | 'pharmacy_checkout'
+  | 'photography'
+  | 'breeder'
+  | 'breeder_catalog'
+  | 'ambulance'
+  | 'ambulance_sos'
+  | 'nutritionist'
+  | 'relocation'
+  | 'resort'
+  | 'resort_booking'
+  | 'holiday'
+  | 'food'
+  | 'booking-details'
+  | 'my-bookings'
+  | 'appointments'
+  | 'appointment-details'
+  | 'appointment-reschedule'
+  | 'wallet'
+  | 'address_book'
+  | 'add-address'
+  | 'profile'
+  | 'purchase-package'
+  | 'coming-soon'
+  | 'adoption_questionnaire'
+  | 'services'
+  | 'bookings'
+  | 'create-booking'
+  | 'pets'
+  | 'multi-pet-booking'
+  | 'return-request'
+  | 'rewards-loyalty'
+  | 'referral-system'
+  | 'package-booking'
+  | 'emergency-booking'
+  | 'check-in-out'
+  | 'medical-records'
+  | 'customer-wallet'
+  | 'mating-dating-hub'
+  | 'integrated-services'
+  | 'home-service-selection'
+  | 'product_reviews'
+  | 'vendor_profile'
+  | 'support_help'
+  | 'problem_grid'
+  | 'problem_selected'
+  | 'services_by_problem'
+  | 'problem_grid_flow'
+  | 'grooming_center'
+  | 'grooming_home'
+  | 'grooming-booking'
+  | 'training-booking'
+  | 'boarding-booking'
+  | 'walk-live-tracking'
+  | 'schedule-walk'
+  | 'gps-tracking'
+  | 'video-call'
+  | 'payment'
+  | 'pharmacy'
+  | 'lab-diagnostics'
+  | 'diagnostics-booking'
+  | 'diagnostics-reports'
+  | 'sample-collection-tracking'
+  | 'nutrition-meal-plans'
+  | 'meal-order-checkout'
+  | 'meal-order-tracking'
+  | 'nutritionist-tele'
+  | 'nutritionist-booking'
+  | 'pharmacy_order_flow'
+  | 'pharmacy_order_status';
+
+export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phone: string; onNavigate: (screen: string) => void; initialScreen?: ScreenType }) {
+  console.log('CustomerHomeWrapper: Rendering with phone:', phone);
+  const [currentScreen, setCurrentScreen] = useState<ScreenType>(initialScreen || 'home');
+  const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
+  const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
+  const [selectedProblem, setSelectedProblem] = useState<{ id: string; title: string; roleId?: string } | null>(null);
+  const [currentServiceType, setCurrentServiceType] = useState<string | null>(null);
+  const [paymentData, setPaymentData] = useState<any>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [userSidebarOpen, setUserSidebarOpen] = useState(false);
+  const [showAddPetModal, setShowAddPetModal] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [selectedService, setSelectedService] = useState<string>('');
+  const [vetServiceData, setVetServiceData] = useState<any>(null);
+  const [walkerServiceData, setWalkerServiceData] = useState<any>(null);
+  const [selectedPetData, setSelectedPetData] = useState<any>(null);
+  const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
+  const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
+  const [previousScreen, setPreviousScreen] = useState<ScreenType | null>(null); // Track previous screen for navigation back
+  const [selectedAddressFromBook, setSelectedAddressFromBook] = useState<any>(null); // Address selected in address book (return to provider profile)
+  const [trackingBookingId, setTrackingBookingId] = useState<string | null>(null); // ✅ GPS Tracking booking ID
+  const [videoCallData, setVideoCallData] = useState<{ bookingId: string; meetingId?: string } | null>(null); // ✅ Video call data
+  const [prescriptionOrderData, setPrescriptionOrderData] = useState<{ prescriptionId?: string; prescriptionUrl?: string } | null>(null); // ✅ Pharmacy order from My Bookings prescription
+  const [currentPharmacyOrderId, setCurrentPharmacyOrderId] = useState<string | null>(null); // ✅ After PharmacyOrderFlow completes
+  const { addToCart } = useCart();
+  
+  // ✅ FIX: User profile state for consistent header display
+  const [userName, setUserName] = useState<string>('User');
+  const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
+  const [pets, setPets] = useState<any[]>([]);
+  const [selectedPet, setSelectedPet] = useState<any | null>(null);
+
+  // ✅ FIX: Listen for orderMedicineFromPrescription event (fallback when onOrderMedicine not passed)
+  useEffect(() => {
+    const handleOrderMedicineFromPrescription = (e: CustomEvent<{ prescriptionId: string; bookingId?: string; medications?: any[]; fileUrl?: string }>) => {
+      const detail = e.detail;
+      if (detail?.prescriptionId) {
+        setPrescriptionOrderData({
+          prescriptionId: detail.prescriptionId,
+          prescriptionUrl: detail.fileUrl,
+        });
+        setCurrentScreen('pharmacy_order_flow');
+        setPreviousScreen('my-bookings');
+        toast.success('Opening pharmacy order...');
+      }
+    };
+    window.addEventListener('orderMedicineFromPrescription', handleOrderMedicineFromPrescription as EventListener);
+    return () => window.removeEventListener('orderMedicineFromPrescription', handleOrderMedicineFromPrescription as EventListener);
+  }, []);
+
+  // ✅ FIX: Load user profile for header display
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      try {
+        const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
+        if (profileResponse?.profile || profileResponse) {
+          const profile = profileResponse.profile || profileResponse;
+          setUserName(profile.name || profile.fullName || profile.full_name || 'User');
+          setUserProfilePhoto(profile.profilePhoto || profile.profile_image_url || profile.photo);
+        }
+        
+        // Also load pets for header pet selector
+        const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
+        if (petsResponse?.pets) {
+          setPets(petsResponse.pets);
+          if (petsResponse.pets.length > 0 && !selectedPet) {
+            setSelectedPet(petsResponse.pets[0]);
+          }
+        }
+      } catch (error) {
+        console.error('[CustomerHomeWrapper] Error loading user profile:', error);
+      }
+    };
+    
+    if (phone) {
+      loadUserProfile();
+    }
+  }, [phone]);
+
+  // Notification Service logic... (kept same as original)
+  useNotificationService({
+    phone: phone,
+    enabled: !!phone,
+    onNewNotification: async (notification) => {
+      console.log('📬 [CUSTOMER-HOME] Notification received:', notification);
+      if (notification.type === 'chat_message' && notification.bookingId) {
+        try {
+          const data = await apiClient.get<{ booking: { id: string; vendorId: string; vendorName: string; customerPhone: string } }>(`/customer/bookings/${notification.bookingId}`);
+          if (data && data.booking) {
+            setVetServiceData({
+              booking: {
+                bookingId: data.booking.id,
+                vendorId: data.booking.vendorId,
+                vendorName: data.booking.vendorName,
+                customerPhone: data.booking.customerPhone
+              }
+            });
+            setCurrentScreen('vet');
+            toast.success('Opening chat...', { description: `Chat with ${data.booking.vendorName}`, duration: 2000 });
+          }
+        } catch (error) {
+          console.error('Error fetching booking for navigation:', error);
+          toast.error('Could not open chat');
+        }
+      }
+      if (notification.type === 'prescription_generated' && notification.bookingId) {
+         toast.info('New Prescription Available', {
+           description: 'Tap to view details',
+           action: { label: 'View', onClick: () => handleViewBooking(notification.bookingId) },
+           duration: 5000
+         });
+      }
+    }
+  });
+  
+  // Navigation handlers (kept same mostly)
+  const handleProfileClick = () => setUserSidebarOpen(true);
+  const handleViewCustomerProfile = () => { setUserSidebarOpen(false); setCurrentScreen('customer-profile'); };
+  const handlePetClick = (petId: string) => { setSelectedPetId(petId); setCurrentScreen('pet-quick'); };
+  const handleViewPetProfile = (petData: any) => { setSelectedPetData(petData); setSelectedPetId(petData.id); setCurrentScreen('pet-profile'); };
+  
+  const handleViewFullPetProfile = async () => {
+    if (!selectedPetId) return;
+    try {
+      const data = await apiClient.get<{ success: boolean; pet: any }>(`/customer/pets/${selectedPetId}`);
+      if (data.success && data.pet) handleViewPetProfile(data.pet);
+    } catch (error) { console.error('Error loading pet data:', error); }
+  };
+
+  const handleAddPet = () => {
+    // Navigate to add-pet screen instead of opening modal
+    setCurrentScreen('add-pet');
+  };
+  const handleAddPetSuccess = () => {
+    setRefreshKey(prev => prev + 1);
+    // Return to home after adding pet
+    setCurrentScreen('home');
+  };
+
+  const handleNavigateToService = (service: string) => {
+    if (service === 'walker') setCurrentScreen('walker');
+    else if (service === 'vet' || service === 'veterinarian') setCurrentScreen('vet');
+    else if (service === 'grooming') setCurrentScreen('grooming');
+    else if (service === 'training') setCurrentScreen('training');
+    else if (service === 'boarding') setCurrentScreen('boarding');
+    else if (service === 'adoption') setCurrentScreen('adoption');
+    else if (service === 'sunset') setCurrentScreen('sunset');
+    else if (service === 'insurance') setCurrentScreen('insurance');
+    else if (service === 'cafes') setCurrentScreen('cafes');
+    else if (service === 'shop') setCurrentScreen('shop');
+    else if (service === 'cart') setCurrentScreen('cart');
+    else if (service === 'my-bookings' || service === 'bookings') setCurrentScreen('my-bookings');
+    else if (service === 'photography') setCurrentScreen('photography');
+    else if (service === 'breeder') setCurrentScreen('breeder');
+    else if (service === 'ambulance') setCurrentScreen('ambulance');
+    else if (service === 'nutritionist') setCurrentScreen('nutritionist');
+    else if (service === 'pharmacy' || service === 'pharmacy_store') setCurrentScreen('pharmacy');
+    else if (service === 'diagnostics' || service === 'lab-diagnostics' || service === 'lab') setCurrentScreen('lab-diagnostics');
+    else if (service === 'home-service') setCurrentScreen('home-service-selection');
+    else if (service === 'relocation') setCurrentScreen('relocation');
+    else if (service === 'resort') setCurrentScreen('resort');
+    else if (service === 'holiday') setCurrentScreen('holiday');
+    else if (service === 'mating-dating-hub') setCurrentScreen('mating-dating-hub');
+    else {
+      setSelectedService(service);
+      handleBack();
+    }
+  };
+
+  const handleVetNavigate = (screen: string, data?: any) => {
+    console.log('🔵 [handleVetNavigate] Navigating to:', screen, data);
+    setVetServiceData(data);
+    // ✅ FIX: Handle all navigation screens including pharmacy, lab, etc.
+    if (screen === 'vet-booking') setCurrentScreen('vet-booking');
+    else if (screen === 'vet-doctor-details') setCurrentScreen('vet-doctor-details');
+    else if (screen === 'vet-clinic-list') setCurrentScreen('vet-clinic-list');
+    else if (screen === 'vet-clinic-profile') setCurrentScreen('vet-clinic-profile');
+    else if (screen === 'vet-clinic-booking') setCurrentScreen('vet-clinic-booking');
+    else if (screen === 'vet-services-by-style') setCurrentScreen('vet-services-by-style');
+    else if (screen === 'vet-tele-consultation') setCurrentScreen('vet-tele-consultation');
+    else if (screen === 'vet-home-visit') setCurrentScreen('vet-home-visit');
+    else if (screen === 'pharmacy') {
+      console.log('🔵 [handleVetNavigate] Setting pharmacy landing (Medicine)');
+      setCurrentScreen('pharmacy');
+    }
+    else if (screen === 'pharmacy_store') {
+      setCurrentScreen('pharmacy_store');
+    }
+    else if (screen === 'lab-diagnostics' || screen === 'lab-tests' || screen === 'diagnostics' || screen === 'lab') {
+      console.log('🔵 [handleVetNavigate] Setting lab-diagnostics screen');
+      setCurrentScreen('lab-diagnostics');
+    }
+    else if (screen === 'home') { 
+      setCurrentScreen('home'); 
+      setVetServiceData(null); 
+    }
+    else if (screen === 'add-address') {
+      // Open address book (add/select address); back returns to current vet flow (e.g. vet-home-visit)
+      setPreviousScreen(currentScreen);
+      setCurrentScreen('address_book');
+    }
+    else if (screen === 'profile') {
+      setCurrentScreen('customer-profile');
+    }
+    else if (screen === 'purchase-package') {
+      setPreviousScreen(currentScreen);
+      setVetServiceData((prev: any) => ({ ...prev, ...data }));
+      setCurrentScreen('package-booking');
+    }
+    else {
+      // ✅ FIX: Fallback - try to navigate to the screen directly
+      console.log('🔵 [handleVetNavigate] Unhandled screen, attempting direct navigation:', screen);
+      setCurrentScreen(screen as any);
+    }
+  };
+  
+  const handleWalkerNavigate = (screen: string, data?: any) => {
+    setWalkerServiceData(data);
+    if (screen === 'walker-booking') {
+      setCurrentScreen('walker-booking');
+    } else if (screen === 'create-booking') {
+      setPreviousScreen(currentScreen);
+      setSelectedVendorId(data?.vendorId);
+      setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType || 'walking' });
+      setCurrentScreen('create-booking');
+    } else if (screen === 'walk-live-tracking') {
+      setPreviousScreen(currentScreen);
+      setWalkerServiceData({ sessionId: data?.sessionId, bookingId: data?.sessionId });
+      setCurrentScreen('walk-live-tracking');
+    } else if (screen === 'schedule-walk') {
+      setPreviousScreen(currentScreen);
+      setWalkerServiceData({ packageId: data?.packageId });
+      setCurrentScreen('schedule-walk');
+    }
+  };
+
+  const handleAccountNavigate = (path: string) => {
+    if (path === 'account/orders') setCurrentScreen('order_history');
+    else if (path === 'account/addresses') setCurrentScreen('address_book');
+    else if (path === 'account/wallet') setCurrentScreen('wallet');
+    else if (path === 'rewards-loyalty') setCurrentScreen('rewards-loyalty');
+    else if (path === 'referral-system') setCurrentScreen('referral-system');
+    else if (path === 'account/settings') {
+      // Navigate to settings page
+      if (typeof window !== 'undefined') {
+        window.location.href = '/settings';
+      }
+    }
+  };
+
+  const handleBottomNav = (screen: string) => {
+    if (screen === 'home') {
+      setCurrentScreen('home');
+      setSelectedPetId(null);
+      setSelectedBookingId(null);
+      setVetServiceData(null);
+      setWalkerServiceData(null);
+      setSelectedVendorId(undefined);
+      setSelectedProblem(null);
+      setCurrentServiceType(null);
+    } else if (screen === 'cart') {
+      setCurrentScreen('cart');
+    } else if (screen === 'my-bookings') {
+      setCurrentScreen('my-bookings');
+    } else if (screen === 'profile') {
+      handleProfileClick();
+    }
+  };
+
+  const handleBack = () => {
+    setCurrentScreen('home');
+    setSelectedPetId(null);
+    setSelectedBookingId(null);
+    setVetServiceData(null);
+    setWalkerServiceData(null);
+    setSelectedVendorId(undefined);
+    setSelectedProblem(null);
+    setCurrentServiceType(null);
+  };
+
+  const handlePetDeleted = () => {
+    setRefreshKey(prev => prev + 1);
+    setCurrentScreen('home');
+    setSelectedPetId(null);
+    setSelectedBookingId(null);
+  };
+
+  const handlePetProfileComplete = async (pets: any[]) => {
+    setRefreshKey(prev => prev + 1);
+    setCurrentScreen('home');
+  };
+
+  const handleViewBooking = (bookingId: string, petId?: string) => {
+    setSelectedBookingId(bookingId);
+    if (petId) setSelectedPetId(petId);
+    setSidebarOpen(false);
+    setUserSidebarOpen(false);
+    setCurrentScreen('my-bookings');
+  };
+
+  const handleReorderMedicine = (medications: any[], prescriptionId?: string, _bookingId?: string) => {
+    console.log('Reordering medicines:', medications, prescriptionId);
+    // ✅ From My Bookings → vet appointment → prescription: open medicine delivery flow (prescription → address → broadcast → invoice → pay)
+    if (prescriptionId) {
+      setPrescriptionOrderData({ prescriptionId });
+      setCurrentScreen('pharmacy_order_flow');
+      toast.success('Order medicine from prescription');
+      return;
+    }
+    if (medications && medications.length > 0) {
+      medications.forEach(med => {
+        addToCart({
+          id: med.id || `med-${Math.random().toString(36).substr(2, 9)}`,
+          name: med.name,
+          price: med.price || 150,
+          quantity: parseInt(med.quantity) || 1,
+          prescriptionRequired: true,
+          image: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&q=80&w=200'
+        });
+      });
+      toast.success(`Added ${medications.length} medicines to cart`);
+      setCurrentScreen('pharmacy_checkout');
+    } else {
+      toast.success('Navigating to Pharmacy...');
+      setCurrentScreen('pharmacy');
+    }
+  };
+
+  // ✅ FIX: Helper function to render screens with consistent StandardizedHeader layout
+  // This ensures all service landing pages have the same header/footer as the home page
+  const renderScreenWithLayout = (
+    screen: ScreenType,
+    component: ReactNode,
+    options: {
+      title: string;
+      subtitle?: string;
+      showBackButton?: boolean;
+      showPets?: boolean;
+      onBackOverride?: () => void;
+      skipHeader?: boolean; // ✅ FIX: Allow skipping header for service routers that have their own frame UI
+    }
+  ): ReactNode => {
+    return (
+      <CustomerScreenWrapper 
+        currentScreen={screen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        {/* ✅ FIX: Mobile-optimized container matching CustomerHomeComplete (430px max-width) */}
+        <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+          {/* ✅ FIX: Skip StandardizedHeader for service routers that use ServiceDashboardHeader (frame UI) */}
+          {!options.skipHeader && (
+            <StandardizedHeader
+              userName={userName}
+              userProfilePhoto={userProfilePhoto}
+              title={options.title}
+              subtitle={options.subtitle}
+              showBackButton={options.showBackButton ?? true}
+              showPets={options.showPets ?? false}
+              pets={pets}
+              selectedPet={selectedPet}
+              onPetSelect={setSelectedPet}
+              onBack={options.onBackOverride || handleBack}
+              onNavigate={(s: string) => handleNavigateToService(s)}
+              onProfileClick={handleProfileClick}
+              onPetClick={handlePetClick}
+              onAddPet={handleAddPet}
+              customerPhone={phone}
+            />
+          )}
+          {component}
+          {userSidebarOpen && (
+            <UserAccountSidebar 
+              phone={phone}
+              onClose={() => setUserSidebarOpen(false)}
+              onViewBooking={handleViewBooking}
+              onViewCustomerProfile={handleViewCustomerProfile}
+              onNavigate={handleAccountNavigate}
+            />
+          )}
+        </div>
+      </CustomerScreenWrapper>
+    );
+  };
+
+  // RENDER LOGIC
+
+  if (currentScreen === 'home') {
+    return (
+      <CustomerScreenWrapper 
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <CustomerHome 
+          phone={phone}
+          refreshKey={refreshKey}
+          onNavigate={(screen, data) => {
+            // ✅ Handle order-tracking: meal vs ecommerce/pharmacy (Phase 5)
+            if (screen === 'order-tracking') {
+              const orderId = data?.orderId;
+              if (data?.orderType === 'meal' && orderId) {
+                setSelectedBookingId(orderId);
+                setCurrentScreen('meal-order-tracking');
+              } else if (orderId) {
+                setSelectedOrder({ id: orderId });
+                setCurrentScreen('order_tracking');
+              } else {
+                handleNavigateToService(screen);
+              }
+              return;
+            }
+            // ✅ Handle GPS Live Tracking navigation
+            if (screen === 'gps-tracking' || screen === 'tracking') {
+              setTrackingBookingId(data?.bookingId);
+              setPreviousScreen(currentScreen);
+              setCurrentScreen('gps-tracking');
+            }
+            // ✅ Handle Video Call navigation
+            else if (screen === 'video-call') {
+              setVideoCallData({ bookingId: data?.bookingId, meetingId: data?.meetingId });
+              setPreviousScreen(currentScreen);
+              setCurrentScreen('video-call');
+            }
+            // ✅ FIX: View Details from Upcoming & Active / notifications → open My Bookings with that booking's detail modal (by bookingId)
+            else if (screen === 'booking-details' && data?.bookingId) {
+              setSelectedBookingId(data.bookingId);
+              setCurrentScreen('my-bookings');
+              return;
+            }
+            // ✅ FIX: my-bookings with bookingId (e.g. from notification) → same as booking-details
+            else if (screen === 'my-bookings' && data?.bookingId) {
+              setSelectedBookingId(data.bookingId);
+              setCurrentScreen('my-bookings');
+              return;
+            }
+            // Handle problem-based navigation
+            else if (screen === 'services_by_problem' || screen === 'problem_selected') {
+              // ✅ Route through ProblemGridFlowRouter for service style selection
+              setSelectedProblem({ 
+                id: data?.problemId, 
+                title: data?.problemTitle || 'Service',
+                roleId: data?.roleId
+              });
+              setCurrentScreen('problem_grid_flow');
+            } else if (screen === 'problem_grid') {
+              setCurrentServiceType(data?.roleId || 'general');
+              setCurrentScreen('problem_grid');
+            } else {
+              handleNavigateToService(screen);
+            }
+          }}
+          onProfileClick={handleProfileClick}
+          onSidebarOpen={() => setSidebarOpen(true)}
+          onPetClick={handlePetClick}
+          onAddPet={handleAddPet}
+          onViewBooking={handleViewBooking}
+        />
+        {userSidebarOpen && (
+          <UserAccountSidebar 
+            phone={phone}
+            onClose={() => setUserSidebarOpen(false)}
+            onViewBooking={handleViewBooking}
+            onViewCustomerProfile={handleViewCustomerProfile}
+            onNavigate={handleAccountNavigate}
+          />
+        )}
+      </CustomerScreenWrapper>
+    );
+  }
+
+  // ✅ GPS Live Tracking Screen - Full screen tracking with Google Maps
+  if (currentScreen === 'gps-tracking' && trackingBookingId) {
+    return (
+      <TrackingPageClient 
+        bookingId={trackingBookingId}
+      />
+    );
+  }
+
+  // ✅ Video Call Screen - AWS Chime video calling
+  if (currentScreen === 'video-call' && videoCallData) {
+    return (
+      <ChimeVideoCall
+        bookingId={videoCallData.bookingId}
+        participantType="customer"
+        participantId={phone}
+        onEndCall={() => {
+          setVideoCallData(null);
+          setCurrentScreen(previousScreen || 'home');
+          setPreviousScreen(null);
+        }}
+      />
+    );
+  }
+
+  // ✅ UPDATED: Customer Profile with navigation
+  if (currentScreen === 'customer-profile') {
+    return (
+      <CustomerScreenWrapper 
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <CustomerProfile phone={phone} onBack={handleBack} onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)} />
+      </CustomerScreenWrapper>
+    );
+  }
+  if (currentScreen === 'pet-profile' && selectedPetData) return <PetProfile phone={phone} petId={selectedPetData.id} petName={selectedPetData.name} petType={selectedPetData.type} petBreed={selectedPetData.breed} petAge={selectedPetData.age} petGender={selectedPetData.gender} petImage={selectedPetData.image} onBack={handleBack} />;
+  if (currentScreen === 'booking-details' && selectedBookingId && selectedPetId) return <PetBookingDetails bookingId={selectedBookingId} petId={selectedPetId} phone={phone} onBack={handleBack} onReorderMedicine={handleReorderMedicine} />;
+  if (currentScreen === 'pet-quick' && selectedPetId) return <PetQuickView petId={selectedPetId} phone={phone} onBack={handleBack} onViewFullProfile={handleViewFullPetProfile} />;
+  if (currentScreen === 'pet-details' && selectedPetId) return <CustomerPetDetails phone={phone} petId={selectedPetId} onBack={() => setCurrentScreen('pet-quick')} onViewBooking={handleViewBooking} onDelete={handlePetDeleted} onViewPetProfile={(petData: any) => { setSelectedPetData(petData); setCurrentScreen('pet-profile-dashboard'); }} />;
+  if (currentScreen === 'pet-profile-dashboard' && selectedPetData) return <PetProfileDashboard phone={phone} petData={selectedPetData} onBack={() => { setCurrentScreen('pet-details'); setSelectedPetData(null); }} />;
+  if (currentScreen === 'add-pet') return <CustomerPetProfile session={{ phone }} prefillData={null} onComplete={handlePetProfileComplete} onBack={handleBack} />;
+  
+  // Core Services
+  // ✅ FIX: Walker with Frame UI (ServiceDashboardHeader only – skipHeader to avoid double header)
+  if (currentScreen === 'walker') {
+    return renderScreenWithLayout('walker',
+      <WalkerDashboard phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
+        if (screen === 'problem_grid') {
+          setCurrentServiceType('walker');
+          setCurrentScreen('problem_grid');
+        } else if (screen === 'problem_selected') {
+          setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Walking Service', roleId: 'walker' });
+          setCurrentScreen('problem_grid_flow');
+        } else {
+          handleWalkerNavigate(screen, data);
+        }
+      }} data={walkerServiceData} />,
+      { title: 'Pet Walking', subtitle: 'Professional dog walking services', showBackButton: true, skipHeader: true }
+    );
+  }
+  // ✅ FIX: Walker booking flow – use WalkerBookingRouter (same pattern as vet/grooming/training)
+  if (currentScreen === 'walker-booking') {
+    return (
+      <WalkerBookingRouter
+        phone={phone}
+        vendorId={walkerServiceData?.vendorId}
+        walker={walkerServiceData?.walker}
+        selectedService={walkerServiceData?.serviceId}
+        serviceId={walkerServiceData?.serviceId}
+        serviceName={walkerServiceData?.serviceName}
+        serviceStyle={walkerServiceData?.serviceStyle || 'at_home'}
+        serviceType={walkerServiceData?.serviceType || 'walking'}
+        price={walkerServiceData?.price}
+        duration={walkerServiceData?.duration}
+        onBack={() => setCurrentScreen('walker')}
+        onNavigate={(screen, data) => {
+          if (screen === 'booking-details' || screen === 'booking-confirmation') {
+            handleViewBooking(data?.bookingId);
+          } else if (screen === 'walk-live-tracking') {
+            setPreviousScreen('walker-booking');
+            setWalkerServiceData({ sessionId: data?.sessionId, bookingId: data?.sessionId });
+            setCurrentScreen('walk-live-tracking');
+          } else if (screen === 'schedule-walk') {
+            setPreviousScreen('walker-booking');
+            setWalkerServiceData({ packageId: data?.packageId });
+            setCurrentScreen('schedule-walk');
+          } else {
+            handleWalkerNavigate(screen, data);
+          }
+        }}
+        onViewBooking={handleViewBooking}
+      />
+    );
+  }
+  if (currentScreen === 'walk-live-tracking') return <WalkLiveTrackingView bookingId={walkerServiceData?.bookingId || walkerServiceData?.sessionId || ''} onBack={() => { setCurrentScreen(previousScreen || 'walker-booking'); setPreviousScreen(null); }} />;
+  if (currentScreen === 'schedule-walk') return <CreateBookingPage phone={phone} vendorId={walkerServiceData?.vendorId} serviceId={walkerServiceData?.packageId} onBack={() => { setCurrentScreen(previousScreen || 'walker-booking'); setPreviousScreen(null); }} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
+  // ✅ FIX: Vet Service with Frame UI (ServiceDashboardHeader)
+  if (currentScreen === 'vet') {
+    return renderScreenWithLayout('vet',
+      <VetServiceRouter 
+        phone={phone} 
+        onBack={handleBack} 
+        onNavigate={(screen, data) => {
+          if (screen === 'problem_grid') {
+            setCurrentServiceType('veterinarian');
+            setCurrentScreen('problem_grid');
+          } else if (screen === 'problem_selected') {
+            setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Vet Service', roleId: 'veterinarian' });
+            setCurrentScreen('problem_grid_flow');
+          } else {
+            handleVetNavigate(screen, data);
+          }
+        }} 
+        data={vetServiceData} 
+      />,
+      { title: 'Veterinary Services', subtitle: 'Professional pet healthcare', showBackButton: true, skipHeader: true }
+    );
+  }
+  if (currentScreen === 'vet-booking') return <VetBookingRouter phone={phone} doctorId={vetServiceData?.vendorId || vetServiceData?.doctorId} vendorId={vetServiceData?.vendorId} clinicId={vetServiceData?.clinicId || vetServiceData?.id} doctor={vetServiceData?.doctor} selectedService={vetServiceData?.service} serviceType={vetServiceData?.serviceType} serviceId={vetServiceData?.serviceId} serviceName={vetServiceData?.serviceName} serviceStyle={vetServiceData?.serviceStyle} price={vetServiceData?.price} duration={vetServiceData?.duration} selectedServices={vetServiceData?.selectedServices} vendorName={vetServiceData?.vendorName} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} onViewBooking={handleViewBooking} />;
+  if (currentScreen === 'vet-doctor-details') return <VetDoctorDetails phone={phone} doctorId={vetServiceData?.doctorId || ''} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
+  if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={() => setCurrentScreen('vet')} onNavigate={(screen, data) => { 
+    if (screen === 'clinic-profile' || screen === 'clinic-details') { 
+      setVetServiceData({ id: data?.clinicId, ...data }); 
+      setCurrentScreen('vet-clinic-profile'); 
+    } 
+  }} />;
+  if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={() => setCurrentScreen('vet-clinic-list')} onNavigate={(screen, data) => {
+    if (screen === 'appointment' || screen === 'vet-booking') {
+      setVetServiceData({
+        ...vetServiceData,
+        id: data?.clinicId || vetServiceData?.id,
+        vendorId: data?.vendorId || data?.clinicId || vetServiceData?.id,
+        clinicId: data?.clinicId || vetServiceData?.id,
+        serviceType: data?.serviceType || 'clinic',
+        serviceStyle: data?.serviceStyle || 'at_center',
+        service: data?.service,
+        serviceId: data?.serviceId,
+        serviceName: data?.serviceName,
+        price: data?.price,
+        duration: data?.duration,
+        doctor: data?.doctor,
+        clinic: data?.clinic,
+      });
+      setCurrentScreen('vet-booking');
+    }
+  }} />;
+  if (currentScreen === 'vet-clinic-booking') return <VetBookingFlow phone={phone} serviceType={vetServiceData?.serviceType || 'tele'} vendorId={vetServiceData?.vendorId} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
+  if (currentScreen === 'vet-services-by-style') return <VetServicesByStyle phone={phone} serviceStyle={vetServiceData?.serviceStyle || 'tele'} serviceTypeName={vetServiceData?.serviceTypeName} category={vetServiceData?.category || 'vet'} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
+  // ✅ FIX: Tele Consultation Router
+  if (currentScreen === 'vet-tele-consultation') {
+    return renderScreenWithLayout('vet-tele-consultation',
+      <TeleConsultationRouter 
+        phone={phone} 
+        onBack={() => setCurrentScreen('vet')} 
+        onNavigate={(screen, data) => {
+          // Handle navigation from TeleConsultationRouter
+          if (screen === 'video-call') {
+            // Navigate to video call page
+            if (typeof window !== 'undefined' && data?.bookingId) {
+              window.location.href = `/video/${data.bookingId}`;
+            }
+          } else if (screen === 'add-pet') {
+            setCurrentScreen('add-pet');
+          } else if (screen === 'payment') {
+            // Handle payment navigation - go directly to payment page with booking data
+            setPaymentData(data);
+            setCurrentScreen('payment');
+          } else {
+            // Fallback to vet navigation handler
+            handleVetNavigate(screen, data);
+          }
+        }} 
+      />,
+      { title: 'Tele Consultation', subtitle: 'Video consultation with vets', showBackButton: true, skipHeader: true }
+    );
+  }
+  // ✅ FIX: Home Visit Router
+  if (currentScreen === 'vet-home-visit') {
+    return renderScreenWithLayout('vet-home-visit',
+      <HomeVisitRouter 
+        phone={phone} 
+        onBack={() => setCurrentScreen('vet')} 
+        onNavigate={(screen, data) => {
+          // Handle navigation from HomeVisitRouter
+          if (screen === 'payment') {
+            // Handle payment navigation - go directly to payment page with booking data
+            setPaymentData(data);
+            setCurrentScreen('payment');
+          } else if (screen === 'add-pet') {
+            setCurrentScreen('add-pet');
+          } else {
+            // Fallback to vet navigation handler
+            handleVetNavigate(screen, data);
+          }
+        }}
+        initialAddressFromBook={selectedAddressFromBook}
+        onConsumeInitialAddress={() => setSelectedAddressFromBook(null)}
+      />,
+      { title: 'Home Visit', subtitle: 'Vet comes to your doorstep', showBackButton: true, skipHeader: true }
+    );
+  }
+  // ✅ FIX: Payment Screen - Universal payment page for all service booking flows
+  if (currentScreen === 'payment' && paymentData) {
+    const bookingData = paymentData;
+    const servicesArray = bookingData.services && Array.isArray(bookingData.services) 
+      ? bookingData.services 
+      : [];
+    const firstService = servicesArray[0] || bookingData;
+    
+    // Normalize selectedServices for UniversalPaymentPage (supports both camelCase and snake_case)
+    const selectedServices = servicesArray.length > 0 ? servicesArray.map((s: any) => ({
+      id: s.id || s.serviceId || s.service_id,
+      serviceId: s.serviceId || s.service_id || s.id,
+      name: s.name || s.serviceName || s.service_name || 'Service',
+      serviceName: s.serviceName || s.name || s.service_name,
+      price: Number(s.price) || 0,
+      duration: s.duration != null ? Number(s.duration) : 0,
+      serviceStyle: s.serviceStyle || s.service_style || bookingData.serviceType || bookingData.serviceStyle,
+      description: s.description,
+    })) : undefined;
+    
+    const baseAmount = Number(bookingData.totalAmount) 
+      || (selectedServices ? selectedServices.reduce((sum: number, s: any) => sum + (s.price || 0), 0) : 0)
+      || Number(firstService?.price) || Number(bookingData?.price) || 0;
+    const duration = bookingData.totalDuration ?? firstService?.duration ?? bookingData?.duration;
+    const serviceName = firstService?.name || firstService?.serviceName || firstService?.service_name || bookingData.serviceName || 'Service';
+    
+    return (
+      <UniversalPaymentPage
+        type="booking"
+        vendorId={bookingData.vendorId || bookingData.provider?.id || ''}
+        vendorName={bookingData.provider?.name || bookingData.vendorName || 'Service Provider'}
+        serviceId={bookingData.serviceId || firstService?.serviceId || firstService?.service_id || firstService?.id}
+        serviceName={serviceName}
+        serviceDescription={firstService?.description || bookingData.description}
+        serviceStyle={bookingData.serviceType || bookingData.serviceStyle || 'tele'}
+        category={bookingData.category || 'vet'}
+        bookingDate={bookingData.bookingDate}
+        bookingTime={bookingData.bookingTime}
+        petId={bookingData.petId}
+        petName={bookingData.petName}
+        petBreed={bookingData.petBreed}
+        address={bookingData.address}
+        baseAmount={baseAmount}
+        duration={duration}
+        selectedServices={selectedServices}
+        customerPhone={phone}
+        customerId={bookingData.customerId}
+        onBack={() => {
+          // Go back to provider profile or tele consultation
+          if (bookingData.category === 'nutritionist') {
+            setCurrentScreen(previousScreen || 'nutritionist-tele');
+            setPreviousScreen(null);
+          } else if (bookingData.flowType === 'tele-scheduled') {
+            setCurrentScreen('vet-tele-consultation');
+          } else if (bookingData.flowType === 'home-visit') {
+            setCurrentScreen('vet-home-visit');
+          } else {
+            setCurrentScreen('vet');
+          }
+          setPaymentData(null);
+        }}
+        onSuccess={(bookingId, orderId, otpCode) => {
+          setSelectedBookingId(bookingId);
+          setSelectedAppointmentId(bookingId);
+          setCurrentScreen('my-bookings');
+          setPaymentData(null);
+          toast.success('Booking confirmed successfully!');
+        }}
+      />
+    );
+  }
+  // ✅ FIX: Grooming Service with Frame UI (ServiceDashboardHeader)
+  if (currentScreen === 'grooming') {
+    return renderScreenWithLayout('grooming',
+      <GroomingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => { 
+        console.log('🟢 [CustomerHomeWrapper] Grooming navigation:', screen, data);
+        if (screen === 'appointment-details') { 
+          setSelectedAppointmentId(data?.appointmentId); 
+          setCurrentScreen('appointment-details'); 
+        } else if (screen === 'create-booking') {
+          setPreviousScreen('grooming');
+          setSelectedVendorId(data?.vendorId);
+          setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
+          setCurrentScreen('create-booking');
+        } else if (screen === 'problem_grid') {
+          console.log('🟢 [CustomerHomeWrapper] Setting problem_grid screen');
+          setCurrentServiceType('groomer');
+          setCurrentScreen('problem_grid');
+        } else if (screen === 'problem_selected') {
+          console.log('🟢 [CustomerHomeWrapper] Setting problem_selected screen:', data);
+          if (data?.problemId && !data?.problemTitle) {
+            setSelectedProblem({ id: data.problemId, title: 'Loading...', roleId: 'groomer' });
+          } else {
+            setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Grooming Service', roleId: 'groomer' });
+          }
+          setCurrentScreen('problem_grid_flow');
+        } else if (screen === 'grooming_center' || screen === 'at_center') {
+          console.log('🟢 [CustomerHomeWrapper] Setting grooming_center screen');
+          setCurrentScreen('grooming_center');
+        } else if (screen === 'grooming_home' || screen === 'at_home') {
+          console.log('🟢 [CustomerHomeWrapper] Setting grooming_home screen');
+          setCurrentScreen('grooming_home');
+        } else if (screen === 'add-address') {
+          setPreviousScreen(currentScreen);
+          setCurrentScreen('address_book');
+        } else if (screen === 'profile') {
+          setCurrentScreen('customer-profile');
+        } else if (screen === 'purchase-package') {
+          setPreviousScreen(currentScreen);
+          setVetServiceData((prev: any) => ({ ...prev, ...data }));
+          setCurrentScreen('purchase-package');
+        } else {
+          console.warn('🟡 [CustomerHomeWrapper] Unhandled grooming navigation:', screen, data);
+          setCurrentScreen(screen as any);
+        }
+      }} />,
+      { title: 'Grooming', subtitle: 'Premium pet grooming services', showBackButton: true, skipHeader: true }
+    );
+  }
+  // ✅ FIX: Training Service with Frame UI (ServiceDashboardHeader)
+  if (currentScreen === 'training') {
+    return renderScreenWithLayout('training',
+      <TrainingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => {
+        console.log('🟢 [CustomerHomeWrapper] Training navigation:', screen, data);
+        if (screen === 'create-booking' || screen === 'training-booking' || screen === 'booking') {
+          setPreviousScreen('training');
+          setSelectedVendorId(data?.vendorId);
+          setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType || 'training', trainer: data?.trainer, service: data?.service, serviceId: data?.serviceId, vendorName: data?.vendorName, price: data?.price, duration: data?.duration });
+          setCurrentScreen('training-booking');
+        } else if (screen === 'problem_grid') {
+          setCurrentServiceType('trainer');
+          setCurrentScreen('problem_grid');
+        } else if (screen === 'problem_selected') {
+          setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Training Service', roleId: 'trainer' });
+          setCurrentScreen('problem_grid_flow');
+        } else if (screen === 'training_center') {
+          // ✅ FIX: Handle training center service style navigation
+          setCurrentScreen('training_center');
+        } else if (screen === 'training_home' || screen === 'at_home') {
+          // ✅ FIX: Handle training home service style navigation  
+          setCurrentScreen('training_home');
+        } else if (screen === 'training-trial-booking' || screen === 'training-progress' || screen === 'training-skill-matrix') {
+          handleBack();
+          toast.info('Not available.');
+        } else if (screen === 'add-address') {
+          setPreviousScreen(currentScreen);
+          setCurrentScreen('address_book');
+        } else if (screen === 'profile') {
+          setCurrentScreen('customer-profile');
+        } else if (screen === 'purchase-package') {
+          setPreviousScreen(currentScreen);
+          setVetServiceData((prev: any) => ({ ...prev, ...data }));
+          setCurrentScreen('purchase-package');
+        } else {
+          console.warn('🟡 [CustomerHomeWrapper] Unhandled training navigation:', screen, data);
+          setCurrentScreen(screen as any);
+        }
+      }} />,
+      { title: 'Training', subtitle: 'Professional pet training', showBackButton: true, skipHeader: true }
+    );
+  }
+  // ✅ FIX: Boarding Service with Frame UI (ServiceDashboardHeader – skipHeader to match vet/grooming/training)
+  if (currentScreen === 'boarding') {
+    return renderScreenWithLayout('boarding',
+      <BoardingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => {
+        if (screen === 'boarding-booking') {
+          setPreviousScreen('boarding');
+          setVetServiceData({ vendorId: data?.vendorId, serviceType: 'boarding', facility: data?.facility });
+          setCurrentScreen('boarding-booking');
+        } else if (screen === 'create-booking') {
+          setPreviousScreen('boarding');
+          setSelectedVendorId(data?.vendorId);
+          setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
+          setCurrentScreen('create-booking');
+        } else if (screen === 'problem_grid') {
+          setCurrentServiceType('boarding');
+          setCurrentScreen('problem_grid');
+        } else if (screen === 'problem_selected') {
+          setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Boarding Service', roleId: 'boarding' });
+          setCurrentScreen('problem_grid_flow');
+        } else if (screen === 'boarding_facility') {
+          setCurrentScreen('boarding_facility');
+        } else {
+          handleBack();
+        }
+      }} />,
+      { title: 'Pet Boarding', subtitle: 'Safe & comfortable pet stay', showBackButton: true, skipHeader: true }
+    );
+  }
+  // ✅ Boarding Facility list (View all facilities) – same frame UI
+  if (currentScreen === 'boarding_facility') {
+    return renderScreenWithLayout('boarding_facility',
+      <BoardingServiceRouter phone={phone} onBack={() => setCurrentScreen('boarding')} onViewBooking={handleViewBooking} onNavigate={(screen, data) => {
+        if (screen === 'boarding-booking') {
+          setPreviousScreen('boarding_facility');
+          setVetServiceData({ vendorId: data?.vendorId, serviceType: 'boarding', facility: data?.facility });
+          setCurrentScreen('boarding-booking');
+        } else if (screen === 'create-booking') {
+          setPreviousScreen('boarding_facility');
+          setSelectedVendorId(data?.vendorId);
+          setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
+          setCurrentScreen('create-booking');
+        } else if (screen === 'boarding_facility') {
+          setCurrentScreen('boarding_facility');
+        } else {
+          setCurrentScreen('boarding');
+        }
+      }} />,
+      { title: 'Boarding Facilities', subtitle: 'Select a facility', showBackButton: true, skipHeader: true }
+    );
+  }
+  // ✅ FIX: Adoption Service with StandardizedHeader layout
+  if (currentScreen === 'adoption') {
+    return renderScreenWithLayout('adoption',
+      <AdoptionServiceRouter phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
+        if (screen === 'adoption_questionnaire') {
+          setCurrentScreen('adoption_questionnaire');
+        } else if (screen === 'create-booking') {
+          setPreviousScreen('adoption');
+          setSelectedVendorId(data?.vendorId);
+          setCurrentScreen('create-booking');
+        } else if (screen === 'problem_grid') {
+          setCurrentServiceType('adoption');
+          setCurrentScreen('problem_grid');
+        } else if (screen === 'problem_selected') {
+          setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Adoption Service', roleId: 'adoption' });
+          setCurrentScreen('problem_grid_flow');
+        } else {
+          handleBack();
+        }
+      }} />,
+      { title: 'Pet Adoption', subtitle: 'Find your new family member', showBackButton: true }
+    );
+  }
+  // ✅ FIX: Sunset Care with StandardizedHeader layout
+  if (currentScreen === 'sunset') {
+    return renderScreenWithLayout('sunset',
+      <SunsetServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => {
+        if (screen === 'create-booking') {
+          setPreviousScreen('sunset');
+          setSelectedVendorId(data?.vendorId);
+          setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
+          setCurrentScreen('create-booking');
+        } else if (screen === 'problem_grid') {
+          setCurrentServiceType('sunset');
+          setCurrentScreen('problem_grid');
+        } else if (screen === 'problem_selected') {
+          setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Sunset Care Service', roleId: 'sunset' });
+          setCurrentScreen('problem_grid_flow');
+        } else {
+          handleBack();
+        }
+      }} />,
+      { title: 'Sunset Care', subtitle: 'Compassionate end-of-life care', showBackButton: true }
+    );
+  }
+  // ✅ FIX: Insurance Services with StandardizedHeader layout
+  if (currentScreen === 'insurance') {
+    return renderScreenWithLayout('insurance',
+      <InsuranceServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
+        if (screen === 'insurance_policy_purchase') {
+          setSelectedVendorId(data?.vendorId);
+          setCurrentScreen('insurance_provider');
+        } else if (screen === 'create-booking') {
+          setSelectedVendorId(data?.vendorId);
+          setCurrentScreen('create-booking');
+        } else {
+          handleBack();
+        }
+      }} />,
+      { title: 'Pet Insurance', subtitle: 'Protect your furry friend', showBackButton: true }
+    );
+  }
+  
+  // ✅ UPDATED LANDING PAGES & FLOWS
+  if (currentScreen === 'resort') return <ResortServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'resort_booking') { setSelectedVendorId(data?.vendorId); setCurrentScreen('resort_booking'); } }} />;
+  if (currentScreen === 'resort_booking') return <ResortBoardingBookingEnhanced phone={phone} preSelectedVendorId={selectedVendorId} onBack={() => setCurrentScreen('resort')} onSuccess={() => setCurrentScreen('my-bookings')} />;
+  
+  if (currentScreen === 'cafes') return <PetCafeServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
+      if (screen === 'cafe_reservation') { setSelectedVendorId(data?.vendorId); setCurrentScreen('cafe_reservation'); }
+      else if (screen === 'cafe_detail') { setSelectedVendorId(data?.vendorId); setCurrentScreen('cafe_detail'); }
+  }} />;
+  if (currentScreen === 'cafe_detail') return <PetCafeListingZomatoStyle cafeId={selectedVendorId || ''} onBack={() => setCurrentScreen('cafes')} />;
+  if (currentScreen === 'cafe_reservation') return <CafeReservationFlow phone={phone} preSelectedVendorId={selectedVendorId} onBack={() => setCurrentScreen('cafes')} />;
+  
+  if (currentScreen === 'breeder') return <BreederServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'breeder_catalog') setCurrentScreen('breeder_catalog'); }} />;
+  if (currentScreen === 'breeder_catalog') return <BreederCatalogView phone={phone} onBack={() => setCurrentScreen('breeder')} />;
+
+  if (currentScreen === 'ambulance') return <AmbulanceServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'ambulance_sos') setCurrentScreen('ambulance_sos'); }} />;
+  if (currentScreen === 'ambulance_sos') return <AmbulanceSOS phone={phone} onBack={() => setCurrentScreen('ambulance')} />;
+  
+  if (currentScreen === 'photography') return <PhotographyServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
+    if (screen === 'create-booking') {
+      setSelectedVendorId(data?.vendorId);
+      setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
+      setCurrentScreen('create-booking');
+    } else {
+      handleBack();
+    }
+  }} />;
+  if (currentScreen === 'relocation') return <RelocationServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
+    if (screen === 'create-booking') {
+      setSelectedVendorId(data?.vendorId);
+      setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
+      setCurrentScreen('create-booking');
+    } else {
+      handleBack();
+    }
+  }} />;
+  
+  // Nutritionist & Holiday
+  // ✅ Nutritionist Tele - Video consultation flow (scheduled or instant)
+  if (currentScreen === 'nutritionist-tele') {
+    return (
+      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
+        <NutritionistTeleRouter
+          phone={phone}
+          onBack={() => { setCurrentScreen(previousScreen || 'nutritionist'); setPreviousScreen(null); }}
+          onNavigate={(screen, data) => {
+            if (screen === 'payment' && data) {
+              setPaymentData(data);
+              setPreviousScreen('nutritionist-tele');
+              setCurrentScreen('payment');
+            } else if (screen === 'video-call' && data?.bookingId) {
+              setVideoCallData({ bookingId: data.bookingId, meetingId: data.meetingId });
+              setPreviousScreen('nutritionist-tele');
+              setCurrentScreen('video-call');
+            } else if (screen === 'add-pet' || screen === 'pets') {
+              setCurrentScreen('pets');
+            } else if (screen === 'nutritionist-booking') {
+              setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceId || 'pet_nutritionist', nutritionist: data?.nutritionist });
+              setPreviousScreen('nutritionist-tele');
+              setCurrentScreen('nutritionist-booking');
+            } else {
+              handleNavigateToService(screen);
+            }
+          }}
+        />
+      </CustomerScreenWrapper>
+    );
+  }
+  // ✅ Nutritionist Booking Router - step-by-step consultation booking (service → datetime → pet → payment → confirmation)
+  if (currentScreen === 'nutritionist-booking') {
+    return (
+      <NutritionistBookingRouter
+        phone={phone}
+        vendorId={vetServiceData?.vendorId}
+        nutritionist={vetServiceData?.nutritionist}
+        selectedService={vetServiceData?.serviceId}
+        serviceType={vetServiceData?.serviceType || 'pet_nutritionist'}
+        serviceId={vetServiceData?.serviceId}
+        serviceName={vetServiceData?.service?.name}
+        serviceStyle={vetServiceData?.serviceStyle}
+        price={vetServiceData?.price}
+        duration={vetServiceData?.duration}
+        onBack={() => setCurrentScreen(previousScreen || 'nutritionist')}
+        onNavigate={(screen, data) => {
+          if (screen === 'booking-details' || screen === 'booking-confirmation') {
+            handleViewBooking(data?.bookingId);
+          } else {
+            handleNavigateToService(screen);
+          }
+        }}
+        onViewBooking={handleViewBooking}
+      />
+    );
+  }
+  if (currentScreen === 'nutritionist') {
+    return (
+      <CustomerScreenWrapper 
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <NutritionistServicesLanding 
+          phone={phone} 
+          onBack={handleBack} 
+          onNavigate={(screen, data) => {
+            if (screen === 'nutrition-meal-plans') {
+              setCurrentScreen('nutrition-meal-plans');
+            } else if (screen === 'nutritionist-tele') {
+              setPreviousScreen('nutritionist');
+              setCurrentScreen('nutritionist-tele');
+            } else if (screen === 'nutritionist-booking') {
+              setPreviousScreen('nutritionist');
+              setSelectedVendorId(data?.vendorId);
+              setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceId || 'pet_nutritionist', nutritionist: data?.nutritionist });
+              setCurrentScreen('nutritionist-booking');
+            } else if (screen === 'create-booking') {
+              setSelectedVendorId(data?.vendorId);
+              setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
+              setCurrentScreen('create-booking');
+            } else if (screen === 'pets') {
+              setCurrentScreen('pets');
+            } else if (screen === 'problem_grid') {
+              setCurrentServiceType('pet_nutritionist');
+              setCurrentScreen('problem_grid');
+            } else if (screen === 'problem_selected') {
+              setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Nutrition', roleId: 'pet_nutritionist' });
+              setCurrentScreen('problem_grid_flow');
+            } else {
+              handleBack();
+            }
+          }} 
+        />
+      </CustomerScreenWrapper>
+    );
+  }
+  if (currentScreen === 'nutrition-meal-plans') {
+    return (
+      <CustomerScreenWrapper 
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <MealPlansList 
+          phone={phone} 
+          onBack={() => setCurrentScreen('nutritionist')} 
+          onNavigate={(screen, data) => {
+            if (screen === 'meal-order-checkout') {
+              setSelectedVendorId(data?.vendorId);
+              setVetServiceData({ vendorId: data?.vendorId, mealPlanId: data?.mealPlanId });
+              setCurrentScreen('meal-order-checkout');
+            } else if (screen === 'create-booking') {
+              setSelectedVendorId(data?.vendorId);
+              setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType, mealPlanId: data?.mealPlanId });
+              setCurrentScreen('create-booking');
+            } else if (screen === 'pets') {
+              setCurrentScreen('pets');
+            } else {
+              setCurrentScreen(screen as any);
+            }
+          }} 
+        />
+      </CustomerScreenWrapper>
+    );
+  }
+  if (currentScreen === 'meal-order-checkout') {
+    return (
+      <MealOrderCheckout
+        phone={phone}
+        mealPlanId={vetServiceData?.mealPlanId || ''}
+        vendorId={vetServiceData?.vendorId || selectedVendorId || ''}
+        onBack={() => setCurrentScreen('nutrition-meal-plans')}
+        onSuccess={(orderId) => {
+          toast.success('Order placed successfully');
+          setSelectedBookingId(orderId);
+          setCurrentScreen('meal-order-tracking');
+        }}
+      />
+    );
+  }
+  if (currentScreen === 'meal-order-tracking' && selectedBookingId) {
+    return (
+      <OrderTrackingScreen
+        orderId={selectedBookingId}
+        orderType="meal"
+        onBack={() => setCurrentScreen('nutrition-meal-plans')}
+      />
+    );
+  }
+  if (currentScreen === 'holiday') return <PetHolidayServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
+    if (screen === 'create-booking') {
+      setSelectedVendorId(data?.vendorId);
+      setVetServiceData({ vendorId: data?.vendorId, serviceType: data?.serviceType });
+      setCurrentScreen('create-booking');
+    } else {
+      handleBack();
+    }
+  }} />;
+
+  // Pharmacy Landing - Entry point for pharmacy (Medicine): Order medicine flow or Browse shop
+  if (currentScreen === 'pharmacy') return <PharmacyServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
+    if (screen === 'pharmacy_order_flow') {
+      if (data?.prescriptionId || data?.prescriptionUrl) setPrescriptionOrderData({ prescriptionId: data.prescriptionId, prescriptionUrl: data.prescriptionUrl });
+      setCurrentScreen('pharmacy_order_flow');
+    }
+    else if (screen === 'pharmacy_store') setCurrentScreen('pharmacy_store'); 
+    else if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout');
+  }} />;
+
+  // Pharmacy Order Flow: prescription → address → broadcast (5/10/20km) → pharmacy accept → invoice → pay → OTP → track
+  if (currentScreen === 'pharmacy_order_flow') return (
+    <PharmacyOrderFlow
+      customerPhone={phone}
+      customerId={phone}
+      prescriptionId={prescriptionOrderData?.prescriptionId}
+      prescriptionUrl={prescriptionOrderData?.prescriptionUrl}
+      onBack={() => { setPrescriptionOrderData(null); handleBack(); }}
+      onComplete={(orderId) => {
+        setCurrentPharmacyOrderId(orderId);
+        setPrescriptionOrderData(null);
+        setCurrentScreen('pharmacy_order_status');
+      }}
+    />
+  );
+
+  // Pharmacy Order Status: track order, OTP, delivery (Zomato-like)
+  if (currentScreen === 'pharmacy_order_status' && currentPharmacyOrderId) return (
+    <PharmacyOrderStatus
+      orderId={currentPharmacyOrderId}
+      phone={phone}
+      onBack={() => { setCurrentPharmacyOrderId(null); handleBack(); }}
+    />
+  );
+
+  // Lab Diagnostics Landing - Entry point for lab tests and diagnostics
+  if (currentScreen === 'lab-diagnostics') return <DiagnosticsServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
+    if (screen === 'lab-booking') {
+      setSelectedVendorId(data?.vendorId);
+      setVetServiceData({ vendorId: data?.vendorId, serviceType: 'diagnostics' });
+      setPreviousScreen('lab-diagnostics');
+      setCurrentScreen('diagnostics-booking');
+    } else if (screen === 'diagnostics-reports') {
+      setSelectedBookingId(data?.bookingId);
+      setPreviousScreen('lab-diagnostics');
+      setCurrentScreen('diagnostics-reports');
+    } else if (screen === 'sample-collection-tracking') {
+      setSelectedBookingId(data?.bookingId);
+      setPreviousScreen('lab-diagnostics');
+      setCurrentScreen('sample-collection-tracking');
+    }
+  }} />;
+
+  // Diagnostics Booking Flow - Test selection, home/center, payment (uses DiagnosticsBookingFlow, NOT CreateBookingPage)
+  // Fallback: use vetServiceData?.vendorId if selectedVendorId not set (wireframe stitching / alternate navigation)
+  const diagnosticsVendorId = selectedVendorId || vetServiceData?.vendorId;
+  if (currentScreen === 'diagnostics-booking' && diagnosticsVendorId) return <DiagnosticsBookingFlow 
+    vendorId={diagnosticsVendorId} 
+    customerPhone={phone} 
+    onBack={() => { setCurrentScreen(previousScreen || 'lab-diagnostics'); setPreviousScreen(null); setSelectedVendorId(undefined); }} 
+    onSuccess={(bookingId) => { handleViewBooking(bookingId); setCurrentScreen('my-bookings'); }} 
+    onCancel={() => { setCurrentScreen(previousScreen || 'lab-diagnostics'); setPreviousScreen(null); setSelectedVendorId(undefined); }} 
+  />;
+
+  // Diagnostics Report Viewer - View and download lab reports (Phase 3: Order medicine, Book physio)
+  if (currentScreen === 'diagnostics-reports' && selectedBookingId) return <DiagnosticsReportViewer 
+    bookingId={selectedBookingId} 
+    customerPhone={phone} 
+    onBack={() => { setCurrentScreen(previousScreen || 'lab-diagnostics'); setPreviousScreen(null); }} 
+    onShareWithVet={(reportId, vetId) => { toast.success('Report shared with vet'); }}
+    onNavigate={(screen, data) => {
+      if (screen === 'pharmacy_store' || screen === 'pharmacy') setCurrentScreen('pharmacy');
+      else if (screen === 'pharmacy_order_flow') {
+        if (data?.prescriptionId || data?.prescriptionUrl) setPrescriptionOrderData({ prescriptionId: data.prescriptionId, prescriptionUrl: data.prescriptionUrl });
+        setCurrentScreen('pharmacy_order_flow');
+      }
+      else if (screen === 'my-bookings') setCurrentScreen('my-bookings');
+      else if (screen === 'vet' || screen === 'vet-services') setCurrentScreen('vet');
+      else if (screen === 'booking-details' && data?.bookingId) {
+        setSelectedBookingId(data.bookingId);
+        setCurrentScreen('booking-details');
+      }
+    }}
+  />;
+
+  // Sample Collection Tracker - Track phlebotomist for home collection
+  if (currentScreen === 'sample-collection-tracking' && selectedBookingId) return <SampleCollectionTracker 
+    bookingId={selectedBookingId} 
+    customerPhone={phone} 
+    onBack={() => { setCurrentScreen(previousScreen || 'lab-diagnostics'); setPreviousScreen(null); }} 
+    onComplete={() => { toast.success('Sample collection completed'); setCurrentScreen('lab-diagnostics'); }}
+  />;
+
+  // Shop & Orders
+  if (currentScreen === 'shop') {
+    return (
+      <CustomerScreenWrapper 
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <ShopDashboard phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'pharmacy_store') setCurrentScreen('pharmacy_store'); else if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } else if (screen === 'cart') setCurrentScreen('cart'); else handleNavigateToService(screen); }} />
+      </CustomerScreenWrapper>
+    );
+  }
+  if (currentScreen === 'product_detail' && selectedProduct) return (
+    <ProductDetailPage 
+      product={selectedProduct} 
+      phone={phone}
+      onBack={() => setCurrentScreen('shop')} 
+      onReviewsClick={() => {
+        setCurrentScreen('product_reviews');
+      }} 
+      onVendorClick={() => {
+        if (selectedProduct.vendorId) {
+          setSelectedVendorId(selectedProduct.vendorId);
+          setCurrentScreen('vendor_profile');
+        } else {
+          toast.info('Vendor information not available');
+        }
+      }} 
+    />
+  );
+  if (currentScreen === 'product_reviews' && selectedProduct) return <ProductReviewsView productId={selectedProduct.id || selectedProduct.productId} productName={selectedProduct.name} onBack={() => setCurrentScreen('product_detail')} />;
+  if (currentScreen === 'vendor_profile' && selectedVendorId) return <VendorProfileDetail vendorId={selectedVendorId} phone={phone} onBack={() => setCurrentScreen(selectedProduct ? 'product_detail' : 'shop')} onNavigate={(screen, data) => { if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } }} />;
+  if (currentScreen === 'cart') {
+    return (
+      <CustomerScreenWrapper 
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <ShoppingCartView onBack={() => setCurrentScreen('shop')} onCheckout={() => setCurrentScreen('checkout')} onContinueShopping={() => setCurrentScreen('shop')} />
+      </CustomerScreenWrapper>
+    );
+  }
+  if (currentScreen === 'checkout') return <CheckoutView phone={phone} onBack={() => setCurrentScreen('shop')} onSuccess={(orderId) => { setCurrentOrderId(orderId); setCurrentScreen('order_success'); }} />;
+  if (currentScreen === 'order_success' && currentOrderId) return <OrderSuccessView orderId={currentOrderId} onTrackOrder={() => { setSelectedOrder({ id: currentOrderId }); setCurrentScreen('order_tracking'); }} onBackToHome={() => { setCurrentOrderId(null); setCurrentScreen('home'); }} onViewOrders={() => { setCurrentOrderId(null); setCurrentScreen('order_history'); }} />;
+  if (currentScreen === 'order_history') return <OrderHistoryPage onNavigate={handleAccountNavigate} />;
+  if (currentScreen === 'address_book') return (
+    <AddressBookPage
+      phone={phone}
+      onBack={previousScreen ? () => { setCurrentScreen(previousScreen); setPreviousScreen(null); } : handleBack}
+      onSelect={(address) => {
+        toast.success('Address selected');
+        setSelectedAddressFromBook(address);
+        if (previousScreen) { setCurrentScreen(previousScreen); setPreviousScreen(null); } else handleBack();
+      }}
+    />
+  );
+  // Add Address: must show address book, not fall through to default fallback
+  if (currentScreen === 'add-address') return (
+    <AddressBookPage
+      phone={phone}
+      onBack={previousScreen ? () => { setCurrentScreen(previousScreen); setPreviousScreen(null); } : handleBack}
+      onSelect={(address) => {
+        toast.success('Address selected');
+        setSelectedAddressFromBook(address);
+        if (previousScreen) { setCurrentScreen(previousScreen); setPreviousScreen(null); } else handleBack();
+      }}
+    />
+  );
+  if (currentScreen === 'wallet') return <WalletPage onNavigate={handleAccountNavigate} />;
+  // if (currentScreen === 'order_history') return <OrderHistoryView phone={phone} onBack={handleBack} onOrderClick={(order) => { setSelectedOrder(order); setCurrentScreen('order_detail'); }} />;
+  if (currentScreen === 'order_detail' && selectedOrder) return <OrderDetailView order={selectedOrder} onBack={() => setCurrentScreen('order_history')} onTrackOrder={() => setCurrentScreen('order_tracking')} onReorder={() => { toast.success('Items added to cart'); setCurrentScreen('shop'); }} onHelp={() => setCurrentScreen('support_help')} />;
+  if (currentScreen === 'order_tracking' && selectedOrder) return <OrderTrackingPage orderId={selectedOrder.id || selectedOrder.orderId} onBack={() => setCurrentScreen('order_detail')} />;
+  
+  if (currentScreen === 'pharmacy_store') return <PharmacyStore phone={phone} onBack={() => setCurrentScreen('shop')} onNavigate={(screen) => { if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'cart') setCurrentScreen('cart'); }} />;
+  if (currentScreen === 'pharmacy_checkout') return <PharmacyCheckout phone={phone} onBack={() => setCurrentScreen('pharmacy_store')} onSuccess={() => setCurrentScreen('home')} />;
+
+  // Other Screens
+  if (currentScreen === 'my-bookings') {
+    return (
+      <CustomerScreenWrapper 
+        currentScreen={currentScreen}
+        onNavigate={handleBottomNav}
+        onProfileClick={handleProfileClick}
+      >
+        <MyBookings 
+          phone={phone} 
+          onBack={handleBack} 
+          initialBookingId={selectedBookingId || undefined} 
+          onReorderMedicine={handleReorderMedicine} 
+          onNavigate={(screen, data) => { 
+            if (data?.bookingId) setSelectedBookingId(data.bookingId); 
+            if (screen === 'diagnostics-reports' || screen === 'sample-collection-tracking') setPreviousScreen('my-bookings');
+            if (screen === 'video-call' && data?.bookingId) {
+              const payload = data as { bookingId: string; meetingId?: string };
+              setVideoCallData({ bookingId: payload.bookingId, meetingId: payload.meetingId });
+              setPreviousScreen('my-bookings');
+              setCurrentScreen('video-call');
+            } else if (screen === 'gps-tracking' || screen === 'tracking') {
+              setTrackingBookingId(data?.bookingId ?? null);
+              setPreviousScreen('my-bookings');
+              setCurrentScreen('gps-tracking');
+            } else {
+              setCurrentScreen(screen as ScreenType);
+            }
+          }} 
+        />
+      </CustomerScreenWrapper>
+    );
+  }
+  if (currentScreen === 'appointments') return <AppointmentsList customerId={phone} onBack={handleBack} onSelectAppointment={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-details'); }} />;
+  if (currentScreen === 'appointment-details' && selectedAppointmentId) return <AppointmentDetailsView appointmentId={selectedAppointmentId} customerId={phone} onBack={() => setCurrentScreen('appointments')} onReschedule={(appointmentId) => { setSelectedAppointmentId(appointmentId); setCurrentScreen('appointment-reschedule'); }} onCancel={() => { setCurrentScreen('appointments'); setSelectedAppointmentId(null); }} />;
+  if (currentScreen === 'appointment-reschedule' && selectedAppointmentId) return <RescheduleAppointmentView appointmentId={selectedAppointmentId} onBack={() => setCurrentScreen('appointment-details')} onSuccess={() => { setCurrentScreen('appointment-details'); toast.success('Rescheduled successfully'); }} />;
+  
+  // if (currentScreen === 'wallet') return <WalletView phone={phone} onBack={handleBack} />;
+  if (currentScreen === 'category-mapper') return <ProblemCategoryMapper />;
+  
+  // ✅ NEW: Adoption Questionnaire
+  if (currentScreen === 'adoption_questionnaire') return <AdoptionQuestionnaire onBack={() => setCurrentScreen('adoption')} onComplete={() => { toast.success('Preferences saved'); setCurrentScreen('adoption'); }} />;
+
+  // ✅ NEW: Services Browser
+  if (currentScreen === 'services') return <CustomerServicesPage onBack={handleBack} onNavigate={(screen, data) => { 
+    if (screen === 'create-booking') { 
+      setSelectedService(data?.serviceId);
+      setSelectedVendorId(data?.vendorId);
+      setCurrentScreen('create-booking');
+    } else {
+      handleNavigateToService(screen);
+    }
+  }} />;
+  
+  // ✅ Grooming Service Style Screens - Frame UI (CustomerScreenWrapper for bottom nav, back → grooming)
+  const groomingCenterNavigate = (screen: string, data?: any) => {
+    if (screen === 'grooming-booking' || screen === 'create-booking') {
+      setSelectedService(data?.serviceId);
+      setSelectedVendorId(data?.vendorId);
+      setVetServiceData({
+        vendorId: data?.vendorId,
+        serviceType: 'grooming',
+        serviceStyle: 'at_center',
+        groomer: data?.vendor || data?.groomer || (data?.vendorName ? { name: data.vendorName } : undefined),
+        service: data?.service,
+        serviceId: data?.serviceId,
+        selectedServices: data?.selectedServices, // ✅ FIX: Pass multiple selected services
+        vendorName: data?.vendorName,
+        price: data?.price,
+        duration: data?.duration,
+      });
+      setCurrentScreen('grooming-booking');
+    } else {
+      handleNavigateToService(screen);
+    }
+  };
+  const groomingHomeNavigate = (screen: string, data?: any) => {
+    if (screen === 'grooming-booking' || screen === 'create-booking') {
+      setSelectedService(data?.serviceId);
+      setSelectedVendorId(data?.vendorId);
+      setVetServiceData({
+        vendorId: data?.vendorId,
+        serviceType: 'grooming',
+        serviceStyle: 'at_home',
+        groomer: data?.vendor || data?.groomer || (data?.vendorName ? { name: data.vendorName } : undefined),
+        service: data?.service,
+        serviceId: data?.serviceId,
+        selectedServices: data?.selectedServices, // ✅ FIX: Pass multiple selected services
+        vendorName: data?.vendorName,
+        price: data?.price,
+        duration: data?.duration,
+      });
+      setCurrentScreen('grooming-booking');
+    } else {
+      handleNavigateToService(screen);
+    }
+  };
+  if (currentScreen === 'grooming_center') {
+    return (
+      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
+        <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+          <GroomingServicesByStyle
+            phone={phone}
+            serviceStyle="at_center"
+            serviceTypeName="Grooming Center"
+            category="grooming"
+            onBack={() => setCurrentScreen('grooming')}
+            onNavigate={groomingCenterNavigate}
+          />
+        </div>
+      </CustomerScreenWrapper>
+    );
+  }
+  if (currentScreen === 'grooming_home') {
+    return (
+      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
+        <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+          <GroomingServicesByStyle
+            phone={phone}
+            serviceStyle="at_home"
+            serviceTypeName="At Home Grooming"
+            category="grooming"
+            onBack={() => setCurrentScreen('grooming')}
+            onNavigate={groomingHomeNavigate}
+          />
+        </div>
+      </CustomerScreenWrapper>
+    );
+  }
+
+  // ✅ Training Service Style Screens - Frame UI (CustomerScreenWrapper for bottom nav, back → training)
+  const trainingCenterNavigate = (screen: string, data?: any) => {
+    if (screen === 'training-booking' || screen === 'booking' || screen === 'create-booking') {
+      setSelectedService(data?.serviceId);
+      setSelectedVendorId(data?.vendorId);
+      setVetServiceData({
+        vendorId: data?.vendorId,
+        serviceType: 'training',
+        serviceStyle: 'at_center',
+        trainer: data?.vendor || data?.trainer,
+        service: data?.service,
+        serviceId: data?.serviceId,
+        selectedServices: data?.selectedServices,
+        vendorName: data?.vendorName,
+        price: data?.price,
+        duration: data?.duration,
+      });
+      setCurrentScreen('training-booking');
+    } else {
+      handleNavigateToService(screen);
+    }
+  };
+  const trainingHomeNavigate = (screen: string, data?: any) => {
+    if (screen === 'training-booking' || screen === 'booking' || screen === 'create-booking') {
+      setSelectedService(data?.serviceId);
+      setSelectedVendorId(data?.vendorId);
+      setVetServiceData({
+        vendorId: data?.vendorId,
+        serviceType: 'training',
+        serviceStyle: 'at_home',
+        trainer: data?.vendor || data?.trainer,
+        service: data?.service,
+        serviceId: data?.serviceId,
+        selectedServices: data?.selectedServices,
+        vendorName: data?.vendorName,
+        price: data?.price,
+        duration: data?.duration,
+      });
+      setCurrentScreen('training-booking');
+    } else {
+      handleNavigateToService(screen);
+    }
+  };
+  if (currentScreen === 'training_center') {
+    return (
+      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
+        <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+          <UniversalServicesByStyle
+            phone={phone}
+            roleId="trainer"
+            serviceStyle="at_center"
+            serviceTypeName="Training Center"
+            category="training"
+            bookingScreen="training-booking"
+            onBack={() => setCurrentScreen('training')}
+            onNavigate={trainingCenterNavigate}
+          />
+        </div>
+      </CustomerScreenWrapper>
+    );
+  }
+  if (currentScreen === 'training_home') {
+    return (
+      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
+        <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+          <UniversalServicesByStyle
+            phone={phone}
+            roleId="trainer"
+            serviceStyle="at_home"
+            serviceTypeName="At Home Training"
+            category="training"
+            bookingScreen="training-booking"
+            onBack={() => setCurrentScreen('training')}
+            onNavigate={trainingHomeNavigate}
+          />
+        </div>
+      </CustomerScreenWrapper>
+    );
+  }
+
+  // ✅ Grooming Booking Router
+  if (currentScreen === 'grooming-booking') return <GroomingBookingRouter 
+    phone={phone}
+    vendorId={vetServiceData?.vendorId}
+    groomer={vetServiceData?.groomer}
+    selectedService={vetServiceData?.service}
+    serviceId={vetServiceData?.serviceId}
+    serviceName={vetServiceData?.service?.name}
+    serviceStyle={vetServiceData?.serviceStyle || 'at_center'}
+    selectedServices={vetServiceData?.selectedServices}
+    vendorName={vetServiceData?.vendorName}
+    price={vetServiceData?.price}
+    duration={vetServiceData?.duration}
+    onBack={() => setCurrentScreen('grooming')} 
+    onNavigate={(screen, data) => {
+      if (screen === 'booking-details' || screen === 'booking-confirmation') {
+        handleViewBooking(data?.bookingId);
+      } else {
+        handleNavigateToService(screen);
+      }
+    }}
+    onViewBooking={handleViewBooking}
+  />;
+  
+  // ✅ Training Booking Router
+  if (currentScreen === 'training-booking') return <TrainingBookingRouter 
+    phone={phone}
+    vendorId={vetServiceData?.vendorId}
+    trainer={vetServiceData?.trainer}
+    selectedService={vetServiceData?.service}
+    serviceId={vetServiceData?.serviceId}
+    serviceName={vetServiceData?.service?.name}
+    serviceStyle={vetServiceData?.serviceStyle || 'at_center'}
+    selectedServices={vetServiceData?.selectedServices}
+    price={vetServiceData?.price}
+    duration={vetServiceData?.duration}
+    onBack={() => setCurrentScreen('training')} 
+    onNavigate={(screen, data) => {
+      if (screen === 'booking-details' || screen === 'booking-confirmation') {
+        handleViewBooking(data?.bookingId);
+      } else {
+        handleNavigateToService(screen);
+      }
+    }}
+    onViewBooking={handleViewBooking}
+  />;
+
+  // ✅ Boarding Booking Router - step-by-step boarding flow (service → datetime → pet → room → payment → confirmation)
+  if (currentScreen === 'boarding-booking') return <BoardingBookingRouter 
+    phone={phone}
+    vendorId={vetServiceData?.vendorId}
+    facility={vetServiceData?.facility}
+    selectedService={vetServiceData?.serviceId}
+    serviceType={vetServiceData?.serviceType || 'boarding'}
+    serviceId={vetServiceData?.serviceId}
+    serviceName={vetServiceData?.service?.name}
+    serviceStyle={vetServiceData?.serviceStyle}
+    price={vetServiceData?.price}
+    duration={vetServiceData?.duration}
+    onBack={() => setCurrentScreen(previousScreen || 'boarding')} 
+    onNavigate={(screen, data) => {
+      if (screen === 'booking-details' || screen === 'booking-confirmation') {
+        handleViewBooking(data?.bookingId);
+      } else {
+        handleNavigateToService(screen);
+      }
+    }}
+    onViewBooking={handleViewBooking}
+  />;
+
+  // ✅ NEW: Bookings List
+  if (currentScreen === 'bookings') return <CustomerBookingsPage phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
+    if (screen === 'booking-details') handleViewBooking(data.bookingId);
+    else if (screen === 'services') setCurrentScreen('services');
+  }} />;
+  
+  // Support & Help Center
+  if (currentScreen === 'support_help') return <SupportHelpCenter phone={phone} onBack={handleBack} />;
+
+  // ✅ NEW: Create Booking
+  if (currentScreen === 'create-booking') return <CreateBookingPage phone={phone} serviceId={selectedService} vendorId={selectedVendorId} onBack={() => { setCurrentScreen(previousScreen || 'walker'); setPreviousScreen(null); }} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;
+
+  // ✅ NEW: Pets
+  if (currentScreen === 'pets') return <CustomerPetsPage 
+    phone={phone} 
+    onBack={handleBack} 
+    onNavigate={(screen, data) => {
+      if (screen === 'pet-details') {
+         setSelectedPetId(data?.petId);
+         setCurrentScreen('pet-details');
+      }
+    }} 
+    onAddPet={() => setCurrentScreen('add-pet')} 
+  />;
+
+  // ✅ P2 CUSTOMER APP ENHANCEMENTS - Recently Developed Features
+
+  // Multi-Pet Booking
+  if (currentScreen === 'multi-pet-booking') return <MultiPetBookingPage 
+    customerPhone={phone}
+    customerId={phone}
+    petId={selectedPetId || undefined}
+  />;
+
+  // Return Request
+  if (currentScreen === 'return-request' && selectedOrder) return <ReturnRequestPage
+    customerPhone={phone}
+    customerId={phone}
+    orderId={selectedOrder.id}
+    onBack={() => setCurrentScreen('order_detail')}
+  />;
+
+  // Rewards & Loyalty
+  if (currentScreen === 'rewards-loyalty') return <RewardsLoyaltyPage
+    customerPhone={phone}
+    customerId={phone}
+    onBack={handleBack}
+  />;
+
+  // Referral System
+  if (currentScreen === 'referral-system') return <ReferralSystemPage
+    customerPhone={phone}
+    customerId={phone}
+    onBack={handleBack}
+  />;
+
+  // Package Booking
+  if (currentScreen === 'package-booking') return <PackageBookingPage
+    customerPhone={phone}
+    customerId={phone}
+    petId={selectedPetId || undefined}
+  />;
+  // purchase-package: same as package-booking (e.g. from VetBookingRouter/GroomingBookingRouter package cards)
+  if (currentScreen === 'purchase-package') return <PackageBookingPage
+    customerPhone={phone}
+    customerId={phone}
+    petId={selectedPetId || undefined}
+    onBack={() => { setCurrentScreen(previousScreen || 'home'); setPreviousScreen(null); }}
+  />;
+  // profile: map to customer-profile (e.g. from VetBookingRouter tab)
+  if (currentScreen === 'profile') return (
+    <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick}>
+      <CustomerProfile phone={phone} onBack={handleBack} onNavigate={(screen: string) => setCurrentScreen(screen as ScreenType)} />
+    </CustomerScreenWrapper>
+  );
+
+  // Emergency Booking
+  if (currentScreen === 'emergency-booking') return <EmergencyBookingPage
+    customerPhone={phone}
+    customerId={phone}
+    onBack={handleBack}
+  />;
+
+  // Check-In/Check-Out
+  if (currentScreen === 'check-in-out') return <CheckInCheckOutPage
+    customerPhone={phone}
+    customerId={phone}
+    bookingId={selectedBookingId || undefined}
+    onBack={handleBack}
+  />;
+
+  // Medical Records
+  if (currentScreen === 'medical-records' && selectedPetId) return <MedicalRecordsPage
+    phone={phone}
+    petId={selectedPetId}
+    onBack={() => setCurrentScreen('pet-details')}
+  />;
+
+  // Customer Wallet (Enhanced)
+  if (currentScreen === 'customer-wallet') return <CustomerWalletPage
+    customerPhone={phone}
+    customerId={phone}
+    onBack={handleBack}
+  />;
+
+  // ✅ MATING & DATING SERVICE - P2P Matchmaking
+  if (currentScreen === 'mating-dating-hub') return <MatingDatingHub
+    phone={phone}
+    onBack={handleBack}
+  />;
+
+  // ✅ GAP FIXES: Rule 2 & 6
+  if (currentScreen === 'integrated-services') return <IntegratedServicesHub />;
+
+  if (currentScreen === 'home-service-selection') return <HomeServiceSelectionEnhanced
+    customerId={phone}
+    customerPhone={phone}
+    petId={selectedPetId || 'pet_default'}
+    onBack={handleBack}
+    onSuccess={(bookingId) => bookingId && handleViewBooking(bookingId)}
+  />;
+
+  // ✅ Problem Grid Navigation Handlers
+  if (currentScreen === 'problem_grid') {
+    // Determine roleId and roleName from currentServiceType or default to general
+    const roleMap: Record<string, { roleId: string; roleName: string }> = {
+      'groomer': { roleId: 'groomer', roleName: 'Groomer' },
+      'trainer': { roleId: 'trainer', roleName: 'Trainer' },
+      'veterinarian': { roleId: 'veterinarian', roleName: 'Veterinarian' },
+      'walker': { roleId: 'walker', roleName: 'Walker' },
+      'boarding': { roleId: 'boarding', roleName: 'Boarding' },
+      'adoption': { roleId: 'adoption', roleName: 'Adoption' },
+      'sunset': { roleId: 'sunset', roleName: 'Sunset Care' },
+      'general': { roleId: 'all', roleName: 'All Services' },
+    };
+    const roleInfo = currentServiceType 
+      ? (roleMap[currentServiceType] || { roleId: currentServiceType, roleName: currentServiceType })
+      : roleMap['general'];
+    
+    return (
+      <ProblemGridSelector
+        roleId={roleInfo.roleId}
+        roleName={roleInfo.roleName}
+        customerId={phone}
+        phone={phone}
+        onBack={() => {
+          // Go back to the service that opened problem grid
+          if (currentServiceType === 'groomer') setCurrentScreen('grooming');
+          else if (currentServiceType === 'trainer') setCurrentScreen('training');
+          else if (currentServiceType === 'veterinarian') setCurrentScreen('vet');
+          else if (currentServiceType === 'walker') setCurrentScreen('walker');
+          else if (currentServiceType === 'boarding') setCurrentScreen('boarding');
+          else if (currentServiceType === 'adoption') setCurrentScreen('adoption');
+          else if (currentServiceType === 'sunset') setCurrentScreen('sunset');
+          else {
+            // If opened from home page, go back to home
+            setCurrentScreen('home');
+          }
+          setCurrentServiceType(null);
+        }}
+        onProblemSelect={(problem) => {
+          setSelectedProblem({ 
+            id: problem.id || problem.problemId, 
+            title: problem.displayName || problem.name || problem.title,
+            roleId: roleInfo.roleId === 'all' ? undefined : roleInfo.roleId
+          });
+          // ✅ Route to ProblemGridFlowRouter for service style selection
+          setCurrentScreen('problem_grid_flow');
+        }}
+      />
+    );
+  }
+
+  // ✅ NEW: Problem Grid Flow Router - Service Style Selection after Problem Grid
+  if (currentScreen === 'problem_grid_flow' && selectedProblem) {
+    return (
+      <ProblemGridFlowRouter
+        initialProblem={{
+          id: selectedProblem.id,
+          name: selectedProblem.title,
+          icon: '🐾',
+          description: `Services for ${selectedProblem.title}`,
+          allowedServiceStyles: ['at_home', 'at_center', 'tele'],
+          linkedServiceRoles: selectedProblem.roleId ? [selectedProblem.roleId] : ['veterinarian', 'groomer', 'trainer'],
+          category: selectedProblem.roleId || 'general',
+        }}
+        customerId={phone}
+        onClose={() => {
+          // Go back to problem grid or home
+          if (currentServiceType) {
+            setCurrentScreen('problem_grid');
+          } else {
+            setCurrentScreen('home');
+          }
+          setSelectedProblem(null);
+        }}
+        onBookingComplete={(bookingId) => {
+          // Navigate to booking details after successful booking
+          handleViewBooking(bookingId);
+          setSelectedProblem(null);
+          setCurrentServiceType(null);
+        }}
+      />
+    );
+  }
+
+  if (currentScreen === 'services_by_problem' && selectedProblem) {
+    return (
+      <ServicesByProblem
+        problemId={selectedProblem.id}
+        problemTitle={selectedProblem.title}
+        onBack={() => {
+          // ✅ Go back to problem_grid_flow for service style selection
+          setCurrentScreen('problem_grid_flow');
+        }}
+        onServiceSelect={(service) => {
+          // Handle service selection - navigate to booking flow
+          const vendorId = (service as any).vendorId || (service as any).id;
+          const serviceId = (service as any).serviceId || (service as any).id;
+          
+          setSelectedVendorId(vendorId);
+          setSelectedService(serviceId);
+          setVetServiceData({ 
+            vendorId: vendorId, 
+            serviceType: selectedProblem.roleId,
+            service: service
+          });
+          setCurrentScreen('create-booking');
+        }}
+      />
+    );
+  }
+
+  return <NotAvailable onBack={handleBack} />;
+}

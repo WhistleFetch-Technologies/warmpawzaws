@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { 
   Check, X, AlertCircle, Info, MapPin, Building2, Radio, Lock, Sparkles,
-  Package, DollarSign, Clock, FileText, Tag
+  Package, IndianRupee, Clock, FileText, Tag, Users, Navigation
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 
 interface ServicePublishFormProps {
   vendorId: string;
@@ -64,6 +64,11 @@ export function ServicePublishForm({
     selectedCentreId: '', // NEW: Selected centre
     priceOverride: false, // NEW: Centre-level price override
     centreLevelPrice: '', // NEW: Centre-specific price
+    // PHASE 1.1: Missing Features
+    serviceRadius: '', // Service radius in km (for at_home)
+    queueMaxSize: '10', // Max queue size (for tele)
+    queueAvgWaitTime: '15', // Avg wait time in minutes (for tele)
+    queueAutoAccept: false, // Auto-accept queue (for tele)
   });
 
   const [allowedCategories, setAllowedCategories] = useState<ServiceCategory[]>([]);
@@ -263,7 +268,16 @@ export function ServicePublishForm({
         // NEW: Centre-level price override
         centreLevelPrice: formData.priceOverride && formData.centreLevelPrice 
           ? parseFloat(formData.centreLevelPrice) 
-          : undefined
+          : undefined,
+        // PHASE 1.1: Missing Features
+        serviceRadius: formData.serviceStyle === 'at_home' && formData.serviceRadius 
+          ? parseFloat(formData.serviceRadius) 
+          : undefined,
+        queueConfig: formData.serviceStyle === 'tele' ? {
+          max_queue_size: parseInt(formData.queueMaxSize) || 10,
+          avg_wait_time_minutes: parseInt(formData.queueAvgWaitTime) || 15,
+          auto_accept: formData.queueAutoAccept || false
+        } : undefined
       };
 
       const data = await apiClient.post('/vendor/services/publish', payload) as any;
@@ -358,7 +372,7 @@ export function ServicePublishForm({
             <div>
               <Label>Price (₹) *</Label>
               <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <IndianRupee className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <Input
                   type="number"
                   value={formData.price}
@@ -453,6 +467,110 @@ export function ServicePublishForm({
                 onCheckedChange={(checked) => setFormData({ ...formData, gpsTracking: checked })}
                 disabled={isGPSMandatory}
               />
+            </div>
+          </Card>
+        )}
+
+        {/* PHASE 1.1: Service Radius (for at_home services) */}
+        {formData.serviceStyle === 'at_home' && (
+          <Card className="p-4 bg-green-50 border-green-200">
+            <div className="flex items-start gap-3 mb-3">
+              <Navigation className="w-5 h-5 text-green-600 mt-0.5" />
+              <div className="flex-1">
+                <Label className="text-green-900 font-semibold">Service Coverage Radius</Label>
+                <p className="text-xs text-green-700 mt-1">
+                  Define the maximum distance (in km) from your location where you provide home services
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <Input
+                  type="number"
+                  value={formData.serviceRadius}
+                  onChange={(e) => setFormData({ ...formData, serviceRadius: e.target.value })}
+                  placeholder="e.g., 20"
+                  min="1"
+                  max="100"
+                  className="w-full"
+                />
+              </div>
+              <div className="text-sm text-gray-600 whitespace-nowrap">km</div>
+            </div>
+            {formData.serviceRadius && (
+              <p className="text-xs text-green-700 mt-2">
+                ✓ You will serve customers within {formData.serviceRadius} km of your location
+              </p>
+            )}
+          </Card>
+        )}
+
+        {/* PHASE 1.1: Queue Configuration (for tele services) */}
+        {formData.serviceStyle === 'tele' && (
+          <Card className="p-4 bg-purple-50 border-purple-200">
+            <div className="flex items-start gap-3 mb-4">
+              <Users className="w-5 h-5 text-purple-600 mt-0.5" />
+              <div className="flex-1">
+                <Label className="text-purple-900 font-semibold">Queue Configuration</Label>
+                <p className="text-xs text-purple-700 mt-1">
+                  Configure settings for instant tele consultation queue management
+                </p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              {/* Max Queue Size */}
+              <div>
+                <Label className="text-sm text-purple-900">Maximum Queue Size</Label>
+                <p className="text-xs text-purple-600 mb-2">Maximum number of customers allowed in queue at once</p>
+                <Input
+                  type="number"
+                  value={formData.queueMaxSize}
+                  onChange={(e) => setFormData({ ...formData, queueMaxSize: e.target.value })}
+                  placeholder="10"
+                  min="1"
+                  max="50"
+                  className="w-full"
+                />
+              </div>
+
+              {/* Average Wait Time */}
+              <div>
+                <Label className="text-sm text-purple-900">Average Wait Time (minutes)</Label>
+                <p className="text-xs text-purple-600 mb-2">Estimated time per consultation (used for ETA calculation)</p>
+                <Input
+                  type="number"
+                  value={formData.queueAvgWaitTime}
+                  onChange={(e) => setFormData({ ...formData, queueAvgWaitTime: e.target.value })}
+                  placeholder="15"
+                  min="5"
+                  max="120"
+                  className="w-full"
+                />
+              </div>
+
+              {/* Auto Accept */}
+              <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-purple-200">
+                <div className="flex-1">
+                  <Label className="text-sm text-purple-900">Auto-Accept Queue Requests</Label>
+                  <p className="text-xs text-purple-600 mt-1">
+                    Automatically accept customers from queue without manual approval
+                  </p>
+                </div>
+                <Switch
+                  checked={formData.queueAutoAccept}
+                  onCheckedChange={(checked) => setFormData({ ...formData, queueAutoAccept: checked })}
+                />
+              </div>
+
+              {formData.queueMaxSize && formData.queueAvgWaitTime && (
+                <div className="p-3 bg-purple-100 rounded-lg border border-purple-300">
+                  <p className="text-xs text-purple-900 font-medium">Queue Summary:</p>
+                  <p className="text-xs text-purple-700 mt-1">
+                    Max {formData.queueMaxSize} customers • ~{formData.queueAvgWaitTime} min per consultation • 
+                    ETA for last customer: ~{parseInt(formData.queueMaxSize) * parseInt(formData.queueAvgWaitTime)} minutes
+                  </p>
+                </div>
+              )}
             </div>
           </Card>
         )}

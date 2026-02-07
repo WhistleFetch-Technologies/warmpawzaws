@@ -45,20 +45,23 @@ export function useNotificationService({ phone, enabled, onNewNotification }: No
         
         if (notifications.length > 0) {
             const latestNotification = notifications[0];
+            // API returns DB rows: id, is_read (snake_case). Support both id/notificationId and is_read/read.
+            const notificationId = latestNotification.id ?? latestNotification.notificationId;
+            const isRead = latestNotification.is_read ?? latestNotification.read;
             
-            console.log(`🔔 [NOTIFICATION-SERVICE] Latest: ${latestNotification.notificationId}, Last: ${lastNotificationIdRef.current}`);
+            console.log(`🔔 [NOTIFICATION-SERVICE] Latest: ${notificationId}, Last: ${lastNotificationIdRef.current}`);
             
             // Skip initial load to avoid showing old notifications
             if (isInitialLoadRef.current) {
-              lastNotificationIdRef.current = latestNotification.notificationId;
+              lastNotificationIdRef.current = notificationId ?? null;
               isInitialLoadRef.current = false;
               console.log(`🔔 [NOTIFICATION-SERVICE] Initial load complete, will track future notifications`);
               return;
             }
             
-            // Check if there's a new notification
-            if (latestNotification.notificationId !== lastNotificationIdRef.current && !latestNotification.read) {
-              lastNotificationIdRef.current = latestNotification.notificationId;
+            // Check if there's a new notification (by id and unread)
+            if (notificationId != null && notificationId !== lastNotificationIdRef.current && !isRead) {
+              lastNotificationIdRef.current = notificationId;
               
               console.log(`🎉 [NOTIFICATION-SERVICE] NEW NOTIFICATION DETECTED!`, latestNotification);
               
@@ -80,9 +83,21 @@ export function useNotificationService({ phone, enabled, onNewNotification }: No
               isInitialLoadRef.current = false;
             }
           }
-      } catch (error) {
-        // Silently log error without showing it prominently (this is normal for polling)
-        console.log(`⚠️ [NOTIFICATION-SERVICE] Polling error (will retry):`, error instanceof Error ? error.message : String(error));
+      } catch (error: any) {
+        // Only log non-CORS errors to reduce console noise
+        // CORS errors indicate configuration issues and shouldn't be retried
+        if (error?.code !== 'CORS_ERROR') {
+          // Only log in development/UAT mode
+          if (typeof window !== 'undefined' && (process.env.NODE_ENV === 'development' || window.location.hostname.includes('uat'))) {
+            console.log(`⚠️ [NOTIFICATION-SERVICE] Polling error (will retry):`, error instanceof Error ? error.message : String(error));
+          }
+        } else {
+          // CORS errors are configuration issues - stop polling to avoid spam
+          if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+            console.warn(`🚫 [NOTIFICATION-SERVICE] CORS error detected - notification polling disabled`);
+          }
+          return; // Exit early for CORS errors
+        }
         
         // Mark initial load as complete even on error to prevent infinite loops
         if (isInitialLoadRef.current) {
@@ -133,11 +148,28 @@ export function useNotificationService({ phone, enabled, onNewNotification }: No
     };
 
     const showToastNotification = (notification: any) => {
+      // ✅ FIX: Ensure title is a string, not an object
+      // Handle different notification structures from API
+      const title = typeof notification.title === 'string' 
+        ? notification.title 
+        : notification.text || notification.message || 'New Notification';
+      
+      const message = typeof notification.message === 'string'
+        ? notification.message
+        : typeof notification.text === 'string'
+        ? notification.text
+        : '';
+      
       const icon = notification.type === 'chat_message' ? '💬' : '🔔';
       
-      toast(notification.title, {
-        description: notification.message,
-        icon: icon,
+      // ✅ FIX: Ensure icon is a string, not an object
+      const iconString = typeof notification.icon === 'string' 
+        ? notification.icon 
+        : icon;
+      
+      toast(title, {
+        description: message,
+        icon: iconString,
         duration: 6000,
         action: {
           label: 'View',

@@ -18,11 +18,20 @@ import {
   MapPin,
   Settings
 } from 'lucide-react';
-// Using apiClient instead of Supabase
+// Uses apiClient (API Gateway)
 
 interface VendorScheduleManagementProps {
   vendorId: string;
   onBack: () => void;
+}
+
+// ✅ ENRICHED: Location override for per-slot location
+interface LocationOverride {
+  address: string;
+  formatted_address?: string;
+  lat?: number;
+  lng?: number;
+  place_id?: string;
 }
 
 interface TimeSlot {
@@ -30,6 +39,7 @@ interface TimeSlot {
   startTime: string; // e.g., "09:00"
   endTime: string; // e.g., "17:00"
   isEnabled: boolean;
+  locationOverride?: LocationOverride | null; // ✅ NEW: Per-slot location
 }
 
 interface ServiceSlotConfig {
@@ -110,10 +120,74 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
   const [hasPublishedSchedule, setHasPublishedSchedule] = useState(false); // Track if schedule exists
   const [newTimeWindow, setNewTimeWindow] = useState({
     startTime: '09:00',
-    endTime: '17:00'
+    endTime: '17:00',
+    locationOverride: null as LocationOverride | null
   });
+  
+  // ✅ ENRICHED: Location search state for Google Places
+  const [locationSearch, setLocationSearch] = useState('');
+  const [locationResults, setLocationResults] = useState<any[]>([]);
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
 
   // Using apiClient instead of API_BASE
+
+  // ✅ ENRICHED: Google Places location search handler
+  const handleLocationSearch = async (query: string) => {
+    setLocationSearch(query);
+    
+    if (query.length < 3) {
+      setLocationResults([]);
+      return;
+    }
+
+    setIsSearchingLocation(true);
+    try {
+      const response = await apiClient.post<any>('/location/autocomplete', { input: query });
+      if (response && response.success) {
+        setLocationResults(response.predictions || []);
+      }
+    } catch (error) {
+      console.error('Location search error:', error);
+      setLocationResults([]);
+    } finally {
+      setIsSearchingLocation(false);
+    }
+  };
+
+  // ✅ ENRICHED: Select location from search results
+  const handleSelectLocation = async (placeId: string, description: string) => {
+    try {
+      const response = await apiClient.post<any>('/location/details', { placeId });
+      if (response && response.success && response.location) {
+        const locationData: LocationOverride = {
+          address: response.location.formatted_address || description,
+          formatted_address: response.location.formatted_address,
+          lat: response.location.lat,
+          lng: response.location.lng,
+          place_id: placeId
+        };
+        setNewTimeWindow(prev => ({ ...prev, locationOverride: locationData }));
+        setLocationSearch(locationData.address);
+        setLocationResults([]);
+      }
+    } catch (error) {
+      console.error('Location details error:', error);
+      // Use description as fallback
+      setNewTimeWindow(prev => ({ 
+        ...prev, 
+        locationOverride: { address: description, place_id: placeId } 
+      }));
+      setLocationSearch(description);
+      setLocationResults([]);
+    }
+  };
+
+  // ✅ ENRICHED: Clear location selection
+  const clearLocation = () => {
+    setNewTimeWindow(prev => ({ ...prev, locationOverride: null }));
+    setLocationSearch('');
+    setLocationResults([]);
+  };
 
   // Fetch vendor status and availability
   useEffect(() => {
@@ -326,7 +400,8 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       id: `window_${Date.now()}`,
       startTime: newTimeWindow.startTime,
       endTime: newTimeWindow.endTime,
-      isEnabled: true
+      isEnabled: true,
+      locationOverride: newTimeWindow.locationOverride // ✅ ENRICHED: Include location
     };
 
     console.log('✅ Creating new window:', newWindow);
@@ -341,7 +416,9 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
     console.log('✅ Time window added successfully, new availability:', updatedAvailability);
 
     setShowAddWindowModal(false);
-    setNewTimeWindow({ startTime: '09:00', endTime: '17:00' });
+    setNewTimeWindow({ startTime: '09:00', endTime: '17:00', locationOverride: null });
+    setLocationSearch(''); // ✅ Clear location search
+    setLocationResults([]);
   };
 
   const removeTimeWindow = (dayOfWeek: string, windowId: string) => {
@@ -492,20 +569,22 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
             ))}
           </div>
           
-          {/* Debug Button */}
-          <button
-            onClick={() => {
-              console.log('🐛 DEBUG STATE:');
-              console.log('  - availability:', availability);
-              console.log('  - availability.length:', availability?.length);
-              console.log('  - selectedDay:', selectedDay);
-              console.log('  - vendorServiceStyles:', vendorServiceStyles);
-              console.log('  - currentDayAvail:', currentDayAvail);
-            }}
-            className="mt-2 w-full py-1 bg-purple-100 text-purple-700 text-xs rounded"
-          >
-            🐛 Debug: Log Current State
-          </button>
+          {/* Debug Button - only shown in development */}
+          {process.env.NODE_ENV === 'development' && (
+            <button
+              onClick={() => {
+                console.log('🐛 DEBUG STATE:');
+                console.log('  - availability:', availability);
+                console.log('  - availability.length:', availability?.length);
+                console.log('  - selectedDay:', selectedDay);
+                console.log('  - vendorServiceStyles:', vendorServiceStyles);
+                console.log('  - currentDayAvail:', currentDayAvail);
+              }}
+              className="mt-2 w-full py-1 bg-purple-100 text-purple-700 text-xs rounded"
+            >
+              🐛 Debug: Log Current State
+            </button>
+          )}
         </div>
 
         {/* Schedule Configuration */}
@@ -700,7 +779,17 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
             newTimeWindow={newTimeWindow}
             setNewTimeWindow={setNewTimeWindow}
             onAdd={addTimeWindow}
-            onClose={() => setShowAddWindowModal(false)}
+            onClose={() => {
+              setShowAddWindowModal(false);
+              setLocationSearch('');
+              setLocationResults([]);
+            }}
+            locationSearch={locationSearch}
+            locationResults={locationResults}
+            isSearchingLocation={isSearchingLocation}
+            onLocationSearch={handleLocationSearch}
+            onSelectLocation={handleSelectLocation}
+            onClearLocation={clearLocation}
           />
         )}
 
@@ -733,16 +822,28 @@ function AddTimeWindowModal({
   newTimeWindow, 
   setNewTimeWindow, 
   onAdd, 
-  onClose 
+  onClose,
+  locationSearch,
+  locationResults,
+  isSearchingLocation,
+  onLocationSearch,
+  onSelectLocation,
+  onClearLocation
 }: {
-  newTimeWindow: { startTime: string; endTime: string };
+  newTimeWindow: { startTime: string; endTime: string; locationOverride?: LocationOverride | null };
   setNewTimeWindow: (value: any) => void;
   onAdd: () => void;
   onClose: () => void;
+  locationSearch: string;
+  locationResults: any[];
+  isSearchingLocation: boolean;
+  onLocationSearch: (query: string) => void;
+  onSelectLocation: (placeId: string, description: string) => void;
+  onClearLocation: () => void;
 }) {
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-[400px]">
+      <div className="bg-white rounded-2xl w-full max-w-[400px] max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Add Time Window</h2>
 
@@ -759,7 +860,7 @@ function AddTimeWindowModal({
             </select>
           </div>
 
-          <div className="mb-6">
+          <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">End Time</label>
             <select
               value={newTimeWindow.endTime}
@@ -770,6 +871,73 @@ function AddTimeWindowModal({
                 <option key={time} value={time}>{time}</option>
               ))}
             </select>
+          </div>
+
+          {/* ✅ ENRICHED: Location Search with Google Places */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <MapPin className="w-4 h-4 inline mr-1" />
+              Location for this slot (optional)
+            </label>
+            <p className="text-xs text-gray-500 mb-2">
+              Set a specific location for this time window (useful for home visits)
+            </p>
+            
+            {newTimeWindow.locationOverride ? (
+              <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <MapPin className="w-4 h-4 text-green-600 flex-shrink-0" />
+                <span className="text-sm text-green-800 flex-1 truncate">
+                  {newTimeWindow.locationOverride.address}
+                </span>
+                <button
+                  onClick={onClearLocation}
+                  className="text-green-600 hover:text-green-800"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <input
+                  type="text"
+                  value={locationSearch}
+                  onChange={(e) => onLocationSearch(e.target.value)}
+                  placeholder="Search for a location..."
+                  className="w-full p-3 pl-10 border border-gray-300 rounded-lg"
+                />
+                <MapPin className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                {isSearchingLocation && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+                
+                {/* Location search results dropdown */}
+                {locationResults.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {locationResults.map((result: any) => (
+                      <button
+                        key={result.place_id}
+                        onClick={() => onSelectLocation(result.place_id, result.description)}
+                        className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                      >
+                        <div className="flex items-start gap-2">
+                          <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                          <div>
+                            <p className="text-sm text-gray-900 line-clamp-1">
+                              {result.structured_formatting?.main_text || result.description}
+                            </p>
+                            <p className="text-xs text-gray-500 line-clamp-1">
+                              {result.structured_formatting?.secondary_text || ''}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex gap-3">

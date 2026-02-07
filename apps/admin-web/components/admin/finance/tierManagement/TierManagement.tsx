@@ -22,6 +22,7 @@ import {
 import { Plus, Edit2, Trash2, Layers, RefreshCw } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PolicyHelpButton } from '@/components/PolicyHelpButton';
 
 interface Tier {
   id: string;
@@ -41,18 +42,17 @@ interface Tier {
   splitPaymentIntervalDays?: number;
   features: string[];
   roles: string[];
+  termsAndConditions?: string;
+  termsVersion?: string;
   isDefault: boolean;
   isActive: boolean;
 }
 
-const AVAILABLE_ROLES = [
-  { id: 'veterinarian', label: 'Veterinarian' },
-  { id: 'groomer', label: 'Pet Groomer' },
-  { id: 'trainer', label: 'Pet Trainer' },
-  { id: 'boarding', label: 'Boarding Facility' },
-  { id: 'walker', label: 'Pet Walker' },
-  { id: 'shop', label: 'Pet Shop' },
-];
+interface RoleOption {
+  id: string;
+  label: string;
+  name?: string;
+}
 
 export function TierManagement() {
   const [tiers, setTiers] = useState<Tier[]>([]);
@@ -60,19 +60,56 @@ export function TierManagement() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentTier, setCurrentTier] = useState<Tier | null>(null);
   const [saving, setSaving] = useState(false);
+  const [availableRoles, setAvailableRoles] = useState<RoleOption[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
 
   useEffect(() => {
     loadTiers();
   }, []);
 
+  useEffect(() => {
+    loadRoles();
+  }, []);
+
+  const loadRoles = async () => {
+    setRolesLoading(true);
+    try {
+      // Prefer /config/roles (active roles); fallback to /admin/vendor-roles
+      let raw: { id: string; name?: string; display_name?: string; displayName?: string; is_active?: boolean }[] = [];
+      try {
+        const data = await apiClient.get<{ success?: boolean; roles?: typeof raw }>('/config/roles');
+        raw = (data as any)?.roles ?? (data as any)?.data?.roles ?? [];
+      } catch {
+        const data = await apiClient.get<{ success?: boolean; roles?: typeof raw }>('/admin/vendor-roles');
+        raw = (data as any)?.roles ?? (data as any)?.data?.roles ?? [];
+      }
+      const list = Array.isArray(raw) ? raw : [];
+      const activeOnly = list.filter((r) => r.is_active !== false);
+      setAvailableRoles(
+        (activeOnly.length ? activeOnly : list).map((r) => ({
+          id: r.id,
+          label: (r as any).display_name ?? (r as any).displayName ?? r.name ?? r.id,
+          name: r.name,
+        }))
+      );
+    } catch (e) {
+      console.error('Error loading roles:', e);
+      setAvailableRoles([]);
+    } finally {
+      setRolesLoading(false);
+    }
+  };
+
   const loadTiers = async () => {
     setLoading(true);
     try {
       const data = await apiClient.get<any>('/admin/payments/tiers');
-      setTiers((data as any).data?.tiers || (data as any).tiers || []);
+      const raw = (data as any)?.data?.tiers ?? (data as any)?.tiers;
+      setTiers(Array.isArray(raw) ? raw : []);
     } catch (error) {
       console.error('Error loading tiers:', error);
-      toast.error('Failed to load payment tiers');
+      toast.error('Failed to load payment tiers. Table may not exist yet—run migration 008.');
+      setTiers([]);
     } finally {
       setLoading(false);
     }
@@ -82,8 +119,16 @@ export function TierManagement() {
     setLoading(true);
     try {
       const data = await apiClient.post<any>('/admin/payments/tiers/seed-defaults');
-      setTiers((data as any).data?.tiers || (data as any).tiers || []);
-      toast.success('Default tiers seeded successfully');
+      const raw = (data as any)?.data?.tiers ?? (data as any)?.tiers;
+      const list = Array.isArray(raw) ? raw : [];
+      if (list.length > 0) {
+        setTiers(list);
+        toast.success('Default tiers seeded successfully');
+      } else {
+        // Tiers already existed; refresh list from server
+        await loadTiers();
+        toast.success((data as any)?.message ?? 'Tiers refreshed');
+      }
     } catch (error) {
       toast.error('Error seeding tiers');
     } finally {
@@ -98,11 +143,13 @@ export function TierManagement() {
     try {
       if (currentTier.id) {
         const data = await apiClient.put<any>(`/admin/payments/tiers/${currentTier.id}`, currentTier);
-        setTiers(tiers.map((t) => (t.id === currentTier.id ? (data as any).data?.tier || (data as any).tier : t)));
+        const updatedTier = (data as any)?.data?.tier ?? (data as any)?.tier;
+    setTiers((tiers ?? []).map((t) => (t.id === currentTier.id && updatedTier ? { ...t, ...updatedTier } : t)));
         toast.success('Tier updated successfully');
       } else {
         const data = await apiClient.post<any>('/admin/payments/tiers', currentTier);
-        setTiers([...tiers, (data as any).data?.tier || (data as any).tier]);
+        const newTier = (data as any)?.data?.tier ?? (data as any)?.tier;
+        setTiers(newTier ? [...(tiers ?? []), newTier] : (tiers ?? []));
         toast.success('Tier created successfully');
       }
       setIsModalOpen(false);
@@ -148,6 +195,8 @@ export function TierManagement() {
         splitPaymentIntervalDays: 30,
         features: [],
         roles: [],
+        termsAndConditions: '',
+        termsVersion: '1.0',
         isDefault: false,
         isActive: true,
       });
@@ -166,9 +215,12 @@ export function TierManagement() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-900">Tier Configuration</h2>
-          <p className="text-sm text-slate-500">Manage vendor commission tiers and payout rules</p>
+        <div className="flex items-center gap-2">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">Tier Configuration</h2>
+            <p className="text-sm text-slate-500">Manage vendor commission tiers and payout rules</p>
+          </div>
+          <PolicyHelpButton docKey="finance-tier-system" />
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={handleSeedDefaults} disabled={loading}>
@@ -182,11 +234,11 @@ export function TierManagement() {
         </div>
       </div>
 
-      {loading && tiers.length === 0 ? (
+      {loading && (tiers ?? []).length === 0 ? (
         <div className="flex justify-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
         </div>
-      ) : tiers.length === 0 ? (
+      ) : (tiers ?? []).length === 0 ? (
         <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50">
           <Layers className="w-12 h-12 text-slate-300 mx-auto mb-3" />
           <h3 className="text-lg font-medium text-slate-900">No Tiers Configured</h3>
@@ -197,7 +249,7 @@ export function TierManagement() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-full">
-          {tiers.map((tier) => (
+          {(tiers ?? []).map((tier) => (
             <Card
               key={tier.id}
               className={`relative overflow-hidden border-2 transition-all w-full max-w-full ${
@@ -369,26 +421,31 @@ export function TierManagement() {
                     <Label>Commission (%)</Label>
                     <Input
                       type="number"
-                      value={currentTier.commissionRate}
-                      onChange={(e) =>
-                        setCurrentTier({
-                          ...currentTier,
-                          commissionRate: parseFloat(e.target.value),
-                        })
-                      }
+                      min={0}
+                      max={100}
+                      step={0.5}
+                      value={currentTier.commissionRate === undefined || currentTier.commissionRate === null || Number.isNaN(currentTier.commissionRate) ? '' : currentTier.commissionRate}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        const num = v === '' ? 0 : Number(v);
+                        if (v !== '' && Number.isNaN(num)) return;
+                        setCurrentTier({ ...currentTier, commissionRate: num });
+                      }}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>Payout Period (days)</Label>
                     <Input
                       type="number"
-                      value={currentTier.payoutPeriodDays}
-                      onChange={(e) =>
-                        setCurrentTier({
-                          ...currentTier,
-                          payoutPeriodDays: parseInt(e.target.value),
-                        })
-                      }
+                      min={0}
+                      step={1}
+                      value={currentTier.payoutPeriodDays === undefined || currentTier.payoutPeriodDays === null || Number.isNaN(currentTier.payoutPeriodDays) ? '' : currentTier.payoutPeriodDays}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        const num = v === '' ? 0 : Math.max(0, Math.floor(Number(v)));
+                        if (v !== '' && Number.isNaN(num)) return;
+                        setCurrentTier({ ...currentTier, payoutPeriodDays: num });
+                      }}
                     />
                   </div>
                 </div>
@@ -397,43 +454,62 @@ export function TierManagement() {
                     <Label>Monthly Cost (₹)</Label>
                     <Input
                       type="number"
-                      value={currentTier.monthlyCost}
-                      onChange={(e) =>
-                        setCurrentTier({
-                          ...currentTier,
-                          monthlyCost: parseFloat(e.target.value),
-                        })
-                      }
+                      min={0}
+                      step={1}
+                      value={currentTier.monthlyCost === undefined || currentTier.monthlyCost === null || Number.isNaN(currentTier.monthlyCost) ? '' : currentTier.monthlyCost}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        const num = v === '' ? 0 : Number(v);
+                        if (v !== '' && Number.isNaN(num)) return;
+                        setCurrentTier({ ...currentTier, monthlyCost: num });
+                      }}
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>Yearly Cost (₹)</Label>
                     <Input
                       type="number"
-                      value={currentTier.yearlyCost}
-                      onChange={(e) =>
-                        setCurrentTier({
-                          ...currentTier,
-                          yearlyCost: parseFloat(e.target.value),
-                        })
-                      }
+                      min={0}
+                      step={1}
+                      value={currentTier.yearlyCost === undefined || currentTier.yearlyCost === null || Number.isNaN(currentTier.yearlyCost) ? '' : currentTier.yearlyCost}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        const num = v === '' ? 0 : Number(v);
+                        if (v !== '' && Number.isNaN(num)) return;
+                        setCurrentTier({ ...currentTier, yearlyCost: num });
+                      }}
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
+                  <Label>Terms & Conditions (vendor must accept before upgrade)</Label>
+                  <Textarea
+                    value={currentTier.termsAndConditions ?? ''}
+                    onChange={(e) => setCurrentTier({ ...currentTier, termsAndConditions: e.target.value })}
+                    placeholder="Enter terms and conditions for this tier. Leave empty if no T&C required."
+                    className="resize-none h-24 text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
                   <Label>Applicable Roles</Label>
                   <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto border p-2 rounded-lg">
-                    {AVAILABLE_ROLES.map((role) => (
-                      <div key={role.id} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={currentTier.roles.includes(role.id)}
-                          onChange={() => toggleRole(role.id)}
-                          className="w-4 h-4"
-                        />
-                        <Label className="text-sm">{role.label}</Label>
-                      </div>
-                    ))}
+                    {rolesLoading ? (
+                      <div className="col-span-2 text-sm text-slate-500">Loading roles...</div>
+                    ) : availableRoles.length === 0 ? (
+                      <div className="col-span-2 text-sm text-slate-500">No active roles found.</div>
+                    ) : (
+                      availableRoles.map((role) => (
+                        <div key={role.id} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={currentTier.roles.includes(role.id)}
+                            onChange={() => toggleRole(role.id)}
+                            className="w-4 h-4"
+                          />
+                          <Label className="text-sm">{role.label}</Label>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>

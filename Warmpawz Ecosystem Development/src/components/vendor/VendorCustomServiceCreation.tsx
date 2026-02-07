@@ -21,7 +21,7 @@ import { Label } from '../ui/label';
 import { Badge } from '../ui/badge';
 import { Switch } from '../ui/switch';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { 
   getAllMicroCategoriesForRole, 
   getMicroCategoriesForRole,
@@ -176,9 +176,9 @@ export function VendorCustomServiceCreation({
       console.log(`📋 Loading custom services for vendor: ${vendorId}`);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/custom-services`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/custom-services`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -308,11 +308,11 @@ export function VendorCustomServiceCreation({
       console.log('📤 Sending custom service:', customService);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/custom-services`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/custom-services`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(customService)
@@ -349,10 +349,10 @@ export function VendorCustomServiceCreation({
       console.log(`📤 Publishing custom service: ${serviceId}`);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/custom-services/${serviceId}/publish`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/custom-services/${serviceId}/publish`,
         {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -379,10 +379,10 @@ export function VendorCustomServiceCreation({
       console.log(`🗑️ Deleting custom service: ${serviceId}`);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/custom-services/${serviceId}`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/custom-services/${serviceId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

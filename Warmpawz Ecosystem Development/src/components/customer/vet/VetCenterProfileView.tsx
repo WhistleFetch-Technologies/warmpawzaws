@@ -3,7 +3,7 @@ import { ArrowLeft, Star, Heart, Share2, MapPin, Phone, Clock, Navigation, Award
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { shareContent } from '../../../utils/shareUtils';
 
 interface VetCenterProfileViewProps {
@@ -45,7 +45,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
   const [isFavorite, setIsFavorite] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'services' | 'reviews'>('overview');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadCenterData();
@@ -60,7 +60,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
       // Fetch facility data
       const facilityResponse = await fetch(`${API_BASE}/customer/facility/${centerId}`, {
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         }
       });
 
@@ -79,7 +79,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
       // Fetch services
       const servicesResponse = await fetch(`${API_BASE}/customer/clinic/${centerId}/services`, {
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         }
       });
 
@@ -341,9 +341,38 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
               <Button
                 variant="outline"
                 className="w-full border-[#FF8C42] text-[#FF8C42] hover:bg-orange-50"
+                onClick={() => {
+                  if (facility?.latitude && facility?.longitude) {
+                    const url = `https://www.google.com/maps/dir/?api=1&destination=${facility.latitude},${facility.longitude}`;
+                    window.open(url, '_blank');
+                  } else if (facility?.address || center?.address) {
+                    const address = facility?.address || center?.address;
+                    const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
+                    window.open(url, '_blank');
+                  } else {
+                    alert('Location not available');
+                  }
+                }}
               >
                 <Navigation className="w-4 h-4 mr-2" />
                 Get Directions
+              </Button>
+              
+              {/* Call Button */}
+              <Button
+                variant="outline"
+                className="w-full border-gray-300 text-gray-700 hover:bg-gray-50"
+                onClick={() => {
+                  const phoneNumber = center?.phone || facility?.phone;
+                  if (phoneNumber) {
+                    window.location.href = `tel:${phoneNumber}`;
+                  } else {
+                    alert('Phone number not available');
+                  }
+                }}
+              >
+                <Phone className="w-4 h-4 mr-2" />
+                Call Now
               </Button>
             </div>
           )}

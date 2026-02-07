@@ -1,46 +1,36 @@
 'use client';
 
+/**
+ * /dashboard – Redirect to home so vendors always get the full UI (VendorDashboard from VendorLandingPage).
+ * The simplified "Welcome back!" dashboard (VendorDashboardScreen) is not used; full UI has all options,
+ * appointment models, navigation, and capabilities.
+ */
 import { useRouter } from 'next/navigation';
-import { VendorDashboardScreen } from '@/components/vendor/dashboard/VendorDashboardScreen';
+import { useEffect } from 'react';
+import { isTokenExpired, clearVendorSession } from '@/lib/session-utils';
 
 export default function DashboardPage() {
   const router = useRouter();
 
-  const handleNavigate = (screen: string, data?: any) => {
-    console.log(`[DashboardPage] Navigating to: ${screen}`, data);
+  useEffect(() => {
+    const storedToken = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
+    const storedPhone = localStorage.getItem('vendorPhone');
 
-    // Map screen names to Next.js routes
-    const routeMap: Record<string, string> = {
-      'bookings': '/bookings',
-      'services': '/services',
-      'staff': '/staff',
-      'schedule': '/schedule',
-      'analytics': '/analytics',
-      'settings': '/settings',
-      'booking-detail': '/bookings/[id]',
-    };
-
-    const route = routeMap[screen];
-    if (route) {
-      if (screen === 'booking-detail' && data?.bookingId) {
-        router.push(`/bookings/${data.bookingId}`);
-      } else {
-        router.push(route);
-      }
-    } else {
-      console.warn(`[DashboardPage] No route mapping found for screen: ${screen}`);
+    if (!storedToken || !storedPhone || isTokenExpired(storedToken)) {
+      clearVendorSession();
+      window.location.replace('/auth');
+      return;
     }
-  };
 
-  // Get vendor data from localStorage (set by session management)
-  const vendorData = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('vendorData') || '{}') : {};
-  const vendorId = typeof window !== 'undefined' ? localStorage.getItem('vendorId') || '' : '';
+    router.replace('/');
+  }, [router]);
 
   return (
-    <VendorDashboardScreen
-      vendorId={vendorId}
-      vendorData={vendorData}
-      onNavigate={handleNavigate}
-    />
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4" />
+        <p className="text-gray-600">Loading...</p>
+      </div>
+    </div>
   );
 }

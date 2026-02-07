@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BarChart3, TrendingUp, DollarSign, Package } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface SellerAnalyticsProps {
   sellerId: string;
@@ -18,8 +18,8 @@ export function SellerAnalytics({ sellerId }: SellerAnalyticsProps) {
     try {
       setLoading(true);
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/ecommerce/analytics/seller/${sellerId}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/ecommerce/analytics/seller/${sellerId}`,
+        { headers: getAuthHeaders() }
       );
       
       if (res.ok) {

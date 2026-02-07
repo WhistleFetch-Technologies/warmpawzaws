@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface SettlementTierDashboardProps {
   vendorId: string;
@@ -33,7 +33,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
     bankName: ''
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadData();
@@ -58,7 +58,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
   const fetchTierInfo = async () => {
     try {
       const response = await fetch(`${API_BASE}/settlement/vendor/${vendorId}/tier`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (response.ok) {
@@ -75,7 +75,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
   const fetchAnalytics = async () => {
     try {
       const response = await fetch(`${API_BASE}/settlement/vendor/${vendorId}/analytics?period=month`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (response.ok) {
@@ -92,7 +92,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
   const fetchSettlementHistory = async () => {
     try {
       const response = await fetch(`${API_BASE}/settlement/vendor/${vendorId}/history?limit=10`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (response.ok) {
@@ -109,7 +109,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
   const fetchBankAccount = async () => {
     try {
       const response = await fetch(`${API_BASE}/settlement/vendor/${vendorId}/bank-account`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
       
       if (response.ok) {
@@ -131,7 +131,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify(bankFormData)
       });
@@ -172,7 +172,7 @@ export function SettlementTierDashboard({ vendorId }: SettlementTierDashboardPro
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         },
         body: JSON.stringify({
           targetTier: tierInfo.nextTier,

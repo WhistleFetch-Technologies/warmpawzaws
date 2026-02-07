@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, Star, Clock, Search } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { ArrowLeft, MapPin, Star, Clock, Search, Home, CalendarDays, ShoppingBag, User } from 'lucide-react';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { ImageWithFallback } from '../../figma/ImageWithFallback';
 
 interface TrainingCenterListViewProps {
@@ -14,7 +14,7 @@ export function TrainingCenterListView({ phone, onBack, onNavigate }: TrainingCe
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadTrainingCenters();
@@ -143,6 +143,52 @@ export function TrainingCenterListView({ phone, onBack, onNavigate }: TrainingCe
             </div>
           ))
         )}
+      </div>
+
+      {/* ✅ Fixed Bottom Navigation - Design Consistency */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 max-w-md mx-auto">
+        <div className="bg-white border-t border-gray-100 shadow-lg px-2 py-2">
+          <div className="flex items-center justify-around">
+            <button
+              onClick={() => onNavigate('home')}
+              className="flex flex-col items-center gap-1 p-2 text-gray-400 hover:text-[#FF8C42] transition-colors"
+            >
+              <Home className="w-5 h-5" />
+              <span className="text-[10px]">Home</span>
+            </button>
+            
+            <button
+              className="flex flex-col items-center gap-1 p-2 text-[#FF8C42]"
+            >
+              <Search className="w-5 h-5" />
+              <span className="text-[10px] font-medium">Search</span>
+            </button>
+            
+            <button
+              onClick={() => onNavigate('my-bookings')}
+              className="flex flex-col items-center gap-1 p-2 text-gray-400 hover:text-[#FF8C42] transition-colors"
+            >
+              <CalendarDays className="w-5 h-5" />
+              <span className="text-[10px]">Bookings</span>
+            </button>
+            
+            <button
+              onClick={() => onNavigate('shop')}
+              className="flex flex-col items-center gap-1 p-2 text-gray-400 hover:text-[#FF8C42] transition-colors"
+            >
+              <ShoppingBag className="w-5 h-5" />
+              <span className="text-[10px]">Shop</span>
+            </button>
+            
+            <button
+              onClick={() => onNavigate('customer-profile')}
+              className="flex flex-col items-center gap-1 p-2 text-gray-400 hover:text-[#FF8C42] transition-colors"
+            >
+              <User className="w-5 h-5" />
+              <span className="text-[10px]">Profile</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

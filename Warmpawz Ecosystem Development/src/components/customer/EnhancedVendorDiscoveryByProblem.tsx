@@ -15,7 +15,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Star, Phone, User, Building2, ChevronRight, Home, Video } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface EnhancedVendorDiscoveryByProblemProps {
   roleId: string;
@@ -71,10 +71,10 @@ export function EnhancedVendorDiscoveryByProblem({
       }
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/discover-by-problem-v2/${roleId}/${problem.id}?${params}`,
+        `${getApiBaseUrl()}/customer/discover-by-problem-v2/${roleId}/${problem.id}?${params}`,
         {
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
         }
       );

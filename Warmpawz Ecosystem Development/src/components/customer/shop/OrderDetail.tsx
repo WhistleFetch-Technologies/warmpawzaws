@@ -4,7 +4,7 @@ import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Separator } from '../../ui/separator';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { ImageWithFallback } from '../../figma/ImageWithFallback';
 import { cn } from '../../../lib/utils';
 import { toast } from 'sonner@2.0.3';
@@ -43,8 +43,8 @@ export function OrderDetail({ orderId, onBack }: OrderDetailProps) {
   const fetchOrderDetails = async () => {
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/orders/${orderId}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/orders/${orderId}`,
+        { headers: getAuthHeaders() }
       );
       if (res.ok) {
         const data = await res.json();
@@ -66,11 +66,11 @@ export function OrderDetail({ orderId, onBack }: OrderDetailProps) {
     setCancelling(true);
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/orders/${orderId}/cancel`,
+        `${getApiBaseUrl()}/orders/${orderId}/cancel`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ reason: 'Customer cancelled via app' })

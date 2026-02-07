@@ -13,9 +13,11 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { projectId, publicAnonKey } from '@/lib/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { toast } from 'sonner';
 import { authenticatedFetch } from '@/lib/session-manager';
+import { getVendorRoleId, normalizeServiceStyle, isServiceApplicableToRole } from '@/lib/vendor-utils';
+import { getServiceStyleLabel } from '@/lib/service-style-labels';
 
 interface VendorServiceCatalogViewProps {
   vendorId: string;
@@ -24,6 +26,8 @@ interface VendorServiceCatalogViewProps {
   onSelectService?: (service: any) => void;
   mode?: 'browse' | 'multi-select';
   allowedServiceStyles?: ('at_home' | 'at_center' | 'tele')[]; // ✅ NEW: Filter by role config
+  roleId?: string; // ✅ NEW: Direct roleId prop for catalog filtering
+  roleName?: string | null; // ✅ For role-based labels (e.g. "Training center booking")
 }
 
 interface ServiceCatalogItem {
@@ -53,6 +57,14 @@ interface ServiceCatalogItem {
   };
   description: string;
   duration?: number;
+  // Snake_case variants for API compatibility
+  service_name?: string;
+  category_name?: string;
+  category?: string;
+  sub_category_name?: string;
+  category_id?: string;
+  sub_category_id?: string;
+  id?: string;
 }
 
 interface CategoryGroup {
@@ -71,8 +83,11 @@ export function VendorServiceCatalogView({
   onBack,
   onSelectService,
   mode = 'browse',
-  allowedServiceStyles // ✅ NEW: Role-based service style filter
+  allowedServiceStyles, // ✅ NEW: Role-based service style filter
+  roleId: propRoleId, // ✅ NEW: Direct roleId prop
+  roleName: propRoleName // ✅ For role-based labels
 }: VendorServiceCatalogViewProps) {
+  const roleNameForLabels = propRoleName ?? vendorData?.roleName ?? vendorData?.role_name ?? '';
   const [services, setServices] = useState<ServiceCatalogItem[]>([]);
   const [groupedServices, setGroupedServices] = useState<CategoryGroup[]>([]);
   const [vendorServices, setVendorServices] = useState<any[]>([]);
@@ -85,6 +100,7 @@ export function VendorServiceCatalogView({
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
   const [roleAllowedStyles, setRoleAllowedStyles] = useState<string[]>([]); // ✅ NEW: Store allowed styles from API
+  const [vendorRoleName, setVendorRoleName] = useState<string>(''); // ✅ NEW: Store role name for filtering
 
   useEffect(() => {
     loadCatalogData();
@@ -92,27 +108,144 @@ export function VendorServiceCatalogView({
 
   useEffect(() => {
     groupServicesByCategory();
-  }, [services, searchQuery, activeStyle, vendorData, roleAllowedStyles]);
+  }, [services, searchQuery, activeStyle, vendorData, roleAllowedStyles, vendorRoleName]);
 
   const loadCatalogData = async () => {
     try {
       setLoading(true);
 
-      console.log('📚 [CATALOG] Loading service catalog...');
+      // ✅ Get vendor's roleId for filtering services - prefer prop, then try utility, then localStorage
+      let vendorRoleId = propRoleId || getVendorRoleId(vendorData);
+      
+      // ✅ FIX: If roleId still not available, try to get from localStorage
+      if (!vendorRoleId && typeof window !== 'undefined') {
+        const storedVendorData = localStorage.getItem('vendorData');
+        if (storedVendorData) {
+          try {
+            const parsed = JSON.parse(storedVendorData);
+            vendorRoleId = parsed.roleId || parsed.role_id || parsed.selected_role_id;
+          } catch (e) {
+            console.warn('📚 [CATALOG] Failed to parse stored vendorData');
+          }
+        }
+      }
+      
+      console.log('📚 [CATALOG] Loading service catalog for roleId:', vendorRoleId);
 
-      // Load all services from admin catalog API
-      const servicesData = await apiClient.get('/admin/service-catalog') as any;
+      // ✅ NEW: Try local service catalog first (faster, role-specific)
+      const { getServiceCatalogForRole } = await import('@/lib/service-catalogs');
+      const localCatalog = getServiceCatalogForRole(vendorRoleId);
+      
+      if (localCatalog && localCatalog.length > 0) {
+        console.log('📚 [CATALOG] Using local service catalog:', localCatalog.length, 'services');
+        // Transform local catalog to match expected format
+        const normalizedServices = localCatalog
+          .filter((svc: any) => svc.category) // ✅ FIX: Filter out services without category
+          .map((svc: any) => ({
+            catalogId: svc.id,
+            categoryId: (svc.category || 'Uncategorized').toLowerCase().replace(/\s+/g, '_'),
+            categoryName: svc.category || 'Uncategorized',
+            subCategoryId: (svc.subCategory != null ? String(svc.subCategory).toLowerCase().replace(/\s+/g, '_') : '') || 'general',
+            subCategoryName: svc.subCategory || 'General',
+            serviceName: svc.name,
+            serviceStyle: svc.serviceStyle,
+            applicableRoles: svc.applicableRoles || [],
+            basePrice: svc.priceRange?.min || 0,
+            duration: svc.duration,
+            description: svc.description,
+            isPackage: svc.isPackage || false,
+            packageDetails: svc.packageDetails,
+          }));
+        
+        setServices(normalizedServices);
+      }
+
+      // Load services from service catalog API - pass roleId for better filtering
+      // NOTE: Using /service-catalog/role/:roleId (public endpoint) instead of /admin/service-catalog
+      // which requires admin authentication and causes redirect issues for vendor users
+      const catalogUrl = vendorRoleId 
+        ? `/service-catalog/role/${vendorRoleId}`
+        : '/service-catalog/categories';
+      
+      let servicesData: any = null;
+      try {
+        servicesData = await apiClient.get(catalogUrl) as any;
+      } catch (apiError) {
+        console.warn('📚 [CATALOG] Admin API failed, using local catalog:', apiError);
+        // If API fails and we have local catalog, continue with that
+        if (localCatalog && localCatalog.length > 0) {
+          // Already set above, continue
+        } else {
+          throw apiError;
+        }
+      }
 
       if (servicesData) {
-        console.log('📚 [CATALOG] Loaded services:', servicesData);
-        console.log('📚 [CATALOG] Total services:', servicesData.services?.length || 0);
+        console.log('📚 [CATALOG] Loaded services data:', servicesData);
         
-        if (servicesData.services && servicesData.services.length > 0) {
-          console.log('📚 [CATALOG] Sample service:', servicesData.services[0]);
-          setServices(servicesData.services);
+        // ✅ FIX: Handle different API response structures
+        let servicesArray: any[] = [];
+        if (Array.isArray(servicesData)) {
+          servicesArray = servicesData;
+        } else if (servicesData.services && Array.isArray(servicesData.services)) {
+          servicesArray = servicesData.services;
+        } else if (servicesData.data && Array.isArray(servicesData.data)) {
+          servicesArray = servicesData.data;
+        } else if (servicesData.results && Array.isArray(servicesData.results)) {
+          servicesArray = servicesData.results;
+        }
+        
+        console.log('📚 [CATALOG] Total services found:', servicesArray.length);
+        
+        if (servicesArray.length > 0) {
+          console.log('📚 [CATALOG] Sample service (raw):', servicesArray[0]);
+          
+          // ✅ CRITICAL: Normalize services from snake_case to camelCase
+          const normalizedServices = servicesArray.map((svc: any) => {
+            const rawStyle = svc.serviceStyle || svc.service_style;
+            const normalizedStyle = normalizeServiceStyle(rawStyle);
+            // ✅ FIX: Handle null categoryId - use categoryName as fallback for categoryId
+            const categoryName = svc.categoryName || svc.category_name || svc.category || 'General';
+            const categoryId = svc.categoryId || svc.category_id || (categoryName ? categoryName.toLowerCase().replace(/\s+/g, '_') : 'general');
+            return {
+              ...svc,
+              // Normalize IDs
+              catalogId: svc.catalogId || svc.id || svc.service_id,
+              categoryId: categoryId,
+              subCategoryId: svc.subCategoryId || svc.sub_category_id || '',
+              serviceGroupId: svc.serviceGroupId || svc.service_group_id || '',
+              // Normalize names
+              serviceName: svc.serviceName || svc.service_name || svc.name || '',
+              categoryName: categoryName,
+              subCategoryName: svc.subCategoryName || svc.sub_category_name || '',
+              serviceGroupName: svc.serviceGroupName || svc.service_group_name || '',
+              // ✅ CRITICAL: Normalize serviceStyle using utility function
+              serviceStyle: normalizedStyle,
+              // Normalize other fields
+              applicableRoles: svc.applicableRoles || svc.applicable_roles || [],
+              basePrice: parseFloat(svc.basePrice || svc.base_price || '0'),
+              duration: svc.duration || svc.duration_minutes || 30,
+              isPackage: svc.isPackage || svc.is_package || false,
+              description: svc.description || '',
+            };
+          });
+          
+          console.log('📚 [CATALOG] Sample service (normalized):', normalizedServices[0]);
+          const styleDistribution = normalizedServices.reduce((acc: any, s: any) => {
+            acc[s.serviceStyle] = (acc[s.serviceStyle] || 0) + 1;
+            return acc;
+          }, {});
+          console.log('📚 [CATALOG] Service styles distribution:', styleDistribution);
+          
+          setServices(normalizedServices);
+          console.log('✅ [CATALOG] Services set in state:', normalizedServices.length);
         } else {
-          console.warn('⚠️ [CATALOG] No services in catalog!');
-          toast.error('No services found in catalog. Please contact admin.');
+          console.warn('⚠️ [CATALOG] No services in catalog response!');
+          console.warn('⚠️ [CATALOG] Response structure:', Object.keys(servicesData));
+          // ✅ FIX: Don't show error if local catalog has services
+          if (!localCatalog || localCatalog.length === 0) {
+            toast.error('No services found in catalog. Please contact admin.');
+          }
         }
       } else {
         console.error('❌ [CATALOG] Failed to load service catalog');
@@ -121,6 +254,13 @@ export function VendorServiceCatalogView({
 
       // Load vendor's enabled services
       const vendorServicesData = await apiClient.get(`/vendor/${vendorId}/services`) as any;
+
+      // ✅ CRITICAL FIX: Extract role name from vendor services API response first (more reliable)
+      let roleNameFromVendorAPI: string | null = null;
+      if (vendorServicesData?.role) {
+        roleNameFromVendorAPI = vendorServicesData.role.name || vendorServicesData.role.display_name || null;
+        console.log('📋 [CATALOG] Role name from vendor services API:', roleNameFromVendorAPI);
+      }
 
       if (vendorServicesData) {
         const data = vendorServicesData;
@@ -131,34 +271,83 @@ export function VendorServiceCatalogView({
         if (data.allServices && Array.isArray(data.allServices)) {
           vendorServicesList = data.allServices;
         }
-        else if (data.services && typeof data.services === 'object') {
-          ['at_home', 'at_center', 'tele'].forEach(style => {
-            if (data.services[style] && data.services[style].services) {
-              vendorServicesList.push(...data.services[style].services);
+        else if (Array.isArray(data.services)) {
+          vendorServicesList = data.services;
+        }
+        else if ((data.servicesByStyle || data.services) && typeof (data.servicesByStyle || data.services) === 'object' && !Array.isArray(data.services)) {
+          const grouped = data.servicesByStyle || data.services;
+          ['at_home', 'at_center', 'tele'].forEach((style: string) => {
+            const bucket = grouped[style];
+            if (bucket?.services && Array.isArray(bucket.services)) {
+              vendorServicesList.push(...bucket.services);
             }
           });
         }
         else if (data.legacyServices && Array.isArray(data.legacyServices)) {
           vendorServicesList = data.legacyServices;
         }
-        else if (Array.isArray(data.services)) {
-          vendorServicesList = data.services;
-        }
         
         console.log('✅ [VENDOR] Parsed vendor services:', vendorServicesList.length);
         setVendorServices(vendorServicesList);
       }
 
-      // ✅ Load role configuration to get allowed service styles
-      const vendorRoleId = vendorData?.roleId || vendorData?.role_id;
-      if (vendorRoleId) {
+      // ✅ Load role configuration to get allowed service styles AND role name
+      const currentVendorRoleId = vendorData?.roleId || vendorData?.role_id;
+      if (currentVendorRoleId) {
         try {
-          const roleConfigData = await apiClient.get(`/config/roles/${vendorRoleId}`) as any;
-          if (roleConfigData && roleConfigData.config) {
-            const rawStyles = roleConfigData.config?.serviceStyles || 
-                                  roleConfigData.config?.allowedServiceStyles || 
-                                  roleConfigData.allowedServiceStyles ||
-                                  ['at_home', 'at_center', 'tele'];
+          const roleConfigData = await apiClient.get(`/config/roles/${currentVendorRoleId}`) as any;
+          if (roleConfigData) {
+            // ✅ CRITICAL FIX: Use role name from vendor services API if available, otherwise from config
+            const roleName = roleNameFromVendorAPI || roleConfigData.name || roleConfigData.roleName || roleConfigData.roleCode || '';
+            console.log('📋 [CATALOG] Role name from config:', roleName);
+            setVendorRoleName(roleName.toLowerCase());
+            
+            // ✅ FIX: Extract serviceStyles correctly from role config
+            // The API returns: { solo: [], business: [...], selected: [...] }
+            const serviceStylesObj = roleConfigData.config?.serviceStyles || 
+                                     roleConfigData.config?.allowedServiceStyles || 
+                                     roleConfigData.serviceStyles;
+            
+            console.log('📋 [CATALOG] Raw serviceStylesObj from role config:', serviceStylesObj);
+            
+            let rawStyles: string[] = [];
+            
+            if (serviceStylesObj) {
+              // If it's an object with selected/business/solo properties
+              if (typeof serviceStylesObj === 'object' && !Array.isArray(serviceStylesObj)) {
+                // Prefer 'selected' if available, otherwise use 'business' or 'solo' based on vendor type
+                const vendorType = vendorData?.vendorConfiguration || vendorData?.vendor_type || 'business';
+                console.log('📋 [CATALOG] Vendor type:', vendorType, 'serviceStylesObj keys:', Object.keys(serviceStylesObj));
+                
+                if (serviceStylesObj.selected && Array.isArray(serviceStylesObj.selected) && serviceStylesObj.selected.length > 0) {
+                  rawStyles = serviceStylesObj.selected;
+                  console.log('📋 [CATALOG] Using selected styles:', rawStyles);
+                } else if (serviceStylesObj.business && Array.isArray(serviceStylesObj.business) && serviceStylesObj.business.length > 0) {
+                  rawStyles = serviceStylesObj.business;
+                  console.log('📋 [CATALOG] Using business styles:', rawStyles);
+                } else if (serviceStylesObj.solo && Array.isArray(serviceStylesObj.solo) && serviceStylesObj.solo.length > 0) {
+                  rawStyles = serviceStylesObj.solo;
+                  console.log('📋 [CATALOG] Using solo styles:', rawStyles);
+                } else {
+                  // Fallback: try to flatten all arrays from the object
+                  const allStyles = Object.values(serviceStylesObj).flat().filter((s: any) => typeof s === 'string');
+                  rawStyles = Array.from(new Set(allStyles)) as string[];
+                  console.log('📋 [CATALOG] Flattened all styles from object:', rawStyles);
+                }
+              } else if (Array.isArray(serviceStylesObj)) {
+                rawStyles = serviceStylesObj;
+                console.log('📋 [CATALOG] serviceStylesObj is already an array:', rawStyles);
+              } else if (typeof serviceStylesObj === 'string') {
+                rawStyles = [serviceStylesObj];
+                console.log('📋 [CATALOG] serviceStylesObj is a string, converted to array:', rawStyles);
+              }
+            }
+            
+            // Final fallback if nothing was extracted
+            if (rawStyles.length === 0) {
+              rawStyles = roleConfigData.allowedServiceStyles || ['at_home', 'at_center', 'tele'];
+              console.log('📋 [CATALOG] Using fallback styles:', rawStyles);
+            }
             
             // ✅ FIX: Map role config naming to service catalog naming
             const styleMapping: { [key: string]: string } = {
@@ -172,18 +361,47 @@ export function VendorServiceCatalogView({
               'home_service': 'at_home'
             };
             
-            const allowedStyles = rawStyles.map((style: string) => styleMapping[style] || style);
+            let allowedStyles = rawStyles.map((style: string) => styleMapping[style] || style);
             console.log('📋 [CATALOG] Raw allowed styles from role config:', rawStyles);
             console.log('📋 [CATALOG] Mapped allowed styles:', allowedStyles);
+            
+            // ✅ SOLO PROVIDER ENFORCEMENT: Solo vendors cannot have at_center
+            const isSoloProvider = vendorData?.vendorConfiguration === 'solo' || 
+                                   vendorData?.isSoloProvider === true ||
+                                   vendorData?.is_solo_provider === true ||
+                                   vendorData?.vendor_type === 'solo';
+            if (isSoloProvider) {
+              allowedStyles = allowedStyles.filter((s: string) => s !== 'at_center');
+              console.log('📋 [CATALOG] Solo provider - filtered out at_center. Final styles:', allowedStyles);
+            }
+            
             setRoleAllowedStyles(allowedStyles);
           }
         } catch (roleError) {
           console.warn('⚠️ Failed to load role config, using prop or defaults:', roleError);
-          setRoleAllowedStyles(allowedServiceStyles || ['at_home', 'at_center', 'tele']);
+          let fallbackStyles = allowedServiceStyles || ['at_home', 'at_center', 'tele'];
+          // ✅ SOLO PROVIDER ENFORCEMENT
+          const isSoloProvider = vendorData?.vendorConfiguration === 'solo' || 
+                                 vendorData?.isSoloProvider === true ||
+                                 vendorData?.is_solo_provider === true ||
+                                 vendorData?.vendor_type === 'solo';
+          if (isSoloProvider) {
+            fallbackStyles = fallbackStyles.filter((s: string) => s !== 'at_center');
+          }
+          setRoleAllowedStyles(fallbackStyles);
         }
       } else {
         // Use prop-based allowed styles or defaults
-        setRoleAllowedStyles(allowedServiceStyles || ['at_home', 'at_center', 'tele']);
+        let propStyles = allowedServiceStyles || ['at_home', 'at_center', 'tele'];
+        // ✅ SOLO PROVIDER ENFORCEMENT
+        const isSoloProvider = vendorData?.vendorConfiguration === 'solo' || 
+                               vendorData?.isSoloProvider === true ||
+                               vendorData?.is_solo_provider === true ||
+                               vendorData?.vendor_type === 'solo';
+        if (isSoloProvider) {
+          propStyles = propStyles.filter((s: string) => s !== 'at_center');
+        }
+        setRoleAllowedStyles(propStyles);
       }
       
       // Load roles list for reference
@@ -207,75 +425,127 @@ export function VendorServiceCatalogView({
   const groupServicesByCategory = () => {
     let filteredServices = [...services];
 
-    const vendorRoleId = vendorData?.roleId || vendorData?.role_id;
-    const effectiveAllowedStyles = roleAllowedStyles.length > 0 ? roleAllowedStyles : (allowedServiceStyles || []);
+    const vendorRoleId = getVendorRoleId(vendorData);
     
     console.log('🔍 [GROUPING] Starting with', filteredServices.length, 'services');
     console.log('🔍 [GROUPING] Vendor roleId:', vendorRoleId);
-    console.log('🔍 [GROUPING] Allowed service styles:', effectiveAllowedStyles);
+    console.log('🔍 [GROUPING] Total services from API:', services.length);
 
-    // 1. ✅ STRICT Role Filter - Only show services for vendor's role
-    if (vendorRoleId) {
+    // ✅ FIX: DO NOT apply role-based filtering that blocks services
+    // Backend already filters services by role, so frontend should show all services returned by API
+    // Only apply role filter as a preference, but never block all services
+    if (vendorRoleName && filteredServices.length > 0) {
       const beforeFilter = filteredServices.length;
-      filteredServices = filteredServices.filter(service => isServiceApplicable(service, vendorRoleId));
-      console.log('🔍 [GROUPING] After role filter:', filteredServices.length, 'services (filtered out:', beforeFilter - filteredServices.length, ')');
+      const roleFilteredServices = filteredServices.filter(service => {
+        return isServiceApplicable(service, vendorRoleName);
+      });
+      console.log('🔍 [GROUPING] Role filter would show:', roleFilteredServices.length, 'services (filtered out:', beforeFilter - roleFilteredServices.length, ')');
       
-      if (filteredServices.length === 0 && services.length > 0) {
-        console.error('❌ [GROUPING] ALL SERVICES FILTERED OUT BY ROLE!');
-        console.error('Sample service applicableRoles:', services[0]?.applicableRoles);
-        console.error('Vendor roleId:', vendorRoleId);
+      // ✅ CRITICAL FIX: Only apply role filter if it doesn't result in empty list
+      // If role filter results in 0 services but API returned services, show all services
+      if (roleFilteredServices.length > 0) {
+        filteredServices = roleFilteredServices;
+        console.log('🔍 [GROUPING] Applied role filter - showing', filteredServices.length, 'services');
+      } else {
+        console.warn('⚠️ [GROUPING] Role filter would hide all services - showing all services from API instead');
+        // Keep filteredServices as-is (show all services from API)
       }
     } else {
-      console.warn('⚠️ [GROUPING] No vendor roleId found - showing NO services (must have role)');
-      filteredServices = []; // ✅ STRICT: Don't show any services without roleId
+      console.log('🔍 [GROUPING] No role filter applied - showing all services from API');
     }
 
-    // 2. ✅ Filter by allowed service styles from role config (only if styles are loaded)
-    if (effectiveAllowedStyles.length > 0) {
+    // Phase 2: Respect allowedServiceStyles — never show a style that isn't allowed (Walker: no at_center).
+    if (roleAllowedStyles.length > 0) {
       const beforeStyleFilter = filteredServices.length;
-      filteredServices = filteredServices.filter(service => {
-        // ✅ FIX: Handle both camelCase and snake_case field names
-        const serviceStyle = service.serviceStyle || (service as any).service_style || 'at_center';
-        return effectiveAllowedStyles.includes(serviceStyle);
+      const styleFilteredServices = filteredServices.filter(service => {
+        const style = normalizeServiceStyle(service.serviceStyle || (service as any).service_style);
+        return roleAllowedStyles.includes(style);
       });
-      console.log('🔍 [GROUPING] After role-allowed styles filter:', filteredServices.length, 'services (filtered out:', beforeStyleFilter - filteredServices.length, ')');
+      console.log('🔍 [GROUPING] Style filter would show:', styleFilteredServices.length, 'services (removed', beforeStyleFilter - styleFilteredServices.length, ')');
+      
+      // ✅ CRITICAL FIX: Only apply style filter if it doesn't result in empty list
+      // If style filter results in 0 services but API returned services, show all services
+      if (styleFilteredServices.length > 0) {
+        filteredServices = styleFilteredServices;
+        console.log('🔍 [GROUPING] Applied style filter - showing', filteredServices.length, 'services');
+      } else {
+        console.warn('⚠️ [GROUPING] Style filter would hide all services - showing all services from API instead');
+        // Keep filteredServices as-is (show all services from API)
+      }
     } else {
-      console.log('⏳ [GROUPING] Skipping style filter - no allowed styles loaded yet');
+      console.log('🔍 [GROUPING] No style filter applied - roleAllowedStyles is empty');
     }
 
     // 3. User-selected style filter
     if (activeStyle !== 'all') {
-      filteredServices = filteredServices.filter(service => service.serviceStyle === activeStyle);
+      filteredServices = filteredServices.filter(service => {
+        const style = normalizeServiceStyle(service.serviceStyle || (service as any).service_style);
+        return style === activeStyle;
+      });
       console.log('🔍 [GROUPING] After user style filter:', filteredServices.length, 'services');
     }
 
     // 3. Search Filter
     if (searchQuery) {
-      filteredServices = filteredServices.filter(service =>
-        service.serviceName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        service.categoryName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (service.subCategoryName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (service.description || '').toLowerCase().includes(searchQuery.toLowerCase())
-      );
+      const query = searchQuery.toLowerCase();
+      filteredServices = filteredServices.filter(service => {
+        const serviceName = (service.serviceName || service.service_name || '').toLowerCase();
+        const categoryName = (service.categoryName || service.category_name || service.category || '').toLowerCase();
+        const subCategoryName = (service.subCategoryName || service.sub_category_name || '').toLowerCase();
+        const description = (service.description || '').toLowerCase();
+        
+        return serviceName.includes(query) ||
+               categoryName.includes(query) ||
+               subCategoryName.includes(query) ||
+               description.includes(query);
+      });
       console.log('🔍 [GROUPING] After search filter:', filteredServices.length, 'services');
     }
 
-    // Group by category and subcategory
-    const grouped: { [key: string]: CategoryGroup } = {};
+    // ✅ Only group services that have a proper category (no "Uncategorized" section)
+    // ✅ FIX: Allow "General" category and handle null categoryId properly
+    const withCategory = filteredServices.filter(service => {
+      const raw = service.categoryName || service.category_name || service.category;
+      const categoryId = service.categoryId || service.category_id;
+      // Include if categoryName exists and is not "Uncategorized", or if categoryId exists
+      return (raw && String(raw).trim() && String(raw).toLowerCase() !== 'uncategorized') || 
+             (categoryId && String(categoryId).trim());
+    });
 
-    filteredServices.forEach(service => {
-      const catKey = service.categoryId || service.categoryName;
+    // Group by category and subcategory
+    // ✅ FIX: Use a combination of normalized categoryName to prevent duplicates
+    const grouped: { [key: string]: CategoryGroup } = {};
+    const serviceKeys = new Set<string>(); // Track services to prevent duplicates
+
+    withCategory.forEach(service => {
+      // Handle both camelCase and snake_case field names
+      const categoryName = service.categoryName || service.category_name || service.category || 'General';
+      // ✅ FIX: Use normalized categoryName as key to prevent duplicates
+      const normalizedCategoryName = categoryName.trim().toLowerCase();
+      const catKey = normalizedCategoryName;
+      
+      // Generate categoryId from categoryName if null/empty, using consistent format
+      const categoryId = service.categoryId || service.category_id || 
+        (categoryName ? categoryName.toLowerCase().replace(/\s+/g, '_') : 'general');
       
       if (!grouped[catKey]) {
         grouped[catKey] = {
-          categoryName: service.categoryName,
-          categoryId: service.categoryId,
+          categoryName: categoryName,
+          categoryId: categoryId,
           subcategories: []
         };
       }
 
-      const subCatName = service.subCategoryName || 'General';
-      const subCatId = service.subCategoryId || 'general';
+      const subCatName = service.subCategoryName || service.sub_category_name || 'General';
+      const subCatId = service.subCategoryId || service.sub_category_id || 'general';
+      
+      // ✅ FIX: Create unique service key to prevent duplicates
+      const serviceKey = `${service.serviceId || service.id || ''}_${service.serviceStyle || ''}_${service.serviceName || ''}`;
+      if (serviceKeys.has(serviceKey)) {
+        console.warn('⚠️ [GROUPING] Duplicate service detected, skipping:', serviceKey);
+        return; // Skip duplicate service
+      }
+      serviceKeys.add(serviceKey);
       
       let subcategory = grouped[catKey].subcategories.find(
         sub => sub.subCategoryId === subCatId
@@ -302,50 +572,39 @@ export function VendorServiceCatalogView({
     setGroupedServices(result);
   };
 
-  const isServiceApplicable = (service: ServiceCatalogItem, vendorRoleId: string): boolean => {
-    // ✅ STRICT: Vendor MUST have a roleId
-    if (!vendorRoleId) {
-      return false;
-    }
-
-    // ✅ FIX: Handle both camelCase and snake_case field names from API
-    const rawApplicableRoles = (service as any).applicableRoles || 
-                               (service as any).applicable_roles || 
-                               [];
-
-    // If service has no applicable roles defined, check if it's a universal service
-    if (!rawApplicableRoles || rawApplicableRoles.length === 0) {
-      // Universal service - allowed for all roles if service style is permitted
-      return true;
-    }
-
-    // Parse applicable roles - handle both string and array cases
-    let applicableRoles: string[] = [];
-    
-    if (Array.isArray(rawApplicableRoles)) {
-      applicableRoles = rawApplicableRoles;
-    } else if (typeof rawApplicableRoles === 'string') {
-      try {
-        const parsed = JSON.parse(rawApplicableRoles);
-        applicableRoles = Array.isArray(parsed) ? parsed : [rawApplicableRoles];
-      } catch {
-        applicableRoles = [rawApplicableRoles];
-      }
-    }
-
-    // ✅ STRICT: Check if vendor's role is in the service's applicable roles
-    const isApplicable = applicableRoles.includes(vendorRoleId);
-    
-    return isApplicable;
+  const isServiceApplicable = (service: ServiceCatalogItem, roleName: string): boolean => {
+    // Use utility function for consistent service applicability checking
+    return isServiceApplicableToRole(service, roleName);
   };
 
   const isServiceAdded = (service: ServiceCatalogItem): boolean => {
+    // ✅ FIX: Handle both camelCase and snake_case property names
+    const catalogServiceId = service.catalogId || (service as any).id || (service as any).service_id;
+    const catalogServiceName = (service.serviceName || (service as any).service_name || '').toLowerCase();
+    const catalogCategoryName = (service.categoryName || (service as any).category_name || '').toLowerCase();
+    const catalogServiceStyle = service.serviceStyle || (service as any).service_style;
+    
     return vendorServices.some(vs => {
-      if (vs.catalogId && service.catalogId) {
-        return vs.catalogId === service.catalogId;
+      // Check by service_id (UUID) match
+      const vsServiceId = vs.serviceId || vs.service_id || vs.catalogId || vs.catalog_id;
+      if (vsServiceId && catalogServiceId && vsServiceId === catalogServiceId) {
+        return true;
       }
-      return vs.serviceName === service.serviceName && 
-             vs.categoryName === service.categoryName;
+      
+      // Check by name + category + style match
+      const vsServiceName = (vs.serviceName || vs.service_name || vs.name || '').toLowerCase();
+      const vsCategoryName = (vs.categoryName || vs.category_name || vs.category || '').toLowerCase();
+      const vsServiceStyle = vs.serviceStyle || vs.service_style;
+      
+      // Match by name and category (and optionally style)
+      if (vsServiceName === catalogServiceName && vsCategoryName === catalogCategoryName) {
+        // If styles match or no style specified, it's a match
+        if (!catalogServiceStyle || !vsServiceStyle || catalogServiceStyle === vsServiceStyle) {
+          return true;
+        }
+      }
+      
+      return false;
     });
   };
 
@@ -373,32 +632,69 @@ export function VendorServiceCatalogView({
     });
   };
 
+  const getServiceKey = (service: ServiceCatalogItem | any): string => {
+    // Handle both camelCase and snake_case property names from API
+    const catalogId = service.catalogId || (service as any).id || (service as any).catalog_id;
+    const categoryName = service.categoryName || (service as any).category_name || 'unknown';
+    const serviceName = service.serviceName || (service as any).service_name || (service as any).display_name || 'unknown';
+    return catalogId || `${categoryName}_${serviceName}`;
+  };
+
   const toggleServiceSelection = (service: ServiceCatalogItem) => {
-    const serviceKey = service.catalogId || `${service.categoryName}_${service.serviceName}`;
+    const serviceKey = getServiceKey(service);
     
     setSelectedServices(prev => {
       const newSet = new Set(prev);
       if (newSet.has(serviceKey)) {
         newSet.delete(serviceKey);
+        console.log('[SELECTION] Removed service:', serviceKey, 'New count:', newSet.size);
       } else {
         newSet.add(serviceKey);
+        console.log('[SELECTION] Added service:', serviceKey, 'New count:', newSet.size);
       }
       return newSet;
     });
   };
 
   const isServiceSelected = (service: ServiceCatalogItem): boolean => {
-    const serviceKey = service.catalogId || `${service.categoryName}_${service.serviceName}`;
+    const serviceKey = getServiceKey(service);
     return selectedServices.has(serviceKey);
   };
 
-  const handleAddService = async (service: ServiceCatalogItem) => {
+  const handleAddService = async (service: ServiceCatalogItem, targetServiceStyle?: 'at_home' | 'at_center' | 'tele') => {
+    // ✅ FIX: Skip if already added
+    if (isServiceAdded(service)) {
+      toast.info(`${service.serviceName} is already added`);
+      return;
+    }
+    
     try {
       setAdding(true);
 
+      // Phase 2: Determine service style from allowed styles only; never default to at_center when role is Walker.
+      const allowed = roleAllowedStyles.length > 0 ? roleAllowedStyles : (allowedServiceStyles || []);
+      const defaultStyle = (allowed[0] as 'at_home' | 'at_center' | 'tele') || 'at_home';
+      let effectiveServiceStyle: 'at_home' | 'at_center' | 'tele' = defaultStyle;
+      
+      if (targetServiceStyle && ['at_home', 'at_center', 'tele'].includes(targetServiceStyle) && allowed.includes(targetServiceStyle)) {
+        effectiveServiceStyle = targetServiceStyle;
+      } else if (service.serviceStyle && allowed.includes(service.serviceStyle)) {
+        effectiveServiceStyle = service.serviceStyle as 'at_home' | 'at_center' | 'tele';
+      } else if (activeStyle !== 'all' && allowed.includes(activeStyle)) {
+        effectiveServiceStyle = activeStyle;
+      } else if (allowed.length > 0) {
+        effectiveServiceStyle = allowed[0] as 'at_home' | 'at_center' | 'tele';
+      }
+      
+      console.log(`📋 [CATALOG] Adding service "${service.serviceName}" with serviceStyle: ${effectiveServiceStyle}`);
+
+      // Use catalogId as serviceId for backward compatibility with backend
+      const effectiveServiceId = service.catalogId || (service as any).id || (service as any).service_id;
+      
       const data = await apiClient.post(`/vendor/${vendorId}/services`, {
         vendorId,
-        catalogId: service.catalogId,
+        serviceId: effectiveServiceId, // Backend expects serviceId
+        catalogId: service.catalogId, // Also send catalogId for fallback
         categoryId: service.categoryId,
         categoryName: service.categoryName,
         subCategoryId: service.subCategoryId,
@@ -406,34 +702,77 @@ export function VendorServiceCatalogView({
         serviceGroupId: service.serviceGroupId,
         serviceGroupName: service.serviceGroupName,
         serviceName: service.serviceName,
-        serviceStyle: service.serviceStyle,
+        serviceStyle: effectiveServiceStyle, // ✅ FIX: Use determined service style (not defaulting to at_center)
         basePrice: service.basePrice,
+        duration: service.duration,
         isPackage: service.isPackage,
         packageDetails: service.packageDetails,
         description: service.description,
-        duration: service.duration,
-        isActive: true
+        isActive: true,
+        publishStatus: 'draft' // ✅ NEW: Start as draft, vendor publishes later
       }) as any;
 
       if (data && data.success) {
         const result = data;
-        console.log('✅ Service added:', result);
-        toast.success(`Added ${service.serviceName}`);
         
-        setVendorServices(prev => [...prev, {
-          ...service,
-          vendorServiceId: result.vendorServiceId || result.id
-        }]);
+        // ✅ FIX: Handle alreadyExists flag from backend
+        if (result.alreadyExists) {
+          console.log('📋 Service already exists:', service.serviceName);
+          toast.info(`${service.serviceName} is already added`);
+          
+          // Update vendorServices with existing service info from backend
+          setVendorServices(prev => {
+            const exists = prev.some(s => 
+              (s.vendorServiceId === result.vendorServiceId) ||
+              (s.serviceId === service.catalogId) ||
+              ((s.serviceName || '').toLowerCase() === (service.serviceName || '').toLowerCase() &&
+               (s.serviceStyle || '').toLowerCase() === (service.serviceStyle || '').toLowerCase())
+            );
+            if (!exists) {
+              return [...prev, {
+                ...service,
+                vendorServiceId: result.vendorServiceId,
+                publishStatus: result.publishStatus || 'draft',
+                isEnabled: result.isEnabled ?? true
+              }];
+            }
+            return prev;
+          });
+        } else {
+          console.log('✅ Service added:', result);
+          toast.success(`Added ${service.serviceName} (Draft)`);
+          
+          setVendorServices(prev => [...prev, {
+            ...service,
+            vendorServiceId: result.vendorServiceId || result.id,
+            publishStatus: 'draft'
+          }]);
 
-        if (mode === 'browse' && onSelectService) {
-          onSelectService(service);
+          if (mode === 'browse' && onSelectService) {
+            onSelectService(service);
+          }
         }
       } else {
-        toast.error(data?.error || 'Failed to add service');
+        // Handle error response
+        if (data?.error?.includes('already exists') || data?.alreadyExists) {
+          toast.info(`${service.serviceName} is already added`);
+          // Refresh vendor services list to sync state
+          const vendorServicesData = await apiClient.get(`/vendor/${vendorId}/services`) as any;
+          if (vendorServicesData?.allServices) {
+            setVendorServices(vendorServicesData.allServices);
+          }
+        } else {
+          toast.error(data?.error || 'Failed to add service');
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding service:', error);
-      toast.error('Failed to add service');
+      // Handle 409 conflict from error response
+      if (error?.message?.includes('already exists') || error?.status === 409) {
+        toast.info(`${service.serviceName} is already added`);
+      } else {
+        toast.error('Failed to add service');
+      }
     } finally {
       setAdding(false);
     }
@@ -444,25 +783,45 @@ export function VendorServiceCatalogView({
       setAdding(true);
       
       const servicesToAdd: ServiceCatalogItem[] = [];
+      const alreadyAddedCount = { count: 0 };
       
       groupedServices.forEach(category => {
         category.subcategories.forEach(subcategory => {
           subcategory.services.forEach(service => {
-            if (isServiceSelected(service) && !isServiceAdded(service)) {
-              servicesToAdd.push(service);
+            if (isServiceSelected(service)) {
+              if (isServiceAdded(service)) {
+                alreadyAddedCount.count++;
+              } else {
+                servicesToAdd.push(service);
+              }
             }
           });
         });
       });
 
-      console.log(`Adding ${servicesToAdd.length} selected services...`);
+      console.log(`Adding ${servicesToAdd.length} new services, ${alreadyAddedCount.count} already added`);
 
+      let successCount = 0;
+      // ✅ FIX: Use activeStyle filter when adding services in bulk
+      const targetStyle = activeStyle !== 'all' ? activeStyle : undefined;
       for (const service of servicesToAdd) {
-        await handleAddService(service);
+        try {
+          await handleAddService(service, targetStyle);
+          successCount++;
+        } catch (e) {
+          // Individual errors handled in handleAddService
+        }
       }
 
       setSelectedServices(new Set());
-      toast.success(`Added ${servicesToAdd.length} services`);
+      
+      if (successCount > 0 && alreadyAddedCount.count > 0) {
+        toast.success(`Added ${successCount} services (${alreadyAddedCount.count} already existed)`);
+      } else if (successCount > 0) {
+        toast.success(`Added ${successCount} services as draft`);
+      } else if (alreadyAddedCount.count > 0) {
+        toast.info(`All ${alreadyAddedCount.count} selected services were already added`);
+      }
 
     } catch (error) {
       console.error('Error adding services:', error);
@@ -477,10 +836,13 @@ export function VendorServiceCatalogView({
       <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
         <div className="bg-white border-b border-gray-200 p-4">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={onBack}>
+            <Button variant="ghost" size="icon" onClick={onBack} title="Back to Service Management">
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <h1 className="text-lg font-semibold">Service Catalog</h1>
+            <div>
+              <h1 className="text-lg font-semibold">Browse Catalog</h1>
+              <p className="text-xs text-gray-500">Service Management</p>
+            </div>
           </div>
         </div>
         <div className="flex items-center justify-center h-64">
@@ -498,13 +860,13 @@ export function VendorServiceCatalogView({
       {/* Header */}
       <div className="bg-white border-b border-gray-200 p-4 sticky top-0 z-10">
         <div className="flex items-center gap-3 mb-4">
-          <Button variant="ghost" size="icon" onClick={onBack}>
+          <Button variant="ghost" size="icon" onClick={onBack} title="Back to Service Management">
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-lg font-semibold">Service Catalog</h1>
+            <h1 className="text-lg font-semibold">Browse Catalog</h1>
             <p className="text-xs text-gray-500">
-              {services.length} services • {groupedServices.length} categories
+              Service Management · {services.length} services · {groupedServices.length} categories
             </p>
           </div>
         </div>
@@ -528,7 +890,9 @@ export function VendorServiceCatalogView({
               <CheckSquare className="w-5 h-5 text-blue-600" />
               <div>
                 <p className="text-sm font-semibold text-blue-900">Multi-Select Mode</p>
-                <p className="text-xs text-blue-700">{selectedServices.size} service(s) selected</p>
+                <p className="text-xs text-blue-700">
+                  {selectedServices.size} service{selectedServices.size !== 1 ? 's' : ''} selected
+                </p>
               </div>
             </div>
             {selectedServices.size > 0 && (
@@ -549,9 +913,9 @@ export function VendorServiceCatalogView({
             const effectiveStyles = roleAllowedStyles.length > 0 ? roleAllowedStyles : (allowedServiceStyles || ['at_home', 'at_center', 'tele']);
             const styleOptions = [
               { value: 'all', label: 'All' },
-              { value: 'at_center', label: 'At Center' },
-              { value: 'at_home', label: 'At Home' },
-              { value: 'tele', label: 'Tele' }
+              { value: 'at_center', label: getServiceStyleLabel(roleNameForLabels, 'at_center') },
+              { value: 'at_home', label: getServiceStyleLabel(roleNameForLabels, 'at_home') },
+              { value: 'tele', label: getServiceStyleLabel(roleNameForLabels, 'tele') }
             ].filter(opt => opt.value === 'all' || effectiveStyles.includes(opt.value));
             
             return styleOptions.map(style => (
@@ -575,10 +939,31 @@ export function VendorServiceCatalogView({
       <div className="p-4 space-y-3">
         {groupedServices.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-gray-500 mb-2">No services found</p>
-            <p className="text-xs text-gray-400">
-              {searchQuery ? 'Try a different search term' : 'No services available for your role'}
+            <p className="text-gray-500 mb-2">
+              {services.length > 0 
+                ? 'No services match your current filters' 
+                : 'No services found'}
             </p>
+            <p className="text-xs text-gray-400">
+              {searchQuery 
+                ? 'Try a different search term or clear filters' 
+                : services.length > 0
+                  ? 'Try selecting a different service style tab or clear filters'
+                  : 'No services available in the catalog'}
+            </p>
+            {services.length > 0 && (
+              <Button
+                onClick={() => {
+                  setSearchQuery('');
+                  setActiveStyle('all');
+                }}
+                variant="outline"
+                size="sm"
+                className="mt-4"
+              >
+                Clear Filters
+              </Button>
+            )}
           </div>
         ) : (
           groupedServices.map(category => (
@@ -624,14 +1009,29 @@ export function VendorServiceCatalogView({
                           {subcategory.services.map((service, idx) => {
                             const added = isServiceAdded(service);
                             const selected = isServiceSelected(service);
-                            const serviceKey = service.catalogId || `${service.categoryName}_${service.serviceName}_${idx}`;
+                            const serviceKey = getServiceKey(service); // ✅ FIX: Use consistent key generation
+                            
+                            // ✅ Check if service is live (published and enabled)
+                            const isLive = vendorServices.some(vs => {
+                              const vsServiceId = vs.serviceId || vs.service_id || vs.catalogId || vs.catalog_id;
+                              const catalogServiceId = service.catalogId || (service as any).id || (service as any).service_id;
+                              if (vsServiceId && catalogServiceId && vsServiceId === catalogServiceId) {
+                                const isEnabled = vs.isEnabled !== undefined ? vs.isEnabled : (vs.is_enabled !== undefined ? vs.is_enabled : true);
+                                const publishStatus = vs.publishStatus || vs.publish_status || 'draft';
+                                return isEnabled && publishStatus === 'published';
+                              }
+                              return false;
+                            });
+                            
+                            // ✅ Disable selection if service is live (published and enabled) in multi-select mode
+                            const isDisabled = mode === 'multi-select' && isLive;
 
                             return (
                               <div
                                 key={serviceKey}
                                 className={`p-4 pl-12 hover:bg-gray-50 transition-colors ${
                                   selected ? 'bg-blue-50 border-l-4 border-blue-500' : ''
-                                }`}
+                                } ${isDisabled ? 'opacity-60' : ''}`}
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   {/* ✅ FIX: Checkbox separate from content */}
@@ -640,22 +1040,26 @@ export function VendorServiceCatalogView({
                                       onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
-                                        toggleServiceSelection(service);
+                                        if (!isDisabled) {
+                                          toggleServiceSelection(service);
+                                        }
                                       }}
-                                      className="flex-shrink-0 mt-1 p-1 hover:bg-gray-100 rounded"
+                                      disabled={isDisabled}
+                                      className={`flex-shrink-0 mt-1 p-1 hover:bg-gray-100 rounded ${isDisabled ? 'cursor-not-allowed opacity-50' : ''}`}
                                       type="button"
+                                      title={isDisabled ? 'This service is already live and cannot be selected' : ''}
                                     >
                                       {selected ? (
                                         <CheckSquare className="w-5 h-5 text-blue-600" />
                                       ) : (
-                                        <Square className="w-5 h-5 text-gray-400 hover:text-gray-600" />
+                                        <Square className={`w-5 h-5 ${isDisabled ? 'text-gray-300' : 'text-gray-400 hover:text-gray-600'}`} />
                                       )}
                                     </button>
                                   )}
                                   
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
-                                      <h5 className="font-medium text-gray-900">{service.serviceName}</h5>
+                                      <h5 className="font-medium text-gray-900">{service.serviceName || service.service_name || 'Unnamed Service'}</h5>
                                       {added && (
                                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                           <Check className="w-3 h-3 mr-1" />
@@ -670,12 +1074,11 @@ export function VendorServiceCatalogView({
 
                                     <div className="flex items-center gap-2 flex-wrap">
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                                        ₹{service.basePrice}
+                                        ₹{Number(service.basePrice || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                                       </span>
                                       
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                        {service.serviceStyle === 'at_home' ? 'At Home' : 
-                                         service.serviceStyle === 'at_center' ? 'At Center' : 'Tele'}
+                                        {service.serviceStyle && getServiceStyleLabel(roleNameForLabels, service.serviceStyle)}
                                       </span>
 
                                       {service.duration && (
@@ -695,7 +1098,11 @@ export function VendorServiceCatalogView({
                                       onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
-                                        if (!added) handleAddService(service);
+                                        if (!added) {
+                                          // ✅ FIX: Use activeStyle filter when adding service
+                                          const targetStyle = activeStyle !== 'all' ? activeStyle : undefined;
+                                          handleAddService(service, targetStyle);
+                                        }
                                       }}
                                       disabled={added || adding}
                                       size="sm"

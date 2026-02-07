@@ -62,12 +62,12 @@ export function PetIntelligenceSystem({ onBack }: PetIntelligenceSystemProps) {
           {onBack && (
             <button
               onClick={onBack}
-              className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-0"
+              className="mb-0 text-gray-600 hover:text-gray-900 flex items-center gap-3"
             >
               ← Back
             </button>
           )}
-          <div className="flex items-center gap-0 mb-4">
+          <div className="flex items-center gap-3 mb-4">
             <div className="p-0 bg-orange-100 rounded-lg">
               <Brain className="w-6 h-6 text-orange-600" />
             </div>
@@ -104,7 +104,7 @@ export function PetIntelligenceSystem({ onBack }: PetIntelligenceSystemProps) {
                   <p className="text-sm text-gray-600 mb-0">{pet.breed} • {pet.age} years</p>
                   <p className="text-sm text-gray-500">Owner: {pet.ownerName}</p>
                 </div>
-                <div className="flex items-center gap-0">
+                <div className="flex items-center gap-3">
                   <div className="text-center">
                     <Heart className="w-5 h-5 text-red-500 mx-auto mb-0" />
                     <span className="text-xs font-semibold text-gray-900">{pet.healthScore}%</span>
@@ -114,7 +114,7 @@ export function PetIntelligenceSystem({ onBack }: PetIntelligenceSystemProps) {
               {pet.behaviorPatterns.length > 0 && (
                 <div className="mb-0">
                   <p className="text-xs font-medium text-gray-700 mb-0">Behavior Patterns</p>
-                  <div className="flex flex-wrap gap-0">
+                  <div className="flex flex-wrap gap-3">
                     {pet.behaviorPatterns.map((pattern, idx) => (
                       <span key={idx} className="text-xs px-0 py-0 bg-blue-100 text-blue-700 rounded">
                         {pattern}
@@ -128,7 +128,7 @@ export function PetIntelligenceSystem({ onBack }: PetIntelligenceSystemProps) {
                   <p className="text-xs font-medium text-gray-700 mb-0">Recommendations</p>
                   <ul className="text-xs text-gray-600 space-y-1">
                     {pet.recommendations.map((rec, idx) => (
-                      <li key={idx} className="flex items-start gap-0">
+                      <li key={idx} className="flex items-start gap-3">
                         <Activity className="w-3 h-3 text-orange-600 mt-0.5 flex-shrink-0" />
                         <span>{rec}</span>
                       </li>

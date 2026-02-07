@@ -49,14 +49,14 @@ export function PaymentsTab() {
         <div key={payment.id} className="bg-white rounded-lg border-2 border-gray-200 p-4">
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <div className="flex items-center gap-0 mb-0">
+              <div className="flex items-center gap-3 mb-0">
                 <CreditCard className="w-4 h-4 text-gray-400" />
                 <span className="font-semibold text-gray-900">
                   {payment.currency} {payment.amount.toFixed(2)}
                 </span>
               </div>
               <p className="text-sm text-gray-600">{payment.method}</p>
-              <div className="flex items-center gap-0 mt-0">
+              <div className="flex items-center gap-3 mt-0">
                 {payment.status === 'completed' ? (
                   <CheckCircle className="w-4 h-4 text-green-600" />
                 ) : payment.status === 'failed' ? (

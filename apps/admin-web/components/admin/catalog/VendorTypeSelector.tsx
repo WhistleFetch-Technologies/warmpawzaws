@@ -29,7 +29,7 @@ interface VendorTypeSelectorProps {
 
 export function VendorTypeSelector({ selectedType, onSelect }: VendorTypeSelectorProps) {
   return (
-    <div className="grid grid-cols-2 gap-0">
+    <div className="grid grid-cols-2 gap-3">
       {VENDOR_TYPES.map((type) => (
         <button
           key={type.id}
@@ -48,7 +48,7 @@ export function VendorTypeSelector({ selectedType, onSelect }: VendorTypeSelecto
               <Check className="w-2.5 h-2.5 text-white" />
             </div>
           )}
-          <div className="flex items-start gap-0">
+          <div className="flex items-start gap-3">
             <div className="text-lg">{type.emoji}</div>
             <div className="flex-1">
               <div className="text-xs mb-0.5">{type.label}</div>

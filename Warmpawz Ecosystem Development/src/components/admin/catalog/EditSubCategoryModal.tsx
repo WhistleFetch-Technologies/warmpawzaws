@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface EditSubCategoryModalProps {
   isOpen: boolean;
@@ -53,11 +53,11 @@ export function EditSubCategoryModal({
       console.log('Updating subcategory with data:', formData);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/subcategories/${subcategory.id}`,
+        `${getApiBaseUrl()}/admin/catalog/subcategories/${subcategory.id}`,
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify(formData)

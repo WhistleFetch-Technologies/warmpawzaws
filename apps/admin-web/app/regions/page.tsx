@@ -29,7 +29,7 @@ import {
 	Loader2,
 	Search,
 	Calendar,
-	DollarSign,
+	IndianRupee,
 	Phone,
 	Languages,
 	Package,
@@ -546,7 +546,7 @@ export default function RegionManager() {
 
 											<div className="space-y-3 mb-4">
 												<div className="flex items-center gap-2 text-sm text-gray-600">
-													<DollarSign className="w-4 h-4" />
+													<IndianRupee className="w-4 h-4" />
 													<span>
 														{region.currency?.symbol} ({region.currency?.code})
 													</span>

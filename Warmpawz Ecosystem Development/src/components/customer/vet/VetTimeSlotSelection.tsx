@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Calendar, Clock, ChevronRight, AlertCircle } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface VetTimeSlotSelectionProps {
   serviceType: string;
@@ -31,7 +31,7 @@ export function VetTimeSlotSelection({ serviceType, vendorName, vendorId, servic
   const [vendorOffline, setVendorOffline] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   // Generate next 7 days
   const getNextDays = () => {
@@ -74,7 +74,7 @@ export function VetTimeSlotSelection({ serviceType, vendorName, vendorId, servic
       const res = await fetch(
         `${API_BASE}/vendor/${vendorId}/available-slots?date=${selectedDate}&serviceStyle=${serviceStyle}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

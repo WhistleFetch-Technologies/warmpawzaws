@@ -4,7 +4,7 @@ import {
   ChevronLeft, MessageCircle, MapPin, Heart, 
   Calendar, Sparkles, Lock, Crown
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface MatingDatingMatchesProps {
@@ -27,8 +27,8 @@ export function MatingDatingMatches({ phone, mode, onBack, onChatClick }: Mating
   const checkSubscription = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/subscriptions/user/${phone}/check-access?feature=dating_chat&tierType=p2p_service`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/subscriptions/user/${phone}/check-access?feature=dating_chat&tierType=p2p_service`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -44,8 +44,8 @@ export function MatingDatingMatches({ phone, mode, onBack, onChatClick }: Mating
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/dating/matches/${phone}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/dating/matches/${phone}`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {

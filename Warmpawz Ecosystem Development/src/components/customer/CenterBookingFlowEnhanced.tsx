@@ -5,7 +5,7 @@ import { Badge } from '../ui/badge';
 import { Calendar } from '../ui/calendar';
 import { format } from 'date-fns';
 import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { ArrowLeft, Calendar as CalendarIcon, Clock, Check, Plus, FileText, Upload, Stethoscope, AlertCircle, MessageCircle, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BookingChatWidget } from './BookingChatWidget';
@@ -93,8 +93,8 @@ export function CenterBookingFlowEnhanced({
   const loadPetMedicalDocs = async () => {
       try {
           const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/pets/${petId}/medical-documents`,
-            { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+            `${getApiBaseUrl()}/pets/${petId}/medical-documents`,
+            { headers: getAuthHeaders() }
           );
           if (response.ok) {
               const data = await response.json();
@@ -116,11 +116,11 @@ export function CenterBookingFlowEnhanced({
               const base64 = reader.result as string;
               
               const response = await fetch(
-                `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/pets/${petId}/medical-documents/upload`,
+                `${getApiBaseUrl()}/pets/${petId}/medical-documents/upload`,
                 {
                   method: 'POST',
                   headers: {
-                    'Authorization': `Bearer ${publicAnonKey}`,
+                    ...getAuthHeaders(),
                     'Content-Type': 'application/json'
                   },
                   body: JSON.stringify({
@@ -160,8 +160,8 @@ export function CenterBookingFlowEnhanced({
       setLoading(true);
       // Try fetching specialized services first
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/specialized-services/vendor/${vendorId}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/specialized-services/vendor/${vendorId}`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -187,8 +187,8 @@ export function CenterBookingFlowEnhanced({
       // Fallback implementation
       try {
         const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/services`,
-            { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+            `${getApiBaseUrl()}/vendor/${vendorId}/services`,
+            { headers: getAuthHeaders() }
         );
         if (response.ok) {
             const data = await response.json();
@@ -258,12 +258,12 @@ export function CenterBookingFlowEnhanced({
       };
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings`,
+        `${getApiBaseUrl()}/bookings`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify(bookingPayload)
         }
@@ -275,12 +275,12 @@ export function CenterBookingFlowEnhanced({
 
             // 2. Attach Specialized Details (Add-ons, etc.)
             await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${bookingId}/add-specialized-service`,
+            `${getApiBaseUrl()}/booking/${bookingId}/add-specialized-service`,
             {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${publicAnonKey}`
+                ...getAuthHeaders()
             },
             body: JSON.stringify({
                 serviceId: selectedService.serviceId,
@@ -293,8 +293,8 @@ export function CenterBookingFlowEnhanced({
 
       // 3. Initiate Chat Context (Rule 1 Requirement)
       await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/booking/${bookingId}/chat/role-context?role=customer`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/booking/${bookingId}/chat/role-context?role=customer`,
+        { headers: getAuthHeaders() }
       );
 
       toast.success('Booking confirmed successfully!');

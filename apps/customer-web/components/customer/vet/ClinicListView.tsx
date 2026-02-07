@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Star, MapPin, Clock, Filter, Search, ChevronRight } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Star, MapPin, Clock, Search, ChevronRight, Building2, Stethoscope } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { StandardizedFooter } from '../shared/StandardizedFooter';
 
 interface ClinicListViewProps {
   phone: string;
@@ -22,6 +23,7 @@ interface Clinic {
   services: string[];
   price_range: string;
   is_open?: boolean;
+  photo?: string; // ✅ Added photo support
 }
 
 export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProps) {
@@ -29,6 +31,27 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
   const [clinics, setClinics] = useState<Clinic[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'rating' | 'distance' | 'price'>('all');
+  
+  // User profile data for header
+  const [userName, setUserName] = useState('User');
+  const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
+  
+  useEffect(() => {
+    loadUserProfile();
+  }, [phone]);
+  
+  const loadUserProfile = async () => {
+    try {
+      const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
+      if (profileResponse?.profile || profileResponse) {
+        const profile = profileResponse.profile || profileResponse;
+        setUserName(profile.name || profile.fullName || 'User');
+        setUserProfilePhoto(profile.profilePhoto || profile.profile_image_url || profile.photo);
+      }
+    } catch (error) {
+      console.error('Error loading user profile:', error);
+    }
+  };
 
   useEffect(() => {
     loadClinics();
@@ -37,78 +60,101 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
   const loadClinics = async () => {
     try {
       setLoading(true);
+      
+      // Get customer location from localStorage for distance-based sorting
+      let locationParams = '';
       try {
-        const response = await apiClient.get('/vendors?role=veterinary_clinic') as any;
-        if (response.vendors && response.vendors.length > 0) {
-          setClinics(response.vendors.map((v: any) => ({
-            id: v.id,
-            name: v.business_name || v.name,
-            address: v.address || 'Location available on booking',
-            rating: v.rating || 4.5,
-            review_count: v.review_count || 0,
-            distance: v.distance || '2.5 km',
-            timing: v.timing || '9 AM - 8 PM',
-            services: v.services?.map((s: any) => s.name) || ['General Consultation', 'Vaccination'],
-            price_range: v.price_range || '₹399 - ₹2999',
-            is_open: true,
-          })));
-          return;
+        const customerLat = localStorage.getItem('customer_latitude');
+        const customerLng = localStorage.getItem('customer_longitude');
+        if (customerLat && customerLng) {
+          locationParams = `&latitude=${customerLat}&longitude=${customerLng}`;
         }
-      } catch (err) {
-        console.log('Using mock data for clinics');
+      } catch (e) {
+        console.log('Could not get customer location');
+      }
+      
+      // Try primary endpoint
+      try {
+        const response = await apiClient.get(`/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}`) as any;
+        console.log('📋 [CLINIC-LIST] API Response:', response);
+        
+        const servicesData = response.vendors || response.services || [];
+        if (servicesData.length > 0) {
+          // ✅ FIX: Filter out solo vendors - only show clinics
+          const clinicsOnly = servicesData.filter((service: any) => {
+            const vendorType = service.vendorType || service.vendor_type || service.providerType || '';
+            const roleName = (service.role || service.roleName || '').toLowerCase();
+            const isSolo = vendorType === 'solo' || vendorType === 'individual' || 
+                          service.isSoloProvider === true || service.isIndividualProvider === true ||
+                          roleName.includes('solo');
+            return !isSolo; // Only include if NOT solo
+          });
+          
+          // Group by vendor to get unique clinics
+          const vendorMap = new Map();
+          clinicsOnly.forEach((service: any) => {
+            const vendorId = service.vendorId || service.id;
+            if (!vendorMap.has(vendorId)) {
+              vendorMap.set(vendorId, {
+                id: vendorId,
+                name: service.vendorName || service.businessName || service.business_name || service.name || 'Unnamed Clinic',
+                address: service.vendorLocation?.address || service.address || `${service.city || ''}${service.city ? ', ' : ''}${service.pincode || ''}`.trim() || 'Location available on booking',
+                rating: parseFloat(service.vendorRating || service.rating || service.avgRating || '4.5'),
+                review_count: parseInt(service.vendorReviewCount || service.reviewsCount || service.review_count || '0', 10),
+                distance: service.distance ? `${Number(service.distance).toFixed(1)} km` : null,
+                timing: service.businessHours || service.timing || '9 AM - 8 PM',
+                services: service.services?.map((s: any) => typeof s === 'string' ? s : s.name) || [service.serviceName || 'General Consultation'].filter(Boolean),
+                price_range: service.priceRange || service.price_range || (service.price ? `₹${service.price}` : '₹399 - ₹2999'),
+                is_open: service.is_open !== undefined ? service.is_open : true,
+                photo: service.vendorPhoto || service.photo || service.businessPhoto, // ✅ Added photo support
+              });
+            } else {
+              // Add service to existing clinic
+              const clinic = vendorMap.get(vendorId);
+              if (service.serviceName && !clinic.services.includes(service.serviceName)) {
+                clinic.services.push(service.serviceName);
+              }
+            }
+          });
+          
+          const mappedClinics = Array.from(vendorMap.values());
+          setClinics(mappedClinics);
+          console.log(`✅ [CLINIC-LIST] Found ${mappedClinics.length} clinics from API`);
+          return;
+        } else {
+          console.warn('⚠️ [CLINIC-LIST] No vendors in response');
+        }
+      } catch (err: any) {
+        console.error('❌ [CLINIC-LIST] Primary API Error:', err);
+        
+        // Try fallback endpoint
+        try {
+          const fallbackResponse = await apiClient.get('/vendors?role=veterinarian') as any;
+          if (fallbackResponse && fallbackResponse.vendors && fallbackResponse.vendors.length > 0) {
+            const mappedClinics = fallbackResponse.vendors.map((v: any) => ({
+              id: v.id,
+              name: v.businessName || v.business_name || v.name || 'Unnamed Clinic',
+              address: v.address || `${v.city || ''}${v.city ? ', ' : ''}${v.pincode || ''}`.trim() || 'Location available on booking',
+              rating: parseFloat(v.rating || v.avgRating || '4.5'),
+              review_count: parseInt(v.reviewCount || v.review_count || '0', 10),
+              distance: v.distance || null,
+              timing: v.timing || v.businessHours || '9 AM - 8 PM',
+              services: v.services?.map((s: any) => typeof s === 'string' ? s : s.name) || ['General Consultation', 'Vaccination'],
+              price_range: v.price_range || v.priceRange || '₹399 - ₹2999',
+              is_open: v.is_open !== undefined ? v.is_open : true,
+              photo: v.photo || v.businessPhoto || v.vendorPhoto, // ✅ Added photo support
+            }));
+            setClinics(mappedClinics);
+            console.log(`✅ [CLINIC-LIST] Found ${mappedClinics.length} clinics from fallback endpoint`);
+            return;
+          }
+        } catch (fallbackErr) {
+          console.error('❌ [CLINIC-LIST] Fallback endpoint also failed:', fallbackErr);
+        }
       }
 
-      // Mock data
-      setClinics([
-        {
-          id: '1',
-          name: 'PetCare Veterinary Clinic',
-          address: 'Linking Road, Bandra West',
-          rating: 4.8,
-          review_count: 156,
-          distance: '1.2 km',
-          timing: '9 AM - 8 PM',
-          services: ['General', 'Surgery', 'Dental', 'Lab'],
-          price_range: '₹399 - ₹2999',
-          is_open: true,
-        },
-        {
-          id: '2',
-          name: 'Happy Paws Animal Hospital',
-          address: 'Hill Road, Bandra',
-          rating: 4.6,
-          review_count: 89,
-          distance: '2.1 km',
-          timing: '8 AM - 10 PM',
-          services: ['General', 'Emergency', 'Vaccination'],
-          price_range: '₹299 - ₹1999',
-          is_open: true,
-        },
-        {
-          id: '3',
-          name: 'VetLife Clinic',
-          address: 'Turner Road, Bandra',
-          rating: 4.5,
-          review_count: 67,
-          distance: '3.4 km',
-          timing: '10 AM - 7 PM',
-          services: ['General', 'Grooming', 'Pharmacy'],
-          price_range: '₹349 - ₹1499',
-          is_open: false,
-        },
-        {
-          id: '4',
-          name: 'Pet Wellness Center',
-          address: 'SV Road, Santacruz',
-          rating: 4.7,
-          review_count: 112,
-          distance: '4.0 km',
-          timing: '24 Hours',
-          services: ['Emergency', 'ICU', 'Surgery', 'Lab'],
-          price_range: '₹499 - ₹5999',
-          is_open: true,
-        },
-      ]);
+      // No clinics found - will show empty state
+      setClinics([]);
     } catch (error) {
       console.error('Error loading clinics:', error);
     } finally {
@@ -145,121 +191,141 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
     { id: 'price', label: 'Price' },
   ];
 
+  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const dashboardStats = [
+    { value: `${filteredClinics.length}+`, label: 'Clinics', icon: <Building2 className="w-4 h-4" /> },
+    { value: '1K+', label: 'Bookings' },
+    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+  ];
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-md mx-auto px-4 py-3">
-          <div className="flex items-center gap-3 mb-3">
-            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-full">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <h1 className="text-lg font-semibold">Veterinary Clinics</h1>
-          </div>
-
-          {/* Search */}
-          <div className="relative mb-3">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search clinics..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
-            />
-          </div>
-
-          {/* Filters */}
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            {filters.map((filter) => (
-              <button
-                key={filter.id}
-                onClick={() => setSelectedFilter(filter.id as any)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-                  selectedFilter === filter.id
-                    ? 'bg-orange-500 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                {filter.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
+      {/* ✅ FIX: Use ServiceDashboardHeader for consistent Frame UI */}
+      <ServiceDashboardHeader
+        serviceName="Vet Clinics"
+        serviceSubtitle="Find a veterinary clinic near you"
+        serviceIcon={Stethoscope}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-[#FF8C42]"
+      />
+      
       {/* Content */}
-      <div className="max-w-md mx-auto px-4 py-4">
+      <div className="max-w-[430px] mx-auto px-4 pt-4 pb-28">
+        {/* Search - design system curves (rounded-2xl), soft bg */}
+        <div className="relative mb-4">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search clinics..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-2xl text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF8C42]/40 focus:border-[#FF8C42] transition-all"
+          />
+        </div>
+
+        {/* Filters - pills matching home, primary orange when active */}
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide mb-5">
+          {filters.map((filter) => (
+            <button
+              key={filter.id}
+              onClick={() => setSelectedFilter(filter.id as any)}
+              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all duration-200 ${
+                selectedFilter === filter.id
+                  ? 'bg-[#FF8C42] text-white shadow-[0_2px_8px_rgba(255,140,66,0.35)]'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-orange-500"></div>
+          <div className="flex flex-col items-center justify-center py-16">
+            <div className="animate-spin rounded-full h-12 w-12 border-2 border-[#FF8C42]/30 border-t-[#FF8C42]"></div>
+            <p className="text-gray-500 text-sm mt-4">Finding clinics...</p>
           </div>
         ) : sortedClinics.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-4xl mb-4">🏥</div>
-            <p className="text-gray-600">No clinics found</p>
-            <p className="text-sm text-gray-400 mt-1">Try adjusting your search</p>
+          <div className="text-center py-16 px-4">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#FFF5EE] flex items-center justify-center text-3xl">🏥</div>
+            <p className="text-gray-800 font-semibold">No clinics found</p>
+            <p className="text-sm text-gray-500 mt-1">Try adjusting your search or filters</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            <p className="text-sm text-gray-500">{sortedClinics.length} clinics found</p>
+          <div className="space-y-4">
+            <p className="text-sm font-medium text-gray-700">{sortedClinics.length} clinics found</p>
             
             {sortedClinics.map((clinic) => (
               <button
                 key={clinic.id}
                 onClick={() => handleViewClinic(clinic.id)}
-                className="w-full bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow text-left"
+                className="w-full card card-interactive rounded-2xl p-4 text-left border border-gray-100 hover:border-orange-100 hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-all duration-200"
               >
                 <div className="flex gap-3">
-                  {/* Clinic Icon */}
-                  <div className="w-16 h-16 rounded-xl bg-purple-100 flex items-center justify-center text-2xl flex-shrink-0">
-                    🏥
-                  </div>
+                  {/* Clinic Photo or Icon - rounded-2xl, soft orange tint */}
+                  {clinic.photo ? (
+                    <img 
+                      src={clinic.photo} 
+                      alt={clinic.name}
+                      className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#FF8C42]/20 flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] flex items-center justify-center text-2xl flex-shrink-0 border border-orange-100/50">
+                      <Building2 className="w-7 h-7 text-[#FF8C42]" />
+                    </div>
+                  )}
                   
-                  {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
-                      <h3 className="font-semibold text-gray-900 truncate">{clinic.name}</h3>
-                      <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                      <h3 className="font-bold text-gray-900 truncate">{clinic.name}</h3>
+                      <ChevronRight className="w-5 h-5 text-gray-300 flex-shrink-0" />
                     </div>
                     
                     <div className="flex items-center gap-2 mt-1">
-                      <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-                      <span className="font-medium text-sm">{clinic.rating}</span>
+                      <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
+                      <span className="font-semibold text-sm text-gray-800">{clinic.rating}</span>
                       <span className="text-gray-400 text-sm">({clinic.review_count})</span>
-                      <span className="text-gray-300">•</span>
-                      <span className="text-sm text-gray-500">{clinic.distance}</span>
+                      {clinic.distance && (
+                        <>
+                          <span className="text-gray-300">•</span>
+                          <span className="text-sm text-gray-500">{clinic.distance}</span>
+                        </>
+                      )}
                     </div>
                     
-                    <div className="flex items-center gap-1 mt-1 text-sm text-gray-500">
-                      <MapPin className="w-3.5 h-3.5" />
+                    <div className="flex items-center gap-1.5 mt-1.5 text-sm text-gray-500">
+                      <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
                       <span className="truncate">{clinic.address}</span>
                     </div>
                     
-                    <div className="flex items-center justify-between mt-2">
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5 text-gray-400" />
-                        <span className="text-sm text-gray-500">{clinic.timing}</span>
+                    <div className="flex items-center justify-between mt-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 text-gray-400" />
+                          <span className="text-sm text-gray-500">{clinic.timing}</span>
+                        </div>
                         {clinic.is_open !== undefined && (
-                          <span className={`text-xs px-2 py-0.5 rounded-full ml-1 ${
-                            clinic.is_open ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                          <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
+                            clinic.is_open ? 'bg-[#EDFFEE] text-[#00C30C]' : 'bg-red-50 text-red-600'
                           }`}>
                             {clinic.is_open ? 'Open' : 'Closed'}
                           </span>
                         )}
                       </div>
-                      <span className="text-sm font-medium text-orange-600">{clinic.price_range}</span>
+                      <span className="text-sm font-bold text-[#FF8C42]">{clinic.price_range}</span>
                     </div>
 
-                    {/* Service Tags */}
-                    <div className="flex flex-wrap gap-1 mt-2">
+                    <div className="flex flex-wrap gap-1.5 mt-2">
                       {clinic.services.slice(0, 3).map((service, idx) => (
-                        <span key={idx} className="px-2 py-0.5 bg-gray-100 rounded-full text-xs text-gray-600">
+                        <span key={idx} className="px-2.5 py-1 bg-gray-100 rounded-lg text-xs font-medium text-gray-600">
                           {service}
                         </span>
                       ))}
                       {clinic.services.length > 3 && (
-                        <span className="px-2 py-0.5 bg-gray-100 rounded-full text-xs text-gray-600">
+                        <span className="px-2.5 py-1 bg-gray-100 rounded-lg text-xs font-medium text-gray-500">
                           +{clinic.services.length - 3}
                         </span>
                       )}
@@ -271,6 +337,17 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
           </div>
         )}
       </div>
+      
+      <StandardizedFooter
+        currentTab="bookings"
+        onTabChange={(tab) => {
+          if (tab === 'home') onBack();
+          else if (tab === 'bookings') onNavigate('my-bookings');
+          else if (tab === 'cart') onNavigate('cart');
+          else if (tab === 'profile') onNavigate('profile');
+        }}
+        maxWidth="max-w-[430px]"
+      />
     </div>
   );
 }

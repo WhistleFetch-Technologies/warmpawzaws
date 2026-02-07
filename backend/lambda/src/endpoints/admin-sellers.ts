@@ -15,6 +15,8 @@
 import { Hono } from 'hono';
 import { select, update, query } from '../database/rds-connection';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // GET /admin/vendors/sellers - List sellers pending approval
@@ -200,32 +202,36 @@ export function registerAdminSellersEndpoints(app: Hono) {
   const rejectSellerHandler = new RejectSellerHandler();
 
   app.get('/admin/vendors/sellers', async (c) => {
+    const queryParams: Record<string, string> = {};
+    const url = new URL(c.req.url, 'http://localhost');
+    url.searchParams.forEach((value, key) => { queryParams[key] = value; });
+    
     const response = await getSellersHandler.handle({
       event: {
-        queryStringParameters: Object.fromEntries(c.req.query()),
+        queryStringParameters: queryParams,
       } as any,
     } as HandlerContext);
-    return c.json(response.body, response.statusCode);
+    return c.json(response.body as any, response.statusCode as 200 | 400 | 500);
   });
 
   app.post('/admin/vendors/:vendorId/approve-seller', async (c) => {
     const response = await approveSellerHandler.handle({
       event: {
         pathParameters: c.req.param(),
-        body: await c.req.json(),
+        body: await c.req.json().catch(() => ({})),
       } as any,
     } as HandlerContext);
-    return c.json(response.body, response.statusCode);
+    return c.json(response.body as any, response.statusCode as 200 | 400 | 500);
   });
 
   app.post('/admin/vendors/:vendorId/reject-seller', async (c) => {
     const response = await rejectSellerHandler.handle({
       event: {
         pathParameters: c.req.param(),
-        body: await c.req.json(),
+        body: await c.req.json().catch(() => ({})),
       } as any,
     } as HandlerContext);
-    return c.json(response.body, response.statusCode);
+    return c.json(response.body as any, response.statusCode as 200 | 400 | 500);
   });
 }
 

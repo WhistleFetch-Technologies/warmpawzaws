@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, X, Clock, TrendingUp, MapPin, Star } from 'lucide-react';
 import { Badge } from '../ui/badge';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface AutocompleteProps {
   onSelect: (value: string) => void;
@@ -58,10 +58,10 @@ export function SearchAutocomplete({ onSelect, placeholder, className = '' }: Au
     setLoading(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/search/autocomplete-enhanced?q=${encodeURIComponent(query)}`,
+        `${getApiBaseUrl()}/search/autocomplete-enhanced?q=${encodeURIComponent(query)}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

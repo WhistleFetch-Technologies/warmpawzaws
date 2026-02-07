@@ -21,7 +21,7 @@ import {
   Camera,
   Briefcase
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { CustomerNotificationModal } from './CustomerNotificationModal';
 
 interface UniversalServicesLandingProps {
@@ -114,8 +114,8 @@ export function UniversalServicesLanding({
   const loadPromotions = async () => {
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/marketing/promotions?roleId=${roleId}`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/customer/marketing/promotions?roleId=${roleId}`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
       if (res.ok) {
         const data = await res.json();
@@ -129,8 +129,8 @@ export function UniversalServicesLanding({
   const loadUiConfig = async () => {
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/ui/dashboard?roleId=${roleId}`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/config/ui/dashboard?roleId=${roleId}`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
       
       if (res.ok) {
@@ -159,9 +159,9 @@ export function UniversalServicesLanding({
     try {
       const cleanPhone = phone.replace(/[^0-9]/g, '');
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/notifications/${cleanPhone}?limit=50`,
+        `${getApiBaseUrl()}/customer/notifications/${cleanPhone}?limit=50`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` },
+          headers: { Authorization: (getAuthHeaders().Authorization || "") },
         }
       );
 

@@ -1,0 +1,255 @@
+{
+  "_comment": "Jio True Connect approved template texts for Warmpawz. Use EXACT message at send time; replace only the {#tag#} placeholders. Variable types: number, url, alphanumeric. Register each in Jio portal first; see docs/JIO_TRUE_CONNECT_SMS_TEMPLATES_GUIDE.md. SMS links must be app deep links (Capacitor), not vendor-web/customer-web URLs.",
+  "brandName": "Warmpawz",
+  "approvedSmsHeader": "WARMPZ",
+  "templates": [
+    {
+      "id": "otp_login",
+      "jioTemplateName": "Warmpawz OTP Login",
+      "message": "Warmpawz: Your OTP is {#number#}. Valid for 5 minutes. Do not share.",
+      "variables": [
+        { "key": "otp", "jioTag": "number", "maxLength": 30 }
+      ]
+    },
+    {
+      "id": "booking_confirmed",
+      "jioTemplateName": "Warmpawz Booking Confirmed",
+      "message": "Warmpawz: Your booking {#alphanumeric#} for {#alphanumeric#} on {#alphanumeric#} at {#alphanumeric#} is confirmed. Details: {#url#}",
+      "variables": [
+        { "key": "bookingId", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "serviceName", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "date", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "time", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "detailsUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "booking_rescheduled",
+      "jioTemplateName": "Warmpawz Booking Rescheduled",
+      "message": "Warmpawz: Your booking {#alphanumeric#} has been rescheduled to {#alphanumeric#} at {#alphanumeric#}. Details: {#url#}",
+      "variables": [
+        { "key": "bookingId", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "date", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "time", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "detailsUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "booking_cancelled",
+      "jioTemplateName": "Warmpawz Booking Cancelled",
+      "message": "Warmpawz: Your booking {#alphanumeric#} has been cancelled. Refund of Rs. {#number#} will be processed in 5-7 days. {#url#}",
+      "variables": [
+        { "key": "bookingId", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "refundAmount", "jioTag": "number", "maxLength": 30 },
+        { "key": "detailsUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "payment_received",
+      "jioTemplateName": "Warmpawz Payment Received",
+      "message": "Warmpawz: Payment of Rs. {#number#} received for booking {#alphanumeric#}. Receipt: {#url#}",
+      "variables": [
+        { "key": "amount", "jioTag": "number", "maxLength": 30 },
+        { "key": "bookingId", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "receiptUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "staff_assigned",
+      "jioTemplateName": "Warmpawz Staff Assigned",
+      "message": "Warmpawz: {#alphanumeric#} has been assigned to your booking {#alphanumeric#}. Track: {#url#}",
+      "variables": [
+        { "key": "staffName", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "bookingId", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "trackUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "provider_en_route",
+      "jioTemplateName": "Warmpawz Provider En Route",
+      "message": "Warmpawz: {#alphanumeric#} is on the way for your booking. Track: {#url#}",
+      "variables": [
+        { "key": "providerName", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "trackUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "provider_arrived_otp",
+      "jioTemplateName": "Warmpawz Provider Arrived OTP",
+      "message": "Warmpawz: {#alphanumeric#} has arrived. OTP for verification: {#number#}. Do not share.",
+      "variables": [
+        { "key": "providerName", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "otp", "jioTag": "number", "maxLength": 30 }
+      ]
+    },
+    {
+      "id": "service_completed",
+      "jioTemplateName": "Warmpawz Service Completed",
+      "message": "Warmpawz: Service completed for {#alphanumeric#}. OTP: {#number#}. Rate: {#url#}",
+      "variables": [
+        { "key": "petName", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "otp", "jioTag": "number", "maxLength": 30 },
+        { "key": "reviewUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "refund_processed",
+      "jioTemplateName": "Warmpawz Refund Processed",
+      "message": "Warmpawz: Refund of Rs. {#number#} for booking {#alphanumeric#} has been processed. {#url#}",
+      "variables": [
+        { "key": "amount", "jioTag": "number", "maxLength": 30 },
+        { "key": "bookingId", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "detailsUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "review_request",
+      "jioTemplateName": "Warmpawz Review Request",
+      "message": "Warmpawz: How was your experience? Share feedback: {#url#}",
+      "variables": [
+        { "key": "reviewUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "vendor_new_booking",
+      "jioTemplateName": "Warmpawz Vendor New Booking",
+      "message": "Warmpawz: New booking {#alphanumeric#} – {#alphanumeric#} on {#alphanumeric#} at {#alphanumeric#}. View: {#url#}",
+      "variables": [
+        { "key": "bookingId", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "serviceName", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "date", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "time", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "viewUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "vendor_booking_rescheduled",
+      "jioTemplateName": "Warmpawz Vendor Booking Rescheduled",
+      "message": "Warmpawz: Booking {#alphanumeric#} rescheduled to {#alphanumeric#} at {#alphanumeric#}. View: {#url#}",
+      "variables": [
+        { "key": "bookingId", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "date", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "time", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "viewUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "vendor_booking_cancelled",
+      "jioTemplateName": "Warmpawz Vendor Booking Cancelled",
+      "message": "Warmpawz: Booking {#alphanumeric#} has been cancelled by customer. View: {#url#}",
+      "variables": [
+        { "key": "bookingId", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "viewUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "vendor_application_approved",
+      "jioTemplateName": "Warmpawz Vendor Application Approved",
+      "message": "Warmpawz: Your vendor application has been approved. Login: {#url#}",
+      "variables": [
+        { "key": "loginUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "vendor_application_rejected",
+      "jioTemplateName": "Warmpawz Vendor Application Rejected",
+      "message": "Warmpawz: Your vendor application was not approved. Reason: {#alphanumeric#}. Contact support: {#url#}",
+      "variables": [
+        { "key": "reason", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "supportUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "vendor_customer_more_info",
+      "jioTemplateName": "Warmpawz Vendor Customer More Info",
+      "message": "Warmpawz: Customer requested more info for booking {#alphanumeric#}. Reply: {#url#}",
+      "variables": [
+        { "key": "bookingId", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "replyUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "vendor_application_more_info",
+      "jioTemplateName": "Warmpawz Vendor Application More Info",
+      "message": "Warmpawz: We need more info for your application. Submit: {#url#}",
+      "variables": [
+        { "key": "submitUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "settlement_credit",
+      "jioTemplateName": "Warmpawz Settlement Credit",
+      "message": "Warmpawz: Rs. {#number#} has been credited to your account for settlement period {#alphanumeric#}. Details: {#url#}",
+      "variables": [
+        { "key": "amount", "jioTag": "number", "maxLength": 30 },
+        { "key": "period", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "detailsUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "payment_success",
+      "jioTemplateName": "Warmpawz Payment Success",
+      "message": "Warmpawz: Payment of Rs. {#number#} received for order {#alphanumeric#}. Receipt: {#url#}",
+      "variables": [
+        { "key": "amount", "jioTag": "number", "maxLength": 30 },
+        { "key": "orderId", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "receiptUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "delivery_otp",
+      "jioTemplateName": "Warmpawz Delivery OTP",
+      "message": "Warmpawz: Your delivery OTP is {#number#}. Share with delivery partner. Order: {#alphanumeric#}",
+      "variables": [
+        { "key": "otp", "jioTag": "number", "maxLength": 30 },
+        { "key": "orderId", "jioTag": "alphanumeric", "maxLength": 40 }
+      ]
+    },
+    {
+      "id": "order_confirmed",
+      "jioTemplateName": "Warmpawz Order Confirmed",
+      "message": "Warmpawz: Order {#alphanumeric#} is confirmed. Track: {#url#}",
+      "variables": [
+        { "key": "orderId", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "trackUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "order_dispatched",
+      "jioTemplateName": "Warmpawz Order Dispatched",
+      "message": "Warmpawz: Order {#alphanumeric#} is on the way. Expected by {#alphanumeric#}. Track: {#url#}",
+      "variables": [
+        { "key": "orderId", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "eta", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "trackUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "order_delivered",
+      "jioTemplateName": "Warmpawz Order Delivered",
+      "message": "Warmpawz: Order {#alphanumeric#} has been delivered. Thank you for choosing Warmpawz.",
+      "variables": [
+        { "key": "orderId", "jioTag": "alphanumeric", "maxLength": 40 }
+      ]
+    },
+    {
+      "id": "pharmacy_accepted",
+      "jioTemplateName": "Warmpawz Pharmacy Accepted",
+      "message": "Warmpawz: {#alphanumeric#} has accepted your order {#alphanumeric#}. Track: {#url#}",
+      "variables": [
+        { "key": "pharmacyName", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "orderId", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "trackUrl", "jioTag": "url" }
+      ]
+    },
+    {
+      "id": "pharmacy_rejected",
+      "jioTemplateName": "Warmpawz Pharmacy Rejected",
+      "message": "Warmpawz: Order {#alphanumeric#} was not accepted. We are finding another partner. {#url#}",
+      "variables": [
+        { "key": "orderId", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "detailsUrl", "jioTag": "url" }
+      ]
+    }
+  ]
+}

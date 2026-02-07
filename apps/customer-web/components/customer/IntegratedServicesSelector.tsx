@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Ambulance, Microscope, Pill, MapPin, Clock, Star, Navigation, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-// Removed Supabase imports - using apiClient instead
+// Uses apiClient (API Gateway)
 import { motion, AnimatePresence } from 'framer-motion';
 import { apiClient } from '@/lib/api-client';
 
@@ -84,16 +84,14 @@ export function IntegratedServicesSelector({
 
     try {
       setLoading(true);
-      const data = await apiClient.post('/customer/services/request', {
+      const data = await apiClient.post('/bookings/create', {
         customerId,
-        providerId: selectedProvider.providerId,
+        vendorId: selectedProvider.providerId,
         serviceType: activeTab,
-        bookingId,
-        location: { ...userLocation, address: 'Current Location' },
-        details: {
-          providerName: selectedProvider.providerName,
-          price: selectedProvider.basePrice
-        }
+        parentBookingId: bookingId,
+        serviceLocation: { ...userLocation, address: 'Current Location' },
+        notes: `${activeTab} service request - ${selectedProvider.providerName}`,
+        amount: selectedProvider.basePrice
       });
       toast.success(`${activeTab === 'ambulance' ? 'Ambulance' : 'Service'} requested successfully!`);
       onServiceSelected(data);
@@ -145,7 +143,7 @@ export function IntegratedServicesSelector({
         </div>
         <div className="flex items-center gap-1">
           <Navigation className="w-4 h-4 text-blue-500" />
-          <span>{provider.distance.toFixed(1)} km</span>
+          <span>{Number(provider.distance || 0).toFixed(1)} km</span>
         </div>
         {provider.rating && (
           <div className="flex items-center gap-1">

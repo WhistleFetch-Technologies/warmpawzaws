@@ -74,7 +74,7 @@ export function RegionalCatalogManager() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-0">
+        <div className="flex items-center gap-3">
           <div className="p-0 bg-purple-100 rounded-xl">
             <Package className="w-6 h-6 text-purple-600" />
           </div>
@@ -86,7 +86,7 @@ export function RegionalCatalogManager() {
         {selectedRegion && (
           <button
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-0 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+            className="flex items-center gap-3 px-4 py-0 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
           >
             <Plus className="w-4 h-4" />
             Add Package
@@ -95,11 +95,11 @@ export function RegionalCatalogManager() {
       </div>
 
       <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
-        <div className="flex items-center gap-0 mb-4">
+        <div className="flex items-center gap-3 mb-4">
           <MapPin className="w-5 h-5 text-gray-400" />
           <h2 className="font-semibold text-gray-900">Select Region</h2>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-0">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
           {regions.map((region) => (
             <button
               key={region.regionId}

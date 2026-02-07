@@ -18,9 +18,13 @@ import {
   CheckCircle2,
   TrendingUp,
   Search,
-  Building2 // ✅ ADDED: Missing import
+  Building2,
+  Home as HomeIcon,
+  ShoppingCart,
+  User
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
+import { useCart } from '../../../context/CartContext';
 
 interface ClinicProfileViewProps {
   phone: string;
@@ -63,8 +67,10 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
   const [activeTab, setActiveTab] = useState<'overview' | 'doctors' | 'services' | 'reviews'>('overview');
   const [serviceSearchQuery, setServiceSearchQuery] = useState('');
   const [doctorSearchQuery, setDoctorSearchQuery] = useState('');
+  const [selectedService, setSelectedService] = useState<ServiceData | null>(null);
+  const { itemCount } = useCart();
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadClinicData();
@@ -79,7 +85,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       // Fetch facility data (includes vendor, facility, reviews)
       const facilityResponse = await fetch(`${API_BASE}/customer/facility/${clinicId}`, {
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         }
       });
 
@@ -98,7 +104,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       // Fetch services from the customer services endpoint and filter by vendorId
       const servicesResponse = await fetch(`${API_BASE}/customer/clinic/${clinicId}/services`, {
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         }
       });
 
@@ -134,7 +140,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       // Fetch doctors from the customer doctors endpoint and filter by vendorId
       const doctorsResponse = await fetch(`${API_BASE}/customer/doctors/search?roleId=veterinarian`, {
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`
+          ...getAuthHeaders()
         }
       });
 
@@ -179,7 +185,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600">Loading clinic details...</p>
@@ -190,7 +196,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
 
   if (!clinic || !facility) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
         <div className="text-center">
           <p className="text-gray-600">Clinic not found</p>
           <Button onClick={onBack} className="mt-4" variant="outline">
@@ -206,8 +212,8 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
   const hasPhotos = photos.length > 0;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-20">
+    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+      <div className="w-full bg-white min-h-screen pb-20">
         {/* Photo Gallery */}
         <div className="relative">
           {hasPhotos ? (
@@ -339,11 +345,36 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
 
           {/* Contact Info */}
           <div className="flex gap-3">
-            <Button variant="outline" className="flex-1 border-gray-300">
+            <Button 
+              variant="outline" 
+              className="flex-1 border-gray-300"
+              onClick={() => {
+                const phoneNumber = clinic?.phone || facility?.phone;
+                if (phoneNumber) {
+                  window.location.href = `tel:${phoneNumber}`;
+                } else {
+                  alert('Phone number not available');
+                }
+              }}
+            >
               <Phone className="w-4 h-4 mr-2" />
               Call
             </Button>
-            <Button variant="outline" className="flex-1 border-gray-300">
+            <Button 
+              variant="outline" 
+              className="flex-1 border-gray-300"
+              onClick={() => {
+                if (facility?.latitude && facility?.longitude) {
+                  const url = `https://www.google.com/maps/dir/?api=1&destination=${facility.latitude},${facility.longitude}`;
+                  window.open(url, '_blank');
+                } else if (facility?.address) {
+                  const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(facility.address)}`;
+                  window.open(url, '_blank');
+                } else {
+                  alert('Location not available');
+                }
+              }}
+            >
               <Navigation className="w-4 h-4 mr-2" />
               Direction
             </Button>
@@ -554,37 +585,50 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
                   .filter((service) =>
                     service.name.toLowerCase().includes(serviceSearchQuery.toLowerCase())
                   )
-                  .map((service) => (
-                    <Card
-                      key={service.id}
-                      className="p-4 hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h4 className="font-semibold text-gray-900">{service.name}</h4>
-                            {service.popular && (
-                              <Badge className="bg-orange-100 text-orange-700 text-xs">
-                                Popular
-                              </Badge>
+                  .map((service) => {
+                    const isSelected = selectedService?.id === service.id;
+                    return (
+                      <Card
+                        key={service.id}
+                        className={`p-4 hover:shadow-md transition-all cursor-pointer border-2 ${
+                          isSelected 
+                            ? 'border-[#FF8C42] shadow-lg bg-orange-50' 
+                            : 'border-gray-100 hover:border-[#FF8C42]'
+                        }`}
+                        onClick={() => setSelectedService(service)}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h4 className="font-semibold text-gray-900">{service.name}</h4>
+                              {service.popular && (
+                                <Badge className="bg-orange-100 text-orange-700 text-xs">
+                                  Popular
+                                </Badge>
+                              )}
+                              {isSelected && (
+                                <Badge className="bg-[#FF8C42] text-white text-xs">
+                                  Selected
+                                </Badge>
+                              )}
+                            </div>
+                            {service.description && (
+                              <p className="text-sm text-gray-600 mb-2">{service.description}</p>
                             )}
+                            <div className="flex items-center gap-3 text-xs text-gray-500">
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {service.duration} mins
+                              </span>
+                            </div>
                           </div>
-                          {service.description && (
-                            <p className="text-sm text-gray-600 mb-2">{service.description}</p>
-                          )}
-                          <div className="flex items-center gap-3 text-xs text-gray-500">
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {service.duration} mins
-                            </span>
+                          <div className="text-right ml-4">
+                            <div className="font-bold text-lg text-[#FF8C42]">₹{service.price}</div>
                           </div>
                         </div>
-                        <div className="text-right ml-4">
-                          <div className="font-bold text-lg text-[#FF8C42]">₹{service.price}</div>
-                        </div>
-                      </div>
-                    </Card>
-                  ))
+                      </Card>
+                    );
+                  })
               )}
             </div>
           )}
@@ -673,16 +717,98 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
         </div>
 
         {/* Fixed Bottom CTA */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg">
-          <div className="max-w-[430px] mx-auto">
-            <Button
-              onClick={() => onNavigate('appointment', { clinicId })}
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A2F] text-white h-12 text-base font-semibold"
-            >
-              <Calendar className="w-5 h-5 mr-2" />
-              Book Appointment
-            </Button>
-          </div>
+        <div className="fixed bottom-16 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg max-w-[430px] mx-auto z-40">
+          {selectedService ? (
+            <div className="mb-3 p-3 bg-orange-50 rounded-lg border border-orange-100">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-600 mb-1">Selected Service</p>
+                  <p className="font-semibold text-sm">{selectedService.name}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-lg font-bold text-[#FF8C42]">₹{selectedService.price}</p>
+                  <p className="text-xs text-gray-500">{selectedService.duration} mins</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+          <Button
+            onClick={() => {
+              if (selectedService) {
+                // ✅ FIXED: Navigate to 'select_service' which is handled by VetServiceRouter
+                // Pass the selected service so it can be pre-selected
+                console.log('📅 [CLINIC-PROFILE] Booking with selected service:', selectedService);
+                onNavigate('select_service', { 
+                  clinicId,
+                  vendorId: clinicId,
+                  vendorName: clinic?.businessName || clinic?.fullName,
+                  vendorAddress: facility?.address,
+                  preSelectedService: selectedService,
+                  serviceId: selectedService.id,
+                  service: selectedService,
+                  serviceType: 'center'
+                });
+              } else {
+                // Navigate to service selection without pre-selection
+                onNavigate('select_service', {
+                  clinicId,
+                  vendorId: clinicId,
+                  vendorName: clinic?.businessName || clinic?.fullName,
+                  vendorAddress: facility?.address,
+                  serviceType: 'center'
+                });
+              }
+            }}
+            className="w-full bg-[#FF8C42] hover:bg-[#FF7A2F] text-white h-12 text-base font-semibold"
+          >
+            <Calendar className="w-5 h-5 mr-2" />
+            {selectedService ? 'Book Appointment' : 'Select a Service'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Fixed Bottom Navigation - Matching Customer Home */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 max-w-[430px] mx-auto z-50">
+        <div className="flex items-center justify-around">
+          <button 
+            onClick={() => onNavigate && onNavigate('home')}
+            className="flex flex-col items-center gap-1"
+          >
+            <HomeIcon className="w-6 h-6 text-[#FF8C42]" />
+            <span className="text-xs font-medium text-[#FF8C42]">Home</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('cart')}
+            className="flex flex-col items-center gap-1 relative"
+          >
+            <div className="relative">
+              <ShoppingCart className="w-6 h-6 text-gray-400" />
+              {itemCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {itemCount}
+                </span>
+              )}
+            </div>
+            <span className="text-xs text-gray-400">Cart</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('bookings')}
+            className="flex flex-col items-center gap-1"
+          >
+            <Calendar className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Bookings</span>
+          </button>
+          <button 
+            onClick={() => onNavigate && onNavigate('profile')}
+            className="flex flex-col items-center gap-1"
+          >
+            <User className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Profile</span>
+          </button>
+        </div>
+        {/* Home Indicator */}
+        <div className="flex justify-center mt-2">
+          <div className="w-32 h-1 bg-black rounded-full"></div>
         </div>
       </div>
     </div>

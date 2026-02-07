@@ -27,7 +27,9 @@ export interface TaxCalculationParams {
 export interface TaxItem {
   id: string;
   type: 'product' | 'service';
-  hsnCode?: string;
+  hsnCode?: string;       // HSN code string (e.g. '9996') - from GST Configuration
+  hsnCodeId?: string;     // HSN code UUID - when linked via service_catalog.hsn_code_id
+  taxCategoryId?: string; // Tax category UUID - when linked via service_catalog.tax_category_id
   amount: number;
   quantity?: number;
   category?: string;
@@ -105,14 +107,24 @@ export class TaxCalculationService {
         category: category || item.category,
       });
 
-      // Get HSN code details if available
+      // Resolution chain: HSN (by ID) → HSN (by code) → Tax Category → Tax Rule → 18%
       let hsnDetails = null;
-      if (item.hsnCode) {
-        hsnDetails = await this.getHSNCodeDetails(item.hsnCode);
+      let taxCategoryDetails = null;
+      if (item.hsnCodeId) {
+        hsnDetails = await this.getHSNCodeById(item.hsnCodeId);
+      }
+      if (!hsnDetails && item.hsnCode) {
+        hsnDetails = await this.getHSNCodeByCode(item.hsnCode);
+      }
+      if (!hsnDetails && item.taxCategoryId) {
+        taxCategoryDetails = await this.getTaxCategoryDetails(item.taxCategoryId);
       }
 
-      // Use HSN code rate if available, otherwise use tax rule rate
-      const gstRate = hsnDetails?.gst_rate || taxRule.gst_rate || 18;
+      const gstRate = hsnDetails?.gst_rate
+        ?? taxCategoryDetails?.tax_rate
+        ?? taxCategoryDetails?.default_gst_rate
+        ?? taxRule.gst_rate
+        ?? 18;
       const cgstRate = taxRule.cgst_percentage || (gstRate / 2);
       const sgstRate = taxRule.sgst_percentage || (gstRate / 2);
       const igstRate = taxRule.igst_percentage || gstRate;
@@ -127,7 +139,7 @@ export class TaxCalculationService {
       taxBreakdowns.push({
         itemId: item.id,
         itemType: item.type,
-        hsnCode: item.hsnCode || hsnDetails?.hsn_code,
+        hsnCode: item.hsnCode || hsnDetails?.hsn_code || hsnDetails?.code,
         baseAmount: itemAmount,
         quantity: item.quantity || 1,
         gstRate,
@@ -201,10 +213,17 @@ export class TaxCalculationService {
       paramIndex++;
     }
 
-    // Filter by category
+    // Filter by category (legacy TEXT)
     if (category || item.category) {
       queryStr += ` AND (category IS NULL OR category = $${paramIndex})`;
       queryParams.push(category || item.category);
+      paramIndex++;
+    }
+
+    // Filter by tax_category_id (FK - selection not enter)
+    if (item.taxCategoryId) {
+      queryStr += ` AND (tax_category_id IS NULL OR tax_category_id = $${paramIndex})`;
+      queryParams.push(item.taxCategoryId);
       paramIndex++;
     }
 
@@ -254,15 +273,39 @@ export class TaxCalculationService {
   }
 
   /**
-   * Get HSN code details
+   * Get HSN code by UUID (from service_catalog.hsn_code_id)
    */
-  private async getHSNCodeDetails(hsnCode: string): Promise<any> {
-    const queryStr = `
-      SELECT * FROM hsn_codes
-      WHERE hsn_code = $1 AND is_active = true
-      LIMIT 1
-    `;
-    const result = await query(queryStr, [hsnCode]);
+  private async getHSNCodeById(id: string): Promise<any> {
+    const result = await query(
+      `SELECT * FROM hsn_codes WHERE id = $1 AND is_active = true LIMIT 1`,
+      [id]
+    );
+    const rows = Array.isArray(result) ? result : (result as any).rows || [];
+    return rows.length > 0 ? rows[0] : null;
+  }
+
+  /**
+   * Get HSN code by code string (hsn_code or code column)
+   */
+  private async getHSNCodeByCode(hsnCode: string): Promise<any> {
+    const result = await query(
+      `SELECT * FROM hsn_codes 
+       WHERE (hsn_code = $1 OR code = $1) AND is_active = true 
+       LIMIT 1`,
+      [hsnCode]
+    );
+    const rows = Array.isArray(result) ? result : (result as any).rows || [];
+    return rows.length > 0 ? rows[0] : null;
+  }
+
+  /**
+   * Get tax category details (tax_rate or default_gst_rate)
+   */
+  private async getTaxCategoryDetails(id: string): Promise<any> {
+    const result = await query(
+      `SELECT * FROM tax_categories WHERE id = $1 AND is_active = true LIMIT 1`,
+      [id]
+    );
     const rows = Array.isArray(result) ? result : (result as any).rows || [];
     return rows.length > 0 ? rows[0] : null;
   }

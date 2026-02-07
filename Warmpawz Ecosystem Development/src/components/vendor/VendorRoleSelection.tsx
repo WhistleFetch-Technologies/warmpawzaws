@@ -1,7 +1,6 @@
 import { ArrowRight } from 'lucide-react';
-import logoImage from 'figma:asset/1ee3459260cb17d9119000df586f10f31d016a25.png';
 import { useState, useEffect } from 'react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { configRolesUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface VendorRoleSelectionProps {
   onRoleSelect: (role: string) => void;
@@ -38,12 +37,8 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
   const fetchRoles = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/config/roles`,
-        {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
-        }
-      );
+      const url = configRolesUrl();
+      const response = await fetch(url, { headers: getAuthHeaders() });
 
       if (!response.ok) {
         throw new Error('Failed to fetch roles');
@@ -305,6 +300,13 @@ export function VendorRoleSelection({ onRoleSelect }: VendorRoleSelectionProps) 
         ) : error ? (
           <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
             <p className="text-red-700 text-center text-xs">{error}</p>
+          </div>
+        ) : null}
+
+        {/* Empty state when API returns no roles */}
+        {!loading && !error && roles.length === 0 ? (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-center">
+            <p className="text-amber-800 text-sm">No roles available right now. Please try again later.</p>
           </div>
         ) : null}
 

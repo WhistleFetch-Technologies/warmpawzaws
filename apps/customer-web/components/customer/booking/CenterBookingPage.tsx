@@ -59,15 +59,24 @@ export function CenterBookingPage({
   };
 
   const fetchAvailableSlots = async () => {
+    if (!selectedDate || !vendorId) return;
     try {
-      const response = await apiClient.get<{ slots: any[] }>(
-        `/vendor/${vendorId}/available-slots?date=${selectedDate}`
+      const params = new URLSearchParams({
+        date: selectedDate,
+        serviceStyle: 'at_center',
+        totalDuration: '30',
+      });
+      const response = await apiClient.get<{ slots: Array<{ time: string; available?: boolean }> }>(
+        `/customer/vendor/${vendorId}/available-slots?${params}`
       );
-      if (response.slots) {
-        setAvailableSlots(response.slots);
-      }
+      const slots = response?.slots ?? [];
+      const list = Array.isArray(slots)
+        ? slots.map((s) => (typeof s === 'object' && s?.time ? s : { time: String(s), available: true }))
+        : [];
+      setAvailableSlots(list);
     } catch (err) {
       console.error('Error fetching available slots:', err);
+      setAvailableSlots([]);
     }
   };
 
@@ -79,19 +88,30 @@ export function CenterBookingPage({
 
     setLoading(true);
     try {
-      const response = await apiClient.post<{ bookingId: string }>('/booking/create', {
-        phone,
-        petId: selectedPetId,
+      const customerRes = await apiClient.get<{ customer?: { id: string }; id?: string }>(`/customer/by-phone?phone=${encodeURIComponent(phone)}`);
+      const customerId = customerRes?.customer?.id ?? customerRes?.id;
+      if (!customerId) {
+        alert('Customer not found. Please try again.');
+        setLoading(false);
+        return;
+      }
+      const response = await apiClient.post<{ bookingId?: string; data?: { bookingId?: string }; booking?: { id?: string } }>('/booking/create', {
+        customerId,
         vendorId,
         serviceId,
+        bookingDate: selectedDate,
+        bookingTime: selectedTimeSlot.includes(':') ? selectedTimeSlot.split(':').slice(0, 2).join(':') : selectedTimeSlot,
         serviceType: 'at_center',
-        scheduledDate: selectedDate,
-        scheduledTime: selectedTimeSlot
+        petId: selectedPetId,
+        customerPhone: phone,
       });
 
-      if (response.bookingId) {
+      const bookingId = response?.data?.bookingId ?? response?.bookingId ?? response?.booking?.id;
+      if (bookingId) {
         alert('Booking created successfully!');
-        onSuccess(response.bookingId);
+        onSuccess(bookingId);
+      } else {
+        alert('Booking created but no booking ID returned.');
       }
     } catch (err) {
       console.error('Error creating booking:', err);
@@ -104,7 +124,7 @@ export function CenterBookingPage({
   return (
     <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center gap-0">
+      <div className="sticky top-0 z-10 bg-white border-b px-4 py-4 flex items-center gap-3">
         <button
           onClick={onBack}
           className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"

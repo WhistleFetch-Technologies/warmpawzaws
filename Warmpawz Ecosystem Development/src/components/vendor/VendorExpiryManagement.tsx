@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, Package, AlertTriangle, Calendar, Plus, Trash2, Search, Filter } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface ProductBatch {
   id: string;
@@ -123,9 +123,9 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
   const loadBatches = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/expiry-management/${vendorId}/batches`,
+        `${getApiBaseUrl()}/vendor/expiry-management/${vendorId}/batches`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          headers: { Authorization: (getAuthHeaders().Authorization || "") }
         }
       );
       const data = await response.json();
@@ -141,9 +141,9 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
   const loadAlerts = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/expiry-management/${vendorId}/alerts`,
+        `${getApiBaseUrl()}/vendor/expiry-management/${vendorId}/alerts`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          headers: { Authorization: (getAuthHeaders().Authorization || "") }
         }
       );
       const data = await response.json();
@@ -159,9 +159,9 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
   const loadDisposals = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/expiry-management/${vendorId}/disposal`,
+        `${getApiBaseUrl()}/vendor/expiry-management/${vendorId}/disposal`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          headers: { Authorization: (getAuthHeaders().Authorization || "") }
         }
       );
       const data = await response.json();
@@ -178,12 +178,12 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
     e.preventDefault();
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/expiry-management/${vendorId}/batches`,
+        `${getApiBaseUrl()}/vendor/expiry-management/${vendorId}/batches`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`
+            Authorization: (getAuthHeaders().Authorization || "")
           },
           body: JSON.stringify({
             ...batchForm,
@@ -224,12 +224,12 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/expiry-management/${vendorId}/disposal`,
+        `${getApiBaseUrl()}/vendor/expiry-management/${vendorId}/disposal`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`
+            Authorization: (getAuthHeaders().Authorization || "")
           },
           body: JSON.stringify({
             batchId: selectedBatch.id,
@@ -264,10 +264,10 @@ export function VendorExpiryManagement({ vendorId, vendorData, onBack }: VendorE
   const acknowledgeAlert = async (alertId: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/expiry-management/${vendorId}/alerts/${alertId}/acknowledge`,
+        `${getApiBaseUrl()}/vendor/expiry-management/${vendorId}/alerts/${alertId}/acknowledge`,
         {
           method: 'POST',
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          headers: { Authorization: (getAuthHeaders().Authorization || "") }
         }
       );
       const data = await response.json();

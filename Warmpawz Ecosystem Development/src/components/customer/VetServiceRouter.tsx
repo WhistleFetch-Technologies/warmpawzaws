@@ -15,7 +15,7 @@ import { VetBookingRouter } from './vet/VetBookingRouter'; // ✅ NEW: Complete 
 import { VetDoctorDetails } from './vet/VetDoctorDetails'; // ✅ NEW: Doctor details
 import { ProblemGridSelector } from './ProblemGridSelector'; // ✅ NEW: Problem grid
 import { VendorDiscoveryByProblem } from './VendorDiscoveryByProblem'; // ✅ NEW: Vendor discovery
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 type ViewType = 
   | 'landing'
@@ -89,7 +89,7 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
   // ✅ NEW: Problem grid state
   const [selectedProblem, setSelectedProblem] = useState<any>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadCustomerData();
@@ -172,7 +172,31 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
       setBookingFlow(prev => ({ ...prev, followUpBooking: data?.booking || null }));
       setCurrentView('followup_chat');
     } else if (screen === 'select_service') {
-      setCurrentView('select_service');
+      // ✅ FIXED: Capture vendor data and pre-selected service when coming from clinic profile
+      console.log('📦 [VET-ROUTER] Navigating to select_service with data:', data);
+      
+      const preSelectedService = data?.preSelectedService || data?.service;
+      
+      if (data) {
+        setBookingFlow(prev => ({
+          ...prev,
+          vendorId: data?.vendorId || data?.clinicId || prev.vendorId,
+          vendorName: data?.vendorName || prev.vendorName,
+          vendorAddress: data?.vendorAddress || prev.vendorAddress,
+          serviceType: data?.serviceType || prev.serviceType || 'center',
+          // If preSelectedService is provided, add it to services array
+          services: preSelectedService ? [preSelectedService] : prev.services,
+          selectedService: preSelectedService || null
+        }));
+      }
+      
+      // ✅ ISSUE #2 FIX: Skip service selection if service is already selected
+      if (preSelectedService) {
+        console.log('✅ [VET-ROUTER] Service already selected, skipping to pet selection:', preSelectedService);
+        setCurrentView('select_pet');
+      } else {
+        setCurrentView('select_service');
+      }
     } else if (screen === 'home_service_book') {
       setBookingFlow(prev => ({
         ...prev,
@@ -219,6 +243,12 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
         vendorName: data?.doctor?.name || data?.doctor?.fullName || data?.name,
         vendorAddress: data?.doctor?.clinicAddress || data?.address
       }));
+    } else {
+      // ✅ FIXED: Pass unknown screens (home, cart, bookings, profile, etc.) to parent
+      console.log('📤 [VET-ROUTER] Passing navigation to parent:', screen, data);
+      if (onNavigate) {
+        onNavigate(screen, data);
+      }
     }
   };
 
@@ -440,7 +470,9 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
     return (
       <TimeSlotSelector
         vendorId={bookingFlow.vendorId}
+        vendorName={bookingFlow.vendorName || 'Vet Clinic'} // ✅ Pass vendorName for scheduling policy display
         serviceDuration={bookingFlow.services[0].duration || 60}
+        serviceStyle={bookingFlow.serviceType === 'home' ? 'at_home' : 'at_center'} // ✅ Pass serviceStyle
         onBack={() => setCurrentView('select_pet')}
         onSelect={handleTimeSelected}
       />
@@ -451,7 +483,16 @@ export function VetServiceRouter({ onBack, phone, onNavigate, onViewBooking, dat
     return (
       <PetSelector
         phone={phone}
-        onBack={() => setCurrentView('select_service')}
+        onBack={() => {
+          // ✅ ISSUE #2 FIX: If service was pre-selected (skipped service selection), 
+          // go back to center_profile instead of select_service
+          if (bookingFlow.selectedService) {
+            console.log('✅ [VET-ROUTER] Service was pre-selected, going back to center_profile');
+            setCurrentView('center_profile');
+          } else {
+            setCurrentView('select_service');
+          }
+        }}
         onSelect={handlePetSelected}
       />
     );

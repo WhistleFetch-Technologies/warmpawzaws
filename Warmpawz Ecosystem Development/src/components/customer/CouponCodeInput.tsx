@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Tag, Check, X, Loader2, AlertCircle } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 /**
  * 🎫 COUPON CODE INPUT COMPONENT
@@ -55,11 +55,11 @@ export function CouponCodeInput({
       setError(null);
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/coupons/validate`,
+        `${getApiBaseUrl()}/coupons/validate`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

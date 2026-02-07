@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Calendar, Clock, CheckCircle, XCircle, Loader, Package, TrendingUp } from 'lucide-react';
+import { Calendar, Clock, CheckCircle, XCircle, Loader, Package, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -144,23 +144,11 @@ export function PetProfile({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-[430px] mx-auto bg-white min-h-screen">
-        {/* Header */}
-        <div className="sticky top-0 bg-[#FF8C42] text-white p-4 shadow-md z-10">
-          <div className="flex items-center gap-3">
-            <button onClick={onBack} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-            <div className="flex-1">
-              <h1 className="font-semibold">{petName}'s Profile</h1>
-              <p className="text-sm text-white/90">Health & Service History</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Pet Header */}
-        <div className="p-6 bg-gradient-to-b from-[#FF8C42]/10 to-transparent">
+    <>
+      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
+      
+      {/* Pet Header */}
+      <div className="p-6 bg-gradient-to-b from-[#FF8C42]/10 to-transparent">
           <div className="flex items-center gap-4 mb-6">
             <div className="w-20 h-20 bg-gradient-to-br from-[#FF8C42] to-[#FF7029] rounded-full flex items-center justify-center text-4xl">
               {getPetEmoji(petType)}
@@ -272,7 +260,6 @@ export function PetProfile({
             </TabsContent>
           </Tabs>
         </div>
-      </div>
-    </div>
+    </>
   );
 }

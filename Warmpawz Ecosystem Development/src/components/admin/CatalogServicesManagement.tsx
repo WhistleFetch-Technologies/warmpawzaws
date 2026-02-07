@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { RoleManagement } from './RoleManagement';
 import { EnhancedOnboardingFormBuilder } from './EnhancedOnboardingFormBuilder';
 import { ServiceCatalogTab } from './catalog/ServiceCatalogTab';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { Button } from '../ui/button';
 import { 
   Grid3x3, 
@@ -70,10 +70,10 @@ export function CatalogServicesManagement({ onNavigate }: CatalogServicesManagem
   const loadCategories = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/categories`,
+        `${getApiBaseUrl()}/admin/catalog/categories`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -93,10 +93,10 @@ export function CatalogServicesManagement({ onNavigate }: CatalogServicesManagem
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/catalog/stats`,
+        `${getApiBaseUrl()}/admin/catalog/stats`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

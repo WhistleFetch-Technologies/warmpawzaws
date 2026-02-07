@@ -8,7 +8,7 @@ import {
   Trash2,
   Edit2,
   TrendingUp,
-  DollarSign,
+  IndianRupee,
   Layers,
   Users,
   Check,
@@ -364,7 +364,7 @@ export function CommissionSettings() {
       {/* Default Commission Rate */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <div className="flex items-center gap-2 mb-4">
-          <DollarSign className="w-5 h-5 text-[#FF8C42]" />
+          <IndianRupee className="w-5 h-5 text-[#FF8C42]" />
           <h3 className="font-semibold text-gray-900">Default Commission Rate</h3>
         </div>
         <div className="max-w-md">

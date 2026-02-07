@@ -24,14 +24,13 @@ provider:
   # Environment variables
   environment:
     NODE_ENV: ${self:provider.stage}
-    AWS_REGION: ${self:provider.region}
     
     # RDS Configuration
     DB_HOST: ${ssm:/warmpawz/${self:provider.stage}/db/host}
     DB_PORT: ${ssm:/warmpawz/${self:provider.stage}/db/port, '5432'}
     DB_NAME: ${ssm:/warmpawz/${self:provider.stage}/db/name}
     DB_USER: ${ssm:/warmpawz/${self:provider.stage}/db/user}
-    DB_PASSWORD: ${ssm:/warmpawz/${self:provider.stage}/db/password~true}
+    DB_PASSWORD: ${ssm:/warmpawz/${self:provider.stage}/db/password}
     
     # Cognito Configuration
     COGNITO_USER_POOL_ID: ${ssm:/warmpawz/${self:provider.stage}/cognito/userPoolId}
@@ -43,11 +42,16 @@ provider:
     
     # Razorpay Configuration
     RAZORPAY_KEY_ID: ${ssm:/warmpawz/${self:provider.stage}/razorpay/keyId}
-    RAZORPAY_KEY_SECRET: ${ssm:/warmpawz/${self:provider.stage}/razorpay/keySecret~true}
-    RAZORPAY_WEBHOOK_SECRET: ${ssm:/warmpawz/${self:provider.stage}/razorpay/webhookSecret~true}
+    RAZORPAY_KEY_SECRET: ${ssm:/warmpawz/${self:provider.stage}/razorpay/keySecret}
+    RAZORPAY_WEBHOOK_SECRET: ${ssm:/warmpawz/${self:provider.stage}/razorpay/webhookSecret}
     
     # Feature Flags
     UAT_MODE: ${ssm:/warmpawz/${self:provider.stage}/features/uatMode, 'false'}
+    
+    # S3 Configuration
+    S3_UPLOADS_BUCKET: ${ssm:/warmpawz/${self:provider.stage}/s3/uploadsBucket, 'warmpawz-dev-uploads'}
+    S3_STORAGE_BUCKET: ${ssm:/warmpawz/${self:provider.stage}/s3/storageBucket, 'warmpawz-dev-storage'}
+    S3_ASSETS_BUCKET: ${ssm:/warmpawz/${self:provider.stage}/s3/assetsBucket, 'warmpawz-dev-assets'}
   
   # IAM Role Permissions
   iam:
@@ -95,6 +99,17 @@ provider:
             - logs:PutLogEvents
           Resource: '*'
         
+        # S3 Access for file uploads
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:DeleteObject
+            - s3:ListBucket
+          Resource:
+            - arn:aws:s3:::warmpawz-*
+            - arn:aws:s3:::warmpawz-*/*
+        
         # AWS Bedrock Access (for AI plan generation)
         - Effect: Allow
           Action:
@@ -102,6 +117,29 @@ provider:
             - bedrock:InvokeModelWithResponseStream
           Resource:
             - arn:aws:bedrock:${self:provider.region}::foundation-model/*
+        
+        # AWS Chime SDK Access (for video calls/tele-consultations)
+        - Effect: Allow
+          Action:
+            - chime:CreateMeeting
+            - chime:DeleteMeeting
+            - chime:GetMeeting
+            - chime:ListMeetings
+            - chime:CreateAttendee
+            - chime:DeleteAttendee
+            - chime:GetAttendee
+            - chime:ListAttendees
+            - chime:BatchCreateAttendee
+            - chime:StartMeetingTranscription
+            - chime:StopMeetingTranscription
+          Resource:
+            - arn:aws:chime:*:*:meeting/*
+        
+        # Chime SDK Meetings specific permissions
+        - Effect: Allow
+          Action:
+            - chime:CreateMeetingWithAttendees
+          Resource: '*'
   
   # VPC Configuration for RDS
   vpc:
@@ -112,23 +150,14 @@ provider:
       - ${ssm:/warmpawz/${self:provider.stage}/vpc/subnetId2}
   
   # API Gateway Configuration
+  # Using existing API Gateway (z0b3obweb6) that frontend is pointing to
+  # Note: CORS is handled by Lambda handler to ensure proper OPTIONS handling
+  # The Lambda handler handles OPTIONS requests and returns 200 OK for preflight
+  # CORS configuration removed from here because:
+  # 1. Serverless Framework cannot configure CORS on externally configured HTTP APIs
+  # 2. CORS is fully handled in the Lambda handler code (see handler/index.ts)
   httpApi:
-    cors:
-      allowedOrigins:
-        - ${ssm:/warmpawz/${self:provider.stage}/cors/allowedOrigins}
-      allowedHeaders:
-        - Content-Type
-        - Authorization
-        - X-Requested-With
-        - X-Request-Id
-      allowedMethods:
-        - GET
-        - POST
-        - PUT
-        - DELETE
-        - PATCH
-        - OPTIONS
-      maxAge: 86400
+    id: z0b3obweb6  # Use existing API Gateway that frontend is pointing to
 
 functions:
   api:
@@ -142,29 +171,26 @@ functions:
           path: /
           method: ANY
 
-# CloudFront Distribution (via plugin)
-plugins:
-  - serverless-cloudfront-invalidate
+# CloudFront Distribution (disabled for now)
+# plugins:
+#   - serverless-cloudfront-invalidate
 
-custom:
-  cloudfront:
-    distributionId: ${ssm:/warmpawz/${self:provider.stage}/cloudfront/distributionId}
-    paths:
-      - '/*'
+# custom:
+#   cloudfront:
+#     distributionId: ${ssm:/warmpawz/${self:provider.stage}/cloudfront/distributionId}
+#     paths:
+#       - '/*'
 
 # Package Configuration
+# Include all node_modules (dependencies will be automatically included)
+# Exclude only source files and build configs
 package:
   patterns:
-    - '!node_modules/**'
     - '!src/**'
     - '!*.ts'
     - '!*.tsx'
     - '!tsconfig.json'
     - '!esbuild.config.js'
     - 'dist/**'
-    - 'node_modules/@warmpawz/**'
-    - 'node_modules/zod/**'
-    - 'node_modules/hono/**'
-    - 'node_modules/jose/**'
-    - 'node_modules/pg/**'
+    - 'node_modules/**'
 

@@ -14,7 +14,7 @@ import {
   Video,
   Check,
   AlertCircle,
-  DollarSign,
+  IndianRupee,
   Users,
   Home as HomeIcon
 } from 'lucide-react';

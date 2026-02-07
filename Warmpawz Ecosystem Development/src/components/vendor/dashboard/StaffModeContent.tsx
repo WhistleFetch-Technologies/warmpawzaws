@@ -8,7 +8,7 @@ import { ActiveBookingsList } from './ActiveBookingsList';
 import { AvailabilityToggle } from './AvailabilityToggle';
 import { TodaySchedule } from './TodaySchedule';
 import { StaffProfileEditor } from './StaffProfileEditor';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface StaffModeContentProps {
   session: {
@@ -34,7 +34,7 @@ export function StaffModeContent({
   const [todaySchedule, setTodaySchedule] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchStaffData();
@@ -50,7 +50,7 @@ export function StaffModeContent({
         `${API_BASE}/staff/${session.staffId}/bookings/active`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -68,7 +68,7 @@ export function StaffModeContent({
         `${API_BASE}/staff/${session.staffId}/schedule?date=${today}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );

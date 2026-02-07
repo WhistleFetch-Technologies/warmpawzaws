@@ -194,14 +194,6 @@ function generateVeterinarianSchema(vendorType: 'solo' | 'business'): FormSchema
         validation: { min: 0, max: 50 },
       },
       {
-        id: 'specializations',
-        label: 'Specializations',
-        type: 'multiselect',
-        required: false,
-        section: 'professional',
-        options: ['Surgery', 'Dermatology', 'Cardiology', 'Oncology', 'Emergency', 'General Practice'],
-      },
-      {
         id: 'panCard',
         label: 'PAN Card',
         type: 'file',
@@ -554,14 +546,6 @@ function generatePetTrainerSchema(vendorType: 'solo' | 'business'): FormSchema {
         validation: { min: 0 },
       },
       {
-        id: 'specializations',
-        label: 'Training Specializations',
-        type: 'multiselect',
-        required: false,
-        section: 'professional',
-        options: ['Basic Obedience', 'Advanced Training', 'Behavior Modification', 'Puppy Training', 'Agility'],
-      },
-      {
         id: 'certificationDoc',
         label: 'Certification Document',
         type: 'file',
@@ -768,14 +752,6 @@ function generatePetPhotographerSchema(): FormSchema {
         required: true,
         section: 'professional',
         validation: { min: 0 },
-      },
-      {
-        id: 'specializations',
-        label: 'Photography Types',
-        type: 'multiselect',
-        required: false,
-        section: 'professional',
-        options: ['Portrait', 'Event', 'Outdoor', 'Studio', 'Action'],
       },
       {
         id: 'panCard',

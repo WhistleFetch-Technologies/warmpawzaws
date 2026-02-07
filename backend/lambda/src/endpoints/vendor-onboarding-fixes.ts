@@ -15,6 +15,8 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // Default form fields when onboarding_forms doesn't exist
 const DEFAULT_FORM_FIELDS = [
@@ -192,38 +194,63 @@ export function registerVendorOnboardingFixes(app: Hono) {
   app.get('/vendor/onboarding/form-schema-fixed', async (c) => {
     try {
       const phone = c.req.query('phone');
+      const roleIdParam = c.req.query('roleId');
+      const vendorTypeParam = c.req.query('vendorType');
       
-      if (!phone) {
-        return c.json({ error: 'Phone number is required' }, 400);
+      // Allow either phone or roleId to be provided
+      if (!phone && !roleIdParam) {
+        return c.json({ error: 'Phone number or roleId is required' }, 400);
       }
 
-      // Get vendor identity
-      const identities = await select('vendor_identity', { phone });
-      if (identities.length === 0) {
-        return c.json({ error: 'Vendor identity not found' }, 404);
+      let selectedRoleId = roleIdParam;
+      let vendorType = vendorTypeParam || 'business';
+      let identity: any = null;
+
+      // If phone is provided, try to get vendor identity
+      if (phone) {
+        const identities = await select('vendor_identity', { phone });
+        if (identities.length > 0) {
+          identity = identities[0];
+          // Use identity values if available, fallback to query params
+          selectedRoleId = identity.selected_role_id || roleIdParam;
+          vendorType = identity.vendor_type || vendorTypeParam || 'business';
+        }
       }
 
-      const identity = identities[0];
-
-      if (!identity.selected_role_id || !identity.vendor_type) {
-        return c.json({ error: 'Role and vendor type must be selected first' }, 400);
+      // If still no role ID, return default form schema
+      if (!selectedRoleId) {
+        console.log(`⚠️ [FORM SCHEMA] No role selected, returning DEFAULT FIELDS`);
+        return c.json({
+          success: true,
+          roleId: null,
+          roleName: 'default',
+          fields: DEFAULT_FORM_FIELDS,
+          sections: getSectionsFromFields(DEFAULT_FORM_FIELDS),
+          schema: {
+            fields: DEFAULT_FORM_FIELDS,
+            sections: getSectionsFromFields(DEFAULT_FORM_FIELDS),
+          },
+          message: 'Using default form fields. Select a role for role-specific fields.',
+        });
       }
 
       // Get role information
-      const roles = await select('roles', { id: identity.selected_role_id });
-      if (roles.length === 0) {
-        return c.json({ error: 'Role not found' }, 404);
+      const roles = await select('roles', { id: selectedRoleId });
+      let roleName = 'default';
+      
+      if (roles.length > 0) {
+        roleName = roles[0].name;
+      } else {
+        // roleId might be a role name, not UUID
+        roleName = selectedRoleId;
       }
       
-      const role = roles[0];
-      const roleName = role.name;
-      
-      console.log(`📋 [FORM SCHEMA] Looking for form for role: ${roleName} (UUID: ${identity.selected_role_id})`);
+      console.log(`📋 [FORM SCHEMA] Looking for form for role: ${roleName} (UUID: ${selectedRoleId})`);
       
       // Try to get form from onboarding_forms table
       const formsResult = await query(
         `SELECT * FROM onboarding_forms WHERE role_id = $1 OR role_id = $2 ORDER BY created_at DESC LIMIT 1`,
-        [roleName, identity.selected_role_id]
+        [roleName, selectedRoleId]
       );
       
       let fields: any[] = [];
@@ -242,7 +269,7 @@ export function registerVendorOnboardingFixes(app: Hono) {
             `INSERT INTO onboarding_forms (role_id, vendor_type, fields, version, status, created_at, updated_at)
              VALUES ($1, $2, $3, 1, 'published', NOW(), NOW())
              ON CONFLICT (role_id, vendor_type) DO UPDATE SET fields = $3, updated_at = NOW()`,
-            [roleName, identity.vendor_type || 'center', JSON.stringify(DEFAULT_FORM_FIELDS)]
+            [roleName, vendorType || 'center', JSON.stringify(DEFAULT_FORM_FIELDS)]
           );
           console.log(`✅ [FORM SCHEMA] Created default form for role ${roleName}`);
         } catch (insertError) {
@@ -257,7 +284,7 @@ export function registerVendorOnboardingFixes(app: Hono) {
         console.error(`❌ [FORM SCHEMA] No active fields found, returning default fields`);
         return c.json({
           success: true,
-          roleId: identity.selected_role_id,
+          roleId: selectedRoleId,
           roleName: roleName,
           fields: DEFAULT_FORM_FIELDS,
           sections: getSectionsFromFields(DEFAULT_FORM_FIELDS),
@@ -275,7 +302,7 @@ export function registerVendorOnboardingFixes(app: Hono) {
 
       return c.json({
         success: true,
-        roleId: identity.selected_role_id,
+        roleId: selectedRoleId,
         roleName: roleName,
         fields: activeFields,
         sections: sections,
@@ -298,13 +325,14 @@ export function registerVendorOnboardingFixes(app: Hono) {
     try {
       console.log('📋 [ADMIN] Fetching pending applications...');
       
-      // Query vendor_onboarding_applications with JOIN to vendor_identity
+      // Query vendor_onboarding_applications with JOIN to vendor_identity (include uploaded_documents for admin review)
       const applicationsResult = await query(`
         SELECT 
           voa.id as application_id,
           voa.vendor_identity_id,
           voa.status,
           voa.application_payload,
+          voa.uploaded_documents,
           voa.submitted_at,
           voa.created_at,
           vi.phone,
@@ -329,12 +357,15 @@ export function registerVendorOnboardingFixes(app: Hono) {
           id: row.application_id,
           applicationId: row.application_id,
           vendorId: row.vendor_identity_id,
-          fullName: payload.fullName || payload.businessName || 'N/A',
+          fullName: payload.fullName || payload.ownerName || payload.businessName || 'N/A',
           businessName: payload.businessName || payload.fullName || 'N/A',
+          ownerName: payload.ownerName || payload.fullName || 'N/A',
           phone: row.phone || payload.phone || 'N/A',
           email: payload.email || 'N/A',
           address: payload.address || 'N/A',
           city: payload.city || 'N/A',
+          state: payload.state || 'N/A',
+          pincode: payload.pincode || payload.pinCode || payload.pin || 'N/A',
           category: row.role_display_name || row.role_name || 'N/A',
           roleName: row.role_name,
           experience: payload.experience || '0',
@@ -342,6 +373,10 @@ export function registerVendorOnboardingFixes(app: Hono) {
           submittedAt: row.submitted_at || row.created_at,
           vendorType: row.vendor_type,
           priority: 'medium',
+          uploaded_documents: row.uploaded_documents ?? undefined,
+          uploadedDocuments: row.uploaded_documents ?? undefined,
+          customFields: payload,
+          formData: payload,
         };
       });
       
@@ -355,6 +390,78 @@ export function registerVendorOnboardingFixes(app: Hono) {
     } catch (error: any) {
       console.error('❌ [ADMIN] Error fetching pending applications:', error);
       return c.json({ error: error.message || 'Failed to fetch applications' }, 500);
+    }
+  });
+
+  /**
+   * ✅ FIX: GET /vendor/application/status/:vendorId
+   * Get vendor application status by vendorId (used by VendorApplicationStatus.tsx)
+   */
+  app.get('/vendor/application/status/:vendorId', async (c) => {
+    const vendorId = c.req.param('vendorId');
+    console.log('📋 [VENDOR-APPLICATION-STATUS] Getting status for vendorId:', vendorId);
+    
+    try {
+      // First try to find by application ID
+      let application = await query(
+        `SELECT va.*, vi.phone, vi.vendor_id, vi.selected_role_id, r.name as role_name
+         FROM vendor_onboarding_applications va
+         LEFT JOIN vendor_identity vi ON va.vendor_identity_id = vi.id
+         LEFT JOIN roles r ON vi.selected_role_id = r.id
+         WHERE va.id = $1 OR va.vendor_identity_id = $1 OR vi.vendor_id = $1
+         ORDER BY va.created_at DESC
+         LIMIT 1`,
+        [vendorId]
+      );
+      
+      if (!application || !application.rows || application.rows.length === 0) {
+        // Try to find by vendor_id in vendors table
+        const vendorRecord = await query(
+          `SELECT v.*, vi.phone, va.id as application_id, va.status as app_status, va.submitted_at
+           FROM vendors v
+           LEFT JOIN vendor_identity vi ON v.phone = vi.phone
+           LEFT JOIN vendor_onboarding_applications va ON vi.id = va.vendor_identity_id
+           WHERE v.id = $1
+           ORDER BY va.created_at DESC
+           LIMIT 1`,
+          [vendorId]
+        );
+        
+        if (vendorRecord && vendorRecord.rows && vendorRecord.rows.length > 0) {
+          const vendor = vendorRecord.rows[0];
+          return c.json({
+            success: true,
+            application: {
+              id: vendor.application_id || vendorId,
+              status: vendor.app_status || vendor.onboarding_status || 'pending',
+              submittedAt: vendor.submitted_at || vendor.created_at,
+              fullName: vendor.owner_name || vendor.full_name,
+              reviewedAt: vendor.reviewed_at,
+              clarificationNotes: vendor.clarification_notes,
+            },
+            canProceedToSetup: vendor.app_status === 'approved' || vendor.onboarding_status === 'APPROVED',
+          });
+        }
+        
+        return c.json({ success: false, error: 'Application not found' }, 404);
+      }
+      
+      const app = application.rows[0];
+      return c.json({
+        success: true,
+        application: {
+          id: app.id,
+          status: app.status,
+          submittedAt: app.submitted_at || app.created_at,
+          fullName: app.form_data?.fullName || app.form_data?.ownerName || app.application_payload?.fullName || 'Vendor',
+          reviewedAt: app.reviewed_at,
+          clarificationNotes: app.clarification_notes || app.admin_comments,
+        },
+        canProceedToSetup: app.status === 'approved' || app.status === 'APPROVED',
+      });
+    } catch (error: any) {
+      console.error('❌ [VENDOR-APPLICATION-STATUS] Error:', error);
+      return c.json({ success: false, error: error.message }, 500);
     }
   });
 }

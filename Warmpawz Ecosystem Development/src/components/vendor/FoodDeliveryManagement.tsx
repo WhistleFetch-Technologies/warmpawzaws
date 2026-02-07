@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Plus, Edit, Trash } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 /**
  * 🍽️ FOOD DELIVERY VENDOR MANAGEMENT
@@ -28,8 +28,8 @@ export default function FoodDeliveryManagement({ vendorId }: { vendorId: string 
   const fetchMenu = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/food-delivery/menu/${vendorId}`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/food-delivery/menu/${vendorId}`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
       const data = await response.json();
       if (data.success) setMenuItems(data.data.menu || []);
@@ -41,8 +41,8 @@ export default function FoodDeliveryManagement({ vendorId }: { vendorId: string 
   const fetchOrders = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/food-orders`,
-        { headers: { Authorization: `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/food-orders`,
+        { headers: { Authorization: (getAuthHeaders().Authorization || "") } }
       );
       const data = await response.json();
       if (data.success) setOrders(data.data.orders || []);
@@ -55,12 +55,12 @@ export default function FoodDeliveryManagement({ vendorId }: { vendorId: string 
     e.preventDefault();
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/food-delivery/menu/item/create`,
+        `${getApiBaseUrl()}/food-delivery/menu/item/create`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({
             vendorId,
@@ -87,12 +87,12 @@ export default function FoodDeliveryManagement({ vendorId }: { vendorId: string 
   const updateOrderStatus = async (orderId: string, status: string) => {
     try {
       await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/food-delivery/order/${orderId}/status`,
+        `${getApiBaseUrl()}/food-delivery/order/${orderId}/status`,
         {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({ status }),
         }

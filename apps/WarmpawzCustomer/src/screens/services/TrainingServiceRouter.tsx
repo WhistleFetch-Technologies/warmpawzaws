@@ -145,6 +145,8 @@ export function TrainingServiceRouter({
         setPackages(servicePackages);
       }
       
+      // ✅ FIX: Go directly to center_profile with services loaded
+      // This allows service selection from the profile view like vet and grooming flows
       setCurrentView('center_profile');
     } catch (error) {
       console.error('Error loading services:', error);
@@ -154,8 +156,35 @@ export function TrainingServiceRouter({
     }
   };
 
-  const handleViewServices = () => {
-    setCurrentView('select_service');
+  // ✅ State for selected services in profile view
+  const [selectedServicesInProfile, setSelectedServicesInProfile] = useState<string[]>([]);
+
+  const toggleServiceInProfile = (serviceId: string) => {
+    setSelectedServicesInProfile(prev => 
+      prev.includes(serviceId) 
+        ? prev.filter(id => id !== serviceId)
+        : [...prev, serviceId]
+    );
+  };
+
+  const getSelectedServicesTotal = () => {
+    return services
+      .filter(s => selectedServicesInProfile.includes(s.id))
+      .reduce((sum, s) => sum + (s.price || 0), 0);
+  };
+
+  const handleBookFromProfile = () => {
+    if (selectedServicesInProfile.length === 0) {
+      Alert.alert('Please Select Services', 'Please select at least one training program to continue.');
+      return;
+    }
+    
+    const selectedServicesList = services.filter(s => selectedServicesInProfile.includes(s.id));
+    setBookingFlow(prev => ({
+      ...prev,
+      services: selectedServicesList,
+    }));
+    setCurrentView('select_pet');
   };
 
   const handleServiceSelect = (service: any, addOns: any[] = []) => {
@@ -292,10 +321,12 @@ export function TrainingServiceRouter({
     </View>
   );
 
+  // ✅ FIX: Center Profile now shows services inline with selection checkboxes
+  // This matches the vet and grooming flows where services are selected from profile before booking
   const renderCenterProfile = () => (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => setCurrentView('training_center')}>
+        <TouchableOpacity onPress={() => setCurrentView(bookingFlow.serviceType === 'center' ? 'training_center' : 'training_home')}>
           <Text style={styles.backButton}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{selectedVendor?.name}</Text>
@@ -335,13 +366,100 @@ export function TrainingServiceRouter({
           </View>
         )}
 
-        <TouchableOpacity
-          style={styles.primaryButton}
-          onPress={handleViewServices}
-        >
-          <Text style={styles.primaryButtonText}>View Training Programs</Text>
-        </TouchableOpacity>
+        {/* ✅ Training Programs Section - Inline selection like VetCenterProfileView */}
+        <View style={styles.servicesSection}>
+          <Text style={styles.sectionHeader}>Select Training Programs</Text>
+          
+          {/* Selected count indicator */}
+          {selectedServicesInProfile.length > 0 && (
+            <View style={styles.selectedIndicator}>
+              <Text style={styles.selectedIndicatorText}>
+                {selectedServicesInProfile.length} program{selectedServicesInProfile.length > 1 ? 's' : ''} selected • ₹{getSelectedServicesTotal()}
+              </Text>
+            </View>
+          )}
+          
+          {/* Training Packages */}
+          {packages.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Training Packages</Text>
+              {packages.map((pkg) => {
+                const isSelected = selectedServicesInProfile.includes(pkg.id);
+                return (
+                  <TouchableOpacity
+                    key={pkg.id}
+                    style={[styles.serviceCard, styles.packageCard, isSelected && styles.selectedServiceCard]}
+                    onPress={() => toggleServiceInProfile(pkg.id)}
+                  >
+                    <View style={styles.serviceCardContent}>
+                      <View style={styles.serviceInfo}>
+                        <Text style={styles.serviceName}>{pkg.name}</Text>
+                        <Text style={styles.serviceDescription}>{pkg.description}</Text>
+                        {pkg.sessions && (
+                          <Text style={styles.serviceSessions}>{pkg.sessions} sessions</Text>
+                        )}
+                        <Text style={styles.servicePrice}>₹{pkg.price}</Text>
+                        <Text style={styles.packageBadge}>Package</Text>
+                      </View>
+                      <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+                        {isSelected && <Text style={styles.checkmark}>✓</Text>}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+
+          {/* Individual Sessions */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Individual Sessions</Text>
+            {services.filter((s: any) => !s.isPackage).map((service) => {
+              const isSelected = selectedServicesInProfile.includes(service.id);
+              return (
+                <TouchableOpacity
+                  key={service.id}
+                  style={[styles.serviceCard, isSelected && styles.selectedServiceCard]}
+                  onPress={() => toggleServiceInProfile(service.id)}
+                >
+                  <View style={styles.serviceCardContent}>
+                    <View style={styles.serviceInfo}>
+                      <Text style={styles.serviceName}>{service.name}</Text>
+                      <Text style={styles.serviceDescription}>{service.description}</Text>
+                      <Text style={styles.servicePrice}>₹{service.price}</Text>
+                      {service.duration && (
+                        <Text style={styles.serviceDuration}>⏱️ {service.duration} min</Text>
+                      )}
+                    </View>
+                    <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+                      {isSelected && <Text style={styles.checkmark}>✓</Text>}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
       </ScrollView>
+      
+      {/* ✅ Fixed bottom book button */}
+      <View style={styles.bottomButtonContainer}>
+        <TouchableOpacity
+          style={[
+            styles.primaryButton, 
+            selectedServicesInProfile.length === 0 && styles.disabledButton
+          ]}
+          onPress={handleBookFromProfile}
+          disabled={selectedServicesInProfile.length === 0}
+        >
+          <Text style={styles.primaryButtonText}>
+            {selectedServicesInProfile.length === 0 
+              ? 'Select Programs to Book' 
+              : `Book ${selectedServicesInProfile.length} Program${selectedServicesInProfile.length > 1 ? 's' : ''} • ₹${getSelectedServicesTotal()}`
+            }
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -672,13 +790,14 @@ const styles = StyleSheet.create({
   specializationTag: {
     fontSize: typography.caption,
     color: colors.primary,
-    backgroundColor: colors.error + 20% opacity,
+    backgroundColor: '#FFF7ED',
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.sm,
   },
   profileContainer: {
     flex: 1,
+    paddingBottom: 100, // Space for fixed bottom button
   },
   imagePlaceholder: {
     width: '100%',
@@ -771,6 +890,76 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: 'bold',
     marginTop: spacing.xs,
+  },
+  // ✅ New styles for inline service selection
+  servicesSection: {
+    marginTop: spacing.lg,
+  },
+  sectionHeader: {
+    fontSize: typography.h2,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: spacing.md,
+  },
+  selectedIndicator: {
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  selectedIndicatorText: {
+    fontSize: typography.body,
+    fontWeight: '600',
+    color: colors.primary,
+    textAlign: 'center',
+  },
+  serviceCardContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  serviceInfo: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  selectedServiceCard: {
+    borderColor: colors.primary,
+    borderWidth: 2,
+    backgroundColor: '#FFF7ED',
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: colors.gray['300'],
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: spacing.xs,
+  },
+  checkboxSelected: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  checkmark: {
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  bottomButtonContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.white,
+    padding: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.gray['200'],
+  },
+  disabledButton: {
+    backgroundColor: colors.gray['300'],
   },
   petList: {
     flex: 1,

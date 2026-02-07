@@ -1,1 +1,1 @@
-{"version":1,"functions":{"/analytics":{},"/catalog":{},"/_not-found":{},"/banners":{},"/governance":{},"/integrations":{},"/logistics":{},"/promotions":{},"/":{},"/refunds":{},"/reports":{},"/sellers":{},"/settlements":{},"/tiers":{}}}
+{"version":1,"functions":{"/analytics":{},"/catalog":{},"/banners":{},"/_not-found":{},"/governance":{},"/integrations":{},"/logistics":{},"/":{},"/refunds":{},"/promotions":{},"/sellers":{},"/settlements":{},"/vendors":{},"/tiers":{},"/webhooks":{}}}

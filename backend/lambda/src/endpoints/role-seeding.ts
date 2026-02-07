@@ -12,6 +12,8 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 // ============================================================================
 // STANDARD ROLE DEFINITIONS (From Reference)
@@ -51,23 +53,120 @@ const KNOWN_ROLE_NAMES: Record<string, string> = {
   'insurance': 'Pet Insurance Provider',
 };
 
+// ============================================================================
+// BASE CAPABILITIES - Available to ALL vendor roles
+// These are horizontal capabilities required for all vendors
+// ============================================================================
+const BASE_CAPABILITIES = [
+  'dashboard',        // Core Operations - Dashboard overview
+  'profile',          // Core Operations - Update vendor profile
+  'earnings',         // Finance & Payments - View earnings
+  'settlements',      // Finance & Payments - View payouts
+  'bank_account',     // Finance & Payments - Manage bank details
+  'notifications',    // Communication - Notifications
+  'reports',          // Operations - Reports and analytics
+  'bank_verification', // Verification - Bank account verification
+];
+
+// Only these 27 canonical roles are active; inactive roles are removed from catalog/DB (added behaviorist_solo, behaviorist_center)
+const CANONICAL_ACTIVE_ROLE_NAMES: string[] = [
+  'vet_solo', 'vet_clinic', 'groomer_solo', 'groomer_center', 'trainer_solo', 'trainer_center',
+  'behaviorist_solo', 'behaviorist_center',
+  'boarding', 'walker', 'sitter', 'adoption_center', 'cafe', 'photographer', 'pharmacy', 'seller',
+  'ambulance', 'insurance', 'nutritionist', 'nutritionist_center', 'relocation', 'resort', 'holiday',
+  'sunset', 'breeder', 'diagnostics_center', 'event_organizer',
+];
+
+// Map canonical role name -> legacy definition key (for config/capabilities)
+const CANONICAL_TO_LEGACY_DEF: Record<string, string> = {
+  vet_solo: 'veterinarian',
+  vet_clinic: 'veterinary_clinic',
+  groomer_solo: 'pet_groomer',
+  groomer_center: 'pet_groomer',
+  trainer_solo: 'pet_trainer',
+  trainer_center: 'pet_trainer',
+  behaviorist_solo: 'pet_behaviorist',
+  behaviorist_center: 'pet_behaviorist',
+  boarding: 'pet_boarding',
+  walker: 'pet_walker',
+  sitter: 'pet_sitter',
+  adoption_center: 'pet_shelter',
+  cafe: 'pet_cafe',
+  photographer: 'pet_photographer',
+  pharmacy: 'pet_pharmacy',
+  seller: 'pet_products_store',
+  ambulance: 'pet_ambulance',
+  insurance: 'insurance',
+  nutritionist: 'nutritionist',
+  nutritionist_center: 'nutritionist',
+  relocation: 'pet_taxi',
+  resort: 'pet_resort',
+  holiday: 'pet_holiday_planner',
+  sunset: 'pet_sunset_services',
+  breeder: 'pet_breeder',
+  diagnostics_center: 'veterinary_clinic',
+  event_organizer: 'event_organizer',
+};
+
+// Display names for canonical roles (catalog/admin)
+const CANONICAL_ROLE_DISPLAY_NAMES: Record<string, string> = {
+  vet_solo: 'Veterinarian (Solo)',
+  vet_clinic: 'Veterinary Clinic',
+  groomer_solo: 'Pet Groomer (Solo)',
+  groomer_center: 'Pet Grooming Salon',
+  trainer_solo: 'Pet Trainer (Solo)',
+  trainer_center: 'Pet Training Center',
+  behaviorist_solo: 'Behaviorist (Solo)',
+  behaviorist_center: 'Behaviorist Center',
+  boarding: 'Pet Boarding / Kennel',
+  walker: 'Pet Walker',
+  sitter: 'Pet Sitter',
+  adoption_center: 'Pet Shelter / NGO',
+  cafe: 'Pet Cafe',
+  photographer: 'Pet Photographer',
+  pharmacy: 'Pet Pharmacy',
+  seller: 'Pet Store / Retailer',
+  ambulance: 'Pet Ambulance',
+  insurance: 'Pet Insurance Provider',
+  nutritionist: 'Pet Nutritionist',
+  nutritionist_center: 'Nutritionist (Center)',
+  relocation: 'Pet Relocation',
+  resort: 'Pet Resort',
+  holiday: 'Pet Holiday Planner',
+  sunset: 'Pet Sunset Services',
+  breeder: 'Pet Breeder',
+  diagnostics_center: 'Diagnostics Center',
+  event_organizer: 'Event Organizer',
+};
+
+function getDefinitionsForCanonicalRolesOnly(): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const canonicalName of CANONICAL_ACTIVE_ROLE_NAMES) {
+    const legacyKey = CANONICAL_TO_LEGACY_DEF[canonicalName];
+    const def = STANDARD_ROLE_DEFINITIONS[legacyKey];
+    if (def) out[canonicalName] = { ...def };
+  }
+  return out;
+}
+
 const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
   'veterinarian': {
     vendorTypes: ['healthcare_provider'],
     serviceStyles: ['at_clinic', 'video_consultation', 'home_visit'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
-      'prescription',
+      ...BASE_CAPABILITIES,
+      'prescriptions',
       'medical_records',
-      'booking',
+      'bookings',
       'chat',
-      'staff_management',
-      'tele',
+      'staff',
+      'tele_consultation',
       'emergency',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'custom_services',
-      'package_management',
+      'packages',
       'vet_summary',
       'patient_monitoring'
     ],
@@ -79,17 +178,18 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     serviceStyles: ['at_clinic', 'video_consultation', 'home_visit'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
-      'prescription',
+      ...BASE_CAPABILITIES,
+      'prescriptions',
       'medical_records',
-      'booking',
+      'bookings',
       'chat',
-      'staff_management',
-      'tele',
+      'staff',
+      'tele_consultation',
       'emergency',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'custom_services',
-      'package_management',
+      'packages',
       'vet_summary',
       'patient_monitoring',
       'multi_doctor_management',
@@ -105,160 +205,167 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     serviceStyles: ['at_center', 'at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
-      'booking',
-      'portfolio',
+      ...BASE_CAPABILITIES,
+      'bookings',
       'gallery',
       'chat',
-      'staff_management',
+      'staff',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'custom_services',
-      'package_management'
+      'packages'
     ],
     icon: '✂️',
-    category: 'service_provider',
+    category: 'grooming',
   },
   'pet_boarding': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_center'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
-      'booking',
+      ...BASE_CAPABILITIES,
+      'bookings',
       'cctv_access',
       'photo_updates',
       'chat',
-      'staff_management',
+      'staff',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'custom_services',
-      'package_management',
-      'room_management',
+      'packages',
+      'rooms',
       'nightly_pricing',
       'occupancy_tracking'
     ],
     icon: '🏨',
-    category: 'service_provider',
+    category: 'petcare',
   },
   'pet_resort': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_center'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
-      'booking',
+      ...BASE_CAPABILITIES,
+      'bookings',
       'cctv_access',
       'photo_updates',
       'chat',
-      'staff_management',
+      'staff',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'custom_services',
-      'package_management',
-      'room_management',
+      'packages',
+      'rooms',
       'nightly_pricing',
       'occupancy_tracking'
     ],
     icon: '🏝️',
-    category: 'service_provider',
+    category: 'petcare',
   },
   'pet_walker': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
+    // ✅ Solo-focused role: No packages capability, only custom_services
     capabilities: [
+      ...BASE_CAPABILITIES,
       'gps_tracking',
       'photo_updates',
-      'booking',
+      'bookings',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'custom_services',
-      'package_management',
       'chat'
     ],
     icon: '🦮',
-    category: 'service_provider',
+    category: 'petcare',
   },
   'pet_trainer': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_home', 'at_center', 'online'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
-      'booking',
+      ...BASE_CAPABILITIES,
+      'bookings',
       'progress_tracking',
       'chat',
-      'staff_management',
+      'staff',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'custom_services',
-      'package_management'
+      'packages'
     ],
     icon: '🎾',
-    category: 'service_provider',
+    category: 'training',
   },
   'pet_behaviorist': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_home', 'at_center', 'video_consultation'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
-      'booking',
+      ...BASE_CAPABILITIES,
+      'bookings',
       'progress_tracking',
       'chat',
-      'staff_management',
+      'staff',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'custom_services',
-      'package_management',
-      'tele'
+      'packages',
+      'tele_consultation'
     ],
     icon: '🧠',
-    category: 'service_provider',
+    category: 'training',
   },
   'pet_sitter': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
+    // ✅ Solo-focused role: No packages capability, only custom_services
     capabilities: [
-      'booking',
+      ...BASE_CAPABILITIES,
+      'bookings',
       'photo_updates',
       'chat',
       'facility_management',
-      'schedule_management',
-      'custom_services',
-      'package_management',
-      'staff_management'
+      'schedule',
+      'custom_services'
     ],
     icon: '🏠',
-    category: 'service_provider',
+    category: 'petcare',
   },
   'pet_taxi': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
+    // ✅ Solo-focused role: No packages capability, only custom_services
     capabilities: [
-      'booking',
+      ...BASE_CAPABILITIES,
+      'bookings',
       'gps_tracking',
       'emergency',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'custom_services',
-      'package_management',
       'distance_pricing',
       'chat'
     ],
     icon: '🚕',
-    category: 'service_provider',
+    category: 'specialty',
   },
   'pet_products_store': {
     vendorTypes: ['seller'],
     serviceStyles: ['delivery', 'pickup'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'catalog',
       'inventory',
       'orders',
       'delivery',
-      'staff_management',
+      'staff',
       'facility_management',
-      'schedule_management'
+      'schedule'
     ],
     icon: '🛍️',
     category: 'retail',
@@ -268,16 +375,21 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     serviceStyles: ['delivery', 'pickup'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'catalog',
       'inventory',
-      'prescription',
+      'prescriptions',
       'delivery',
-      'staff_management',
+      'staff',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'prescription_verification',
       'controlled_substances',
-      'expiry_management'
+      'expiry_management',
+      'order_dispatch',
+      'availability_check',
+      'invoice_generation',
+      'order_broadcast'
     ],
     icon: '💊',
     category: 'healthcare',
@@ -287,105 +399,132 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     serviceStyles: ['at_center'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
-      'booking',
+      ...BASE_CAPABILITIES,
+      'bookings',
       'menu',
       'events',
-      'staff_management',
+      'staff',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'custom_services',
-      'package_management',
-      'table_management',
+      'packages',
+      'cafe_tables',
       'pax_management',
       'chat'
     ],
     icon: '☕',
-    category: 'hospitality',
+    category: 'lifestyle',
   },
   'pet_photographer': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_center', 'at_home', 'outdoor'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
-      'booking',
-      'portfolio',
+      ...BASE_CAPABILITIES,
+      'bookings',
       'gallery',
-      'staff_management',
+      'portfolio',
+      'staff',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'custom_services',
-      'package_management',
+      'packages',
       'chat'
     ],
     icon: '📸',
-    category: 'service_provider',
+    category: 'lifestyle',
   },
   'pet_shelter': {
     vendorTypes: ['service_provider', 'ngo'],
     serviceStyles: ['at_center'],
     pricingControl: { canControlPrice: false, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'adoption',
       'donation',
+      'pet_profiles',
       'events',
-      'staff_management',
+      'staff',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'chat'
     ],
     icon: '🏠',
-    category: 'specialist',
+    category: 'specialty',
   },
   'event_organizer': {
     vendorTypes: ['service_provider', 'ngo', 'organization'],
     serviceStyles: ['at_center', 'outdoor'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'events',
-      'booking',
-      'staff_management',
+      'bookings',
+      'staff',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'chat',
       'custom_services',
-      'package_management'
+      'packages'
     ],
     icon: '📅',
-    category: 'specialist',
+    category: 'lifestyle',
+  },
+  'pet_holiday_planner': {
+    vendorTypes: ['service_provider'],
+    serviceStyles: ['at_center', 'at_home', 'online'],
+    pricingControl: { canControlPrice: true, canControlDuration: true },
+    capabilities: [
+      ...BASE_CAPABILITIES,
+      'bookings',
+      'chat',
+      'staff',
+      'facility_management',
+      'schedule',
+      'custom_services',
+      'packages'
+    ],
+    icon: '🏖️',
+    category: 'lifestyle',
   },
   'pet_sunset_services': {
     vendorTypes: ['service_provider'],
     serviceStyles: ['at_center', 'home_visit'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
-      'booking',
+      ...BASE_CAPABILITIES,
+      'bookings',
       'memorial',
       'counseling',
-      'staff_management',
+      'staff',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'custom_services',
-      'package_management',
+      'packages',
       'chat'
     ],
     icon: '🌅',
-    category: 'specialist',
+    category: 'specialty',
   },
   'nutritionist': {
     vendorTypes: ['healthcare_provider', 'service_provider'],
-    serviceStyles: ['at_center', 'video_consultation', 'home_visit'],
+    serviceStyles: ['at_center', 'video_consultation', 'home_visit', 'delivery'],
     pricingControl: { canControlPrice: true, canControlDuration: true },
     capabilities: [
-      'booking',
+      ...BASE_CAPABILITIES,
+      'bookings',
       'chat',
-      'staff_management',
-      'tele',
+      'staff',
+      'tele_consultation',
+      'video_calling',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'custom_services',
-      'package_management',
+      'packages',
       'meal_plans',
       'diet_charts',
+      'prescriptions',
+      'delivery',
       'progress_tracking'
     ],
     icon: '🥗',
@@ -396,28 +535,34 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     serviceStyles: ['online', 'at_center'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'chat',
-      'staff_management',
+      'staff',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'policy_management',
-      'claims_management'
+      'claims_management',
+      'insurance_plans'
     ],
     icon: '🛡️',
-    category: 'service_provider',
+    category: 'specialty',
   },
   'pet_ambulance': {
     vendorTypes: ['healthcare_provider', 'service_provider'],
     serviceStyles: ['at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
+    // ✅ Solo-focused role: Primarily solo operators
     capabilities: [
-      'booking',
+      ...BASE_CAPABILITIES,
+      'bookings',
       'gps_tracking',
+      'live_location',
       'emergency',
       'facility_management',
-      'schedule_management',
+      'schedule',
       'chat',
-      'emergency_protocols'
+      'emergency_protocols',
+      'custom_services'
     ],
     icon: '🚑',
     category: 'healthcare',
@@ -427,15 +572,42 @@ const STANDARD_ROLE_DEFINITIONS: Record<string, any> = {
     serviceStyles: ['at_center', 'at_home'],
     pricingControl: { canControlPrice: true, canControlDuration: false },
     capabilities: [
+      ...BASE_CAPABILITIES,
       'catalog',
-      'booking',
+      'pet_profiles',
+      'bookings',
       'chat',
       'facility_management',
-      'schedule_management',
-      'custom_services'
+      'schedule',
+      'custom_services',
+      'gallery'
     ],
     icon: '🐶',
     category: 'retail',
+  },
+  // ============================================================================
+  // DIAGNOSTICS ROLE - For home sample collection services
+  // ============================================================================
+  'diagnostics': {
+    vendorTypes: ['healthcare_provider'],
+    serviceStyles: ['at_home', 'at_center'],
+    pricingControl: { canControlPrice: true, canControlDuration: true },
+    capabilities: [
+      ...BASE_CAPABILITIES,
+      'bookings',
+      'diagnostics',
+      'diagnostic_lab',
+      'medical_records',
+      'gps_tracking',
+      'live_location',
+      'chat',
+      'staff',
+      'facility_management',
+      'schedule',
+      'custom_services'
+    ],
+    icon: '🔬',
+    category: 'healthcare',
   },
 };
 
@@ -594,7 +766,12 @@ async function seedOnboardingForm(roleId: string): Promise<boolean> {
           CREATE INDEX IF NOT EXISTS idx_onboarding_forms_is_active ON onboarding_forms(is_active);
         END IF;
       END $$;
-    `).catch(() => {}); // Ignore if already exists
+    `).catch((error) => {
+      // Expected: ignore if column already exists
+      if (error instanceof Error && !error.message.includes('already exists')) {
+        console.warn('[ROLE-SEEDING] Unexpected error adding is_active column:', error.message);
+      }
+    }); // Ignore if already exists
 
     // Check if form already exists
     const existingForm = await select('onboarding_forms', { role_id: roleId });
@@ -706,7 +883,12 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
       CREATE INDEX IF NOT EXISTS idx_service_catalog_service_style ON service_catalog(service_style);
       CREATE INDEX IF NOT EXISTS idx_service_catalog_status ON service_catalog(status, publish_status);
       CREATE INDEX IF NOT EXISTS idx_service_catalog_role_id ON service_catalog(role_id);
-    `).catch(() => {}); // Ignore if already exists
+    `).catch((error) => {
+      // Expected: ignore if column already exists
+      if (error instanceof Error && !error.message.includes('already exists')) {
+        console.warn('[ROLE-SEEDING] Unexpected error adding is_active column:', error.message);
+      }
+    }); // Ignore if already exists
 
     // Get existing services for this role (using applicable_roles array, role_id is optional)
     let existingServices: any[] = [];
@@ -757,6 +939,27 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
           const serviceId = `svc_${roleId}_${entry.serviceStyle || mappedStyle}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
           try {
             // Use applicable_roles array (primary) and role_id (if column exists, for backward compatibility)
+            // ✅ FIX: Include role mappings in applicable_roles for better matching (align with service-catalog roleMappings)
+            const roleMappings: Record<string, string[]> = {
+              'pet_trainer': ['pet_trainer', 'trainer'],
+              'trainer_solo': ['trainer_solo', 'pet_trainer', 'trainer'],
+              'trainer_center': ['trainer_center', 'pet_trainer', 'trainer'],
+              'pet_behaviorist': ['pet_behaviorist', 'behaviorist'],
+              'behaviorist_solo': ['behaviorist_solo', 'pet_behaviorist', 'behaviorist'],
+              'behaviorist_center': ['behaviorist_center', 'pet_behaviorist', 'behaviorist'],
+              'pet_walker': ['pet_walker', 'walker', 'dog_walker'],
+              'walker': ['walker', 'pet_walker', 'dog_walker'],
+              'pet_groomer': ['pet_groomer', 'groomer'],
+              'veterinarian': ['veterinarian', 'vet'],
+            };
+            const mappedRoles = roleMappings[roleId] || [roleId];
+            const applicableRoles = [roleId, ...mappedRoles.filter(r => r !== roleId)]; // Ensure roleId is first, then mapped roles
+            
+            // Ensure every catalog entry has a category so nothing appears uncategorized in service management
+            const roleDef = STANDARD_ROLE_DEFINITIONS[roleId];
+            const categorySlug = (roleDef?.category || 'general').replace(/\s+/g, '_');
+            const categoryName = categorySlug.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+            
             const insertData: any = {
               service_id: serviceId,
               service_name: entry.serviceName,
@@ -765,10 +968,12 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
               base_price: entry.basePrice || 0,
               duration_minutes: entry.duration || 30,
               service_style: entry.serviceStyle || mappedStyle,
-              applicable_roles: [roleId], // Primary way to link to role
+              applicable_roles: applicableRoles, // ✅ Include both roleId and mapped roles (e.g., ['pet_trainer', 'trainer'])
               status: 'active',
               publish_status: 'published',
               display_order: 0,
+              category_id: categorySlug,
+              category_name: categoryName,
             };
             
             // Add optional columns if they exist in table
@@ -786,6 +991,25 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
               console.warn(`Retrying insert without optional columns for ${entry.serviceName}:`, err.message);
               try {
                 // Retry with minimal required columns only
+                // ✅ FIX: Include role mappings in applicable_roles (same as above)
+                const roleMappings: Record<string, string[]> = {
+                  'pet_trainer': ['pet_trainer', 'trainer'],
+                  'trainer_solo': ['trainer_solo', 'pet_trainer', 'trainer'],
+                  'trainer_center': ['trainer_center', 'pet_trainer', 'trainer'],
+                  'pet_behaviorist': ['pet_behaviorist', 'behaviorist'],
+                  'behaviorist_solo': ['behaviorist_solo', 'pet_behaviorist', 'behaviorist'],
+                  'behaviorist_center': ['behaviorist_center', 'pet_behaviorist', 'behaviorist'],
+                  'pet_walker': ['pet_walker', 'walker', 'dog_walker'],
+                  'walker': ['walker', 'pet_walker', 'dog_walker'],
+                  'pet_groomer': ['pet_groomer', 'groomer'],
+                  'veterinarian': ['veterinarian', 'vet'],
+                };
+                const mappedRoles = roleMappings[roleId] || [roleId];
+                const applicableRoles = [roleId, ...mappedRoles.filter(r => r !== roleId)];
+                
+                const roleDefMin = STANDARD_ROLE_DEFINITIONS[roleId];
+                const catSlug = (roleDefMin?.category || 'general').replace(/\s+/g, '_');
+                const catName = catSlug.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
                 await insert('service_catalog', {
                   service_id: serviceId,
                   service_name: entry.serviceName,
@@ -794,10 +1018,12 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
                   base_price: entry.basePrice || 0,
                   duration_minutes: entry.duration || 30,
                   service_style: entry.serviceStyle || mappedStyle,
-                  applicable_roles: [roleId],
+                  applicable_roles: applicableRoles, // ✅ Include both roleId and mapped roles
                   status: 'active',
                   publish_status: 'published',
                   display_order: 0,
+                  category_id: catSlug,
+                  category_name: catName,
                 });
                 console.log(`Created service (minimal columns): ${entry.serviceName} for role ${roleId}`);
                 createdCount++;
@@ -827,7 +1053,8 @@ async function seedServiceCatalog(roleId: string, serviceStyles: string[]): Prom
 export function registerRoleSeedingEndpoints(app: Hono) {
   /**
    * POST /admin/roles/seed
-   * Seed all 20 standard roles with configurations, onboarding forms, and service catalogs
+   * By default (updateOnly=true): only updates existing roles (config, display_name, description); never creates; does not change is_active or is_system_role.
+   * ?updateOnly=false: full seed (create missing roles, update existing, seed forms/catalogs).
    */
   app.post('/admin/roles/seed', async (c) => {
     try {
@@ -835,68 +1062,68 @@ export function registerRoleSeedingEndpoints(app: Hono) {
         created: 0,
         updated: 0,
         skipped: 0,
-        formsCreated: 0,
-        catalogsCreated: 0,
         errors: [] as string[],
       };
 
-      for (const [roleId, def] of Object.entries(STANDARD_ROLE_DEFINITIONS)) {
+      // Query param: updateOnly=true = only update existing roles, never create; only touch config/display fields; preserve is_active, is_system_role
+      const updateOnly = (c.req.query('updateOnly') ?? 'true') === 'true';
+
+      const definitionsToSeed = getDefinitionsForCanonicalRolesOnly();
+      for (const [roleId, def] of Object.entries(definitionsToSeed)) {
         try {
-          // Check if role exists
           const existing = await select('roles', { name: roleId });
-          
-          const roleData: any = {
-            name: roleId,
-            display_name: KNOWN_ROLE_NAMES[roleId] || roleId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
-            description: `Standard ${KNOWN_ROLE_NAMES[roleId] || roleId} role`,
-            is_system_role: true,
-            is_active: true,
-            config: {
-              category: def.category || 'general',
-              icon: def.icon || '🔧',
-              vendorTypes: def.vendorTypes || [],
-              serviceStyles: def.serviceStyles || [],
-              pricingControl: def.pricingControl || {
-                canControlPrice: false,
-                canControlDuration: false,
+
+          if (existing.length === 0) {
+            // Do not create new roles when updateOnly
+            if (updateOnly) {
+              stats.skipped++;
+              continue;
+            }
+            // Legacy full-seed path: create new role (only when updateOnly=false)
+            const roleData: any = {
+              name: roleId,
+              display_name: CANONICAL_ROLE_DISPLAY_NAMES[roleId] || KNOWN_ROLE_NAMES[roleId] || roleId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+              description: `Standard ${KNOWN_ROLE_NAMES[roleId] || roleId} role`,
+              is_system_role: true,
+              is_active: true,
+              config: {
+                category: def.category || 'general',
+                icon: def.icon || '🔧',
+                vendorTypes: def.vendorTypes || [],
+                serviceStyles: def.serviceStyles || [],
+                pricingControl: def.pricingControl || { canControlPrice: false, canControlDuration: false },
               },
-            },
-          };
-
-          let roleRecordId: string;
-
-          if (existing.length > 0) {
-            // Update existing role
-            await update('roles', { name: roleId }, roleData);
-            roleRecordId = existing[0].id;
-            stats.updated++;
-          } else {
-            // Create new role
+            };
             const newRole = await insert('roles', roleData);
-            roleRecordId = newRole[0].id;
-            
-            // Insert capabilities
-            if (def.capabilities && def.capabilities.length > 0) {
+            if (def.capabilities?.length) {
               for (const capName of def.capabilities) {
-                await insert('role_permissions', {
-                  role_id: roleRecordId,
-                  permission_name: capName,
-                  resource: '*',
-                  action: '*',
-                }).catch(err => console.error(`Error adding capability ${capName} to role ${roleId}:`, err));
+                await insert('role_permissions', { role_id: newRole[0].id, permission_name: capName, resource: '*', action: '*' }).catch(() => {});
               }
             }
+            // Seed onboarding form and service catalog for new role (same as resurrect path)
+            await seedOnboardingForm(roleId).catch((err) => console.warn(`Seed onboarding form for ${roleId}:`, err?.message));
+            await seedServiceCatalog(roleId, def.serviceStyles || []).catch((err) => console.warn(`Seed service catalog for ${roleId}:`, err?.message));
             stats.created++;
+            continue;
           }
 
-          // Seed onboarding form for this role
-          const formCreated = await seedOnboardingForm(roleId);
-          if (formCreated) stats.formsCreated++;
-
-          // Seed service catalog for this role
-          const catalogCount = await seedServiceCatalog(roleId, def.serviceStyles || []);
-          stats.catalogsCreated += catalogCount;
-
+          // Update existing role only: required config fields; do not change is_active or is_system_role
+          const current = existing[0] as any;
+          const currentConfig = (current.config && typeof current.config === 'object') ? current.config : {};
+          const updateData: any = {
+            display_name: CANONICAL_ROLE_DISPLAY_NAMES[roleId] ?? KNOWN_ROLE_NAMES[roleId] ?? current.display_name ?? roleId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+            description: current.description ?? `Standard ${CANONICAL_ROLE_DISPLAY_NAMES[roleId] || KNOWN_ROLE_NAMES[roleId] || roleId} role`,
+            config: {
+              ...currentConfig,
+              category: def.category ?? currentConfig.category ?? 'general',
+              icon: def.icon ?? currentConfig.icon ?? '🔧',
+              vendorTypes: def.vendorTypes ?? currentConfig.vendorTypes ?? [],
+              serviceStyles: def.serviceStyles ?? currentConfig.serviceStyles ?? [],
+              pricingControl: def.pricingControl ?? currentConfig.pricingControl ?? { canControlPrice: false, canControlDuration: false },
+            },
+          };
+          await update('roles', { name: roleId }, updateData);
+          stats.updated++;
         } catch (error: any) {
           console.error(`Error seeding role ${roleId}:`, error);
           stats.errors.push(`${roleId}: ${error.message}`);
@@ -906,9 +1133,9 @@ export function registerRoleSeedingEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        message: 'Roles seeding completed',
+        message: updateOnly ? 'Roles update completed (existing only; status preserved)' : 'Roles seeding completed',
         stats,
-        totalRoles: Object.keys(STANDARD_ROLE_DEFINITIONS).length,
+        totalRoles: Object.keys(definitionsToSeed).length,
       });
     } catch (error: any) {
       console.error('Error seeding roles:', error);
@@ -923,10 +1150,14 @@ export function registerRoleSeedingEndpoints(app: Hono) {
   app.post('/admin/roles/resurrect', async (c) => {
     try {
       // Delete all existing system roles
-      await query('DELETE FROM roles WHERE is_system_role = true').catch(() => {});
+      await query('DELETE FROM roles WHERE is_system_role = true').catch((error) => {
+        console.warn('[ROLE-SEEDING] Error deleting system roles:', error instanceof Error ? error.message : 'Unknown error');
+      });
       
       // Delete all role permissions for system roles
-      await query('DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE is_system_role = true)').catch(() => {});
+      await query('DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE is_system_role = true)').catch((error) => {
+        console.warn('[ROLE-SEEDING] Error deleting role permissions:', error instanceof Error ? error.message : 'Unknown error');
+      });
       
       // Re-seed all roles by calling the seed endpoint logic
       const stats = {
@@ -936,12 +1167,13 @@ export function registerRoleSeedingEndpoints(app: Hono) {
         errors: [] as string[],
       };
 
-      for (const [roleId, def] of Object.entries(STANDARD_ROLE_DEFINITIONS)) {
+      const definitionsToResurrect = getDefinitionsForCanonicalRolesOnly();
+      for (const [roleId, def] of Object.entries(definitionsToResurrect)) {
         try {
           const roleData: any = {
             name: roleId,
-            display_name: KNOWN_ROLE_NAMES[roleId] || roleId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
-            description: `Standard ${KNOWN_ROLE_NAMES[roleId] || roleId} role`,
+            display_name: CANONICAL_ROLE_DISPLAY_NAMES[roleId] || KNOWN_ROLE_NAMES[roleId] || roleId.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+            description: `Standard ${CANONICAL_ROLE_DISPLAY_NAMES[roleId] || KNOWN_ROLE_NAMES[roleId] || roleId} role`,
             is_system_role: true,
             is_active: true,
             config: {
@@ -989,7 +1221,7 @@ export function registerRoleSeedingEndpoints(app: Hono) {
         success: true,
         message: 'Roles resurrection completed',
         stats,
-        totalRoles: Object.keys(STANDARD_ROLE_DEFINITIONS).length,
+        totalRoles: Object.keys(definitionsToResurrect).length,
       });
     } catch (error: any) {
       console.error('Error resurrecting roles:', error);

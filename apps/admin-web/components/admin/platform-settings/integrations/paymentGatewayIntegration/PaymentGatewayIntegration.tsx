@@ -562,8 +562,8 @@ export function PaymentGatewayIntegration() {
 					</div>
 
 					<div>
-						<Label className="block text-sm font-medium text-gray-700 mb-2">
-							Settlement Period (Days)
+						<Label className="block text-sm font-medium text-gray-700 mb-2" title="When the gateway credits the platform; vendor payout period is in Finance → Tier Management">
+							Gateway settlement cycle (days)
 						</Label>
 						<Input
 							type="number"
@@ -578,6 +578,7 @@ export function PaymentGatewayIntegration() {
 							max="30"
 							className="w-full"
 						/>
+						<p className="text-xs text-gray-500 mt-1">When the gateway credits the platform. Vendor payout period is in Finance → Tier Management.</p>
 					</div>
 				</div>
 			</div>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Truck, Package, MapPin, Clock, Phone, CheckCircle, AlertCircle, Search, Filter } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface DeliveryManagementProps {
@@ -34,7 +34,7 @@ export function VendorDeliveryManagement({ vendorId, onClose }: DeliveryManageme
   const [searchQuery, setSearchQuery] = useState('');
   const [showDetailsModal, setShowDetailsModal] = useState(false);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     fetchDeliveries();
@@ -46,7 +46,7 @@ export function VendorDeliveryManagement({ vendorId, onClose }: DeliveryManageme
       const response = await fetch(
         `${API_BASE}/vendor/delivery/${vendorId}?status=${filter === 'all' ? '' : filter}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
@@ -69,7 +69,7 @@ export function VendorDeliveryManagement({ vendorId, onClose }: DeliveryManageme
         {
           method: 'PUT',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ status: newStatus })

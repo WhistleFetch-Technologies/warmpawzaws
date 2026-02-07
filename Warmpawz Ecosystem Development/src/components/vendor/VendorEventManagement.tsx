@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Users, CheckCircle, XCircle, MapPin, Clock, Plus, Edit2 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'react-toastify';
 
 interface Event {
@@ -110,9 +110,9 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
   const loadDashboard = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/dashboard`,
+        `${getApiBaseUrl()}/vendor/event-management/${vendorId}/dashboard`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          headers: { Authorization: (getAuthHeaders().Authorization || "") }
         }
       );
       const data = await response.json();
@@ -128,9 +128,9 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
     setLoading(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/list`,
+        `${getApiBaseUrl()}/vendor/event-management/${vendorId}/list`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          headers: { Authorization: (getAuthHeaders().Authorization || "") }
         }
       );
       const data = await response.json();
@@ -148,9 +148,9 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
   const loadRegistrations = async (eventId: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/${eventId}/registrations`,
+        `${getApiBaseUrl()}/vendor/event-management/${vendorId}/${eventId}/registrations`,
         {
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          headers: { Authorization: (getAuthHeaders().Authorization || "") }
         }
       );
       const data = await response.json();
@@ -166,8 +166,8 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
     e.preventDefault();
     try {
       const url = editingEvent
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/${editingEvent.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/create`;
+        ? `${getApiBaseUrl()}/vendor/event-management/${vendorId}/${editingEvent.id}`
+        : `${getApiBaseUrl()}/vendor/event-management/${vendorId}/create`;
 
       const method = editingEvent ? 'PUT' : 'POST';
 
@@ -175,7 +175,7 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
         method,
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${publicAnonKey}`
+          Authorization: (getAuthHeaders().Authorization || "")
         },
         body: JSON.stringify({
           ...eventForm,
@@ -210,12 +210,12 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
   const updateEventStatus = async (eventId: string, status: Event['status']) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/${eventId}/status`,
+        `${getApiBaseUrl()}/vendor/event-management/${vendorId}/${eventId}/status`,
         {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`
+            Authorization: (getAuthHeaders().Authorization || "")
           },
           body: JSON.stringify({ status })
         }
@@ -238,11 +238,11 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/${eventId}`,
+        `${getApiBaseUrl()}/vendor/event-management/${vendorId}/${eventId}`,
         {
           method: 'DELETE',
           headers: {
-            Authorization: `Bearer ${publicAnonKey}`
+            Authorization: (getAuthHeaders().Authorization || "")
           }
         }
       );
@@ -264,10 +264,10 @@ export function VendorEventManagement({ vendorId, vendorData, vendorType = 'othe
   const handleCheckIn = async (eventId: string, registrationId: string) => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/event-management/${vendorId}/${eventId}/registrations/${registrationId}/checkin`,
+        `${getApiBaseUrl()}/vendor/event-management/${vendorId}/${eventId}/registrations/${registrationId}/checkin`,
         {
           method: 'PUT',
-          headers: { Authorization: `Bearer ${publicAnonKey}` }
+          headers: { Authorization: (getAuthHeaders().Authorization || "") }
         }
       );
 

@@ -3,7 +3,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { supabase } from '../../utils/supabase/client';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { Shield } from 'lucide-react';
 
 interface AdminAuthProps {
@@ -47,10 +47,10 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
       let isAdminFromKV = false;
       try {
         const adminCheckResponse = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/auth/check-admin/${data.user?.id}`,
+          `${getApiBaseUrl()}/auth/check-admin/${data.user?.id}`,
           {
             headers: {
-              'Authorization': `Bearer ${publicAnonKey}`
+              ...getAuthHeaders()
             }
           }
         );
@@ -86,12 +86,12 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
           // Attempt to auto-create OR reset the test account
           // The backend now handles "already registered" by updating the password if masterKey is valid
           const response = await fetch(
-            `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/auth/admin/signup`,
+            `${getApiBaseUrl()}/auth/admin/signup`,
             {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                Authorization: `Bearer ${publicAnonKey}`,
+                Authorization: (getAuthHeaders().Authorization || ""),
               },
               body: JSON.stringify({
                 email: 'admin@warmpawz.com',
@@ -145,12 +145,12 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
     setLoading(true);
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/auth/admin/reset-test-user`,
+        `${getApiBaseUrl()}/auth/admin/reset-test-user`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify({
             masterKey: 'warmpawz2025'
@@ -179,12 +179,12 @@ export function AdminAuth({ onAuthSuccess }: AdminAuthProps) {
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/auth/admin/signup`,
+        `${getApiBaseUrl()}/auth/admin/signup`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${publicAnonKey}`,
+            Authorization: (getAuthHeaders().Authorization || ""),
           },
           body: JSON.stringify(formData),
         }

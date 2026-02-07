@@ -1,5 +1,9 @@
 # DynamoDB Module - NoSQL tables for non-critical data and reporting
 
+locals {
+  is_prod = var.environment == "prod"
+}
+
 # DynamoDB Table for Sessions
 resource "aws_dynamodb_table" "sessions" {
   name         = "warmpawz-${var.environment}-sessions"
@@ -45,6 +49,11 @@ resource "aws_dynamodb_table" "sessions" {
   tags = {
     Name        = "warmpawz-${var.environment}-sessions"
     Environment = var.environment
+  }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
   }
 }
 
@@ -116,6 +125,11 @@ resource "aws_dynamodb_table" "analytics_events" {
     Name        = "warmpawz-${var.environment}-analytics-events"
     Environment = var.environment
   }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
+  }
 }
 
 # DynamoDB Table for Cache
@@ -148,6 +162,11 @@ resource "aws_dynamodb_table" "cache" {
   tags = {
     Name        = "warmpawz-${var.environment}-cache"
     Environment = var.environment
+  }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
   }
 }
 

@@ -3,7 +3,7 @@ import { Button } from '../../ui/button';
 import { Card } from '../../ui/card';
 import { Badge } from '../../ui/badge';
 import { Calendar, Clock, Users, ChevronRight, AlertCircle, Coffee, ArrowLeft, Check } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 interface PetCafeTableBookingProps {
@@ -24,7 +24,7 @@ export function PetCafeTableBooking({ vendorId, vendorName, onBack, onBookingCom
   const [loading, setLoading] = useState(false);
   const [cafeConfig, setCafeConfig] = useState<any>(null);
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   useEffect(() => {
     loadCafeConfig();
@@ -84,7 +84,7 @@ export function PetCafeTableBooking({ vendorId, vendorName, onBack, onBookingCom
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             vendorId,
@@ -110,7 +110,7 @@ export function PetCafeTableBooking({ vendorId, vendorName, onBack, onBookingCom
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           },
           body: JSON.stringify({
             vendorId,

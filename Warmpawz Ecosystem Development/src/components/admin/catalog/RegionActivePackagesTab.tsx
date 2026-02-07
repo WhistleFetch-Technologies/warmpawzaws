@@ -9,7 +9,7 @@ import {
   ChevronRight,
   Info
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 
 interface RegionActivePackagesTabProps {
   regionId: string;
@@ -78,10 +78,10 @@ export function RegionActivePackagesTab({
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/packages/by-region/${regionId}`,
+        `${getApiBaseUrl()}/packages/by-region/${regionId}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
           },
         }
       );

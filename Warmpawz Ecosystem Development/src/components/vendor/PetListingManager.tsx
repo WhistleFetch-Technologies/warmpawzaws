@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Edit, Trash2, Save, Upload, Heart, DollarSign } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
@@ -53,8 +53,8 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/pet-listings`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/vendor/${vendorId}/pet-listings`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {
@@ -92,13 +92,13 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
 
     try {
       const endpoint = editingListing
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/pet-listings/${editingListing.id}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/pet-listings`;
+        ? `${getApiBaseUrl()}/vendor/${vendorId}/pet-listings/${editingListing.id}`
+        : `${getApiBaseUrl()}/vendor/${vendorId}/pet-listings`;
 
       const response = await fetch(endpoint, {
         method: editingListing ? 'PUT' : 'POST',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(formData)
@@ -137,10 +137,10 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
       }
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/pet-listings/media/upload`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/pet-listings/media/upload`,
         {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` },
+          headers: getAuthHeaders(),
           body: formDataPayload
         }
       );
@@ -170,10 +170,10 @@ export function PetListingManager({ vendorId, vendorName, vendorType, onBack }: 
 
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/vendor/${vendorId}/pet-listings/${listingId}`,
+        `${getApiBaseUrl()}/vendor/${vendorId}/pet-listings/${listingId}`,
         {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 

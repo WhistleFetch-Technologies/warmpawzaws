@@ -15,7 +15,7 @@ import {
   MapPin,
   Settings
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface VendorScheduleManagementProps {
   vendorId: string;
@@ -110,7 +110,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
     endTime: '17:00'
   });
 
-  const API_BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475`;
+  const API_BASE = getApiBaseUrl();
 
   // Fetch vendor status and availability
   useEffect(() => {
@@ -124,7 +124,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
 
       // Fetch vendor status
       const statusRes = await fetch(`${API_BASE}/vendor/status/${vendorId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (statusRes.ok) {
@@ -136,7 +136,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
 
       // Fetch availability (new format)
       const availRes = await fetch(`${API_BASE}/vendor/availability-v2/${vendorId}`, {
-        headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+        headers: getAuthHeaders()
       });
 
       if (availRes.ok) {
@@ -170,7 +170,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       // Fetch vendor's service styles - handle 404 gracefully
       try {
         const vendorRes = await fetch(`${API_BASE}/vendor/${vendorId}`, {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         });
 
         if (vendorRes.ok) {
@@ -178,7 +178,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
           if (vendorData.vendor) {
             // Get service styles from vendor profile
             const servicesRes = await fetch(`${API_BASE}/vendor/${vendorId}/services`, {
-              headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+              headers: getAuthHeaders()
             });
 
             if (servicesRes.ok) {
@@ -234,7 +234,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       const res = await fetch(`${API_BASE}/vendor/status/${vendorId}`, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ isOnline: newStatus })
@@ -262,7 +262,7 @@ export function VendorScheduleManagement({ vendorId, onBack }: VendorScheduleMan
       const res = await fetch(`${API_BASE}/vendor/availability-v2/${vendorId}`, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ availability })

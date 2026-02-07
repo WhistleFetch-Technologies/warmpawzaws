@@ -13,6 +13,8 @@
 
 import { Hono } from 'hono';
 import { select, insert, query } from '../database/rds-connection';
+import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { isValidUUID } from '../types/entities';
 
 export function registerBehaviorJournalEndpoints(app: Hono) {
   /**
@@ -146,8 +148,8 @@ export function registerBehaviorJournalEndpoints(app: Hono) {
         try {
           enrichedEntries = await Promise.all(
             journalEntries.map(async (entry: any) => {
-              let petData = { rows: [] };
-              let customerData = { rows: [] };
+              let petData: { rows: Array<{ name?: string; species?: string }> } = { rows: [] };
+              let customerData: { rows: Array<{ full_name?: string }> } = { rows: [] };
               
               // Use UUID type directly for enrichment queries
               if (entry.pet_id) {
@@ -156,7 +158,7 @@ export function registerBehaviorJournalEndpoints(app: Hono) {
                     `SELECT name, species FROM pets WHERE id = $1::uuid LIMIT 1`,
                     [String(entry.pet_id)]
                   );
-                  petData = petResult;
+                  petData = petResult as any;
                 } catch (err: any) {
                   console.error('[Behavior Journal] Error fetching pet data:', err?.message);
                 }
@@ -168,7 +170,7 @@ export function registerBehaviorJournalEndpoints(app: Hono) {
                     `SELECT full_name FROM customers WHERE id = $1::uuid LIMIT 1`,
                     [String(entry.customer_id)]
                   );
-                  customerData = customerResult;
+                  customerData = customerResult as any;
                 } catch (err: any) {
                   console.error('[Behavior Journal] Error fetching customer data:', err?.message);
                 }
@@ -190,7 +192,7 @@ export function registerBehaviorJournalEndpoints(app: Hono) {
       }
 
       // Get trends/statistics (only if we have a filter)
-      let trends = { rows: [] };
+      let trends: { rows: Array<{ behavior: string; count: number; avg_severity: number }> } = { rows: [] };
       if (petId || resolvedCustomerId) {
         // Use UUID type directly for trends query
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

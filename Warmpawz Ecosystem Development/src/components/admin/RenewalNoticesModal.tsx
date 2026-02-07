@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { X, Send } from 'lucide-react';
 import { Button } from '../ui/button';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface RenewalNoticesModalProps {
   isOpen: boolean;
@@ -27,10 +27,10 @@ export function RenewalNoticesModal({ isOpen, onClose, onSuccess }: RenewalNotic
   const fetchExpiringVendorCount = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/renewals/expiring?days=${recipients}`,
+        `${getApiBaseUrl()}/admin/vendors/renewals/expiring?days=${recipients}`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
+            ...getAuthHeaders()
           }
         }
       );
@@ -51,11 +51,11 @@ export function RenewalNoticesModal({ isOpen, onClose, onSuccess }: RenewalNotic
       setLoading(true);
       
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/vendors/renewals/send`,
+        `${getApiBaseUrl()}/admin/vendors/renewals/send`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

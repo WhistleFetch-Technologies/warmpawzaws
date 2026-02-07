@@ -15,7 +15,7 @@ import {
   Heart,
   Shield
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 
 interface BehaviorMetric {
   behaviorName: string;
@@ -80,8 +80,8 @@ export function BehavioristProgressTracker({
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/behaviorist/package/${packageId}/progress`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/behaviorist/package/${packageId}/progress`,
+        { headers: getAuthHeaders() }
       );
 
       if (response.ok) {

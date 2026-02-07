@@ -14,7 +14,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '../../ui/select';
-import { projectId, publicAnonKey } from '../../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../../utils/api-config';
 import { toast } from 'sonner@2.0.3';
 
 // Compatible with Handoff Spec
@@ -78,8 +78,8 @@ export function PromotionsAdmin() {
       if (typeFilter !== 'all') query.append('type', typeFilter);
 
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/promotions?${query.toString()}`,
-        { headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/admin/promotions?${query.toString()}`,
+        { headers: getAuthHeaders() }
       );
       
       const data = await res.json();
@@ -99,15 +99,15 @@ export function PromotionsAdmin() {
       setSubmitting(true);
       
       const url = editingId 
-        ? `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/promotions/${editingId}`
-        : `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/promotions/create`;
+        ? `${getApiBaseUrl()}/admin/promotions/${editingId}`
+        : `${getApiBaseUrl()}/admin/promotions/create`;
         
       const method = editingId ? 'PUT' : 'POST';
       
       const res = await fetch(url, {
         method,
         headers: {
-          'Authorization': `Bearer ${publicAnonKey}`,
+          ...getAuthHeaders(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(formData)
@@ -135,8 +135,8 @@ export function PromotionsAdmin() {
     
     try {
       const res = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/promotions/${id}`,
-        { method: 'DELETE', headers: { 'Authorization': `Bearer ${publicAnonKey}` } }
+        `${getApiBaseUrl()}/admin/promotions/${id}`,
+        { method: 'DELETE', headers: getAuthHeaders() }
       );
       
       if (res.ok) {
@@ -155,10 +155,10 @@ export function PromotionsAdmin() {
       setPromotions(promotions.map(p => p.id === promo.id ? { ...p, isActive: newStatus } : p));
       
       await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/admin/promotions/${promo.id}`,
+        `${getApiBaseUrl()}/admin/promotions/${promo.id}`,
         {
           method: 'PUT',
-          headers: { 'Authorization': `Bearer ${publicAnonKey}`, 'Content-Type': 'application/json' },
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ isActive: newStatus })
         }
       );

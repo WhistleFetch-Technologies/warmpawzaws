@@ -12,7 +12,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { Check, Calendar, Clock, MapPin, User, DollarSign, Percent, Info, ChevronRight } from 'lucide-react';
 
 interface Pet {
@@ -72,10 +72,10 @@ export function MultiPetBookingPage({
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/customer/${customerId}/pets`,
+        `${getApiBaseUrl()}/customer/${customerId}/pets`,
         {
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           }
         }
@@ -164,11 +164,11 @@ export function MultiPetBookingPage({
       const pricing = calculatePricing();
 
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/bookings/create-multi-pet`,
+        `${getApiBaseUrl()}/bookings/create-multi-pet`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${publicAnonKey}`,
+            ...getAuthHeaders(),
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({

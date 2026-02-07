@@ -9,7 +9,7 @@ import {
   CheckCircle,
   XCircle
 } from 'lucide-react';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
+import { getApiBaseUrl, getAuthHeaders } from '../../utils/api-config';
 import { toast } from 'sonner';
 
 interface StaffAnalyticsProps {
@@ -30,9 +30,9 @@ export function StaffAnalytics({ staff, onBack }: StaffAnalyticsProps) {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-3dd53475/staff/${staff.id}/analytics?period=${period}`,
+        `${getApiBaseUrl()}/staff/${staff.id}/analytics?period=${period}`,
         {
-          headers: { 'Authorization': `Bearer ${publicAnonKey}` }
+          headers: getAuthHeaders()
         }
       );
 
