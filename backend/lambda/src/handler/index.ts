@@ -320,10 +320,12 @@ try {
 }
 
 // Health check endpoint with database connectivity check
+// ✅ PRODUCTION FIX: Add timeout to prevent Lambda timeout
 app.get('/health', async (c) => {
   const healthStatus: {
     status: string;
     timestamp: string;
+    apiGateway?: string;
     database?: { connected: boolean; error?: string };
     environment?: { valid: boolean; warnings?: string[] };
   } = {
@@ -331,9 +333,20 @@ app.get('/health', async (c) => {
     timestamp: new Date().toISOString(),
   };
   
-  // Check database connectivity
+  // Add API Gateway info for production verification
+  const event = (c.env as any)?.event as APIGatewayProxyEventV2 | undefined;
+  if (event?.requestContext?.apiId) {
+    healthStatus.apiGateway = `${event.requestContext.apiId}.execute-api.${process.env.AWS_REGION || 'ap-south-1'}.amazonaws.com`;
+  }
+  
+  // Check database connectivity with timeout (5 seconds max)
   try {
-    const dbHealthy = await checkDbHealth();
+    const dbHealthPromise = checkDbHealth();
+    const timeoutPromise = new Promise<boolean>((_, reject) => {
+      setTimeout(() => reject(new Error('Database health check timeout')), 5000);
+    });
+    
+    const dbHealthy = await Promise.race([dbHealthPromise, timeoutPromise]) as boolean;
     healthStatus.database = { connected: dbHealthy };
     if (!dbHealthy) {
       healthStatus.status = 'degraded';
@@ -963,9 +976,20 @@ export const handler = async (
       if (apiId) {
         const region = process.env.AWS_REGION || 'ap-south-1';
         domainName = `${apiId}.execute-api.${region}.amazonaws.com`;
+        // ✅ PRODUCTION: Log API Gateway ID for verification
+        if (process.env.ENVIRONMENT === 'prod' && apiId === 'mss9sa4y01') {
+          console.log('[API-GATEWAY] Using production API Gateway:', domainName);
+        }
       } else {
-        // Fallback: use a placeholder if apiId is also missing (shouldn't happen)
-        domainName = 'api.warmpawz.com';
+        // ✅ PRODUCTION FIX: Use production API Gateway ID if in prod and apiId missing
+        if (process.env.ENVIRONMENT === 'prod') {
+          const region = process.env.AWS_REGION || 'ap-south-1';
+          domainName = `mss9sa4y01.execute-api.${region}.amazonaws.com`;
+          console.log('[API-GATEWAY] Production fallback: Using hardcoded API Gateway ID');
+        } else {
+          // Fallback: use a placeholder if apiId is also missing (shouldn't happen)
+          domainName = 'api.warmpawz.com';
+        }
       }
     }
     

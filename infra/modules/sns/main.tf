@@ -1,5 +1,9 @@
 # SNS Module - Notification service
 
+locals {
+  is_prod = var.environment == "prod"
+}
+
 # SNS Topic for System Alerts
 resource "aws_sns_topic" "system_alerts" {
   name         = "warmpawz-${var.environment}-system-alerts"
@@ -22,6 +26,11 @@ resource "aws_sns_topic" "system_alerts" {
     Name        = "warmpawz-${var.environment}-system-alerts"
     Environment = var.environment
   }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
+  }
 }
 
 # SNS Topic for User Notifications
@@ -32,6 +41,11 @@ resource "aws_sns_topic" "user_notifications" {
   tags = {
     Name        = "warmpawz-${var.environment}-user-notifications"
     Environment = var.environment
+  }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
   }
 }
 
@@ -44,6 +58,11 @@ resource "aws_sns_topic" "booking_updates" {
     Name        = "warmpawz-${var.environment}-booking-updates"
     Environment = var.environment
   }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
+  }
 }
 
 # SNS Topic for Payment Events
@@ -55,6 +74,11 @@ resource "aws_sns_topic" "payment_events" {
     Name        = "warmpawz-${var.environment}-payment-events"
     Environment = var.environment
   }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
+  }
 }
 
 # SNS Topic for Vendor Notifications
@@ -65,6 +89,11 @@ resource "aws_sns_topic" "vendor_notifications" {
   tags = {
     Name        = "warmpawz-${var.environment}-vendor-notifications"
     Environment = var.environment
+  }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
   }
 }
 

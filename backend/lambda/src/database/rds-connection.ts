@@ -19,6 +19,7 @@
 
 import { Pool, PoolClient, QueryResult } from 'pg';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { promises as dns } from 'dns';
 
 // ============================================================================
 // CONFIGURATION
@@ -104,12 +105,36 @@ export async function getRdsPool(): Promise<Pool> {
     }
 
     console.log('[DB] Creating connection pool...');
+    
+    // ✅ DIAGNOSTIC: Test DNS resolution before creating pool
+    try {
+      console.log('[DB] Testing DNS resolution for:', DB_HOST);
+      const dnsStart = Date.now();
+      const addresses = await Promise.race([
+        dns.resolve4(DB_HOST),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('DNS resolution timeout after 5s')), 5000);
+        })
+      ]);
+      const dnsDuration = Date.now() - dnsStart;
+      console.log(`[DB] ✅ DNS resolution successful in ${dnsDuration}ms. Resolved to:`, addresses);
+    } catch (dnsError: any) {
+      console.error('[DB] ❌ DNS resolution failed:', dnsError?.message || dnsError);
+      console.error('[DB] DNS error code:', dnsError?.code);
+      // Continue anyway - the connection attempt will also fail, but we'll have better diagnostics
+    }
+    
     // ✅ FIX: Reduce pool size to prevent connection exhaustion
     // Lambda functions share the same RDS instance, so we need to be conservative
     // Each Lambda instance can have its own pool, so max: 5 per instance is safer
     // With many concurrent Lambda invocations, even 5 per instance can exhaust RDS
     const poolMax = parseInt(process.env.DB_POOL_MAX || '5', 10);
-    pool = new Pool({
+    
+    // ✅ FIX: RDS Proxy doesn't support statement_timeout option
+    // Only set statement_timeout if NOT using RDS Proxy (proxy endpoint contains 'proxy')
+    const isRdsProxy = DB_HOST?.includes('proxy') || false;
+    
+    const poolConfig: any = {
       host: DB_HOST,
       port: DB_PORT,
       database: DB_NAME,
@@ -119,9 +144,14 @@ export async function getRdsPool(): Promise<Pool> {
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000, // Reduced timeout to fail faster
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-      // ✅ FIX: Add statement_timeout to prevent long-running queries from holding connections
-      statement_timeout: 45000, // 45 seconds (leave buffer for Lambda 60s timeout)
-    });
+    };
+    
+    // Only add statement_timeout if NOT using RDS Proxy
+    if (!isRdsProxy) {
+      poolConfig.statement_timeout = 45000; // 45 seconds (leave buffer for Lambda 60s timeout)
+    }
+    
+    pool = new Pool(poolConfig);
 
     // Handle pool errors
     pool.on('error', (err) => {
@@ -142,11 +172,17 @@ export async function getRdsPool(): Promise<Pool> {
       }, 60000); // Every minute
     }
 
-    // Test connection immediately
+    // Test connection immediately with timeout to prevent hanging
+    // ✅ PRODUCTION FIX: Wrap initial connection test in timeout to prevent Lambda timeout
     try {
       console.log('[DB] Testing initial connection...');
-      const testResult = await pool.query('SELECT 1 as test');
-      console.log('[DB] Connection test successful:', testResult.rows[0]);
+      const testQuery = pool.query('SELECT 1 as test');
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Initial connection test timeout')), 8000);
+      });
+      
+      const testResult = await Promise.race([testQuery, timeoutPromise]);
+      console.log('[DB] Connection test successful:', (testResult as any).rows[0]);
     } catch (error) {
       console.error('[DB] Initial connection test failed:', error);
       // Don't throw here - let individual queries handle errors

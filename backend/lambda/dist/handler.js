@@ -104176,7 +104176,7 @@ See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode de
 var require_connection_parameters = __commonJS({
   "node_modules/pg/lib/connection-parameters.js"(exports2, module2) {
     "use strict";
-    var dns = require("dns");
+    var dns3 = require("dns");
     var defaults2 = require_defaults2();
     var parse4 = require_pg_connection_string().parse;
     var val = function(key, config, envVar) {
@@ -104302,7 +104302,7 @@ var require_connection_parameters = __commonJS({
         if (this.client_encoding) {
           params.push("client_encoding=" + quoteParamValue(this.client_encoding));
         }
-        dns.lookup(this.host, function(err, address) {
+        dns3.lookup(this.host, function(err, address) {
           if (err) return cb(err, null);
           params.push("hostaddr=" + quoteParamValue(address));
           return cb(null, params.join(" "));
@@ -107495,8 +107495,24 @@ async function getRdsPool() {
       throw new Error("Database credentials not available");
     }
     console.log("[DB] Creating connection pool...");
+    try {
+      console.log("[DB] Testing DNS resolution for:", DB_HOST);
+      const dnsStart = Date.now();
+      const addresses = await Promise.race([
+        import_dns.promises.resolve4(DB_HOST),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error("DNS resolution timeout after 5s")), 5e3);
+        })
+      ]);
+      const dnsDuration = Date.now() - dnsStart;
+      console.log(`[DB] \u2705 DNS resolution successful in ${dnsDuration}ms. Resolved to:`, addresses);
+    } catch (dnsError) {
+      console.error("[DB] \u274C DNS resolution failed:", dnsError?.message || dnsError);
+      console.error("[DB] DNS error code:", dnsError?.code);
+    }
     const poolMax = parseInt(process.env.DB_POOL_MAX || "5", 10);
-    pool = new Pool({
+    const isRdsProxy = DB_HOST?.includes("proxy") || false;
+    const poolConfig = {
       host: DB_HOST,
       port: DB_PORT,
       database: DB_NAME,
@@ -107507,11 +107523,12 @@ async function getRdsPool() {
       idleTimeoutMillis: 3e4,
       connectionTimeoutMillis: 1e4,
       // Reduced timeout to fail faster
-      ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false,
-      // ✅ FIX: Add statement_timeout to prevent long-running queries from holding connections
-      statement_timeout: 45e3
-      // 45 seconds (leave buffer for Lambda 60s timeout)
-    });
+      ssl: process.env.DB_SSL === "true" ? { rejectUnauthorized: false } : false
+    };
+    if (!isRdsProxy) {
+      poolConfig.statement_timeout = 45e3;
+    }
+    pool = new Pool(poolConfig);
     pool.on("error", (err) => {
       console.error("[DB] Unexpected error on idle client", err);
     });
@@ -107527,7 +107544,11 @@ async function getRdsPool() {
     }
     try {
       console.log("[DB] Testing initial connection...");
-      const testResult = await pool.query("SELECT 1 as test");
+      const testQuery = pool.query("SELECT 1 as test");
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("Initial connection test timeout")), 8e3);
+      });
+      const testResult = await Promise.race([testQuery, timeoutPromise]);
       console.log("[DB] Connection test successful:", testResult.rows[0]);
     } catch (error) {
       console.error("[DB] Initial connection test failed:", error);
@@ -107848,12 +107869,13 @@ function handleDbError(error) {
   }
   throw new DatabaseError2(error?.message || "Unknown database error");
 }
-var import_client_secrets_manager, DB_HOST, DB_PORT, DB_NAME, DB_SECRET_ARN, DB_USER, DB_PASSWORD, secretsClient, pool, deleteRecord, DatabaseError2;
+var import_client_secrets_manager, import_dns, DB_HOST, DB_PORT, DB_NAME, DB_SECRET_ARN, DB_USER, DB_PASSWORD, secretsClient, pool, deleteRecord, DatabaseError2;
 var init_rds_connection = __esm({
   "src/database/rds-connection.ts"() {
     "use strict";
     init_esm();
     import_client_secrets_manager = require("@aws-sdk/client-secrets-manager");
+    import_dns = require("dns");
     DB_HOST = process.env.DB_HOST || process.env.RDS_HOSTNAME || process.env.AURORA_PROXY_ENDPOINT;
     DB_PORT = parseInt(process.env.DB_PORT || "5432", 10);
     DB_NAME = process.env.DB_NAME || process.env.RDS_DB_NAME || process.env.AURORA_DATABASE;
@@ -147253,30 +147275,32 @@ function registerServiceDiscoveryEndpoints(app3) {
       const vendors = await query(vendorQuery, params);
       const services = await Promise.all(
         vendors.rows.map(async (vendor) => {
-          const serviceColumns = await query(
-            `SELECT column_name FROM information_schema.columns 
-             WHERE table_name = 'services' AND column_name = 'is_global'`
-          );
-          const hasIsGlobal = serviceColumns.rows.length > 0;
+          const params2 = [vendor.id];
+          let styleClause = "";
+          if (serviceStyle) {
+            params2.push(serviceStyle);
+            styleClause = ` AND vs.service_style = $${params2.length}`;
+          }
           const vendorServices = await query(
-            `SELECT s.*, vs.custom_price, vs.custom_duration, vs.service_style
-             FROM services s
-             LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
-             WHERE (vs.vendor_id = $1${hasIsGlobal ? " OR s.is_global = true" : ""})
-             AND s.is_active = true
-             ${serviceStyle ? `AND vs.service_style = $2` : ""}
-             ORDER BY s.name`,
-            serviceStyle ? [vendor.id, serviceStyle] : [vendor.id]
+            `SELECT vs.id as vs_id, vs.service_id, vs.service_name as vs_service_name, vs.custom_price, vs.custom_duration, vs.service_style, vs.category,
+                    s.id as s_id, s.name as s_name, s.price as s_price, s.duration_minutes as s_duration,
+                    sc.id as sc_id, sc.service_name as sc_service_name, sc.base_price as sc_price, sc.duration_minutes as sc_duration
+             FROM vendor_services vs
+             LEFT JOIN services s ON vs.service_id = s.id
+             LEFT JOIN service_catalog sc ON vs.service_id = sc.id
+             WHERE vs.vendor_id = $1 AND vs.is_enabled = true AND vs.publish_status = 'published'${styleClause}
+             ORDER BY COALESCE(vs.service_name, sc.service_name, s.name)`,
+            params2
           );
-          return vendorServices.rows.map((service) => ({
-            id: service.id,
-            serviceId: service.id,
-            serviceName: service.name,
+          return vendorServices.rows.map((row) => ({
+            id: row.vs_id,
+            serviceId: row.service_id,
+            serviceName: row.vs_service_name || row.sc_service_name || row.s_name || "Service",
             vendorId: vendor.id,
             vendorName: vendor.business_name,
-            price: service.custom_price || service.base_price || 0,
-            duration: service.custom_duration || service.duration_minutes || 30,
-            serviceStyle: service.service_style || serviceStyle
+            price: row.custom_price != null ? parseFloat(row.custom_price) : row.sc_price != null ? parseFloat(row.sc_price) : row.s_price != null ? parseFloat(row.s_price) : 0,
+            duration: row.custom_duration ?? row.sc_duration ?? row.s_duration ?? 30,
+            serviceStyle: row.service_style || serviceStyle
           }));
         })
       );
@@ -147475,13 +147499,14 @@ function registerServiceDiscoveryEndpoints(app3) {
               OR r.name LIKE '%Solo%'
               OR LOWER(r.name) LIKE '%solo%'
             )`;
-        const vendorParams = targetRolesLower.length > 0 ? targetRolesLower : [];
+        const vendorParams = targetRolesLower.length > 0 ? [...targetRolesLower] : [];
         const isWalkerCategory = category?.toLowerCase() === "walker" || category?.toLowerCase() === "walking" || targetRolesLower.length > 0 && targetRolesLower.some((r) => ["walker", "walker_solo", "pet_walker", "dog_walker"].includes(r));
-        const existsServiceClause = targetRolesLower.length > 0 ? isWalkerCategory ? ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true AND vs.publish_status = 'published')` : ` AND EXISTS (
+        const styleFilterInExists = targetRolesLower.length > 0 ? ` AND vs.service_style = $2` : "";
+        const existsServiceClause = targetRolesLower.length > 0 ? isWalkerCategory ? ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true AND vs.publish_status = 'published'${styleFilterInExists})` : ` AND EXISTS (
               SELECT 1 FROM vendor_services vs
               WHERE vs.vendor_id = v.id
                 AND vs.is_enabled = true
-                AND vs.publish_status = 'published'
+                AND vs.publish_status = 'published'${styleFilterInExists}
             )` : ` AND EXISTS (
               SELECT 1 FROM vendor_services vs
               WHERE vs.vendor_id = v.id
@@ -147490,10 +147515,11 @@ function registerServiceDiscoveryEndpoints(app3) {
                 AND vs.publish_status = 'published'
             )`;
         if (targetRolesLower.length === 0) vendorParams.unshift(serviceStyle);
+        if (targetRolesLower.length > 0) vendorParams.push(serviceStyle);
         let vendorQuery2 = `
           SELECT DISTINCT v.id, v.business_name, v.owner_name, v.phone, v.city, v.state,
                  v.latitude, v.longitude, r.name as role_name, r.display_name as role_display_name,
-                 v.languages, v.is_verified, v.profile_image, v.specializations, v.is_online,
+                 v.languages, v.is_verified, v.profile_photo_url, v.profile_image, v.logo_url, v.specializations, v.is_online,
                  v.vendor_type, v.metadata,
                  v.service_radius,
                  (SELECT MIN(vs.service_radius_km) FROM vendor_services vs
@@ -147685,8 +147711,8 @@ function registerServiceDiscoveryEndpoints(app3) {
             isVerified: vendor.is_verified ?? vendor.status === "approved",
             isOnline: vendor.is_online ?? true,
             languages: vendor.languages ? Array.isArray(vendor.languages) ? vendor.languages : JSON.parse(vendor.languages || "[]") : ["English", "Hindi"],
-            photoUrl: vendor.profile_image || null,
-            vendorProfileImage: vendor.profile_image || null,
+            photoUrl: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
+            vendorProfileImage: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
             specializations: vendor.specializations ? Array.isArray(vendor.specializations) ? vendor.specializations : JSON.parse(vendor.specializations || "[]") : [],
             // Phase 2: Gallery, price range, bestForProblem, hasPackages
             photos: photos.length > 0 ? photos : void 0,
@@ -148030,8 +148056,8 @@ function registerServiceDiscoveryEndpoints(app3) {
             completedBookings,
             languages,
             isVerified,
-            photoUrl: vendor.profile_image || vendor.logo_url || null,
-            vendorProfileImage: vendor.profile_image || vendor.logo_url || null,
+            photoUrl: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
+            vendorProfileImage: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
             // Phase 2: Gallery, price range, bestForProblem, hasPackages
             photos: photos.length > 0 ? photos : void 0,
             priceMin: priceMin > 0 ? priceMin : void 0,
@@ -148810,12 +148836,12 @@ function registerServiceDiscoveryEndpoints(app3) {
       }
       if (serviceStyle === "at_center") {
         vendorQuery += ` AND (v.vendor_type IS NULL OR v.vendor_type != 'solo')`;
-        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true)`;
+        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true AND vs.publish_status = 'published')`;
         params.push(serviceStyle);
         paramIndex++;
       } else if (serviceStyle === "at_home" || serviceStyle === "tele") {
         vendorQuery += ` AND (v.vendor_type = 'solo' OR r.name LIKE '%_solo' OR LOWER(r.name) LIKE '%solo%')`;
-        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true)`;
+        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true AND vs.publish_status = 'published')`;
         params.push(serviceStyle);
         paramIndex++;
       }
@@ -150361,7 +150387,9 @@ function registerServiceDiscoveryEndpoints(app3) {
           v.city,
           v.latitude,
           v.longitude,
+          v.profile_photo_url,
           v.profile_image,
+          v.logo_url,
           v.specializations,
           v.metadata,
           r.name as role_name,
@@ -150440,8 +150468,8 @@ function registerServiceDiscoveryEndpoints(app3) {
           vendorName: vendor.business_name || vendor.owner_name,
           name: vendor.business_name || vendor.owner_name,
           phone: vendor.phone,
-          photo: vendor.profile_image || null,
-          photoUrl: vendor.profile_image || null,
+          photo: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
+          photoUrl: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
           role: vendor.role_display_name || vendor.role_name,
           experienceYears: null,
           qualifications: null,
@@ -151423,37 +151451,60 @@ function registerFollowupRescheduleEndpoints(app3) {
         return c.json({ error: "Booking not found" }, 404);
       }
       const booking = bookingResult.rows[0];
-      const vendorId = booking.vendor_id;
+      const bookingVendorId = booking.vendor_id;
+      const vendor = await resolveVendorById(bookingVendorId);
+      const resolvedVendorId = vendor?.id ?? bookingVendorId;
+      const availabilityIds = await getVendorIdsForAvailabilityLookup(resolvedVendorId);
+      const vendorIdsForQuery = availabilityIds.length > 0 ? availabilityIds : [resolvedVendorId];
       const datesToCheck = date ? [date] : Array.from({ length: 7 }, (_, i) => {
         const d = /* @__PURE__ */ new Date();
         d.setDate(d.getDate() + i + 1);
         return d.toISOString().split("T")[0];
       });
+      const styleArray = [serviceStyle];
       const allSlots = [];
       for (const checkDate of datesToCheck) {
         const requestedDate = new Date(checkDate);
         const dayOfWeek = requestedDate.getDay();
-        const scheduleSlots = await query(
-          `SELECT * FROM vendor_availability_v2
-           WHERE vendor_id::text = $1::text
-           AND day_of_week = $2
-           AND service_style = $3
-           AND is_enabled = true
-           ORDER BY time_window_start`,
-          [booking.vendor_id, dayOfWeek, serviceStyle]
-        );
+        let scheduleSlots;
+        try {
+          scheduleSlots = await query(
+            `SELECT * FROM vendor_availability_v2
+             WHERE vendor_id::text = ANY($1::text[])
+             AND day_of_week = $2
+             AND (
+               service_style::text = ANY($3::text[])
+               OR (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
+               OR COALESCE(service_type, '')::text = ANY($3::text[])
+             )
+             AND COALESCE(is_enabled, is_available, true) = true
+             ORDER BY COALESCE(time_window_start, start_time)`,
+            [vendorIdsForQuery, dayOfWeek, styleArray]
+          );
+        } catch (_) {
+          scheduleSlots = await query(
+            `SELECT * FROM vendor_availability_v2
+             WHERE vendor_id::text = ANY($1::text[])
+             AND day_of_week = $2
+             AND service_style = $3
+             AND (is_enabled = true OR is_enabled IS NULL)
+             ORDER BY time_window_start`,
+            [vendorIdsForQuery, dayOfWeek, serviceStyle]
+          );
+        }
         const existingBookings = await query(
           `SELECT booking_time FROM bookings
            WHERE vendor_id::text = $1::text
            AND booking_date = $2
            AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
            AND id::text != $3::text`,
-          [booking.vendor_id, checkDate, bookingId]
+          [resolvedVendorId, checkDate, bookingId]
         );
         const bookedTimes = new Set(existingBookings.rows.map((b) => b.booking_time));
         for (const slot of scheduleSlots.rows) {
-          const startTime = slot.time_window_start;
-          const endTime = slot.time_window_end;
+          const startTime = slot.time_window_start ?? slot.start_time;
+          const endTime = slot.time_window_end ?? slot.end_time;
+          if (!startTime || !endTime) continue;
           const slots = generateTimeSlots(startTime, endTime, 30);
           for (const timeSlot of slots) {
             if (!bookedTimes.has(timeSlot)) {
@@ -173286,6 +173337,7 @@ function registerEventEndpoints(app3) {
 
 // src/endpoints/health.ts
 init_rds_connection();
+var import_dns2 = require("dns");
 function registerHealthEndpoints(app3) {
   app3.get("/health", async (c) => {
     try {
@@ -173415,6 +173467,125 @@ function registerHealthEndpoints(app3) {
         timestamp: (/* @__PURE__ */ new Date()).toISOString()
       }, 503);
     }
+  });
+  app3.get("/health/diagnostic", async (c) => {
+    const diagnostics = {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      environment: {
+        dbHost: process.env.DB_HOST,
+        dbPort: process.env.DB_PORT,
+        dbName: process.env.DB_NAME,
+        awsRegion: process.env.AWS_REGION,
+        vpcId: process.env.VPC_ID || "not set"
+      },
+      tests: []
+    };
+    const dbHost = process.env.DB_HOST;
+    if (dbHost) {
+      try {
+        const dnsStart = Date.now();
+        const addresses = await Promise.race([
+          import_dns2.promises.resolve4(dbHost),
+          new Promise((_, reject) => {
+            setTimeout(() => reject(new Error("DNS resolution timeout after 5s")), 5e3);
+          })
+        ]);
+        const dnsDuration = Date.now() - dnsStart;
+        diagnostics.tests.push({
+          name: "DNS Resolution",
+          status: "success",
+          duration: dnsDuration,
+          details: {
+            hostname: dbHost,
+            resolvedAddresses: addresses,
+            count: addresses.length
+          }
+        });
+      } catch (error) {
+        diagnostics.tests.push({
+          name: "DNS Resolution",
+          status: "failed",
+          error: error.message,
+          errorCode: error.code,
+          details: {
+            hostname: dbHost
+          }
+        });
+      }
+    } else {
+      diagnostics.tests.push({
+        name: "DNS Resolution",
+        status: "skipped",
+        reason: "DB_HOST not set"
+      });
+    }
+    try {
+      const dbStart = Date.now();
+      const dbHealthy = await Promise.race([
+        checkDbHealth(),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error("Database health check timeout after 10s")), 1e4);
+        })
+      ]);
+      const dbDuration = Date.now() - dbStart;
+      diagnostics.tests.push({
+        name: "Database Connection",
+        status: dbHealthy ? "success" : "failed",
+        duration: dbDuration,
+        details: {
+          connected: dbHealthy
+        }
+      });
+    } catch (error) {
+      diagnostics.tests.push({
+        name: "Database Connection",
+        status: "failed",
+        duration: Date.now() - (diagnostics.tests.find((t) => t.name === "Database Connection")?.startTime || Date.now()),
+        error: error.message,
+        errorCode: error.code,
+        details: {
+          errorType: error.constructor.name
+        }
+      });
+    }
+    try {
+      const secretsStart = Date.now();
+      const secretArn = process.env.DB_SECRET_ARN;
+      if (secretArn) {
+        diagnostics.tests.push({
+          name: "Secrets Manager",
+          status: "configured",
+          duration: Date.now() - secretsStart,
+          details: {
+            secretArn: secretArn.substring(0, 50) + "..."
+            // Partial ARN for security
+          }
+        });
+      } else {
+        diagnostics.tests.push({
+          name: "Secrets Manager",
+          status: "not_configured",
+          details: {
+            reason: "DB_SECRET_ARN not set"
+          }
+        });
+      }
+    } catch (error) {
+      diagnostics.tests.push({
+        name: "Secrets Manager",
+        status: "error",
+        error: error.message
+      });
+    }
+    const allPassed = diagnostics.tests.every((t) => t.status === "success" || t.status === "configured");
+    const anyFailed = diagnostics.tests.some((t) => t.status === "failed");
+    diagnostics.summary = {
+      overall: anyFailed ? "failed" : allPassed ? "success" : "partial",
+      totalTests: diagnostics.tests.length,
+      passed: diagnostics.tests.filter((t) => t.status === "success" || t.status === "configured").length,
+      failed: diagnostics.tests.filter((t) => t.status === "failed").length
+    };
+    return c.json(diagnostics, anyFailed ? 503 : 200);
   });
 }
 
@@ -186083,11 +186254,16 @@ function registerRefundPolicyEngineEndpoints(app3) {
   });
   app3.get("/customer/refund-policy", async (c) => {
     try {
-      const rules = await query(
+      const vendorId = c.req.query("vendorId");
+      const serviceId = c.req.query("serviceId");
+      let rules = { rows: [] };
+      rules = await query(
         `SELECT * FROM booking_cancellation_rules
-         WHERE vendor_id IS NULL AND service_id IS NULL
-         ORDER BY created_at DESC
-         LIMIT 1`
+         WHERE (vendor_id IS NULL OR vendor_id::text = $1)
+           AND (service_id IS NULL OR service_id::text = $2)
+         ORDER BY (vendor_id IS NOT NULL)::int + (service_id IS NOT NULL)::int DESC, created_at DESC
+         LIMIT 1`,
+        [vendorId || null, serviceId || null]
       ).catch(() => ({ rows: [] }));
       const rows = rules.rows || [];
       if (rows.length > 0) {
@@ -195410,6 +195586,15 @@ var DEFAULT_POLICIES = {
     }
   },
   booking: {
+    payment: {
+      title: "Payment Policy",
+      description: "Secure payments via Razorpay",
+      details: [
+        "Accepted: Cards, UPI, Net Banking, Wallet",
+        "Payment is due at checkout unless otherwise stated",
+        "Platform and convenience fees may apply as per config"
+      ]
+    },
     cancellation: {
       title: "Cancellation Policy",
       description: "Flexible cancellation for your convenience",
@@ -227705,8 +227890,16 @@ app2.get("/health", async (c) => {
     status: "ok",
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   };
+  const event = c.env?.event;
+  if (event?.requestContext?.apiId) {
+    healthStatus.apiGateway = `${event.requestContext.apiId}.execute-api.${process.env.AWS_REGION || "ap-south-1"}.amazonaws.com`;
+  }
   try {
-    const dbHealthy = await checkDbHealth();
+    const dbHealthPromise = checkDbHealth();
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Database health check timeout")), 5e3);
+    });
+    const dbHealthy = await Promise.race([dbHealthPromise, timeoutPromise]);
     healthStatus.database = { connected: dbHealthy };
     if (!dbHealthy) {
       healthStatus.status = "degraded";
@@ -228169,8 +228362,17 @@ var handler = async (event, context) => {
         if (apiId) {
           const region = process.env.AWS_REGION || "ap-south-1";
           domainName = `${apiId}.execute-api.${region}.amazonaws.com`;
+          if (process.env.ENVIRONMENT === "prod" && apiId === "mss9sa4y01") {
+            console.log("[API-GATEWAY] Using production API Gateway:", domainName);
+          }
         } else {
-          domainName = "api.warmpawz.com";
+          if (process.env.ENVIRONMENT === "prod") {
+            const region = process.env.AWS_REGION || "ap-south-1";
+            domainName = `mss9sa4y01.execute-api.${region}.amazonaws.com`;
+            console.log("[API-GATEWAY] Production fallback: Using hardcoded API Gateway ID");
+          } else {
+            domainName = "api.warmpawz.com";
+          }
         }
       }
       const url = `https://${domainName}${rawPath}${queryString}`;

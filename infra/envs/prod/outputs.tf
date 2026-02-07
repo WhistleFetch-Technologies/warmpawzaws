@@ -1,33 +1,33 @@
 output "vpc_id" {
-  description = "VPC ID"
-  value       = module.vpc.vpc_id
+  description = "VPC ID (using dev VPC)"
+  value       = local.dev_vpc_id
 }
 
 output "rds_endpoint" {
-  description = "RDS cluster endpoint"
-  value       = module.rds.cluster_endpoint
+  description = "RDS cluster endpoint (using dev cluster)"
+  value       = local.rds_cluster_endpoint
   sensitive   = true
 }
 
 output "rds_reader_endpoint" {
-  description = "RDS cluster reader endpoint"
-  value       = module.rds.cluster_reader_endpoint
+  description = "RDS cluster reader endpoint (using dev cluster)"
+  value       = local.rds_cluster_reader_endpoint
   sensitive   = true
 }
 
 output "rds_database_name" {
-  description = "RDS database name"
-  value       = module.rds.database_name
+  description = "RDS database name (using dev cluster)"
+  value       = local.rds_database_name
 }
 
 output "rds_port" {
-  description = "RDS cluster port"
-  value       = module.rds.cluster_port
+  description = "RDS cluster port (using dev cluster)"
+  value       = local.rds_cluster_port
 }
 
 output "rds_secret_arn" {
-  description = "RDS credentials secret ARN"
-  value       = module.rds.secret_arn
+  description = "RDS credentials secret ARN (using dev secret)"
+  value       = local.rds_secret_arn
 }
 
 output "api_endpoint" {
@@ -51,3 +51,7 @@ output "opensearch_endpoint" {
   sensitive   = true
 }
 
+output "lambda_security_group_id" {
+  description = "Lambda security group ID (needed for Phase 5: Security Group Configuration)"
+  value       = module.lambda.lambda_security_group_id
+}

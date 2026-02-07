@@ -46,6 +46,13 @@ resource "aws_iam_role" "lambda" {
     Name        = "warmpawz-${var.environment}-lambda-role"
     Environment = var.environment
   }
+
+  # CRITICAL: Prevent duplicate IAM roles - ONE role per environment
+  lifecycle {
+    create_before_destroy = true
+    # Prevent recreation if role name changes (name_prefix ensures uniqueness)
+    ignore_changes = [name_prefix]
+  }
 }
 
 # Attach basic Lambda execution policy
@@ -175,6 +182,13 @@ resource "aws_cloudwatch_log_group" "lambda" {
     Environment = var.environment
     Function    = each.key
   }
+
+  # CRITICAL: Prevent duplicate log groups - ONE log group per function per environment
+  lifecycle {
+    create_before_destroy = true
+    # Prevent recreation if log group name changes (name is unique per function)
+    ignore_changes = [name]
+  }
 }
 
 # Lambda Functions
@@ -192,7 +206,7 @@ resource "aws_lambda_function" "functions" {
   source_code_hash = filebase64sha256(each.value.zip_path)
 
   # Enable versioning for provisioned concurrency
-  publish = try(each.value.provisioned_concurrency, 0) > 0 ? true : false
+  publish = coalesce(each.value.provisioned_concurrency, 0) > 0
 
   # VPC Configuration
   vpc_config {
@@ -234,6 +248,13 @@ resource "aws_lambda_function" "functions" {
     Function    = each.key
   }
 
+  # CRITICAL: Prevent duplicate Lambda functions - ONE function per name per environment
+  lifecycle {
+    create_before_destroy = true
+    # Prevent recreation if function name changes (name is unique per environment)
+    ignore_changes = [function_name]
+  }
+
   depends_on = [
     aws_iam_role_policy_attachment.lambda_basic,
     aws_iam_role_policy_attachment.lambda_vpc,
@@ -270,7 +291,7 @@ resource "aws_lambda_function_url" "functions" {
 resource "aws_lambda_alias" "provisioned" {
   for_each = {
     for k, v in var.lambda_functions : k => v
-    if try(v.provisioned_concurrency, 0) > 0
+    if coalesce(v.provisioned_concurrency, 0) > 0
   }
 
   name             = "provisioned"
@@ -285,7 +306,7 @@ resource "aws_lambda_alias" "provisioned" {
 resource "aws_lambda_provisioned_concurrency_config" "functions" {
   for_each = {
     for k, v in var.lambda_functions : k => v
-    if try(v.provisioned_concurrency, 0) > 0
+    if coalesce(v.provisioned_concurrency, 0) > 0
   }
 
   function_name                     = aws_lambda_function.functions[each.key].function_name

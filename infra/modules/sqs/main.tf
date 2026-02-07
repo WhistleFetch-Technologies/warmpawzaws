@@ -1,5 +1,9 @@
 # SQS Module - Message queues for async processing
 
+locals {
+  is_prod = var.environment == "prod"
+}
+
 # Dead Letter Queue (Standard)
 resource "aws_sqs_queue" "dlq" {
   name                       = "warmpawz-${var.environment}-dlq"
@@ -9,6 +13,11 @@ resource "aws_sqs_queue" "dlq" {
   tags = {
     Name        = "warmpawz-${var.environment}-dlq"
     Environment = var.environment
+  }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
   }
 }
 
@@ -22,6 +31,11 @@ resource "aws_sqs_queue" "dlq_fifo" {
   tags = {
     Name        = "warmpawz-${var.environment}-dlq-fifo"
     Environment = var.environment
+  }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
   }
 }
 
@@ -43,6 +57,11 @@ resource "aws_sqs_queue" "booking_processing" {
     Name        = "warmpawz-${var.environment}-booking-processing"
     Environment = var.environment
   }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
+  }
 }
 
 # Queue for Payment Processing
@@ -62,6 +81,11 @@ resource "aws_sqs_queue" "payment_processing" {
   tags = {
     Name        = "warmpawz-${var.environment}-payment-processing"
     Environment = var.environment
+  }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
   }
 }
 
@@ -83,6 +107,11 @@ resource "aws_sqs_queue" "notification_delivery" {
     Name        = "warmpawz-${var.environment}-notification-delivery"
     Environment = var.environment
   }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
+  }
 }
 
 # Queue for Analytics Events
@@ -103,6 +132,11 @@ resource "aws_sqs_queue" "analytics_events" {
     Name        = "warmpawz-${var.environment}-analytics-events"
     Environment = var.environment
   }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
+  }
 }
 
 # Queue for Email Delivery
@@ -122,6 +156,11 @@ resource "aws_sqs_queue" "email_delivery" {
   tags = {
     Name        = "warmpawz-${var.environment}-email-delivery"
     Environment = var.environment
+  }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
   }
 }
 
@@ -144,6 +183,11 @@ resource "aws_sqs_queue" "order_processing" {
   tags = {
     Name        = "warmpawz-${var.environment}-order-processing"
     Environment = var.environment
+  }
+
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
   }
 }
 

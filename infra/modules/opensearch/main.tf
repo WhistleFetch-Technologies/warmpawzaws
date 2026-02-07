@@ -1,5 +1,9 @@
 # OpenSearch Module - Search and analytics engine
 
+locals {
+  is_prod = var.environment == "prod"
+}
+
 # Security Group for OpenSearch
 resource "aws_security_group" "opensearch" {
   name_prefix = "warmpawz-${var.environment}-opensearch-"
@@ -132,6 +136,11 @@ resource "aws_opensearch_domain" "main" {
     Environment = var.environment
   }
 
+  lifecycle {
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
+  }
+
   depends_on = [aws_iam_service_linked_role.opensearch]
 }
 
@@ -193,6 +202,9 @@ resource "aws_cloudwatch_log_resource_policy" "opensearch" {
 }
 
 # OpenSearch Access Policy
+# Note: For VPC-based OpenSearch domains, access is controlled by security groups.
+# IP-based conditions are not allowed in domain policies for VPC endpoints.
+# This policy allows access from within the VPC (controlled by security groups).
 resource "aws_opensearch_domain_policy" "main" {
   domain_name = aws_opensearch_domain.main.domain_name
 
@@ -206,11 +218,8 @@ resource "aws_opensearch_domain_policy" "main" {
         }
         Action   = "es:*"
         Resource = "${aws_opensearch_domain.main.arn}/*"
-        Condition = {
-          IpAddress = {
-            "aws:SourceIp" = var.vpc_cidr
-          }
-        }
+        # Note: IP-based conditions removed - not allowed for VPC-based domains
+        # Access is controlled by security groups instead
       }
     ]
   })

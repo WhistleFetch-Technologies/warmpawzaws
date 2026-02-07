@@ -1,5 +1,9 @@
 # S3 Module - Object storage for media, static files, and logs
 
+locals {
+  is_prod = var.environment == "prod"
+}
+
 # S3 Bucket for User Uploads (Profile pictures, documents, etc.)
 resource "aws_s3_bucket" "user_uploads" {
   bucket = "warmpawz-${var.environment}-user-uploads-${var.account_id}"
@@ -11,7 +15,8 @@ resource "aws_s3_bucket" "user_uploads" {
   }
 
   lifecycle {
-    prevent_destroy = false # Set to true for prod
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
   }
 }
 
@@ -96,7 +101,8 @@ resource "aws_s3_bucket" "static_website" {
   }
 
   lifecycle {
-    prevent_destroy = false
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
   }
 }
 
@@ -142,7 +148,8 @@ resource "aws_s3_bucket" "logs" {
   }
 
   lifecycle {
-    prevent_destroy = false
+    prevent_destroy = true # Prevent accidental deletion (set to false for dev/staging if needed)
+    create_before_destroy = true # Ensure no downtime during updates
   }
 }
 

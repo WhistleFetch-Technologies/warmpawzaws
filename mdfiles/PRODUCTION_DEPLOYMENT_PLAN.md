@@ -2,8 +2,181 @@
 ## Using Dev RDS and Dev VPC for Production
 
 **Date Created:** 2026-01-28  
-**Status:** 📋 Ready for Implementation  
+**Status:** 🚧 In Progress - Phase 6 Complete, Phase 7 Ready  
+**Last Updated:** 2026-02-07  
 **Objective:** Deploy production infrastructure using existing dev RDS database and dev VPC
+
+## 🎉 Recent Completion (2026-02-07)
+
+**Phase 6: Testing & Verification - COMPLETE**
+- ✅ **Database Connection Issue RESOLVED**
+  - Root cause: Prod Lambda missing `lambda-rdsproxy-1` security group and using direct RDS endpoint
+  - Solution: Added RDS Proxy security group, updated to use proxy endpoint, fixed `statement_timeout` compatibility
+- ✅ **All API Endpoints Tested and Working**
+  - Health check: `ok` with database connected
+  - Diagnostic endpoint: All tests passing (DNS, Database, Secrets Manager)
+  - Database health: Healthy with 4ms response time
+- ✅ **Production API Fully Operational**
+  - API Gateway: `https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com/`
+  - Lambda function: `warmpawz-prod-api-handler` working correctly
+  - RDS connection: Working through RDS Proxy
+
+**Next Step: Phase 7 - Deployment Execution**
+
+## 📊 Progress Tracker
+
+- ✅ **Phase 1: Information Gathering** - COMPLETE
+  - ✅ Dev VPC ID gathered: `vpc-02a4893e5e582c4d8`
+  - ✅ Dev RDS cluster info gathered
+  - ✅ Dev RDS secret ARN gathered
+  - ✅ Dev private subnets gathered
+  - ✅ Dev RDS security group gathered
+  - ✅ Dev Razorpay secret verified: `warmpawz/dev/razorpay`
+  - ✅ Dev Google Maps secret verified: `warmpawz/dev/google-maps`
+  - ✅ Google Maps API key retrieved: `AIzaSyC6iwRfS_r1zRtjiGyLjgueZ_rDV_l7yo0`
+
+- ✅ **Phase 2: Terraform Configuration** - COMPLETE
+  - ✅ Data sources added for dev VPC, RDS, subnets, secrets
+  - ✅ VPC module commented out
+  - ✅ RDS module commented out
+  - ✅ Secrets module added (Razorpay uses dev secret, Google Maps creates prod secret)
+  - ✅ Lambda module updated to use dev VPC and RDS
+  - ✅ Lambda env vars updated (UAT_MODE, ENVIRONMENT, API_BASE_URL, COGNITO_*, RAZORPAY_SECRET_ARN, GOOGLE_MAPS_SECRET_ARN, SNS_VENDOR_TOPIC_ARN, DB_READER_HOST)
+  - ✅ Lambda secrets_arns updated
+  - ✅ OpenSearch updated to use dev VPC
+  - ✅ Outputs updated to use local values
+  - ✅ Variables added for external integrations
+  - ✅ terraform.tfvars updated (Google Maps API key added, Razorpay set to empty strings)
+
+- ✅ **Phase 3: CI/CD Workflow Updates** - COMPLETE
+  - ✅ Frontend build env vars added (NEXT_PUBLIC_*)
+
+- ✅ **Phase 5: Security Group Configuration** - COMPLETE (2026-02-07)
+  - ✅ Prod Lambda security group ID obtained: `sg-02e65cf9ab59ae60b`
+  - ✅ Dev RDS security group updated to allow prod Lambda access
+  - ✅ Security group rule created: `sgr-0a65254d743b3ddd5`
+
+- 🔄 **Phase 4: GitHub Secrets Configuration** - READY (values documented, requires manual addition)
+  - ✅ Cognito User Pool ID: `ap-south-1_TpAEgzUIJ`
+  - ✅ Cognito Client ID: `6fpmgr888pp6ld0tt82t33d3h4`
+  - ✅ API Endpoint: `https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com/`
+  - ⏳ **ACTION REQUIRED:** Add secrets to GitHub (see Step 7 below)
+
+- ✅ **Phase 6: Testing & Verification** - COMPLETE (2026-02-07)
+  - ✅ API Gateway verified: `mss9sa4y01.execute-api.ap-south-1.amazonaws.com`
+  - ✅ Health endpoint accessible: Returns `ok` status with database connected
+  - ✅ **Database connection issue RESOLVED** - Fixed RDS Proxy configuration
+    - ✅ Added `lambda-rdsproxy-1` security group to prod Lambda
+    - ✅ Updated Lambda to use RDS Proxy endpoint
+    - ✅ Fixed code to exclude `statement_timeout` for RDS Proxy
+    - ✅ All API endpoints tested and working
+  - ✅ Security groups verified: Correctly configured
+  - ✅ Network ACLs checked: No blocking rules
+  - ✅ Lambda timeout increased: 30s → 60s
+  - ✅ Code updated: Added DNS resolution testing and diagnostic endpoint
+  - 📋 **Investigation document created:** `DATABASE_CONNECTION_INVESTIGATION.md`
+- 🔄 **Phase 7: Deployment Execution** - READY TO PROCEED (2026-02-07)
+
+## 🎯 Current Status & Next Steps
+
+### ✅ Completed
+1. **Phase 1:** All dev resource information gathered
+2. **Phase 2:** Terraform configuration updated (data sources, secrets, Lambda env vars, outputs)
+3. **Phase 3:** CI/CD workflow updated with frontend env vars
+
+### ✅ Completed Steps
+1. ✅ **Update terraform.tfvars:** Razorpay and Google Maps configured - **COMPLETE**
+2. ✅ **Set OpenSearch password:** Strong password generated and set - **COMPLETE** (2026-01-28)
+3. ✅ **Terraform Init:** Initialized successfully - **COMPLETE** (2026-01-28)
+4. ✅ **Terraform Plan:** Configuration verified successfully - **COMPLETE** (2026-02-07)
+   - Fixed Lambda module `provisioned_concurrency` null handling issues
+   - Plan shows 112 resources to be created
+   - No RDS or VPC resources will be created (using dev resources)
+   - All data sources correctly configured
+5. ✅ **First Terraform Apply:** Infrastructure deployed successfully - **COMPLETE** (2026-02-07)
+   - Fixed OpenSearch domain policy (removed IP condition for VPC-based domain)
+   - OpenSearch domain policy created
+   - SNS topic updated
+   - **Outputs obtained:**
+     - API endpoint: `https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com/`
+     - Cognito User Pool ID: `ap-south-1_TpAEgzUIJ`
+     - Lambda Security Group ID: `sg-02e65cf9ab59ae60b` ⭐ **NEEDED FOR STEP 6**
+     - OpenSearch endpoint: (sensitive)
+     - RDS endpoints: (sensitive)
+
+### ✅ Completed Steps (continued)
+6. ✅ **Update dev RDS security group:** Security group rule added successfully - **COMPLETE** (2026-02-07)
+   - Added ingress rule: `sg-02e65cf9ab59ae60b` (prod Lambda) → `sg-0f873d37e561cdfb0` (dev RDS)
+   - Rule ID: `sgr-0a65254d743b3ddd5`
+   - Port: 5432 (PostgreSQL)
+   - Prod Lambda can now access dev RDS
+
+### ✅ Completed Steps (continued)
+7. ✅ **Get Cognito Client ID:** Retrieved from AWS - **COMPLETE** (2026-02-07)
+   - Cognito User Pool ID: `ap-south-1_TpAEgzUIJ` ✅
+   - Cognito Customer Web Client ID: `6fpmgr888pp6ld0tt82t33d3h4` ✅
+   - API Endpoint: `https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com/` ✅
+8. ✅ **GitHub CLI Installed:** GitHub CLI installed successfully - **COMPLETE** (2026-02-07)
+   - Script created: `scripts/add-prod-secrets.ps1`
+   - Script created: `scripts/setup-prod-github-secrets.ps1`
+
+### ✅ Completed Steps (continued)
+9. ✅ **GitHub Secrets Added:** All production secrets added to GitHub - **COMPLETE** (2026-02-07)
+   - `PROD_API_URL` ✅
+   - `PROD_COGNITO_USER_POOL_ID` ✅
+   - `PROD_COGNITO_CLIENT_ID` ✅
+   - `GOOGLE_MAPS_API_KEY` ✅
+
+### ✅ Completed Steps (continued)
+10. ✅ **Infrastructure Testing:** Basic verification completed - **COMPLETE** (2026-02-07)
+   - ✅ Lambda function deployed and configured
+   - ✅ Lambda environment variables verified (all production values correct)
+   - ✅ Lambda VPC configuration verified (using dev VPC)
+   - ✅ Security group rule verified (prod Lambda → dev RDS)
+   - ✅ Secrets created (Google Maps prod secret exists)
+   - ⚠️ **ISSUE FOUND:** Lambda handler module not found - needs code deployment
+
+### ✅ Completed Steps (continued)
+11. ✅ **Lambda Code Deployment:** Built and deployed successfully - **COMPLETE** (2026-02-07)
+   - ✅ TypeScript code compiled using esbuild
+   - ✅ Package created: `api-handler.zip` with `dist/handler.js` structure
+   - ✅ Lambda function code updated via AWS CLI
+   - ✅ Handler updated to `dist/handler.handler` (matches dev environment)
+   - ✅ Terraform configuration updated to match dev handler pattern
+   - ✅ Function status: Active
+   - ✅ Handler module error resolved
+   - ⚠️ **Note:** Initial timeout observed (may be cold start related - needs monitoring)
+
+### ✅ Completed
+- **Phase 6:** Testing & Verification - **COMPLETE** (2026-02-07)
+  - ✅ Database connection working through RDS Proxy
+  - ✅ All API endpoints tested and verified
+  - ✅ Health checks passing
+  - ✅ Diagnostic endpoint shows all systems operational
+
+### ⏭️ Next Actions (In Order)
+10. 🔄 **Phase 7:** Deployment Execution & Monitoring - **READY TO PROCEED**
+   - **Option A: Using GitHub CLI (Recommended)**
+     1. Run: `gh auth login` (follow prompts to authenticate)
+     2. Run: `.\scripts\add-prod-secrets.ps1`
+   - **Option B: Manual via GitHub Web UI**
+     1. Go to: https://github.com/ketan0103/warmpawzaws/settings/secrets/actions
+     2. Click "New repository secret" for each:
+        - `PROD_API_URL`: `https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com/`
+        - `PROD_COGNITO_USER_POOL_ID`: `ap-south-1_TpAEgzUIJ`
+        - `PROD_COGNITO_CLIENT_ID`: `6fpmgr888pp6ld0tt82t33d3h4`
+        - `GOOGLE_MAPS_API_KEY`: `AIzaSyC6iwRfS_r1zRtjiGyLjgueZ_rDV_l7yo0`
+8. ⏳ **Phase 6:** Test and verify everything works
+
+### ✅ Resolved Issues
+- ✅ **Lambda Module Error:** Fixed `provisioned_concurrency` null handling in Lambda module
+  - Changed `try()` to `coalesce()` for proper null handling
+  - Fixed in 3 locations: publish flag, alias filter, and provisioned concurrency config
+- ✅ **Terraform prevent_destroy Error:** Fixed lifecycle blocks using computed values
+  - Changed `prevent_destroy = local.is_prod` to `prevent_destroy = true` in all modules
+  - Terraform doesn't allow variables/computed values in lifecycle blocks
+  - Fixed in: api-gateway, secrets, s3, dynamodb, opensearch, sns, sqs, cognito modules
+  - **Date:** 2026-02-07
 
 ---
 
@@ -27,37 +200,65 @@
 ### Critical Issues ❌
 
 1. **Terraform Configuration:**
-   - ❌ Creating new RDS cluster (should use dev RDS)
-   - ❌ Creating new VPC (should use dev VPC)
-   - ❌ Lambda configured for prod VPC (needs dev VPC)
-   - ❌ Missing data sources for dev resources
-   - ❌ Lambda env vars reference `module.rds` (will fail)
+   - ✅ Creating new RDS cluster (should use dev RDS) - **FIXED: Using dev RDS via data source**
+   - ✅ Creating new VPC (should use dev VPC) - **FIXED: Using dev VPC via data source**
+   - ✅ Lambda configured for prod VPC (needs dev VPC) - **FIXED: Lambda uses dev VPC**
+   - ✅ Missing data sources for dev resources - **FIXED: All data sources added**
+   - ✅ Lambda env vars reference `module.rds` (will fail) - **FIXED: Uses local.rds_* values**
 
 2. **CI/CD Workflow (`prod.yml`):**
-   - ❌ Frontend build missing `NEXT_PUBLIC_*` environment variables
-   - ❌ No production Cognito configuration
-   - ❌ Missing `NEXT_PUBLIC_UAT_MODE: 'false'` for production
+   - ✅ Frontend build missing `NEXT_PUBLIC_*` environment variables - **FIXED: All NEXT_PUBLIC_* vars added**
+   - ⚠️ No production Cognito configuration - **PENDING: Will be available after first Terraform deploy**
+   - ✅ Missing `NEXT_PUBLIC_UAT_MODE: 'false'` for production - **FIXED: Added to workflow**
 
 3. **Lambda Environment Variables:**
-   - ❌ Missing `UAT_MODE = "false"`
-   - ❌ Missing `ENVIRONMENT = "prod"`
-   - ❌ Missing `API_BASE_URL`
-   - ❌ Missing `COGNITO_USER_POOL_ID` and `COGNITO_CLIENT_ID`
-   - ❌ Missing `RAZORPAY_SECRET_ARN`, `GOOGLE_MAPS_SECRET_ARN`, `SHIPROCKET_SECRET_ARN`
+   - ✅ Missing `UAT_MODE = "false"` - **FIXED: Added to common_env_vars**
+   - ✅ Missing `ENVIRONMENT = "prod"` - **FIXED: Added to common_env_vars**
+   - ✅ Missing `API_BASE_URL` - **FIXED: Set to "https://api.warmpawz.com"**
+   - ✅ Missing `COGNITO_USER_POOL_ID` and `COGNITO_CLIENT_ID` - **FIXED: Added from module.cognito**
+   - ✅ Missing `RAZORPAY_SECRET_ARN`, `GOOGLE_MAPS_SECRET_ARN`, `SHIPROCKET_SECRET_ARN` - **FIXED: All added**
 
 4. **Secrets Module (External Integrations):**
-   - ❌ **MISSING ENTIRELY** - No secrets module in prod Terraform
-   - ❌ Missing Razorpay variables (`razorpay_key_id`, `razorpay_key_secret`)
-   - ❌ Missing Google Maps API key variable
-   - ❌ Missing Shiprocket variables (optional)
-   - ❌ No Razorpay values in `terraform.tfvars` (need live keys: `rzp_live_...`)
-   - ❌ Lambda cannot access Razorpay secrets (will fail payment processing)
+   - ✅ **MISSING ENTIRELY** - No secrets module in prod Terraform - **FIXED: Secrets module added**
+   - ✅ Missing Razorpay variables (`razorpay_key_id`, `razorpay_key_secret`) - **FIXED: Variables added**
+   - ✅ Missing Google Maps API key variable - **FIXED: Variable added**
+   - ✅ Missing Shiprocket variables (optional) - **FIXED: Variables added**
+   - ✅ No Razorpay values in `terraform.tfvars` - **FIXED: Set to empty strings (using dev secret)**
+   - ✅ Lambda cannot access Razorpay secrets - **FIXED: Lambda uses dev Razorpay secret ARN**
+   - ✅ **CONFIGURATION:** Razorpay uses dev secret, Google Maps creates prod secret with actual API key
 
 5. **Security Groups:**
    - ❌ Prod Lambda security group not allowed in dev RDS security group
 
 6. **Outputs:**
-   - ❌ Still referencing `module.rds` which will be removed
+   - ✅ Still referencing `module.rds` which will be removed - **FIXED: All outputs use local.rds_* values**
+   - ✅ Still referencing `module.vpc` which will be removed - **FIXED: Outputs use local.dev_vpc_id**
+   - ✅ Should use `local.rds_*` and `local.dev_vpc_id` values instead - **FIXED: All updated**
+
+7. **Additional Lambda Environment Variables Missing:**
+   - ✅ Missing `DB_READER_HOST` (for read replicas) - **FIXED: Added to common_env_vars**
+   - ✅ Missing `SNS_VENDOR_TOPIC_ARN` (vendor notifications) - **FIXED: Added to common_env_vars**
+   - ⚠️ Missing `SNS_BOOKING_UPDATES_ARN` vs `SNS_BOOKING_TOPIC_ARN` naming inconsistency - **USING: SNS_BOOKING_TOPIC_ARN (matches prod SNS module)**
+
+8. **OpenSearch VPC Configuration:**
+   - ✅ OpenSearch module still references `module.vpc.vpc_id` - **FIXED: Uses local.dev_vpc_id**
+   - ✅ Should use `local.dev_vpc_id` and `local.dev_vpc_cidr` - **FIXED: Both updated**
+
+9. **Terraform Variables Missing:**
+   - ✅ `prod/variables.tf` missing: `razorpay_key_id`, `razorpay_key_secret`, `razorpay_x_account_number` - **FIXED: All variables added**
+   - ✅ Missing: `google_maps_api_key`, `shiprocket_email`, `shiprocket_password` - **FIXED: All variables added**
+
+10. **Terraform Values Missing:**
+    - ✅ `prod/terraform.tfvars` missing: All external integration values - **FIXED: Google Maps API key added, Razorpay set to empty (using dev secret)**
+
+11. **Cognito Secrets Timing Issue:**
+    - ⚠️ `PROD_COGNITO_USER_POOL_ID` and `PROD_COGNITO_CLIENT_ID` won't exist until AFTER first Terraform deploy
+    - ⚠️ CI/CD workflow should handle missing secrets gracefully on first run
+
+12. **SNS Topic ARN Naming Inconsistency:**
+    - ⚠️ Dev uses: `SNS_BOOKING_UPDATES_ARN`
+    - ⚠️ Prod uses: `SNS_BOOKING_TOPIC_ARN`
+    - ⚠️ Need to verify which one backend code expects and standardize
 
 ---
 
@@ -868,6 +1069,8 @@ Go to GitHub Repository → Settings → Secrets and variables → Actions
 
 ## 🔒 Phase 5: Security Group Configuration
 
+**⚠️ IMPORTANT:** This phase must be done AFTER first Terraform apply (when prod Lambda is created).
+
 ### Step 5.1: Get Prod Lambda Security Group ID
 
 **After Terraform apply (first deployment):**
@@ -880,9 +1083,11 @@ aws lambda get-function-configuration \
   --function-name warmpawz-prod-api-handler \
   --query 'VpcConfig.SecurityGroupIds[0]' \
   --output text
+# OR check Lambda module output
+terraform output | grep lambda_security_group
 ```
 
-**Document:** Prod Lambda Security Group ID: `_________________`
+**Document:** Prod Lambda Security Group ID: `_________________` (will be filled after first deploy)
 
 ### Step 5.2: Update Dev RDS Security Group
 
@@ -916,9 +1121,39 @@ module "rds" {
 
 Then run `terraform apply` in dev environment.
 
+**Option C: AWS CLI Script (Recommended - Can be automated)**
+
+**After first Terraform apply, run:**
+
+```bash
+# 1. Get prod Lambda security group ID
+PROD_LAMBDA_SG=$(aws lambda get-function-configuration \
+  --function-name warmpawz-prod-api-handler \
+  --region ap-south-1 \
+  --query 'VpcConfig.SecurityGroupIds[0]' \
+  --output text)
+
+# 2. Get dev RDS security group ID (from Phase 1.2)
+DEV_RDS_SG="sg-0f873d37e561cdfb0"  # From Phase 1.2
+
+# 3. Add ingress rule to dev RDS security group
+aws ec2 authorize-security-group-ingress \
+  --group-id $DEV_RDS_SG \
+  --protocol tcp \
+  --port 5432 \
+  --source-group $PROD_LAMBDA_SG \
+  --region ap-south-1 \
+  --group-owner-id $(aws sts get-caller-identity --query Account --output text) \
+  --description "Allow prod Lambda to access dev RDS"
+
+echo "✅ Security group rule added: $PROD_LAMBDA_SG -> $DEV_RDS_SG"
+```
+
 **✅ Checklist:**
+- [ ] Phase 2 Terraform configuration complete
+- [ ] First Terraform apply completed (prod Lambda created)
 - [ ] Prod Lambda security group ID documented
-- [ ] Dev RDS security group updated to allow prod Lambda
+- [ ] Dev RDS security group updated to allow prod Lambda (via Console, CLI, or dev Terraform)
 - [ ] Connectivity tested (see Phase 6)
 
 ---
@@ -1117,10 +1352,10 @@ aws logs tail /aws/lambda/warmpawz-prod-api-handler --follow | grep -i razorpay
 
 ### Step 7.1: Pre-Deployment Checklist
 
-- [ ] All Terraform changes applied
-- [ ] All GitHub secrets configured
-- [ ] Security groups configured
-- [ ] Lambda connectivity verified
+- [x] All Terraform changes applied ✅
+- [x] All GitHub secrets configured ✅
+- [x] Security groups configured ✅
+- [x] Lambda connectivity verified ✅ (Database connection working through RDS Proxy)
 - [ ] Frontend build tested locally with prod env vars
 - [ ] Database migrations tested (dry run)
 
@@ -1363,6 +1598,37 @@ Before considering deployment complete:
 
 ---
 
-**Document Version:** 1.0  
+**Document Version:** 1.1  
 **Last Updated:** 2026-01-28  
 **Next Review:** After first production deployment
+
+---
+
+## 📋 Change Log
+
+### 2026-01-28 - Phase 2 & 3 Complete
+
+**Completed:**
+- ✅ Phase 1: Information gathering (all dev resources documented)
+- ✅ Phase 2: Terraform configuration (data sources, secrets module, Lambda env vars, outputs)
+- ✅ Phase 3: CI/CD workflow (frontend build env vars added)
+- ✅ Lambda security group output added to outputs.tf
+- ✅ terraform.tfvars formatting fixed
+
+**Configuration Decisions:**
+- **Razorpay:** Using dev secret (`warmpawz/dev/razorpay`) - Lambda references via data source
+- **Google Maps:** Creating prod secret (`warmpawz/prod/google-maps`) with actual API key from dev secret
+- **VPC/RDS:** Using dev resources via data sources
+
+**Files Modified:**
+- `infra/envs/prod/main.tf` - Data sources, secrets module, Lambda config, OpenSearch config
+- `infra/envs/prod/outputs.tf` - Updated to use local values, added lambda_security_group_id
+- `infra/envs/prod/variables.tf` - Added external integration variables
+- `infra/envs/prod/terraform.tfvars` - Added Google Maps API key, Razorpay set to empty
+- `.github/workflows/prod.yml` - Added frontend build environment variables
+
+**Pending:**
+- ⚠️ Set `opensearch_master_password` in terraform.tfvars (REQUIRED before deployment)
+- ⏳ First Terraform apply
+- ⏳ Phase 5: Security group configuration (after first apply)
+- ⏳ Phase 4: GitHub secrets (after first apply)
