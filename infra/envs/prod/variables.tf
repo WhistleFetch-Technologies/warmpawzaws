@@ -33,3 +33,76 @@ variable "route53_zone_id" {
   default     = null
 }
 
+# Optional: ACM cert in us-east-1 for prod CloudFront custom domains (admin/vendor/customer.warmpawz.com)
+variable "prod_cloudfront_certificate_arn" {
+  description = "ACM certificate ARN (us-east-1) for CloudFront custom domains"
+  type        = string
+  default     = null
+}
+
+# Secrets (placeholders; update values in Secrets Manager after deploy)
+variable "razorpay_key_id" {
+  description = "Razorpay API Key ID"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+variable "razorpay_key_secret" {
+  description = "Razorpay API Key Secret"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+variable "razorpay_x_account_number" {
+  description = "RazorpayX account number"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+variable "google_maps_api_key" {
+  description = "Google Maps API Key"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+variable "shiprocket_email" {
+  description = "Shiprocket account email"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+variable "shiprocket_password" {
+  description = "Shiprocket account password"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+variable "enable_push_notifications" {
+  description = "Enable Android push (FCM)"
+  type        = bool
+  default     = false
+}
+variable "enable_ios_push" {
+  description = "Enable iOS push (APNS)"
+  type        = bool
+  default     = false
+}
+variable "fcm_server_key" {
+  description = "FCM server key"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+variable "apns_certificate" {
+  description = "APNS certificate"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+variable "apns_private_key" {
+  description = "APNS private key"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+

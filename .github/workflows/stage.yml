@@ -1,10 +1,9 @@
-name: 🎯 Deploy to Stage
+# DISABLED: Stage removed from pipeline; promote develop → prod via prod workflow only.
+name: Deploy to Stage (disabled)
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+  # push: main removed so prod is the only deploy path
 
 # Prevent parallel deployments to the same environment
 concurrency:

@@ -35,9 +35,15 @@ locals {
     Project     = "Warmpawz"
     Critical    = "true"
   }
+  # Prod custom domains + CloudFront URLs (CloudFront URLs added after module exists)
+  cors_prod_domains = ["https://admin.warmpawz.com", "https://vendor.warmpawz.com", "https://customer.warmpawz.com", "https://www.warmpawz.com"]
+  cors_allowed_origins = concat(
+    local.cors_prod_domains,
+    [for k, v in module.cloudfront.distributions : "https://${v.domain_name}"]
+  )
 }
 
-# VPC Module - Production-grade with full HA
+# VPC Module - One NAT gateway for all private subnets (cost + plan)
 module "vpc" {
   source = "../../modules/vpc"
 
@@ -48,7 +54,7 @@ module "vpc" {
   private_subnet_cidrs     = ["10.2.11.0/24", "10.2.12.0/24", "10.2.13.0/24"]
   database_subnet_cidrs    = ["10.2.21.0/24", "10.2.22.0/24", "10.2.23.0/24"]
   enable_nat_gateway       = true
-  single_nat_gateway       = false # HA: NAT per AZ
+  single_nat_gateway       = true # One NAT for all IPs (prod plan)
   create_private_endpoints = true
   use_existing_vpc         = false
 }
@@ -58,6 +64,24 @@ module "sns" {
 
   environment  = local.environment
   alert_emails = var.alert_emails
+}
+
+# Secrets Module - Same structure as dev; update values in Secrets Manager after deploy
+module "secrets" {
+  source = "../../modules/secrets"
+
+  environment               = local.environment
+  razorpay_key_id           = var.razorpay_key_id
+  razorpay_key_secret       = var.razorpay_key_secret
+  razorpay_x_account_number = var.razorpay_x_account_number
+  google_maps_api_key       = var.google_maps_api_key
+  shiprocket_email          = var.shiprocket_email
+  shiprocket_password      = var.shiprocket_password
+  enable_push_notifications = var.enable_push_notifications
+  enable_ios_push           = var.enable_ios_push
+  fcm_server_key            = var.fcm_server_key
+  apns_certificate          = var.apns_certificate
+  apns_private_key          = var.apns_private_key
 }
 
 module "rds" {
@@ -96,10 +120,74 @@ module "s3" {
   environment           = local.environment
   account_id            = data.aws_caller_identity.current.account_id
   enable_versioning     = true
-  cors_allowed_origins  = ["https://customer.warmpawz.com", "https://vendor.warmpawz.com"]
+  cors_allowed_origins  = local.cors_allowed_origins
   log_retention_days    = 365
   backup_retention_days = 2555 # 7 years for compliance
   alarm_actions         = [module.sns.system_alerts_topic_arn]
+}
+
+# ---------------------------------------------------------------------------
+# Prod frontend S3 buckets (admin, vendor, customer) - for CloudFront only
+# ---------------------------------------------------------------------------
+resource "aws_s3_bucket" "prod_frontend" {
+  for_each = toset(["admin", "vendor", "customer"])
+  bucket   = "warmpawz-prod-${each.key}-frontend-${var.aws_region}"
+
+  tags = merge(local.common_tags, {
+    Name = "warmpawz-prod-${each.key}-frontend"
+    App  = each.key
+  })
+}
+
+resource "aws_s3_bucket_versioning" "prod_frontend" {
+  for_each = aws_s3_bucket.prod_frontend
+
+  bucket = each.value.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "prod_frontend" {
+  for_each = aws_s3_bucket.prod_frontend
+
+  bucket = each.value.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# CloudFront - three prod URLs for admin, vendor, customer (apart from dev)
+module "cloudfront" {
+  source = "../../modules/cloudfront"
+
+  environment       = local.environment
+  aws_region        = var.aws_region
+  certificate_arn   = var.prod_cloudfront_certificate_arn
+  enable_versioning = true
+  price_class       = "PriceClass_200"
+  alarm_actions     = [module.sns.system_alerts_topic_arn]
+
+  frontend_apps = {
+    admin = {
+      bucket_name = aws_s3_bucket.prod_frontend["admin"].id
+      domain      = var.prod_cloudfront_certificate_arn != null ? "admin.warmpawz.com" : null
+      description = "Admin Dashboard (prod)"
+    }
+    vendor = {
+      bucket_name = aws_s3_bucket.prod_frontend["vendor"].id
+      domain      = var.prod_cloudfront_certificate_arn != null ? "vendor.warmpawz.com" : null
+      description = "Vendor Portal (prod)"
+    }
+    customer = {
+      bucket_name = aws_s3_bucket.prod_frontend["customer"].id
+      domain      = var.prod_cloudfront_certificate_arn != null ? "customer.warmpawz.com" : null
+      description = "Customer App (prod)"
+    }
+  }
 }
 
 module "sqs" {
@@ -134,7 +222,7 @@ module "lambda" {
     UAT_MODE                    = "false"
     ENVIRONMENT                 = local.environment
     DB_HOST                     = module.rds.cluster_endpoint
-    DB_READER_HOST              = module.rds.cluster_reader_endpoint
+    DB_READER_HOST               = module.rds.cluster_reader_endpoint
     DB_NAME                     = module.rds.database_name
     DB_SECRET_ARN               = module.rds.secret_arn
     DYNAMODB_SESSIONS_TABLE     = module.dynamodb.sessions_table_name
@@ -147,10 +235,13 @@ module "lambda" {
     SNS_NOTIFICATIONS_TOPIC_ARN = module.sns.user_notifications_topic_arn
     SNS_BOOKING_TOPIC_ARN       = module.sns.booking_updates_topic_arn
     SNS_PAYMENT_TOPIC_ARN       = module.sns.payment_events_topic_arn
+    RAZORPAY_SECRET_ARN         = module.secrets.razorpay_secret_arn
+    GOOGLE_MAPS_SECRET_ARN      = module.secrets.google_maps_secret_arn
+    SHIPROCKET_SECRET_ARN       = module.secrets.shiprocket_secret_arn
     OPENSEARCH_ENDPOINT         = module.opensearch.domain_endpoint
   }
 
-  secrets_arns    = ["${module.rds.secret_arn}", "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:*"]
+  secrets_arns    = concat([module.rds.secret_arn], module.secrets.all_secret_arns)
   s3_arns         = ["${module.s3.user_uploads_bucket_arn}/*"]
   dynamodb_arns   = [module.dynamodb.sessions_table_arn, module.dynamodb.cache_table_arn, module.dynamodb.analytics_events_table_arn]
   sns_arns        = [module.sns.user_notifications_topic_arn, module.sns.booking_updates_topic_arn, module.sns.payment_events_topic_arn]
@@ -184,7 +275,7 @@ module "api_gateway" {
   aws_region                  = var.aws_region
   stage_name                  = "$default"
   auto_deploy                 = false # Manual deployment in prod
-  cors_allowed_origins        = ["https://customer.warmpawz.com", "https://vendor.warmpawz.com", "https://www.warmpawz.com"]
+  cors_allowed_origins        = local.cors_allowed_origins
   throttle_burst_limit        = 5000
   throttle_rate_limit         = 10000
   cognito_user_pool_arn       = module.cognito.user_pool_arn

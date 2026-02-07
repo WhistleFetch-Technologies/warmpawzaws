@@ -51,3 +51,25 @@ output "opensearch_endpoint" {
   sensitive   = true
 }
 
+# Prod CloudFront – mark once created (three URLs for admin, vendor, customer)
+output "cloudfront_distribution_ids" {
+  description = "Prod CloudFront distribution IDs (admin, vendor, customer)"
+  value       = module.cloudfront.distribution_ids
+}
+
+output "cloudfront_urls" {
+  description = "Prod CloudFront URLs (mark once created)"
+  value = {
+    for k, v in module.cloudfront.distributions : k => "https://${v.domain_name}"
+  }
+}
+
+output "prod_frontend_bucket_names" {
+  description = "Prod frontend S3 bucket names for deploy"
+  value = {
+    admin    = aws_s3_bucket.prod_frontend["admin"].id
+    vendor   = aws_s3_bucket.prod_frontend["vendor"].id
+    customer = aws_s3_bucket.prod_frontend["customer"].id
+  }
+}
+
