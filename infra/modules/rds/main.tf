@@ -1,10 +1,31 @@
 # RDS Aurora Serverless v2 Module
 # Production-grade PostgreSQL cluster with automated backups
 
+# When subnet group already exists in another VPC, use subnets from that VPC so ModifyDBSubnetGroup succeeds
+data "aws_db_subnet_group" "existing" {
+  count = var.use_existing_subnet_group_vpc ? 1 : 0
+
+  name = "warmpawz-${var.environment}-db-subnet-group"
+}
+
+data "aws_subnets" "in_subnet_group_vpc" {
+  count = var.use_existing_subnet_group_vpc ? 1 : 0
+
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_db_subnet_group.existing[0].vpc_id]
+  }
+}
+
+locals {
+  # Use subnets from existing subnet group's VPC when requested (fixes "not in the same Vpc as the existing subnet group")
+  db_subnet_ids = var.use_existing_subnet_group_vpc && length(data.aws_subnets.in_subnet_group_vpc[0].ids) > 0 ? data.aws_subnets.in_subnet_group_vpc[0].ids : var.database_subnet_ids
+}
+
 # DB Subnet Group (must span >= 2 AZs for RDS)
 resource "aws_db_subnet_group" "main" {
   name       = "warmpawz-${var.environment}-db-subnet-group"
-  subnet_ids = var.database_subnet_ids
+  subnet_ids = local.db_subnet_ids
 
   tags = {
     Name        = "warmpawz-${var.environment}-db-subnet-group"
@@ -12,7 +33,6 @@ resource "aws_db_subnet_group" "main" {
   }
 
   lifecycle {
-    # Allow subnet_ids update when existing VPC had no database subnets (fallback to private)
     ignore_changes = [tags]
   }
 }

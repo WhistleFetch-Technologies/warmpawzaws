@@ -92,22 +92,23 @@ module "secrets" {
 module "rds" {
   source = "../../modules/rds"
 
-  environment                  = local.environment
-  vpc_id                       = module.vpc.vpc_id
-  database_subnet_ids          = module.vpc.database_subnet_ids
-  allowed_security_groups      = [module.lambda.lambda_security_group_id]
-  database_name                = "warmpawz"
-  master_username              = "warmpawz_admin"
-  min_capacity                 = 2.0
-  max_capacity                 = 16.0
-  backup_retention_period      = 30
-  availability_zones           = module.vpc.availability_zones
-  deletion_protection          = true
-  skip_final_snapshot          = false
-  instance_count               = 3 # HA: Multi-AZ with read replicas
-  performance_insights_enabled = true
-  auto_minor_version_upgrade   = false # Manual control in prod
-  alarm_actions                = [module.sns.system_alerts_topic_arn]
+  environment                     = local.environment
+  vpc_id                          = module.vpc.vpc_id
+  database_subnet_ids             = module.vpc.database_subnet_ids
+  use_existing_subnet_group_vpc   = true # Use subnets from existing subnet group's VPC (fixes cross-VPC update)
+  allowed_security_groups         = [module.lambda.lambda_security_group_id]
+  database_name                   = "warmpawz"
+  master_username                 = "warmpawz_admin"
+  min_capacity                    = 2.0
+  max_capacity                    = 16.0
+  backup_retention_period         = 30
+  availability_zones             = module.vpc.availability_zones
+  deletion_protection             = true
+  skip_final_snapshot             = false
+  instance_count                  = 3 # HA: Multi-AZ with read replicas
+  performance_insights_enabled   = true
+  auto_minor_version_upgrade      = false # Manual control in prod
+  alarm_actions                   = [module.sns.system_alerts_topic_arn]
 }
 
 module "dynamodb" {

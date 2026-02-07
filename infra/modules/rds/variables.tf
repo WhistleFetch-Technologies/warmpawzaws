@@ -9,8 +9,14 @@ variable "vpc_id" {
 }
 
 variable "database_subnet_ids" {
-  description = "Database subnet IDs"
+  description = "Database subnet IDs (used when subnet group is created fresh)"
   type        = list(string)
+}
+
+variable "use_existing_subnet_group_vpc" {
+  description = "When true, look up existing DB subnet group by name and use subnets from its VPC (fixes 'not in the same Vpc as the existing subnet group')"
+  type        = bool
+  default     = false
 }
 
 variable "allowed_security_groups" {
