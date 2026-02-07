@@ -3,9 +3,10 @@
 If `terraform apply` fails with:
 
 - **"The subnet ID 'subnet-xxx' does not exist"** (NAT creation), or  
-- **"You have specified two resources that belong to different networks"** (RDS security group),
+- **"You have specified two resources that belong to different networks"** (RDS security group), or  
+- **"DB subnet group doesn't meet Availability Zone (AZ) coverage requirement"** (no database-tagged subnets in existing VPC),
 
-do the following.
+do the following. The VPC module now falls back to **private subnets** for RDS when the existing VPC has no (or &lt; 2) database-tagged subnets, so re-run plan/apply after pulling latest.
 
 ## 1. Use the VPC where Lambda lives
 

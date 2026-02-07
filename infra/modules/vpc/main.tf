@@ -38,9 +38,12 @@ locals {
   vpc_id = var.use_existing_vpc ? (var.existing_vpc_id != null && var.existing_vpc_id != "" ? var.existing_vpc_id : data.aws_vpc.existing[0].id) : aws_vpc.main[0].id
 
   # Subnet IDs - use data source if existing VPC, otherwise use created subnets
+  # When existing VPC has no database-tagged subnets (or < 2 AZs), use private subnets so RDS meets AZ coverage
   private_subnet_ids  = var.use_existing_vpc ? data.aws_subnets.existing_private[0].ids : aws_subnet.private[*].id
   public_subnet_ids   = var.use_existing_vpc ? data.aws_subnets.existing_public[0].ids : aws_subnet.public[*].id
-  database_subnet_ids = var.use_existing_vpc ? data.aws_subnets.existing_database[0].ids : aws_subnet.database[*].id
+  database_subnet_ids = var.use_existing_vpc ? (
+    length(data.aws_subnets.existing_database[0].ids) >= 2 ? data.aws_subnets.existing_database[0].ids : data.aws_subnets.existing_private[0].ids
+  ) : aws_subnet.database[*].id
 }
 
 # Availability Zones

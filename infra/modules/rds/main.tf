@@ -1,7 +1,7 @@
 # RDS Aurora Serverless v2 Module
 # Production-grade PostgreSQL cluster with automated backups
 
-# DB Subnet Group
+# DB Subnet Group (must span >= 2 AZs for RDS)
 resource "aws_db_subnet_group" "main" {
   name       = "warmpawz-${var.environment}-db-subnet-group"
   subnet_ids = var.database_subnet_ids
@@ -12,7 +12,8 @@ resource "aws_db_subnet_group" "main" {
   }
 
   lifecycle {
-    ignore_changes = all  # NUCLEAR OPTION: Never modify after import
+    # Allow subnet_ids update when existing VPC had no database subnets (fallback to private)
+    ignore_changes = [tags]
   }
 }
 
