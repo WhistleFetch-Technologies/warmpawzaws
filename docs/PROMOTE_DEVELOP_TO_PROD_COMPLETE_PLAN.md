@@ -337,6 +337,20 @@ Run these steps **once** (manually or via a one-off script). The pipeline does *
 
 Plan reads: `infra/envs/prod/main.tf` and all referenced modules. Apply uses the plan produced in the `terraform-plan` job.
 
+### 6.1 Terraform idempotency and dev vs prod separation
+
+So that **the next run does not create or replace existing prod resources** and apply stays predictable:
+
+| What | How |
+|------|-----|
+| **Dev vs prod state** | Separate state keys: `dev/terraform.tfstate` and `prod/terraform.tfstate` in the same bucket. No shared state. |
+| **Resource naming** | All resources use `var.environment` (e.g. `warmpawz-prod-*`, `warmpawz-dev-*`). Dev and prod never share resource names. |
+| **Lifecycle rules** | **Cognito:** User pool clients have `ignore_changes` for OAuth/callback drift. **Lambda / OpenSearch SGs:** `ignore_changes = [vpc_id]` so SGs are not replaced when VPC ID drifts. **OpenSearch domain:** `ignore_changes = [cluster_config, vpc_options, advanced_security_options]` so instance count, dedicated master, and subnets are not changed after first create. **OpenSearch domain policy:** `ignore_changes = [access_policies]`. **RDS:** Subnet group and RDS SG use `ignore_changes = all` where applicable. |
+| **Plan before apply** | The pipeline runs `terraform plan` and uploads the plan; `terraform apply` runs only after approval. No apply without a plan. |
+| **Same account, separate resources** | Dev and prod both use account 057442119249 but different Terraform state and different resource names; no overlap. |
+
+After the first successful prod apply, subsequent runs should show **no changes** (or only intentional code changes). Replacements and in-place updates to OpenSearch cluster_config / vpc_options are avoided by the lifecycle rules above.
+
 ---
 
 ## 7. Quick reference: pipeline flow

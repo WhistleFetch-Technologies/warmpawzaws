@@ -22,6 +22,7 @@ resource "aws_security_group" "lambda" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes        = [vpc_id]
   }
 }
 

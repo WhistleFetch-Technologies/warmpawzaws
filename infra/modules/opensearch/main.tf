@@ -29,6 +29,7 @@ resource "aws_security_group" "opensearch" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes        = [vpc_id]
   }
 }
 
@@ -132,6 +133,14 @@ resource "aws_opensearch_domain" "main" {
     Environment = var.environment
   }
 
+  lifecycle {
+    ignore_changes = [
+      cluster_config,
+      vpc_options,
+      advanced_security_options
+    ]
+  }
+
   depends_on = [aws_iam_service_linked_role.opensearch]
 }
 
@@ -214,6 +223,10 @@ resource "aws_opensearch_domain_policy" "main" {
       }
     ]
   })
+
+  lifecycle {
+    ignore_changes = [access_policies]
+  }
 }
 
 # CloudWatch Alarms
