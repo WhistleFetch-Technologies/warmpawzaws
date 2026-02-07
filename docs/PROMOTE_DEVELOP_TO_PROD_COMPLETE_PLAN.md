@@ -28,6 +28,16 @@ From the final outline (Part C), these gaps were identified and addressed as fol
 | — | **CORS** | API and S3 must allow prod CloudFront and prod domains. | **Fixed.** `infra/envs/prod/main.tf`: `local.cors_allowed_origins` = prod domains + CloudFront URLs from `module.cloudfront.distributions`; used by API Gateway and S3 module. |
 | — | **Prod API URL in apps** | All frontends must use prod API URL from Terraform, not hardcoded. | **Fixed.** Build with `NEXT_PUBLIC_API_BASE_URL` from Terraform output; deploy step injects `runtime-config.js` with same URL. |
 
+### Build and pipeline fixes (post-audit)
+
+| Fix | What was wrong | What was done |
+|-----|----------------|---------------|
+| **Android/iOS not in prod** | Prod workflow must be web + backend + infra only; mobile is separate. | `prod.yml` header states "NO Android/iOS/Capacitor"; `mobile-build-android.yml` and `mobile-build-ios.yml` now trigger only on `develop` (removed `main`), so push to `prod` never runs mobile. |
+| **Vendor-web build** | `framer-motion` missing → "Module not found". | Added `framer-motion` to `apps/vendor-web/package.json` (via `npm install framer-motion`). |
+| **Lambda build** | `Could not resolve "./discovery"` in api-contracts. | (1) `packages/api-contracts/package.json`: added `"./discovery"` to `exports`. (2) Root `build:backend` builds api-contracts first, then Lambda. (3) `prod.yml` build-lambda job: added "Install root dependencies", "Build api-contracts", then "Build backend". |
+| **DB migrations** | Already in pipeline. | Job `database-migrations` (after terraform-apply) runs `migrate:up` and `seed:prod` against prod RDS; no change. |
+| **Prod resources** | Already in Terraform. | `terraform-apply` creates/updates prod VPC, RDS, S3, Cognito, CloudFront, etc.; workflow header documents this. |
+
 ---
 
 ## 1. Trigger and approval (who can run / bypass)

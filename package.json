@@ -78,7 +78,7 @@
     "dev:admin": "npm run dev --prefix apps/admin-web",
     "build": "npm run build --prefix apps/admin-web",
     "build:admin": "npm run build --prefix apps/admin-web",
-    "build:backend": "cd backend/lambda && npm ci && npm run build",
+    "build:backend": "cd packages/api-contracts && npm ci && npm run build && cd ../../backend/lambda && npm ci && npm run build",
     "build:frontend": "npm run build:frontend:admin && npm run build:frontend:vendor && npm run build:frontend:customer",
     "build:frontend:admin": "cd apps/admin-web && npm ci && npm run build",
     "build:frontend:vendor": "cd apps/vendor-web && npm ci && npm run build",

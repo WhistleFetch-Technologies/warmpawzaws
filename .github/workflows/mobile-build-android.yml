@@ -1,8 +1,9 @@
 name: Build Android APKs
 
+# Capacitor/Android separate from prod deploy. Only develop or manual trigger.
 on:
   push:
-    branches: [main, develop]
+    branches: [develop]
     paths:
       - 'apps/WarmpawzCustomer/**'
       - 'apps/WarmpawzVendor/**'

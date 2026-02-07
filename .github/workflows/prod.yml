@@ -1,5 +1,14 @@
-# Promote develop → prod: full plan (no stage; one NAT; prod CloudFront + CORS; bootstrap-aware)
-# Approval: use GitHub Environments "production-approval" and "production" with Required reviewers = repo owner only (see docs/PROMOTE_DEVELOP_TO_PROD_COMPLETE_PLAN.md)
+# =============================================================================
+# DEPLOY TO PRODUCTION — Web + Backend + Infra only. NO Android/iOS/Capacitor.
+# =============================================================================
+# This workflow:
+# - Builds Lambda (backend) and admin/vendor/customer WEB apps only
+# - Terraform apply: prod VPC, 1 NAT, RDS cluster, DynamoDB, S3 (uploads + 3 frontend buckets),
+#   Cognito, API Gateway, CloudFront (3), SQS, SNS, OpenSearch, secrets
+# - DB migrations + seed (idempotent) against prod RDS
+# - Deploys web assets to prod S3 + CloudFront invalidation
+# Mobile/Capacitor: use separate workflows (mobile-build-android.yml, mobile-build-ios.yml)
+# =============================================================================
 name: Deploy to Production
 
 on:
@@ -60,6 +69,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+      - name: Install root dependencies
+        run: npm ci
+      - name: Build api-contracts (required by Lambda)
+        run: cd packages/api-contracts && npm ci && npm run build
       - name: Build backend
         run: npm run build:backend
       - name: Package Lambda
