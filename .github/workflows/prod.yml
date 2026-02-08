@@ -234,28 +234,67 @@ jobs:
           echo "   VPC: $VPC_ID"
           echo "   Internet Gateway: $IGW_ID"
           
-          # Create a new route table with Internet Gateway route for RDS subnets
-          RDS_RT_ID=$(aws ec2 create-route-table --vpc-id "$VPC_ID" --region ap-south-1 --query 'RouteTable.RouteTableId' --output text 2>/dev/null || echo "")
-          
-          if [ -z "$RDS_RT_ID" ] || [ "$RDS_RT_ID" == "None" ]; then
-            echo "   Checking for existing route table with IGW route..."
-            # Check if a route table with IGW route already exists
-            RDS_RT_ID=$(aws ec2 describe-route-tables --region ap-south-1 --filters "Name=vpc-id,Values=$VPC_ID" "Name=route.gateway-id,Values=$IGW_ID" --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null || echo "")
-          fi
+          # Check if a route table with IGW route already exists
+          echo "   Checking for existing route table with IGW route..."
+          RDS_RT_ID=$(aws ec2 describe-route-tables --region ap-south-1 --filters "Name=vpc-id,Values=$VPC_ID" "Name=route.gateway-id,Values=$IGW_ID" --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null || echo "")
           
           if [ -z "$RDS_RT_ID" ] || [ "$RDS_RT_ID" == "None" ]; then
             echo "   Creating new route table with Internet Gateway route..."
             RDS_RT_ID=$(aws ec2 create-route-table --vpc-id "$VPC_ID" --region ap-south-1 --query 'RouteTable.RouteTableId' --output text)
-            aws ec2 create-route --route-table-id "$RDS_RT_ID" --destination-cidr-block 0.0.0.0/0 --gateway-id "$IGW_ID" --region ap-south-1
             echo "   ✅ Created route table: $RDS_RT_ID"
           else
-            echo "   ✅ Using existing route table: $RDS_RT_ID"
+            echo "   ✅ Found existing route table with IGW route: $RDS_RT_ID"
           fi
+          
+          # CRITICAL: Always ensure the IGW route exists (may have been created without route)
+          echo "   Ensuring Internet Gateway route exists..."
+          EXISTING_ROUTE=$(aws ec2 describe-route-tables --region ap-south-1 --route-table-ids "$RDS_RT_ID" --query 'RouteTables[0].Routes[?DestinationCidrBlock==`0.0.0.0/0` && GatewayId==`'$IGW_ID'`].GatewayId' --output text 2>/dev/null || echo "")
+          
+          if [ -z "$EXISTING_ROUTE" ] || [ "$EXISTING_ROUTE" == "None" ]; then
+            echo "   Adding Internet Gateway route..."
+            aws ec2 create-route --route-table-id "$RDS_RT_ID" --destination-cidr-block 0.0.0.0/0 --gateway-id "$IGW_ID" --region ap-south-1
+            echo "   ✅ Added IGW route"
+          else
+            echo "   ✅ IGW route already exists"
+          fi
+          
+          # Verify the route table has the correct route
+          VERIFY_ROUTE=$(aws ec2 describe-route-tables --region ap-south-1 --route-table-ids "$RDS_RT_ID" --query 'RouteTables[0].Routes[?DestinationCidrBlock==`0.0.0.0/0`]' --output json)
+          echo "   Route table routes: $VERIFY_ROUTE"
           
           # Associate RDS subnets with the new route table
           for SUBNET in $RDS_SUBNETS; do
             echo "   Associating subnet $SUBNET with route table $RDS_RT_ID..."
-            aws ec2 associate-route-table --subnet-id "$SUBNET" --route-table-id "$RDS_RT_ID" --region ap-south-1 2>&1 | grep -v "Resource.AlreadyAssociated" || echo "     Already associated"
+            # Get current association ID first
+            CURRENT_ASSOC=$(aws ec2 describe-route-tables --region ap-south-1 --filters "Name=association.subnet-id,Values=$SUBNET" --query 'RouteTables[0].Associations[?SubnetId==`'$SUBNET'`].RouteTableAssociationId' --output text 2>/dev/null || echo "")
+            
+            if [ -n "$CURRENT_ASSOC" ] && [ "$CURRENT_ASSOC" != "None" ]; then
+              # Check if already associated with correct route table
+              CURRENT_RT=$(aws ec2 describe-route-tables --region ap-south-1 --filters "Name=association.subnet-id,Values=$SUBNET" --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null || echo "")
+              if [ "$CURRENT_RT" == "$RDS_RT_ID" ]; then
+                echo "     ✅ Already associated with correct route table"
+              else
+                echo "     Replacing association (old: $CURRENT_RT, new: $RDS_RT_ID)..."
+                aws ec2 replace-route-table-association --association-id "$CURRENT_ASSOC" --route-table-id "$RDS_RT_ID" --region ap-south-1
+                echo "     ✅ Replaced association"
+              fi
+            else
+              # No existing association, create new one
+              aws ec2 associate-route-table --subnet-id "$SUBNET" --route-table-id "$RDS_RT_ID" --region ap-south-1
+              echo "     ✅ Created new association"
+            fi
+          done
+          
+          # Verify associations
+          echo ""
+          echo "   Verifying subnet associations..."
+          for SUBNET in $RDS_SUBNETS; do
+            ASSOC_RT=$(aws ec2 describe-route-tables --region ap-south-1 --filters "Name=association.subnet-id,Values=$SUBNET" --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null || echo "")
+            if [ "$ASSOC_RT" == "$RDS_RT_ID" ]; then
+              echo "     ✅ Subnet $SUBNET → Route Table $RDS_RT_ID"
+            else
+              echo "     ❌ Subnet $SUBNET → Route Table $ASSOC_RT (WRONG!)"
+            fi
           done
           
           echo "✅ Route table configured for inbound traffic"
