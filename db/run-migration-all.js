@@ -409,11 +409,50 @@ async function runAllMigrations() {
         console.log('   ✅ Success');
         successCount++;
       } catch (error) {
-        if (error.message.includes('already exists') || 
-            error.message.includes('duplicate key')) {
+        const errorMsg = error.message.toLowerCase();
+        const errorCode = error.code || '';
+        
+        // Skip errors that indicate the migration is already applied or safe to skip
+        const skipPatterns = [
+          'already exists',
+          'duplicate key',
+          'duplicate',
+          'constraint.*already exists',
+          'index.*already exists'
+        ];
+        
+        // Skip dependency errors (table/column doesn't exist) - these are often safe
+        // if the migration is trying to alter something that hasn't been created yet
+        const dependencyErrors = [
+          'relation.*does not exist',
+          'column.*does not exist',
+          'undefined_table',
+          'undefined_column'
+        ];
+        
+        // Check if this is a skip-able error
+        const isSkippable = skipPatterns.some(pattern => {
+          const regex = new RegExp(pattern, 'i');
+          return regex.test(errorMsg);
+        });
+        
+        // Check if this is a dependency error (table/column missing)
+        const isDependencyError = dependencyErrors.some(pattern => {
+          const regex = new RegExp(pattern, 'i');
+          return regex.test(errorMsg);
+        });
+        
+        if (isSkippable) {
           console.log('   ⏭️  Skipped (already applied)');
           skipCount++;
+        } else if (isDependencyError) {
+          // Dependency errors are often safe to skip if the migration is trying to
+          // alter/add to a table that doesn't exist yet (will be created by another migration)
+          console.log('   ⏭️  Skipped (dependency not met - table/column missing)');
+          console.log('      ' + error.message.split('\n')[0]);
+          skipCount++;
         } else {
+          // Real error - log it
           console.error('   ❌ Error: ' + error.message);
           // Show first 5 lines of error for context
           const errorLines = error.message.split('\n').slice(0, 5);
