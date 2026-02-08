@@ -154,7 +154,7 @@ resource "aws_iam_role_policy" "lambda_custom" {
 
 # RDS Proxy connection permission (required for Lambda to connect via RDS Proxy)
 resource "aws_iam_role_policy" "lambda_rds_proxy" {
-  count = var.rds_proxy_arn != null && var.rds_proxy_arn != "" ? 1 : 0
+  count = var.enable_rds_proxy ? 1 : 0
   
   name_prefix = "warmpawz-${var.environment}-lambda-rds-proxy-"
   role        = aws_iam_role.lambda.id
@@ -171,6 +171,7 @@ resource "aws_iam_role_policy" "lambda_rds_proxy" {
         # RDS Proxy ARN format: arn:aws:rds:region:account:db-proxy:prx-xxxxx
         # Need to extract: region, account, proxy-id and convert to rds-db format
         # Using regex replace: arn:aws:rds:(region):(account):db-proxy:(proxy-id) -> arn:aws:rds-db:$1:$2:dbuser:$3
+        # ARN may be unknown during plan when proxy is being created - Terraform will resolve it during apply
         Resource = "${replace(var.rds_proxy_arn, "/^arn:aws:rds:([^:]+):([^:]+):db-proxy:(.+)$/", "arn:aws:rds-db:$1:$2:dbuser:$3")}/${var.rds_proxy_db_username}"
       }
     ]

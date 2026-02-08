@@ -256,6 +256,7 @@ module "lambda" {
   dlq_arn              = module.sqs.dlq_arn
   rds_proxy_arn        = module.rds.proxy_arn
   rds_proxy_db_username = module.rds.master_username
+  enable_rds_proxy      = true  # RDS proxy is always created in prod
   enable_xray          = true
   alarm_actions        = [module.sns.system_alerts_topic_arn]
 }

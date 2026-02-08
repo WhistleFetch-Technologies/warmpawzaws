@@ -147,6 +147,12 @@ variable "rds_proxy_arn" {
   default     = null
 }
 
+variable "enable_rds_proxy" {
+  description = "Enable RDS Proxy IAM permissions (set to true if RDS proxy is being created)"
+  type        = bool
+  default     = false
+}
+
 variable "rds_proxy_db_username" {
   description = "Database username for RDS Proxy IAM authentication"
   type        = string
