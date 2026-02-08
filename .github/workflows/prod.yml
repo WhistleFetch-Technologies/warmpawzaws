@@ -273,6 +273,23 @@ jobs:
             fi
           done
           
+          # Add temporary 0.0.0.0/0 rule for testing (PRODUCTION: Remove after debugging)
+          echo ""
+          echo "⚠️ Adding temporary 0.0.0.0/0 rule for connection testing..."
+          TEMP_RULE=$(aws ec2 describe-security-group-rules \
+            --filters "Name=group-id,Values=$RDS_SG_ID" "Name=cidr-ipv4,Values=0.0.0.0/0" \
+            --query 'SecurityGroupRules[?IsEgress==`false` && IpProtocol==`tcp` && FromPort==`5432`].SecurityGroupRuleId' \
+            --output text --region ap-south-1 2>/dev/null || echo "")
+          
+          if [ -z "$TEMP_RULE" ] || [ "$TEMP_RULE" == "None" ]; then
+            aws ec2 authorize-security-group-ingress \
+              --group-id "$RDS_SG_ID" \
+              --ip-permissions "IpProtocol=tcp,FromPort=5432,ToPort=5432,IpRanges=[{CidrIp=0.0.0.0/0,Description='Temporary: GitHub Actions debugging'}]" \
+              --region ap-south-1 2>&1 && echo "  ✅ Added temporary 0.0.0.0/0 rule" || echo "  ⚠️ Failed to add temporary rule"
+          else
+            echo "  ℹ️ Temporary 0.0.0.0/0 rule already exists"
+          fi
+          
           if [ $RULES_ADDED -eq 0 ]; then
             echo "⚠️ No new rules were added. Verifying existing rules..."
             EXISTING_RULES=$(aws ec2 describe-security-group-rules \
@@ -289,6 +306,7 @@ jobs:
           fi
           echo "✅ RDS security group configured for GitHub Actions"
           echo "   Note: Using direct cluster endpoint for migrations (like dev), not proxy"
+          echo "   ⚠️ TEMPORARY: Added 0.0.0.0/0 rule for debugging - REMOVE AFTER FIXING"
       - name: Get database URL
         id: db
         working-directory: infra/envs/prod
