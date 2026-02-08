@@ -151,7 +151,7 @@ export function TransactionMonitoring() {
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
               placeholder="Search transactions..."
               className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             />
@@ -159,7 +159,7 @@ export function TransactionMonitoring() {
           <div className="flex gap-3">
             <select
               value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFilterType(e.target.value)}
               className="px-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             >
               <option value="all">All Types</option>
@@ -169,7 +169,7 @@ export function TransactionMonitoring() {
             </select>
             <select
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFilterStatus(e.target.value)}
               className="px-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             >
               <option value="all">All Status</option>

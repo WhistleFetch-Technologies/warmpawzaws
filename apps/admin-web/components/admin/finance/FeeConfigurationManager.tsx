@@ -263,7 +263,7 @@ export function FeeConfigurationManager() {
                     max="50"
                     step="0.1"
                     value={config.platformFeePercentage}
-                    onChange={(e) => updateConfig('platformFeePercentage', parseFloat(e.target.value) || 0)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('platformFeePercentage', parseFloat(e.target.value) || 0)}
                     className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                   />
                   <span className="absolute right-3 top-2.5 text-gray-400">%</span>
@@ -282,7 +282,7 @@ export function FeeConfigurationManager() {
                     min="0"
                     step="1"
                     value={config.platformFeeFlat}
-                    onChange={(e) => updateConfig('platformFeeFlat', parseFloat(e.target.value) || 0)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('platformFeeFlat', parseFloat(e.target.value) || 0)}
                     className="w-full px-4 py-2 pl-8 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                   />
                 </div>
@@ -300,7 +300,7 @@ export function FeeConfigurationManager() {
                     min="0"
                     step="10"
                     value={config.maxPlatformFee}
-                    onChange={(e) => updateConfig('maxPlatformFee', parseFloat(e.target.value) || 0)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('maxPlatformFee', parseFloat(e.target.value) || 0)}
                     className="w-full px-4 py-2 pl-8 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                   />
                 </div>
@@ -361,7 +361,7 @@ export function FeeConfigurationManager() {
                     min="0"
                     step="1"
                     value={config.convenienceFeeBooking}
-                    onChange={(e) => updateConfig('convenienceFeeBooking', parseFloat(e.target.value) || 0)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('convenienceFeeBooking', parseFloat(e.target.value) || 0)}
                     className="w-full px-4 py-2 pl-8 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                   />
                 </div>
@@ -379,7 +379,7 @@ export function FeeConfigurationManager() {
                     min="0"
                     step="1"
                     value={config.convenienceFeeOrder}
-                    onChange={(e) => updateConfig('convenienceFeeOrder', parseFloat(e.target.value) || 0)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('convenienceFeeOrder', parseFloat(e.target.value) || 0)}
                     className="w-full px-4 py-2 pl-8 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                   />
                 </div>
@@ -397,7 +397,7 @@ export function FeeConfigurationManager() {
                     min="0"
                     step="1"
                     value={config.convenienceFeeTele}
-                    onChange={(e) => updateConfig('convenienceFeeTele', parseFloat(e.target.value) || 0)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('convenienceFeeTele', parseFloat(e.target.value) || 0)}
                     className="w-full px-4 py-2 pl-8 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                   />
                 </div>
@@ -444,7 +444,7 @@ export function FeeConfigurationManager() {
                     min="0"
                     step="5"
                     value={config.deliveryFeeBase}
-                    onChange={(e) => updateConfig('deliveryFeeBase', parseFloat(e.target.value) || 0)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('deliveryFeeBase', parseFloat(e.target.value) || 0)}
                     className="w-full px-4 py-2 pl-8 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                   />
                 </div>
@@ -462,7 +462,7 @@ export function FeeConfigurationManager() {
                     min="0"
                     step="1"
                     value={config.deliveryFeePerKm}
-                    onChange={(e) => updateConfig('deliveryFeePerKm', parseFloat(e.target.value) || 0)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('deliveryFeePerKm', parseFloat(e.target.value) || 0)}
                     className="w-full px-4 py-2 pl-8 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                   />
                 </div>
@@ -480,7 +480,7 @@ export function FeeConfigurationManager() {
                     min="0"
                     step="50"
                     value={config.freeDeliveryThreshold}
-                    onChange={(e) => updateConfig('freeDeliveryThreshold', parseFloat(e.target.value) || 0)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('freeDeliveryThreshold', parseFloat(e.target.value) || 0)}
                     className="w-full px-4 py-2 pl-8 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                   />
                 </div>
@@ -497,7 +497,7 @@ export function FeeConfigurationManager() {
                   max="100"
                   step="1"
                   value={config.maxDeliveryDistance}
-                  onChange={(e) => updateConfig('maxDeliveryDistance', parseFloat(e.target.value) || 25)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('maxDeliveryDistance', parseFloat(e.target.value) || 25)}
                   className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                 />
                 <p className="text-xs text-gray-500 mt-1">Maximum serviceable distance</p>
@@ -551,7 +551,7 @@ export function FeeConfigurationManager() {
                 <input
                   type="checkbox"
                   checked={config.packagingFeeEnabled}
-                  onChange={(e) => updateConfig('packagingFeeEnabled', e.target.checked)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('packagingFeeEnabled', e.target.checked)}
                   className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600"></div>
@@ -570,7 +570,7 @@ export function FeeConfigurationManager() {
                     min="0"
                     step="1"
                     value={config.packagingFeeAmount}
-                    onChange={(e) => updateConfig('packagingFeeAmount', parseFloat(e.target.value) || 0)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('packagingFeeAmount', parseFloat(e.target.value) || 0)}
                     className="w-full px-4 py-2 pl-8 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                   />
                 </div>
@@ -627,7 +627,7 @@ export function FeeConfigurationManager() {
                         <input
                           type="checkbox"
                           checked={override?.enabled || false}
-                          onChange={(e) => updateServiceOverride(service.id, 'enabled', e.target.checked)}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateServiceOverride(service.id, 'enabled', e.target.checked)}
                           className="sr-only peer"
                         />
                         <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-orange-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-600"></div>
@@ -647,7 +647,7 @@ export function FeeConfigurationManager() {
                             step="0.1"
                             placeholder={`${config.platformFeePercentage}% (default)`}
                             value={override?.platformFeePercentage ?? ''}
-                            onChange={(e) => updateServiceOverride(
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateServiceOverride(
                               service.id, 
                               'platformFeePercentage', 
                               e.target.value ? parseFloat(e.target.value) : undefined
@@ -665,7 +665,7 @@ export function FeeConfigurationManager() {
                             step="1"
                             placeholder={`₹${config.convenienceFeeBooking} (default)`}
                             value={override?.convenienceFee ?? ''}
-                            onChange={(e) => updateServiceOverride(
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateServiceOverride(
                               service.id, 
                               'convenienceFee', 
                               e.target.value ? parseFloat(e.target.value) : undefined

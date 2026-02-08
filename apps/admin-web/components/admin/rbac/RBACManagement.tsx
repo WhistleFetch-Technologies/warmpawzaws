@@ -381,7 +381,7 @@ export function RBACManagement() {
                   <input
                     type="text"
                     value={formData.roleName}
-                    onChange={(e) => setFormData(prev => ({ ...prev, roleName: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, roleName: e.target.value }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     placeholder="e.g., Vendor Manager"
                   />
@@ -391,7 +391,7 @@ export function RBACManagement() {
                   <input
                     type="text"
                     value={formData.roleCode}
-                    onChange={(e) => setFormData(prev => ({ ...prev, roleCode: e.target.value.toUpperCase() }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, roleCode: e.target.value.toUpperCase() }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     placeholder="e.g., VENDOR_MGR"
                   />
@@ -402,7 +402,7 @@ export function RBACManagement() {
                 <label className="block text-sm font-medium text-gray-700 mb-0">Description</label>
                 <textarea
                   value={formData.description}
-                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   rows={2}
                   placeholder="Describe this role..."
@@ -414,7 +414,7 @@ export function RBACManagement() {
                   <label className="text-sm font-medium text-gray-700">Permissions</label>
                   <select
                     value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedCategory(e.target.value)}
                     className="px-0 py-0 border-2 border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="all">All Categories</option>
@@ -479,7 +479,7 @@ export function RBACManagement() {
                   <input
                     type="checkbox"
                     checked={formData.isActive}
-                    onChange={(e) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
                     className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                   />
                   <span className="text-sm font-medium text-gray-700">Active Role</span>

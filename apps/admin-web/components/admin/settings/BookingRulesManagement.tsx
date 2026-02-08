@@ -154,7 +154,7 @@ export function BookingRulesManagement() {
                   type="number"
                   min="1"
                   value={rules.general.maxAdvanceBookingDays}
-                  onChange={(e) => updateRule('general', 'maxAdvanceBookingDays', parseInt(e.target.value))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule('general', 'maxAdvanceBookingDays', parseInt(e.target.value))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                 />
               </div>
@@ -164,7 +164,7 @@ export function BookingRulesManagement() {
                   type="number"
                   min="0"
                   value={rules.general.minAdvanceBookingHours}
-                  onChange={(e) => updateRule('general', 'minAdvanceBookingHours', parseInt(e.target.value))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule('general', 'minAdvanceBookingHours', parseInt(e.target.value))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                 />
               </div>
@@ -175,7 +175,7 @@ export function BookingRulesManagement() {
                 type="number"
                 min="1"
                 value={rules.general.maxConcurrentBookings}
-                onChange={(e) => updateRule('general', 'maxConcurrentBookings', parseInt(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule('general', 'maxConcurrentBookings', parseInt(e.target.value))}
                 className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -183,7 +183,7 @@ export function BookingRulesManagement() {
               <input
                 type="checkbox"
                 checked={rules.general.allowSameDayBooking}
-                onChange={(e) => updateRule('general', 'allowSameDayBooking', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule('general', 'allowSameDayBooking', e.target.checked)}
                 className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
               />
               <span className="text-sm font-medium text-gray-700">Allow Same-Day Booking</span>
@@ -198,7 +198,7 @@ export function BookingRulesManagement() {
               <input
                 type="checkbox"
                 checked={rules.cancellation.allowCancellation}
-                onChange={(e) => updateRule('cancellation', 'allowCancellation', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule('cancellation', 'allowCancellation', e.target.checked)}
                 className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
               />
               <span className="text-sm font-medium text-gray-700">Allow Cancellation</span>
@@ -212,7 +212,7 @@ export function BookingRulesManagement() {
                       type="number"
                       min="0"
                       value={rules.cancellation.cancellationWindowHours}
-                      onChange={(e) => updateRule('cancellation', 'cancellationWindowHours', parseInt(e.target.value))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule('cancellation', 'cancellationWindowHours', parseInt(e.target.value))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     />
                   </div>
@@ -223,7 +223,7 @@ export function BookingRulesManagement() {
                       min="0"
                       max="100"
                       value={rules.cancellation.refundPercentage}
-                      onChange={(e) => updateRule('cancellation', 'refundPercentage', parseInt(e.target.value))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule('cancellation', 'refundPercentage', parseInt(e.target.value))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     />
                   </div>
@@ -233,7 +233,7 @@ export function BookingRulesManagement() {
                       type="number"
                       min="0"
                       value={rules.cancellation.penaltyAmount}
-                      onChange={(e) => updateRule('cancellation', 'penaltyAmount', parseInt(e.target.value))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule('cancellation', 'penaltyAmount', parseInt(e.target.value))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     />
                   </div>
@@ -250,7 +250,7 @@ export function BookingRulesManagement() {
               <input
                 type="checkbox"
                 checked={rules.modification.allowModification}
-                onChange={(e) => updateRule('modification', 'allowModification', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule('modification', 'allowModification', e.target.checked)}
                 className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
               />
               <span className="text-sm font-medium text-gray-700">Allow Modification</span>
@@ -263,7 +263,7 @@ export function BookingRulesManagement() {
                     type="number"
                     min="0"
                     value={rules.modification.modificationWindowHours}
-                    onChange={(e) => updateRule('modification', 'modificationWindowHours', parseInt(e.target.value))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule('modification', 'modificationWindowHours', parseInt(e.target.value))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -273,7 +273,7 @@ export function BookingRulesManagement() {
                     type="number"
                     min="1"
                     value={rules.modification.maxModificationsAllowed}
-                    onChange={(e) => updateRule('modification', 'maxModificationsAllowed', parseInt(e.target.value))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule('modification', 'maxModificationsAllowed', parseInt(e.target.value))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -289,7 +289,7 @@ export function BookingRulesManagement() {
               <input
                 type="checkbox"
                 checked={rules.payment.requireFullPayment}
-                onChange={(e) => updateRule('payment', 'requireFullPayment', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule('payment', 'requireFullPayment', e.target.checked)}
                 className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
               />
               <span className="text-sm font-medium text-gray-700">Require Full Payment Upfront</span>
@@ -303,7 +303,7 @@ export function BookingRulesManagement() {
                     min="0"
                     max="100"
                     value={rules.payment.advancePaymentPercentage}
-                    onChange={(e) => updateRule('payment', 'advancePaymentPercentage', parseInt(e.target.value))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule('payment', 'advancePaymentPercentage', parseInt(e.target.value))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -313,7 +313,7 @@ export function BookingRulesManagement() {
                     type="number"
                     min="0"
                     value={rules.payment.paymentDueHours}
-                    onChange={(e) => updateRule('payment', 'paymentDueHours', parseInt(e.target.value))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRule('payment', 'paymentDueHours', parseInt(e.target.value))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>

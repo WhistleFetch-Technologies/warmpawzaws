@@ -203,7 +203,7 @@ export function EnhancedAddressAutocomplete({
           ref={inputRef}
           type="text"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
           placeholder={!apiKey && !isLoading ? "Enter your full address" : placeholder}
           required={required}
           disabled={disabled || isLoading}

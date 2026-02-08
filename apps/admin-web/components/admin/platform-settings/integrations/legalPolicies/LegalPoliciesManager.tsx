@@ -370,7 +370,7 @@ export function LegalPoliciesManager() {
         ) : (
           <textarea
             value={editedContent[activePolicy] || ''}
-            onChange={(e) => setEditedContent(prev => ({
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditedContent(prev => ({
               ...prev,
               [activePolicy]: e.target.value,
             }))}

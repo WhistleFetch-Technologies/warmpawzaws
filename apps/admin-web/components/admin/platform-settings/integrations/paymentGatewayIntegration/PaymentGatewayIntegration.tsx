@@ -287,7 +287,7 @@ export function PaymentGatewayIntegration() {
 									<input
 										type="checkbox"
 										checked={settings.razorpay.enabled}
-										onChange={(e) =>
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 											updateRazorpay("enabled", e.target.checked)
 										}
 										className="w-5 h-5 rounded"
@@ -303,7 +303,7 @@ export function PaymentGatewayIntegration() {
 								<Input
 									type="text"
 									value={settings.razorpay.key_id}
-									onChange={(e) => updateRazorpay("key_id", e.target.value)}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateRazorpay("key_id", e.target.value)}
 									placeholder="rzp_test_xxxxx or rzp_live_xxxxx"
 									className="w-full"
 								/>
@@ -316,7 +316,7 @@ export function PaymentGatewayIntegration() {
 								<Input
 									type="password"
 									value={settings.razorpay.key_secret}
-									onChange={(e) =>
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 										updateRazorpay("key_secret", e.target.value)
 									}
 									placeholder="Your Razorpay key secret"
@@ -331,7 +331,7 @@ export function PaymentGatewayIntegration() {
 								<Input
 									type="password"
 									value={settings.razorpay.webhook_secret}
-									onChange={(e) =>
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 										updateRazorpay("webhook_secret", e.target.value)
 									}
 									placeholder="whsec_xxxxx"
@@ -347,7 +347,7 @@ export function PaymentGatewayIntegration() {
 									<input
 										type="checkbox"
 										checked={settings.razorpay.auto_capture}
-										onChange={(e) =>
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 											updateRazorpay("auto_capture", e.target.checked)
 										}
 										className="w-4 h-4 rounded"
@@ -359,7 +359,7 @@ export function PaymentGatewayIntegration() {
 									<input
 										type="checkbox"
 										checked={settings.razorpay.test_mode}
-										onChange={(e) =>
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 											updateRazorpay("test_mode", e.target.checked)
 										}
 										className="w-4 h-4 rounded"
@@ -394,7 +394,7 @@ export function PaymentGatewayIntegration() {
 									<input
 										type="checkbox"
 										checked={settings.stripe.enabled}
-										onChange={(e) => updateStripe("enabled", e.target.checked)}
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateStripe("enabled", e.target.checked)}
 										className="w-5 h-5 rounded"
 									/>
 									<span className="font-medium">Enable</span>
@@ -408,7 +408,7 @@ export function PaymentGatewayIntegration() {
 								<Input
 									type="text"
 									value={settings.stripe.publishable_key}
-									onChange={(e) =>
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 										updateStripe("publishable_key", e.target.value)
 									}
 									placeholder="pk_test_xxxxx or pk_live_xxxxx"
@@ -423,7 +423,7 @@ export function PaymentGatewayIntegration() {
 								<Input
 									type="password"
 									value={settings.stripe.secret_key}
-									onChange={(e) => updateStripe("secret_key", e.target.value)}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateStripe("secret_key", e.target.value)}
 									placeholder="sk_test_xxxxx or sk_live_xxxxx"
 									className="w-full"
 								/>
@@ -436,7 +436,7 @@ export function PaymentGatewayIntegration() {
 								<Input
 									type="password"
 									value={settings.stripe.webhook_secret}
-									onChange={(e) =>
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 										updateStripe("webhook_secret", e.target.value)
 									}
 									placeholder="whsec_xxxxx"
@@ -448,7 +448,7 @@ export function PaymentGatewayIntegration() {
 								<input
 									type="checkbox"
 									checked={settings.stripe.test_mode}
-									onChange={(e) => updateStripe("test_mode", e.target.checked)}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateStripe("test_mode", e.target.checked)}
 									className="w-4 h-4 rounded"
 								/>
 								<span className="text-sm">Test mode</span>
@@ -472,7 +472,7 @@ export function PaymentGatewayIntegration() {
 									<input
 										type="checkbox"
 										checked={settings.paytm.enabled}
-										onChange={(e) => updatePaytm("enabled", e.target.checked)}
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) => updatePaytm("enabled", e.target.checked)}
 										className="w-5 h-5 rounded"
 									/>
 									<span className="font-medium">Enable</span>
@@ -486,7 +486,7 @@ export function PaymentGatewayIntegration() {
 								<Input
 									type="text"
 									value={settings.paytm.merchant_id}
-									onChange={(e) => updatePaytm("merchant_id", e.target.value)}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => updatePaytm("merchant_id", e.target.value)}
 									placeholder="Your Paytm merchant ID"
 									className="w-full"
 								/>
@@ -499,7 +499,7 @@ export function PaymentGatewayIntegration() {
 								<Input
 									type="password"
 									value={settings.paytm.merchant_key}
-									onChange={(e) => updatePaytm("merchant_key", e.target.value)}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => updatePaytm("merchant_key", e.target.value)}
 									placeholder="Your Paytm merchant key"
 									className="w-full"
 								/>
@@ -509,7 +509,7 @@ export function PaymentGatewayIntegration() {
 								<input
 									type="checkbox"
 									checked={settings.paytm.test_mode}
-									onChange={(e) => updatePaytm("test_mode", e.target.checked)}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => updatePaytm("test_mode", e.target.checked)}
 									className="w-4 h-4 rounded"
 								/>
 								<span className="text-sm">Test mode</span>
@@ -548,7 +548,7 @@ export function PaymentGatewayIntegration() {
 						<Input
 							type="number"
 							value={settings.commission_percentage}
-							onChange={(e) =>
+							onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 								setSettings({
 									...settings,
 									commission_percentage: parseFloat(e.target.value),
@@ -568,7 +568,7 @@ export function PaymentGatewayIntegration() {
 						<Input
 							type="number"
 							value={settings.settlement_period_days}
-							onChange={(e) =>
+							onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 								setSettings({
 									...settings,
 									settlement_period_days: parseInt(e.target.value),

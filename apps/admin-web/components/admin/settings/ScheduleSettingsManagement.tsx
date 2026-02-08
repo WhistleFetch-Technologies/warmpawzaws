@@ -118,7 +118,7 @@ export function ScheduleSettingsManagement() {
               min="15"
               step="15"
               value={settings.slotDuration}
-              onChange={(e) => setSettings(prev => ({ ...prev, slotDuration: parseInt(e.target.value) }))}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, slotDuration: parseInt(e.target.value) }))}
               className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             />
           </div>
@@ -128,7 +128,7 @@ export function ScheduleSettingsManagement() {
               type="number"
               min="0"
               value={settings.breakDuration}
-              onChange={(e) => setSettings(prev => ({ ...prev, breakDuration: parseInt(e.target.value) }))}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, breakDuration: parseInt(e.target.value) }))}
               className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             />
           </div>
@@ -141,7 +141,7 @@ export function ScheduleSettingsManagement() {
               type="number"
               min="0"
               value={settings.bufferTime}
-              onChange={(e) => setSettings(prev => ({ ...prev, bufferTime: parseInt(e.target.value) }))}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, bufferTime: parseInt(e.target.value) }))}
               className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             />
           </div>
@@ -151,7 +151,7 @@ export function ScheduleSettingsManagement() {
               type="number"
               min="1"
               value={settings.maxSlotsPerDay}
-              onChange={(e) => setSettings(prev => ({ ...prev, maxSlotsPerDay: parseInt(e.target.value) }))}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, maxSlotsPerDay: parseInt(e.target.value) }))}
               className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             />
           </div>
@@ -165,7 +165,7 @@ export function ScheduleSettingsManagement() {
               <input
                 type="time"
                 value={settings.defaultWorkingHours.start}
-                onChange={(e) => setSettings(prev => ({
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({
                   ...prev,
                   defaultWorkingHours: { ...prev.defaultWorkingHours, start: e.target.value }
                 }))}
@@ -177,7 +177,7 @@ export function ScheduleSettingsManagement() {
               <input
                 type="time"
                 value={settings.defaultWorkingHours.end}
-                onChange={(e) => setSettings(prev => ({
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({
                   ...prev,
                   defaultWorkingHours: { ...prev.defaultWorkingHours, end: e.target.value }
                 }))}
@@ -192,7 +192,7 @@ export function ScheduleSettingsManagement() {
             <input
               type="checkbox"
               checked={settings.allowOverlapping}
-              onChange={(e) => setSettings(prev => ({ ...prev, allowOverlapping: e.target.checked }))}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, allowOverlapping: e.target.checked }))}
               className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
             />
             <span className="text-sm font-medium text-gray-700">Allow Overlapping Bookings</span>
@@ -201,7 +201,7 @@ export function ScheduleSettingsManagement() {
             <input
               type="checkbox"
               checked={settings.autoConfirmBookings}
-              onChange={(e) => setSettings(prev => ({ ...prev, autoConfirmBookings: e.target.checked }))}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings(prev => ({ ...prev, autoConfirmBookings: e.target.checked }))}
               className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
             />
             <span className="text-sm font-medium text-gray-700">Auto-confirm Bookings</span>

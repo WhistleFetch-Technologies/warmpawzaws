@@ -774,7 +774,7 @@ export default function SupportSettingsPage() {
                 <Input
                   type="number"
                   value={editingAgent?.maxConcurrentTickets || 10}
-                  onChange={(e) => setEditingAgent({ ...editingAgent, maxConcurrentTickets: parseInt(e.target.value) })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingAgent({ ...editingAgent, maxConcurrentTickets: parseInt(e.target.value) })}
                 />
               </div>
             </div>
@@ -802,7 +802,7 @@ export default function SupportSettingsPage() {
                 <label className="text-sm font-medium text-gray-700 mb-1.5 block">Name</label>
                 <Input
                   value={editingSLA?.name || ""}
-                  onChange={(e) => setEditingSLA({ ...editingSLA, name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingSLA({ ...editingSLA, name: e.target.value })}
                   placeholder="e.g., Urgent SLA"
                 />
               </div>
@@ -831,7 +831,7 @@ export default function SupportSettingsPage() {
                   <Input
                     type="number"
                     value={editingSLA?.firstResponseMinutes || ""}
-                    onChange={(e) => setEditingSLA({ ...editingSLA, firstResponseMinutes: parseInt(e.target.value) })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingSLA({ ...editingSLA, firstResponseMinutes: parseInt(e.target.value) })}
                     placeholder="60"
                   />
                 </div>
@@ -840,7 +840,7 @@ export default function SupportSettingsPage() {
                   <Input
                     type="number"
                     value={editingSLA?.resolutionMinutes || ""}
-                    onChange={(e) => setEditingSLA({ ...editingSLA, resolutionMinutes: parseInt(e.target.value) })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingSLA({ ...editingSLA, resolutionMinutes: parseInt(e.target.value) })}
                     placeholder="480"
                   />
                 </div>
@@ -851,7 +851,7 @@ export default function SupportSettingsPage() {
                 <Input
                   type="number"
                   value={editingSLA?.escalationAfterMinutes || ""}
-                  onChange={(e) => setEditingSLA({ ...editingSLA, escalationAfterMinutes: parseInt(e.target.value) })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingSLA({ ...editingSLA, escalationAfterMinutes: parseInt(e.target.value) })}
                   placeholder="120"
                 />
               </div>
@@ -880,7 +880,7 @@ export default function SupportSettingsPage() {
                 <label className="text-sm font-medium text-gray-700 mb-1.5 block">Name *</label>
                 <Input
                   value={editingCategory?.name || ""}
-                  onChange={(e) => setEditingCategory({ ...editingCategory, name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingCategory({ ...editingCategory, name: e.target.value })}
                   placeholder="e.g., billing"
                 />
               </div>
@@ -889,7 +889,7 @@ export default function SupportSettingsPage() {
                 <label className="text-sm font-medium text-gray-700 mb-1.5 block">Description</label>
                 <Textarea
                   value={editingCategory?.description || ""}
-                  onChange={(e) => setEditingCategory({ ...editingCategory, description: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingCategory({ ...editingCategory, description: e.target.value })}
                   placeholder="Describe this category..."
                   rows={2}
                 />
@@ -957,7 +957,7 @@ export default function SupportSettingsPage() {
                 <label className="text-sm font-medium text-gray-700 mb-1.5 block">Rule Name *</label>
                 <Input
                   value={editingRule?.name || ""}
-                  onChange={(e) => setEditingRule({ ...editingRule, name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingRule({ ...editingRule, name: e.target.value })}
                   placeholder="e.g., Escalate after 30 min no response"
                 />
               </div>
@@ -984,7 +984,7 @@ export default function SupportSettingsPage() {
                   <Input
                     type="number"
                     value={editingRule?.triggerValue || ""}
-                    onChange={(e) => setEditingRule({ ...editingRule, triggerValue: parseInt(e.target.value) })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingRule({ ...editingRule, triggerValue: parseInt(e.target.value) })}
                     placeholder="30"
                   />
                 </div>
@@ -1057,7 +1057,7 @@ export default function SupportSettingsPage() {
                 <Input
                   type="email"
                   value={editingRule?.notifyEmail || ""}
-                  onChange={(e) => setEditingRule({ ...editingRule, notifyEmail: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingRule({ ...editingRule, notifyEmail: e.target.value })}
                   placeholder="manager@example.com"
                 />
               </div>
