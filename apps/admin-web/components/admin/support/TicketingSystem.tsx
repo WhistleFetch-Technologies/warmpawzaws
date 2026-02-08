@@ -123,7 +123,7 @@ export function TicketingSystem() {
                 <label className="block text-sm font-medium text-gray-700 mb-0">Description</label>
                 <textarea
                   value={formData.description}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   rows={4}
                 />

@@ -2311,7 +2311,7 @@ export default function MarketingPromotionsTab() {
 							<Label>Content *</Label>
 							<textarea
 								value={articleForm.content}
-								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setArticleForm({ ...articleForm, content: e.target.value })}
+								onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setArticleForm({ ...articleForm, content: e.target.value })}
 								placeholder="Write your article content here..."
 								className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-[#FF8C42] focus:border-transparent min-h-[200px]"
 							/>
