@@ -565,7 +565,7 @@ export function AddVendorModal({ isOpen, onClose, onSuccess }: AddVendorModalPro
                 <div className="flex gap-3 mb-4">
                   <select 
                     value={selectedDocType}
-                    onChange={(e) => setSelectedDocType(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedDocType(e.target.value)}
                     className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
                   >
                     <option value="">Select document type</option>

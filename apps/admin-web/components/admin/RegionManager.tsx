@@ -323,7 +323,7 @@ export function RegionManager() {
                   <input
                     type="text"
                     value={formData.regionName}
-                    onChange={(e) => setFormData(prev => ({ ...prev, regionName: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, regionName: e.target.value }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     placeholder="e.g., Mumbai"
                   />
@@ -333,7 +333,7 @@ export function RegionManager() {
                   <input
                     type="text"
                     value={formData.regionCode}
-                    onChange={(e) => setFormData(prev => ({ ...prev, regionCode: e.target.value.toUpperCase() }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, regionCode: e.target.value.toUpperCase() }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     placeholder="e.g., MUM"
                   />
@@ -345,7 +345,7 @@ export function RegionManager() {
                 <input
                   type="text"
                   value={formData.country}
-                  onChange={(e) => setFormData(prev => ({ ...prev, country: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, country: e.target.value }))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                 />
               </div>
@@ -358,7 +358,7 @@ export function RegionManager() {
                     <input
                       type="text"
                       value={formData.currencyCode}
-                      onChange={(e) => setFormData(prev => ({ ...prev, currencyCode: e.target.value.toUpperCase() }))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, currencyCode: e.target.value.toUpperCase() }))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     />
                   </div>
@@ -367,7 +367,7 @@ export function RegionManager() {
                     <input
                       type="text"
                       value={formData.currencySymbol}
-                      onChange={(e) => setFormData(prev => ({ ...prev, currencySymbol: e.target.value }))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, currencySymbol: e.target.value }))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     />
                   </div>
@@ -375,7 +375,7 @@ export function RegionManager() {
                     <label className="block text-sm font-medium text-gray-700 mb-0">Position</label>
                     <select
                       value={formData.symbolPosition}
-                      onChange={(e) => setFormData(prev => ({ ...prev, symbolPosition: e.target.value as 'before' | 'after' }))}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, symbolPosition: e.target.value as 'before' | 'after' }))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     >
                       <option value="before">Before</option>
@@ -396,7 +396,7 @@ export function RegionManager() {
                       max="100"
                       step="0.1"
                       value={formData.taxRate}
-                      onChange={(e) => setFormData(prev => ({ ...prev, taxRate: parseFloat(e.target.value) }))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, taxRate: parseFloat(e.target.value) }))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     />
                   </div>
@@ -405,7 +405,7 @@ export function RegionManager() {
                     <input
                       type="text"
                       value={formData.taxName}
-                      onChange={(e) => setFormData(prev => ({ ...prev, taxName: e.target.value }))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, taxName: e.target.value }))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     />
                   </div>
@@ -417,7 +417,7 @@ export function RegionManager() {
                       max="100"
                       step="0.1"
                       value={formData.commissionRate}
-                      onChange={(e) => setFormData(prev => ({ ...prev, commissionRate: parseFloat(e.target.value) }))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, commissionRate: parseFloat(e.target.value) }))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     />
                   </div>
@@ -431,7 +431,7 @@ export function RegionManager() {
                     <label className="block text-sm font-medium text-gray-700 mb-0">Timezone</label>
                     <select
                       value={formData.timezone}
-                      onChange={(e) => setFormData(prev => ({ ...prev, timezone: e.target.value }))}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, timezone: e.target.value }))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     >
                       <option value="Asia/Kolkata">Asia/Kolkata</option>
@@ -443,7 +443,7 @@ export function RegionManager() {
                     <label className="block text-sm font-medium text-gray-700 mb-0">Language</label>
                     <select
                       value={formData.language}
-                      onChange={(e) => setFormData(prev => ({ ...prev, language: e.target.value }))}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, language: e.target.value }))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     >
                       <option value="en">English</option>
@@ -454,7 +454,7 @@ export function RegionManager() {
                     <label className="block text-sm font-medium text-gray-700 mb-0">Date Format</label>
                     <select
                       value={formData.dateFormat}
-                      onChange={(e) => setFormData(prev => ({ ...prev, dateFormat: e.target.value }))}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, dateFormat: e.target.value }))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     >
                       <option value="DD/MM/YYYY">DD/MM/YYYY</option>
@@ -472,7 +472,7 @@ export function RegionManager() {
                     <label className="block text-sm font-medium text-gray-700 mb-0">Cities (comma-separated)</label>
                     <textarea
                       value={formData.cities}
-                      onChange={(e) => setFormData(prev => ({ ...prev, cities: e.target.value }))}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData(prev => ({ ...prev, cities: e.target.value }))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                       rows={2}
                       placeholder="Mumbai, Navi Mumbai, Thane"
@@ -482,7 +482,7 @@ export function RegionManager() {
                     <label className="block text-sm font-medium text-gray-700 mb-0">Postal Codes (comma-separated)</label>
                     <textarea
                       value={formData.postalCodes}
-                      onChange={(e) => setFormData(prev => ({ ...prev, postalCodes: e.target.value }))}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData(prev => ({ ...prev, postalCodes: e.target.value }))}
                       className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                       rows={2}
                       placeholder="400001, 400002, 400003"
@@ -496,7 +496,7 @@ export function RegionManager() {
                   <input
                     type="checkbox"
                     checked={formData.isActive}
-                    onChange={(e) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
                     className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                   />
                   <span className="text-sm font-medium text-gray-700">Active Region</span>

@@ -279,7 +279,7 @@ export function ProblemCategoryMapper() {
                   <input
                     type="text"
                     value={formData.categoryName}
-                    onChange={(e) => setFormData(prev => ({ ...prev, categoryName: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, categoryName: e.target.value }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     placeholder="e.g., Payment Issues"
                   />
@@ -289,7 +289,7 @@ export function ProblemCategoryMapper() {
                   <input
                     type="text"
                     value={formData.categoryCode}
-                    onChange={(e) => setFormData(prev => ({ ...prev, categoryCode: e.target.value.toUpperCase() }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, categoryCode: e.target.value.toUpperCase() }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     placeholder="e.g., PAY"
                   />
@@ -300,7 +300,7 @@ export function ProblemCategoryMapper() {
                 <label className="block text-sm font-medium text-gray-700 mb-0">Description</label>
                 <textarea
                   value={formData.description}
-                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   rows={2}
                   placeholder="Describe this category..."
@@ -312,7 +312,7 @@ export function ProblemCategoryMapper() {
                   <label className="block text-sm font-medium text-gray-700 mb-0">Severity</label>
                   <select
                     value={formData.severity}
-                    onChange={(e) => setFormData(prev => ({ ...prev, severity: e.target.value as any }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, severity: e.target.value as any }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   >
                     {SEVERITY_LEVELS.map(level => (
@@ -326,7 +326,7 @@ export function ProblemCategoryMapper() {
                     type="number"
                     min="1"
                     value={formData.slaHours}
-                    onChange={(e) => setFormData(prev => ({ ...prev, slaHours: parseInt(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, slaHours: parseInt(e.target.value) }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -337,7 +337,7 @@ export function ProblemCategoryMapper() {
                   <input
                     type="checkbox"
                     checked={formData.autoAssign}
-                    onChange={(e) => setFormData(prev => ({ ...prev, autoAssign: e.target.checked }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, autoAssign: e.target.checked }))}
                     className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                   />
                   <span className="text-sm font-medium text-gray-700">Auto-assign to team</span>
@@ -349,7 +349,7 @@ export function ProblemCategoryMapper() {
                   <label className="block text-sm font-medium text-gray-700 mb-0">Assigned Team</label>
                   <select
                     value={formData.assignedTeam}
-                    onChange={(e) => setFormData(prev => ({ ...prev, assignedTeam: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, assignedTeam: e.target.value }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="">Select Team</option>
@@ -365,7 +365,7 @@ export function ProblemCategoryMapper() {
                   <input
                     type="checkbox"
                     checked={formData.isActive}
-                    onChange={(e) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
                     className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                   />
                   <span className="text-sm font-medium text-gray-700">Active Category</span>

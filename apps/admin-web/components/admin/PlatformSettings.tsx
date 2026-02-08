@@ -224,7 +224,7 @@ export function PlatformSettings() {
                 <input
                   type="text"
                   value={config.general.platformName}
-                  onChange={(e) => updateConfig('general', 'platformName', e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('general', 'platformName', e.target.value)}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                 />
               </div>
@@ -235,7 +235,7 @@ export function PlatformSettings() {
                   <input
                     type="email"
                     value={config.general.supportEmail}
-                    onChange={(e) => updateConfig('general', 'supportEmail', e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('general', 'supportEmail', e.target.value)}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -244,7 +244,7 @@ export function PlatformSettings() {
                   <input
                     type="tel"
                     value={config.general.supportPhone}
-                    onChange={(e) => updateConfig('general', 'supportPhone', e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('general', 'supportPhone', e.target.value)}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -255,7 +255,7 @@ export function PlatformSettings() {
                   <input
                     type="checkbox"
                     checked={config.general.maintenanceMode}
-                    onChange={(e) => updateConfig('general', 'maintenanceMode', e.target.checked)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('general', 'maintenanceMode', e.target.checked)}
                     className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                   />
                   <span className="text-sm font-medium text-gray-700">Maintenance Mode</span>
@@ -267,7 +267,7 @@ export function PlatformSettings() {
                   <label className="block text-sm font-medium text-gray-700 mb-0">Maintenance Message</label>
                   <textarea
                     value={config.general.maintenanceMessage}
-                    onChange={(e) => updateConfig('general', 'maintenanceMessage', e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateConfig('general', 'maintenanceMessage', e.target.value)}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     rows={3}
                     placeholder="Platform is under maintenance. We'll be back soon!"
@@ -284,7 +284,7 @@ export function PlatformSettings() {
                   <label className="block text-sm font-medium text-gray-700 mb-0">Default Currency</label>
                   <select
                     value={config.business.defaultCurrency}
-                    onChange={(e) => updateConfig('business', 'defaultCurrency', e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateConfig('business', 'defaultCurrency', e.target.value)}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="INR">INR (₹)</option>
@@ -297,7 +297,7 @@ export function PlatformSettings() {
                   <label className="block text-sm font-medium text-gray-700 mb-0">Default Timezone</label>
                   <select
                     value={config.business.defaultTimezone}
-                    onChange={(e) => updateConfig('business', 'defaultTimezone', e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateConfig('business', 'defaultTimezone', e.target.value)}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
@@ -309,7 +309,7 @@ export function PlatformSettings() {
                   <label className="block text-sm font-medium text-gray-700 mb-0">Default Language</label>
                   <select
                     value={config.business.defaultLanguage}
-                    onChange={(e) => updateConfig('business', 'defaultLanguage', e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateConfig('business', 'defaultLanguage', e.target.value)}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="en">English</option>
@@ -324,7 +324,7 @@ export function PlatformSettings() {
                   <input
                     type="checkbox"
                     checked={config.business.taxEnabled}
-                    onChange={(e) => updateConfig('business', 'taxEnabled', e.target.checked)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('business', 'taxEnabled', e.target.checked)}
                     className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                   />
                   <span className="text-sm font-medium text-gray-700">Enable Tax Calculation</span>
@@ -340,7 +340,7 @@ export function PlatformSettings() {
                     max="100"
                     step="0.1"
                     value={config.business.defaultTaxRate}
-                    onChange={(e) => updateConfig('business', 'defaultTaxRate', parseFloat(e.target.value))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('business', 'defaultTaxRate', parseFloat(e.target.value))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -352,7 +352,7 @@ export function PlatformSettings() {
                     max="100"
                     step="0.1"
                     value={config.business.commissionRate}
-                    onChange={(e) => updateConfig('business', 'commissionRate', parseFloat(e.target.value))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('business', 'commissionRate', parseFloat(e.target.value))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -369,7 +369,7 @@ export function PlatformSettings() {
                     type="number"
                     min="1"
                     value={config.booking.maxAdvanceBookingDays}
-                    onChange={(e) => updateConfig('booking', 'maxAdvanceBookingDays', parseInt(e.target.value))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('booking', 'maxAdvanceBookingDays', parseInt(e.target.value))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -379,7 +379,7 @@ export function PlatformSettings() {
                     type="number"
                     min="0"
                     value={config.booking.minAdvanceBookingHours}
-                    onChange={(e) => updateConfig('booking', 'minAdvanceBookingHours', parseInt(e.target.value))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('booking', 'minAdvanceBookingHours', parseInt(e.target.value))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -389,7 +389,7 @@ export function PlatformSettings() {
                     type="number"
                     min="0"
                     value={config.booking.cancellationWindowHours}
-                    onChange={(e) => updateConfig('booking', 'cancellationWindowHours', parseInt(e.target.value))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('booking', 'cancellationWindowHours', parseInt(e.target.value))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -400,7 +400,7 @@ export function PlatformSettings() {
                   <input
                     type="checkbox"
                     checked={config.booking.autoConfirmBookings}
-                    onChange={(e) => updateConfig('booking', 'autoConfirmBookings', e.target.checked)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('booking', 'autoConfirmBookings', e.target.checked)}
                     className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                   />
                   <span className="text-sm font-medium text-gray-700">Auto-confirm Bookings</span>
@@ -409,7 +409,7 @@ export function PlatformSettings() {
                   <input
                     type="checkbox"
                     checked={config.booking.allowGuestBooking}
-                    onChange={(e) => updateConfig('booking', 'allowGuestBooking', e.target.checked)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('booking', 'allowGuestBooking', e.target.checked)}
                     className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                   />
                   <span className="text-sm font-medium text-gray-700">Allow Guest Booking (No Login)</span>
@@ -431,7 +431,7 @@ export function PlatformSettings() {
                 <input
                   type="checkbox"
                   checked={config.notifications.emailEnabled}
-                  onChange={(e) => updateConfig('notifications', 'emailEnabled', e.target.checked)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('notifications', 'emailEnabled', e.target.checked)}
                   className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
                 />
               </label>
@@ -447,7 +447,7 @@ export function PlatformSettings() {
                 <input
                   type="checkbox"
                   checked={config.notifications.smsEnabled}
-                  onChange={(e) => updateConfig('notifications', 'smsEnabled', e.target.checked)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('notifications', 'smsEnabled', e.target.checked)}
                   className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
                 />
               </label>
@@ -463,7 +463,7 @@ export function PlatformSettings() {
                 <input
                   type="checkbox"
                   checked={config.notifications.pushEnabled}
-                  onChange={(e) => updateConfig('notifications', 'pushEnabled', e.target.checked)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('notifications', 'pushEnabled', e.target.checked)}
                   className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
                 />
               </label>
@@ -479,7 +479,7 @@ export function PlatformSettings() {
                 <input
                   type="checkbox"
                   checked={config.notifications.whatsappEnabled}
-                  onChange={(e) => updateConfig('notifications', 'whatsappEnabled', e.target.checked)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('notifications', 'whatsappEnabled', e.target.checked)}
                   className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
                 />
               </label>
@@ -495,7 +495,7 @@ export function PlatformSettings() {
                     type="number"
                     min="5"
                     value={config.security.sessionTimeoutMinutes}
-                    onChange={(e) => updateConfig('security', 'sessionTimeoutMinutes', parseInt(e.target.value))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('security', 'sessionTimeoutMinutes', parseInt(e.target.value))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -505,7 +505,7 @@ export function PlatformSettings() {
                     type="number"
                     min="1"
                     value={config.security.maxLoginAttempts}
-                    onChange={(e) => updateConfig('security', 'maxLoginAttempts', parseInt(e.target.value))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('security', 'maxLoginAttempts', parseInt(e.target.value))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -515,7 +515,7 @@ export function PlatformSettings() {
                     type="number"
                     min="6"
                     value={config.security.passwordMinLength}
-                    onChange={(e) => updateConfig('security', 'passwordMinLength', parseInt(e.target.value))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('security', 'passwordMinLength', parseInt(e.target.value))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -526,7 +526,7 @@ export function PlatformSettings() {
                   <input
                     type="checkbox"
                     checked={config.security.requireMFA}
-                    onChange={(e) => updateConfig('security', 'requireMFA', e.target.checked)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('security', 'requireMFA', e.target.checked)}
                     className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                   />
                   <span className="text-sm font-medium text-gray-700">Require Multi-Factor Authentication (MFA)</span>
@@ -545,7 +545,7 @@ export function PlatformSettings() {
                 <input
                   type="checkbox"
                   checked={config.features.multiRegionEnabled}
-                  onChange={(e) => updateConfig('features', 'multiRegionEnabled', e.target.checked)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('features', 'multiRegionEnabled', e.target.checked)}
                   className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
                 />
               </label>
@@ -558,7 +558,7 @@ export function PlatformSettings() {
                 <input
                   type="checkbox"
                   checked={config.features.subscriptionsEnabled}
-                  onChange={(e) => updateConfig('features', 'subscriptionsEnabled', e.target.checked)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('features', 'subscriptionsEnabled', e.target.checked)}
                   className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
                 />
               </label>
@@ -571,7 +571,7 @@ export function PlatformSettings() {
                 <input
                   type="checkbox"
                   checked={config.features.insuranceEnabled}
-                  onChange={(e) => updateConfig('features', 'insuranceEnabled', e.target.checked)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('features', 'insuranceEnabled', e.target.checked)}
                   className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
                 />
               </label>
@@ -584,7 +584,7 @@ export function PlatformSettings() {
                 <input
                   type="checkbox"
                   checked={config.features.counselingEnabled}
-                  onChange={(e) => updateConfig('features', 'counselingEnabled', e.target.checked)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('features', 'counselingEnabled', e.target.checked)}
                   className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
                 />
               </label>
@@ -597,7 +597,7 @@ export function PlatformSettings() {
                 <input
                   type="checkbox"
                   checked={config.features.adoptionEnabled}
-                  onChange={(e) => updateConfig('features', 'adoptionEnabled', e.target.checked)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateConfig('features', 'adoptionEnabled', e.target.checked)}
                   className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
                 />
               </label>

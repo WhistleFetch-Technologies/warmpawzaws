@@ -313,7 +313,7 @@ export function ActiveVendorsTab() {
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
             placeholder="Search by name, phone, email, city, or category..."
             className="w-full pl-10 pr-10 py-2.5 border border-gray-200 rounded-lg focus:border-[#FF8C42] focus:ring-2 focus:ring-[#FF8C42]/20 outline-none transition-colors"
           />

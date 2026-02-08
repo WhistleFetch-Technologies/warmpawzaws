@@ -154,7 +154,7 @@ export function AdminSettings({ onBack }: AdminSettingsProps) {
                     <input
                       type="text"
                       value={settings.platformName}
-                      onChange={(e) => setSettings({ ...settings, platformName: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings({ ...settings, platformName: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-200 focus:border-orange-500"
                     />
                   </div>
@@ -163,7 +163,7 @@ export function AdminSettings({ onBack }: AdminSettingsProps) {
                     <input
                       type="email"
                       value={settings.supportEmail}
-                      onChange={(e) => setSettings({ ...settings, supportEmail: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings({ ...settings, supportEmail: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-200 focus:border-orange-500"
                     />
                   </div>
@@ -172,7 +172,7 @@ export function AdminSettings({ onBack }: AdminSettingsProps) {
                     <input
                       type="tel"
                       value={settings.supportPhone}
-                      onChange={(e) => setSettings({ ...settings, supportPhone: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings({ ...settings, supportPhone: e.target.value })}
                       className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-200 focus:border-orange-500"
                     />
                   </div>
@@ -237,7 +237,7 @@ export function AdminSettings({ onBack }: AdminSettingsProps) {
                     <input
                       type="number"
                       value={settings.commissionRate}
-                      onChange={(e) => setSettings({ ...settings, commissionRate: parseFloat(e.target.value) || 0 })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings({ ...settings, commissionRate: parseFloat(e.target.value) || 0 })}
                       className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-200 focus:border-orange-500"
                     />
                     <p className="text-xs text-gray-500 mt-1">Commission deducted from vendor earnings</p>
@@ -247,7 +247,7 @@ export function AdminSettings({ onBack }: AdminSettingsProps) {
                     <input
                       type="number"
                       value={settings.minPayout}
-                      onChange={(e) => setSettings({ ...settings, minPayout: parseFloat(e.target.value) || 0 })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings({ ...settings, minPayout: parseFloat(e.target.value) || 0 })}
                       className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-200 focus:border-orange-500"
                     />
                   </div>
@@ -256,7 +256,7 @@ export function AdminSettings({ onBack }: AdminSettingsProps) {
                     <input
                       type="number"
                       value={settings.payoutHoldDays}
-                      onChange={(e) => setSettings({ ...settings, payoutHoldDays: parseInt(e.target.value) || 0 })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings({ ...settings, payoutHoldDays: parseInt(e.target.value) || 0 })}
                       className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-200 focus:border-orange-500"
                     />
                     <p className="text-xs text-gray-500 mt-1">Days to hold earnings before payout</p>
