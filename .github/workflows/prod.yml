@@ -294,6 +294,11 @@ jobs:
         working-directory: infra/envs/prod
         run: |
           terraform init -backend-config=backend.hcl -migrate-state
+          # Get actual GitHub Actions runner IP for debugging
+          RUNNER_IP=$(curl -s https://api.ipify.org || echo "unknown")
+          echo "🔍 GitHub Actions Runner IP: $RUNNER_IP"
+          echo "   This IP should be within one of the allowed CIDR blocks"
+          
           # Use direct cluster endpoint for migrations (like dev)
           # RDS is publicly accessible, and we've added GitHub Actions IPs to security group
           # Proxy is only needed for Lambda functions (connection pooling), not for migrations
@@ -306,7 +311,8 @@ jobs:
           DB_USERNAME=$(echo "$DB_SECRET" | jq -r '.username // .Username // "postgres"')
           echo "::add-mask::$DB_PASSWORD"
           echo "database_url=postgresql://${DB_USERNAME}:${DB_PASSWORD}@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}" >> $GITHUB_OUTPUT
-          echo "⚠️ WARNING: Using endpoint ${RDS_ENDPOINT} - this may fail if RDS is in private subnet"
+          echo "⚠️ WARNING: Using endpoint ${RDS_ENDPOINT}"
+          echo "   Runner IP: $RUNNER_IP - verify it's in allowed CIDR blocks"
       - name: Run migrations
         working-directory: db
         run: |
