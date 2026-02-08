@@ -278,3 +278,136 @@ resource "aws_cloudwatch_metric_alarm" "database_connections" {
   }
 }
 
+# ============================================================================
+# RDS PROXY - For Lambda connection pooling and better connection management
+# ============================================================================
+
+# IAM Role for RDS Proxy
+resource "aws_iam_role" "rds_proxy" {
+  name_prefix = "warmpawz-${var.environment}-rds-proxy-"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "rds.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "warmpawz-${var.environment}-rds-proxy-role"
+    Environment = var.environment
+  }
+}
+
+# IAM Policy for RDS Proxy to access Secrets Manager
+resource "aws_iam_role_policy" "rds_proxy_secrets" {
+  name_prefix = "warmpawz-${var.environment}-rds-proxy-secrets-"
+  role        = aws_iam_role.rds_proxy.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = aws_secretsmanager_secret.rds_master_password.arn
+      }
+    ]
+  })
+}
+
+# Security Group for RDS Proxy
+resource "aws_security_group" "rds_proxy" {
+  name_prefix = "warmpawz-${var.environment}-rds-proxy-"
+  description = "Security group for RDS Proxy"
+  vpc_id      = var.vpc_id  # Use the main VPC ID (where Lambda is), not the subnet group VPC
+
+  ingress {
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = var.allowed_security_groups
+    description     = "PostgreSQL access from Lambda via Proxy"
+  }
+
+  egress {
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    security_groups = [aws_security_group.rds.id]
+    description = "Allow proxy to connect to RDS"
+  }
+
+  tags = {
+    Name        = "warmpawz-${var.environment}-rds-proxy-sg"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# RDS Proxy
+resource "aws_db_proxy" "main" {
+  name                   = "warmpawz-${var.environment}-proxy"
+  engine_family          = "POSTGRESQL"
+  
+  auth {
+    auth_scheme = "SECRETS"
+    secret_arn  = aws_secretsmanager_secret.rds_master_password.arn
+    iam_auth    = "DISABLED"
+  }
+  
+  role_arn                = aws_iam_role.rds_proxy.arn
+  # Use database subnets from the VPC where Lambda is (dev VPC), not the RDS subnet group VPC
+  # This ensures proxy is in same VPC as Lambda for connectivity
+  vpc_subnet_ids          = var.database_subnet_ids
+  vpc_security_group_ids  = [aws_security_group.rds_proxy.id]
+  
+  require_tls             = true
+  idle_client_timeout     = 1800
+
+  tags = {
+    Name        = "warmpawz-${var.environment}-rds-proxy"
+    Environment = var.environment
+  }
+}
+
+# RDS Proxy Target Group (for connection settings)
+resource "aws_db_proxy_default_target_group" "main" {
+  db_proxy_name = aws_db_proxy.main.name
+
+  connection_pool_config {
+    max_connections_percent         = 100
+    max_idle_connections_percent   = 50
+    connection_borrow_timeout       = 120
+  }
+}
+
+# Register RDS Cluster as Proxy Target
+resource "aws_db_proxy_target" "cluster" {
+  db_proxy_name          = aws_db_proxy.main.name
+  target_group_name      = "default"
+  db_cluster_identifier  = aws_rds_cluster.main.id
+}
+
+# Allow RDS Proxy to connect to RDS (separate rule to avoid circular dependency)
+resource "aws_security_group_rule" "rds_allow_proxy" {
+  type                     = "ingress"
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.rds_proxy.id
+  security_group_id        = aws_security_group.rds.id
+  description              = "PostgreSQL access from RDS Proxy"
+}

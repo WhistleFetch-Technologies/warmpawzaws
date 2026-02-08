@@ -141,6 +141,18 @@ variable "rds_secret_arn" {
   default     = null
 }
 
+variable "rds_proxy_arn" {
+  description = "ARN of RDS Proxy for Lambda connection (optional)"
+  type        = string
+  default     = null
+}
+
+variable "rds_proxy_db_username" {
+  description = "Database username for RDS Proxy IAM authentication"
+  type        = string
+  default     = "warmpawz_admin"
+}
+
 variable "enable_migration_runner" {
   description = "Enable VPC-based migration runner Lambda (optional, for production)"
   type        = bool

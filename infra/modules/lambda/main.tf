@@ -152,6 +152,31 @@ resource "aws_iam_role_policy" "lambda_custom" {
   })
 }
 
+# RDS Proxy connection permission (required for Lambda to connect via RDS Proxy)
+resource "aws_iam_role_policy" "lambda_rds_proxy" {
+  count = var.rds_proxy_arn != null ? 1 : 0
+  
+  name_prefix = "warmpawz-${var.environment}-lambda-rds-proxy-"
+  role        = aws_iam_role.lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "rds-db:connect"
+        ]
+        # Format: arn:aws:rds-db:region:account-id:dbuser:proxy-id/db-username
+        # RDS Proxy ARN format: arn:aws:rds:region:account:db-proxy:prx-xxxxx
+        # Need to extract: region, account, proxy-id and convert to rds-db format
+        # Using regex replace: arn:aws:rds:(region):(account):db-proxy:(proxy-id) -> arn:aws:rds-db:$1:$2:dbuser:$3
+        Resource = "${replace(var.rds_proxy_arn, "/^arn:aws:rds:([^:]+):([^:]+):db-proxy:(.+)$/", "arn:aws:rds-db:$1:$2:dbuser:$3")}/${var.rds_proxy_db_username}"
+      }
+    ]
+  })
+}
+
 # Lambda Layer for shared dependencies
 resource "aws_lambda_layer_version" "shared_dependencies" {
   count = var.create_shared_layer ? 1 : 0

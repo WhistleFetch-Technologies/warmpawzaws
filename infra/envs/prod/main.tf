@@ -95,7 +95,7 @@ module "rds" {
   environment                     = local.environment
   vpc_id                          = module.vpc.vpc_id
   database_subnet_ids             = module.vpc.database_subnet_ids
-  use_existing_subnet_group_vpc   = true # Use subnets from existing subnet group's VPC (fixes cross-VPC update)
+  use_existing_subnet_group_vpc   = false # Use dev VPC subnets for everything (RDS, Proxy, Lambda all in same VPC)
   allowed_security_groups         = [module.lambda.lambda_security_group_id]
   database_name                   = "warmpawz"
   master_username                 = "warmpawz_admin"
@@ -105,7 +105,7 @@ module "rds" {
   availability_zones             = module.vpc.availability_zones
   deletion_protection             = true
   skip_final_snapshot             = false
-  instance_count                  = 3 # HA: Multi-AZ with read replicas
+  instance_count                  = 1 # Single instance for prod
   performance_insights_enabled   = true
   auto_minor_version_upgrade      = false # Manual control in prod
   alarm_actions                   = [module.sns.system_alerts_topic_arn]
@@ -227,10 +227,10 @@ module "lambda" {
   common_env_vars = {
     UAT_MODE                    = "false"
     ENVIRONMENT                 = local.environment
-    DB_HOST                     = module.rds.cluster_endpoint
-    DB_READER_HOST               = module.rds.cluster_reader_endpoint
+    DB_HOST                     = module.rds.proxy_endpoint  # Use RDS Proxy endpoint
+    DB_READER_HOST               = module.rds.proxy_endpoint  # Use proxy for reads too
     DB_NAME                     = module.rds.database_name
-    DB_SECRET_ARN               = module.rds.secret_arn  # ← Use dev RDS secret ARN
+    DB_SECRET_ARN               = module.rds.secret_arn
     DYNAMODB_SESSIONS_TABLE     = module.dynamodb.sessions_table_name
     DYNAMODB_CACHE_TABLE        = module.dynamodb.cache_table_name
     DYNAMODB_ANALYTICS_TABLE    = module.dynamodb.analytics_events_table_name
@@ -247,15 +247,17 @@ module "lambda" {
     OPENSEARCH_ENDPOINT         = module.opensearch.domain_endpoint
   }
 
-  secrets_arns    = concat([module.rds.secret_arn], module.secrets.all_secret_arns)
-  s3_arns         = ["${module.s3.user_uploads_bucket_arn}/*"]
-  dynamodb_arns   = [module.dynamodb.sessions_table_arn, module.dynamodb.cache_table_arn, module.dynamodb.analytics_events_table_arn]
-  sns_arns        = [module.sns.user_notifications_topic_arn, module.sns.booking_updates_topic_arn, module.sns.payment_events_topic_arn]
-  sqs_arns        = [module.sqs.booking_processing_queue_arn, module.sqs.payment_processing_queue_arn, module.sqs.notification_delivery_queue_arn]
-  opensearch_arns = [module.opensearch.domain_arn]
-  dlq_arn         = module.sqs.dlq_arn
-  enable_xray     = true
-  alarm_actions   = [module.sns.system_alerts_topic_arn]
+  secrets_arns         = concat([module.rds.secret_arn], module.secrets.all_secret_arns)
+  s3_arns              = ["${module.s3.user_uploads_bucket_arn}/*"]
+  dynamodb_arns        = [module.dynamodb.sessions_table_arn, module.dynamodb.cache_table_arn, module.dynamodb.analytics_events_table_arn]
+  sns_arns             = [module.sns.user_notifications_topic_arn, module.sns.booking_updates_topic_arn, module.sns.payment_events_topic_arn]
+  sqs_arns             = [module.sqs.booking_processing_queue_arn, module.sqs.payment_processing_queue_arn, module.sqs.notification_delivery_queue_arn]
+  opensearch_arns      = [module.opensearch.domain_arn]
+  dlq_arn              = module.sqs.dlq_arn
+  rds_proxy_arn        = module.rds.proxy_arn
+  rds_proxy_db_username = module.rds.master_username
+  enable_xray          = true
+  alarm_actions        = [module.sns.system_alerts_topic_arn]
 }
 
 module "cognito" {
