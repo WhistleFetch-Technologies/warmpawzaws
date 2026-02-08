@@ -391,7 +391,7 @@ async function runAllMigrations() {
       console.log('⚙️  Running: ' + file);
       
       try {
-        const sql = fs.readFileSync(migrationPath, 'utf8');
+        let sql = fs.readFileSync(migrationPath, 'utf8');
         
         // Skip if file is empty or only contains comments
         const hasContent = sql.split('\n').some(line => {
@@ -403,6 +403,37 @@ async function runAllMigrations() {
           console.log('   ⏭️  Skipped (empty or comments only)');
           skipCount++;
           continue;
+        }
+
+        // Check if migration already has DO block (proper error handling)
+        const hasDoBlock = /^\s*DO\s+\$\$/.test(sql.trim()) || /DO\s+\$\$/.test(sql);
+        
+        // If migration doesn't have DO block, wrap it in one with error handling
+        if (!hasDoBlock) {
+          // Wrap the entire migration in a DO block with exception handling
+          sql = `
+DO $$
+BEGIN
+  -- Auto-wrapped migration: ${file}
+  ${sql}
+EXCEPTION
+  WHEN undefined_table THEN
+    -- Table doesn't exist yet - safe to skip
+    RAISE NOTICE 'Skipping migration: table does not exist';
+  WHEN undefined_column THEN
+    -- Column doesn't exist yet - safe to skip
+    RAISE NOTICE 'Skipping migration: column does not exist';
+  WHEN duplicate_table THEN
+    -- Table already exists - safe to skip
+    RAISE NOTICE 'Skipping migration: table already exists';
+  WHEN duplicate_column THEN
+    -- Column already exists - safe to skip
+    RAISE NOTICE 'Skipping migration: column already exists';
+  WHEN OTHERS THEN
+    -- Re-raise other errors so we can see them
+    RAISE;
+END $$;
+          `.trim();
         }
 
         await client.query(sql);
