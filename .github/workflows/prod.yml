@@ -219,6 +219,47 @@ jobs:
         working-directory: infra/envs/prod
         run: |
           terraform init -backend-config=backend.hcl -migrate-state
+          
+          # CRITICAL FIX: RDS subnets route through NAT, which blocks inbound traffic
+          # We need to add an Internet Gateway route to allow inbound connections
+          echo "🔧 Fixing route table for RDS subnets to allow inbound traffic..."
+          
+          # Get RDS subnet IDs
+          RDS_SUBNET_GROUP=$(aws rds describe-db-instances --region ap-south-1 --db-instance-identifier warmpawz-prod-instance-1 --query 'DBInstances[0].DBSubnetGroup.DBSubnetGroupName' --output text)
+          RDS_SUBNETS=$(aws rds describe-db-subnet-groups --region ap-south-1 --db-subnet-group-name "$RDS_SUBNET_GROUP" --query 'DBSubnetGroups[0].Subnets[*].SubnetIdentifier' --output text)
+          VPC_ID=$(aws rds describe-db-subnet-groups --region ap-south-1 --db-subnet-group-name "$RDS_SUBNET_GROUP" --query 'DBSubnetGroups[0].VpcId' --output text)
+          IGW_ID=$(aws ec2 describe-internet-gateways --region ap-south-1 --filters "Name=attachment.vpc-id,Values=$VPC_ID" --query 'InternetGateways[0].InternetGatewayId' --output text)
+          
+          echo "   RDS Subnets: $RDS_SUBNETS"
+          echo "   VPC: $VPC_ID"
+          echo "   Internet Gateway: $IGW_ID"
+          
+          # Create a new route table with Internet Gateway route for RDS subnets
+          RDS_RT_ID=$(aws ec2 create-route-table --vpc-id "$VPC_ID" --region ap-south-1 --query 'RouteTable.RouteTableId' --output text 2>/dev/null || echo "")
+          
+          if [ -z "$RDS_RT_ID" ] || [ "$RDS_RT_ID" == "None" ]; then
+            echo "   Checking for existing route table with IGW route..."
+            # Check if a route table with IGW route already exists
+            RDS_RT_ID=$(aws ec2 describe-route-tables --region ap-south-1 --filters "Name=vpc-id,Values=$VPC_ID" "Name=route.gateway-id,Values=$IGW_ID" --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null || echo "")
+          fi
+          
+          if [ -z "$RDS_RT_ID" ] || [ "$RDS_RT_ID" == "None" ]; then
+            echo "   Creating new route table with Internet Gateway route..."
+            RDS_RT_ID=$(aws ec2 create-route-table --vpc-id "$VPC_ID" --region ap-south-1 --query 'RouteTable.RouteTableId' --output text)
+            aws ec2 create-route --route-table-id "$RDS_RT_ID" --destination-cidr-block 0.0.0.0/0 --gateway-id "$IGW_ID" --region ap-south-1
+            echo "   ✅ Created route table: $RDS_RT_ID"
+          else
+            echo "   ✅ Using existing route table: $RDS_RT_ID"
+          fi
+          
+          # Associate RDS subnets with the new route table
+          for SUBNET in $RDS_SUBNETS; do
+            echo "   Associating subnet $SUBNET with route table $RDS_RT_ID..."
+            aws ec2 associate-route-table --subnet-id "$SUBNET" --route-table-id "$RDS_RT_ID" --region ap-south-1 2>&1 | grep -v "Resource.AlreadyAssociated" || echo "     Already associated"
+          done
+          
+          echo "✅ Route table configured for inbound traffic"
+          
           # Get RDS security group ID from Terraform output or AWS directly
           RDS_SG_ID=$(terraform output -raw rds_security_group_id 2>/dev/null || echo "")
           
