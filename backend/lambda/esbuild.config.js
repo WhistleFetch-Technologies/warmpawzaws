@@ -30,13 +30,24 @@ const apiContractsResolvePlugin = {
       // If we're resolving from an api-contracts dist file
       if (args.importer && args.importer.includes('api-contracts/dist')) {
         const resolvedPath = path.resolve(path.dirname(args.importer), args.path);
-        // Try with .js extension if needed
-        const resolvedWithExt = resolvedPath.endsWith('.js') ? resolvedPath : resolvedPath + '.js';
         
-        // Check if the file exists
+        // Check if it's a directory (like ./common) - resolve to directory/index.js
         if (fs.existsSync(resolvedPath)) {
-          return { path: resolvedPath };
-        } else if (fs.existsSync(resolvedWithExt)) {
+          const stats = fs.statSync(resolvedPath);
+          if (stats.isDirectory()) {
+            const indexPath = path.join(resolvedPath, 'index.js');
+            if (fs.existsSync(indexPath)) {
+              return { path: indexPath };
+            }
+          } else if (stats.isFile()) {
+            // It's already a file, return it
+            return { path: resolvedPath };
+          }
+        }
+        
+        // Try with .js extension if needed (like ./discovery -> ./discovery.js)
+        const resolvedWithExt = resolvedPath.endsWith('.js') ? resolvedPath : resolvedPath + '.js';
+        if (fs.existsSync(resolvedWithExt)) {
           return { path: resolvedWithExt };
         }
       }
