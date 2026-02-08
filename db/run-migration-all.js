@@ -353,10 +353,11 @@ async function runAllMigrations() {
   let skipCount = 0;
   let errorCount = 0;
   const failedMigrations = [];
+  let client = null;
 
   try {
     console.log('🔗 Connecting to database...');
-    const client = await pool.connect();
+    client = await pool.connect();
     console.log('✅ Connected successfully');
     console.log('');
     
@@ -464,14 +465,15 @@ END $$;
           // If rollback fails, the transaction is already aborted - we need to reset the connection
           // Release the current client and get a new one
           try {
-            client.release();
+            if (client) {
+              client.release();
+            }
           } catch (e) {
             // Ignore release errors
           }
           // Get a new client connection
-          const newClient = await pool.connect();
-          // Replace the client reference (we'll release it at the end)
-          Object.assign(client, newClient);
+          client = await pool.connect();
+          console.log('   🔄 Connection reset after transaction abort');
         }
         
         const errorMsg = error.message.toLowerCase();
