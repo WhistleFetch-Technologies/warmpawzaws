@@ -529,7 +529,7 @@ export function PaymentGatewayIntegration() {
 					</Label>
 					<select
 						value={settings.default_gateway}
-						onChange={(e) =>
+						onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
 							setSettings({ ...settings, default_gateway: e.target.value })
 						}
 						className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
