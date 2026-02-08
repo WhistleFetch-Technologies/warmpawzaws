@@ -405,10 +405,37 @@ jobs:
           RDS_DB_NAME=$(terraform output -raw rds_database_name)
           RDS_PORT=$(terraform output -raw rds_port)
           DB_SECRET=$(aws secretsmanager get-secret-value --secret-id "$RDS_SECRET_ARN" --query SecretString --output text)
-          DB_PASSWORD=$(echo "$DB_SECRET" | jq -r '.password // .Password // .')
-          DB_USERNAME=$(echo "$DB_SECRET" | jq -r '.username // .Username // "postgres"')
+          
+          # Parse secret with multiple field name variations
+          DB_USERNAME=$(echo "$DB_SECRET" | jq -r '.username // .Username // .user // "warmpawz_admin"')
+          DB_PASSWORD=$(echo "$DB_SECRET" | jq -r '.password // .Password // .pass // ""')
+          
+          # Verify password was found
+          if [ -z "$DB_PASSWORD" ] || [ "$DB_PASSWORD" == "null" ]; then
+            echo "❌ ERROR: Password not found in secret"
+            echo "   Secret ARN: $RDS_SECRET_ARN"
+            echo "   Secret structure: $(echo "$DB_SECRET" | jq 'keys')"
+            exit 1
+          fi
+          
+          # Verify username
+          echo "🔐 Database credentials:"
+          echo "   Username: $DB_USERNAME"
+          echo "   Password: [MASKED]"
+          echo "   Secret ARN: $RDS_SECRET_ARN"
+          
+          # URL-encode password for DATABASE_URL
+          DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$DB_PASSWORD''', safe=''))")
+          
           echo "::add-mask::$DB_PASSWORD"
-          echo "database_url=postgresql://${DB_USERNAME}:${DB_PASSWORD}@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}" >> $GITHUB_OUTPUT
+          echo "database_url=postgresql://${DB_USERNAME}:${DB_PASSWORD_ENCODED}@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}" >> $GITHUB_OUTPUT
+          
+          # Verify RDS master username matches
+          RDS_MASTER_USER=$(aws rds describe-db-clusters --region ap-south-1 --db-cluster-identifier warmpawz-prod-cluster --query 'DBClusters[0].MasterUsername' --output text)
+          if [ "$DB_USERNAME" != "$RDS_MASTER_USER" ]; then
+            echo "⚠️ WARNING: Secret username ($DB_USERNAME) differs from RDS master username ($RDS_MASTER_USER)"
+            echo "   This may cause authentication failures"
+          fi
           echo "⚠️ WARNING: Using endpoint ${RDS_ENDPOINT}"
           echo "   Runner IP: $RUNNER_IP - verify it's in allowed CIDR blocks"
       - name: Run migrations
