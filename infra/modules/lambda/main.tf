@@ -266,6 +266,11 @@ resource "aws_lambda_function" "functions" {
     aws_iam_role_policy_attachment.lambda_vpc,
     aws_cloudwatch_log_group.lambda
   ]
+
+  # Prevent VPC config changes that could cause "SubnetIds and SecurityIds must coexist" error
+  lifecycle {
+    ignore_changes = [vpc_config]
+  }
 }
 
 # Lambda Function URLs (optional, for direct HTTP access)
