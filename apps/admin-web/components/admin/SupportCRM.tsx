@@ -156,7 +156,7 @@ export function SupportCRM() {
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
               placeholder="Search tickets..."
               className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             />
@@ -164,7 +164,7 @@ export function SupportCRM() {
           <div className="flex gap-3">
             <select
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStatus(e.target.value)}
               className="px-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             >
               <option value="all">All Status</option>
@@ -175,7 +175,7 @@ export function SupportCRM() {
             </select>
             <select
               value={filterPriority}
-              onChange={(e) => setFilterPriority(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterPriority(e.target.value)}
               className="px-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             >
               <option value="all">All Priority</option>

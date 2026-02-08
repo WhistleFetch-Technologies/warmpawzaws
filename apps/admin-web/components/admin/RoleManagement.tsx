@@ -126,7 +126,7 @@ export function RoleManagement() {
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
               placeholder="Search users by name or email..."
               className="w-full pl-0 pr-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             />
@@ -135,7 +135,7 @@ export function RoleManagement() {
             <Filter className="w-5 h-5 text-gray-400" />
             <select
               value={filterRole}
-              onChange={(e) => setFilterRole(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterRole(e.target.value)}
               className="px-4 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             >
               <option value="all">All Roles</option>

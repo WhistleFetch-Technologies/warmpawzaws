@@ -299,7 +299,7 @@ export function ReschedulingPolicyManager() {
                   <input
                     type="text"
                     value={formData.policyName}
-                    onChange={(e) => setFormData(prev => ({ ...prev, policyName: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, policyName: e.target.value }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     placeholder="e.g., Standard Veterinary Policy"
                   />
@@ -308,7 +308,7 @@ export function ReschedulingPolicyManager() {
                   <label className="block text-sm font-medium text-gray-700 mb-0">Service Category</label>
                   <select
                     value={formData.serviceCategory}
-                    onChange={(e) => setFormData(prev => ({ ...prev, serviceCategory: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, serviceCategory: e.target.value }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   >
                     {SERVICE_CATEGORIES.map(cat => (
@@ -323,7 +323,7 @@ export function ReschedulingPolicyManager() {
                   <input
                     type="checkbox"
                     checked={formData.allowRescheduling}
-                    onChange={(e) => setFormData(prev => ({ ...prev, allowRescheduling: e.target.checked }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, allowRescheduling: e.target.checked }))}
                     className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                   />
                   <span className="text-sm font-medium text-gray-700">Allow Rescheduling</span>
@@ -341,7 +341,7 @@ export function ReschedulingPolicyManager() {
                           type="number"
                           min="1"
                           value={formData.maxReschedulesAllowed}
-                          onChange={(e) => setFormData(prev => ({ ...prev, maxReschedulesAllowed: parseInt(e.target.value) }))}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, maxReschedulesAllowed: parseInt(e.target.value) }))}
                           className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -351,7 +351,7 @@ export function ReschedulingPolicyManager() {
                           type="number"
                           min="0"
                           value={formData.minHoursBeforeBooking}
-                          onChange={(e) => setFormData(prev => ({ ...prev, minHoursBeforeBooking: parseInt(e.target.value) }))}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, minHoursBeforeBooking: parseInt(e.target.value) }))}
                           className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -361,7 +361,7 @@ export function ReschedulingPolicyManager() {
                           type="number"
                           min="0"
                           value={formData.rescheduleWindowHours}
-                          onChange={(e) => setFormData(prev => ({ ...prev, rescheduleWindowHours: parseInt(e.target.value) }))}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, rescheduleWindowHours: parseInt(e.target.value) }))}
                           className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -374,7 +374,7 @@ export function ReschedulingPolicyManager() {
                         <input
                           type="checkbox"
                           checked={formData.chargeRescheduleFee}
-                          onChange={(e) => setFormData(prev => ({ ...prev, chargeRescheduleFee: e.target.checked }))}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, chargeRescheduleFee: e.target.checked }))}
                           className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                         />
                         <span className="text-sm font-medium text-gray-700">Charge Rescheduling Fee</span>
@@ -389,7 +389,7 @@ export function ReschedulingPolicyManager() {
                             min="0"
                             step="0.01"
                             value={formData.rescheduleFeeAmount}
-                            onChange={(e) => setFormData(prev => ({ ...prev, rescheduleFeeAmount: parseFloat(e.target.value) }))}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, rescheduleFeeAmount: parseFloat(e.target.value) }))}
                             className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                           />
                         </div>
@@ -397,7 +397,7 @@ export function ReschedulingPolicyManager() {
                           <label className="block text-sm font-medium text-gray-700 mb-0">Fee Type</label>
                           <select
                             value={formData.rescheduleFeeType}
-                            onChange={(e) => setFormData(prev => ({ ...prev, rescheduleFeeType: e.target.value as 'fixed' | 'percentage' }))}
+                            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, rescheduleFeeType: e.target.value as 'fixed' | 'percentage' }))}
                             className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                           >
                             <option value="fixed">Fixed Amount (₹)</option>
@@ -414,7 +414,7 @@ export function ReschedulingPolicyManager() {
                         <input
                           type="checkbox"
                           checked={formData.refundOnReschedule}
-                          onChange={(e) => setFormData(prev => ({ ...prev, refundOnReschedule: e.target.checked }))}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, refundOnReschedule: e.target.checked }))}
                           className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                         />
                         <span className="text-sm font-medium text-gray-700">Refund on Reschedule</span>
@@ -428,7 +428,7 @@ export function ReschedulingPolicyManager() {
                           min="0"
                           max="100"
                           value={formData.refundPercentage}
-                          onChange={(e) => setFormData(prev => ({ ...prev, refundPercentage: parseInt(e.target.value) }))}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, refundPercentage: parseInt(e.target.value) }))}
                           className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                         />
                       </div>
@@ -442,7 +442,7 @@ export function ReschedulingPolicyManager() {
                   <input
                     type="checkbox"
                     checked={formData.isActive}
-                    onChange={(e) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
                     className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                   />
                   <span className="text-sm font-medium text-gray-700">Active Policy</span>

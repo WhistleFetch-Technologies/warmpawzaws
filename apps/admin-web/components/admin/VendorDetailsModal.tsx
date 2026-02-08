@@ -420,7 +420,7 @@ export function VendorDetailsModal({ isOpen, onClose, vendorId, onVendorUpdated 
                   type="text"
                   placeholder="Search services, bookings, activity..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]/20 focus:border-[#FF8C42]"
                 />
               </div>
