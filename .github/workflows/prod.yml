@@ -170,10 +170,15 @@ jobs:
         run: |
           # Check if RDS instance exists in AWS
           if aws rds describe-db-instances --db-instance-identifier warmpawz-prod-instance-1 --region ap-south-1 >/dev/null 2>&1; then
-            # Try to import - will fail gracefully if already in state
-            terraform import module.rds.aws_rds_cluster_instance.main[0] warmpawz-prod-instance-1 2>&1 | grep -v "Resource already managed" || echo "RDS instance already in state or import failed (continuing...)"
+            # Check if already in Terraform state
+            if terraform state show module.rds.aws_rds_cluster_instance.main[0] >/dev/null 2>&1; then
+              echo "✅ RDS instance already in Terraform state, skipping import"
+            else
+              echo "📥 Importing RDS instance into Terraform state..."
+              terraform import module.rds.aws_rds_cluster_instance.main[0] warmpawz-prod-instance-1 || echo "⚠️ Import failed (may already be in state or other issue)"
+            fi
           else
-            echo "RDS instance does not exist in AWS (will be created if needed)"
+            echo "ℹ️ RDS instance not found in AWS (will be created by Terraform)"
           fi
       - name: Terraform Apply
         working-directory: infra/envs/prod
