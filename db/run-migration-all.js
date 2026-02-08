@@ -386,13 +386,13 @@ async function runAllMigrations() {
       process.exit(1);
     }
 
-    // Run each migration
+    // Run each migration in its own connection to prevent transaction abort cascades
     for (const file of files) {
       const migrationPath = path.join(migrationsDir, file);
       console.log('⚙️  Running: ' + file);
       
-      // Use a savepoint for each migration so we can rollback on error without aborting the connection
-      const savepointName = `sp_${file.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      // Get a fresh client connection for each migration to ensure complete isolation
+      let migrationClient = null;
       
       try {
         let sql = fs.readFileSync(migrationPath, 'utf8');
@@ -409,11 +409,12 @@ async function runAllMigrations() {
           continue;
         }
 
-        // Create savepoint for this migration
-        await client.query(`SAVEPOINT ${savepointName}`);
+        // Get a fresh client connection for this migration
+        migrationClient = await pool.connect();
 
         // Check if migration already has DO block (proper error handling)
-        const hasDoBlock = /^\s*DO\s+\$\$/.test(sql.trim()) || /DO\s+\$\$/.test(sql);
+        // Use more robust regex to catch DO blocks that might have whitespace/comments before them
+        const hasDoBlock = /(?:^|\n)\s*DO\s+\$\$/.test(sql) || /DO\s+\$\$/.test(sql);
         
         // If migration doesn't have DO block, wrap it in one with error handling
         // This makes all migrations idempotent and handles missing dependencies gracefully
@@ -450,31 +451,11 @@ END $$;
           `.trim();
         }
 
-        await client.query(sql);
-        
-        // Release savepoint on success
-        await client.query(`RELEASE SAVEPOINT ${savepointName}`);
+        await migrationClient.query(sql);
         
         console.log('   ✅ Success');
         successCount++;
       } catch (error) {
-        // Always rollback the savepoint on error to prevent transaction abort
-        try {
-          await client.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
-        } catch (rollbackError) {
-          // If rollback fails, the transaction is already aborted - we need to reset the connection
-          // Release the current client and get a new one
-          try {
-            if (client) {
-              client.release();
-            }
-          } catch (e) {
-            // Ignore release errors
-          }
-          // Get a new client connection
-          client = await pool.connect();
-          console.log('   🔄 Connection reset after transaction abort');
-        }
         
         const errorMsg = error.message.toLowerCase();
         const errorCode = error.code || '';
@@ -559,11 +540,24 @@ END $$;
           errorCount++;
           console.log('   ⚠️  Continuing with remaining migrations...');
         }
+      } finally {
+        // Always release the migration client connection to prevent connection leaks
+        // Each migration gets its own connection, so we must release it
+        if (migrationClient) {
+          try {
+            migrationClient.release();
+          } catch (releaseError) {
+            // Ignore release errors - connection might already be closed or aborted
+          }
+        }
       }
       console.log('');
     }
 
-    client.release();
+    // Release the main client connection (used for initial verification)
+    if (client) {
+      client.release();
+    }
 
     // Summary
     console.log('='.repeat(60));
