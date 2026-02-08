@@ -1148,7 +1148,7 @@ export default function MarketingPromotionsTab() {
 										{/* State Selector */}
 										<div className="relative z-30">
 											<Label className="block text-sm font-medium text-gray-700 mb-2">State</Label>
-											<Select value={selectedState || "__all__"} onValueChange={(val) => setSelectedState(val === "__all__" ? "" : val)}>
+											<Select value={selectedState || "__all__"} onValueChange={(val: string) => setSelectedState(val === "__all__" ? "" : val)}>
 												<SelectTrigger className="w-full">
 													<SelectValue placeholder="All India (Default)" />
 												</SelectTrigger>
@@ -1167,7 +1167,7 @@ export default function MarketingPromotionsTab() {
 										{selectedState && (
 											<div className="relative z-20">
 												<Label className="block text-sm font-medium text-gray-700 mb-2">City</Label>
-												<Select value={selectedCity || "__all__"} onValueChange={(val) => setSelectedCity(val === "__all__" ? "" : val)}>
+												<Select value={selectedCity || "__all__"} onValueChange={(val: string) => setSelectedCity(val === "__all__" ? "" : val)}>
 													<SelectTrigger className="w-full">
 														<SelectValue placeholder="All Cities in State" />
 													</SelectTrigger>
@@ -1835,7 +1835,7 @@ export default function MarketingPromotionsTab() {
 								<Label>Discount Type</Label>
 								<Select
 									value={promoForm.discountType}
-									onValueChange={(v) =>
+									onValueChange={(v: string) =>
 										setPromoForm({ ...promoForm, discountType: v })
 									}
 								>
@@ -1880,7 +1880,7 @@ export default function MarketingPromotionsTab() {
 								<Label>Category</Label>
 								<Select
 									value={promoForm.serviceCategory}
-									onValueChange={(v) =>
+									onValueChange={(v: string) =>
 										setPromoForm({ ...promoForm, serviceCategory: v })
 									}
 								>
@@ -1901,7 +1901,7 @@ export default function MarketingPromotionsTab() {
 								<Label>Service Style</Label>
 								<Select
 									value={promoForm.serviceStyle}
-									onValueChange={(v) =>
+									onValueChange={(v: string) =>
 										setPromoForm({ ...promoForm, serviceStyle: v })
 									}
 								>
@@ -1944,7 +1944,7 @@ export default function MarketingPromotionsTab() {
 						<div className="flex items-center gap-2">
 							<Switch
 								checked={promoForm.isActive}
-								onCheckedChange={(checked) =>
+								onCheckedChange={(checked: boolean) =>
 									setPromoForm({ ...promoForm, isActive: checked })
 								}
 							/>
@@ -2146,7 +2146,7 @@ export default function MarketingPromotionsTab() {
 								<Label>Position</Label>
 								<Select
 									value={bannerForm.position}
-									onValueChange={(v) => setBannerForm({ ...bannerForm, position: v })}
+									onValueChange={(v: string) => setBannerForm({ ...bannerForm, position: v })}
 								>
 									<SelectTrigger>
 										<SelectValue />
@@ -2192,7 +2192,7 @@ export default function MarketingPromotionsTab() {
 						<div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
 							<Switch
 								checked={bannerForm.is_active}
-								onCheckedChange={(checked) => setBannerForm({ ...bannerForm, is_active: checked })}
+								onCheckedChange={(checked: boolean) => setBannerForm({ ...bannerForm, is_active: checked })}
 							/>
 							<Label>Banner is active</Label>
 						</div>
@@ -2270,7 +2270,7 @@ export default function MarketingPromotionsTab() {
 								<Label>Category</Label>
 								<Select
 									value={articleForm.category}
-									onValueChange={(v) => setArticleForm({ ...articleForm, category: v })}
+									onValueChange={(v: string) => setArticleForm({ ...articleForm, category: v })}
 								>
 									<SelectTrigger>
 										<SelectValue />
@@ -2290,7 +2290,7 @@ export default function MarketingPromotionsTab() {
 								<Label>Read Time</Label>
 								<Select
 									value={articleForm.read_time}
-									onValueChange={(v) => setArticleForm({ ...articleForm, read_time: v })}
+									onValueChange={(v: string) => setArticleForm({ ...articleForm, read_time: v })}
 								>
 									<SelectTrigger>
 										<SelectValue />
@@ -2321,14 +2321,14 @@ export default function MarketingPromotionsTab() {
 							<div className="flex items-center gap-2">
 								<Switch
 									checked={articleForm.is_published}
-									onCheckedChange={(checked) => setArticleForm({ ...articleForm, is_published: checked })}
+									onCheckedChange={(checked: boolean) => setArticleForm({ ...articleForm, is_published: checked })}
 								/>
 								<Label>Published</Label>
 							</div>
 							<div className="flex items-center gap-2">
 								<Switch
 									checked={articleForm.featured}
-									onCheckedChange={(checked) => setArticleForm({ ...articleForm, featured: checked })}
+									onCheckedChange={(checked: boolean) => setArticleForm({ ...articleForm, featured: checked })}
 								/>
 								<Label>Featured on Home</Label>
 							</div>
@@ -2390,7 +2390,7 @@ export default function MarketingPromotionsTab() {
 								<Label>Badge Color</Label>
 								<Select
 									value={announcementForm.badge_color}
-									onValueChange={(v) => setAnnouncementForm({ ...announcementForm, badge_color: v })}
+									onValueChange={(v: string) => setAnnouncementForm({ ...announcementForm, badge_color: v })}
 								>
 									<SelectTrigger>
 										<SelectValue />
@@ -2418,7 +2418,7 @@ export default function MarketingPromotionsTab() {
 							<Label>Announcement Type</Label>
 							<Select
 								value={announcementForm.announcement_type}
-								onValueChange={(v) => setAnnouncementForm({ ...announcementForm, announcement_type: v })}
+								onValueChange={(v: string) => setAnnouncementForm({ ...announcementForm, announcement_type: v })}
 							>
 								<SelectTrigger>
 									<SelectValue />
@@ -2463,7 +2463,7 @@ export default function MarketingPromotionsTab() {
 						<div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
 							<Switch
 								checked={announcementForm.is_active}
-								onCheckedChange={(checked) => setAnnouncementForm({ ...announcementForm, is_active: checked })}
+								onCheckedChange={(checked: boolean) => setAnnouncementForm({ ...announcementForm, is_active: checked })}
 							/>
 							<Label>Announcement is active</Label>
 						</div>
