@@ -533,7 +533,7 @@ export default function AnalyticsPage() {
           </div>
 
           {/* Tabs for Different Views */}
-          <Tabs value={activeTab} onValueChange={(value) => {
+          <Tabs value={activeTab} onValueChange={(value: string) => {
             console.log('🔧 Analytics tab clicked:', value);
             setActiveTab(value);
           }}>
