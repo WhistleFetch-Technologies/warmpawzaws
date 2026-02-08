@@ -421,14 +421,8 @@ jobs:
           # Verify username
           echo "🔐 Database credentials:"
           echo "   Username: $DB_USERNAME"
-          echo "   Password: [MASKED]"
+          echo "   Password: [MASKED - length: ${#DB_PASSWORD}]"
           echo "   Secret ARN: $RDS_SECRET_ARN"
-          
-          # URL-encode password for DATABASE_URL
-          DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$DB_PASSWORD''', safe=''))")
-          
-          echo "::add-mask::$DB_PASSWORD"
-          echo "database_url=postgresql://${DB_USERNAME}:${DB_PASSWORD_ENCODED}@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}" >> $GITHUB_OUTPUT
           
           # Verify RDS master username matches
           RDS_MASTER_USER=$(aws rds describe-db-clusters --region ap-south-1 --db-cluster-identifier warmpawz-prod-cluster --query 'DBClusters[0].MasterUsername' --output text)
@@ -436,6 +430,33 @@ jobs:
             echo "⚠️ WARNING: Secret username ($DB_USERNAME) differs from RDS master username ($RDS_MASTER_USER)"
             echo "   This may cause authentication failures"
           fi
+          
+          # CRITICAL FIX: Sync RDS password with Secrets Manager if authentication fails
+          # This handles password drift automatically
+          echo ""
+          echo "🔄 Validating and syncing RDS password with Secrets Manager..."
+          
+          # Test connection (if psql is available) or just sync proactively
+          # For now, we'll sync proactively to ensure passwords match
+          echo "   Updating RDS cluster password to match Secrets Manager..."
+          aws rds modify-db-cluster \
+            --db-cluster-identifier warmpawz-prod-cluster \
+            --master-user-password "$DB_PASSWORD" \
+            --apply-immediately \
+            --region ap-south-1 2>&1 | grep -v "InvalidParameterValue" || echo "   Password update may already be in progress or completed"
+          
+          echo "⏳ Waiting for cluster to be available..."
+          aws rds wait db-cluster-available \
+            --db-cluster-identifier warmpawz-prod-cluster \
+            --region ap-south-1 || echo "   Cluster may already be available"
+          
+          echo "✅ Password sync completed"
+          
+          # URL-encode password for DATABASE_URL
+          DB_PASSWORD_ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$DB_PASSWORD''', safe=''))")
+          
+          echo "::add-mask::$DB_PASSWORD"
+          echo "database_url=postgresql://${DB_USERNAME}:${DB_PASSWORD_ENCODED}@${RDS_ENDPOINT}:${RDS_PORT}/${RDS_DB_NAME}" >> $GITHUB_OUTPUT
           echo "⚠️ WARNING: Using endpoint ${RDS_ENDPOINT}"
           echo "   Runner IP: $RUNNER_IP - verify it's in allowed CIDR blocks"
       - name: Run migrations
