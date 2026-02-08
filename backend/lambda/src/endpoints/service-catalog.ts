@@ -184,7 +184,8 @@ export function registerServiceCatalogEndpoints(app: Hono) {
 
       // ✅ FIX: Handle UUID vs text comparison properly
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
-      
+
+      // 1. Try service_catalog first
       const services = await query(
         isUUID
           ? `SELECT * FROM service_catalog
@@ -196,40 +197,71 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         [serviceId]
       );
 
-      if (services.rows.length === 0) {
-        return c.json({ error: 'Service not found' }, 404);
+      if (services.rows.length > 0) {
+        const service = services.rows[0];
+        return c.json({
+          success: true,
+          id: service.service_id || `catalog_${service.id}`,
+          serviceId: service.service_id || `catalog_${service.id}`,
+          catalogId: service.id,
+          serviceName: service.service_name,
+          name: service.service_name,
+          displayName: service.display_name || service.service_name,
+          description: service.description,
+          categoryId: service.category_id,
+          categoryName: service.category_name,
+          subCategoryId: service.sub_category_id,
+          subCategoryName: service.sub_category_name,
+          applicableRoles: service.applicable_roles || [],
+          specializationIds: service.specialization_ids || [],
+          specialization_ids: service.specialization_ids || [],
+          service_style: service.service_style,
+          serviceStyle: service.service_style || 'at_center',
+          basePrice: parseFloat(service.base_price || '0'),
+          price: parseFloat(service.base_price || '0'),
+          duration: service.duration_minutes || 30,
+          durationMinutes: service.duration_minutes || 30,
+          status: service.status,
+          publishStatus: service.publish_status,
+          metadata: service.metadata || {},
+        });
       }
 
-      const service = services.rows[0];
+      // 2. Fallback: vendor_services.id (ProblemGridFlowRouter passes vendor_services.id from by-problem)
+      const vsResult = await query(
+        `SELECT vs.*, v.business_name as vendor_name, v.address as vendor_address
+         FROM vendor_services vs
+         INNER JOIN vendors v ON vs.vendor_id = v.id
+         WHERE vs.id = $1::uuid AND vs.is_enabled = true`,
+        [serviceId]
+      );
 
-      return c.json({
-        success: true,
-        // ✅ CRITICAL FIX: NEVER use service_catalog.id (UUID) as id/serviceId
-        // Only use service_id (TEXT) to prevent UUID collisions with vendor_services.id
-        id: service.service_id || `catalog_${service.id}`, // Use TEXT service_id, or prefixed catalog UUID if service_id is null
-        serviceId: service.service_id || `catalog_${service.id}`, // Use TEXT service_id, or prefixed catalog UUID if service_id is null
-        catalogId: service.id, // Store catalog UUID separately for reference (but don't use as id)
-        serviceName: service.service_name,
-        name: service.service_name,
-        displayName: service.display_name || service.service_name,
-        description: service.description,
-        categoryId: service.category_id,
-        categoryName: service.category_name,
-        subCategoryId: service.sub_category_id,
-        subCategoryName: service.sub_category_name,
-        applicableRoles: service.applicable_roles || [],
-        specializationIds: service.specialization_ids || [],
-        specialization_ids: service.specialization_ids || [],
-        service_style: service.service_style,
-        serviceStyle: service.service_style || 'at_center',
-        basePrice: parseFloat(service.base_price || '0'),
-        price: parseFloat(service.base_price || '0'),
-        duration: service.duration_minutes || 30,
-        durationMinutes: service.duration_minutes || 30,
-        status: service.status,
-        publishStatus: service.publish_status,
-        metadata: service.metadata || {},
-      });
+      if (vsResult.rows.length > 0) {
+        const vs = vsResult.rows[0];
+        const price = vs.custom_price != null ? parseFloat(vs.custom_price) : parseFloat(vs.price || '0');
+        return c.json({
+          success: true,
+          id: vs.id,
+          serviceId: vs.id,
+          serviceName: vs.service_name,
+          name: vs.service_name,
+          displayName: vs.service_name,
+          description: vs.custom_description || vs.service_name,
+          vendor_id: vs.vendor_id,
+          vendor_name: vs.vendor_name,
+          vendor_address: vs.vendor_address,
+          service_style: vs.service_style || 'at_center',
+          serviceStyle: vs.service_style || 'at_center',
+          basePrice: price,
+          price,
+          duration: vs.custom_duration ?? vs.duration_minutes ?? 30,
+          durationMinutes: vs.custom_duration ?? vs.duration_minutes ?? 30,
+          category: vs.category,
+          sub_category: vs.sub_category,
+        });
+      }
+
+      return c.json({ error: 'Service not found' }, 404);
     } catch (error: any) {
       console.error('Error fetching service:', error);
       return c.json({ error: error.message }, 500);

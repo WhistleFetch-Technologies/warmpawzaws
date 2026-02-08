@@ -597,6 +597,20 @@ export function registerVendorProfileEndpoints(app: Hono) {
 
         const updated = await update('vendors', { id: vendor.id }, updateData);
 
+        // Sync specializations to vendor_specializations (for /customer/services/by-problem discovery)
+        if (updateData.specializations !== undefined) {
+          try {
+            const specArr = Array.isArray(updateData.specializations) ? updateData.specializations : (typeof updateData.specializations === 'string' ? JSON.parse(updateData.specializations || '[]') : []);
+            await query('DELETE FROM vendor_specializations WHERE vendor_id = $1', [vendor.id]);
+            for (const spec of specArr) {
+              const s = typeof spec === 'string' ? spec.trim() : (spec?.id ?? spec?.specializationId ?? String(spec));
+              if (s) await insert('vendor_specializations', { vendor_id: vendor.id, specialization: s });
+            }
+          } catch (syncErr: any) {
+            console.warn('[PROFILE-UPDATE] vendor_specializations sync failed (non-fatal):', syncErr?.message);
+          }
+        }
+
         return c.json({
           success: true,
           message: 'Profile updated. Re-approval required for critical changes.',
@@ -610,6 +624,20 @@ export function registerVendorProfileEndpoints(app: Hono) {
         console.log(`✅ [PROFILE-UPDATE] Non-critical fields updated - no re-approval needed`);
 
         const updated = await update('vendors', { id: vendor.id }, updateData);
+
+        // Sync specializations to vendor_specializations (for /customer/services/by-problem discovery)
+        if (updateData.specializations !== undefined) {
+          try {
+            const specArr = Array.isArray(updateData.specializations) ? updateData.specializations : (typeof updateData.specializations === 'string' ? JSON.parse(updateData.specializations || '[]') : []);
+            await query('DELETE FROM vendor_specializations WHERE vendor_id = $1', [vendor.id]);
+            for (const spec of specArr) {
+              const s = typeof spec === 'string' ? spec.trim() : (spec?.id ?? spec?.specializationId ?? String(spec));
+              if (s) await insert('vendor_specializations', { vendor_id: vendor.id, specialization: s });
+            }
+          } catch (syncErr: any) {
+            console.warn('[PROFILE-UPDATE] vendor_specializations sync failed (non-fatal):', syncErr?.message);
+          }
+        }
 
         return c.json({
           success: true,

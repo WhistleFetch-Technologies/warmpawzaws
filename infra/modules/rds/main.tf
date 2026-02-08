@@ -18,8 +18,10 @@ data "aws_subnets" "in_subnet_group_vpc" {
 }
 
 locals {
-  # Use subnets from existing subnet group's VPC when requested (fixes "not in the same Vpc as the existing subnet group")
-  db_subnet_ids = var.use_existing_subnet_group_vpc && length(data.aws_subnets.in_subnet_group_vpc[0].ids) > 0 ? data.aws_subnets.in_subnet_group_vpc[0].ids : var.database_subnet_ids
+  # When use_existing_subnet_group_vpc: ONLY use subnets from the existing group's VPC (no fallback — fallback caused cross-VPC error)
+  db_subnet_ids = var.use_existing_subnet_group_vpc ? data.aws_subnets.in_subnet_group_vpc[0].ids : var.database_subnet_ids
+  # RDS SG and cluster must be in the same VPC as the DB subnet group (subnet group is in its own VPC in prod)
+  vpc_id_for_rds = var.use_existing_subnet_group_vpc ? data.aws_db_subnet_group.existing[0].vpc_id : var.vpc_id
 }
 
 # DB Subnet Group (must span >= 2 AZs for RDS)
@@ -33,7 +35,8 @@ resource "aws_db_subnet_group" "main" {
   }
 
   lifecycle {
-    ignore_changes = [tags]
+    # Never update subnet_ids after create (existing prod group is in another VPC; modifying causes cross-VPC error)
+    ignore_changes = [tags, subnet_ids]
   }
 }
 
@@ -41,7 +44,7 @@ resource "aws_db_subnet_group" "main" {
 resource "aws_security_group" "rds" {
   name_prefix = "warmpawz-${var.environment}-rds-"
   description = "Security group for RDS Aurora cluster"
-  vpc_id      = var.vpc_id
+  vpc_id      = local.vpc_id_for_rds
 
   ingress {
     from_port       = 5432

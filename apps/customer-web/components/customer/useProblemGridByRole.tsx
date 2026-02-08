@@ -52,18 +52,19 @@ export function useProblemGridByRole(roleKey: keyof typeof ROLE_ALIASES): Proble
       for (const roleId of aliases) {
         if (cancelled) return;
         try {
+          // Use /public/problems (problem_grid_mappings) for single source of truth - aligns with ProblemGridSelector and by-problem discovery
           const res = await apiClient.get<{ success?: boolean; problems?: any[] }>(
-            `/public/problem-grid/${roleId}`
+            `/public/problems?roleId=${roleId}`
           );
           if (
             !cancelled &&
-            res?.success &&
+            (res?.success !== false) &&
             Array.isArray(res.problems) &&
             res.problems.length > 0
           ) {
             const mapped: ProblemGridItem[] = [
               ...res.problems.map((p: any) => ({
-                id: p.id || p.problemId,
+                id: p.id || p.problemId || p.name,
                 name: p.displayName || p.name,
                 icon: <DynamicProblemIcon iconName={p.iconName} iconColor={p.iconColor} />,
                 priority: p.displayOrder ?? 50,

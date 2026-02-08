@@ -541,6 +541,7 @@ export function registerProblemGridEndpoints(app: Hono) {
       }
 
       // Get problem mappings to find relevant subcategories and allowed service styles
+      // When empty, treat problemId as specialization_id (specialization_master) for single source compatibility
       const mappingsResult = await query(
         `SELECT DISTINCT 
            sub_category_id, 
@@ -551,16 +552,20 @@ export function registerProblemGridEndpoints(app: Hono) {
         [problemId]
       );
 
+      let subCategoryIds: string[];
+      let roleIds: string[];
+
       if (mappingsResult.rows.length === 0) {
-        return c.json({
-          success: true,
-          services: [],
-          total: 0,
-        });
+        // Fallback: problemId may be specialization_id from specialization_master - use for vendor_specializations match
+        subCategoryIds = [problemId];
+        roleIds = [];
+      } else {
+        subCategoryIds = mappingsResult.rows.map((r: any) => r.sub_category_id);
+        roleIds = [...new Set(mappingsResult.rows.map((r: any) => r.role_id))];
       }
 
-      // Check if requested serviceStyle is allowed for this problem
-      if (serviceStyle) {
+      // Check if requested serviceStyle is allowed for this problem (only when we have mappings)
+      if (serviceStyle && mappingsResult.rows.length > 0) {
         let isStyleAllowed = false;
         for (const mapping of mappingsResult.rows) {
           let allowedStyles: string[] = ['at_home', 'at_center', 'tele'];
@@ -592,9 +597,6 @@ export function registerProblemGridEndpoints(app: Hono) {
         }
       }
 
-      const subCategoryIds = mappingsResult.rows.map((r: any) => r.sub_category_id);
-      let roleIds = [...new Set(mappingsResult.rows.map((r: any) => r.role_id))];
-
       // Expand problem_grid role_id to actual roles.name values so trainer problems also match behaviorist vendors
       const problemRoleToVendorRoleNames: Record<string, string[]> = {
         trainer: ['trainer', 'trainer_solo', 'trainer_center', 'behaviorist_solo', 'behaviorist_center'],
@@ -609,9 +611,17 @@ export function registerProblemGridEndpoints(app: Hono) {
       }
       roleIds = [...new Set(expandedRoleIds)];
 
+      // Normalize legacy service styles: at_vendor → at_center, online → tele
+      const styleToDbValues: Record<string, string[]> = {
+        at_center: ['at_center', 'at_vendor'],
+        at_home: ['at_home'],
+        tele: ['tele', 'online', 'video_consultation'],
+      };
+      const acceptableStyles = serviceStyle ? (styleToDbValues[serviceStyle] || [serviceStyle]) : null;
+
       // Get vendors with matching specializations or roles
-      // Use rev for reviews (is_published works when is_approved column is missing); join roles for role name filter (problem_grid_mappings.role_id is role name TEXT, vendors.role_id is UUID)
-      // Note: Do not use SELECT DISTINCT with GROUP BY + ORDER BY - PostgreSQL requires ORDER BY columns in select list when using DISTINCT. GROUP BY already deduplicates.
+      // Enforce publish_status: published or auto_published (exclude draft/unpublished)
+      // Use rev for reviews (is_published works when is_approved column is missing); join roles for role name filter
       let servicesQuery = `
         SELECT
           vs.id as service_id,
@@ -622,10 +632,16 @@ export function registerProblemGridEndpoints(app: Hono) {
           vs.service_style,
           vs.vendor_id,
           v.business_name as vendor_name,
+          v.profile_photo_url,
+          v.profile_image,
+          v.logo_url,
+          v.metadata as vendor_metadata,
           COALESCE(AVG(rev.rating), 0) as vendor_rating,
           COUNT(DISTINCT rev.id) as vendor_reviews,
           v.city,
           v.state,
+          v.latitude,
+          v.longitude,
           vs.created_at
         FROM vendor_services vs
         INNER JOIN vendors v ON vs.vendor_id = v.id
@@ -634,15 +650,16 @@ export function registerProblemGridEndpoints(app: Hono) {
         WHERE v.status = 'approved' 
           AND v.is_active = true
           AND vs.is_enabled = true
+          AND (vs.publish_status IN ('published', 'auto_published') OR vs.publish_status IS NULL)
       `;
 
       const params: any[] = [];
       let paramIndex = 1;
 
-      // Filter by service_style if provided
-      if (serviceStyle) {
-        servicesQuery += ` AND vs.service_style = $${paramIndex}`;
-        params.push(serviceStyle);
+      // Filter by service_style if provided (include legacy aliases: at_vendor, online)
+      if (acceptableStyles && acceptableStyles.length > 0) {
+        servicesQuery += ` AND vs.service_style = ANY($${paramIndex}::text[])`;
+        params.push(acceptableStyles);
         paramIndex++;
       }
 
@@ -670,12 +687,29 @@ export function registerProblemGridEndpoints(app: Hono) {
 
       servicesQuery += `
         GROUP BY vs.id, vs.service_name, vs.price, vs.duration_minutes, vs.service_style,
-                 vs.vendor_id, v.business_name, v.city, v.state, vs.created_at
+                 vs.vendor_id, v.business_name, v.city, v.state, vs.created_at,
+                 v.profile_photo_url, v.profile_image, v.logo_url, v.metadata, v.latitude, v.longitude
         ORDER BY vendor_rating DESC, vs.created_at DESC
         LIMIT 50
       `;
 
       const servicesResult = await query(servicesQuery, params);
+
+      const vendorIds = [...new Set(servicesResult.rows.map((r: any) => r.vendor_id))];
+      const specMap: Record<string, string[]> = {};
+      if (vendorIds.length > 0) {
+        try {
+          const placeholders = vendorIds.map((_, i) => `$${i + 1}`).join(', ');
+          const specResult = await query(
+            `SELECT vendor_id, specialization FROM vendor_specializations WHERE vendor_id IN (${placeholders})`,
+            vendorIds
+          );
+          for (const row of specResult.rows || []) {
+            if (!specMap[row.vendor_id]) specMap[row.vendor_id] = [];
+            specMap[row.vendor_id].push(row.specialization);
+          }
+        } catch (_) { /* non-fatal */ }
+      }
 
       // Calculate distance if location provided
       let services = servicesResult.rows.map((service: any) => {
@@ -691,7 +725,16 @@ export function registerProblemGridEndpoints(app: Hono) {
           vendorRating: parseFloat(service.vendor_rating || '0'),
           vendorReviews: parseInt(service.vendor_reviews || '0'),
           distance: null as number | null,
-          relevanceScore: 1.0, // Default relevance
+          relevanceScore: 1.0,
+          id: `${service.vendor_id}_${service.service_id}`,
+          type: 'vendor',
+          photo: service.profile_photo_url || service.profile_image || (service.vendor_metadata && service.vendor_metadata.logo_url),
+          rating: parseFloat(service.vendor_rating || '0'),
+          reviewCount: parseInt(service.vendor_reviews || '0'),
+          specializations: specMap[service.vendor_id] || [],
+          distanceFormatted: 'N/A',
+          priceFormatted: `₹${parseFloat(service.price || '0').toLocaleString('en-IN')}`,
+          serviceName: service.name,
         };
 
         // Calculate distance if coordinates available
@@ -702,6 +745,9 @@ export function registerProblemGridEndpoints(app: Hono) {
             parseFloat(service.latitude),
             parseFloat(longitude)
           );
+        }
+        if (serviceData.distance != null) {
+          serviceData.distanceFormatted = serviceData.distance < 1 ? `${Math.round(serviceData.distance * 1000)} m` : `${serviceData.distance.toFixed(1)} km`;
         }
 
         return serviceData;
@@ -717,6 +763,7 @@ export function registerProblemGridEndpoints(app: Hono) {
       return c.json({
         success: true,
         services,
+        providers: services,
         total: services.length,
         problemId,
         serviceStyle: serviceStyle || 'all',

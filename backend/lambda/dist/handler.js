@@ -117727,7 +117727,8 @@ var require_vendors = __commonJS({
       action: zod_1.z.enum(["APPROVE", "REQUEST_CLARIFICATION", "REJECT"], {
         errorMap: () => ({ message: "Action must be APPROVE, REQUEST_CLARIFICATION, or REJECT" })
       }),
-      admin_id: zod_1.z.string().uuid("Invalid admin ID format"),
+      admin_id: zod_1.z.string().min(1, "Admin ID is required"),
+      // Allow non-UUID (e.g. "admin") for compatibility
       comments: zod_1.z.string().max(2e3, "Comments too long").optional(),
       rejection_reason: zod_1.z.string().max(500, "Rejection reason too long").optional()
     });

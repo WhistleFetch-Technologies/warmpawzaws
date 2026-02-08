@@ -2,8 +2,8 @@
 aws_region   = "ap-south-1"
 alert_emails = ["prod-alerts@warmpawz.com", "sre@warmpawz.com", "cto@warmpawz.com"]
 
-# OpenSearch password - MUST be stored in AWS Secrets Manager
-opensearch_master_password = "REPLACE_WITH_SECRET_MANAGER_VALUE"
+# OpenSearch password (for local apply; in CI use secrets.PROD_OPENSEARCH_PASSWORD)
+opensearch_master_password = "Warmpawz2025"
 
 # Use existing prod VPC and NAT (created via scripts/create-prod-nat-gateway.sh) — fixes "different networks" and subnet-not-exist
 existing_vpc_id         = "vpc-02a4893e5e582c4d8"

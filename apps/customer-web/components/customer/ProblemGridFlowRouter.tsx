@@ -202,34 +202,17 @@ export function ProblemGridFlowRouter({
     
     setLoading(true);
     try {
-      const params = new URLSearchParams({
+      // Use /customer/services/by-problem (single source - returns providers shape for ProblemGridFlowRouter)
+      const byProblemParams = new URLSearchParams({
+        problemId: selectedProblem.id,
         serviceStyle: selectedServiceStyle,
-        problemGridId: selectedProblem.id,
-        specializations: selectedProblem.specializations?.join(',') || '',
-        roles: selectedProblem.linkedServiceRoles?.join(',') || '',
         ...(location && {
           lat: location.lat.toString(),
           lng: location.lng.toString(),
         }),
       });
+      const res = await apiClient.get<any>(`/customer/services/by-problem?${byProblemParams}`);
 
-      // Try the search/providers endpoint first, fall back to customer/services/by-problem
-      let res: any;
-      try {
-        res = await apiClient.get<any>(`/search/providers?${params}`);
-      } catch (searchError) {
-        // Fallback to by-problem endpoint with serviceStyle filter
-        const byProblemParams = new URLSearchParams({
-          problemId: selectedProblem.id,
-          serviceStyle: selectedServiceStyle,
-          ...(location && {
-            lat: location.lat.toString(),
-            lng: location.lng.toString(),
-          }),
-        });
-        res = await apiClient.get<any>(`/customer/services/by-problem?${byProblemParams}`);
-      }
-      
       if (res.success) {
         setProviders(res.providers || res.services || []);
         
@@ -482,7 +465,7 @@ export function ProblemGridFlowRouter({
                           {provider.name}
                         </h3>
                         <p className="text-sm text-gray-500 truncate">
-                          {provider.specializations.slice(0, 2).join(', ')}
+                          {(provider.specializations || []).slice(0, 2).join(', ')}
                         </p>
                       </div>
                       {provider.isInstantAvailable && (
@@ -495,7 +478,7 @@ export function ProblemGridFlowRouter({
                     {/* Stats */}
                     <div className="flex items-center gap-3 mt-2 text-sm">
                       <span className="flex items-center gap-1 text-yellow-600">
-                        ⭐ {provider.rating.toFixed(1)}
+                        ⭐ {(typeof provider.rating === 'number' ? provider.rating : 0).toFixed(1)}
                         <span className="text-gray-400">({provider.reviewCount})</span>
                       </span>
                       {selectedServiceStyle !== 'tele' && (
@@ -516,7 +499,7 @@ export function ProblemGridFlowRouter({
                   {/* Price */}
                   <div className="text-right flex-shrink-0">
                     <p className="text-lg font-bold text-[#FF8C42]">
-                      {provider.priceFormatted}
+                      {provider.priceFormatted ?? `₹${(provider.price ?? 0).toLocaleString('en-IN')}`}
                     </p>
                     <p className="text-xs text-gray-500">onwards</p>
                   </div>

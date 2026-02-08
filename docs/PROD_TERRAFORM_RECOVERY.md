@@ -4,7 +4,8 @@ If `terraform apply` fails with:
 
 - **"The subnet ID 'subnet-xxx' does not exist"** (NAT creation), or  
 - **"You have specified two resources that belong to different networks"** (RDS security group), or  
-- **"DB subnet group doesn't meet Availability Zone (AZ) coverage requirement"** (no database-tagged subnets in existing VPC),
+- **"DB subnet group doesn't meet Availability Zone (AZ) coverage requirement"** (no database-tagged subnets in existing VPC), or  
+- **"The new Subnets are not in the same Vpc as the existing subnet group"** (RDS DB subnet group),
 
 do the following. The VPC module now falls back to **private subnets** for RDS when the existing VPC has no (or &lt; 2) database-tagged subnets, so re-run plan/apply after pulling latest.
 
@@ -59,4 +60,12 @@ terraform plan -var="opensearch_master_password=..." -out=tfplan
 terraform apply -auto-approve tfplan
 ```
 
-In CI, set `TF_VAR_existing_vpc_id` and `TF_VAR_existing_nat_gateway_id` (or use a tfvars file that is not committed).
+In CI, the prod workflow uses `-var-file=terraform.tfvars` so the same values are applied. Ensure `terraform.tfvars` has `existing_vpc_id` and `existing_nat_gateway_id` (or set `TF_VAR_*` if you prefer not to commit them).
+
+## 4. "Not in the same Vpc as the existing subnet group"
+
+If the **existing** prod DB subnet group lives in a different VPC than the one in `existing_vpc_id` (e.g. subnet group in `vpc-0b72e8dad5d61bf21`, NAT/VPC in `vpc-02a4893e5e582c4d8`), Terraform must not change the subnet group’s subnets.
+
+- The RDS module now uses **lifecycle { ignore_changes = [subnet_ids] }** on the DB subnet group so it is never updated after create.
+- When `use_existing_subnet_group_vpc = true` (prod), the RDS security group and cluster use the **subnet group’s VPC** (`vpc_id_for_rds`) so they stay in the same VPC as the subnet group.
+- Run apply again; no further change to the subnet group will be attempted.
