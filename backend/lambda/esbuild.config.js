@@ -15,8 +15,36 @@
 
 const esbuild = require('esbuild');
 const path = require('path');
+const fs = require('fs');
 
 const isProduction = process.env.NODE_ENV === 'production';
+
+// Plugin to resolve relative requires in api-contracts dist files
+const apiContractsResolvePlugin = {
+  name: 'api-contracts-resolve',
+  setup(build) {
+    const apiContractsDist = path.resolve(__dirname, '../../packages/api-contracts/dist');
+    
+    // Resolve relative requires in api-contracts dist files
+    build.onResolve({ filter: /^\.\/.*$/ }, (args) => {
+      // If we're resolving from an api-contracts dist file
+      if (args.importer && args.importer.includes('api-contracts/dist')) {
+        const resolvedPath = path.resolve(path.dirname(args.importer), args.path);
+        // Try with .js extension if needed
+        const resolvedWithExt = resolvedPath.endsWith('.js') ? resolvedPath : resolvedPath + '.js';
+        
+        // Check if the file exists
+        if (fs.existsSync(resolvedPath)) {
+          return { path: resolvedPath };
+        } else if (fs.existsSync(resolvedWithExt)) {
+          return { path: resolvedWithExt };
+        }
+      }
+      // Return undefined to let esbuild handle it with default resolution
+      return undefined;
+    });
+  },
+};
 
 esbuild.build({
   entryPoints: ['src/handler/index.ts'],
@@ -24,6 +52,7 @@ esbuild.build({
   platform: 'node',
   target: 'node18',
   outfile: 'dist/handler.js',
+  plugins: [apiContractsResolvePlugin],
   
   // External dependencies (AWS SDK, native modules)
   // These are provided by Lambda runtime or must be excluded due to native bindings
@@ -53,6 +82,7 @@ esbuild.build({
   nodePaths: [
     path.resolve(__dirname, 'node_modules'),
     path.resolve(__dirname, '../../node_modules'),
+    path.resolve(__dirname, '../../packages/api-contracts/dist'), // Allow esbuild to resolve relative requires in api-contracts
   ],
   
   // Resolve path aliases for API contracts
@@ -64,6 +94,7 @@ esbuild.build({
     '@warmpawz/api-contracts/customers': path.resolve(__dirname, '../../packages/api-contracts/dist/customers.js'),
     '@warmpawz/api-contracts/payments': path.resolve(__dirname, '../../packages/api-contracts/dist/payments.js'),
     '@warmpawz/api-contracts/common': path.resolve(__dirname, '../../packages/api-contracts/dist/common/index.js'),
+    '@warmpawz/api-contracts/discovery': path.resolve(__dirname, '../../packages/api-contracts/dist/discovery.js'),
   },
   
   // AWS Lambda specific settings
