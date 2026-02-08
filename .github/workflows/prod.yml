@@ -269,55 +269,16 @@ jobs:
             fi
           done
           echo "✅ RDS security group configured for GitHub Actions"
-          
-          # Also add GitHub Actions IPs to RDS Proxy security group
-          # (migrations use proxy endpoint, so proxy SG also needs access)
-          echo ""
-          echo "Getting RDS Proxy security group ID..."
-          PROXY_SG_ID=$(terraform output -raw rds_proxy_security_group_id 2>/dev/null || echo "")
-          
-          if [ -z "$PROXY_SG_ID" ] || [ "$PROXY_SG_ID" == "None" ]; then
-            echo "Getting proxy security group from RDS Proxy..."
-            PROXY_SG_ID=$(aws rds describe-db-proxies --region ap-south-1 --db-proxy-name warmpawz-prod-proxy --query 'DBProxies[0].VpcSecurityGroupIds[0]' --output text)
-          fi
-          
-          if [ -n "$PROXY_SG_ID" ] && [ "$PROXY_SG_ID" != "None" ]; then
-            echo "RDS Proxy Security Group: $PROXY_SG_ID"
-            echo "Adding GitHub Actions IP ranges to RDS Proxy security group..."
-            for CIDR in "${GITHUB_IPS[@]}"; do
-              # Check if rule already exists
-              EXISTING=$(aws ec2 describe-security-group-rules \
-                --filters "Name=group-id,Values=$PROXY_SG_ID" "Name=cidr-ipv4,Values=$CIDR" \
-                --query 'SecurityGroupRules[?IsEgress==`false` && IpProtocol==`tcp` && FromPort==`5432`].SecurityGroupRuleId' \
-                --output text --region ap-south-1 2>/dev/null || echo "")
-              
-              if [ -z "$EXISTING" ] || [ "$EXISTING" == "None" ]; then
-                echo "  Adding $CIDR to proxy SG..."
-                aws ec2 authorize-security-group-ingress \
-                  --group-id "$PROXY_SG_ID" \
-                  --protocol tcp \
-                  --port 5432 \
-                  --cidr "$CIDR" \
-                  --region ap-south-1 \
-                  --description "GitHub Actions CI/CD migrations" 2>/dev/null || echo "    (may already exist)"
-              else
-                echo "  $CIDR already allowed in proxy SG"
-              fi
-            done
-            echo "✅ RDS Proxy security group configured for GitHub Actions"
-          else
-            echo "⚠️ Could not find RDS Proxy security group"
-          fi
+          echo "   Note: Using direct cluster endpoint for migrations (like dev), not proxy"
       - name: Get database URL
         id: db
         working-directory: infra/envs/prod
         run: |
           terraform init -backend-config=backend.hcl -migrate-state
-          # CRITICAL: RDS is in private subnet - GitHub Actions cannot reach it directly
-          # Both cluster endpoint and proxy endpoint are in private subnets
-          # This migration step will likely fail with connection timeout
-          # TODO: Implement Lambda-based migrations (run from within VPC)
-          RDS_ENDPOINT=$(terraform output -raw rds_proxy_endpoint 2>/dev/null || terraform output -raw rds_endpoint)
+          # Use direct cluster endpoint for migrations (like dev)
+          # RDS is publicly accessible, and we've added GitHub Actions IPs to security group
+          # Proxy is only needed for Lambda functions (connection pooling), not for migrations
+          RDS_ENDPOINT=$(terraform output -raw rds_endpoint)
           RDS_SECRET_ARN=$(terraform output -raw rds_secret_arn)
           RDS_DB_NAME=$(terraform output -raw rds_database_name)
           RDS_PORT=$(terraform output -raw rds_port)
