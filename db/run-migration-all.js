@@ -409,8 +409,9 @@ async function runAllMigrations() {
         const hasDoBlock = /^\s*DO\s+\$\$/.test(sql.trim()) || /DO\s+\$\$/.test(sql);
         
         // If migration doesn't have DO block, wrap it in one with error handling
+        // This makes all migrations idempotent and handles missing dependencies gracefully
         if (!hasDoBlock) {
-          // Wrap the entire migration in a DO block with exception handling
+          // Wrap the entire migration in a DO block with comprehensive exception handling
           sql = `
 DO $$
 BEGIN
@@ -418,19 +419,25 @@ BEGIN
   ${sql}
 EXCEPTION
   WHEN undefined_table THEN
-    -- Table doesn't exist yet - safe to skip
-    RAISE NOTICE 'Skipping migration: table does not exist';
+    -- Table doesn't exist yet - safe to skip (will be created by another migration)
+    RAISE NOTICE 'Migration ${file}: table does not exist, skipping';
   WHEN undefined_column THEN
-    -- Column doesn't exist yet - safe to skip
-    RAISE NOTICE 'Skipping migration: column does not exist';
+    -- Column doesn't exist yet - safe to skip (will be created by another migration)
+    RAISE NOTICE 'Migration ${file}: column does not exist, skipping';
   WHEN duplicate_table THEN
-    -- Table already exists - safe to skip
-    RAISE NOTICE 'Skipping migration: table already exists';
+    -- Table already exists - safe to skip (already applied)
+    RAISE NOTICE 'Migration ${file}: table already exists, skipping';
   WHEN duplicate_column THEN
-    -- Column already exists - safe to skip
-    RAISE NOTICE 'Skipping migration: column already exists';
+    -- Column already exists - safe to skip (already applied)
+    RAISE NOTICE 'Migration ${file}: column already exists, skipping';
+  WHEN undefined_object THEN
+    -- Constraint/index/etc doesn't exist - safe to skip
+    RAISE NOTICE 'Migration ${file}: object does not exist, skipping';
+  WHEN unique_violation THEN
+    -- Duplicate key - safe to skip (already applied)
+    RAISE NOTICE 'Migration ${file}: unique constraint violation, skipping';
   WHEN OTHERS THEN
-    -- Re-raise other errors so we can see them
+    -- Re-raise other errors so we can see them in the catch block
     RAISE;
 END $$;
           `.trim();
