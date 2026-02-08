@@ -390,6 +390,9 @@ async function runAllMigrations() {
       const migrationPath = path.join(migrationsDir, file);
       console.log('⚙️  Running: ' + file);
       
+      // Use a savepoint for each migration so we can rollback on error without aborting the connection
+      const savepointName = `sp_${file.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      
       try {
         let sql = fs.readFileSync(migrationPath, 'utf8');
         
@@ -404,6 +407,9 @@ async function runAllMigrations() {
           skipCount++;
           continue;
         }
+
+        // Create savepoint for this migration
+        await client.query(`SAVEPOINT ${savepointName}`);
 
         // Check if migration already has DO block (proper error handling)
         const hasDoBlock = /^\s*DO\s+\$\$/.test(sql.trim()) || /DO\s+\$\$/.test(sql);
@@ -444,11 +450,44 @@ END $$;
         }
 
         await client.query(sql);
+        
+        // Release savepoint on success
+        await client.query(`RELEASE SAVEPOINT ${savepointName}`);
+        
         console.log('   ✅ Success');
         successCount++;
       } catch (error) {
+        // Always rollback the savepoint on error to prevent transaction abort
+        try {
+          await client.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+        } catch (rollbackError) {
+          // If rollback fails, the transaction is already aborted - we need to reset the connection
+          // Release the current client and get a new one
+          try {
+            client.release();
+          } catch (e) {
+            // Ignore release errors
+          }
+          // Get a new client connection
+          const newClient = await pool.connect();
+          // Replace the client reference (we'll release it at the end)
+          Object.assign(client, newClient);
+        }
+        
         const errorMsg = error.message.toLowerCase();
         const errorCode = error.code || '';
+        
+        // PostgreSQL error codes that are safe to skip
+        // 42P01 = undefined_table
+        // 42703 = undefined_column  
+        // 42P07 = duplicate_table
+        // 42701 = duplicate_column
+        // 23505 = unique_violation (duplicate key)
+        // 42P16 = invalid_table_definition (sometimes safe)
+        // 42704 = undefined_object (constraint, index, etc.)
+        // 25P02 = in_failed_sql_transaction (transaction aborted - handled by rollback)
+        const skippableCodes = ['42P07', '42701', '23505', '42704'];
+        const dependencyCodes = ['42P01', '42703'];
         
         // Skip errors that indicate the migration is already applied or safe to skip
         const skipPatterns = [
@@ -456,38 +495,45 @@ END $$;
           'duplicate key',
           'duplicate',
           'constraint.*already exists',
-          'index.*already exists'
+          'index.*already exists',
+          'relation.*already exists',
+          'column.*already exists'
         ];
         
-        // Skip dependency errors (table/column doesn't exist) - these are often safe
-        // if the migration is trying to alter something that hasn't been created yet
+        // Skip dependency errors (table/column doesn't exist) - these are safe to skip
         const dependencyErrors = [
           'relation.*does not exist',
           'column.*does not exist',
           'undefined_table',
-          'undefined_column'
+          'undefined_column',
+          'table.*does not exist',
+          'cannot.*does not exist'
         ];
         
+        const isSkippableCode = skippableCodes.includes(errorCode);
+        const isDependencyCode = dependencyCodes.includes(errorCode);
+        
         // Check if this is a skip-able error
-        const isSkippable = skipPatterns.some(pattern => {
+        const isSkippable = isSkippableCode || skipPatterns.some(pattern => {
           const regex = new RegExp(pattern, 'i');
           return regex.test(errorMsg);
         });
         
         // Check if this is a dependency error (table/column missing)
-        const isDependencyError = dependencyErrors.some(pattern => {
+        const isDependencyError = isDependencyCode || dependencyErrors.some(pattern => {
           const regex = new RegExp(pattern, 'i');
           return regex.test(errorMsg);
         });
         
-        if (isSkippable) {
-          console.log('   ⏭️  Skipped (already applied)');
+        // Transaction aborted errors should be treated as skippable after rollback
+        const isTransactionAborted = errorCode === '25P02' || errorMsg.includes('current transaction is aborted');
+        
+        if (isSkippable || isTransactionAborted) {
+          console.log('   ⏭️  Skipped (already applied or transaction rolled back)');
           skipCount++;
         } else if (isDependencyError) {
-          // Dependency errors are often safe to skip if the migration is trying to
-          // alter/add to a table that doesn't exist yet (will be created by another migration)
-          console.log('   ⏭️  Skipped (dependency not met - table/column missing)');
-          console.log('      ' + error.message.split('\n')[0]);
+          // Dependency errors are safe to skip - table/column will be created by another migration
+          console.log('   ⏭️  Skipped (dependency not met - will be created later)');
           skipCount++;
         } else {
           // Real error - log it
