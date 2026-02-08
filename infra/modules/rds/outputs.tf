@@ -51,7 +51,7 @@ output "proxy_endpoint" {
 
 output "proxy_arn" {
   description = "RDS Proxy ARN"
-  value       = aws_db_proxy.main.arn
+  value       = try(aws_db_proxy.main.arn, null)
 }
 
 output "proxy_name" {

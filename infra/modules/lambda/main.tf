@@ -154,7 +154,7 @@ resource "aws_iam_role_policy" "lambda_custom" {
 
 # RDS Proxy connection permission (required for Lambda to connect via RDS Proxy)
 resource "aws_iam_role_policy" "lambda_rds_proxy" {
-  count = var.rds_proxy_arn != null ? 1 : 0
+  count = var.rds_proxy_arn != null && var.rds_proxy_arn != "" ? 1 : 0
   
   name_prefix = "warmpawz-${var.environment}-lambda-rds-proxy-"
   role        = aws_iam_role.lambda.id
