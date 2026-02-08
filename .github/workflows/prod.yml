@@ -106,7 +106,7 @@ jobs:
           path: backend/lambda
       - name: Terraform Init
         working-directory: infra/envs/prod
-        run: terraform init -backend-config=backend.hcl
+        run: terraform init -backend-config=backend.hcl -migrate-state
       - name: Terraform Plan
         working-directory: infra/envs/prod
         run: |
@@ -164,7 +164,7 @@ jobs:
           path: backend/lambda
       - name: Terraform Init
         working-directory: infra/envs/prod
-        run: terraform init -backend-config=backend.hcl
+        run: terraform init -backend-config=backend.hcl -migrate-state
       - name: Import existing RDS instance if needed
         working-directory: infra/envs/prod
         run: |
