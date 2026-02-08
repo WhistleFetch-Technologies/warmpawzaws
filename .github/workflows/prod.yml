@@ -165,6 +165,12 @@ jobs:
       - name: Terraform Init
         working-directory: infra/envs/prod
         run: terraform init -backend-config=backend.hcl
+      - name: Import existing RDS instance if needed
+        working-directory: infra/envs/prod
+        run: |
+          # Try to import RDS instance if it exists in AWS but not in Terraform state
+          # Ignore errors if already imported or doesn't exist
+          terraform import module.rds.aws_rds_cluster_instance.main[0] warmpawz-prod-instance-1 || true
       - name: Terraform Apply
         working-directory: infra/envs/prod
         run: terraform apply -auto-approve tfplan
