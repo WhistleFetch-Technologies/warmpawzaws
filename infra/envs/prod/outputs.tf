@@ -41,6 +41,11 @@ output "rds_proxy_endpoint" {
   sensitive   = true
 }
 
+output "rds_proxy_security_group_id" {
+  description = "RDS Proxy security group ID (for adding GitHub Actions IP ranges)"
+  value       = module.rds.proxy_security_group_id
+}
+
 output "api_endpoint" {
   description = "API Gateway endpoint"
   value       = module.api_gateway.stage_invoke_url

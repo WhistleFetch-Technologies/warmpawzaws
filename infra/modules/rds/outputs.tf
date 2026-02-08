@@ -58,3 +58,8 @@ output "proxy_name" {
   description = "RDS Proxy name"
   value       = aws_db_proxy.main.name
 }
+
+output "proxy_security_group_id" {
+  description = "RDS Proxy security group ID"
+  value       = aws_security_group.rds_proxy.id
+}
