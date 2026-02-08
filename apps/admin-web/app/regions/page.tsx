@@ -807,7 +807,7 @@ export default function RegionManager() {
 											</div>
 											<Switch
 												checked={editingRegion.isActive || false}
-												onCheckedChange={(checked) =>
+												onCheckedChange={(checked: boolean) =>
 													setEditingRegion({
 														...editingRegion,
 														isActive: checked,
@@ -1018,7 +1018,7 @@ export default function RegionManager() {
 													checked={
 														editingRegion.localization?.rtlSupport || false
 													}
-													onCheckedChange={(checked) =>
+													onCheckedChange={(checked: boolean) =>
 														setEditingRegion({
 															...editingRegion,
 															localization: {
@@ -1049,7 +1049,7 @@ export default function RegionManager() {
 															<Label className="capitalize">{service}</Label>
 															<Switch
 																checked={enabled}
-																onCheckedChange={(checked) =>
+																onCheckedChange={(checked: boolean) =>
 																	setEditingRegion({
 																		...editingRegion,
 																		serviceCatalog: {

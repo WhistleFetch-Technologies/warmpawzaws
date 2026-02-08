@@ -594,7 +594,7 @@ export function CancellationPolicyManagement() {
                     <div key={type.id} className="flex items-center gap-2">
                       <Checkbox
                         checked={(editingPolicy.vendorTypes ?? []).includes(type.id)}
-                        onCheckedChange={(checked) => {
+                        onCheckedChange={(checked: boolean) => {
                           if (checked) {
                             setEditingPolicy({
                               ...editingPolicy,
@@ -623,7 +623,7 @@ export function CancellationPolicyManagement() {
                     <div key={type.id} className="flex items-center gap-2">
                       <Checkbox
                         checked={(editingPolicy.serviceTypes ?? []).includes(type.id)}
-                        onCheckedChange={(checked) => {
+                        onCheckedChange={(checked: boolean) => {
                           if (checked) {
                             setEditingPolicy({
                               ...editingPolicy,
@@ -741,7 +741,7 @@ export function CancellationPolicyManagement() {
                       <div className="flex items-center gap-1">
                         <Checkbox
                           checked={win.allowReschedule ?? false}
-                          onCheckedChange={(checked) => {
+                          onCheckedChange={(checked: boolean) => {
                             const next = [...(editingPolicy.cancellationWindows ?? [])];
                             next[idx] = { ...win, allowReschedule: !!checked };
                             setEditingPolicy({ ...editingPolicy, cancellationWindows: next });
@@ -785,7 +785,7 @@ export function CancellationPolicyManagement() {
                   <div className="flex items-center gap-2 mb-2">
                     <Checkbox
                       checked={editingPolicy.vendorCancellationPenalty?.enabled ?? true}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(checked: boolean) =>
                         setEditingPolicy({
                           ...editingPolicy,
                           vendorCancellationPenalty: { ...(editingPolicy.vendorCancellationPenalty ?? {}), enabled: !!checked },
@@ -835,7 +835,7 @@ export function CancellationPolicyManagement() {
                   <div className="flex items-center gap-2 mb-2">
                     <Checkbox
                       checked={editingPolicy.noShowPolicy?.enabled ?? true}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(checked: boolean) =>
                         setEditingPolicy({
                           ...editingPolicy,
                           noShowPolicy: { ...(editingPolicy.noShowPolicy ?? {}), enabled: !!checked },
@@ -883,7 +883,7 @@ export function CancellationPolicyManagement() {
               <div className="flex items-center gap-2">
                 <Checkbox
                   checked={editingPolicy.isActive}
-                  onCheckedChange={(checked) =>
+                  onCheckedChange={(checked: boolean) =>
                     setEditingPolicy({ ...editingPolicy, isActive: checked as boolean })
                   }
                 />

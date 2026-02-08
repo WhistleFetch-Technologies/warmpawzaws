@@ -458,7 +458,7 @@ export function PaymentRulesSection() {
               <div className="flex items-center gap-2">
                 <Checkbox
                   checked={editingRule.partialPaymentAllowed}
-                  onCheckedChange={(checked) =>
+                  onCheckedChange={(checked: boolean) =>
                     setEditingRule({ ...editingRule, partialPaymentAllowed: checked as boolean })
                   }
                 />
@@ -468,7 +468,7 @@ export function PaymentRulesSection() {
               <div className="flex items-center gap-2">
                 <Checkbox
                   checked={editingRule.autoCapturePayment}
-                  onCheckedChange={(checked) =>
+                  onCheckedChange={(checked: boolean) =>
                     setEditingRule({ ...editingRule, autoCapturePayment: checked as boolean })
                   }
                 />
@@ -478,7 +478,7 @@ export function PaymentRulesSection() {
               <div className="flex items-center gap-2">
                 <Checkbox
                   checked={editingRule.isActive}
-                  onCheckedChange={(checked) =>
+                  onCheckedChange={(checked: boolean) =>
                     setEditingRule({ ...editingRule, isActive: checked as boolean })
                   }
                 />

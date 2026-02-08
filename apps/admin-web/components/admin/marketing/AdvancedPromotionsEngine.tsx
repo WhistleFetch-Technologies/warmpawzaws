@@ -417,7 +417,7 @@ export function AdvancedPromotionsEngine({
 											</div>
 											<Switch
 												checked={promotion.active}
-												onCheckedChange={(checked) =>
+												onCheckedChange={(checked: boolean) =>
 													togglePromotionStatus(promotion.id, checked)
 												}
 											/>
@@ -752,7 +752,7 @@ export function AdvancedPromotionsEngine({
 									</div>
 									<Switch
 										checked={formData.stackable}
-										onCheckedChange={(checked) =>
+										onCheckedChange={(checked: boolean) =>
 											setFormData({ ...formData, stackable: checked })
 										}
 									/>
@@ -767,7 +767,7 @@ export function AdvancedPromotionsEngine({
 									</div>
 									<Switch
 										checked={formData.active}
-										onCheckedChange={(checked) =>
+										onCheckedChange={(checked: boolean) =>
 											setFormData({ ...formData, active: checked })
 										}
 									/>
@@ -786,7 +786,7 @@ export function AdvancedPromotionsEngine({
 										</div>
 										<Switch
 											checked={formData.is_spotlight || false}
-											onCheckedChange={(checked) =>
+											onCheckedChange={(checked: boolean) =>
 												setFormData({ ...formData, is_spotlight: checked })
 											}
 										/>
@@ -801,7 +801,7 @@ export function AdvancedPromotionsEngine({
 										</div>
 										<Switch
 											checked={formData.published || false}
-											onCheckedChange={(checked) =>
+											onCheckedChange={(checked: boolean) =>
 												setFormData({ ...formData, published: checked })
 											}
 										/>

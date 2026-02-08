@@ -336,7 +336,7 @@ export function DynamicSettlementRulesManager() {
               <div className="flex items-center gap-2">
                 <Switch
                   checked={editingRule.enabled}
-                  onCheckedChange={(checked) =>
+                  onCheckedChange={(checked: boolean) =>
                     setEditingRule({ ...editingRule, enabled: checked })
                   }
                 />
@@ -346,7 +346,7 @@ export function DynamicSettlementRulesManager() {
               <div className="flex items-center gap-2">
                 <Switch
                   checked={editingRule.settlement.autoProcess}
-                  onCheckedChange={(checked) =>
+                  onCheckedChange={(checked: boolean) =>
                     setEditingRule({
                       ...editingRule,
                       settlement: {

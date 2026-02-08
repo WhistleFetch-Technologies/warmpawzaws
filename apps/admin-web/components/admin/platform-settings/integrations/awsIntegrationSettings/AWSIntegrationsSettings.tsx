@@ -483,7 +483,7 @@ export function AWSIntegrationsSettings() {
 								</div>
 								<Switch
 									checked={aws.s3.enabled}
-									onCheckedChange={(checked) =>
+									onCheckedChange={(checked: boolean) =>
 										setAws({
 											...aws,
 											s3: { ...aws.s3, enabled: checked },
@@ -551,7 +551,7 @@ export function AWSIntegrationsSettings() {
 								</div>
 								<Switch
 									checked={aws.sns.enabled}
-									onCheckedChange={(checked) =>
+									onCheckedChange={(checked: boolean) =>
 										setAws({
 											...aws,
 											sns: { ...aws.sns, enabled: checked },
@@ -639,7 +639,7 @@ export function AWSIntegrationsSettings() {
 								</div>
 								<Switch
 									checked={aws.sqs.enabled}
-									onCheckedChange={(checked) =>
+									onCheckedChange={(checked: boolean) =>
 										setAws({
 											...aws,
 											sqs: { ...aws.sqs, enabled: checked },
@@ -699,7 +699,7 @@ export function AWSIntegrationsSettings() {
 								</div>
 								<Switch
 									checked={aws.chime.enabled}
-									onCheckedChange={(checked) =>
+									onCheckedChange={(checked: boolean) =>
 										setAws({
 											...aws,
 											chime: { ...aws.chime, enabled: checked },
@@ -748,7 +748,7 @@ export function AWSIntegrationsSettings() {
 								</div>
 								<Switch
 									checked={aws.bedrock.enabled}
-									onCheckedChange={(checked) =>
+									onCheckedChange={(checked: boolean) =>
 										setAws({
 											...aws,
 											bedrock: { ...aws.bedrock, enabled: checked },
@@ -807,7 +807,7 @@ export function AWSIntegrationsSettings() {
 								</div>
 								<Switch
 									checked={razorpay.bankVerificationEnabled}
-									onCheckedChange={(checked) =>
+									onCheckedChange={(checked: boolean) =>
 										setRazorpay({
 											...razorpay,
 											bankVerificationEnabled: checked,
@@ -880,7 +880,7 @@ export function AWSIntegrationsSettings() {
 								</div>
 								<Switch
 									checked={googleMaps.enabled}
-									onCheckedChange={(checked) =>
+									onCheckedChange={(checked: boolean) =>
 										setGoogleMaps({
 											...googleMaps,
 											enabled: checked,

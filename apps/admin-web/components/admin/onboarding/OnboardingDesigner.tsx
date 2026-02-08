@@ -632,7 +632,7 @@ function FieldEditModal({
           <div className="flex items-center gap-2">
             <Switch
               checked={formData.required}
-              onCheckedChange={(checked) => setFormData({ ...formData, required: checked })}
+              onCheckedChange={(checked: boolean) => setFormData({ ...formData, required: checked })}
             />
             <Label className="text-gray-900">Required Field</Label>
           </div>

@@ -588,7 +588,7 @@ export function LoyaltyActionRulesManagement() {
               <Switch
                 id="is_active"
                 checked={formData.is_active}
-                onCheckedChange={(checked) =>
+                onCheckedChange={(checked: boolean) =>
                   setFormData((prev) => ({ ...prev, is_active: checked }))
                 }
               />

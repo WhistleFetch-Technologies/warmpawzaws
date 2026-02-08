@@ -352,7 +352,7 @@ export function LogisticsSettings() {
 							</div>
 							<Switch
 								checked={currentPartner.enabled}
-								onCheckedChange={(c) =>
+								onCheckedChange={(c: boolean) =>
 									setCurrentPartner({ ...currentPartner, enabled: c })
 								}
 							/>

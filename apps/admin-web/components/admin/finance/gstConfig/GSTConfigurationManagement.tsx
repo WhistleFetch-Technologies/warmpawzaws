@@ -513,7 +513,7 @@ export function GSTConfigurationManagement() {
                 <Label>Active</Label>
                 <Switch
                   checked={editingHSN.isActive}
-                  onCheckedChange={(checked) =>
+                  onCheckedChange={(checked: boolean) =>
                     setEditingHSN({ ...editingHSN, isActive: checked })
                   }
                 />
@@ -583,7 +583,7 @@ export function GSTConfigurationManagement() {
                 <Label>Active</Label>
                 <Switch
                   checked={editingCategory.isActive}
-                  onCheckedChange={(checked) =>
+                  onCheckedChange={(checked: boolean) =>
                     setEditingCategory({ ...editingCategory, isActive: checked })
                   }
                 />

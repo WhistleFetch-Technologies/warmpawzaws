@@ -527,7 +527,7 @@ export default function WebhooksPage() {
                   <Label>Active</Label>
                   <Switch
                     checked={formData.is_active}
-                    onCheckedChange={(checked) =>
+                    onCheckedChange={(checked: boolean) =>
                       setFormData({ ...formData, is_active: checked })
                     }
                   />

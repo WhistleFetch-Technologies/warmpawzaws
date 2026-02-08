@@ -265,7 +265,7 @@ export function DeliveryRulesManager() {
 								<Label>Enabled</Label>
 								<Switch
 									checked={currentRule.enabled}
-									onCheckedChange={(c) =>
+									onCheckedChange={(c: boolean) =>
 										setCurrentRule({ ...currentRule, enabled: c })
 									}
 								/>

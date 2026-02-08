@@ -688,7 +688,7 @@ function RoleDetailModal({
               <div className="flex items-center gap-2">
                 <Switch
                   checked={formData.is_active}
-                  onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
+                  onCheckedChange={(checked: boolean) => setFormData({ ...formData, is_active: checked })}
                 />
                 <Label>Active</Label>
               </div>
@@ -830,7 +830,7 @@ function RoleDetailModal({
                     </div>
                     <Switch
                       checked={formData.pricingControl.canControlPrice}
-                      onCheckedChange={(checked) => setFormData({
+                      onCheckedChange={(checked: boolean) => setFormData({
                         ...formData,
                         pricingControl: { ...formData.pricingControl, canControlPrice: checked }
                       })}
@@ -844,7 +844,7 @@ function RoleDetailModal({
                       </div>
                       <Switch
                         checked={formData.pricingControl.canControlDuration}
-                        onCheckedChange={(checked) => setFormData({
+                        onCheckedChange={(checked: boolean) => setFormData({
                           ...formData,
                           pricingControl: { ...formData.pricingControl, canControlDuration: checked }
                         })}
@@ -1049,7 +1049,7 @@ function AddRoleModal({
             <div className="flex items-center gap-2">
               <Switch
                 checked={formData.is_active}
-                onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
+                        onCheckedChange={(checked: boolean) => setFormData({ ...formData, is_active: checked })}
               />
               <Label>Active</Label>
             </div>
@@ -1106,7 +1106,7 @@ function AddRoleModal({
                   </div>
                   <Switch
                     checked={formData.pricingControl.canControlPrice}
-                    onCheckedChange={(checked) => setFormData({
+                        onCheckedChange={(checked: boolean) => setFormData({
                       ...formData,
                       pricingControl: { ...formData.pricingControl, canControlPrice: checked }
                     })}
@@ -1120,7 +1120,7 @@ function AddRoleModal({
                     </div>
                     <Switch
                       checked={formData.pricingControl.canControlDuration}
-                      onCheckedChange={(checked) => setFormData({
+                      onCheckedChange={(checked: boolean) => setFormData({
                         ...formData,
                         pricingControl: { ...formData.pricingControl, canControlDuration: checked }
                       })}

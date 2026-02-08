@@ -396,7 +396,7 @@ export function TierManagement() {
                     <Switch
                       id="active-mode"
                       checked={currentTier.isActive}
-                      onCheckedChange={(c) => setCurrentTier({ ...currentTier, isActive: c })}
+                      onCheckedChange={(c: boolean) => setCurrentTier({ ...currentTier, isActive: c })}
                     />
                   </div>
                   <div className="flex items-center justify-between border p-3 rounded-lg">
@@ -409,7 +409,7 @@ export function TierManagement() {
                     <Switch
                       id="default-mode"
                       checked={currentTier.isDefault}
-                      onCheckedChange={(c) => setCurrentTier({ ...currentTier, isDefault: c })}
+                      onCheckedChange={(c: boolean) => setCurrentTier({ ...currentTier, isDefault: c })}
                     />
                   </div>
                 </div>

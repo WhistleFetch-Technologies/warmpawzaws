@@ -185,7 +185,7 @@ export function VendorPromotionsOverview({ onBack }: VendorPromotionsOverviewPro
             </div>
           </div>
           
-          <Select value={filter.status} onValueChange={(v) => setFilter({ ...filter, status: v })}>
+          <Select value={filter.status} onValueChange={(v: string) => setFilter({ ...filter, status: v })}>
             <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
@@ -197,7 +197,7 @@ export function VendorPromotionsOverview({ onBack }: VendorPromotionsOverviewPro
             </SelectContent>
           </Select>
           
-          <Select value={filter.category} onValueChange={(v) => setFilter({ ...filter, category: v })}>
+          <Select value={filter.category} onValueChange={(v: string) => setFilter({ ...filter, category: v })}>
             <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="Category" />
             </SelectTrigger>
@@ -208,7 +208,7 @@ export function VendorPromotionsOverview({ onBack }: VendorPromotionsOverviewPro
             </SelectContent>
           </Select>
           
-          <Select value={filter.type} onValueChange={(v) => setFilter({ ...filter, type: v })}>
+          <Select value={filter.type} onValueChange={(v: string) => setFilter({ ...filter, type: v })}>
             <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Type" />
             </SelectTrigger>

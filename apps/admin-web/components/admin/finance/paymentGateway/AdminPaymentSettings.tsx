@@ -253,7 +253,7 @@ export function AdminPaymentSettings() {
                 </div>
                 <Switch
                   checked={refundConfig.enabled}
-                  onCheckedChange={(checked) =>
+                  onCheckedChange={(checked: boolean) =>
                     setRefundConfig({ ...refundConfig, enabled: checked })
                   }
                 />
@@ -268,7 +268,7 @@ export function AdminPaymentSettings() {
                 </div>
                 <Switch
                   checked={refundConfig.autoReconcile}
-                  onCheckedChange={(checked) =>
+                  onCheckedChange={(checked: boolean) =>
                     setRefundConfig({ ...refundConfig, autoReconcile: checked })
                   }
                 />
@@ -422,7 +422,7 @@ export function AdminPaymentSettings() {
                     <Label>Enable Razorpay</Label>
                     <Switch
                       checked={razorpayConfig.enabled}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(checked: boolean) =>
                         setRazorpayConfig({ ...razorpayConfig, enabled: checked })
                       }
                     />
@@ -543,7 +543,7 @@ export function AdminPaymentSettings() {
                 <Label>Enable Gateway</Label>
                 <Switch
                   checked={editingGateway?.enabled ?? true}
-                  onCheckedChange={(checked) =>
+                  onCheckedChange={(checked: boolean) =>
                     setEditingGateway({ ...editingGateway, enabled: checked })
                   }
                 />

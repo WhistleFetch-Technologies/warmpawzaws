@@ -791,7 +791,7 @@ export function RefundPoliciesSection() {
               <div className="flex items-center gap-2">
                 <Checkbox
                   checked={editingTier.isActive}
-                  onCheckedChange={(checked) =>
+                  onCheckedChange={(checked: boolean) =>
                     setEditingTier({ ...editingTier, isActive: checked as boolean })
                   }
                 />

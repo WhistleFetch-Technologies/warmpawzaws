@@ -155,7 +155,7 @@ export function EcommercePoliciesSection() {
         <div className="flex items-center gap-2 border p-4 rounded-lg bg-green-50/50">
           <Checkbox
             checked={config.cancelBeforeDispatchFullRefund}
-            onCheckedChange={(checked) => setConfig({ ...config, cancelBeforeDispatchFullRefund: !!checked })}
+            onCheckedChange={(checked: boolean) => setConfig({ ...config, cancelBeforeDispatchFullRefund: !!checked })}
           />
           <div>
             <Label>Cancel before dispatch → full refund</Label>

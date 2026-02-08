@@ -156,7 +156,7 @@ export function SettlementScheduleSettings() {
             </div>
             <Switch
               checked={settings.enabled}
-              onCheckedChange={(checked) => setSettings({ ...settings, enabled: checked })}
+              onCheckedChange={(checked: boolean) => setSettings({ ...settings, enabled: checked })}
             />
           </div>
 
@@ -262,7 +262,7 @@ export function SettlementScheduleSettings() {
               </div>
               <Switch
                 checked={settings.autoProcess}
-                onCheckedChange={(checked) =>
+                onCheckedChange={(checked: boolean) =>
                   setSettings({ ...settings, autoProcess: checked })
                 }
               />

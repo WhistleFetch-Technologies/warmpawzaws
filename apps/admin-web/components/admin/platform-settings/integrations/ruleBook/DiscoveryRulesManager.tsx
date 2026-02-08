@@ -263,7 +263,7 @@ export function DiscoveryRulesManager() {
 			</div>
 
 			<div className="flex flex-wrap gap-2">
-				<Select value={filterRole || "all"} onValueChange={(v) => setFilterRole(v === "all" ? "" : v)}>
+				<Select value={filterRole || "all"} onValueChange={(v: string) => setFilterRole(v === "all" ? "" : v)}>
 					<SelectTrigger className="w-[160px]">
 						<SelectValue placeholder="Role" />
 					</SelectTrigger>
@@ -276,7 +276,7 @@ export function DiscoveryRulesManager() {
 						))}
 					</SelectContent>
 				</Select>
-				<Select value={filterKey || "all"} onValueChange={(v) => setFilterKey(v === "all" ? "" : v)}>
+				<Select value={filterKey || "all"} onValueChange={(v: string) => setFilterKey(v === "all" ? "" : v)}>
 					<SelectTrigger className="w-[220px]">
 						<SelectValue placeholder="Rule key" />
 					</SelectTrigger>
@@ -289,7 +289,7 @@ export function DiscoveryRulesManager() {
 						))}
 					</SelectContent>
 				</Select>
-				<Select value={filterServiceStyle || "all"} onValueChange={(v) => setFilterServiceStyle(v === "all" ? "" : v)}>
+				<Select value={filterServiceStyle || "all"} onValueChange={(v: string) => setFilterServiceStyle(v === "all" ? "" : v)}>
 					<SelectTrigger className="w-[140px]">
 						<SelectValue placeholder="Service style" />
 					</SelectTrigger>
@@ -302,7 +302,7 @@ export function DiscoveryRulesManager() {
 						))}
 					</SelectContent>
 				</Select>
-				<Select value={filterServiceType || "all"} onValueChange={(v) => setFilterServiceType(v === "all" ? "" : v)}>
+				<Select value={filterServiceType || "all"} onValueChange={(v: string) => setFilterServiceType(v === "all" ? "" : v)}>
 					<SelectTrigger className="w-[140px]">
 						<SelectValue placeholder="Service type" />
 					</SelectTrigger>
@@ -383,7 +383,7 @@ export function DiscoveryRulesManager() {
 						{!editingRule && (
 							<div>
 								<Label>Role</Label>
-								<Select value={form.role_id} onValueChange={(v) => setForm((f) => ({ ...f, role_id: v }))}>
+								<Select value={form.role_id} onValueChange={(v: string) => setForm((f) => ({ ...f, role_id: v }))}>
 									<SelectTrigger>
 										<SelectValue />
 									</SelectTrigger>
@@ -401,7 +401,7 @@ export function DiscoveryRulesManager() {
 							<Label>Rule key</Label>
 							<Select
 								value={form.rule_key}
-								onValueChange={(v) => setForm((f) => ({ ...f, rule_key: v }))}
+								onValueChange={(v: string) => setForm((f) => ({ ...f, rule_key: v }))}
 								disabled={!!editingRule}
 							>
 								<SelectTrigger>
@@ -438,7 +438,7 @@ export function DiscoveryRulesManager() {
 							<Label>Flow (optional)</Label>
 							<Select
 								value={form.applies_to_flow || "none"}
-								onValueChange={(v) => setForm((f) => ({ ...f, applies_to_flow: v === "none" ? "" : v }))}
+								onValueChange={(v: string) => setForm((f) => ({ ...f, applies_to_flow: v === "none" ? "" : v }))}
 							>
 								<SelectTrigger>
 									<SelectValue placeholder="Flow" />
@@ -457,7 +457,7 @@ export function DiscoveryRulesManager() {
 							<Label>Service style (optional)</Label>
 							<Select
 								value={form.service_style || "none"}
-								onValueChange={(v) => setForm((f) => ({ ...f, service_style: v === "none" ? "" : v }))}
+								onValueChange={(v: string) => setForm((f) => ({ ...f, service_style: v === "none" ? "" : v }))}
 							>
 								<SelectTrigger>
 									<SelectValue placeholder="All styles" />
@@ -476,7 +476,7 @@ export function DiscoveryRulesManager() {
 							<Label>Service type (optional)</Label>
 							<Select
 								value={form.service_type || "none"}
-								onValueChange={(v) => setForm((f) => ({ ...f, service_type: v === "none" ? "" : v }))}
+								onValueChange={(v: string) => setForm((f) => ({ ...f, service_type: v === "none" ? "" : v }))}
 							>
 								<SelectTrigger>
 									<SelectValue placeholder="All types" />

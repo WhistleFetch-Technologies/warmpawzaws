@@ -219,7 +219,7 @@ export function CouponManagement() {
 									<label className="text-sm font-medium">Discount Type</label>
 									<Select
 										value={bulkData.type}
-										onValueChange={(v) => setBulkData({ ...bulkData, type: v })}
+										onValueChange={(v: string) => setBulkData({ ...bulkData, type: v })}
 									>
 										<SelectTrigger>
 											<SelectValue />
@@ -330,7 +330,7 @@ export function CouponManagement() {
 										<label className="text-sm font-medium">Type</label>
 										<Select
 											value={formData.type}
-											onValueChange={(v) =>
+											onValueChange={(v: string) =>
 												setFormData({ ...formData, type: v })
 											}
 										>
