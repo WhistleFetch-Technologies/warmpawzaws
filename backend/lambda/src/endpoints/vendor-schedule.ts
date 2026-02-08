@@ -156,7 +156,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
                FROM vendor_availability_v2
                WHERE vendor_id::text = ANY($1::text[])
                AND day_of_week = $2
-               AND (service_type = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
+               AND (COALESCE(service_style, service_type) = $3 OR $3 = ANY(COALESCE(service_styles, ARRAY[]::text[])))
                AND COALESCE(is_available, is_enabled, true) = true
                ORDER BY start_time`,
               [availabilityIds, dayOfWeek, serviceStyle]

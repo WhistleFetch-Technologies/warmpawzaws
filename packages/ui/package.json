@@ -76,6 +76,10 @@
     "react-dom": "^18.0.0"
   },
   "dependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
     "@radix-ui/react-accordion": "^1.2.1",
     "@radix-ui/react-checkbox": "^1.3.3",
     "@radix-ui/react-dialog": "^1.1.15",
@@ -90,10 +94,6 @@
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
-    "react": "^18.0.0",
-    "react-dom": "^18.0.0",
-    "@types/react": "^18.0.0",
-    "@types/react-dom": "^18.0.0",
     "typescript": "^5.0.0"
   }
 }

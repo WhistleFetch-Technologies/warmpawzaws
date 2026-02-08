@@ -17,7 +17,16 @@
  *   TEST_API_URL=https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com node scripts/forensic-available-slots-e2e.js
  */
 
+const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
+const { Client } = require('pg');
+const { execSync } = require('child_process');
+
 const API_BASE = process.env.TEST_API_URL || process.env.API_BASE_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+const USE_DB_DATE = !['0', 'false', 'no'].includes(String(process.env.USE_DB_DATE || '').toLowerCase());
+const SLOT_START_DATE = process.env.SLOT_START_DATE || process.env.SLOT_DATE || '';
+const ENVIRONMENT = process.env.ENVIRONMENT || 'dev';
+const REGION = process.env.AWS_REGION || 'ap-south-1';
+const DB_SECRET_ARN = process.env.DB_SECRET_ARN || '';
 
 const SERVICE_STYLES = ['at_center', 'at_home', 'tele'];
 
@@ -37,6 +46,258 @@ function tomorrowDateStr() {
   const d = new Date();
   d.setDate(d.getDate() + 1);
   return d.toISOString().slice(0, 10);
+}
+
+function parseDateOnly(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function formatDateOnly(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeServiceStyle(serviceStyle) {
+  if (serviceStyle === 'at_vendor') return 'at_center';
+  return serviceStyle;
+}
+
+function acceptableStylesFor(serviceStyle) {
+  const normalized = normalizeServiceStyle(serviceStyle);
+  if (normalized === 'at_center') return ['at_center', 'at_vendor'];
+  if (normalized === 'tele') return ['tele', 'online', 'video_consultation'];
+  return [normalized];
+}
+
+function nextDateForDayOfWeek(startDate, dayOfWeek) {
+  const d = new Date(startDate);
+  const delta = (dayOfWeek - d.getDay() + 7) % 7;
+  d.setDate(d.getDate() + delta);
+  return d;
+}
+
+async function resolveDbEndpoint() {
+  const clusterId = `warmpawz-${ENVIRONMENT}-cluster`;
+  const endpoint = execSync(
+    `aws rds describe-db-clusters --db-cluster-identifier ${clusterId} --region ${REGION} --query 'DBClusters[0].Endpoint' --output text`,
+    { encoding: 'utf8' }
+  ).trim();
+
+  const port = execSync(
+    `aws rds describe-db-clusters --db-cluster-identifier ${clusterId} --region ${REGION} --query 'DBClusters[0].Port' --output text`,
+    { encoding: 'utf8' }
+  ).trim() || '5432';
+
+  const dbName = execSync(
+    `aws rds describe-db-clusters --db-cluster-identifier ${clusterId} --region ${REGION} --query 'DBClusters[0].DatabaseName' --output text`,
+    { encoding: 'utf8' }
+  ).trim() || 'warmpawz';
+
+  const username = execSync(
+    `aws rds describe-db-clusters --db-cluster-identifier ${clusterId} --region ${REGION} --query 'DBClusters[0].MasterUsername' --output text`,
+    { encoding: 'utf8' }
+  ).trim() || 'warmpawz_admin';
+
+  return { endpoint, port: parseInt(port, 10), dbName, username };
+}
+
+async function resolveSecretArn() {
+  if (DB_SECRET_ARN) return DB_SECRET_ARN;
+  return `warmpawz-${ENVIRONMENT}-rds-master-20260106164510791100000002`;
+}
+
+async function getDbCredentials(secretArn) {
+  const secretsClient = new SecretsManagerClient({ region: REGION });
+  const response = await secretsClient.send(new GetSecretValueCommand({ SecretId: secretArn }));
+  return JSON.parse(response.SecretString);
+}
+
+async function query(client, sql, params) {
+  const res = await client.query(sql, params);
+  return res.rows;
+}
+
+async function detectSchema(client) {
+  const rows = await query(
+    client,
+    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'vendor_availability_v2'`
+  ).catch(() => []);
+  const columns = new Set(rows.map((r) => r.column_name));
+  const hasServiceStyles = columns.has('service_styles');
+  const hasServiceStyle = columns.has('service_style');
+  const hasServiceType = columns.has('service_type');
+  const hasIsEnabled = columns.has('is_enabled');
+  const hasIsAvailable = columns.has('is_available');
+
+  const holidayRows = await query(
+    client,
+    `SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'vendor_holidays'
+    ) as exists`
+  ).catch(() => [{ exists: false }]);
+  const hasVendorHolidays = holidayRows?.[0]?.exists === true || holidayRows?.[0]?.exists === 't';
+
+  return { hasServiceStyles, hasServiceStyle, hasServiceType, hasIsEnabled, hasIsAvailable, hasVendorHolidays };
+}
+
+async function initDb() {
+  if (!USE_DB_DATE) return null;
+  try {
+    const { endpoint, port, dbName, username } = await resolveDbEndpoint();
+    const secretArn = await resolveSecretArn();
+    const creds = await getDbCredentials(secretArn);
+    const client = new Client({
+      host: endpoint,
+      port,
+      database: dbName,
+      user: username,
+      password: creds.password || creds.Password || creds.secret || creds.Secret,
+      ssl: { rejectUnauthorized: false },
+      connectionTimeoutMillis: 10000,
+    });
+    await client.connect();
+    const schema = await detectSchema(client);
+    return { client, schema };
+  } catch (err) {
+    log('db', `DB date selection disabled (fallback to tomorrow): ${err?.message || err}`);
+    return null;
+  }
+}
+
+const availabilityIdCache = new Map();
+const availabilityDayCache = new Map();
+const holidaysCache = new Map();
+
+async function resolveAvailabilityIds(client, vendorId) {
+  if (availabilityIdCache.has(vendorId)) return availabilityIdCache.get(vendorId);
+  const ids = new Set([String(vendorId)]);
+  try {
+    const vendorRows = await query(client, `SELECT id, phone FROM vendors WHERE id::text = $1`, [String(vendorId)]);
+    if (vendorRows.length > 0) {
+      const vendor = vendorRows[0];
+      ids.add(String(vendor.id));
+      const phone = vendor.phone || '';
+      const identityRows = await query(
+        client,
+        `SELECT id FROM vendor_identity WHERE vendor_id::text = $1 OR phone = $2`,
+        [String(vendor.id), phone]
+      ).catch(() => []);
+      for (const row of identityRows) {
+        if (row?.id) ids.add(String(row.id));
+      }
+    } else {
+      const identityRows = await query(
+        client,
+        `SELECT id, vendor_id, phone FROM vendor_identity WHERE id::text = $1 OR vendor_id::text = $1`,
+        [String(vendorId)]
+      ).catch(() => []);
+      if (identityRows.length > 0) {
+        const first = identityRows[0];
+        for (const row of identityRows) {
+          if (row?.id) ids.add(String(row.id));
+          if (row?.vendor_id) ids.add(String(row.vendor_id));
+        }
+        if (first?.vendor_id || first?.phone) {
+          const more = await query(
+            client,
+            `SELECT id FROM vendor_identity WHERE vendor_id::text = $1 OR phone = $2`,
+            [String(first?.vendor_id || ''), String(first?.phone || '')]
+          ).catch(() => []);
+          for (const row of more) {
+            if (row?.id) ids.add(String(row.id));
+          }
+        }
+      }
+    }
+  } catch (_) {
+    // best-effort only
+  }
+  const list = [...ids];
+  availabilityIdCache.set(vendorId, list);
+  return list;
+}
+
+async function getHolidaySet(client, vendorId, schema) {
+  if (!schema?.hasVendorHolidays) return new Set();
+  if (holidaysCache.has(vendorId)) return holidaysCache.get(vendorId);
+  const rows = await query(
+    client,
+    `SELECT holiday_date FROM vendor_holidays WHERE vendor_id::text = $1`,
+    [String(vendorId)]
+  ).catch(() => []);
+  const set = new Set(rows.map((r) => {
+    const d = r?.holiday_date ? new Date(r.holiday_date) : null;
+    return d && !Number.isNaN(d.getTime()) ? formatDateOnly(d) : null;
+  }).filter(Boolean));
+  holidaysCache.set(vendorId, set);
+  return set;
+}
+
+async function getAvailabilityDays(client, availabilityIds, serviceStyle, schema) {
+  const key = `${availabilityIds.join('|')}|${serviceStyle}`;
+  if (availabilityDayCache.has(key)) return availabilityDayCache.get(key);
+
+  const acceptable = acceptableStylesFor(serviceStyle);
+  const enabledExpr = (schema.hasIsEnabled && schema.hasIsAvailable)
+    ? 'COALESCE(is_enabled, is_available, true) = true'
+    : schema.hasIsEnabled
+      ? 'COALESCE(is_enabled, true) = true'
+      : schema.hasIsAvailable
+        ? 'COALESCE(is_available, true) = true'
+        : 'true';
+
+  let styleClause = '';
+  let params = [availabilityIds];
+  if (schema.hasServiceStyles) {
+    styleClause = `AND (COALESCE(service_styles, ARRAY[]::text[]) && $2::text[])`;
+    params = [availabilityIds, acceptable];
+  } else if (schema.hasServiceStyle || schema.hasServiceType) {
+    styleClause = `AND COALESCE(service_style, service_type)::text = ANY($2::text[])`;
+    params = [availabilityIds, acceptable];
+  }
+
+  const rows = await query(
+    client,
+    `SELECT DISTINCT day_of_week
+     FROM vendor_availability_v2
+     WHERE vendor_id::text = ANY($1::text[])
+       AND ${enabledExpr}
+       ${styleClause}
+     ORDER BY day_of_week`,
+    params
+  ).catch(() => []);
+
+  const days = rows.map((r) => Number(r.day_of_week)).filter((n) => Number.isFinite(n));
+  availabilityDayCache.set(key, days);
+  return days;
+}
+
+async function pickDateFromVA2(dbState, vendorId, serviceStyle, baseDateStr) {
+  if (!dbState) return baseDateStr;
+  const { client, schema } = dbState;
+  const baseDate = parseDateOnly(baseDateStr) || parseDateOnly(tomorrowDateStr());
+  const availabilityIds = await resolveAvailabilityIds(client, vendorId);
+  const days = await getAvailabilityDays(client, availabilityIds, serviceStyle, schema);
+  if (!days || days.length === 0) return baseDateStr;
+
+  const holidays = await getHolidaySet(client, vendorId, schema);
+  const candidates = days.map((dayOfWeek) => {
+    let date = nextDateForDayOfWeek(baseDate, dayOfWeek);
+    for (let i = 0; i < 8; i += 1) {
+      const dateStr = formatDateOnly(date);
+      if (!holidays.has(dateStr)) break;
+      date = new Date(date);
+      date.setDate(date.getDate() + 7);
+    }
+    return date;
+  });
+  candidates.sort((a, b) => a.getTime() - b.getTime());
+  const chosen = candidates[0];
+  return chosen ? formatDateOnly(chosen) : baseDateStr;
 }
 
 function log(step, message, data) {

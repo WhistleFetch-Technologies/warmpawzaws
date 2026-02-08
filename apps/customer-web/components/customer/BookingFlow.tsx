@@ -364,14 +364,16 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
   const loadTimeSlots = async () => {
     if (!service?.vendor_id || !selectedDate) return;
     try {
-      // Normalize legacy styles: online/video_consultation → tele, at_vendor → at_center
+      // Normalize legacy styles: online/at_vendor → canonical (tele, at_center)
       const rawStyle = (service?.service_style || 'at_center').toLowerCase();
       const serviceStyle =
         rawStyle === 'at_home'
           ? 'at_home'
           : rawStyle === 'tele' || rawStyle === 'online' || rawStyle === 'video_consultation'
             ? 'tele'
-            : 'at_center'; // at_vendor, at_center, etc. → at_center
+            : rawStyle === 'at_vendor'
+              ? 'at_center'
+              : 'at_center';
       const totalDuration = Math.max(15, service?.duration ?? 30);
       const params = new URLSearchParams({
         date: selectedDate,

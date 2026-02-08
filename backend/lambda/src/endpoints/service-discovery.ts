@@ -557,55 +557,38 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // When category/roleId given: use same criteria as /admin/vendors/active (any published service), then filter by role.
       if (serviceStyle === 'at_home' || serviceStyle === 'tele') {
         const allProviders: any[] = [];
-        const targetRoles = await resolveTargetRolesForDiscovery(category || null, roleId || null);
+        // Category-based role expansion (like by-style): get ALL roles in category so walker, walker_solo, pet_walker all match.
+        const effectiveCategory = (category?.toLowerCase().trim()) || (roleId ? getCategoryFromRole(roleId as string) : null) || null;
+        const targetRoles = await resolveTargetRolesForDiscovery(effectiveCategory || null, effectiveCategory ? null : (roleId || null));
         const targetRolesLower = targetRoles.map((r) => r.toLowerCase());
-        console.log('[discover-services] at_home/tele category=%s roleId=%s targetRoles=%s', category, roleId, JSON.stringify(targetRolesLower));
+        console.log('[discover-services] at_home/tele category=%s roleId=%s effectiveCategory=%s targetRoles=%s', category, roleId, effectiveCategory, JSON.stringify(targetRolesLower));
 
         // Rule book: discovery radius, max results, sort — use actual serviceStyle so tele gets tele-specific rules
-        const roleIdForRule = (category || roleId || targetRoles[0] || 'all') as string;
+        const roleIdForRule = (effectiveCategory || roleId || targetRoles[0] || 'all') as string;
         const ruleStyle = serviceStyle === 'tele' ? 'tele' : 'at_home';
-        const discoveryRules = await getDiscoveryRules(roleIdForRule, 'discover', ruleStyle, category || undefined);
+        const discoveryRules = await getDiscoveryRules(roleIdForRule, 'discover', ruleStyle, effectiveCategory || undefined);
         const ruleRadiusKm = typeof discoveryRules.discovery_radius_km === 'number' ? discoveryRules.discovery_radius_km : 50;
         const ruleMaxResults = typeof discoveryRules.discovery_max_results === 'number' ? discoveryRules.discovery_max_results : 50;
         const ruleSortDefault = typeof discoveryRules.discovery_sort_default === 'string' ? discoveryRules.discovery_sort_default : 'relevance';
 
-        // Match role name exactly or with spaces normalized to underscores (e.g. "Pet Walker" -> pet_walker). Require role so role_id NULL vendors are excluded.
+        // Role filter: match any role in the expanded category list (like by-style); LOWER + space→underscore for compatibility.
         const roleRestrictClause = targetRolesLower.length > 0
           ? ` AND r.id IS NOT NULL AND (LOWER(r.name) = ANY($1::text[]) OR LOWER(REPLACE(COALESCE(r.name, ''), ' ', '_')) = ANY($1::text[]))`
           : '';
-        const soloCondition = targetRolesLower.length > 0
-          ? ''
-          : ` AND (
-              v.vendor_type = 'solo'
-              OR r.name LIKE '%_solo'
-              OR r.name LIKE '%Solo%'
-              OR LOWER(r.name) LIKE '%solo%'
-            )`;
+        const soloCondition = targetRolesLower.length > 0 ? '' : ` AND (v.vendor_type = 'solo' OR LOWER(COALESCE(r.name, '')) LIKE '%_solo%' OR LOWER(COALESCE(r.name, '')) LIKE '%solo%')`;
 
-        // When targetRoles set: require published service; for at_home/tele require vs.service_style = requested style so at_center-only vendors do not appear.
-        const vendorParams: any[] = targetRolesLower.length > 0 ? [...targetRolesLower] : [];
-        const isWalkerCategory = (category?.toLowerCase() === 'walker' || category?.toLowerCase() === 'walking') || (targetRolesLower.length > 0 && targetRolesLower.some((r: string) => ['walker', 'walker_solo', 'pet_walker', 'dog_walker'].includes(r)));
-        // Style-strict: when roleId/category present, require at least one published service in this serviceStyle (at_home/tele)
-        const styleFilterInExists = targetRolesLower.length > 0 ? ` AND vs.service_style = $2` : '';
-        const existsServiceClause = targetRolesLower.length > 0
-          ? (isWalkerCategory
-              ? ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true AND vs.publish_status = 'published'${styleFilterInExists})`
-              : ` AND EXISTS (
-              SELECT 1 FROM vendor_services vs
-              WHERE vs.vendor_id = v.id
-                AND vs.is_enabled = true
-                AND vs.publish_status = 'published'${styleFilterInExists}
-            )`)
-          : ` AND EXISTS (
-              SELECT 1 FROM vendor_services vs
-              WHERE vs.vendor_id = v.id
-                AND (vs.service_style = $1 OR vs.service_style IS NULL)
-                AND vs.is_enabled = true
-                AND vs.publish_status = 'published'
-            )`;
-        if (targetRolesLower.length === 0) vendorParams.unshift(serviceStyle);
-        if (targetRolesLower.length > 0) vendorParams.push(serviceStyle);
+        // Params: [targetRoles..., serviceStyle]; EXISTS always requires vs.service_style = requested style.
+        const vendorParams: any[] = targetRolesLower.length > 0 ? [...targetRolesLower, serviceStyle] : [serviceStyle];
+        const existsServiceClause = ` AND EXISTS (
+          SELECT 1 FROM vendor_services vs
+          WHERE vs.vendor_id = v.id
+            AND vs.service_style = $${targetRolesLower.length > 0 ? '2' : '1'}
+            AND vs.is_enabled = true
+            AND vs.publish_status = 'published'
+        )`;
 
+        // at_home/tele: solo only (vendor_type = 'solo'); style enforced in existsServiceClause above.
+        const soloOnlyClause = ` AND v.vendor_type = 'solo'`;
         // Vendor-defined radius applies only to at_home (travel); tele uses rule-book only, no travel.
         let vendorQuery = `
           SELECT DISTINCT v.id, v.business_name, v.owner_name, v.phone, v.city, v.state,
@@ -620,15 +603,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           LEFT JOIN roles r ON v.role_id = r.id
           WHERE (v.status = 'approved' OR v.status = 'active')
             AND v.is_active = true
+            ${soloOnlyClause}
             AND (${targetRolesLower.length > 0 ? '1=1' : "COALESCE(v.is_online, true) = true"})
             ${soloCondition}
             ${roleRestrictClause}
-            AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%clinic%'
-            AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%hospital%'
-            AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%center%'
-            AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%centre%'
-            AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%salon%'
-            AND COALESCE(LOWER(v.business_name), '') NOT LIKE '% business%'
             ${existsServiceClause}
         `;
 
@@ -921,8 +899,18 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         paramIndex++;
       }
 
-      // DB-driven: filter by category and/or roleId (only discoverable roles)
-      const targetRoles = await resolveTargetRolesForDiscovery(category || null, roleId || null);
+      // DB-driven: filter by category and/or roleId. For at_center normalize to center role names (vet → vet_clinic, etc.)
+      const roleIdForCenter = (serviceStyle === 'at_center' && roleId) ? (() => {
+        const m: Record<string, string> = {
+          vet: 'vet_clinic', veterinarian: 'vet_clinic',
+          grooming: 'groomer_center', groomer: 'groomer_center', pet_groomer: 'groomer_center',
+          training: 'trainer_center', trainer: 'trainer_center', pet_trainer: 'trainer_center',
+          nutrition: 'nutritionist_center', nutritionist: 'nutritionist_center',
+          diagnostics: 'diagnostics_center', 'lab-diagnostics': 'diagnostics_center',
+        };
+        return m[(roleId as string).toLowerCase().trim()] || roleId;
+      })() : roleId;
+      const targetRoles = await resolveTargetRolesForDiscovery(category || null, roleIdForCenter || roleId || null);
       if (targetRoles.length > 0) {
         vendorQuery += ` AND r.name = ANY($${paramIndex})`;
         params.push(targetRoles);
@@ -1396,7 +1384,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
       const resolvedVendorId = vendor.id;
-      // getVendorIdsForAvailabilityLookup returns [vendors.id, ...vendor_identity.id(s)] — use for lookup and for response IDs
+      // VA2 may be keyed by vendors.id or vendor_identity.id; get all IDs so slots are found either way
       const availabilityIds = await getVendorIdsForAvailabilityLookup(resolvedVendorId);
       const canonicalVendorId = availabilityIds[0] ?? resolvedVendorId;
       const vendorIdentityIdFromLookup = availabilityIds.length > 1 ? availabilityIds[1] : null;
@@ -1406,7 +1394,26 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const [year, month, day] = date.split('-').map(Number);
       const requestedDate = new Date(year, month - 1, day);
       const dayOfWeek = requestedDate.getDay();
+      const slotsDebug = c.req.query('debug') === '1' || c.req.query('debug') === 'true';
       console.log(`[SLOTS] Date parsing: input=${date}, parsed=${requestedDate.toISOString()}, dayOfWeek=${dayOfWeek} (0=Sun, 1=Mon, 2=Tue, etc.)`);
+      if (slotsDebug) {
+        console.log(`[SLOTS] debug: resolvedVendorId=${resolvedVendorId}, availabilityIds=${JSON.stringify(availabilityIds)}, date=${date}, dayOfWeek=${dayOfWeek}, serviceStyle=${serviceStyle}`);
+        try {
+          const va2DebugRows = await query(
+            `SELECT vendor_id, day_of_week,
+             COALESCE(service_styles, ARRAY[]::text[]) as service_styles,
+             service_style, service_type, is_enabled, is_available
+             FROM vendor_availability_v2
+             WHERE vendor_id::text = ANY($1::text[])
+             ORDER BY day_of_week`,
+            [availabilityIds]
+          );
+          const rows = (va2DebugRows?.rows ?? []).slice(0, 25);
+          console.log(`[SLOTS] debug: VA2 total=${va2DebugRows?.rows?.length ?? 0}, dayOfWeek requested=${dayOfWeek}, sample=${JSON.stringify(rows)}`);
+        } catch (e: any) {
+          console.warn('[SLOTS] debug: VA2 lookup failed', e?.message);
+        }
+      }
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const requestedDateOnly = new Date(requestedDate);
@@ -1729,7 +1736,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                           lead_time_by_style, max_capacity, service_styles
                    FROM vendor_availability_v2
                    WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
-                     AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
+                     AND (
+                       (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
+                       OR COALESCE(service_style, service_type)::text = ANY($3::text[])
+                     )
                      AND COALESCE(is_available, is_enabled, true) = true
                    ORDER BY start_time`,
                   [availabilityIds, dayOfWeek, acceptableStylesForSlot]
@@ -4754,4 +4764,3 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     }
   });
 }
-
