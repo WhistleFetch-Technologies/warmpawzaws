@@ -241,7 +241,7 @@ export default function EventManagementPage() {
                     type="text"
                     placeholder="Search events..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                     className="px-4 py-2 pl-10 border border-gray-300 rounded-lg bg-white text-gray-900 focus:border-[#FF8C42] focus:ring-2 focus:ring-[#FF8C42]/20 outline-none text-sm w-64"
                   />
                 </div>

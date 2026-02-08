@@ -336,7 +336,7 @@ export function EnterpriseLogicTab() {
                   <input
                     type="text"
                     value={formData.companyName}
-                    onChange={(e) => setFormData(prev => ({ ...prev, companyName: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, companyName: e.target.value }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     placeholder="e.g., Tech Corp Inc."
                   />
@@ -346,7 +346,7 @@ export function EnterpriseLogicTab() {
                   <input
                     type="text"
                     value={formData.contactPerson}
-                    onChange={(e) => setFormData(prev => ({ ...prev, contactPerson: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, contactPerson: e.target.value }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     placeholder="John Doe"
                   />
@@ -359,7 +359,7 @@ export function EnterpriseLogicTab() {
                   <input
                     type="email"
                     value={formData.email}
-                    onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     placeholder="contact@company.com"
                   />
@@ -369,7 +369,7 @@ export function EnterpriseLogicTab() {
                   <input
                     type="tel"
                     value={formData.phone}
-                    onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                     placeholder="+91-XXXXXXXXXX"
                   />
@@ -381,7 +381,7 @@ export function EnterpriseLogicTab() {
                   <label className="block text-sm font-medium text-gray-700 mb-0">Plan</label>
                   <select
                     value={formData.plan}
-                    onChange={(e) => setFormData(prev => ({ ...prev, plan: e.target.value as any }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, plan: e.target.value as any }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   >
                     {PLANS.map(plan => (
@@ -393,7 +393,7 @@ export function EnterpriseLogicTab() {
                   <label className="block text-sm font-medium text-gray-700 mb-0">Status</label>
                   <select
                     value={formData.status}
-                    onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as any }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, status: e.target.value as any }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="active">Active</option>
@@ -410,7 +410,7 @@ export function EnterpriseLogicTab() {
                     type="number"
                     min="0"
                     value={formData.employeeCount}
-                    onChange={(e) => setFormData(prev => ({ ...prev, employeeCount: parseInt(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, employeeCount: parseInt(e.target.value) }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -420,7 +420,7 @@ export function EnterpriseLogicTab() {
                     type="number"
                     min="0"
                     value={formData.monthlyBudget}
-                    onChange={(e) => setFormData(prev => ({ ...prev, monthlyBudget: parseInt(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, monthlyBudget: parseInt(e.target.value) }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -432,7 +432,7 @@ export function EnterpriseLogicTab() {
                     max="100"
                     step="0.1"
                     value={formData.discountRate}
-                    onChange={(e) => setFormData(prev => ({ ...prev, discountRate: parseFloat(e.target.value) }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, discountRate: parseFloat(e.target.value) }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>

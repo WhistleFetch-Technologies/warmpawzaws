@@ -241,7 +241,7 @@ export function NotificationTemplateManager() {
                   <input
                     type="text"
                     value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -250,7 +250,7 @@ export function NotificationTemplateManager() {
                   <input
                     type="text"
                     value={formData.code}
-                    onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -260,7 +260,7 @@ export function NotificationTemplateManager() {
                 <label className="block text-sm font-medium text-gray-700 mb-0">Channel</label>
                 <select
                   value={formData.channel}
-                  onChange={(e) => setFormData(prev => ({ ...prev, channel: e.target.value as any }))}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, channel: e.target.value as any }))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                 >
                   <option value="email">Email</option>
@@ -276,7 +276,7 @@ export function NotificationTemplateManager() {
                   <input
                     type="text"
                     value={formData.subject}
-                    onChange={(e) => setFormData(prev => ({ ...prev, subject: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, subject: e.target.value }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   />
                 </div>
@@ -286,7 +286,7 @@ export function NotificationTemplateManager() {
                 <label className="block text-sm font-medium text-gray-700 mb-0">Body *</label>
                 <textarea
                   value={formData.body}
-                  onChange={(e) => setFormData(prev => ({ ...prev, body: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData(prev => ({ ...prev, body: e.target.value }))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   rows={8}
                   placeholder="Use {{variable}} for dynamic content"
@@ -298,7 +298,7 @@ export function NotificationTemplateManager() {
                 <input
                   type="text"
                   value={formData.variables}
-                  onChange={(e) => setFormData(prev => ({ ...prev, variables: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, variables: e.target.value }))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   placeholder="name, email, date"
                 />
@@ -309,7 +309,7 @@ export function NotificationTemplateManager() {
                   <input
                     type="checkbox"
                     checked={formData.isActive}
-                    onChange={(e) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
                     className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                   />
                   <span className="text-sm font-medium text-gray-700">Active Template</span>

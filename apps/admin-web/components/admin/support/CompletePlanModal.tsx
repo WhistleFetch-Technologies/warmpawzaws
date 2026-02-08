@@ -279,7 +279,7 @@ export function CompletePlanModal({
             <Label>Additional Context</Label>
             <Textarea
               value={context}
-              onChange={(e) => setContext(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setContext(e.target.value)}
               placeholder="Add any additional information about the pet's condition, requirements, or special needs..."
               rows={4}
               className="resize-none"

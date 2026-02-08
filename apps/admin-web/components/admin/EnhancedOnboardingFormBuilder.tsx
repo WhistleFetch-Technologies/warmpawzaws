@@ -163,7 +163,7 @@ export function EnhancedOnboardingFormBuilder({ formId, roleId, onBack }: Enhanc
                 <input
                   type="text"
                   value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormName(e.target.value)}
                   placeholder="e.g., Vet Onboarding Form"
                   className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-200 focus:border-orange-500"
                 />
@@ -252,7 +252,7 @@ export function EnhancedOnboardingFormBuilder({ formId, roleId, onBack }: Enhanc
                       <input
                         type="text"
                         value={editingField.label}
-                        onChange={(e) => updateField(editingField.id, { label: e.target.value })}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateField(editingField.id, { label: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
                       />
                     </div>
@@ -261,7 +261,7 @@ export function EnhancedOnboardingFormBuilder({ formId, roleId, onBack }: Enhanc
                       <input
                         type="text"
                         value={editingField.placeholder || ''}
-                        onChange={(e) => updateField(editingField.id, { placeholder: e.target.value })}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateField(editingField.id, { placeholder: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
                       />
                     </div>
@@ -280,7 +280,7 @@ export function EnhancedOnboardingFormBuilder({ formId, roleId, onBack }: Enhanc
                         <label className="block text-sm font-medium text-gray-700 mb-1">Options (one per line)</label>
                         <textarea
                           value={(editingField.options || []).join('\n')}
-                          onChange={(e) => updateField(editingField.id, { options: e.target.value.split('\n').filter(Boolean) })}
+                          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateField(editingField.id, { options: e.target.value.split('\n').filter(Boolean) })}
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm min-h-[100px]"
                           placeholder="Option 1&#10;Option 2&#10;Option 3"
                         />

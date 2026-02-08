@@ -69,7 +69,7 @@ export function ExportApplicationsModal({ isOpen, onClose }: ExportApplicationsM
             <label className="block text-sm font-medium text-gray-700 mb-0">Export Format</label>
             <select
               value={format}
-              onChange={(e) => setFormat(e.target.value as any)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormat(e.target.value as any)}
               className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             >
               <option value="csv">CSV</option>
@@ -82,7 +82,7 @@ export function ExportApplicationsModal({ isOpen, onClose }: ExportApplicationsM
             <label className="block text-sm font-medium text-gray-700 mb-0">Application Status</label>
             <select
               value={status}
-              onChange={(e) => setStatus(e.target.value as any)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setStatus(e.target.value as any)}
               className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             >
               <option value="all">All Applications</option>
@@ -98,7 +98,7 @@ export function ExportApplicationsModal({ isOpen, onClose }: ExportApplicationsM
               <input
                 type="date"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDateFrom(e.target.value)}
                 className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -107,7 +107,7 @@ export function ExportApplicationsModal({ isOpen, onClose }: ExportApplicationsM
               <input
                 type="date"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDateTo(e.target.value)}
                 className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>

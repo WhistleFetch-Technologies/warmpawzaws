@@ -334,7 +334,7 @@ export function IntegratedServicesManagement() {
                 <input
                   type="text"
                   value={formData.serviceName}
-                  onChange={(e) => setFormData(prev => ({ ...prev, serviceName: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, serviceName: e.target.value }))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   placeholder="e.g., Primary Payment Gateway"
                 />
@@ -344,7 +344,7 @@ export function IntegratedServicesManagement() {
                 <label className="block text-sm font-medium text-gray-700 mb-0">Category *</label>
                 <select
                   value={formData.category}
-                  onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value as any, provider: '' }))}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, category: e.target.value as any, provider: '' }))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                 >
                   {SERVICE_CATEGORIES.map(cat => (
@@ -357,7 +357,7 @@ export function IntegratedServicesManagement() {
                 <label className="block text-sm font-medium text-gray-700 mb-0">Provider *</label>
                 <select
                   value={formData.provider}
-                  onChange={(e) => setFormData(prev => ({ ...prev, provider: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, provider: e.target.value }))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                 >
                   <option value="">Select Provider</option>
@@ -372,7 +372,7 @@ export function IntegratedServicesManagement() {
                 <input
                   type="password"
                   value={formData.apiKey}
-                  onChange={(e) => setFormData(prev => ({ ...prev, apiKey: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, apiKey: e.target.value }))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   placeholder="Enter API key"
                 />
@@ -383,7 +383,7 @@ export function IntegratedServicesManagement() {
                 <input
                   type="password"
                   value={formData.apiSecret}
-                  onChange={(e) => setFormData(prev => ({ ...prev, apiSecret: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, apiSecret: e.target.value }))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   placeholder="Enter API secret"
                 />
@@ -394,7 +394,7 @@ export function IntegratedServicesManagement() {
                 <input
                   type="url"
                   value={formData.webhookUrl}
-                  onChange={(e) => setFormData(prev => ({ ...prev, webhookUrl: e.target.value }))}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, webhookUrl: e.target.value }))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   placeholder="https://api.warmpawz.com/webhooks/..."
                 />
@@ -405,7 +405,7 @@ export function IntegratedServicesManagement() {
                   <input
                     type="checkbox"
                     checked={formData.isActive}
-                    onChange={(e) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
                     className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                   />
                   <span className="text-sm font-medium text-gray-700">Active Integration</span>
