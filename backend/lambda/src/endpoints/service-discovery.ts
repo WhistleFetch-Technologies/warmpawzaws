@@ -23,6 +23,8 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
 import { resolveVendorById, getVendorIdsForAvailabilityLookup, getVendorIdentityId } from './vendor-profile';
+import { taxCalculationService } from '../lib/services/tax-calculation-service';
+import { discountCalculationService } from '../lib/services/discount-calculation-service';
 
 /**
  * Calculate distance between two coordinates (Haversine formula)
@@ -36,6 +38,26 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c; // Distance in km
+}
+
+/**
+ * Unified vendor photo URL: profile_photo_url (vendor profile upload) takes precedence,
+ * then profile_image, logo_url, then first facility photo from metadata.
+ * Use in all discovery endpoints so clinic/solo cards show photos consistently.
+ */
+function getVendorPhotoUrl(v: any): string | null {
+  if (!v) return null;
+  const url = v.profile_photo_url || v.profile_image || v.logo_url || null;
+  if (url && String(url).trim()) return url;
+  try {
+    const meta = v.metadata;
+    const m = typeof meta === 'string' ? (meta ? JSON.parse(meta) : {}) : meta || {};
+    const photos = m?.facility_photos || m?.photos;
+    const first = Array.isArray(photos) ? photos[0] : null;
+    return first && String(first).trim() ? first : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Map canonical role names to customer-facing discovery categories (align with CustomerHomeComplete tiles). */
@@ -791,21 +813,27 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             longitude: vendor.longitude,
             // ✅ FIX: Add distance and rating fields
             distance,
+            distanceKm: distance != null ? parseFloat((distance as number).toFixed(2)) : null,
             distanceText,
             rating: avgRating,
+            reviewCount: totalReviews,
             totalReviews,
             // ✅ ENRICHED: Consultation price for service provider discovery
             consultationFee,
             price: minPrice,
             // ✅ ENRICHED: Additional fields for UniversalVendorCard
             nextAvailableSlot,
+            nextAvailable: nextAvailableSlot ? { date: nextAvailableSlot.date, time: nextAvailableSlot.time, display: nextAvailableSlot.formattedDisplay } : null,
             nextAvailability: nextAvailableSlot?.formattedDisplay || null,
+            serviceStyles: serviceStyle ? [serviceStyle] : ['at_center', 'at_home', 'tele'],
+            vendorType: 'solo',
+            roleName: vendor.role_name || vendor.role_display_name || '',
             completedBookings,
             isVerified: vendor.is_verified ?? (vendor.status === 'approved'),
             isOnline: vendor.is_online ?? true,
             languages: vendor.languages ? (Array.isArray(vendor.languages) ? vendor.languages : JSON.parse(vendor.languages || '[]')) : ['English', 'Hindi'],
-            photoUrl: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
-            vendorProfileImage: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
+            photoUrl: getVendorPhotoUrl(vendor),
+            vendorProfileImage: getVendorPhotoUrl(vendor),
             specializations: vendor.specializations ? (Array.isArray(vendor.specializations) ? vendor.specializations : JSON.parse(vendor.specializations || '[]')) : [],
             // Phase 2: Gallery, price range, bestForProblem, hasPackages
             photos: photos.length > 0 ? photos : undefined,
@@ -962,8 +990,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             ? reviews.rows.reduce((sum: number, r: any) => sum + (r.rating || 0), 0) / reviews.rows.length
             : 0;
 
-          // Check availability - vendor_availability_v2 (canonical) with vendor_schedule_slots fallback
-          // Include vendor_identity.id so slots are found whether stored by vendor_id or vendor_identity_id
+          // Check availability - vendor_availability_v2 only (legacy vendor_schedule_slots removed)
           let isAvailableToday = false;
           try {
             const today = new Date();
@@ -977,18 +1004,6 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               [vendor.id, vendor.phone || '', dayOfWeek]
             );
             isAvailableToday = va2Check.rows.length > 0;
-            if (!isAvailableToday) {
-              const tableCheck = await query(
-                `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'vendor_schedule_slots')`
-              );
-              if (tableCheck.rows[0]?.exists) {
-                const vssCheck = await query(
-                  `SELECT 1 FROM vendor_schedule_slots WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2)) AND day_of_week = $3 AND is_enabled = true LIMIT 1`,
-                  [vendor.id, vendor.phone || '', dayOfWeek]
-                );
-                isAvailableToday = vssCheck.rows.length > 0;
-              }
-            }
           } catch (error: any) {
             console.warn('[Discover Services] availability check failed:', error.message);
             isAvailableToday = true;
@@ -1192,8 +1207,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               address: vendor.address,
             } : null,
             rating: avgRating,
+            reviewCount: reviews.rows.length,
             totalReviews: reviews.rows.length,
             totalOfferings: services.rows.length,
+            distanceKm: distance != null ? parseFloat((distance as number).toFixed(2)) : null,
+            serviceStyles: serviceStyle ? [serviceStyle] : ['at_center', 'at_home', 'tele'],
             featuredOfferings: services.rows.slice(0, 3).map((s: any) => ({
               id: s.id,
               name: s.name || s.service_name,
@@ -1216,14 +1234,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             topPromotion: activePromotions[0] || null,
             // ✅ ENRICHED: Additional fields for UniversalVendorCard
             nextAvailableSlot,
+            nextAvailable: nextAvailableSlot ? { date: nextAvailableSlot.date, time: nextAvailableSlot.time, display: nextAvailableSlot.formattedDisplay } : null,
             nextAvailability: nextAvailableSlot?.formattedDisplay || null,
             specializations,
             experience,
             completedBookings,
             languages,
             isVerified,
-            photoUrl: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
-            vendorProfileImage: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
+            photoUrl: getVendorPhotoUrl(vendor),
+            vendorProfileImage: getVendorPhotoUrl(vendor),
             // Phase 2: Gallery, price range, bestForProblem, hasPackages
             photos: photos.length > 0 ? photos : undefined,
             priceMin: priceMin > 0 ? priceMin : undefined,
@@ -1970,6 +1989,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vs.custom_description,
           vs.category,
           vs.sub_category,
+          vs.metadata as vs_metadata,
+          vs.publish_status,
           s.name as base_name,
           s.description as base_description,
           sc.service_name as catalog_name,
@@ -2003,14 +2024,31 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         const duration = row.custom_duration ?? row.duration_minutes ?? 30;
         const name = row.service_name || row.base_name || row.catalog_name || row.catalog_display_name || 'Service';
         const description = row.custom_description || row.base_description || row.catalog_description || '';
+        const shortDescription = description.length > 200 ? description.slice(0, 200) + '…' : description;
         const rawSpec = row.catalog_specialization_ids;
         const specializationIds = Array.isArray(rawSpec) ? rawSpec : (rawSpec != null ? [].concat(rawSpec) : []);
+        let metadata: any = {};
+        try {
+          metadata = typeof row.vs_metadata === 'string' ? (row.vs_metadata ? JSON.parse(row.vs_metadata) : {}) : (row.vs_metadata || {});
+        } catch (_) {}
+        const isPackage = !!metadata?.isPackage || metadata?.type === 'package';
+        const packageDetails = isPackage && (metadata?.totalSessions != null || metadata?.validityDays != null) ? {
+          totalSessions: metadata.totalSessions ?? null,
+          validityDays: metadata.validityDays ?? null,
+          sessionDuration: metadata.sessionDuration ?? duration,
+        } : undefined;
+        const taxCategoryId = metadata?.taxCategoryId ?? metadata?.tax_category ?? null;
+        const couponEligible = metadata?.couponEligible !== false;
         return {
           id: row.id,
+          serviceId: row.service_id,
           service_id: row.service_id,
           name,
           service_name: name,
+          shortDescription,
+          longDescription: description || null,
           description,
+          durationMinutes: duration,
           base_price: row.price != null ? parseFloat(row.price) : 0,
           price,
           custom_price: row.custom_price != null ? parseFloat(row.custom_price) : undefined,
@@ -2020,15 +2058,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           serviceStyle: row.service_style || 'at_center',
           specializationIds,
           specialization_ids: specializationIds,
+          isPackage,
+          packageDetails,
+          taxCategoryId,
+          couponEligible,
+          publishStatus: row.publish_status || 'published',
           isEnabled: true,
           requiresPetProfile: false,
           requiresAddress: false,
         };
       });
 
+      const services = formattedServices.filter((s: any) => !s.isPackage);
+      const packages = formattedServices.filter((s: any) => s.isPackage);
+
       return c.json({
         success: true,
-        services: formattedServices,
+        services,
+        packages,
         count: formattedServices.length
       });
 
@@ -2215,22 +2262,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const vendorResults = await query(vendorQuery, params);
       let vendors = vendorResults.rows;
 
-      // Enrich vendors with additional data
+      // Enrich vendors with unified card shape: photoUrl, specializations, nextAvailable, distanceText, serviceStyles
       const enrichedVendors = await Promise.all(
         vendors.map(async (vendor: any) => {
-          // Get average rating
           const reviews = await query(
             `SELECT AVG(rating) as avg_rating, COUNT(*) as review_count
              FROM reviews 
              WHERE vendor_id = $1 AND is_approved = true`,
             [vendor.id]
           );
-
           const avgRating = reviews.rows[0]?.avg_rating || 0;
           const reviewCount = reviews.rows[0]?.review_count || 0;
 
-          // Calculate distance if coordinates provided
-          let distance = null;
+          let distance: number | null = null;
           if (latitude && longitude && vendor.latitude && vendor.longitude) {
             distance = calculateDistance(
               parseFloat(latitude),
@@ -2239,26 +2283,82 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               parseFloat(vendor.longitude)
             );
           }
+          const distanceKm = distance != null ? parseFloat(distance.toFixed(2)) : null;
+          const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
 
-          // Get services count
-          const servicesCount = await query(
-            `SELECT COUNT(*) as count
-             FROM vendor_services vs
-             INNER JOIN services s ON vs.service_id = s.id
-             WHERE vs.vendor_id = $1 AND s.is_active = true AND vs.is_enabled = true`,
+          let specializations: string[] = [];
+          try {
+            const specRes = await query(`SELECT specialization FROM vendor_specializations WHERE vendor_id = $1`, [vendor.id]);
+            specializations = (specRes.rows || []).map((r: any) => r.specialization).filter(Boolean);
+          } catch (_) {}
+          if (specializations.length === 0 && vendor.specializations) {
+            specializations = Array.isArray(vendor.specializations) ? vendor.specializations : (typeof vendor.specializations === 'string' ? JSON.parse(vendor.specializations || '[]') : []);
+          }
+
+          let nextAvailable: { date: string; time: string; display: string } | null = null;
+          try {
+            const styleArray = serviceStyle === 'at_center' ? ['at_center', 'at_vendor'] : serviceStyle === 'tele' ? ['tele', 'online', 'video_consultation'] : [serviceStyle].filter(Boolean);
+            if (styleArray.length > 0) {
+              const today = new Date();
+              const dayOfWeek = today.getDay();
+              const va2 = await query(
+                `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
+                 FROM vendor_availability_v2
+                 WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
+                   AND COALESCE(is_enabled, is_available, true) = true
+                   AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[] OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))
+                 ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC LIMIT 1`,
+                [vendor.id, vendor.phone || '', styleArray]
+              );
+              if (va2.rows?.length > 0) {
+                const s = va2.rows[0];
+                let daysToAdd = s.day_of_week - dayOfWeek;
+                if (daysToAdd < 0) daysToAdd += 7;
+                const targetDate = new Date(today);
+                targetDate.setDate(targetDate.getDate() + daysToAdd);
+                const timeStr = (s.start_time || '09:00').toString().substring(0, 5);
+                const formatted = new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                nextAvailable = {
+                  date: targetDate.toISOString().split('T')[0],
+                  time: timeStr,
+                  display: daysToAdd === 0 ? `Today ${formatted}` : daysToAdd === 1 ? `Tomorrow ${formatted}` : `${targetDate.toLocaleDateString('en-US', { weekday: 'short' })} ${formatted}`,
+                };
+              }
+            }
+          } catch (_) {}
+
+          const servicesCountRes = await query(
+            `SELECT COUNT(*) as count FROM vendor_services vs WHERE vs.vendor_id = $1 AND vs.is_enabled = true AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)`,
             [vendor.id]
           );
+          const servicesCount = parseInt(servicesCountRes.rows[0]?.count || '0');
+          const minPriceRes = await query(
+            `SELECT MIN(COALESCE(custom_price, price)) as min_price FROM vendor_services WHERE vendor_id = $1 AND is_enabled = true AND (publish_status = 'published' OR publish_status IS NULL)`,
+            [vendor.id]
+          );
+          const minPrice = minPriceRes.rows[0]?.min_price != null ? parseFloat(minPriceRes.rows[0].min_price) : undefined;
+
+          const vendorType = vendor.vendor_type === 'solo' ? 'solo' : 'business';
+          const roleName = vendor.role_name || vendor.role_display_name || '';
 
           return {
-            ...vendor,
             id: vendor.id,
             vendorId: vendor.id,
             businessName: vendor.business_name,
             name: vendor.business_name || vendor.owner_name,
+            photoUrl: getVendorPhotoUrl(vendor),
             rating: parseFloat(avgRating) || 0,
             reviewCount: parseInt(reviewCount) || 0,
-            distance: distance ? parseFloat(distance.toFixed(2)) : null,
-            servicesCount: parseInt(servicesCount.rows[0]?.count || '0'),
+            distanceKm,
+            distance: distanceKm,
+            distanceText,
+            specializations,
+            nextAvailable,
+            serviceStyles: serviceStyle ? [serviceStyle] : ['at_center', 'at_home', 'tele'],
+            minPrice,
+            vendorType,
+            roleName,
+            servicesCount,
             priceRange: vendor.price_range || null,
             address: vendor.address,
             city: vendor.city,
@@ -2443,7 +2543,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         WHERE v.status = 'approved' AND v.is_active = true
           AND (
             (v.specializations IS NOT NULL AND v.specializations::text ILIKE $2) OR
-            (v.metadata IS NOT NULL AND v.metadata->'specializations' IS NOT NULL AND v.metadata->'specializations'::text ILIKE $2) OR
+            (v.metadata IS NOT NULL AND v.metadata->'specializations' IS NOT NULL AND (v.metadata->'specializations')::text ILIKE $2) OR
             EXISTS (SELECT 1 FROM vendor_specializations vs WHERE vs.vendor_id = v.id AND (vs.specialization = $1 OR vs.specialization ILIKE $2)) OR
             EXISTS (SELECT 1 FROM vendor_services s WHERE s.vendor_id = v.id AND s.is_enabled = true AND (s.service_name ILIKE $2 OR (s.custom_description IS NOT NULL AND s.custom_description::text ILIKE $2)))
           )
@@ -2484,9 +2584,74 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       const result = await query(queryText, params);
 
+      // Enrich with unified card shape: photoUrl, rating, reviewCount, specializations, nextAvailable, distanceText
+      const enriched = await Promise.all((result.rows || []).map(async (row: any) => {
+        const vendorId = row.id || row.vendor_id;
+        let rating = 0;
+        let reviewCount = 0;
+        try {
+          const rev = await query(`SELECT AVG(rating) as avg_rating, COUNT(*) as c FROM reviews WHERE vendor_id = $1 AND is_approved = true`, [vendorId]);
+          rating = parseFloat(rev.rows[0]?.avg_rating || '0');
+          reviewCount = parseInt(rev.rows[0]?.c || '0', 10);
+        } catch (_) {}
+        let specializations: string[] = [];
+        try {
+          const specRes = await query(`SELECT specialization FROM vendor_specializations WHERE vendor_id = $1`, [vendorId]);
+          specializations = (specRes.rows || []).map((r: any) => r.specialization).filter(Boolean);
+        } catch (_) {}
+        if (specializations.length === 0 && row.specializations) {
+          specializations = Array.isArray(row.specializations) ? row.specializations : (typeof row.specializations === 'string' ? JSON.parse(row.specializations || '[]') : []);
+        }
+        let nextAvailable: { date: string; time: string; display: string } | null = null;
+        try {
+          const today = new Date();
+          const dayOfWeek = today.getDay();
+          const va2 = await query(
+            `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
+             FROM vendor_availability_v2
+             WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
+               AND COALESCE(is_enabled, is_available, true) = true
+             ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC LIMIT 1`,
+            [vendorId, row.phone || '']
+          );
+          if (va2.rows?.length > 0) {
+            const s = va2.rows[0];
+            let daysToAdd = s.day_of_week - dayOfWeek;
+            if (daysToAdd < 0) daysToAdd += 7;
+            const targetDate = new Date(today);
+            targetDate.setDate(targetDate.getDate() + daysToAdd);
+            const timeStr = (s.start_time || '09:00').toString().substring(0, 5);
+            const formatted = new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+            nextAvailable = {
+              date: targetDate.toISOString().split('T')[0],
+              time: timeStr,
+              display: daysToAdd === 0 ? `Today ${formatted}` : daysToAdd === 1 ? `Tomorrow ${formatted}` : `${targetDate.toLocaleDateString('en-US', { weekday: 'short' })} ${formatted}`,
+            };
+          }
+        } catch (_) {}
+        const distanceKm = row.distance_km != null ? parseFloat(row.distance_km) : null;
+        const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
+        return {
+          id: vendorId,
+          vendorId,
+          name: row.business_name || row.owner_name,
+          photoUrl: getVendorPhotoUrl(row),
+          rating,
+          reviewCount,
+          distanceKm,
+          distanceText,
+          specializations,
+          nextAvailable,
+          vendorType: row.vendor_type === 'solo' ? 'solo' : 'business',
+          roleName: row.role_name || row.role_display_name || '',
+          serviceStyles: [], // discovery by problem does not filter by style; UI can infer from services
+          ...row,
+        };
+      }));
+
       return c.json({
         success: true,
-        results: result.rows,
+        results: enriched,
         roleConfig: roleId ? { roleId } : null,
       });
     } catch (error: any) {
@@ -3379,6 +3544,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             v.latitude,
             v.longitude,
             v.metadata,
+            v.profile_photo_url,
+            v.profile_image,
+            v.vendor_type,
             r.name as role_name,
             r.display_name as role_display_name,
             (SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id) as avg_rating,
@@ -3502,6 +3670,54 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             if (customerLat && customerLng && vendor.latitude && vendor.longitude) {
               distance = calculateDistance(customerLat, customerLng, parseFloat(vendor.latitude), parseFloat(vendor.longitude));
             }
+            const distanceKm = distance != null ? parseFloat((distance as number).toFixed(2)) : null;
+            const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
+
+            // Next available slot from vendor_availability_v2 (at_center)
+            let nextAvailable: { date: string; time: string; display: string } | null = null;
+            try {
+              const today = new Date();
+              const dayOfWeek = today.getDay();
+              const va2 = await query(
+                `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
+                 FROM vendor_availability_v2
+                 WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
+                   AND COALESCE(is_enabled, is_available, true) = true
+                   AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[] OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))
+                 ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC LIMIT 1`,
+                [vendor.vendor_id, (vendor as any).phone || '', acceptableStyles]
+              );
+              if (va2.rows?.length > 0) {
+                const s = va2.rows[0];
+                let daysToAdd = s.day_of_week - dayOfWeek;
+                if (daysToAdd < 0) daysToAdd += 7;
+                const targetDate = new Date(today);
+                targetDate.setDate(targetDate.getDate() + daysToAdd);
+                const timeStr = (s.start_time || '09:00').toString().substring(0, 5);
+                const formatted = new Date(`2000-01-01T${timeStr}`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                const isToday = daysToAdd === 0;
+                const isTomorrow = daysToAdd === 1;
+                nextAvailable = {
+                  date: targetDate.toISOString().split('T')[0],
+                  time: timeStr,
+                  display: isToday ? `Today ${formatted}` : isTomorrow ? `Tomorrow ${formatted}` : `${targetDate.toLocaleDateString('en-US', { weekday: 'short' })} ${formatted}`,
+                };
+              }
+            } catch (_) { /* non-fatal */ }
+
+            // Specializations from vendor_specializations
+            let specializations: string[] = [];
+            try {
+              const specRes = await query(`SELECT specialization FROM vendor_specializations WHERE vendor_id = $1`, [vendor.vendor_id]);
+              specializations = (specRes.rows || []).map((r: any) => r.specialization).filter(Boolean);
+            } catch (_) { /* non-fatal */ }
+            if (specializations.length === 0 && (vendor as any).metadata) {
+              try {
+                const m = typeof (vendor as any).metadata === 'string' ? JSON.parse((vendor as any).metadata) : (vendor as any).metadata;
+                const arr = m?.specializations;
+                if (Array.isArray(arr)) specializations = arr.slice(0, 5);
+              } catch (_) {}
+            }
 
             // Phase 2: photos, priceMin, priceMax, hasPackages, bestForProblem
             const servicePrices = (servicesResult.rows || []).map((s: any) => parseFloat(s.price || '0')).filter((p: number) => p > 0);
@@ -3521,19 +3737,33 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 photos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
               }
             } catch { /* continue */ }
+
+            const vendorType = (vendor as any).vendor_type === 'solo' ? 'solo' : 'business';
+            const roleName = (vendor as any).role_name || (vendor as any).role_display_name || '';
+
             return {
+              id: vendor.vendor_id,
+              vendorId: vendor.vendor_id,
               providerId: vendor.vendor_id,
               providerType: 'vendor',
-              vendorId: vendor.vendor_id,
               name: vendor.business_name || vendor.owner_name,
               phone: vendor.phone,
               address: vendor.address,
               city: vendor.city,
               role: vendor.role_display_name || vendor.role_name,
-              rating: parseFloat(vendor.avg_rating || '0').toFixed(1),
+              roleName,
+              vendorType,
+              photoUrl: getVendorPhotoUrl(vendor),
+              rating: parseFloat(vendor.avg_rating || '0'),
               reviewCount: parseInt(vendor.review_count || '0', 10),
-              distance: distance ? parseFloat(distance.toFixed(2)) : null,
-              isVerified: true, // Vendors don't need mobile verification
+              distance: distanceKm,
+              distanceKm,
+              distanceText,
+              nextAvailable,
+              specializations,
+              serviceStyles: acceptableStyles,
+              minPrice: priceMin > 0 ? priceMin : undefined,
+              isVerified: true,
               photos: photos.length > 0 ? photos : undefined,
               priceMin: priceMin > 0 ? priceMin : undefined,
               priceMax: priceMax > 0 && priceMax !== priceMin ? priceMax : undefined,
@@ -4211,8 +4441,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vendorName: vendor.business_name || vendor.owner_name,
           name: vendor.business_name || vendor.owner_name,
           phone: vendor.phone,
-          photo: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
-          photoUrl: vendor.profile_photo_url || vendor.profile_image || vendor.logo_url || null,
+          photo: getVendorPhotoUrl(vendor),
+          photoUrl: getVendorPhotoUrl(vendor),
           role: vendor.role_display_name || vendor.role_name,
           experienceYears: null,
           qualifications: null,
@@ -4402,6 +4632,125 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error fetching vendors:', error);
       return c.json({ error: error.message, success: false }, 500);
+    }
+  });
+
+  /**
+   * POST /customer/pricing/quote
+   * Returns server-calculated pricing: basePrice, tax, discount, finalPrice, taxBreakdown, coupon.
+   * Use in booking summary so UI always displays correct totals.
+   */
+  app.post("/customer/pricing/quote", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const serviceId = body.serviceId || body.service_id;
+      const vendorId = body.vendorId || body.vendor_id;
+      const customerId = body.customerId || body.customer_id;
+      const couponCode = (body.couponCode || body.coupon_code || '').trim() || undefined;
+
+      if (!serviceId || !vendorId) {
+        return c.json({ success: false, error: 'serviceId and vendorId are required' }, 400);
+      }
+
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) {
+        return c.json({ success: false, error: 'Vendor not found' }, 404);
+      }
+
+      let basePrice = 0;
+      let category = '';
+      let taxCategoryId: string | null = null;
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
+
+      const vsRow = await query(
+        `SELECT vs.id, vs.service_id, vs.price, vs.custom_price, vs.category, vs.metadata
+         FROM vendor_services vs
+         WHERE (vs.id = $1::uuid OR (vs.service_id = $1 AND vs.vendor_id = $2::uuid))
+           AND vs.vendor_id = $2::uuid AND vs.is_enabled = true`,
+        [serviceId, vendor.id]
+      );
+      if (vsRow.rows?.length > 0) {
+        const vs = vsRow.rows[0];
+        basePrice = vs.custom_price != null ? parseFloat(vs.custom_price) : parseFloat(vs.price || '0');
+        category = vs.category || '';
+        try {
+          const meta = typeof vs.metadata === 'string' ? (vs.metadata ? JSON.parse(vs.metadata) : {}) : (vs.metadata || {});
+          taxCategoryId = meta.taxCategoryId || meta.tax_category || null;
+        } catch (_) {}
+      } else {
+        const catalogRow = await query(
+          `SELECT id, base_price, category_id, category_name FROM service_catalog WHERE (service_id = $1 OR id = $1::uuid) AND status = 'active'`,
+          [serviceId]
+        );
+        if (catalogRow.rows?.length > 0) {
+          const sc = catalogRow.rows[0];
+          basePrice = parseFloat(sc.base_price || '0');
+          category = sc.category_name || sc.category_id || '';
+        }
+      }
+
+      if (basePrice <= 0) {
+        return c.json({ success: false, error: 'Could not resolve service price' }, 400);
+      }
+
+      const discountResult = await discountCalculationService.calculateDiscounts({
+        vendorId: vendor.id,
+        serviceIds: [serviceId],
+        originalAmount: basePrice,
+        customerId,
+        couponCode,
+        serviceCategory: category,
+      });
+
+      const amountAfterDiscount = discountResult.finalAmount;
+      const vendorLocation = vendor.state ? { state: vendor.state, city: vendor.city } : undefined;
+      const customerLocation = body.customerState ? { state: body.customerState, city: body.customerCity } : undefined;
+
+      const taxResult = await taxCalculationService.calculateTax({
+        items: [{
+          id: serviceId,
+          type: 'service',
+          amount: amountAfterDiscount,
+          quantity: 1,
+          category,
+          taxCategoryId: taxCategoryId || undefined,
+        }],
+        customerLocation,
+        vendorLocation,
+        vendorId: vendor.id,
+        serviceType: category,
+        category,
+      });
+
+      const tax = taxResult.totalTax;
+      const finalPrice = taxResult.grandTotal;
+      const taxBreakdown = (taxResult.hsnSummary || []).map((h: any) => ({
+        name: h.description || 'GST',
+        rate: h.gstRate,
+        amount: h.totalTax,
+      }));
+
+      const couponInfo = discountResult.appliedDiscounts.find((d: any) => d.type === 'coupon')
+        ? {
+            code: couponCode,
+            type: discountResult.appliedDiscounts.find((d: any) => d.type === 'coupon')?.discountType || 'percent',
+            value: discountResult.appliedDiscounts.find((d: any) => d.type === 'coupon')?.discountValue || 0,
+            applied: true,
+          }
+        : { applied: false };
+
+      return c.json({
+        success: true,
+        basePrice,
+        tax,
+        discount: discountResult.totalDiscountAmount,
+        finalPrice,
+        taxBreakdown,
+        coupon: couponInfo,
+      });
+    } catch (error: any) {
+      console.error('Error in /customer/pricing/quote:', error);
+      return c.json({ success: false, error: error?.message || 'Pricing quote failed' }, 500);
     }
   });
 }

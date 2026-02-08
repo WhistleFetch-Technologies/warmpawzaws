@@ -194,67 +194,109 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
 
   /**
    * GET /bookings/available-slots
-   * Get available time slots for booking (customer-facing endpoint)
+   * Get available time slots for booking (customer-facing endpoint).
+   * Uses vendor_availability_v2 only (legacy vendor_schedules removed).
    */
   app.get("/bookings/available-slots", async (c) => {
     try {
       const vendorId = c.req.query('vendorId');
       const date = c.req.query('date');
-      const serviceId = c.req.query('serviceId');
-      const serviceStyle = c.req.query('serviceStyle') || 'at_center';
-      const staffId = c.req.query('staffId');
+      const rawStyle = (c.req.query('serviceStyle') || 'at_center').toString().toLowerCase();
 
       if (!vendorId || !date) {
         return c.json({ error: 'vendorId and date are required' }, 400);
       }
 
-      // Check if vendor_schedules table exists
-      const tableCheck = await query(
-        `SELECT EXISTS (
-          SELECT FROM information_schema.tables 
-          WHERE table_schema = 'public' 
-          AND table_name = 'vendor_schedules'
-        )`
-      );
-      
+      // Normalize legacy styles: at_vendor → at_center, online → tele
+      const serviceStyle =
+        rawStyle === 'at_vendor' || rawStyle === 'at_center' ? 'at_center'
+          : rawStyle === 'tele' || rawStyle === 'online' || rawStyle === 'video_consultation' ? 'tele'
+          : rawStyle === 'at_home' ? 'at_home'
+          : 'at_center';
+
+      const requestedDate = new Date(date);
+      const dayOfWeek = requestedDate.getDay();
+
       let slots: any[] = [];
-      
-      if (tableCheck.rows[0]?.exists) {
-        // Get vendor schedule for the date
-        const requestedDate = new Date(date);
-        const dayOfWeek = requestedDate.getDay();
+      const vendor = await resolveVendorById(vendorId);
+      if (vendor) {
+        const availabilityIds = await getVendorIdsForAvailabilityLookup(vendor.id);
+        const acceptableStyles =
+          serviceStyle === 'at_center' ? ['at_center', 'at_vendor']
+            : serviceStyle === 'tele' ? ['tele', 'online', 'video_consultation']
+            : [serviceStyle];
 
         try {
-          const scheduleResult = await query(
-            `SELECT DISTINCT start_time, end_time
-             FROM vendor_schedules
-             WHERE vendor_id::text = $1::text
-             AND day_of_week = $2
-             AND is_available = true
-             ${staffId ? `AND staff_id::text = $3::text` : ''}
-             ORDER BY start_time`,
-            staffId ? [vendorId, dayOfWeek, staffId] : [vendorId, dayOfWeek]
-          );
+          let rows: any[] = [];
+          try {
+            const va2Result = await query(
+                `SELECT time_window_start, time_window_end, start_time, end_time,
+                        COALESCE(slot_duration_minutes, 30) as slot_duration_minutes
+                 FROM vendor_availability_v2
+                 WHERE vendor_id::text = ANY($1::text[])
+                   AND day_of_week = $2
+                   AND (
+                     (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
+                     OR COALESCE(service_style, service_type)::text = ANY($3::text[])
+                   )
+                   AND COALESCE(is_available, is_enabled, true) = true
+                 ORDER BY COALESCE(time_window_start, start_time)`,
+                [availabilityIds, dayOfWeek, acceptableStyles]
+              );
+              rows = va2Result?.rows || [];
+            } catch (colErr: any) {
+              // 006 schema: service_style only, no service_styles
+              const va206 = await query(
+                `SELECT time_window_start, time_window_end,
+                        time_window_start as start_time, time_window_end as end_time,
+                        30 as slot_duration_minutes
+                 FROM vendor_availability_v2
+                 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
+                   AND service_style::text = ANY($3::text[])
+                   AND (is_enabled = true OR is_enabled IS NULL)
+                 ORDER BY time_window_start`,
+                [availabilityIds, dayOfWeek, acceptableStyles]
+              );
+              rows = va206?.rows || [];
+            }
 
-          slots = scheduleResult.rows.map((row: any) => ({
-            time: row.start_time,
-            available: true,
-          }));
-        } catch (error: any) {
-          // If query fails, return default slots
-          console.warn('[Available Slots] vendor_schedules query failed:', error.message);
-          slots = generateDefaultSlots();
+            const timeToMinutes = (t: string): number => {
+              const s = typeof t === 'string' ? t.substring(0, 5) : String(t);
+              const [h, m] = s.split(':').map(Number);
+              return (h || 0) * 60 + (m || 0);
+            };
+
+            for (const row of rows) {
+              const startTime = row.time_window_start || row.start_time;
+              const endTime = row.time_window_end || row.end_time;
+              if (!startTime || !endTime) continue;
+              const slotDuration = Number(row.slot_duration_minutes) || 30;
+              const winStart = timeToMinutes(startTime);
+              const winEnd = timeToMinutes(endTime);
+              let current = winStart;
+              while (current + slotDuration <= winEnd) {
+                const timeStr = `${String(Math.floor(current / 60)).padStart(2, '0')}:${String(current % 60).padStart(2, '0')}`;
+                slots.push({ time: timeStr, available: true });
+                current += slotDuration;
+              }
+            }
+
+          slots = slots.sort((a: any, b: any) => (a.time || '').localeCompare(b.time || ''));
+        } catch (va2Err: any) {
+          console.warn('[bookings/available-slots] vendor_availability_v2 failed:', va2Err?.message);
         }
-      } else {
-        // Table doesn't exist, return default slots
+      }
+
+      if (slots.length === 0) {
         slots = generateDefaultSlots();
       }
 
       return c.json({
         success: true,
-        slots: slots,
-        date: date,
-        vendorId: vendorId,
+        slots,
+        date,
+        vendorId,
+        serviceStyle,
       });
     } catch (error: any) {
       console.error('Error fetching available slots:', error);
@@ -270,7 +312,13 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
     try {
       const bookingId = c.req.query('bookingId');
       const date = c.req.query('date');
-      const serviceStyle = c.req.query('serviceStyle') || 'at_center';
+      const rawStyle = (c.req.query('serviceStyle') || 'at_center').toString().toLowerCase();
+      // Normalize legacy styles so reschedule sees same slots as customer flow
+      const serviceStyle =
+        rawStyle === 'at_vendor' || rawStyle === 'at_center' ? 'at_center'
+          : rawStyle === 'tele' || rawStyle === 'online' || rawStyle === 'video_consultation' ? 'tele'
+          : rawStyle === 'at_home' ? 'at_home'
+          : 'at_center';
 
       if (!bookingId) {
         return c.json({ error: 'bookingId is required' }, 400);
@@ -303,7 +351,10 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
             return d.toISOString().split('T')[0];
           });
 
-      const styleArray = [serviceStyle];
+      const styleArray =
+        serviceStyle === 'at_center' ? ['at_center', 'at_vendor']
+          : serviceStyle === 'tele' ? ['tele', 'online', 'video_consultation']
+          : [serviceStyle];
 
       const allSlots: any[] = [];
 

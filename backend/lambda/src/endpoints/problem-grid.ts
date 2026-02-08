@@ -634,7 +634,6 @@ export function registerProblemGridEndpoints(app: Hono) {
           v.business_name as vendor_name,
           v.profile_photo_url,
           v.profile_image,
-          v.logo_url,
           v.metadata as vendor_metadata,
           COALESCE(AVG(rev.rating), 0) as vendor_rating,
           COUNT(DISTINCT rev.id) as vendor_reviews,
@@ -688,7 +687,7 @@ export function registerProblemGridEndpoints(app: Hono) {
       servicesQuery += `
         GROUP BY vs.id, vs.service_name, vs.price, vs.duration_minutes, vs.service_style,
                  vs.vendor_id, v.business_name, v.city, v.state, vs.created_at,
-                 v.profile_photo_url, v.profile_image, v.logo_url, v.metadata, v.latitude, v.longitude
+                 v.profile_photo_url, v.profile_image, v.metadata, v.latitude, v.longitude
         ORDER BY vendor_rating DESC, vs.created_at DESC
         LIMIT 50
       `;
@@ -728,7 +727,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           relevanceScore: 1.0,
           id: `${service.vendor_id}_${service.service_id}`,
           type: 'vendor',
-          photo: service.profile_photo_url || service.profile_image || (service.vendor_metadata && service.vendor_metadata.logo_url),
+          photo: service.profile_photo_url || service.profile_image || (service.vendor_metadata && (service.vendor_metadata.logo_url || (Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0]) || null)) || null,
           rating: parseFloat(service.vendor_rating || '0'),
           reviewCount: parseInt(service.vendor_reviews || '0'),
           specializations: specMap[service.vendor_id] || [],

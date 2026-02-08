@@ -2464,9 +2464,8 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
           (SELECT COUNT(*) FROM reviews rv WHERE rv.vendor_id = v.id) as review_count,
           -- Last active
           GREATEST(v.updated_at, (SELECT MAX(created_at) FROM bookings b WHERE b.vendor_id = v.id)) as last_activity,
-          -- Discovery health: availability (vendor_availability_v2 or vendor_schedule_slots)
-          (EXISTS (SELECT 1 FROM vendor_availability_v2 va WHERE va.vendor_id = v.id AND va.is_enabled = true) 
-           OR EXISTS (SELECT 1 FROM vendor_schedule_slots vss WHERE vss.vendor_id = v.id AND vss.is_enabled = true)
+          -- Discovery health: availability (vendor_availability_v2 only)
+          (EXISTS (SELECT 1 FROM vendor_availability_v2 va WHERE va.vendor_id = v.id AND COALESCE(va.is_enabled, va.is_available, true) = true)
           ) as has_availability
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
