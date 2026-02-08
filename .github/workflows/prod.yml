@@ -248,6 +248,7 @@ jobs:
           )
           
           echo "Adding GitHub Actions IP ranges to security group..."
+          RULES_ADDED=0
           for CIDR in "${GITHUB_IPS[@]}"; do
             # Check if rule already exists
             EXISTING=$(aws ec2 describe-security-group-rules \
@@ -257,17 +258,37 @@ jobs:
             
             if [ -z "$EXISTING" ] || [ "$EXISTING" == "None" ]; then
               echo "  Adding $CIDR..."
-              aws ec2 authorize-security-group-ingress \
+              if aws ec2 authorize-security-group-ingress \
                 --group-id "$RDS_SG_ID" \
                 --protocol tcp \
                 --port 5432 \
                 --cidr "$CIDR" \
                 --region ap-south-1 \
-                --description "GitHub Actions CI/CD migrations" 2>/dev/null || echo "    (may already exist)"
+                --description "GitHub Actions CI/CD migrations" 2>&1; then
+                echo "    ✅ Added successfully"
+                RULES_ADDED=$((RULES_ADDED + 1))
+              else
+                echo "    ⚠️ Failed to add (check error above)"
+              fi
             else
-              echo "  $CIDR already allowed"
+              echo "  ✅ $CIDR already allowed"
             fi
           done
+          
+          if [ $RULES_ADDED -eq 0 ]; then
+            echo "⚠️ No new rules were added. Verifying existing rules..."
+            EXISTING_RULES=$(aws ec2 describe-security-group-rules \
+              --filters "Name=group-id,Values=$RDS_SG_ID" \
+              --query 'SecurityGroupRules[?IsEgress==`false` && IpProtocol==`tcp` && FromPort==`5432` && CidrIpv4!=`null`].CidrIpv4' \
+              --output text --region ap-south-1 2>/dev/null || echo "")
+            if [ -z "$EXISTING_RULES" ]; then
+              echo "❌ ERROR: No CIDR rules found in security group. Rules may not have been added successfully."
+              echo "   Security Group: $RDS_SG_ID"
+              echo "   This will cause connection failures."
+            else
+              echo "✅ Found existing CIDR rules: $EXISTING_RULES"
+            fi
+          fi
           echo "✅ RDS security group configured for GitHub Actions"
           echo "   Note: Using direct cluster endpoint for migrations (like dev), not proxy"
       - name: Get database URL
