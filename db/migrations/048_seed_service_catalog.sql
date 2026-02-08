@@ -6,17 +6,65 @@
 -- ============================================================================
 
 -- Create service_categories table if not exists
-CREATE TABLE IF NOT EXISTS service_categories (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    category_id TEXT UNIQUE NOT NULL,
-    name TEXT NOT NULL,
-    description TEXT,
-    icon TEXT,
-    display_order INTEGER DEFAULT 0,
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- CRITICAL: Ensure category_id column exists (migration 001 may have created table without it)
+DO $$ 
+BEGIN
+    -- Create table if it doesn't exist
+    CREATE TABLE IF NOT EXISTS service_categories (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        category_id TEXT UNIQUE,
+        name TEXT NOT NULL,
+        description TEXT,
+        icon TEXT,
+        display_order INTEGER DEFAULT 0,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    
+    -- Add category_id column if it doesn't exist (for tables created by migration 001)
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'service_categories' AND column_name = 'category_id'
+    ) THEN
+        ALTER TABLE service_categories ADD COLUMN category_id TEXT;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_service_categories_category_id 
+            ON service_categories(category_id) WHERE category_id IS NOT NULL;
+    END IF;
+    
+    -- Add is_active column if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'service_categories' AND column_name = 'is_active'
+    ) THEN
+        ALTER TABLE service_categories ADD COLUMN is_active BOOLEAN DEFAULT true;
+    END IF;
+    
+    -- Add icon column if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'service_categories' AND column_name = 'icon'
+    ) THEN
+        ALTER TABLE service_categories ADD COLUMN icon TEXT;
+    END IF;
+    
+    -- Add updated_at column if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'service_categories' AND column_name = 'updated_at'
+    ) THEN
+        ALTER TABLE service_categories ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
+    END IF;
+    
+    -- Drop parent_category_id if it exists (from migration 001/002 - causes conflicts)
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'service_categories' AND column_name = 'parent_category_id'
+    ) THEN
+        ALTER TABLE service_categories DROP CONSTRAINT IF EXISTS service_categories_parent_fkey CASCADE;
+        ALTER TABLE service_categories DROP COLUMN parent_category_id CASCADE;
+    END IF;
+END $$;
 
 -- Seed service categories
 INSERT INTO service_categories (category_id, name, description, display_order, is_active) VALUES
