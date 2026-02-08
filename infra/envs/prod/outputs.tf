@@ -30,6 +30,17 @@ output "rds_secret_arn" {
   value       = module.rds.secret_arn
 }
 
+output "rds_security_group_id" {
+  description = "RDS security group ID (for adding GitHub Actions IP ranges)"
+  value       = module.rds.security_group_id
+}
+
+output "rds_proxy_endpoint" {
+  description = "RDS Proxy endpoint (for migrations from within VPC)"
+  value       = module.rds.proxy_endpoint
+  sensitive   = true
+}
+
 output "api_endpoint" {
   description = "API Gateway endpoint"
   value       = module.api_gateway.stage_invoke_url
