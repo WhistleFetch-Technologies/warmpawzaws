@@ -279,7 +279,7 @@ export function AdminPaymentSettings() {
                 <Input
                   type="number"
                   value={refundConfig.reconcilePeriod}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setRefundConfig({
                       ...refundConfig,
                       reconcilePeriod: parseInt(e.target.value),
@@ -387,7 +387,7 @@ export function AdminPaymentSettings() {
                     <Label>Razorpay Key ID</Label>
                     <Input
                       value={razorpayConfig.keyId}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         setRazorpayConfig({ ...razorpayConfig, keyId: e.target.value })
                       }
                       placeholder="rzp_test_..."
@@ -399,7 +399,7 @@ export function AdminPaymentSettings() {
                     <Input
                       type="password"
                       value={razorpayConfig.keySecret}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         setRazorpayConfig({ ...razorpayConfig, keySecret: e.target.value })
                       }
                       placeholder="Enter key secret"
@@ -411,7 +411,7 @@ export function AdminPaymentSettings() {
                     <Input
                       type="password"
                       value={razorpayConfig.webhookSecret}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         setRazorpayConfig({ ...razorpayConfig, webhookSecret: e.target.value })
                       }
                       placeholder="Enter webhook secret"

@@ -190,7 +190,7 @@ export function SettlementScheduleSettings() {
               <Label>Schedule Type</Label>
               <select
                 value={settings.scheduleType}
-                onChange={(e) =>
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setSettings({
                     ...settings,
                     scheduleType: e.target.value as any,
@@ -213,7 +213,7 @@ export function SettlementScheduleSettings() {
                   min="1"
                   max={settings.scheduleType === 'weekly' ? 7 : 31}
                   value={settings.scheduleDay}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setSettings({
                       ...settings,
                       scheduleDay: parseInt(e.target.value),
@@ -228,7 +228,7 @@ export function SettlementScheduleSettings() {
               <Input
                 type="time"
                 value={settings.scheduleTime}
-                onChange={(e) =>
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setSettings({
                     ...settings,
                     scheduleTime: e.target.value,
@@ -273,7 +273,7 @@ export function SettlementScheduleSettings() {
               <Input
                 type="number"
                 value={settings.minPayoutAmount}
-                onChange={(e) =>
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setSettings({
                     ...settings,
                     minPayoutAmount: parseFloat(e.target.value),
@@ -289,7 +289,7 @@ export function SettlementScheduleSettings() {
               <Label>Timezone</Label>
               <select
                 value={settings.timezone}
-                onChange={(e) => setSettings({ ...settings, timezone: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings({ ...settings, timezone: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
               >
                 <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>

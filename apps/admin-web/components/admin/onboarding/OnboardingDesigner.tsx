@@ -548,7 +548,7 @@ function FieldEditModal({
             <Label className="text-gray-900 font-medium">Field Label *</Label>
             <Input
               value={formData.label}
-              onChange={(e) => setFormData({ ...formData, label: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, label: e.target.value })}
               placeholder="e.g., Business Name"
               className="bg-white border-gray-300 text-gray-900"
             />
@@ -558,7 +558,7 @@ function FieldEditModal({
             <Label className="text-gray-900 font-medium">Field Type *</Label>
             <select
               value={formData.type}
-              onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, type: e.target.value as any })}
               className="w-full h-9 px-3 py-2 text-sm border border-gray-300 rounded-md bg-white text-gray-900"
             >
               <option value="text">Text</option>
@@ -581,7 +581,7 @@ function FieldEditModal({
             <Label className="text-gray-900 font-medium">Placeholder</Label>
             <Input
               value={formData.placeholder || ''}
-              onChange={(e) => setFormData({ ...formData, placeholder: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, placeholder: e.target.value })}
               placeholder="Enter placeholder text"
               className="bg-white border-gray-300 text-gray-900"
             />
@@ -592,7 +592,7 @@ function FieldEditModal({
               <Label>Options (comma-separated)</Label>
               <Textarea
                 value={formData.options?.join(', ') || ''}
-                onChange={(e) => setFormData({
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({
                   ...formData,
                   options: e.target.value.split(',').map(o => o.trim()).filter(Boolean),
                 })}
@@ -607,7 +607,7 @@ function FieldEditModal({
               <Label className="text-gray-900 font-medium">Declaration Text *</Label>
               <Textarea
                 value={formData.declarationText || ''}
-                onChange={(e) => setFormData({ ...formData, declarationText: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, declarationText: e.target.value })}
                 placeholder="Enter the declaration text that vendors must agree to..."
                 rows={4}
                 className="bg-white border-gray-300 text-gray-900"

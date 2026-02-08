@@ -179,7 +179,7 @@ export function VendorPromotionsOverview({ onBack }: VendorPromotionsOverviewPro
               <Input
                 placeholder="Search by name, code, or vendor..."
                 value={filter.search}
-                onChange={(e) => setFilter({ ...filter, search: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFilter({ ...filter, search: e.target.value })}
                 className="pl-10"
               />
             </div>

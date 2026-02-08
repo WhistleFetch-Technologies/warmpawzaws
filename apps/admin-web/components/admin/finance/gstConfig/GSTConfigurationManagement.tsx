@@ -297,7 +297,7 @@ export function GSTConfigurationManagement() {
                 type="text"
                 placeholder="Search HSN codes..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                 className="pl-10"
               />
             </div>
@@ -463,7 +463,7 @@ export function GSTConfigurationManagement() {
                 <Label>HSN Code</Label>
                 <Input
                   value={editingHSN.code}
-                  onChange={(e) => setEditingHSN({ ...editingHSN, code: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingHSN({ ...editingHSN, code: e.target.value })}
                   placeholder="e.g., 12345678"
                 />
               </div>
@@ -471,7 +471,7 @@ export function GSTConfigurationManagement() {
                 <Label>Description</Label>
                 <Input
                   value={editingHSN.description}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setEditingHSN({ ...editingHSN, description: e.target.value })
                   }
                   placeholder="Product/service description"
@@ -481,7 +481,7 @@ export function GSTConfigurationManagement() {
                 <Label>Tax Category</Label>
                 <select
                   value={editingHSN.categoryId || ''}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setEditingHSN({
                       ...editingHSN,
                       categoryId: e.target.value || undefined,
@@ -504,7 +504,7 @@ export function GSTConfigurationManagement() {
                 <Input
                   type="number"
                   value={editingHSN.gstRate}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setEditingHSN({ ...editingHSN, gstRate: parseFloat(e.target.value) })
                   }
                 />
@@ -550,7 +550,7 @@ export function GSTConfigurationManagement() {
                 <Label>Category Name</Label>
                 <Input
                   value={editingCategory.name}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setEditingCategory({ ...editingCategory, name: e.target.value })
                   }
                   placeholder="e.g., Pet Services"
@@ -560,7 +560,7 @@ export function GSTConfigurationManagement() {
                 <Label>Description</Label>
                 <Input
                   value={editingCategory.description}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setEditingCategory({ ...editingCategory, description: e.target.value })
                   }
                   placeholder="Category description"
@@ -571,7 +571,7 @@ export function GSTConfigurationManagement() {
                 <Input
                   type="number"
                   value={editingCategory.defaultGSTRate}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setEditingCategory({
                       ...editingCategory,
                       defaultGSTRate: parseFloat(e.target.value),

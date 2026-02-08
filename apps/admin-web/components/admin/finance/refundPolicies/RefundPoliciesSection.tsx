@@ -547,7 +547,7 @@ export function RefundPoliciesSection() {
                 <Label>Tier Name *</Label>
                 <Input
                   value={editingTier.name}
-                  onChange={(e) => setEditingTier({ ...editingTier, name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingTier({ ...editingTier, name: e.target.value })}
                   placeholder="e.g., Standard Refund Policy"
                 />
               </div>
@@ -573,7 +573,7 @@ export function RefundPoliciesSection() {
                 <Label>Service Location</Label>
                 <select
                   value={editingTier.serviceLocation}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setEditingTier({
                       ...editingTier,
                       serviceLocation: e.target.value as ServiceLocationValue,
@@ -594,7 +594,7 @@ export function RefundPoliciesSection() {
                 <Label>Who cancels</Label>
                 <select
                   value={editingTier.cancelledBy ?? 'pet_parent'}
-                  onChange={(e) => {
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     const v = (e.target.value as CancelledByValue) || 'pet_parent';
                     setEditingTier({
                       ...editingTier,
@@ -666,7 +666,7 @@ export function RefundPoliciesSection() {
                       <Label>Cancellation window (customer)</Label>
                       <select
                         value={editingTier.cancellationWindow ?? '24_plus'}
-                        onChange={(e) =>
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                           setEditingTier({
                             ...editingTier,
                             cancellationWindow: e.target.value as CustomerCancellationWindow,
@@ -690,7 +690,7 @@ export function RefundPoliciesSection() {
                         <Label>Operator</Label>
                         <select
                           value={editingTier.hoursOperator ?? 'gte'}
-                          onChange={(e) =>
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                             setEditingTier({
                               ...editingTier,
                               hoursOperator: e.target.value as HoursOperator,
@@ -711,7 +711,7 @@ export function RefundPoliciesSection() {
                           type="number"
                           min={0}
                           value={editingTier.hoursThreshold ?? ''}
-                          onChange={(e) => {
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                             const v = parseFloat(e.target.value);
                             setEditingTier({
                               ...editingTier,
@@ -733,7 +733,7 @@ export function RefundPoliciesSection() {
                   <Label>Vendor cancellation reason</Label>
                   <select
                     value={editingTier.vendorCancellationReason ?? 'operational'}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditingTier({
                         ...editingTier,
                         vendorCancellationReason: e.target.value as VendorCancellationReason,
@@ -759,7 +759,7 @@ export function RefundPoliciesSection() {
                     min={0}
                     max={100}
                     value={Number.isFinite(editingTier.refundPercentage) ? editingTier.refundPercentage : ''}
-                    onChange={(e) => {
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                       const raw = e.target.value;
                       const v = parseFloat(raw);
                       // Allow 0 explicitly; use previous value when clearing (empty string)
@@ -777,7 +777,7 @@ export function RefundPoliciesSection() {
                     type="number"
                     min={0}
                     value={Number.isFinite(editingTier.cancellationFee) ? editingTier.cancellationFee : ''}
-                    onChange={(e) => {
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                       const v = parseFloat(e.target.value);
                       setEditingTier({
                         ...editingTier,

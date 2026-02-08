@@ -414,7 +414,7 @@ export function LoyaltySegmentsManagement() {
               <Input
                 id="segment_name"
                 value={formData.segment_name}
-                onChange={(e) =>
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setFormData((prev) => ({ ...prev, segment_name: e.target.value }))
                 }
                 placeholder="e.g., Medicine Buyers, Gold Tier Customers"
@@ -445,7 +445,7 @@ export function LoyaltySegmentsManagement() {
               <Textarea
                 id="description"
                 value={formData.description}
-                onChange={(e) =>
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setFormData((prev) => ({ ...prev, description: e.target.value }))
                 }
                 placeholder="Describe this segment..."
@@ -477,7 +477,7 @@ export function LoyaltySegmentsManagement() {
                 id="priority"
                 type="number"
                 value={formData.priority}
-                onChange={(e) =>
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setFormData((prev) => ({
                     ...prev,
                     priority: parseInt(e.target.value) || 100,
@@ -509,7 +509,7 @@ export function LoyaltySegmentsManagement() {
                 <Label>Service Categories (comma-separated)</Label>
                 <Input
                   value={formData.criteria.service_categories?.join(', ') || ''}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     updateCriteria(
                       'service_categories',
                       e.target.value
@@ -526,7 +526,7 @@ export function LoyaltySegmentsManagement() {
                 <Label>Customer Tiers (comma-separated)</Label>
                 <Input
                   value={formData.criteria.customer_tiers?.join(', ') || ''}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     updateCriteria(
                       'customer_tiers',
                       e.target.value
@@ -548,7 +548,7 @@ export function LoyaltySegmentsManagement() {
                     <Input
                       type="number"
                       value={formData.criteria.purchase_history?.min_purchases || ''}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         updateCriteria('purchase_history', {
                           ...formData.criteria.purchase_history,
                           min_purchases: e.target.value ? parseInt(e.target.value) : undefined,
@@ -562,7 +562,7 @@ export function LoyaltySegmentsManagement() {
                     <Input
                       type="number"
                       value={formData.criteria.purchase_history?.max_purchases || ''}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         updateCriteria('purchase_history', {
                           ...formData.criteria.purchase_history,
                           max_purchases: e.target.value ? parseInt(e.target.value) : undefined,
@@ -576,7 +576,7 @@ export function LoyaltySegmentsManagement() {
                     <Input
                       type="number"
                       value={formData.criteria.purchase_history?.min_amount || ''}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         updateCriteria('purchase_history', {
                           ...formData.criteria.purchase_history,
                           min_amount: e.target.value ? parseFloat(e.target.value) : undefined,
@@ -590,7 +590,7 @@ export function LoyaltySegmentsManagement() {
                     <Input
                       type="number"
                       value={formData.criteria.purchase_history?.max_amount || ''}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         updateCriteria('purchase_history', {
                           ...formData.criteria.purchase_history,
                           max_amount: e.target.value ? parseFloat(e.target.value) : undefined,
@@ -611,7 +611,7 @@ export function LoyaltySegmentsManagement() {
                     <Input
                       type="date"
                       value={formData.criteria.registration_date?.after || ''}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         updateCriteria('registration_date', {
                           ...formData.criteria.registration_date,
                           after: e.target.value || undefined,
@@ -624,7 +624,7 @@ export function LoyaltySegmentsManagement() {
                     <Input
                       type="date"
                       value={formData.criteria.registration_date?.before || ''}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         updateCriteria('registration_date', {
                           ...formData.criteria.registration_date,
                           before: e.target.value || undefined,
@@ -644,7 +644,7 @@ export function LoyaltySegmentsManagement() {
                     <Input
                       type="number"
                       value={formData.criteria.pet_count?.min || ''}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         updateCriteria('pet_count', {
                           ...formData.criteria.pet_count,
                           min: e.target.value ? parseInt(e.target.value) : undefined,
@@ -659,7 +659,7 @@ export function LoyaltySegmentsManagement() {
                     <Input
                       type="number"
                       value={formData.criteria.pet_count?.max || ''}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         updateCriteria('pet_count', {
                           ...formData.criteria.pet_count,
                           max: e.target.value ? parseInt(e.target.value) : undefined,
@@ -680,7 +680,7 @@ export function LoyaltySegmentsManagement() {
                     <Label className="text-xs">Cities (comma-separated)</Label>
                     <Input
                       value={formData.criteria.location?.cities?.join(', ') || ''}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         updateCriteria('location', {
                           ...formData.criteria.location,
                           cities: e.target.value
@@ -696,7 +696,7 @@ export function LoyaltySegmentsManagement() {
                     <Label className="text-xs">States (comma-separated)</Label>
                     <Input
                       value={formData.criteria.location?.states?.join(', ') || ''}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         updateCriteria('location', {
                           ...formData.criteria.location,
                           states: e.target.value
@@ -712,7 +712,7 @@ export function LoyaltySegmentsManagement() {
                     <Label className="text-xs">Pincodes (comma-separated)</Label>
                     <Input
                       value={formData.criteria.location?.pincodes?.join(', ') || ''}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         updateCriteria('location', {
                           ...formData.criteria.location,
                           pincodes: e.target.value
@@ -732,7 +732,7 @@ export function LoyaltySegmentsManagement() {
                 <Label>Vendor IDs (comma-separated UUIDs)</Label>
                 <Input
                   value={formData.criteria.vendor_ids?.join(', ') || ''}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     updateCriteria(
                       'vendor_ids',
                       e.target.value
@@ -753,7 +753,7 @@ export function LoyaltySegmentsManagement() {
                 <Label>Service Types (comma-separated)</Label>
                 <Input
                   value={formData.criteria.service_types?.join(', ') || ''}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     updateCriteria(
                       'service_types',
                       e.target.value
@@ -778,7 +778,7 @@ export function LoyaltySegmentsManagement() {
                       type="checkbox"
                       id="first_purchase"
                       checked={formData.criteria.first_purchase || false}
-                      onChange={(e) => updateCriteria('first_purchase', e.target.checked || undefined)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateCriteria('first_purchase', e.target.checked || undefined)}
                       className="rounded"
                     />
                     <Label htmlFor="first_purchase" className="text-sm">First Purchase Only</Label>
@@ -788,7 +788,7 @@ export function LoyaltySegmentsManagement() {
                       type="checkbox"
                       id="birthday_month"
                       checked={formData.criteria.birthday_month || false}
-                      onChange={(e) => updateCriteria('birthday_month', e.target.checked || undefined)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateCriteria('birthday_month', e.target.checked || undefined)}
                       className="rounded"
                     />
                     <Label htmlFor="birthday_month" className="text-sm">Birthday Month</Label>
@@ -798,7 +798,7 @@ export function LoyaltySegmentsManagement() {
                       type="checkbox"
                       id="has_pet_profile"
                       checked={formData.criteria.has_pet_profile || false}
-                      onChange={(e) => updateCriteria('has_pet_profile', e.target.checked || undefined)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateCriteria('has_pet_profile', e.target.checked || undefined)}
                       className="rounded"
                     />
                     <Label htmlFor="has_pet_profile" className="text-sm">Has Pet Profile</Label>
@@ -808,7 +808,7 @@ export function LoyaltySegmentsManagement() {
                       type="checkbox"
                       id="has_health_records"
                       checked={formData.criteria.has_health_records || false}
-                      onChange={(e) => updateCriteria('has_health_records', e.target.checked || undefined)}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateCriteria('has_health_records', e.target.checked || undefined)}
                       className="rounded"
                     />
                     <Label htmlFor="has_health_records" className="text-sm">Has Health Records</Label>

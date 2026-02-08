@@ -364,7 +364,7 @@ export function LoyaltyActionRulesManagement() {
                 <Input
                   id="action_name"
                   value={formData.action_name}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setFormData((prev) => ({ ...prev, action_name: e.target.value }))
                   }
                   placeholder="buy_medicine, book_grooming"
@@ -440,7 +440,7 @@ export function LoyaltyActionRulesManagement() {
                   id="points_value"
                   type="number"
                   value={formData.points_value}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setFormData((prev) => ({
                       ...prev,
                       points_value: parseFloat(e.target.value) || 0,
@@ -462,7 +462,7 @@ export function LoyaltyActionRulesManagement() {
                     id="base_amount"
                     type="number"
                     value={formData.base_amount || ''}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setFormData((prev) => ({
                         ...prev,
                         base_amount: e.target.value ? parseFloat(e.target.value) : undefined,
@@ -500,7 +500,7 @@ export function LoyaltyActionRulesManagement() {
                           type="checkbox"
                           id={`segment-${segment.id}`}
                           checked={formData.conditions?.segment_ids?.includes(segment.id) || false}
-                          onChange={(e) => {
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                             const currentIds = formData.conditions?.segment_ids || [];
                             const newIds = e.target.checked
                               ? [...currentIds, segment.id]
@@ -557,7 +557,7 @@ export function LoyaltyActionRulesManagement() {
                   id="priority"
                   type="number"
                   value={formData.priority}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setFormData((prev) => ({
                       ...prev,
                       priority: parseInt(e.target.value) || 100,
@@ -576,7 +576,7 @@ export function LoyaltyActionRulesManagement() {
               <Textarea
                 id="description"
                 value={formData.description || ''}
-                onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setFormData((prev) => ({ ...prev, description: e.target.value }))
                 }
                 placeholder="Describe this action rule..."

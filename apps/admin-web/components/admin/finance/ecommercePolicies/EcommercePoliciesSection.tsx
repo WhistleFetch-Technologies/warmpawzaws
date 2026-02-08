@@ -126,7 +126,7 @@ export function EcommercePoliciesSection() {
               min={24}
               max={168}
               value={config.returnWindowHours}
-              onChange={(e) => {
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 const v = parseInt(e.target.value, 10);
                 setConfig({ ...config, returnWindowHours: Number.isFinite(v) ? Math.max(24, Math.min(168, v)) : 48 });
               }}
@@ -143,7 +143,7 @@ export function EcommercePoliciesSection() {
               min={1}
               max={14}
               value={config.refundProcessingDays}
-              onChange={(e) => {
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 const v = parseInt(e.target.value, 10);
                 setConfig({ ...config, refundProcessingDays: Number.isFinite(v) ? Math.max(1, Math.min(14, v)) : 7 });
               }}

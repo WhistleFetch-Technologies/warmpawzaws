@@ -357,7 +357,7 @@ export function TierManagement() {
                   <Label>Display Name</Label>
                   <Input
                     value={currentTier.displayName}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setCurrentTier({
                         ...currentTier,
                         displayName: e.target.value,
@@ -370,7 +370,7 @@ export function TierManagement() {
                   <Label>Internal Name</Label>
                   <Input
                     value={currentTier.name}
-                    onChange={(e) => setCurrentTier({ ...currentTier, name: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrentTier({ ...currentTier, name: e.target.value })}
                     placeholder="e.g. Tier 2"
                   />
                 </div>
@@ -378,7 +378,7 @@ export function TierManagement() {
                   <Label>Description</Label>
                   <Textarea
                     value={currentTier.description}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setCurrentTier({
                         ...currentTier,
                         description: e.target.value,
@@ -425,7 +425,7 @@ export function TierManagement() {
                       max={100}
                       step={0.5}
                       value={currentTier.commissionRate === undefined || currentTier.commissionRate === null || Number.isNaN(currentTier.commissionRate) ? '' : currentTier.commissionRate}
-                      onChange={(e) => {
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                         const v = e.target.value;
                         const num = v === '' ? 0 : Number(v);
                         if (v !== '' && Number.isNaN(num)) return;
@@ -440,7 +440,7 @@ export function TierManagement() {
                       min={0}
                       step={1}
                       value={currentTier.payoutPeriodDays === undefined || currentTier.payoutPeriodDays === null || Number.isNaN(currentTier.payoutPeriodDays) ? '' : currentTier.payoutPeriodDays}
-                      onChange={(e) => {
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                         const v = e.target.value;
                         const num = v === '' ? 0 : Math.max(0, Math.floor(Number(v)));
                         if (v !== '' && Number.isNaN(num)) return;
@@ -457,7 +457,7 @@ export function TierManagement() {
                       min={0}
                       step={1}
                       value={currentTier.monthlyCost === undefined || currentTier.monthlyCost === null || Number.isNaN(currentTier.monthlyCost) ? '' : currentTier.monthlyCost}
-                      onChange={(e) => {
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                         const v = e.target.value;
                         const num = v === '' ? 0 : Number(v);
                         if (v !== '' && Number.isNaN(num)) return;
@@ -472,7 +472,7 @@ export function TierManagement() {
                       min={0}
                       step={1}
                       value={currentTier.yearlyCost === undefined || currentTier.yearlyCost === null || Number.isNaN(currentTier.yearlyCost) ? '' : currentTier.yearlyCost}
-                      onChange={(e) => {
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                         const v = e.target.value;
                         const num = v === '' ? 0 : Number(v);
                         if (v !== '' && Number.isNaN(num)) return;
@@ -485,7 +485,7 @@ export function TierManagement() {
                   <Label>Terms & Conditions (vendor must accept before upgrade)</Label>
                   <Textarea
                     value={currentTier.termsAndConditions ?? ''}
-                    onChange={(e) => setCurrentTier({ ...currentTier, termsAndConditions: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrentTier({ ...currentTier, termsAndConditions: e.target.value })}
                     placeholder="Enter terms and conditions for this tier. Leave empty if no T&C required."
                     className="resize-none h-24 text-sm"
                   />

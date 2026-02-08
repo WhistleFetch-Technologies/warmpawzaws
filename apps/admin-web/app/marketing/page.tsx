@@ -1322,7 +1322,7 @@ export default function MarketingPromotionsTab() {
 																		min="0"
 																		max="100"
 																		value={svc.effectiveRolloutPercentage || 100}
-																		onChange={(e) => {
+																		onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
 																			const percentage = parseInt(e.target.value) || 100;
 																			handleUpdateServiceLaunch(svc.id || svc.serviceId, svc.effectiveStatus || 'hidden', percentage);
 																		}}
@@ -1812,7 +1812,7 @@ export default function MarketingPromotionsTab() {
 								<Label>Title</Label>
 								<Input
 									value={promoForm.title}
-									onChange={(e) =>
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 										setPromoForm({ ...promoForm, title: e.target.value })
 									}
 									placeholder="e.g. Summer Sale"
@@ -1822,7 +1822,7 @@ export default function MarketingPromotionsTab() {
 								<Label>Subtitle</Label>
 								<Input
 									value={promoForm.subtitle}
-									onChange={(e) =>
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 										setPromoForm({ ...promoForm, subtitle: e.target.value })
 									}
 									placeholder="e.g. 20% off on grooming"
@@ -1853,7 +1853,7 @@ export default function MarketingPromotionsTab() {
 								<Input
 									type="number"
 									value={promoForm.discountValue}
-									onChange={(e) =>
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 										setPromoForm({
 											...promoForm,
 											discountValue: parseFloat(e.target.value) || 0,
@@ -1868,7 +1868,7 @@ export default function MarketingPromotionsTab() {
 							<Label>Promo Code</Label>
 							<Input
 								value={promoForm.code}
-								onChange={(e) =>
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 									setPromoForm({ ...promoForm, code: e.target.value.toUpperCase() })
 								}
 								placeholder="SUMMER2024"
@@ -1924,7 +1924,7 @@ export default function MarketingPromotionsTab() {
 								<Input
 									type="datetime-local"
 									value={promoForm.validFrom}
-									onChange={(e) =>
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 										setPromoForm({ ...promoForm, validFrom: e.target.value })
 									}
 								/>
@@ -1934,7 +1934,7 @@ export default function MarketingPromotionsTab() {
 								<Input
 									type="datetime-local"
 									value={promoForm.validUntil}
-									onChange={(e) =>
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 										setPromoForm({ ...promoForm, validUntil: e.target.value })
 									}
 								/>
@@ -2063,7 +2063,7 @@ export default function MarketingPromotionsTab() {
 								<Label>Title *</Label>
 								<Input
 									value={bannerForm.title}
-									onChange={(e) => setBannerForm({ ...bannerForm, title: e.target.value })}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, title: e.target.value })}
 									placeholder="e.g. Get 50% OFF"
 								/>
 							</div>
@@ -2071,7 +2071,7 @@ export default function MarketingPromotionsTab() {
 								<Label>Subtitle</Label>
 								<Input
 									value={bannerForm.subtitle}
-									onChange={(e) => setBannerForm({ ...bannerForm, subtitle: e.target.value })}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, subtitle: e.target.value })}
 									placeholder="e.g. First Grooming Session"
 								/>
 							</div>
@@ -2081,7 +2081,7 @@ export default function MarketingPromotionsTab() {
 							<Label>Image URL (optional)</Label>
 							<Input
 								value={bannerForm.image_url}
-								onChange={(e) => setBannerForm({ ...bannerForm, image_url: e.target.value })}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, image_url: e.target.value })}
 								placeholder="https://example.com/banner.jpg"
 							/>
 							<p className="text-xs text-gray-500 mt-1">Leave empty to use gradient colors</p>
@@ -2094,12 +2094,12 @@ export default function MarketingPromotionsTab() {
 									<Input
 										type="color"
 										value={bannerForm.gradient_from}
-										onChange={(e) => setBannerForm({ ...bannerForm, gradient_from: e.target.value })}
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, gradient_from: e.target.value })}
 										className="w-12 h-10 p-1"
 									/>
 									<Input
 										value={bannerForm.gradient_from}
-										onChange={(e) => setBannerForm({ ...bannerForm, gradient_from: e.target.value })}
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, gradient_from: e.target.value })}
 										placeholder="#FF8C42"
 									/>
 								</div>
@@ -2110,12 +2110,12 @@ export default function MarketingPromotionsTab() {
 									<Input
 										type="color"
 										value={bannerForm.gradient_to}
-										onChange={(e) => setBannerForm({ ...bannerForm, gradient_to: e.target.value })}
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, gradient_to: e.target.value })}
 										className="w-12 h-10 p-1"
 									/>
 									<Input
 										value={bannerForm.gradient_to}
-										onChange={(e) => setBannerForm({ ...bannerForm, gradient_to: e.target.value })}
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, gradient_to: e.target.value })}
 										placeholder="#FF6B35"
 									/>
 								</div>
@@ -2127,7 +2127,7 @@ export default function MarketingPromotionsTab() {
 								<Label>CTA Button Text</Label>
 								<Input
 									value={bannerForm.cta_text}
-									onChange={(e) => setBannerForm({ ...bannerForm, cta_text: e.target.value })}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, cta_text: e.target.value })}
 									placeholder="Claim Now"
 								/>
 							</div>
@@ -2135,7 +2135,7 @@ export default function MarketingPromotionsTab() {
 								<Label>CTA Link</Label>
 								<Input
 									value={bannerForm.cta_link}
-									onChange={(e) => setBannerForm({ ...bannerForm, cta_link: e.target.value })}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, cta_link: e.target.value })}
 									placeholder="/grooming"
 								/>
 							</div>
@@ -2164,7 +2164,7 @@ export default function MarketingPromotionsTab() {
 								<Input
 									type="number"
 									value={bannerForm.display_order}
-									onChange={(e) => setBannerForm({ ...bannerForm, display_order: parseInt(e.target.value) || 0 })}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, display_order: parseInt(e.target.value) || 0 })}
 									min="0"
 								/>
 							</div>
@@ -2176,7 +2176,7 @@ export default function MarketingPromotionsTab() {
 								<Input
 									type="date"
 									value={bannerForm.start_date}
-									onChange={(e) => setBannerForm({ ...bannerForm, start_date: e.target.value })}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, start_date: e.target.value })}
 								/>
 							</div>
 							<div>
@@ -2184,7 +2184,7 @@ export default function MarketingPromotionsTab() {
 								<Input
 									type="date"
 									value={bannerForm.end_date}
-									onChange={(e) => setBannerForm({ ...bannerForm, end_date: e.target.value })}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, end_date: e.target.value })}
 								/>
 							</div>
 						</div>
@@ -2250,7 +2250,7 @@ export default function MarketingPromotionsTab() {
 								<Label>Title *</Label>
 								<Input
 									value={articleForm.title}
-									onChange={(e) => setArticleForm({ ...articleForm, title: e.target.value })}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setArticleForm({ ...articleForm, title: e.target.value })}
 									placeholder="e.g. 10 Tips for Puppy Training"
 								/>
 							</div>
@@ -2258,7 +2258,7 @@ export default function MarketingPromotionsTab() {
 								<Label>Slug</Label>
 								<Input
 									value={articleForm.slug}
-									onChange={(e) => setArticleForm({ ...articleForm, slug: e.target.value })}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setArticleForm({ ...articleForm, slug: e.target.value })}
 									placeholder="puppy-training-tips"
 								/>
 								<p className="text-xs text-gray-500 mt-1">Auto-generated if left empty</p>
@@ -2311,7 +2311,7 @@ export default function MarketingPromotionsTab() {
 							<Label>Content *</Label>
 							<textarea
 								value={articleForm.content}
-								onChange={(e) => setArticleForm({ ...articleForm, content: e.target.value })}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setArticleForm({ ...articleForm, content: e.target.value })}
 								placeholder="Write your article content here..."
 								className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-[#FF8C42] focus:border-transparent min-h-[200px]"
 							/>
@@ -2363,7 +2363,7 @@ export default function MarketingPromotionsTab() {
 							<Label>Title *</Label>
 							<Input
 								value={announcementForm.title}
-								onChange={(e) => setAnnouncementForm({ ...announcementForm, title: e.target.value })}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAnnouncementForm({ ...announcementForm, title: e.target.value })}
 								placeholder="e.g. AI Pet Assistant"
 							/>
 						</div>
@@ -2372,7 +2372,7 @@ export default function MarketingPromotionsTab() {
 							<Label>Subtitle</Label>
 							<Input
 								value={announcementForm.subtitle}
-								onChange={(e) => setAnnouncementForm({ ...announcementForm, subtitle: e.target.value })}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAnnouncementForm({ ...announcementForm, subtitle: e.target.value })}
 								placeholder="e.g. Get instant answers about pet care"
 							/>
 						</div>
@@ -2382,7 +2382,7 @@ export default function MarketingPromotionsTab() {
 								<Label>Badge Text</Label>
 								<Input
 									value={announcementForm.badge_text}
-									onChange={(e) => setAnnouncementForm({ ...announcementForm, badge_text: e.target.value })}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAnnouncementForm({ ...announcementForm, badge_text: e.target.value })}
 									placeholder="NEW"
 								/>
 							</div>
@@ -2408,7 +2408,7 @@ export default function MarketingPromotionsTab() {
 								<Label>Icon</Label>
 								<Input
 									value={announcementForm.icon}
-									onChange={(e) => setAnnouncementForm({ ...announcementForm, icon: e.target.value })}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAnnouncementForm({ ...announcementForm, icon: e.target.value })}
 									placeholder="✨"
 								/>
 							</div>
@@ -2436,7 +2436,7 @@ export default function MarketingPromotionsTab() {
 								<Label>CTA Button Text (optional)</Label>
 								<Input
 									value={announcementForm.cta_text}
-									onChange={(e) => setAnnouncementForm({ ...announcementForm, cta_text: e.target.value })}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAnnouncementForm({ ...announcementForm, cta_text: e.target.value })}
 									placeholder="Try Now"
 								/>
 							</div>
@@ -2444,7 +2444,7 @@ export default function MarketingPromotionsTab() {
 								<Label>CTA Link</Label>
 								<Input
 									value={announcementForm.cta_link}
-									onChange={(e) => setAnnouncementForm({ ...announcementForm, cta_link: e.target.value })}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAnnouncementForm({ ...announcementForm, cta_link: e.target.value })}
 									placeholder="/ai-assistant"
 								/>
 							</div>
@@ -2455,7 +2455,7 @@ export default function MarketingPromotionsTab() {
 							<Input
 								type="number"
 								value={announcementForm.display_order}
-								onChange={(e) => setAnnouncementForm({ ...announcementForm, display_order: parseInt(e.target.value) || 0 })}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAnnouncementForm({ ...announcementForm, display_order: parseInt(e.target.value) || 0 })}
 								min="0"
 							/>
 						</div>

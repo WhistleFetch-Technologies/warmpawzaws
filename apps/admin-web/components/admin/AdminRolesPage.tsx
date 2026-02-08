@@ -263,7 +263,7 @@ export function AdminRolesPage() {
           <Filter className="w-4 h-4 text-gray-400" />
           <select
             value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value as RoleFilter)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setRoleFilter(e.target.value as RoleFilter)}
             className="h-9 px-3 py-1 text-sm border rounded-md bg-white"
           >
             <option value="all">All Status</option>
@@ -272,7 +272,7 @@ export function AdminRolesPage() {
           </select>
           <select
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCategoryFilter(e.target.value)}
             className="h-9 px-3 py-1 text-sm border rounded-md bg-white capitalize"
           >
             {categories.map(cat => (

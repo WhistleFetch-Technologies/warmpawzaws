@@ -550,7 +550,7 @@ export function AdvancedPromotionsEngine({
 									<Label>Promotion Name *</Label>
 									<Input
 										value={formData.name}
-										onChange={(e) =>
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 											setFormData({ ...formData, name: e.target.value })
 										}
 										placeholder="e.g., Flash Friday Sale"
@@ -562,7 +562,7 @@ export function AdvancedPromotionsEngine({
 									<Label>Description *</Label>
 									<Textarea
 										value={formData.description}
-										onChange={(e) =>
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 											setFormData({ ...formData, description: e.target.value })
 										}
 										placeholder="Describe the promotion..."
@@ -630,7 +630,7 @@ export function AdvancedPromotionsEngine({
 										<Input
 											type="number"
 											value={formData.discountValue}
-											onChange={(e) =>
+											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 												setFormData({
 													...formData,
 													discountValue: parseFloat(e.target.value),
@@ -646,7 +646,7 @@ export function AdvancedPromotionsEngine({
 											<Input
 												type="number"
 												value={formData.maxDiscount || ""}
-												onChange={(e) =>
+												onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 													setFormData({
 														...formData,
 														maxDiscount:
@@ -666,7 +666,7 @@ export function AdvancedPromotionsEngine({
 										<Input
 											type="date"
 											value={formData.validFrom}
-											onChange={(e) =>
+											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 												setFormData({ ...formData, validFrom: e.target.value })
 											}
 											className="mt-2"
@@ -678,7 +678,7 @@ export function AdvancedPromotionsEngine({
 										<Input
 											type="date"
 											value={formData.validUntil}
-											onChange={(e) =>
+											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 												setFormData({ ...formData, validUntil: e.target.value })
 											}
 											className="mt-2"
@@ -692,7 +692,7 @@ export function AdvancedPromotionsEngine({
 										<Input
 											type="number"
 											value={formData.usageLimit}
-											onChange={(e) =>
+											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 												setFormData({
 													...formData,
 													usageLimit: parseInt(e.target.value),
@@ -707,7 +707,7 @@ export function AdvancedPromotionsEngine({
 										<Input
 											type="number"
 											value={formData.priority}
-											onChange={(e) =>
+											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 												setFormData({
 													...formData,
 													priority: parseInt(e.target.value),
@@ -817,7 +817,7 @@ export function AdvancedPromotionsEngine({
 												type="number"
 												min="1"
 												value={formData.priority || 1}
-												onChange={(e) =>
+												onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 													setFormData({
 														...formData,
 														priority: parseInt(e.target.value) || 1,
@@ -839,7 +839,7 @@ export function AdvancedPromotionsEngine({
 													<input
 														type="checkbox"
 														checked={(formData.applicable_services || []).includes(service)}
-														onChange={(e) => {
+														onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
 															const current = formData.applicable_services || [];
 															if (e.target.checked) {
 																setFormData({ ...formData, applicable_services: [...current, service] });

@@ -258,7 +258,7 @@ export function DynamicSettlementRulesManager() {
                 <Label>Rule Name *</Label>
                 <Input
                   value={editingRule.name}
-                  onChange={(e) => setEditingRule({ ...editingRule, name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingRule({ ...editingRule, name: e.target.value })}
                   placeholder="e.g., Premium Tier Settlement"
                 />
               </div>
@@ -269,7 +269,7 @@ export function DynamicSettlementRulesManager() {
                   <Input
                     type="number"
                     value={editingRule.priority}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditingRule({
                         ...editingRule,
                         priority: parseInt(e.target.value),
@@ -282,7 +282,7 @@ export function DynamicSettlementRulesManager() {
                   <Input
                     type="number"
                     value={editingRule.settlement.periodDays}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditingRule({
                         ...editingRule,
                         settlement: {
@@ -302,7 +302,7 @@ export function DynamicSettlementRulesManager() {
                   <Input
                     type="number"
                     value={editingRule.settlement.minPayoutAmount}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditingRule({
                         ...editingRule,
                         settlement: {
@@ -319,7 +319,7 @@ export function DynamicSettlementRulesManager() {
                     <Input
                       type="number"
                       value={editingRule.settlement.commissionRate}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         setEditingRule({
                           ...editingRule,
                           settlement: {

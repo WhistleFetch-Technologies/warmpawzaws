@@ -188,7 +188,7 @@ export function CouponManagement() {
 									<label className="text-sm font-medium">Prefix</label>
 									<Input
 										value={bulkData.prefix}
-										onChange={(e) =>
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 											setBulkData({
 												...bulkData,
 												prefix: e.target.value.toUpperCase(),
@@ -202,7 +202,7 @@ export function CouponManagement() {
 									<Input
 										type="number"
 										value={bulkData.quantity}
-										onChange={(e) =>
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 											setBulkData({
 												...bulkData,
 												quantity: parseInt(e.target.value),
@@ -236,7 +236,7 @@ export function CouponManagement() {
 									<Input
 										type="number"
 										value={bulkData.value}
-										onChange={(e) =>
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 											setBulkData({
 												...bulkData,
 												value: parseFloat(e.target.value),
@@ -252,7 +252,7 @@ export function CouponManagement() {
 									<Input
 										type="number"
 										value={bulkData.minOrderAmount}
-										onChange={(e) =>
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 											setBulkData({
 												...bulkData,
 												minOrderAmount: parseFloat(e.target.value),
@@ -268,7 +268,7 @@ export function CouponManagement() {
 									<Input
 										type="number"
 										value={bulkData.usageLimit}
-										onChange={(e) =>
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 											setBulkData({
 												...bulkData,
 												usageLimit: parseInt(e.target.value),
@@ -315,7 +315,7 @@ export function CouponManagement() {
 									<label className="text-sm font-medium">Coupon Code</label>
 									<Input
 										value={formData.code}
-										onChange={(e) =>
+										onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 											setFormData({
 												...formData,
 												code: e.target.value.toUpperCase(),
@@ -350,7 +350,7 @@ export function CouponManagement() {
 										<Input
 											type="number"
 											value={formData.value}
-											onChange={(e) =>
+											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 												setFormData({
 													...formData,
 													value: parseFloat(e.target.value),
@@ -366,7 +366,7 @@ export function CouponManagement() {
 										<Input
 											type="number"
 											value={formData.minOrderAmount}
-											onChange={(e) =>
+											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 												setFormData({
 													...formData,
 													minOrderAmount: parseFloat(e.target.value),
@@ -379,7 +379,7 @@ export function CouponManagement() {
 										<Input
 											type="number"
 											value={formData.usageLimit}
-											onChange={(e) =>
+											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 												setFormData({
 													...formData,
 													usageLimit: parseInt(e.target.value),
@@ -418,7 +418,7 @@ export function CouponManagement() {
 						className="pl-9"
 						placeholder="Search coupons..."
 						value={search}
-						onChange={(e) => setSearch(e.target.value)}
+											onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
 					/>
 				</div>
 				<Select value={statusFilter} onValueChange={setStatusFilter}>

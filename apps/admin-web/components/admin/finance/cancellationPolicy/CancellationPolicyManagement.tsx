@@ -374,13 +374,13 @@ export function CancellationPolicyManagement() {
               type="text"
               placeholder="Search policies..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
               className="pl-10"
             />
           </div>
           <select
             value={filterType}
-            onChange={(e) => setFilterType(e.target.value as any)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterType(e.target.value as any)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
           >
             <option value="all">All Types</option>
@@ -533,7 +533,7 @@ export function CancellationPolicyManagement() {
                 <Label>Policy Name *</Label>
                 <Input
                   value={editingPolicy.name}
-                  onChange={(e) => setEditingPolicy({ ...editingPolicy, name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingPolicy({ ...editingPolicy, name: e.target.value })}
                   placeholder="e.g., Standard Cancellation Policy"
                 />
               </div>
@@ -542,7 +542,7 @@ export function CancellationPolicyManagement() {
                 <Label>Description</Label>
                 <Input
                   value={editingPolicy.description}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setEditingPolicy({ ...editingPolicy, description: e.target.value })
                   }
                   placeholder="Policy description"
@@ -554,7 +554,7 @@ export function CancellationPolicyManagement() {
                   <Label>Policy Type</Label>
                   <select
                     value={editingPolicy.policyType}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditingPolicy({
                         ...editingPolicy,
                         policyType: e.target.value as any,
@@ -576,7 +576,7 @@ export function CancellationPolicyManagement() {
                     type="number"
                     min={0}
                     value={Number.isFinite(editingPolicy.gracePeriodHours) ? editingPolicy.gracePeriodHours : ''}
-                    onChange={(e) => {
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                       const v = parseInt(e.target.value, 10);
                       setEditingPolicy({
                         ...editingPolicy,
@@ -652,7 +652,7 @@ export function CancellationPolicyManagement() {
                   <Label>Service Category (optional)</Label>
                   <select
                     value={editingPolicy.serviceCategory ?? ''}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditingPolicy({ ...editingPolicy, serviceCategory: e.target.value || undefined })
                     }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
@@ -668,7 +668,7 @@ export function CancellationPolicyManagement() {
                   <Label>Service Format (optional)</Label>
                   <select
                     value={editingPolicy.serviceFormat ?? ''}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditingPolicy({ ...editingPolicy, serviceFormat: e.target.value || undefined })
                     }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
@@ -693,7 +693,7 @@ export function CancellationPolicyManagement() {
                         min={0}
                         placeholder="Hours"
                         value={win.hoursBefore}
-                        onChange={(e) => {
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                           const v = parseInt(e.target.value, 10);
                           const next = [...(editingPolicy.cancellationWindows ?? [])];
                           next[idx] = { ...win, hoursBefore: Number.isFinite(v) ? v : 0 };
@@ -706,7 +706,7 @@ export function CancellationPolicyManagement() {
                         max={100}
                         placeholder="Refund %"
                         value={win.refundPercentage}
-                        onChange={(e) => {
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                           const v = parseFloat(e.target.value);
                           const next = [...(editingPolicy.cancellationWindows ?? [])];
                           next[idx] = { ...win, refundPercentage: Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0 };
@@ -718,7 +718,7 @@ export function CancellationPolicyManagement() {
                         min={0}
                         placeholder="Fee ₹"
                         value={win.cancellationFee}
-                        onChange={(e) => {
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                           const v = parseFloat(e.target.value);
                           const next = [...(editingPolicy.cancellationWindows ?? [])];
                           next[idx] = { ...win, cancellationFee: Number.isFinite(v) ? Math.max(0, v) : 0 };
@@ -731,7 +731,7 @@ export function CancellationPolicyManagement() {
                         max={100}
                         placeholder="Penalty %"
                         value={win.penaltyPercentage}
-                        onChange={(e) => {
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                           const v = parseFloat(e.target.value);
                           const next = [...(editingPolicy.cancellationWindows ?? [])];
                           next[idx] = { ...win, penaltyPercentage: Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 0 };
@@ -802,7 +802,7 @@ export function CancellationPolicyManagement() {
                         min={0}
                         max={100}
                         value={editingPolicy.vendorCancellationPenalty?.penaltyPercentage ?? 10}
-                        onChange={(e) => {
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                           const v = parseFloat(e.target.value);
                           setEditingPolicy({
                             ...editingPolicy,
@@ -818,7 +818,7 @@ export function CancellationPolicyManagement() {
                         min={0}
                         max={100}
                         value={editingPolicy.vendorCancellationPenalty?.compensationPercentage ?? 50}
-                        onChange={(e) => {
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                           const v = parseFloat(e.target.value);
                           setEditingPolicy({
                             ...editingPolicy,
@@ -852,7 +852,7 @@ export function CancellationPolicyManagement() {
                         min={0}
                         max={100}
                         value={editingPolicy.noShowPolicy?.refundPercentage ?? 0}
-                        onChange={(e) => {
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                           const v = parseFloat(e.target.value);
                           setEditingPolicy({
                             ...editingPolicy,
@@ -867,7 +867,7 @@ export function CancellationPolicyManagement() {
                         type="number"
                         min={0}
                         value={editingPolicy.noShowPolicy?.penaltyAmount ?? 0}
-                        onChange={(e) => {
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                           const v = parseFloat(e.target.value);
                           setEditingPolicy({
                             ...editingPolicy,

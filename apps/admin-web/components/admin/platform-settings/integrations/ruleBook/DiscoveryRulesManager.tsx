@@ -430,7 +430,7 @@ export function DiscoveryRulesManager() {
 							</Label>
 							<Input
 								value={form.rule_value}
-								onChange={(e) => setForm((f) => ({ ...f, rule_value: e.target.value }))}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, rule_value: e.target.value }))}
 								placeholder="e.g. 10 or nearest or 5,10,20"
 							/>
 						</div>
@@ -496,7 +496,7 @@ export function DiscoveryRulesManager() {
 								type="checkbox"
 								id="is_active"
 								checked={form.is_active}
-								onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
 								className="rounded border-slate-300"
 							/>
 							<Label htmlFor="is_active">Active</Label>

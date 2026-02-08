@@ -337,7 +337,7 @@ export function PaymentRulesSection() {
                 <Label>Rule Name *</Label>
                 <Input
                   value={editingRule.name}
-                  onChange={(e) => setEditingRule({ ...editingRule, name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingRule({ ...editingRule, name: e.target.value })}
                   placeholder="e.g., Standard Payment Rule"
                 />
               </div>
@@ -362,7 +362,7 @@ export function PaymentRulesSection() {
                   <Label>Service Location</Label>
                   <select
                     value={editingRule.serviceLocation}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditingRule({
                         ...editingRule,
                         serviceLocation: e.target.value as ServiceLocationValue,
@@ -382,7 +382,7 @@ export function PaymentRulesSection() {
                   <Label>Reservation Type</Label>
                   <select
                     value={editingRule.reservationType}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditingRule({
                         ...editingRule,
                         reservationType: e.target.value as any,
@@ -403,7 +403,7 @@ export function PaymentRulesSection() {
                   <Input
                     type="number"
                     value={editingRule.flatAmount}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditingRule({
                         ...editingRule,
                         flatAmount: parseFloat(e.target.value),
@@ -416,7 +416,7 @@ export function PaymentRulesSection() {
                   <Input
                     type="number"
                     value={editingRule.reservationPercentage}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditingRule({
                         ...editingRule,
                         reservationPercentage: parseFloat(e.target.value),
@@ -432,7 +432,7 @@ export function PaymentRulesSection() {
                   <Input
                     type="number"
                     value={editingRule.minimumAdvancePayment}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditingRule({
                         ...editingRule,
                         minimumAdvancePayment: parseFloat(e.target.value),
@@ -445,7 +445,7 @@ export function PaymentRulesSection() {
                   <Input
                     type="number"
                     value={editingRule.escrowHoldPeriodHours}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditingRule({
                         ...editingRule,
                         escrowHoldPeriodHours: parseInt(e.target.value),
