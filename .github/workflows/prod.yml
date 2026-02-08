@@ -218,7 +218,7 @@ jobs:
       - name: Allow GitHub Actions IPs for migrations
         working-directory: infra/envs/prod
         run: |
-          terraform init -backend-config=backend.hcl
+          terraform init -backend-config=backend.hcl -migrate-state
           # Get RDS security group ID from Terraform output or AWS directly
           RDS_SG_ID=$(terraform output -raw rds_security_group_id 2>/dev/null || echo "")
           
@@ -273,7 +273,7 @@ jobs:
         id: db
         working-directory: infra/envs/prod
         run: |
-          terraform init -backend-config=backend.hcl
+          terraform init -backend-config=backend.hcl -migrate-state
           # CRITICAL: RDS is in private subnet - GitHub Actions cannot reach it directly
           # Both cluster endpoint and proxy endpoint are in private subnets
           # This migration step will likely fail with connection timeout
