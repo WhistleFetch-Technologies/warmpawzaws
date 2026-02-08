@@ -254,14 +254,14 @@ export function VendorRolesTab() {
                 type="text"
                 placeholder="Search roles..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
               />
             </div>
           </div>
           <select
             value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value as any)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStatus(e.target.value as any)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 outline-none"
           >
             <option value="all">All Status</option>
@@ -270,7 +270,7 @@ export function VendorRolesTab() {
           </select>
           <select
             value={filterService}
-            onChange={(e) => setFilterService(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterService(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 outline-none"
           >
             <option value="all">All Services</option>

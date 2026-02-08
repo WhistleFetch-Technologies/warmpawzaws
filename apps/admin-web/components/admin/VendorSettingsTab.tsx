@@ -175,7 +175,7 @@ export function VendorSettingsTab() {
               <input
                 type="checkbox"
                 checked={settings.onboarding.autoApprove}
-                onChange={(e) => updateSetting('onboarding', 'autoApprove', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('onboarding', 'autoApprove', e.target.checked)}
                 className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
               />
             </label>
@@ -188,7 +188,7 @@ export function VendorSettingsTab() {
               <input
                 type="checkbox"
                 checked={settings.onboarding.requireDocuments}
-                onChange={(e) => updateSetting('onboarding', 'requireDocuments', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('onboarding', 'requireDocuments', e.target.checked)}
                 className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
               />
             </label>
@@ -201,7 +201,7 @@ export function VendorSettingsTab() {
               <input
                 type="checkbox"
                 checked={settings.onboarding.requireBankDetails}
-                onChange={(e) => updateSetting('onboarding', 'requireBankDetails', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('onboarding', 'requireBankDetails', e.target.checked)}
                 className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
               />
             </label>
@@ -214,7 +214,7 @@ export function VendorSettingsTab() {
               <input
                 type="checkbox"
                 checked={settings.onboarding.verificationRequired}
-                onChange={(e) => updateSetting('onboarding', 'verificationRequired', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('onboarding', 'verificationRequired', e.target.checked)}
                 className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
               />
             </label>
@@ -227,7 +227,7 @@ export function VendorSettingsTab() {
                 max="5"
                 step="0.1"
                 value={settings.onboarding.minRating}
-                onChange={(e) => updateSetting('onboarding', 'minRating', parseFloat(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('onboarding', 'minRating', parseFloat(e.target.value))}
                 className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -245,7 +245,7 @@ export function VendorSettingsTab() {
               <input
                 type="checkbox"
                 checked={settings.operations.allowMultipleServices}
-                onChange={(e) => updateSetting('operations', 'allowMultipleServices', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('operations', 'allowMultipleServices', e.target.checked)}
                 className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
               />
             </label>
@@ -258,7 +258,7 @@ export function VendorSettingsTab() {
               <input
                 type="checkbox"
                 checked={settings.operations.requireServiceArea}
-                onChange={(e) => updateSetting('operations', 'requireServiceArea', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('operations', 'requireServiceArea', e.target.checked)}
                 className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
               />
             </label>
@@ -269,7 +269,7 @@ export function VendorSettingsTab() {
                 type="number"
                 min="1"
                 value={settings.operations.maxServiceRadius}
-                onChange={(e) => updateSetting('operations', 'maxServiceRadius', parseInt(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('operations', 'maxServiceRadius', parseInt(e.target.value))}
                 className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -282,7 +282,7 @@ export function VendorSettingsTab() {
               <input
                 type="checkbox"
                 checked={settings.operations.allowHomeServices}
-                onChange={(e) => updateSetting('operations', 'allowHomeServices', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('operations', 'allowHomeServices', e.target.checked)}
                 className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
               />
             </label>
@@ -295,7 +295,7 @@ export function VendorSettingsTab() {
               <input
                 type="checkbox"
                 checked={settings.operations.allowClinicServices}
-                onChange={(e) => updateSetting('operations', 'allowClinicServices', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('operations', 'allowClinicServices', e.target.checked)}
                 className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
               />
             </label>
@@ -313,7 +313,7 @@ export function VendorSettingsTab() {
                 max="100"
                 step="0.1"
                 value={settings.financial.defaultCommission}
-                onChange={(e) => updateSetting('financial', 'defaultCommission', parseFloat(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('financial', 'defaultCommission', parseFloat(e.target.value))}
                 className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -322,7 +322,7 @@ export function VendorSettingsTab() {
               <label className="block text-sm font-medium text-gray-700 mb-0">Payment Cycle</label>
               <select
                 value={settings.financial.paymentCycle}
-                onChange={(e) => updateSetting('financial', 'paymentCycle', e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateSetting('financial', 'paymentCycle', e.target.value)}
                 className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
               >
                 <option value="weekly">Weekly</option>
@@ -337,7 +337,7 @@ export function VendorSettingsTab() {
                 type="number"
                 min="0"
                 value={settings.financial.minPayoutAmount}
-                onChange={(e) => updateSetting('financial', 'minPayoutAmount', parseInt(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('financial', 'minPayoutAmount', parseInt(e.target.value))}
                 className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -348,7 +348,7 @@ export function VendorSettingsTab() {
                 type="number"
                 min="0"
                 value={settings.financial.holdPeriodDays}
-                onChange={(e) => updateSetting('financial', 'holdPeriodDays', parseInt(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('financial', 'holdPeriodDays', parseInt(e.target.value))}
                 className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -366,7 +366,7 @@ export function VendorSettingsTab() {
               <input
                 type="checkbox"
                 checked={settings.compliance.requireInsurance}
-                onChange={(e) => updateSetting('compliance', 'requireInsurance', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('compliance', 'requireInsurance', e.target.checked)}
                 className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
               />
             </label>
@@ -390,7 +390,7 @@ export function VendorSettingsTab() {
                 type="number"
                 min="1"
                 value={settings.compliance.licenseRenewalDays}
-                onChange={(e) => updateSetting('compliance', 'licenseRenewalDays', parseInt(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('compliance', 'licenseRenewalDays', parseInt(e.target.value))}
                 className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
               />
             </div>
@@ -403,7 +403,7 @@ export function VendorSettingsTab() {
               <input
                 type="checkbox"
                 checked={settings.compliance.backgroundCheckRequired}
-                onChange={(e) => updateSetting('compliance', 'backgroundCheckRequired', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('compliance', 'backgroundCheckRequired', e.target.checked)}
                 className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
               />
             </label>
@@ -421,7 +421,7 @@ export function VendorSettingsTab() {
               <input
                 type="checkbox"
                 checked={settings.notifications.newBookingNotification}
-                onChange={(e) => updateSetting('notifications', 'newBookingNotification', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('notifications', 'newBookingNotification', e.target.checked)}
                 className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
               />
             </label>
@@ -434,7 +434,7 @@ export function VendorSettingsTab() {
               <input
                 type="checkbox"
                 checked={settings.notifications.cancellationNotification}
-                onChange={(e) => updateSetting('notifications', 'cancellationNotification', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('notifications', 'cancellationNotification', e.target.checked)}
                 className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
               />
             </label>
@@ -447,7 +447,7 @@ export function VendorSettingsTab() {
               <input
                 type="checkbox"
                 checked={settings.notifications.paymentNotification}
-                onChange={(e) => updateSetting('notifications', 'paymentNotification', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('notifications', 'paymentNotification', e.target.checked)}
                 className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
               />
             </label>
@@ -460,7 +460,7 @@ export function VendorSettingsTab() {
               <input
                 type="checkbox"
                 checked={settings.notifications.reviewNotification}
-                onChange={(e) => updateSetting('notifications', 'reviewNotification', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('notifications', 'reviewNotification', e.target.checked)}
                 className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
               />
             </label>

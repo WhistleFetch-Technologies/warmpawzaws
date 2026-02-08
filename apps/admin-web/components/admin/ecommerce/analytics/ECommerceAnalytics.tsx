@@ -138,7 +138,7 @@ export function ECommerceAnalytics() {
         <div className="flex items-center gap-3">
           <select
             value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setDateRange(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg"
           >
             <option value="7">Last 7 days</option>

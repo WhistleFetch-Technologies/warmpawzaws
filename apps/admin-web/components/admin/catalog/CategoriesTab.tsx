@@ -422,7 +422,7 @@ function SpecializationModal({
                   <input
                     type="checkbox"
                     checked={form.applicableRoles.includes(role.value)}
-                    onChange={(e) => {
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                       if (e.target.checked) {
                         setForm(f => ({ ...f, applicableRoles: [...f.applicableRoles, role.value] }));
                       } else {
@@ -446,7 +446,7 @@ function SpecializationModal({
               <input
                 type="checkbox"
                 checked={form.showInProblemGrid}
-                onChange={(e) => setForm(f => ({ ...f, showInProblemGrid: e.target.checked }))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm(f => ({ ...f, showInProblemGrid: e.target.checked }))}
                 className="rounded border-gray-300 text-orange-500 focus:ring-orange-500"
               />
               <span className="text-sm text-gray-700">Show in &quot;What&apos;s your pet&apos;s need?&quot;</span>
@@ -455,7 +455,7 @@ function SpecializationModal({
               <input
                 type="checkbox"
                 checked={form.showInVendorProfile}
-                onChange={(e) => setForm(f => ({ ...f, showInVendorProfile: e.target.checked }))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm(f => ({ ...f, showInVendorProfile: e.target.checked }))}
                 className="rounded border-gray-300 text-orange-500 focus:ring-orange-500"
               />
               <span className="text-sm text-gray-700">Show in Vendor Profile</span>
@@ -464,7 +464,7 @@ function SpecializationModal({
               <input
                 type="checkbox"
                 checked={form.showInServicesDashboard}
-                onChange={(e) => setForm(f => ({ ...f, showInServicesDashboard: e.target.checked }))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm(f => ({ ...f, showInServicesDashboard: e.target.checked }))}
                 className="rounded border-gray-300 text-orange-500 focus:ring-orange-500"
               />
               <span className="text-sm text-gray-700">Show in Services Dashboard</span>

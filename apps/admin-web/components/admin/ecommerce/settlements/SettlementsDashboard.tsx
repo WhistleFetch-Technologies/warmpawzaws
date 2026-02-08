@@ -101,7 +101,7 @@ export function SettlementsDashboard() {
         <div className="flex gap-3">
           <select
             value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setDateRange(e.target.value)}
             className="px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 bg-white"
           >
             <option value="7d">Last 7 days</option>

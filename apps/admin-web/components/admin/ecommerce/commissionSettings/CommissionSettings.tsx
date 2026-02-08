@@ -377,7 +377,7 @@ export function CommissionSettings() {
             max="100"
             step="0.1"
             value={defaultRate}
-            onChange={(e) => setDefaultRate(parseFloat(e.target.value))}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDefaultRate(parseFloat(e.target.value))}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
           />
           <p className="text-xs text-gray-500 mt-2">
@@ -703,7 +703,7 @@ function CommissionCalculator({
           <input
             type="number"
             value={orderValue}
-            onChange={(e) => setOrderValue(parseFloat(e.target.value) || 0)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setOrderValue(parseFloat(e.target.value) || 0)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -713,7 +713,7 @@ function CommissionCalculator({
           </label>
           <select
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setCategory(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Select category</option>
@@ -730,7 +730,7 @@ function CommissionCalculator({
           </label>
           <select
             value={vendorTier}
-            onChange={(e) => setVendorTier(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setVendorTier(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Select tier</option>
@@ -801,7 +801,7 @@ function RuleEditorModal({
             <input
               type="text"
               value={editedRule.name}
-              onChange={(e) => setEditedRule({ ...editedRule, name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditedRule({ ...editedRule, name: e.target.value })}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
               placeholder="e.g., Premium Category High Value"
             />
@@ -811,7 +811,7 @@ function RuleEditorModal({
             <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
             <textarea
               value={editedRule.description || ''}
-              onChange={(e) => setEditedRule({ ...editedRule, description: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditedRule({ ...editedRule, description: e.target.value })}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
               rows={2}
               placeholder="Brief description of this rule"
@@ -823,7 +823,7 @@ function RuleEditorModal({
               <label className="block text-sm font-medium text-gray-700 mb-2">Rule Type</label>
               <select
                 value={editedRule.type}
-                onChange={(e) => setEditedRule({ ...editedRule, type: e.target.value as any })}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setEditedRule({ ...editedRule, type: e.target.value as any })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
               >
                 <option value="category">Category-based</option>
@@ -839,7 +839,7 @@ function RuleEditorModal({
               <input
                 type="number"
                 value={editedRule.priority}
-                onChange={(e) =>
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setEditedRule({
                     ...editedRule,
                     priority: parseInt(e.target.value),
@@ -860,7 +860,7 @@ function RuleEditorModal({
               </label>
               <select
                 value={editedRule.commission.type}
-                onChange={(e) =>
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setEditedRule({
                     ...editedRule,
                     commission: {
@@ -888,7 +888,7 @@ function RuleEditorModal({
                 <input
                   type="number"
                   value={editedRule.commission.value || 0}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setEditedRule({
                       ...editedRule,
                       commission: {
@@ -916,7 +916,7 @@ function RuleEditorModal({
                   <input
                     type="number"
                     value={editedRule.conditions.minOrderValue || ''}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditedRule({
                         ...editedRule,
                         conditions: {
@@ -938,7 +938,7 @@ function RuleEditorModal({
                   <input
                     type="number"
                     value={editedRule.conditions.maxOrderValue || ''}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setEditedRule({
                         ...editedRule,
                         conditions: {

@@ -68,7 +68,7 @@ export function CreateBulkOperationModal({ isOpen, onClose, onSuccess }: CreateB
             <label className="block text-sm font-medium text-gray-700 mb-0">Operation Type</label>
             <select
               value={operation}
-              onChange={(e) => setOperation(e.target.value as any)}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setOperation(e.target.value as any)}
               className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
             >
               <option value="update_prices">Update Prices</option>

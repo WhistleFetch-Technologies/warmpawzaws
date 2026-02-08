@@ -185,7 +185,7 @@ export function PromotionsManagement() {
           type="text"
           placeholder="Search promotions or coupons..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
           className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
         />
       </div>
@@ -429,7 +429,7 @@ function PromotionModal({ item, type, onClose, onSave }: any) {
             <input
               required
               value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, name: e.target.value })}
               className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
             />
           </div>
@@ -438,7 +438,7 @@ function PromotionModal({ item, type, onClose, onSave }: any) {
             <label className="block text-sm font-medium text-slate-700 mb-2">Code (Optional)</label>
             <input
               value={formData.code}
-              onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
               className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono uppercase"
             />
           </div>
@@ -448,7 +448,7 @@ function PromotionModal({ item, type, onClose, onSave }: any) {
               <label className="block text-sm font-medium text-slate-700 mb-2">Discount Type</label>
               <select
                 value={formData.discount_type}
-                onChange={(e) => setFormData({ ...formData, discount_type: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, discount_type: e.target.value })}
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl bg-white"
               >
                 <option value="percentage">Percentage (%)</option>
@@ -461,7 +461,7 @@ function PromotionModal({ item, type, onClose, onSave }: any) {
                 type="number"
                 required
                 value={formData.discount_value}
-                onChange={(e) => setFormData({ ...formData, discount_value: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, discount_value: e.target.value })}
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl"
               />
             </div>
@@ -474,7 +474,7 @@ function PromotionModal({ item, type, onClose, onSave }: any) {
                 type="date"
                 required
                 value={formData.start_date}
-                onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, start_date: e.target.value })}
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl"
               />
             </div>
@@ -484,7 +484,7 @@ function PromotionModal({ item, type, onClose, onSave }: any) {
                 type="date"
                 required
                 value={formData.end_date}
-                onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, end_date: e.target.value })}
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl"
               />
             </div>
@@ -495,7 +495,7 @@ function PromotionModal({ item, type, onClose, onSave }: any) {
               type="checkbox"
               id="is_active"
               checked={formData.is_active}
-              onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, is_active: e.target.checked })}
               className="w-5 h-5 rounded text-orange-500"
             />
             <label htmlFor="is_active" className="font-medium text-slate-700">Active</label>

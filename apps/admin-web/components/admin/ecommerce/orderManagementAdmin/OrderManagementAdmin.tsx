@@ -102,7 +102,7 @@ export function OrderManagementAdmin() {
         <div className="flex gap-3">
           <select
             value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setDateRange(e.target.value)}
             className="px-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 bg-white"
           >
             <option value="7d">Last 7 days</option>
@@ -146,7 +146,7 @@ export function OrderManagementAdmin() {
           type="text"
           placeholder="Search by order ID, customer, or seller..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
           className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
         />
       </div>
@@ -253,7 +253,7 @@ export function OrderManagementAdmin() {
                 </div>
                 <select
                   value={selectedOrder.status}
-                  onChange={(e) => updateOrderStatus(selectedOrder.id, e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => updateOrderStatus(selectedOrder.id, e.target.value)}
                   className="px-4 py-2 border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                 >
                   <option value="pending">Pending</option>
