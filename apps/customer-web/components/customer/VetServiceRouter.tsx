@@ -664,7 +664,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                   e.stopPropagation();
                   handleServiceClick();
                 }}
-                onKeyDown={(e) => {
+                onKeyDown={(e: React.KeyboardEvent<HTMLButtonElement>) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
                     console.log('🔵 [VetServiceRouter] Keyboard navigation for:', service.id);

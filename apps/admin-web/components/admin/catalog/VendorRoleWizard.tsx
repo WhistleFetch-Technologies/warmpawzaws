@@ -441,7 +441,7 @@ export function VendorRoleWizard({ isOpen, onClose, onSuccess, editingRole }: Ve
                 <label className="text-sm font-medium block mb-1">Customer Service</label>
                 <select
                   value={formData.customer_service || ''}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, customer_service: e.target.value || null })}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, customer_service: e.target.value || null })}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                 >
                   <option value="">Select Service (Optional)</option>
@@ -524,7 +524,7 @@ export function VendorRoleWizard({ isOpen, onClose, onSuccess, editingRole }: Ve
                         <input
                           type="checkbox"
                           checked={formData.allowCustomServicesForSolo}
-                          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData(prev => ({
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({
                             ...prev,
                             allowCustomServicesForSolo: e.target.checked
                           }))}

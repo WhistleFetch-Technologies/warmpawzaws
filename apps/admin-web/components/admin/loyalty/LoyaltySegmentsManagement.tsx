@@ -445,7 +445,7 @@ export function LoyaltySegmentsManagement() {
               <Textarea
                 id="description"
                 value={formData.description}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                   setFormData((prev) => ({ ...prev, description: e.target.value }))
                 }
                 placeholder="Describe this segment..."

@@ -426,7 +426,7 @@ export function FlexibleTaxRulesManager() {
                   <textarea
                     id="description"
                     value={formData.description || ''}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, description: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, description: e.target.value })}
                     placeholder="Describe when this rule applies..."
                     rows={2}
                     className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 resize-none"
@@ -441,7 +441,7 @@ export function FlexibleTaxRulesManager() {
                   <select
                     id="taxType"
                     value={formData.taxType}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, taxType: e.target.value as TaxType })}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, taxType: e.target.value as TaxType })}
                     className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
                     required
                   >
@@ -465,7 +465,7 @@ export function FlexibleTaxRulesManager() {
                   <select
                     id="calculationMethod"
                     value={formData.calculationMethod}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => 
                       setFormData({ ...formData, calculationMethod: e.target.value as TaxCalculationMethod })
                     }
                     className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
@@ -545,7 +545,7 @@ export function FlexibleTaxRulesManager() {
                   <select
                     id="transactionType"
                     value={formData.conditions?.transactionType || 'both'}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => 
                       setFormData({ 
                         ...formData, 
                         conditions: { ...formData.conditions, transactionType: e.target.value as TransactionType }
@@ -566,7 +566,7 @@ export function FlexibleTaxRulesManager() {
                   <select
                     id="taxCategoryId"
                     value={formData.conditions?.categoryIds?.[0] || (formData as any).tax_category_id || ''}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
                       const v = e.target.value || undefined;
                       setFormData({
                         ...formData,
@@ -595,7 +595,7 @@ export function FlexibleTaxRulesManager() {
                   <select
                     id="serviceStyle"
                     value={formData.conditions?.serviceTypes?.[0] || (formData as any).service_style || ''}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
                       const v = e.target.value || undefined;
                       setFormData({
                         ...formData,
@@ -622,7 +622,7 @@ export function FlexibleTaxRulesManager() {
                   <select
                     id="roleId"
                     value={formData.conditions?.vendorRoles?.[0] || (formData as any).role_id || ''}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
                       const v = e.target.value || undefined;
                       setFormData({
                         ...formData,
@@ -659,7 +659,7 @@ export function FlexibleTaxRulesManager() {
                     <select
                       id="compoundOnTaxType"
                       value={formData.compoundOnTaxType || ''}
-                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => 
                         setFormData({ ...formData, compoundOnTaxType: e.target.value as TaxType })
                       }
                       className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"

@@ -178,9 +178,7 @@ const ROLE_ICONS: Record<string, any> = {
   'pet_sitter_saas': Home,
   'ecommerce_seller': ShoppingBag,
   'e_commerce_seller': ShoppingBag,
-  'product_seller': ShoppingBag,
-  'pet_product': Package,
-  'sunset': Sunset,
+  // product_seller, pet_product, sunset already defined above
 };
 
 function getFallbackRoles(): Role[] {

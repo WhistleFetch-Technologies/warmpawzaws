@@ -134,7 +134,7 @@ export function TicketingSystem() {
                   <label className="block text-sm font-medium text-gray-700 mb-0">Category</label>
                   <select
                     value={formData.category}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, category: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, category: e.target.value }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="General">General</option>
@@ -147,7 +147,7 @@ export function TicketingSystem() {
                   <label className="block text-sm font-medium text-gray-700 mb-0">Priority</label>
                   <select
                     value={formData.priority}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, priority: e.target.value as any }))}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, priority: e.target.value as any }))}
                     className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="low">Low</option>

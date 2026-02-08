@@ -860,7 +860,7 @@ function RuleEditorModal({
               </label>
               <select
                 value={editedRule.commission.type}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                   setEditedRule({
                     ...editedRule,
                     commission: {

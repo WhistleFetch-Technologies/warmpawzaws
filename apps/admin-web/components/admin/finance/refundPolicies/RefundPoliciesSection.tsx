@@ -573,7 +573,7 @@ export function RefundPoliciesSection() {
                 <Label>Service Location</Label>
                 <select
                   value={editingTier.serviceLocation}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                     setEditingTier({
                       ...editingTier,
                       serviceLocation: e.target.value as ServiceLocationValue,
@@ -594,7 +594,7 @@ export function RefundPoliciesSection() {
                 <Label>Who cancels</Label>
                 <select
                   value={editingTier.cancelledBy ?? 'pet_parent'}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
                     const v = (e.target.value as CancelledByValue) || 'pet_parent';
                     setEditingTier({
                       ...editingTier,
@@ -666,7 +666,7 @@ export function RefundPoliciesSection() {
                       <Label>Cancellation window (customer)</Label>
                       <select
                         value={editingTier.cancellationWindow ?? '24_plus'}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                        onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                           setEditingTier({
                             ...editingTier,
                             cancellationWindow: e.target.value as CustomerCancellationWindow,
@@ -690,7 +690,7 @@ export function RefundPoliciesSection() {
                         <Label>Operator</Label>
                         <select
                           value={editingTier.hoursOperator ?? 'gte'}
-                          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                          onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                             setEditingTier({
                               ...editingTier,
                               hoursOperator: e.target.value as HoursOperator,
@@ -733,7 +733,7 @@ export function RefundPoliciesSection() {
                   <Label>Vendor cancellation reason</Label>
                   <select
                     value={editingTier.vendorCancellationReason ?? 'operational'}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                       setEditingTier({
                         ...editingTier,
                         vendorCancellationReason: e.target.value as VendorCancellationReason,

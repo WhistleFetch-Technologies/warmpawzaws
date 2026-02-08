@@ -378,7 +378,7 @@ export function TierManagement() {
                   <Label>Description</Label>
                   <Textarea
                     value={currentTier.description}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                       setCurrentTier({
                         ...currentTier,
                         description: e.target.value,
@@ -485,7 +485,7 @@ export function TierManagement() {
                   <Label>Terms & Conditions (vendor must accept before upgrade)</Label>
                   <Textarea
                     value={currentTier.termsAndConditions ?? ''}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCurrentTier({ ...currentTier, termsAndConditions: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCurrentTier({ ...currentTier, termsAndConditions: e.target.value })}
                     placeholder="Enter terms and conditions for this tier. Leave empty if no T&C required."
                     className="resize-none h-24 text-sm"
                   />

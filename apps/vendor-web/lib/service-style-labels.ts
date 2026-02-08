@@ -153,12 +153,7 @@ const ROLE_STYLE_LABELS: Record<string, Partial<Record<ServiceStyle, ServiceStyl
     at_center: { label: 'Clinic Booking', icon: '🏥', description: 'Book at your practice' },
     tele: { label: 'Video Consultation', icon: '📱', description: 'Online nutrition consultation' },
   },
-  pet_behaviorist: {
-    at_home: { label: 'Home Session', icon: '🏠', description: 'Behavior sessions at home' },
-    at_center: { label: 'Center Booking', icon: '🏥', description: 'Sessions at your center' },
-    tele: { label: 'Video Consultation', icon: '📱', description: 'Online behavior consultation' },
-  },
-  // Pharmacy / Retail
+  // Pharmacy / Retail (pet_behaviorist already defined under Behaviorist above)
   pet_pharmacy: {
     at_center: { label: 'Store / Pickup', icon: '💊', description: 'Pick up at your store' },
     at_home: { label: 'Delivery', icon: '🏠', description: 'Home delivery' },

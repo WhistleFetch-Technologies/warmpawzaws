@@ -562,7 +562,7 @@ export function AdvancedPromotionsEngine({
 									<Label>Description *</Label>
 									<Textarea
 										value={formData.description}
-										onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+										onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
 											setFormData({ ...formData, description: e.target.value })
 										}
 										placeholder="Describe the promotion..."

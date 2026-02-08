@@ -414,7 +414,7 @@ export function RBACManagement() {
                   <label className="text-sm font-medium text-gray-700">Permissions</label>
                   <select
                     value={selectedCategory}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSelectedCategory(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedCategory(e.target.value)}
                     className="px-0 py-0 border-2 border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-orange-500"
                   >
                     <option value="all">All Categories</option>

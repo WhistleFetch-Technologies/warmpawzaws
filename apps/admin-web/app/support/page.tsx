@@ -993,7 +993,7 @@ export default function SupportCRM() {
 												onChange={(e: React.ChangeEvent<HTMLInputElement>) => setReplyText(e.target.value)}
 												placeholder="Type your reply to the customer..."
 												className="flex-1 border-gray-200 focus:border-[#FF8C42] focus:ring-[#FF8C42]/20"
-												onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleReply()}
+												onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && !e.shiftKey && handleReply()}
 											/>
 											<Button
 												onClick={handleReply}

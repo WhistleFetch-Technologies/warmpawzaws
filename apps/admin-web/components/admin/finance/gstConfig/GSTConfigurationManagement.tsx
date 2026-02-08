@@ -481,7 +481,7 @@ export function GSTConfigurationManagement() {
                 <Label>Tax Category</Label>
                 <select
                   value={editingHSN.categoryId || ''}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                     setEditingHSN({
                       ...editingHSN,
                       categoryId: e.target.value || undefined,

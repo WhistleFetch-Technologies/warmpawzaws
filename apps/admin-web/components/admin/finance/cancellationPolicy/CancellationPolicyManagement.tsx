@@ -554,7 +554,7 @@ export function CancellationPolicyManagement() {
                   <Label>Policy Type</Label>
                   <select
                     value={editingPolicy.policyType}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                       setEditingPolicy({
                         ...editingPolicy,
                         policyType: e.target.value as any,
@@ -652,7 +652,7 @@ export function CancellationPolicyManagement() {
                   <Label>Service Category (optional)</Label>
                   <select
                     value={editingPolicy.serviceCategory ?? ''}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                       setEditingPolicy({ ...editingPolicy, serviceCategory: e.target.value || undefined })
                     }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
@@ -668,7 +668,7 @@ export function CancellationPolicyManagement() {
                   <Label>Service Format (optional)</Label>
                   <select
                     value={editingPolicy.serviceFormat ?? ''}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                       setEditingPolicy({ ...editingPolicy, serviceFormat: e.target.value || undefined })
                     }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"

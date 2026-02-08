@@ -431,8 +431,8 @@ export function DeliveryOTPVerification({
                 inputMode="numeric"
                 maxLength={1}
                 value={digit}
-                onChange={(e) => handleOtpChange(idx, e.target.value)}
-                onKeyDown={(e) => handleKeyDown(idx, e)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleOtpChange(idx, e.target.value)}
+                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => handleKeyDown(idx, e)}
                 onPaste={handlePaste}
                 className={`w-14 h-16 text-center text-2xl font-bold rounded-xl border-2 
                   ${verificationError 

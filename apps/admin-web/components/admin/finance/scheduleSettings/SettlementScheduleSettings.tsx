@@ -190,7 +190,7 @@ export function SettlementScheduleSettings() {
               <Label>Schedule Type</Label>
               <select
                 value={settings.scheduleType}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                   setSettings({
                     ...settings,
                     scheduleType: e.target.value as any,
@@ -289,7 +289,7 @@ export function SettlementScheduleSettings() {
               <Label>Timezone</Label>
               <select
                 value={settings.timezone}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSettings({ ...settings, timezone: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSettings({ ...settings, timezone: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
               >
                 <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>

@@ -362,7 +362,7 @@ export function PaymentRulesSection() {
                   <Label>Service Location</Label>
                   <select
                     value={editingRule.serviceLocation}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                       setEditingRule({
                         ...editingRule,
                         serviceLocation: e.target.value as ServiceLocationValue,
@@ -382,7 +382,7 @@ export function PaymentRulesSection() {
                   <Label>Reservation Type</Label>
                   <select
                     value={editingRule.reservationType}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                       setEditingRule({
                         ...editingRule,
                         reservationType: e.target.value as any,

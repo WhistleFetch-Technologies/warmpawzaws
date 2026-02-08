@@ -889,7 +889,7 @@ export default function SupportSettingsPage() {
                 <label className="text-sm font-medium text-gray-700 mb-1.5 block">Description</label>
                 <Textarea
                   value={editingCategory?.description || ""}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingCategory({ ...editingCategory, description: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditingCategory({ ...editingCategory, description: e.target.value })}
                   placeholder="Describe this category..."
                   rows={2}
                 />
