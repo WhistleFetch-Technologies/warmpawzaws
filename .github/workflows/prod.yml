@@ -258,13 +258,11 @@ jobs:
             
             if [ -z "$EXISTING" ] || [ "$EXISTING" == "None" ]; then
               echo "  Adding $CIDR..."
+              # Use --ip-permissions with proper JSON structure for description
               if aws ec2 authorize-security-group-ingress \
                 --group-id "$RDS_SG_ID" \
-                --protocol tcp \
-                --port 5432 \
-                --cidr "$CIDR" \
-                --region ap-south-1 \
-                --description "GitHub Actions CI/CD migrations" 2>&1; then
+                --ip-permissions "IpProtocol=tcp,FromPort=5432,ToPort=5432,IpRanges=[{CidrIp=$CIDR,Description='GitHub Actions CI/CD migrations'}]" \
+                --region ap-south-1 2>&1; then
                 echo "    ✅ Added successfully"
                 RULES_ADDED=$((RULES_ADDED + 1))
               else
