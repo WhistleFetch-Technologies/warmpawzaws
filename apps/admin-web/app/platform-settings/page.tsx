@@ -53,7 +53,7 @@ export default function PlatformSettings() {
 				{/* Main Content - Match wireframe: max-w-6xl mx-auto px-6 py-8 */}
 				<div className="flex-1 overflow-y-auto">
 					<div className="max-w-6xl mx-auto px-6 py-8">
-					<Tabs value={activeTab} onValueChange={(value) => {
+					<Tabs value={activeTab} onValueChange={(value: string) => {
 						console.log('🔧 Platform Settings tab clicked:', value);
 						setActiveTab(value);
 					}} className="space-y-8">

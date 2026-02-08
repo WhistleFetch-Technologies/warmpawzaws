@@ -388,7 +388,7 @@ export default function BannersPage() {
         </main>
 
         {/* Create/Edit Modal */}
-        <Dialog open={modal.isOpen} onOpenChange={(open) => !open && modal.closeModal()}>
+        <Dialog open={modal.isOpen} onOpenChange={(open: boolean) => !open && modal.closeModal()}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{modal.editingItem ? 'Edit Banner' : 'Create Banner'}</DialogTitle>

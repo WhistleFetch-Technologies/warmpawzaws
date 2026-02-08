@@ -513,7 +513,7 @@ export function CancellationPolicyManagement() {
       {showModal && editingPolicy && (
         <Dialog
           open={showModal}
-          onOpenChange={(open) => {
+          onOpenChange={(open: boolean) => {
             setShowModal(open);
             if (!open) setEditingPolicy(null);
           }}

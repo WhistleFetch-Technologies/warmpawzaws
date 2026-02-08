@@ -737,7 +737,7 @@ export default function SupportSettingsPage() {
                 <label className="text-sm font-medium text-gray-700 mb-1.5 block">Staff Member *</label>
                 <Select
                   value={editingAgent?.staffId || ""}
-                  onValueChange={(value) => setEditingAgent({ ...editingAgent, staffId: value })}
+                  onValueChange={(value: string) => setEditingAgent({ ...editingAgent, staffId: value })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select staff member..." />
@@ -756,7 +756,7 @@ export default function SupportSettingsPage() {
                 <label className="text-sm font-medium text-gray-700 mb-1.5 block">Role</label>
                 <Select
                   value={editingAgent?.role || "agent"}
-                  onValueChange={(value) => setEditingAgent({ ...editingAgent, role: value })}
+                  onValueChange={(value: string) => setEditingAgent({ ...editingAgent, role: value })}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -811,7 +811,7 @@ export default function SupportSettingsPage() {
                 <label className="text-sm font-medium text-gray-700 mb-1.5 block">Priority *</label>
                 <Select
                   value={editingSLA?.priority || ""}
-                  onValueChange={(value) => setEditingSLA({ ...editingSLA, priority: value })}
+                  onValueChange={(value: string) => setEditingSLA({ ...editingSLA, priority: value })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select priority..." />
@@ -899,7 +899,7 @@ export default function SupportSettingsPage() {
                 <label className="text-sm font-medium text-gray-700 mb-1.5 block">Default Priority</label>
                 <Select
                   value={editingCategory?.defaultPriority || "medium"}
-                  onValueChange={(value) => setEditingCategory({ ...editingCategory, defaultPriority: value })}
+                  onValueChange={(value: string) => setEditingCategory({ ...editingCategory, defaultPriority: value })}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -917,7 +917,7 @@ export default function SupportSettingsPage() {
                 <label className="text-sm font-medium text-gray-700 mb-1.5 block">Auto-assign To</label>
                 <Select
                   value={editingCategory?.autoAssignTo || "none"}
-                  onValueChange={(value) => setEditingCategory({ ...editingCategory, autoAssignTo: value === "none" ? undefined : value })}
+                  onValueChange={(value: string) => setEditingCategory({ ...editingCategory, autoAssignTo: value === "none" ? undefined : value })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="No auto-assignment" />
@@ -967,7 +967,7 @@ export default function SupportSettingsPage() {
                   <label className="text-sm font-medium text-gray-700 mb-1.5 block">Trigger Type *</label>
                   <Select
                     value={editingRule?.triggerType || ""}
-                    onValueChange={(value) => setEditingRule({ ...editingRule, triggerType: value })}
+                    onValueChange={(value: string) => setEditingRule({ ...editingRule, triggerType: value })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select trigger..." />
@@ -995,7 +995,7 @@ export default function SupportSettingsPage() {
                   <label className="text-sm font-medium text-gray-700 mb-1.5 block">Filter by Priority</label>
                   <Select
                     value={editingRule?.priorityFilter || "any"}
-                    onValueChange={(value) => setEditingRule({ ...editingRule, priorityFilter: value === "any" ? undefined : value })}
+                    onValueChange={(value: string) => setEditingRule({ ...editingRule, priorityFilter: value === "any" ? undefined : value })}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -1013,7 +1013,7 @@ export default function SupportSettingsPage() {
                   <label className="text-sm font-medium text-gray-700 mb-1.5 block">Set New Priority</label>
                   <Select
                     value={editingRule?.newPriority || "none"}
-                    onValueChange={(value) => setEditingRule({ ...editingRule, newPriority: value === "none" ? undefined : value })}
+                    onValueChange={(value: string) => setEditingRule({ ...editingRule, newPriority: value === "none" ? undefined : value })}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -1031,7 +1031,7 @@ export default function SupportSettingsPage() {
                 <label className="text-sm font-medium text-gray-700 mb-1.5 block">Escalate To (Agent)</label>
                 <Select
                   value={editingRule?.escalateTo || "none"}
-                  onValueChange={(value) => setEditingRule({ ...editingRule, escalateTo: value === "none" ? undefined : value })}
+                  onValueChange={(value: string) => setEditingRule({ ...editingRule, escalateTo: value === "none" ? undefined : value })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select agent..." />

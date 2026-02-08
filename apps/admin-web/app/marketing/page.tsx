@@ -1286,7 +1286,7 @@ export default function MarketingPromotionsTab() {
 																	</span>
 																	<Select
 																		value={svc.effectiveStatus || "hidden"}
-																		onValueChange={(value) => handleUpdateServiceLaunch(svc.id || svc.serviceId, value, svc.effectiveRolloutPercentage || 100)}
+																		onValueChange={(value: string) => handleUpdateServiceLaunch(svc.id || svc.serviceId, value, svc.effectiveRolloutPercentage || 100)}
 																	>
 																		<SelectTrigger className="h-8 text-xs">
 																			<SelectValue />
