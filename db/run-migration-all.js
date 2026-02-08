@@ -352,6 +352,7 @@ async function runAllMigrations() {
   let successCount = 0;
   let skipCount = 0;
   let errorCount = 0;
+  const failedMigrations = [];
 
   try {
     console.log('🔗 Connecting to database...');
@@ -414,13 +415,22 @@ async function runAllMigrations() {
           skipCount++;
         } else {
           console.error('   ❌ Error: ' + error.message);
-          // Show first 3 lines of error for context
-          const errorLines = error.message.split('\n').slice(0, 3);
+          // Show first 5 lines of error for context
+          const errorLines = error.message.split('\n').slice(0, 5);
           if (errorLines.length > 1) {
             errorLines.forEach((line, idx) => {
-              if (idx > 0) console.error('      ' + line);
+              if (idx > 0 && line.trim()) console.error('      ' + line);
             });
           }
+          // Extract key error details
+          const errorDetail = {
+            file: file,
+            message: error.message.split('\n')[0],
+            code: error.code || 'UNKNOWN',
+            detail: error.detail || '',
+            hint: error.hint || ''
+          };
+          failedMigrations.push(errorDetail);
           errorCount++;
           console.log('   ⚠️  Continuing with remaining migrations...');
         }
@@ -441,6 +451,46 @@ async function runAllMigrations() {
 
     if (errorCount > 0) {
       console.log('⚠️  Some migrations encountered errors but process continued');
+      console.log('');
+      console.log('📋 Failed Migrations Analysis:');
+      console.log('='.repeat(60));
+      
+      // Group errors by type
+      const errorTypes = {};
+      failedMigrations.forEach(err => {
+        const key = err.code || 'OTHER';
+        if (!errorTypes[key]) errorTypes[key] = [];
+        errorTypes[key].push(err);
+      });
+      
+      // Show error types summary
+      console.log('Error Types:');
+      Object.keys(errorTypes).forEach(type => {
+        console.log(`   ${type}: ${errorTypes[type].length} failures`);
+      });
+      console.log('');
+      
+      // Show first 10 failed migrations with details
+      console.log('First 10 Failed Migrations:');
+      failedMigrations.slice(0, 10).forEach((err, idx) => {
+        console.log(`   ${idx + 1}. ${err.file}`);
+        console.log(`      Error: ${err.message.substring(0, 100)}${err.message.length > 100 ? '...' : ''}`);
+        if (err.code) console.log(`      Code: ${err.code}`);
+        if (err.detail) console.log(`      Detail: ${err.detail.substring(0, 80)}${err.detail.length > 80 ? '...' : ''}`);
+      });
+      
+      if (failedMigrations.length > 10) {
+        console.log(`   ... and ${failedMigrations.length - 10} more failures`);
+      }
+      
+      console.log('');
+      console.log('💡 Common Error Patterns:');
+      console.log('   - "relation does not exist" → Migration dependency issue');
+      console.log('   - "column does not exist" → Schema mismatch');
+      console.log('   - "syntax error" → SQL syntax issue');
+      console.log('   - "permission denied" → User lacks privileges');
+      console.log('   - "duplicate key" → Data already exists (usually safe)');
+      console.log('');
       console.log('   Review the errors above and ensure database is in expected state');
     } else {
       console.log('✅ All migrations completed successfully!');
