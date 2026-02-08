@@ -352,7 +352,7 @@ export default function ProblemGridManagement() {
                   <input
                     type="checkbox"
                     checked={showInactive}
-                    onChange={(e) => setShowInactive(e.target.checked)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setShowInactive(e.target.checked)}
                     className="rounded border-gray-300"
                   />
                   Show inactive items
@@ -370,7 +370,7 @@ export default function ProblemGridManagement() {
                 <input
                   type="text"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                   placeholder="Search problem grid items..."
                   className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:border-[#FF8C42] outline-none"
                 />
@@ -508,7 +508,7 @@ export default function ProblemGridManagement() {
                 <input
                   type="text"
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="e.g., Bath & Brush"
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-[#FF8C42] outline-none"
                 />
@@ -519,7 +519,7 @@ export default function ProblemGridManagement() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
                   value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, description: e.target.value })}
                   placeholder="Brief description of this problem/need"
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-[#FF8C42] outline-none h-20 resize-none"
                 />
@@ -530,7 +530,7 @@ export default function ProblemGridManagement() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
                 <select
                   value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, category: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-[#FF8C42] outline-none"
                 >
                   <option value="">Select category</option>
@@ -547,7 +547,7 @@ export default function ProblemGridManagement() {
                   <input
                     type="text"
                     value={formData.icon}
-                    onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, icon: e.target.value })}
                     placeholder="Emoji (e.g., 🛁)"
                     className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:border-[#FF8C42] outline-none"
                   />
@@ -634,7 +634,7 @@ export default function ProblemGridManagement() {
                 <input
                   type="text"
                   value={formData.keywords}
-                  onChange={(e) => setFormData({ ...formData, keywords: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, keywords: e.target.value })}
                   placeholder="Comma-separated keywords for search"
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-[#FF8C42] outline-none"
                 />

@@ -175,7 +175,7 @@ export function LogisticsRulesManager() {
                   <input
                     type="text"
                     value={formData.rule_name || ''}
-                    onChange={(e) => setFormData({ ...formData, rule_name: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, rule_name: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500"
                     required
                   />
@@ -185,7 +185,7 @@ export function LogisticsRulesManager() {
                   <input
                     type="text"
                     value={formData.rule_type || ''}
-                    onChange={(e) => setFormData({ ...formData, rule_type: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, rule_type: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500"
                     required
                   />
@@ -195,7 +195,7 @@ export function LogisticsRulesManager() {
                   <input
                     type="number"
                     value={formData.rule_config?.priority || 100}
-                    onChange={(e) => setFormData({
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({
                       ...formData,
                       rule_config: {
                         ...formData.rule_config,
@@ -209,7 +209,7 @@ export function LogisticsRulesManager() {
                   <input
                     type="checkbox"
                     checked={formData.is_active ?? true}
-                    onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, is_active: e.target.checked })}
                     className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
                   />
                   <label className="ml-2 block text-sm text-gray-900">Active</label>

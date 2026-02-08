@@ -173,7 +173,7 @@ export function LogisticsPartnersManager() {
                   <input
                     type="text"
                     value={formData.partner_id || ''}
-                    onChange={(e) => setFormData({ ...formData, partner_id: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, partner_id: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500"
                     required
                   />
@@ -183,7 +183,7 @@ export function LogisticsPartnersManager() {
                   <input
                     type="text"
                     value={formData.partner_name || ''}
-                    onChange={(e) => setFormData({ ...formData, partner_name: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, partner_name: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500"
                     required
                   />
@@ -192,7 +192,7 @@ export function LogisticsPartnersManager() {
                   <label className="block text-sm font-medium text-gray-700">Partner Type</label>
                   <select
                     value={formData.partner_type || 'shiprocket'}
-                    onChange={(e) => setFormData({ ...formData, partner_type: e.target.value as any })}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, partner_type: e.target.value as any })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500"
                     required
                   >
@@ -207,7 +207,7 @@ export function LogisticsPartnersManager() {
                   <input
                     type="email"
                     value={formData.email || ''}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, email: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500"
                   />
                 </div>
@@ -216,7 +216,7 @@ export function LogisticsPartnersManager() {
                   <input
                     type="text"
                     value={formData.api_key || ''}
-                    onChange={(e) => setFormData({ ...formData, api_key: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, api_key: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500"
                   />
                 </div>
@@ -224,7 +224,7 @@ export function LogisticsPartnersManager() {
                   <input
                     type="checkbox"
                     checked={formData.enabled ?? true}
-                    onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, enabled: e.target.checked })}
                     className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
                   />
                   <label className="ml-2 block text-sm text-gray-900">Enabled</label>

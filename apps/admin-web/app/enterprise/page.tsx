@@ -140,7 +140,7 @@ export default function EnterpriseRevenue() {
 							<div className="flex items-center gap-3">
 							<select
 								value={dateRange}
-								onChange={(e) => setDateRange(e.target.value)}
+								onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setDateRange(e.target.value)}
 								className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
 							>
 								<option value="7d">Last 7 days</option>

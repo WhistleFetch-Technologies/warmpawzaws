@@ -200,7 +200,7 @@ export function TaxRulesManager() {
                       type="text"
                       required
                       value={formData.rule_name}
-                      onChange={(e) => setFormData({ ...formData, rule_name: e.target.value })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, rule_name: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-orange-500 focus:border-orange-500"
                     />
                   </div>
@@ -212,7 +212,7 @@ export function TaxRulesManager() {
                       type="number"
                       required
                       value={formData.priority}
-                      onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, priority: parseInt(e.target.value) })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-orange-500 focus:border-orange-500"
                     />
                   </div>
@@ -230,7 +230,7 @@ export function TaxRulesManager() {
                       max="100"
                       required
                       value={formData.gst_rate}
-                      onChange={(e) => setFormData({ ...formData, gst_rate: parseFloat(e.target.value) })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, gst_rate: parseFloat(e.target.value) })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-orange-500 focus:border-orange-500"
                     />
                   </div>
@@ -240,7 +240,7 @@ export function TaxRulesManager() {
                     </label>
                     <select
                       value={formData.gst_type}
-                      onChange={(e) => setFormData({ ...formData, gst_type: e.target.value as 'percentage' | 'fixed' })}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, gst_type: e.target.value as 'percentage' | 'fixed' })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-orange-500 focus:border-orange-500"
                     >
                       <option value="percentage">Percentage</option>
@@ -258,7 +258,7 @@ export function TaxRulesManager() {
                       type="number"
                       step="0.01"
                       value={formData.cgst_percentage || ''}
-                      onChange={(e) => setFormData({ ...formData, cgst_percentage: parseFloat(e.target.value) || undefined })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, cgst_percentage: parseFloat(e.target.value) || undefined })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-orange-500 focus:border-orange-500"
                     />
                   </div>
@@ -270,7 +270,7 @@ export function TaxRulesManager() {
                       type="number"
                       step="0.01"
                       value={formData.sgst_percentage || ''}
-                      onChange={(e) => setFormData({ ...formData, sgst_percentage: parseFloat(e.target.value) || undefined })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, sgst_percentage: parseFloat(e.target.value) || undefined })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-orange-500 focus:border-orange-500"
                     />
                   </div>
@@ -282,7 +282,7 @@ export function TaxRulesManager() {
                       type="number"
                       step="0.01"
                       value={formData.igst_percentage || ''}
-                      onChange={(e) => setFormData({ ...formData, igst_percentage: parseFloat(e.target.value) || undefined })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, igst_percentage: parseFloat(e.target.value) || undefined })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-orange-500 focus:border-orange-500"
                     />
                   </div>
@@ -294,7 +294,7 @@ export function TaxRulesManager() {
                   </label>
                   <textarea
                     value={formData.description || ''}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, description: e.target.value })}
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-orange-500 focus:border-orange-500"
                   />
@@ -305,7 +305,7 @@ export function TaxRulesManager() {
                     type="checkbox"
                     id="enabled"
                     checked={formData.enabled}
-                    onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, enabled: e.target.checked })}
                     className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
                   />
                   <label htmlFor="enabled" className="ml-2 block text-sm text-gray-900">

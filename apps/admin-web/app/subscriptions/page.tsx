@@ -500,7 +500,7 @@ export default function SubscriptionPlanManagementPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Plan Name *</label>
                   <Input
                     value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                     placeholder="e.g., Premium Care"
                   />
                 </div>
@@ -510,7 +510,7 @@ export default function SubscriptionPlanManagementPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                   <textarea
                     value={formData.description}
-                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                     placeholder="Brief description of the plan"
                     rows={2}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg resize-none focus:border-orange-500 outline-none"
@@ -524,7 +524,7 @@ export default function SubscriptionPlanManagementPage() {
                     <Input
                       type="number"
                       value={formData.price}
-                      onChange={(e) => setFormData(prev => ({ ...prev, price: parseFloat(e.target.value) || 0 }))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, price: parseFloat(e.target.value) || 0 }))}
                       placeholder="499"
                     />
                   </div>
@@ -532,7 +532,7 @@ export default function SubscriptionPlanManagementPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Billing Cycle</label>
                     <select
                       value={formData.billingCycle}
-                      onChange={(e) => setFormData(prev => ({ ...prev, billingCycle: e.target.value as any }))}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, billingCycle: e.target.value as any }))}
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:border-orange-500 outline-none"
                     >
                       <option value="monthly">Monthly</option>
@@ -549,7 +549,7 @@ export default function SubscriptionPlanManagementPage() {
                     <Input
                       type="number"
                       value={formData.maxBookingsPerMonth}
-                      onChange={(e) => setFormData(prev => ({ ...prev, maxBookingsPerMonth: parseInt(e.target.value) || 0 }))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, maxBookingsPerMonth: parseInt(e.target.value) || 0 }))}
                       placeholder="-1 for unlimited"
                     />
                     <p className="text-xs text-gray-500 mt-1">Use -1 for unlimited</p>
@@ -559,7 +559,7 @@ export default function SubscriptionPlanManagementPage() {
                     <Input
                       type="number"
                       value={formData.discountPercentage}
-                      onChange={(e) => setFormData(prev => ({ ...prev, discountPercentage: parseInt(e.target.value) || 0 }))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, discountPercentage: parseInt(e.target.value) || 0 }))}
                       placeholder="10"
                       max={100}
                     />
@@ -580,7 +580,7 @@ export default function SubscriptionPlanManagementPage() {
                       <div key={i} className="flex gap-2">
                         <Input
                           value={feature}
-                          onChange={(e) => updateFeature(i, e.target.value)}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateFeature(i, e.target.value)}
                           placeholder="e.g., 5 Vet Consultations"
                         />
                         {formData.features.length > 1 && (
@@ -599,7 +599,7 @@ export default function SubscriptionPlanManagementPage() {
                     <input
                       type="checkbox"
                       checked={formData.isPopular}
-                      onChange={(e) => setFormData(prev => ({ ...prev, isPopular: e.target.checked }))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, isPopular: e.target.checked }))}
                       className="w-4 h-4 accent-orange-500"
                     />
                     <span className="text-sm">Mark as Popular</span>
@@ -608,7 +608,7 @@ export default function SubscriptionPlanManagementPage() {
                     <input
                       type="checkbox"
                       checked={formData.isActive}
-                      onChange={(e) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, isActive: e.target.checked }))}
                       className="w-4 h-4 accent-orange-500"
                     />
                     <span className="text-sm">Active</span>

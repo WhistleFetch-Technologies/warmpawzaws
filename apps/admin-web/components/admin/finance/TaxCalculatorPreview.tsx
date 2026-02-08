@@ -119,7 +119,7 @@ export function TaxCalculatorPreview() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
                     <select
                       value={item.type}
-                      onChange={(e) => 
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => 
                         updateTestItem(item.id, { type: e.target.value as 'product' | 'service' })
                       }
                       className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
@@ -134,7 +134,7 @@ export function TaxCalculatorPreview() {
                     <input
                       type="number"
                       value={item.quantity || 1}
-                      onChange={(e) => 
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
                         updateTestItem(item.id, { quantity: parseInt(e.target.value) || 1 })
                       }
                       min="1"
@@ -148,7 +148,7 @@ export function TaxCalculatorPreview() {
                   <input
                     type="number"
                     value={item.amount}
-                    onChange={(e) => 
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
                       updateTestItem(item.id, { amount: parseFloat(e.target.value) || 0 })
                     }
                     step="0.01"
@@ -162,7 +162,7 @@ export function TaxCalculatorPreview() {
                   <input
                     type="text"
                     value={item.categoryId || ''}
-                    onChange={(e) => 
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
                       updateTestItem(item.id, { categoryId: e.target.value })
                     }
                     placeholder="e.g., medicines, pet_food"

@@ -437,7 +437,7 @@ export default function ReportsPage() {
                     <input
                       type="date"
                       value={startDate}
-                      onChange={(e) => {
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                         setStartDate(e.target.value);
                         setTimeRange('custom');
                       }}
@@ -446,7 +446,7 @@ export default function ReportsPage() {
                     <input
                       type="date"
                       value={endDate}
-                      onChange={(e) => {
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                         setEndDate(e.target.value);
                         setTimeRange('custom');
                       }}

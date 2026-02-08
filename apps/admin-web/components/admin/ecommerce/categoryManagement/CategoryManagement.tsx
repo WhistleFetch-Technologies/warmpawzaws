@@ -332,7 +332,7 @@ export function CategoryManagement() {
               type="text"
               placeholder="Search categories..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
             />
           </div>
@@ -340,7 +340,7 @@ export function CategoryManagement() {
           <div className="flex items-center gap-2">
             <select
               value={filterEnabled === null ? 'all' : filterEnabled.toString()}
-              onChange={(e) =>
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                 setFilterEnabled(
                   e.target.value === 'all' ? null : e.target.value === 'true'
                 )
@@ -636,7 +636,7 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
               <input
                 type="text"
                 value={editedCategory.name}
-                onChange={(e) => setEditedCategory({ ...editedCategory, name: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditedCategory({ ...editedCategory, name: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
               />
             </div>
@@ -645,7 +645,7 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
               <input
                 type="text"
                 value={editedCategory.slug}
-                onChange={(e) => setEditedCategory({ ...editedCategory, slug: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditedCategory({ ...editedCategory, slug: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
               />
             </div>
@@ -655,7 +655,7 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
             <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
             <textarea
               value={editedCategory.description || ''}
-              onChange={(e) =>
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                 setEditedCategory({
                   ...editedCategory,
                   description: e.target.value,
@@ -672,7 +672,7 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
               <input
                 type="text"
                 value={editedCategory.icon || ''}
-                onChange={(e) => setEditedCategory({ ...editedCategory, icon: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditedCategory({ ...editedCategory, icon: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
                 placeholder="🐶"
               />
@@ -682,7 +682,7 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
               <input
                 type="text"
                 value={editedCategory.color || ''}
-                onChange={(e) =>
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                   setEditedCategory({
                     ...editedCategory,
                     color: e.target.value,
@@ -705,7 +705,7 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
                 <input
                   type="number"
                   value={editedCategory.metadata?.commissionRate || 0}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setEditedCategory({
                       ...editedCategory,
                       metadata: {
@@ -723,7 +723,7 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
                 <input
                   type="number"
                   value={editedCategory.metadata?.gstRate || 0}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setEditedCategory({
                       ...editedCategory,
                       metadata: {
@@ -743,7 +743,7 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
                 <input
                   type="number"
                   value={editedCategory.metadata?.returnWindow || 0}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setEditedCategory({
                       ...editedCategory,
                       metadata: {
@@ -764,7 +764,7 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
                 </label>
                 <select
                   value={editedCategory.metadata?.shippingCategory || 'standard'}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
                     setEditedCategory({
                       ...editedCategory,
                       metadata: {
@@ -785,7 +785,7 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
                 <input
                   type="checkbox"
                   checked={editedCategory.metadata?.allowReturns || false}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setEditedCategory({
                       ...editedCategory,
                       metadata: {

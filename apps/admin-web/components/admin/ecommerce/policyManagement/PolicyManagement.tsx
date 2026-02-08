@@ -186,7 +186,7 @@ export function PolicyManagement() {
                     id="refund-window"
                     type="number"
                     value={refundPolicy.defaultRefundWindow}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setRefundPolicy({
                         ...refundPolicy,
                         defaultRefundWindow: parseInt(e.target.value),
@@ -206,7 +206,7 @@ export function PolicyManagement() {
                     id="auto-approval"
                     type="number"
                     value={refundPolicy.autoApprovalThreshold}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setRefundPolicy({
                         ...refundPolicy,
                         autoApprovalThreshold: parseInt(e.target.value),
@@ -226,7 +226,7 @@ export function PolicyManagement() {
                     id="restocking-fee"
                     type="number"
                     value={refundPolicy.restockingFeePercentage}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setRefundPolicy({
                         ...refundPolicy,
                         restockingFeePercentage: parseInt(e.target.value),
@@ -242,7 +242,7 @@ export function PolicyManagement() {
                     <input
                       type="checkbox"
                       checked={refundPolicy.partialRefundEnabled}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         setRefundPolicy({
                           ...refundPolicy,
                           partialRefundEnabled: e.target.checked,
@@ -264,7 +264,7 @@ export function PolicyManagement() {
                         <input
                           type="checkbox"
                           checked={refundPolicy.enabledCategories.includes(cat)}
-                          onChange={(e) => {
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                             if (e.target.checked) {
                               setRefundPolicy({
                                 ...refundPolicy,
@@ -321,7 +321,7 @@ export function PolicyManagement() {
                     id="min-order"
                     type="number"
                     value={paymentPolicy.minOrderAmount}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setPaymentPolicy({
                         ...paymentPolicy,
                         minOrderAmount: parseInt(e.target.value),
@@ -338,7 +338,7 @@ export function PolicyManagement() {
                     id="max-order"
                     type="number"
                     value={paymentPolicy.maxOrderAmount}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setPaymentPolicy({
                         ...paymentPolicy,
                         maxOrderAmount: parseInt(e.target.value),
@@ -355,7 +355,7 @@ export function PolicyManagement() {
                     id="cod-charges"
                     type="number"
                     value={paymentPolicy.codCharges}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setPaymentPolicy({
                         ...paymentPolicy,
                         codCharges: parseInt(e.target.value),
@@ -373,7 +373,7 @@ export function PolicyManagement() {
                     <input
                       type="checkbox"
                       checked={paymentPolicy.walletEnabled}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         setPaymentPolicy({
                           ...paymentPolicy,
                           walletEnabled: e.target.checked,
@@ -387,7 +387,7 @@ export function PolicyManagement() {
                     <input
                       type="checkbox"
                       checked={paymentPolicy.codEnabled}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         setPaymentPolicy({
                           ...paymentPolicy,
                           codEnabled: e.target.checked,
@@ -432,7 +432,7 @@ export function PolicyManagement() {
                   id="default-commission"
                   type="number"
                   value={commissionPolicy.defaultPercentage}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setCommissionPolicy({
                       ...commissionPolicy,
                       defaultPercentage: parseInt(e.target.value),
@@ -451,7 +451,7 @@ export function PolicyManagement() {
                       <Input
                         type="number"
                         value={rate}
-                        onChange={(e) =>
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                           setCommissionPolicy({
                             ...commissionPolicy,
                             categoryWiseRates: {
@@ -482,7 +482,7 @@ export function PolicyManagement() {
                       <Input
                         type="number"
                         value={tier.rate}
-                        onChange={(e) => {
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                           const newRates = [...commissionPolicy.tieredRates];
                           newRates[index].rate = parseInt(e.target.value);
                           setCommissionPolicy({
@@ -537,7 +537,7 @@ export function PolicyManagement() {
                         checked={
                           verificationPolicy[key as keyof VerificationPolicy] as boolean
                         }
-                        onChange={(e) =>
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                           setVerificationPolicy({
                             ...verificationPolicy,
                             [key]: e.target.checked,
@@ -560,7 +560,7 @@ export function PolicyManagement() {
                     id="verification-days"
                     type="number"
                     value={verificationPolicy.verificationDays}
-                    onChange={(e) =>
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                       setVerificationPolicy({
                         ...verificationPolicy,
                         verificationDays: parseInt(e.target.value),
@@ -576,7 +576,7 @@ export function PolicyManagement() {
                     <input
                       type="checkbox"
                       checked={verificationPolicy.autoApprove}
-                      onChange={(e) =>
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                         setVerificationPolicy({
                           ...verificationPolicy,
                           autoApprove: e.target.checked,

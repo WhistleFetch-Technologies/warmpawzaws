@@ -190,7 +190,7 @@ export function PaymentGatewayManagement() {
                   <input
                     type="text"
                     value={formData.gateway_name || ''}
-                    onChange={(e) => setFormData({ ...formData, gateway_name: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, gateway_name: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500"
                     required
                   />
@@ -199,7 +199,7 @@ export function PaymentGatewayManagement() {
                   <label className="block text-sm font-medium text-gray-700">Gateway Type</label>
                   <select
                     value={formData.gateway_type || 'razorpay'}
-                    onChange={(e) => setFormData({ ...formData, gateway_type: e.target.value as any })}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData({ ...formData, gateway_type: e.target.value as any })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500"
                     required
                   >
@@ -214,7 +214,7 @@ export function PaymentGatewayManagement() {
                   <input
                     type="text"
                     value={formData.key_id || ''}
-                    onChange={(e) => setFormData({ ...formData, key_id: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, key_id: e.target.value })}
                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500"
                     placeholder="rzp_test_..."
                   />
@@ -224,7 +224,7 @@ export function PaymentGatewayManagement() {
                     <input
                       type="checkbox"
                       checked={formData.enabled ?? true}
-                      onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, enabled: e.target.checked })}
                       className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
                     />
                     <span className="ml-2 block text-sm text-gray-900">Enabled</span>
@@ -233,7 +233,7 @@ export function PaymentGatewayManagement() {
                     <input
                       type="checkbox"
                       checked={formData.test_mode ?? true}
-                      onChange={(e) => setFormData({ ...formData, test_mode: e.target.checked })}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, test_mode: e.target.checked })}
                       className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
                     />
                     <span className="ml-2 block text-sm text-gray-900">Test Mode</span>

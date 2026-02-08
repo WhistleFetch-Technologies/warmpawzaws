@@ -105,7 +105,7 @@ export function FlexibleTaxConfigurationManager() {
             id="configName"
             type="text"
             value={formData.name || taxConfig?.name || ''}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, name: e.target.value })}
             placeholder="e.g., Default GST Configuration"
             className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             required
@@ -119,7 +119,7 @@ export function FlexibleTaxConfigurationManager() {
           <textarea
             id="configDescription"
             value={formData.description || taxConfig?.description || ''}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, description: e.target.value })}
             placeholder="Describe this tax configuration..."
             rows={3}
             className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 resize-none"
@@ -131,7 +131,7 @@ export function FlexibleTaxConfigurationManager() {
             type="checkbox"
             id="isActive"
             checked={formData.isActive ?? taxConfig?.isActive ?? true}
-            onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, isActive: e.target.checked })}
             className="w-4 h-4 text-orange-500 border-gray-300 rounded focus:ring-orange-500"
           />
           <label htmlFor="isActive" className="text-sm font-medium text-gray-700">

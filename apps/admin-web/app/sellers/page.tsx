@@ -116,7 +116,7 @@ export default function SellersPage() {
                 type="search"
                 placeholder="Search sellers..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
                 className="px-4 py-2 border border-gray-300 rounded-lg w-64 focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -283,7 +283,7 @@ export default function SellersPage() {
                     </label>
                     <textarea
                       value={rejectReason}
-                      onChange={(e) => setRejectReason(e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRejectReason(e.target.value)}
                       rows={3}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500"
                       placeholder="Please provide a reason for rejection..."
