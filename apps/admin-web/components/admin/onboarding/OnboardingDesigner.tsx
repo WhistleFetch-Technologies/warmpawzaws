@@ -396,7 +396,7 @@ export function OnboardingDesigner() {
             <Label className="font-medium text-gray-900">Currently:</Label>
             <select
               value={selectedRole}
-              onChange={async (e) => {
+              onChange={async (e: React.ChangeEvent<HTMLSelectElement>) => {
                 const newRole = e.target.value;
                 setSelectedRole(newRole);
                 if (newRole) {

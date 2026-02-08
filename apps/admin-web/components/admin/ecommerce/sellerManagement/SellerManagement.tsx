@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ChangeEvent } from 'react';
 import { Store, Search, Eye, CheckCircle, XCircle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
@@ -73,7 +73,7 @@ export function SellerManagement() {
               type="text"
               placeholder="Search sellers..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
             />
           </div>

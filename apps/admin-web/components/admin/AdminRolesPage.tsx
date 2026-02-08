@@ -325,7 +325,7 @@ export function AdminRolesPage() {
                   variant="ghost"
                   size="sm"
                   className="h-6 text-xs text-green-600 hover:text-green-700 hover:bg-green-50"
-                  onClick={(e) => {
+                  onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                     e.stopPropagation();
                     handleRestoreRole(role.id);
                   }}
@@ -431,7 +431,7 @@ export function AdminRolesPage() {
                     variant="ghost"
                     size="sm"
                     className="h-6 text-xs"
-                    onClick={(e) => {
+                    onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                       e.stopPropagation();
                       setSelectedRole(role);
                     }}
@@ -443,7 +443,7 @@ export function AdminRolesPage() {
                       variant="ghost"
                       size="sm"
                       className="h-6 text-xs text-orange-600 hover:text-orange-700 hover:bg-orange-50"
-                      onClick={(e) => {
+                      onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                         e.stopPropagation();
                         handleDeleteRole(role.id, role.display_name, false);
                       }}
@@ -456,7 +456,7 @@ export function AdminRolesPage() {
                     variant="ghost"
                     size="sm"
                     className="h-6 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-                    onClick={(e) => {
+                    onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                       e.stopPropagation();
                       handleDeleteRole(role.id, role.display_name, true);
                     }}

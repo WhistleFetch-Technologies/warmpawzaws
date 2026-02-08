@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type MouseEvent } from 'react';
 import { Button, Input, Label, Checkbox } from '@warmpawz/ui';
 import { Plus, Edit, Trash2, Save, X } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -525,7 +525,7 @@ export function RefundPoliciesSection() {
         >
           <div
             className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e: MouseEvent<HTMLDivElement>) => e.stopPropagation()}
           >
             <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
               <h3 id="refund-tier-modal-title" className="text-xl font-bold text-gray-900">

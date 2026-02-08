@@ -200,7 +200,7 @@ export function EnhancedOnboardingFormBuilder({ formId, roleId, onBack }: Enhanc
                               <p className="text-xs text-gray-500">{field.type} {field.required && '• Required'}</p>
                             </div>
                             <button
-                              onClick={(e) => { e.stopPropagation(); removeField(field.id); }}
+                              onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); removeField(field.id); }}
                               className="p-1 text-gray-400 hover:text-red-500"
                             >
                               <Trash2 className="w-4 h-4" />

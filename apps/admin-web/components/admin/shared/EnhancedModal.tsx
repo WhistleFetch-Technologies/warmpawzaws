@@ -1,7 +1,7 @@
 'use client';
 
 import { X } from 'lucide-react';
-import { ReactNode } from 'react';
+import { ReactNode, type MouseEvent } from 'react';
 
 interface EnhancedModalProps {
   isOpen: boolean;
@@ -47,7 +47,7 @@ export function EnhancedModal({
       {/* Modal */}
       <div
         className={`relative bg-white rounded-2xl shadow-2xl w-full ${maxWidthClasses[maxWidth]} max-h-[90vh] flex flex-col overflow-hidden`}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e: MouseEvent<HTMLDivElement>) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-gray-200 bg-gradient-to-r from-white to-gray-50">

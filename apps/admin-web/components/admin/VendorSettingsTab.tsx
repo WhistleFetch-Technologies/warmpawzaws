@@ -379,7 +379,7 @@ export function VendorSettingsTab() {
               <input
                 type="checkbox"
                 checked={settings.compliance.requireLicense}
-                onChange={(e) => updateSetting('compliance', 'requireLicense', e.target.checked)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSetting('compliance', 'requireLicense', e.target.checked)}
                 className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500"
               />
             </label>
