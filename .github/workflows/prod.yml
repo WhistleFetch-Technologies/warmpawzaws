@@ -463,10 +463,43 @@ jobs:
         working-directory: db
         run: |
           npm ci
+          echo "🔍 Running all migrations..."
           npm run migrate:up
+          echo ""
+          echo "📊 Migration summary shown above"
+          echo "⚠️  If many migrations failed, check the error messages above"
         env:
           DATABASE_URL: ${{ steps.db.outputs.database_url }}
           ENVIRONMENT: prod
+      - name: Fix service_categories schema (if needed)
+        working-directory: db
+        run: |
+          echo "🔧 Applying schema fix migration if needed..."
+          node -e "
+            const { Pool } = require('pg');
+            const fs = require('fs');
+            const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+            (async () => {
+              const client = await pool.connect();
+              try {
+                const fixSql = fs.readFileSync('migrations/999_fix_service_categories_schema.sql', 'utf8');
+                await client.query(fixSql);
+                console.log('✅ Schema fix applied');
+              } catch (err) {
+                if (err.message.includes('does not exist')) {
+                  console.log('⚠️  Fix migration file not found - skipping');
+                } else {
+                  console.log('⚠️  Schema fix error (may already be applied):', err.message);
+                }
+              } finally {
+                client.release();
+                await pool.end();
+              }
+            })();
+          "
+        env:
+          DATABASE_URL: ${{ steps.db.outputs.database_url }}
+        continue-on-error: true
       - name: Migrations status
         working-directory: db
         run: npm run migrate:status

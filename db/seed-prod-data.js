@@ -45,6 +45,34 @@ async function seedProdData() {
       console.log('✅ Roles seeded');
     }
 
+    // Verify service_categories schema before seeding
+    console.log('🔍 Verifying service_categories schema...');
+    const schemaCheck = await client.query(`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'service_categories' 
+      AND column_name IN ('category_id', 'parent_category_id')
+    `);
+    
+    const hasCategoryId = schemaCheck.rows.some(r => r.column_name === 'category_id');
+    const hasParentCategoryId = schemaCheck.rows.some(r => r.column_name === 'parent_category_id');
+    
+    if (!hasCategoryId || hasParentCategoryId) {
+      console.log('⚠️  Schema issue detected - applying fix migration...');
+      const fixMigrationFile = path.join(__dirname, 'migrations', '999_fix_service_categories_schema.sql');
+      if (fs.existsSync(fixMigrationFile)) {
+        const fixSql = fs.readFileSync(fixMigrationFile, 'utf8');
+        await client.query(fixSql);
+        console.log('✅ Schema fixed');
+      } else {
+        console.error('❌ Fix migration not found: 999_fix_service_categories_schema.sql');
+        throw new Error('Cannot proceed without schema fix');
+      }
+    } else {
+      console.log('✅ Schema verified');
+    }
+    console.log('');
+
     // Seed service catalog - essential for service bookings
     const serviceCatalogFile = path.join(__dirname, 'migrations', '048_seed_service_catalog.sql');
     if (fs.existsSync(serviceCatalogFile)) {

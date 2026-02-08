@@ -414,6 +414,13 @@ async function runAllMigrations() {
           skipCount++;
         } else {
           console.error('   ❌ Error: ' + error.message);
+          // Show first 3 lines of error for context
+          const errorLines = error.message.split('\n').slice(0, 3);
+          if (errorLines.length > 1) {
+            errorLines.forEach((line, idx) => {
+              if (idx > 0) console.error('      ' + line);
+            });
+          }
           errorCount++;
           console.log('   ⚠️  Continuing with remaining migrations...');
         }
