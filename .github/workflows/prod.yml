@@ -564,6 +564,17 @@ jobs:
             apps/customer-web/dist
           retention-days: 1
           if-no-files-found: error
+      - name: Debug artifact upload
+        run: |
+          echo "=== Verifying what was uploaded ==="
+          for app in admin-web vendor-web customer-web; do
+            if [ -d "apps/${app}/dist" ]; then
+              echo "✅ apps/${app}/dist exists (size: $(du -sh apps/${app}/dist | cut -f1))"
+              echo "   Files: $(find apps/${app}/dist -type f | wc -l) files"
+            else
+              echo "❌ apps/${app}/dist MISSING - this will cause deployment to fail"
+            fi
+          done
 
   deploy-web:
     name: Deploy Web to Prod (S3 + CloudFront)
