@@ -2232,7 +2232,12 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       
       const context = createLambdaContext();
       const result: any = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const responseBody = JSON.parse(result.body);
+      // Unified contract: frontend may read data.bookingId or bookingId (legacy)
+      if (responseBody?.success && responseBody?.data?.bookingId) {
+        responseBody.bookingId = responseBody.data.bookingId;
+      }
+      return c.json(responseBody, result.statusCode);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in bookings/create:', error);
@@ -2276,7 +2281,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       };
       const context = createLambdaContext();
       const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const responseBody = JSON.parse(result.body);
+      if (responseBody?.success && responseBody?.data?.bookingId) responseBody.bookingId = responseBody.data.bookingId;
+      return c.json(responseBody, result.statusCode);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in booking/create:', error);
@@ -2319,7 +2326,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       };
       const context = createLambdaContext();
       const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const responseBody = JSON.parse(result.body);
+      if (responseBody?.success && responseBody?.data?.bookingId) responseBody.bookingId = responseBody.data.bookingId;
+      return c.json(responseBody, result.statusCode);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in customer/booking/create:', error);

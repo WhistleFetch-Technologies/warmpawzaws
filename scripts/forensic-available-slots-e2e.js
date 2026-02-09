@@ -10,11 +10,19 @@
  *
  * Steps:
  * 1. Get vendors from discover-services (vet at_center, at_home, tele; grooming; training)
- * 2. For each vendor, call available-slots with date=tomorrow and each serviceStyle
- * 3. Assert: 200, { success: true, slots: array }, no 500; slots may be [] if no availability
+ * 2. For each vendor/style, pick the earliest upcoming date that has VA2 availability (resolves
+ *    vendor identity IDs, reads VA2 day_of_week, skips vendor holidays); then call available-slots.
+ * 3. Assert: 200, { success: true, slots: array }; slots may be [] if no availability.
+ * 4. Print VA2 date summary: chosen date and day_of_week per vendor/style for debugging.
  *
  * Usage:
- *   TEST_API_URL=https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com node scripts/forensic-available-slots-e2e.js
+ *   node scripts/forensic-available-slots-e2e.js
+ *
+ * Env:
+ *   TEST_API_URL / API_BASE_URL  – API base (default: warmpawz dev API)
+ *   USE_DB_DATE=0                – disable DB date selection; use tomorrow for all
+ *   SLOT_START_DATE=YYYY-MM-DD   – start date for "next available" search (default: tomorrow)
+ *   ENVIRONMENT=dev              – for RDS cluster / Secrets Manager
  */
 
 const { SecretsManagerClient, GetSecretValueCommand } = require('@aws-sdk/client-secrets-manager');
@@ -321,13 +329,14 @@ async function fetchJson(url) {
 
 async function main() {
   const base = API_BASE.replace(/\/$/, '');
-  const date = tomorrowDateStr();
+  const baseDateStr = parseDateOnly(SLOT_START_DATE) ? SLOT_START_DATE : tomorrowDateStr();
+  const dbState = await initDb();
 
   console.log('\n' + '═'.repeat(70));
   console.log('FORENSIC E2E: Available Slots (Multi-Style, All Vendors)');
   console.log('═'.repeat(70));
   console.log(`API: ${base}`);
-  console.log(`Date: ${date}`);
+  console.log(`Base Date: ${baseDateStr}${USE_DB_DATE ? ' (VA2-aware)' : ''}`);
   console.log('═'.repeat(70));
 
   const results = { passed: 0, failed: 0, errors: [] };
@@ -392,11 +401,16 @@ async function main() {
   console.log('\n📋 STEP 2: GET /customer/vendor/:vendorId/available-slots');
   console.log('─'.repeat(70));
 
+  const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const va2DateSummary = [];
+
   for (const v of vendorsToTest) {
     const stylesToTry = [v.serviceStyle, ...SERVICE_STYLES.filter((s) => s !== v.serviceStyle)];
     const uniqueStyles = [...new Set(stylesToTry)];
 
     for (const serviceStyle of uniqueStyles) {
+      const date = await pickDateFromVA2(dbState, v.vendorId, serviceStyle, baseDateStr);
+      const dayOfWeek = new Date(date + 'T12:00:00').getDay();
       const qs = `date=${date}&serviceStyle=${serviceStyle}`;
       const url = `${base}/customer/vendor/${v.vendorId}/available-slots?${qs}`;
       try {
@@ -407,40 +421,59 @@ async function main() {
 
         if (hasSuccess && slotsArray) {
           results.passed++;
-          log('slots', `${v.vendorId.slice(0, 8)} style=${serviceStyle} → ${slots.length} slots`, { success: true });
+          va2DateSummary.push({ vendor: v.vendorId.slice(0, 8), style: serviceStyle, date, dow: dayOfWeek, dayName: DAY_NAMES[dayOfWeek], slots: slots.length });
+          log('slots', `${v.vendorId.slice(0, 8)} style=${serviceStyle} date=${date} → ${slots.length} slots`, { success: true });
         } else {
           results.failed++;
-          const err = { vendorId: v.vendorId.slice(0, 8), serviceStyle, success: hasSuccess, slotsArray, response: res };
+          va2DateSummary.push({ vendor: v.vendorId.slice(0, 8), style: serviceStyle, date, dow: dayOfWeek, dayName: DAY_NAMES[dayOfWeek], slots: 'FAIL' });
+          const err = { vendorId: v.vendorId.slice(0, 8), serviceStyle, date, success: hasSuccess, slotsArray, response: res };
           results.errors.push({ step: 'available-slots shape', ...err });
           log('slots', `FAIL shape: ${v.vendorId.slice(0, 8)} style=${serviceStyle}`, err);
         }
       } catch (e) {
         results.failed++;
+        va2DateSummary.push({ vendor: v.vendorId.slice(0, 8), style: serviceStyle, date, dow: dayOfWeek, dayName: DAY_NAMES[dayOfWeek], slots: 'err' });
         results.errors.push({ step: 'available-slots', vendorId: v.vendorId.slice(0, 8), serviceStyle, error: e.message });
         log('slots', `FAIL ${v.vendorId.slice(0, 8)} style=${serviceStyle}: ${e.message}`);
       }
     }
 
     // No serviceStyle (fallback: any availability for vendor+day)
-    const urlNoStyle = `${base}/customer/vendor/${v.vendorId}/available-slots?date=${date}`;
+    const dateNoStyle = await pickDateFromVA2(dbState, v.vendorId, v.serviceStyle, baseDateStr);
+    const dayOfWeekNoStyle = new Date(dateNoStyle + 'T12:00:00').getDay();
+    const urlNoStyle = `${base}/customer/vendor/${v.vendorId}/available-slots?date=${dateNoStyle}`;
     try {
       const res = await fetchJson(urlNoStyle);
       const hasSuccess = res.success === true;
       const slotsArray = Array.isArray(res.slots);
+      const slotCount = (res.slots || []).length;
 
       if (hasSuccess && slotsArray) {
         results.passed++;
-        log('slots', `${v.vendorId.slice(0, 8)} (no serviceStyle) → ${(res.slots || []).length} slots`, { success: true });
+        va2DateSummary.push({ vendor: v.vendorId.slice(0, 8), style: '(no style)', date: dateNoStyle, dow: dayOfWeekNoStyle, dayName: DAY_NAMES[dayOfWeekNoStyle], slots: slotCount });
+        log('slots', `${v.vendorId.slice(0, 8)} (no serviceStyle) date=${dateNoStyle} → ${slotCount} slots`, { success: true });
       } else {
         results.failed++;
+        va2DateSummary.push({ vendor: v.vendorId.slice(0, 8), style: '(no style)', date: dateNoStyle, dow: dayOfWeekNoStyle, dayName: DAY_NAMES[dayOfWeekNoStyle], slots: 'FAIL' });
         results.errors.push({ step: 'available-slots no style', vendorId: v.vendorId.slice(0, 8), success: hasSuccess, slotsArray });
         log('slots', `FAIL ${v.vendorId.slice(0, 8)} no serviceStyle: wrong shape`);
       }
     } catch (e) {
       results.failed++;
+      va2DateSummary.push({ vendor: v.vendorId.slice(0, 8), style: '(no style)', date: dateNoStyle, dow: dayOfWeekNoStyle, dayName: DAY_NAMES[dayOfWeekNoStyle], slots: 'err' });
       results.errors.push({ step: 'available-slots no style', vendorId: v.vendorId.slice(0, 8), error: e.message });
       log('slots', `FAIL ${v.vendorId.slice(0, 8)} no serviceStyle: ${e.message}`);
     }
+  }
+
+  if (va2DateSummary.length > 0) {
+    console.log('\n📋 VA2 date summary (chosen date & day_of_week per vendor/style)');
+    console.log('─'.repeat(70));
+    console.log('  vendor     style        date         day(dow)  slots');
+    va2DateSummary.forEach((r) => {
+      console.log(`  ${r.vendor.padEnd(10)} ${String(r.style).padEnd(12)} ${r.date}  ${r.dayName}(${r.dow})   ${r.slots}`);
+    });
+    console.log('─'.repeat(70));
   }
 
   // 3. Sanity: wrong path /vendor/.../available-slots should 404 or different (we use customer path)
@@ -449,7 +482,7 @@ async function main() {
   const firstVendor = vendorsToTest[0];
   if (firstVendor) {
     try {
-      const vendorPathUrl = `${base}/vendor/${firstVendor.vendorId}/available-slots?date=${date}&serviceStyle=at_center`;
+      const vendorPathUrl = `${base}/vendor/${firstVendor.vendorId}/available-slots?date=${baseDateStr}&serviceStyle=at_center`;
       const res = await fetch(vendorPathUrl);
       const body = await res.json().catch(() => ({}));
       // Vendor path may 404 or return different shape; we only require customer path to work
@@ -459,6 +492,10 @@ async function main() {
       log('sanity', 'Vendor path request failed (expected if not implemented): ' + e.message);
       results.passed++;
     }
+  }
+
+  if (dbState?.client) {
+    await dbState.client.end().catch(() => {});
   }
 
   printSummary(results);

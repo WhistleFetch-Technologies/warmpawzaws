@@ -613,11 +613,20 @@ export function registerProblemGridEndpoints(app: Hono) {
 
       // Normalize legacy service styles: at_vendor → at_center, online → tele
       const styleToDbValues: Record<string, string[]> = {
-        at_center: ['at_center', 'at_vendor'],
-        at_home: ['at_home'],
+        at_center: ['at_center', 'at_vendor', 'at_clinic'],
+        at_home: ['at_home', 'home_visit'],
         tele: ['tele', 'online', 'video_consultation'],
       };
       const acceptableStyles = serviceStyle ? (styleToDbValues[serviceStyle] || [serviceStyle]) : null;
+
+      const hasLogoUrl = await query(
+        `SELECT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'vendors' AND column_name = 'logo_url'
+         ) as exists`
+      ).then(r => r.rows[0]?.exists).catch(() => false);
+      const logoColumn = hasLogoUrl ? 'v.logo_url' : 'NULL';
+      const logoGroupBy = hasLogoUrl ? ', v.logo_url' : '';
 
       // Get vendors with matching specializations or roles
       // Enforce publish_status: published or auto_published (exclude draft/unpublished)
@@ -634,7 +643,10 @@ export function registerProblemGridEndpoints(app: Hono) {
           v.business_name as vendor_name,
           v.profile_photo_url,
           v.profile_image,
+          ${logoColumn} as logo_url,
           v.metadata as vendor_metadata,
+          v.vendor_type,
+          r.name as role_name,
           COALESCE(AVG(rev.rating), 0) as vendor_rating,
           COUNT(DISTINCT rev.id) as vendor_reviews,
           v.city,
@@ -687,7 +699,8 @@ export function registerProblemGridEndpoints(app: Hono) {
       servicesQuery += `
         GROUP BY vs.id, vs.service_name, vs.price, vs.duration_minutes, vs.service_style,
                  vs.vendor_id, v.business_name, v.city, v.state, vs.created_at,
-                 v.profile_photo_url, v.profile_image, v.metadata, v.latitude, v.longitude
+                 v.profile_photo_url, v.profile_image, v.metadata, v.latitude, v.longitude${logoGroupBy},
+                 v.vendor_type, r.name
         ORDER BY vendor_rating DESC, vs.created_at DESC
         LIMIT 50
       `;
@@ -727,10 +740,13 @@ export function registerProblemGridEndpoints(app: Hono) {
           relevanceScore: 1.0,
           id: `${service.vendor_id}_${service.service_id}`,
           type: 'vendor',
-          photo: service.profile_photo_url || service.profile_image || (service.vendor_metadata && (service.vendor_metadata.logo_url || (Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0]) || null)) || null,
+          photo: service.profile_photo_url || service.profile_image || service.logo_url || (service.vendor_metadata && (service.vendor_metadata.logo_url || (Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0]) || null)) || null,
+          photoUrl: service.profile_photo_url || service.profile_image || service.logo_url || (service.vendor_metadata && (service.vendor_metadata.logo_url || (Array.isArray(service.vendor_metadata.facility_photos) && service.vendor_metadata.facility_photos[0]) || null)) || null,
           rating: parseFloat(service.vendor_rating || '0'),
           reviewCount: parseInt(service.vendor_reviews || '0'),
           specializations: specMap[service.vendor_id] || [],
+          vendorType: service.vendor_type === 'solo' ? 'solo' : 'business',
+          roleName: service.role_name || '',
           distanceFormatted: 'N/A',
           priceFormatted: `₹${parseFloat(service.price || '0').toLocaleString('en-IN')}`,
           serviceName: service.name,
@@ -742,7 +758,7 @@ export function registerProblemGridEndpoints(app: Hono) {
             parseFloat(latitude),
             parseFloat(longitude),
             parseFloat(service.latitude),
-            parseFloat(longitude)
+            parseFloat(service.longitude)
           );
         }
         if (serviceData.distance != null) {
@@ -856,7 +872,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           SELECT DISTINCT vs.vendor_id
           FROM vendor_services vs
           WHERE vs.is_enabled = true
-            AND vs.publish_status = 'published'
+            AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
             ${feeMin ? `AND vs.price >= $${paramIndex}` : ''}
             ${feeMax ? `AND vs.price <= $${paramIndex + (feeMin ? 1 : 0)}` : ''}
         )`;
@@ -885,7 +901,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           const servicesResult = await query(
             `SELECT id, service_id, service_name, price, duration_minutes, service_style, category, sub_category
              FROM vendor_services
-             WHERE vendor_id = $1 AND is_enabled = true AND publish_status = 'published'
+             WHERE vendor_id = $1 AND is_enabled = true AND (publish_status IN ('published','auto_published') OR publish_status IS NULL)
              ORDER BY price ASC
              LIMIT 10`,
             [vendor.id]

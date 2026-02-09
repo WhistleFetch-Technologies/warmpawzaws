@@ -60,6 +60,84 @@ function getVendorPhotoUrl(v: any): string | null {
   }
 }
 
+const columnExistsCache = new Map<string, boolean>();
+async function columnExists(tableName: string, columnName: string): Promise<boolean> {
+  const key = `${tableName}.${columnName}`;
+  if (columnExistsCache.has(key)) return columnExistsCache.get(key) as boolean;
+  try {
+    const res = await query(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
+       ) as exists`,
+      [tableName, columnName]
+    );
+    const exists = res.rows?.[0]?.exists === true || res.rows?.[0]?.exists === 't';
+    columnExistsCache.set(key, exists);
+    return exists;
+  } catch {
+    columnExistsCache.set(key, false);
+    return false;
+  }
+}
+
+const STYLE_ALIASES: Record<string, string> = {
+  at_clinic: 'at_center',
+  at_vendor: 'at_center',
+  at_center: 'at_center',
+  home_visit: 'at_home',
+  at_home: 'at_home',
+  video_consultation: 'tele',
+  online: 'tele',
+  tele: 'tele',
+};
+
+function normalizeServiceStyle(style: string | null | undefined): string | null {
+  if (!style) return null;
+  const key = String(style).toLowerCase().trim().replace(/\s+/g, '_');
+  return STYLE_ALIASES[key] || key;
+}
+
+function normalizeServiceStylesArray(styles: any): string[] {
+  if (!styles) return [];
+  const arr = Array.isArray(styles) ? styles : (styles?.selected ?? styles?.solo ?? []);
+  if (!Array.isArray(arr)) return [];
+  const out: string[] = [];
+  for (const s of arr) {
+    const norm = normalizeServiceStyle(s);
+    if (norm && !out.includes(norm)) out.push(norm);
+  }
+  return out;
+}
+
+function parseRoleConfig(roleConfig: any): any {
+  if (!roleConfig) return null;
+  try {
+    return typeof roleConfig === 'string' ? JSON.parse(roleConfig || '{}') : roleConfig;
+  } catch {
+    return null;
+  }
+}
+
+function roleConfigAllowsStyle(roleConfig: any, serviceStyle: string | null | undefined): boolean {
+  const normalized = normalizeServiceStyle(serviceStyle || '') || '';
+  if (!normalized) return true;
+  const config = parseRoleConfig(roleConfig);
+  if (!config) return true;
+  const styles = normalizeServiceStylesArray(config?.serviceStyles || config?.service_styles);
+  if (styles.length === 0) return true;
+  return styles.includes(normalized);
+}
+
+function acceptableStylesForService(serviceStyle: string | null | undefined): string[] {
+  const normalized = normalizeServiceStyle(serviceStyle || '') || '';
+  if (!normalized) return [];
+  if (normalized === 'at_center') return ['at_center', 'at_vendor', 'at_clinic'];
+  if (normalized === 'tele') return ['tele', 'online', 'video_consultation'];
+  if (normalized === 'at_home') return ['at_home', 'home_visit'];
+  return [normalized];
+}
+
 /** Map canonical role names to customer-facing discovery categories (align with CustomerHomeComplete tiles). */
 function getCategoryFromRole(roleId: string): string {
   const roleCategoryMap: Record<string, string> = {
@@ -269,7 +347,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             SELECT 1 FROM vendor_services vs 
             WHERE vs.vendor_id = v.id 
               AND vs.is_enabled = true 
-              AND vs.publish_status = 'published'
+              AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
           )
       `;
 
@@ -293,8 +371,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           const params: any[] = [vendor.id];
           let styleClause = '';
           if (serviceStyle) {
-            params.push(serviceStyle);
-            styleClause = ` AND vs.service_style = $${params.length}`;
+            const acceptableStyles = acceptableStylesForService(serviceStyle);
+            params.push(acceptableStyles);
+            styleClause = ` AND vs.service_style = ANY($${params.length}::text[])`;
           }
           const vendorServices = await query(
             `SELECT vs.id as vs_id, vs.service_id, vs.service_name as vs_service_name, vs.custom_price, vs.custom_duration, vs.service_style, vs.category,
@@ -303,7 +382,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
              FROM vendor_services vs
              LEFT JOIN services s ON vs.service_id = s.id
              LEFT JOIN service_catalog sc ON vs.service_id = sc.id
-             WHERE vs.vendor_id = $1 AND vs.is_enabled = true AND vs.publish_status = 'published'${styleClause}
+             WHERE vs.vendor_id = $1 AND vs.is_enabled = true AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)${styleClause}
              ORDER BY COALESCE(vs.service_name, sc.service_name, s.name)`,
             params
           );
@@ -384,7 +463,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           INNER JOIN vendors v ON vs.vendor_id = v.id
           LEFT JOIN roles r ON v.role_id = r.id
           WHERE vs.is_enabled = true
-            AND vs.publish_status = 'published'
+            AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
             AND (LOWER(r.name) = LOWER($1) OR LOWER(r.display_name) = LOWER($1))
         `;
         
@@ -392,8 +471,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         let paramIdx = 2;
         
         if (serviceStyle && serviceStyle !== 'all') {
-          fallbackQuery += ` AND vs.service_style = $${paramIdx}`;
-          fallbackParams.push(serviceStyle);
+          const acceptableStyles = acceptableStylesForService(serviceStyle);
+          fallbackQuery += ` AND vs.service_style = ANY($${paramIdx}::text[])`;
+          fallbackParams.push(acceptableStyles);
           paramIdx++;
         }
         
@@ -445,7 +525,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           display_order
         FROM service_catalog
         WHERE status = 'active'
-          AND publish_status = 'published'
+          AND (publish_status IN ('published','auto_published') OR publish_status IS NULL)
           AND $1 = ANY(applicable_roles)
       `;
       const params: any[] = [roleId];
@@ -453,8 +533,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // Filter by service style
       if (serviceStyle && serviceStyle !== 'all') {
-        queryText += ` AND (service_style = $${paramIndex} OR service_style = 'all')`;
-        params.push(serviceStyle);
+        const acceptableStyles = acceptableStylesForService(serviceStyle);
+        queryText += ` AND (service_style = ANY($${paramIndex}::text[]) OR service_style = 'all')`;
+        params.push(acceptableStyles);
         paramIndex++;
       }
 
@@ -577,24 +658,33 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           : '';
         const soloCondition = targetRolesLower.length > 0 ? '' : ` AND (v.vendor_type = 'solo' OR LOWER(COALESCE(r.name, '')) LIKE '%_solo%' OR LOWER(COALESCE(r.name, '')) LIKE '%solo%')`;
 
-        // Params: [targetRoles..., serviceStyle]; EXISTS always requires vs.service_style = requested style.
-        const vendorParams: any[] = targetRolesLower.length > 0 ? [...targetRolesLower, serviceStyle] : [serviceStyle];
+        const acceptableServiceStyles = acceptableStylesForService(serviceStyle);
+        // Params: [targetRoles..., acceptableStyles]; EXISTS always requires vs.service_style = requested style (including aliases).
+        const vendorParams: any[] = targetRolesLower.length > 0 ? [targetRolesLower, acceptableServiceStyles] : [acceptableServiceStyles];
+        const styleParamIndex = targetRolesLower.length > 0 ? '2' : '1';
         const existsServiceClause = ` AND EXISTS (
           SELECT 1 FROM vendor_services vs
           WHERE vs.vendor_id = v.id
-            AND vs.service_style = $${targetRolesLower.length > 0 ? '2' : '1'}
+            AND vs.service_style = ANY($${styleParamIndex}::text[])
             AND vs.is_enabled = true
-            AND vs.publish_status = 'published'
+            AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
         )`;
 
-        // at_home/tele: solo only (vendor_type = 'solo'); style enforced in existsServiceClause above.
-        const soloOnlyClause = ` AND v.vendor_type = 'solo'`;
+        // at_home/tele: prefer solo vendors; also allow roles that are explicitly solo (walker/sitter/etc).
+        const soloOnlyClause = ` AND (
+          v.vendor_type = 'solo'
+          OR LOWER(COALESCE(r.name, '')) LIKE '%_solo%'
+          OR LOWER(COALESCE(r.name, '')) LIKE '%solo%'
+          OR LOWER(COALESCE(r.name, '')) IN ('walker','pet_walker','dog_walker','pet_sitter','sitter','pet_taxi','pet_transport','pet_relocation','relocation')
+        )`;
         // Vendor-defined radius applies only to at_home (travel); tele uses rule-book only, no travel.
+        const hasLogoUrl = await columnExists('vendors', 'logo_url');
+        const logoColumn = hasLogoUrl ? 'v.logo_url' : 'NULL';
         let vendorQuery = `
           SELECT DISTINCT v.id, v.business_name, v.owner_name, v.phone, v.city, v.state,
                  v.latitude, v.longitude, r.name as role_name, r.display_name as role_display_name,
-                 v.languages, v.is_verified, v.profile_photo_url, v.profile_image, v.logo_url, v.specializations, v.is_online,
-                 v.vendor_type, v.metadata,
+                 v.languages, v.is_verified, v.profile_photo_url, v.profile_image, ${logoColumn} as logo_url, v.specializations, v.is_online,
+                 v.vendor_type, v.metadata, r.config as role_config,
                  v.service_radius,
                  (SELECT MIN(vs.service_radius_km) FROM vendor_services vs
                   WHERE vs.vendor_id = v.id AND vs.is_enabled = true
@@ -622,6 +712,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         console.log('[discover-services] at_home found %s vendors', vendorResults.rows?.length ?? 0);
         
         for (const vendor of vendorResults.rows) {
+          if (!roleConfigAllowsStyle((vendor as any).role_config, serviceStyle)) continue;
           // ✅ ENRICHED: Get next available slot for solo vendor
           let nextAvailableSlot: { date: string; time: string; formattedDisplay: string } | null = null;
           try {
@@ -632,10 +723,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                FROM vendor_availability_v2 va
                WHERE (va.vendor_id = $1 OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
                  AND COALESCE(va.is_enabled, va.is_available, true) = true
-                 AND ($3 = ANY(COALESCE(va.service_styles, ARRAY[]::text[])) OR va.service_style = $3 OR va.service_type = $3)
+                 AND ((COALESCE(va.service_styles, ARRAY[]::text[]) && $3::text[]) OR va.service_style = ANY($3::text[]) OR va.service_type = ANY($3::text[]))
                ORDER BY va.day_of_week ASC, COALESCE(va.time_window_start, va.start_time) ASC 
                LIMIT 1`,
-              [vendor.id, vendor.phone || '', serviceStyle]
+              [vendor.id, vendor.phone || '', acceptableServiceStyles]
             );
             
             if (nextSlotsResult.rows.length > 0) {
@@ -698,8 +789,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           }
 
           // At_home: vendor-defined radius (travel); rule-book default when vendor not set. Tele: rule-book only (no travel); 0 = no limit.
-          const vendorRadius = vendor.service_radius != null ? Number(vendor.service_radius) : null;
-          const serviceRadiusKmHome = (vendor as any).service_radius_km_min_home != null ? Number((vendor as any).service_radius_km_min_home) : null;
+          const vendorRadiusRaw = vendor.service_radius != null ? Number(vendor.service_radius) : null;
+          const vendorRadius = vendorRadiusRaw != null && vendorRadiusRaw > 0 ? vendorRadiusRaw : null;
+          const serviceRadiusRaw = (vendor as any).service_radius_km_min_home != null ? Number((vendor as any).service_radius_km_min_home) : null;
+          const serviceRadiusKmHome = serviceRadiusRaw != null && serviceRadiusRaw > 0 ? serviceRadiusRaw : null;
           let effectiveRadiusKm: number;
           let withinRadius: boolean;
           if (serviceStyle === 'at_home') {
@@ -770,6 +863,20 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               photos = Array.isArray(raw) ? raw.slice(0, 5).filter(Boolean) : [];
             }
           } catch { /* Continue */ }
+
+          // Specializations: vendor_specializations first, then vendor.specializations
+          let specializations: string[] = [];
+          try {
+            const specRes = await query(`SELECT specialization FROM vendor_specializations WHERE vendor_id = $1`, [vendor.id]);
+            specializations = (specRes.rows || []).map((r: any) => r.specialization).filter(Boolean);
+          } catch { /* Continue */ }
+          if (specializations.length === 0 && vendor.specializations) {
+            try {
+              specializations = Array.isArray(vendor.specializations)
+                ? vendor.specializations
+                : JSON.parse(vendor.specializations || '[]');
+            } catch { /* ignore */ }
+          }
           
           allProviders.push({
             id: vendor.id,
@@ -803,7 +910,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             nextAvailableSlot,
             nextAvailable: nextAvailableSlot ? { date: nextAvailableSlot.date, time: nextAvailableSlot.time, display: nextAvailableSlot.formattedDisplay } : null,
             nextAvailability: nextAvailableSlot?.formattedDisplay || null,
-            serviceStyles: serviceStyle ? [serviceStyle] : ['at_center', 'at_home', 'tele'],
+            serviceStyles: serviceStyle ? (normalizeServiceStyle(serviceStyle) ? [normalizeServiceStyle(serviceStyle)!] : []) : ['at_center', 'at_home', 'tele'],
             vendorType: 'solo',
             roleName: vendor.role_name || vendor.role_display_name || '',
             completedBookings,
@@ -812,7 +919,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             languages: vendor.languages ? (Array.isArray(vendor.languages) ? vendor.languages : JSON.parse(vendor.languages || '[]')) : ['English', 'Hindi'],
             photoUrl: getVendorPhotoUrl(vendor),
             vendorProfileImage: getVendorPhotoUrl(vendor),
-            specializations: vendor.specializations ? (Array.isArray(vendor.specializations) ? vendor.specializations : JSON.parse(vendor.specializations || '[]')) : [],
+            specializations,
             // Phase 2: Gallery, price range, bestForProblem, hasPackages
             photos: photos.length > 0 ? photos : undefined,
             priceMin: minPrice > 0 ? minPrice : undefined,
@@ -869,7 +976,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // ⚠️ RELAXED: Removed strict requirements for lat/lng, published services, and availability
       //    to allow vendors in onboarding phase to be discoverable
       let vendorQuery = `
-        SELECT v.*, r.name as role_name, r.display_name as role_display_name,
+        SELECT v.*, r.name as role_name, r.display_name as role_display_name, r.config as role_config,
           COALESCE((SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true), 0) as service_count,
           COALESCE((SELECT COUNT(*) FROM vendor_availability_v2 va WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)), 0) as availability_count
         FROM vendors v
@@ -882,20 +989,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // ✅ FIX: When serviceStyle=at_center, exclude solo vendors and only include vendors with at_center services
       if (serviceStyle === 'at_center') {
-        // Exclude solo vendors (individual providers, not clinics/centers)
-        // ✅ SOLO VENDOR RESTRICTION: Exclude vendors with vendor_type = 'solo' from at_center listings
-        vendorQuery += ` AND r.name NOT LIKE '%_solo' AND r.name NOT LIKE '%Solo%' AND COALESCE(r.display_name, '') NOT LIKE '%Solo%'`;
-        vendorQuery += ` AND (v.vendor_type IS NULL OR v.vendor_type != 'solo')`;
+        const acceptableStyles = acceptableStylesForService(serviceStyle);
+        // Exclude explicit solo roles; avoid relying solely on vendor_type (often mis-set).
+        vendorQuery += ` AND (LOWER(r.name) NOT LIKE '%solo%')`;
         
         // Only include vendors that have at_center services (relaxed publish_status for discovery)
         vendorQuery += ` AND EXISTS (
           SELECT 1 FROM vendor_services vs
           WHERE vs.vendor_id = v.id
-            AND vs.service_style = $${paramIndex}
+            AND vs.service_style = ANY($${paramIndex}::text[])
             AND vs.is_enabled = true
-            AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)
+            AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
         )`;
-        params.push('at_center');
+        params.push(acceptableStyles);
         paramIndex++;
       }
 
@@ -934,8 +1040,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let vendors = vendorResults.rows;
 
       // Enrich vendors with services, reviews, and availability
-      const enrichedVendors = await Promise.all(
+      const enrichedVendors = (await Promise.all(
         vendors.map(async (vendor: any) => {
+          if (serviceStyle && !roleConfigAllowsStyle((vendor as any).role_config, serviceStyle)) {
+            return null;
+          }
           // Get services - ✅ FIX: Query vendor_services directly (includes custom services)
           const servicesParams: any[] = [vendor.id];
           let servicesQuery = `
@@ -955,13 +1064,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               AND vs.is_enabled = true
           `;
           
-          // ✅ FIX: When serviceStyle is specified, filter by it
+          // ✅ FIX: When serviceStyle is specified, filter by it (include legacy aliases)
           if (serviceStyle && serviceStyle !== 'all') {
-            servicesQuery += ` AND vs.service_style = $2`;
-            servicesParams.push(serviceStyle);
+            const acceptableStyles = acceptableStylesForService(serviceStyle);
+            servicesQuery += ` AND vs.service_style = ANY($2::text[])`;
+            servicesParams.push(acceptableStyles);
           }
           
-          servicesQuery += ` AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)`;
+          servicesQuery += ` AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)`;
           servicesQuery += ` ORDER BY vs.publish_status DESC, vs.service_name LIMIT 10`;
           
           const services = await query(servicesQuery, servicesParams);
@@ -1051,14 +1161,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             const todayStr = today.toISOString().split('T')[0];
             const dayOfWeek = today.getDay();
 
+            const acceptableStyles = serviceStyle ? acceptableStylesForService(serviceStyle) : [];
             const va2Result = await query(
                 `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
                  FROM vendor_availability_v2
                  WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
                    AND COALESCE(is_enabled, is_available, true) = true
+                   ${acceptableStyles.length > 0 ? `AND ((COALESCE(service_styles, ARRAY[]::text[]) && $3::text[]) OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))` : ''}
                  ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC
                  LIMIT 7`,
-                [vendor.id, vendor.phone || '']
+                acceptableStyles.length > 0 ? [vendor.id, vendor.phone || '', acceptableStyles] : [vendor.id, vendor.phone || '']
               ).catch(() => ({ rows: [] }));
 
               if (va2Result.rows.length > 0) {
@@ -1089,14 +1201,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             // Silently continue if slots not available
           }
 
-          // ✅ ENRICHED: Get specializations from vendor profile or services
+          // ✅ ENRICHED: Get specializations from vendor_specializations, vendor profile, or services
           let specializations: string[] = [];
           try {
-            // Try to get from vendor profile metadata
-            if (vendor.specializations) {
+            const specRes = await query(`SELECT specialization FROM vendor_specializations WHERE vendor_id = $1`, [vendor.id]).catch(() => ({ rows: [] }));
+            specializations = (specRes.rows || []).map((r: any) => r.specialization).filter(Boolean);
+            if (specializations.length === 0 && vendor.specializations) {
               specializations = Array.isArray(vendor.specializations) ? 
                 vendor.specializations : JSON.parse(vendor.specializations || '[]');
-            } else {
+            }
+            if (specializations.length === 0) {
               // Derive from services as fallback
               const uniqueCategories = [...new Set(services.rows.map((s: any) => s.category).filter(Boolean))];
               specializations = uniqueCategories.slice(0, 3) as string[];
@@ -1239,7 +1353,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             hasPackages: hasPackages || undefined,
           };
         })
-      );
+      )).filter(Boolean);
 
       // ✅ FIX: When serviceStyle=at_center, filter out vendors with no at_center services
       let filteredVendors = enrichedVendors;
@@ -2012,7 +2126,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         LEFT JOIN service_catalog sc ON vs.service_id = sc.id
         WHERE vs.vendor_id = $1
           AND vs.is_enabled = true
-          AND vs.publish_status = 'published'
+          AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
       `;
       const queryParams: any[] = [resolvedVendorId];
 
@@ -2021,8 +2135,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         servicesQuery += ` AND (LOWER(vs.category) = LOWER($${queryParams.length}) OR LOWER(vs.category) LIKE '%' || LOWER($${queryParams.length}) || '%')`;
       }
       if (serviceStyle) {
-        queryParams.push(serviceStyle);
-        servicesQuery += ` AND vs.service_style = $${queryParams.length}`;
+        const acceptableStyles = acceptableStylesForService(serviceStyle);
+        queryParams.push(acceptableStyles);
+        servicesQuery += ` AND vs.service_style = ANY($${queryParams.length}::text[])`;
       }
 
       servicesQuery += ` ORDER BY vs.category, vs.service_name`;
@@ -2163,6 +2278,38 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         [resolvedVendorId]
       );
 
+      // Enrich vendor profile: specializations, styles, photos
+      let vendorSpecializations: string[] = [];
+      try {
+        const specRes = await query(`SELECT specialization FROM vendor_specializations WHERE vendor_id = $1`, [resolvedVendorId]);
+        vendorSpecializations = (specRes.rows || []).map((r: any) => r.specialization).filter(Boolean);
+      } catch (_) {}
+      if (vendorSpecializations.length === 0 && vendor.specializations) {
+        try {
+          vendorSpecializations = Array.isArray(vendor.specializations)
+            ? vendor.specializations
+            : JSON.parse(vendor.specializations || '[]');
+        } catch (_) {}
+      }
+
+      let vendorServiceStyles: string[] = [];
+      try {
+        const styleRes = await query(
+          `SELECT DISTINCT service_style FROM vendor_services
+           WHERE vendor_id = $1 AND is_enabled = true AND (publish_status IN ('published','auto_published') OR publish_status IS NULL)
+           AND service_style IS NOT NULL`,
+          [resolvedVendorId]
+        );
+        vendorServiceStyles = (styleRes.rows || []).map((r: any) => normalizeServiceStyle(r.service_style)).filter(Boolean) as string[];
+      } catch (_) {}
+
+      let facilityPhotos: string[] = [];
+      try {
+        const meta = vendor.metadata ? (typeof vendor.metadata === 'string' ? JSON.parse(vendor.metadata) : vendor.metadata) : null;
+        const raw = meta?.facility_photos || meta?.photos || [];
+        facilityPhotos = Array.isArray(raw) ? raw.filter(Boolean) : [];
+      } catch (_) {}
+
       return c.json({
         success: true,
         vendor: {
@@ -2184,6 +2331,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           totalReviews: reviews.rows.length,
           operatingHours: vendor.operating_hours ? JSON.parse(vendor.operating_hours) : null,
           description: vendor.description || '',
+          photoUrl: getVendorPhotoUrl(vendor),
+          vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
+          specializations: vendorSpecializations,
+          serviceStyles: vendorServiceStyles,
+          facilityPhotos,
         },
         services: services.rows,
         reviews: reviews.rows,
@@ -2213,7 +2365,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // Build vendor query
       let vendorQuery = `
-        SELECT v.*, r.name as role_name, r.display_name as role_display_name
+        SELECT v.*, r.name as role_name, r.display_name as role_display_name, r.config as role_config
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
@@ -2222,24 +2374,32 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const params: any[] = [];
       let paramIndex = 1;
 
-      // Filter by roleId (primary filter)
-      // ✅ FIX: Use only role name comparison (case-insensitive), not id::text to avoid uuid = text error
+      // Filter by roleId (primary filter) - expand to category roles when roleId is a category key
       if (roleId) {
-        vendorQuery += ` AND (LOWER(r.name) = LOWER($${paramIndex}) OR LOWER(r.display_name) = LOWER($${paramIndex}))`;
-        params.push(roleId);
-        paramIndex++;
+        const targetRoles = await resolveTargetRolesForDiscovery(null, roleId);
+        if (targetRoles.length > 0) {
+          vendorQuery += ` AND r.name = ANY($${paramIndex}::text[])`;
+          params.push(targetRoles);
+          paramIndex++;
+        } else {
+          // ✅ FIX: Use only role name/display_name comparison (case-insensitive), not id::text
+          vendorQuery += ` AND (LOWER(r.name) = LOWER($${paramIndex}) OR LOWER(r.display_name) = LOWER($${paramIndex}))`;
+          params.push(roleId);
+          paramIndex++;
+        }
       }
 
       // ✅ Vendor discovery rules: filter by service style; enforce publish_status = 'published' (align with discover-services)
-      if (serviceStyle === 'at_center') {
-        vendorQuery += ` AND (v.vendor_type IS NULL OR v.vendor_type != 'solo')`;
-        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true AND vs.publish_status = 'published')`;
-        params.push(serviceStyle);
-        paramIndex++;
-      } else if (serviceStyle === 'at_home' || serviceStyle === 'tele') {
-        vendorQuery += ` AND (v.vendor_type = 'solo' OR r.name LIKE '%_solo' OR LOWER(r.name) LIKE '%solo%')`;
-        vendorQuery += ` AND EXISTS (SELECT 1 FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.service_style = $${paramIndex} AND vs.is_enabled = true AND vs.publish_status = 'published')`;
-        params.push(serviceStyle);
+      if (serviceStyle) {
+        const acceptableStyles = acceptableStylesForService(serviceStyle);
+        vendorQuery += ` AND EXISTS (
+          SELECT 1 FROM vendor_services vs 
+          WHERE vs.vendor_id = v.id 
+            AND vs.service_style = ANY($${paramIndex}::text[]) 
+            AND vs.is_enabled = true 
+            AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+        )`;
+        params.push(acceptableStyles);
         paramIndex++;
       }
 
@@ -2273,8 +2433,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let vendors = vendorResults.rows;
 
       // Enrich vendors with unified card shape: photoUrl, specializations, nextAvailable, distanceText, serviceStyles
-      const enrichedVendors = await Promise.all(
+      const enrichedVendors = (await Promise.all(
         vendors.map(async (vendor: any) => {
+          if (serviceStyle && !roleConfigAllowsStyle((vendor as any).role_config, serviceStyle)) {
+            return null;
+          }
           const reviews = await query(
             `SELECT AVG(rating) as avg_rating, COUNT(*) as review_count
              FROM reviews 
@@ -2338,18 +2501,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           } catch (_) {}
 
           const servicesCountRes = await query(
-            `SELECT COUNT(*) as count FROM vendor_services vs WHERE vs.vendor_id = $1 AND vs.is_enabled = true AND (vs.publish_status = 'published' OR vs.publish_status IS NULL)`,
+            `SELECT COUNT(*) as count FROM vendor_services vs WHERE vs.vendor_id = $1 AND vs.is_enabled = true AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)`,
             [vendor.id]
           );
           const servicesCount = parseInt(servicesCountRes.rows[0]?.count || '0');
           const minPriceRes = await query(
-            `SELECT MIN(COALESCE(custom_price, price)) as min_price FROM vendor_services WHERE vendor_id = $1 AND is_enabled = true AND (publish_status = 'published' OR publish_status IS NULL)`,
+            `SELECT MIN(COALESCE(custom_price, price)) as min_price FROM vendor_services WHERE vendor_id = $1 AND is_enabled = true AND (publish_status IN ('published','auto_published') OR publish_status IS NULL)`,
             [vendor.id]
           );
           const minPrice = minPriceRes.rows[0]?.min_price != null ? parseFloat(minPriceRes.rows[0].min_price) : undefined;
 
           const vendorType = vendor.vendor_type === 'solo' ? 'solo' : 'business';
           const roleName = vendor.role_name || vendor.role_display_name || '';
+          const normalizedStyle = normalizeServiceStyle(serviceStyle || '') || serviceStyle || '';
 
           return {
             id: vendor.id,
@@ -2364,7 +2528,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             distanceText,
             specializations,
             nextAvailable,
-            serviceStyles: serviceStyle ? [serviceStyle] : ['at_center', 'at_home', 'tele'],
+            serviceStyles: serviceStyle ? (normalizedStyle ? [normalizedStyle] : []) : ['at_center', 'at_home', 'tele'],
             minPrice,
             vendorType,
             roleName,
@@ -2375,7 +2539,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             state: vendor.state,
           };
         })
-      );
+      )).filter(Boolean);
 
       // If serviceStyle is 'at_home' or 'tele', also return staff
       let staff: any[] = [];
@@ -2537,6 +2701,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
     try {
       const problem = c.req.query('problem') || c.req.query('problemId');
       const roleId = c.req.query('roleId');
+      const serviceStyle = c.req.query('serviceStyle');
       const latitude = c.req.query('latitude');
       const longitude = c.req.query('longitude');
 
@@ -2563,9 +2728,29 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       let paramIdx = 3;
 
       if (roleId) {
-        // ✅ FIX: Use only role name comparison (case-insensitive), not id::text
-        queryText += ` AND (LOWER(r.name) = LOWER($${paramIdx}) OR LOWER(r.display_name) = LOWER($${paramIdx}))`;
-        params.push(roleId);
+        const targetRoles = await resolveTargetRolesForDiscovery(null, roleId);
+        if (targetRoles.length > 0) {
+          queryText += ` AND r.name = ANY($${paramIdx}::text[])`;
+          params.push(targetRoles);
+          paramIdx++;
+        } else {
+          // ✅ FIX: Use only role name comparison (case-insensitive), not id::text
+          queryText += ` AND (LOWER(r.name) = LOWER($${paramIdx}) OR LOWER(r.display_name) = LOWER($${paramIdx}))`;
+          params.push(roleId);
+          paramIdx++;
+        }
+      }
+
+      if (serviceStyle) {
+        const acceptableStyles = acceptableStylesForService(serviceStyle);
+        queryText += ` AND EXISTS (
+          SELECT 1 FROM vendor_services vs 
+          WHERE vs.vendor_id = v.id 
+            AND vs.service_style = ANY($${paramIdx}::text[])
+            AND vs.is_enabled = true 
+            AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+        )`;
+        params.push(acceptableStyles);
         paramIdx++;
       }
 
@@ -2641,6 +2826,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         } catch (_) {}
         const distanceKm = row.distance_km != null ? parseFloat(row.distance_km) : null;
         const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
+        const normalizedStyle = normalizeServiceStyle(serviceStyle || '') || serviceStyle || '';
         return {
           id: vendorId,
           vendorId,
@@ -2654,7 +2840,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           nextAvailable,
           vendorType: row.vendor_type === 'solo' ? 'solo' : 'business',
           roleName: row.role_name || row.role_display_name || '',
-          serviceStyles: [], // discovery by problem does not filter by style; UI can infer from services
+          serviceStyles: serviceStyle ? (normalizedStyle ? [normalizedStyle] : []) : [], // discovery by problem does not filter by style unless provided
           ...row,
         };
       }));
@@ -3445,14 +3631,15 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         LEFT JOIN services s ON vs.service_id = s.id
         WHERE vs.vendor_id = $1 
           AND vs.is_enabled = true 
-          AND vs.publish_status = 'published'
+          AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
       `;
       
       const params: any[] = [vendorId];
       
       if (serviceStyle) {
-        servicesQuery += ` AND vs.service_style = $2`;
-        params.push(serviceStyle);
+        const acceptableStyles = acceptableStylesForService(serviceStyle);
+        servicesQuery += ` AND vs.service_style = ANY($2::text[])`;
+        params.push(acceptableStyles);
       }
       
       servicesQuery += ` ORDER BY vs.category, vs.service_name`;
@@ -3530,11 +3717,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       }
 
       // Normalize legacy styles so vendors stored as at_vendor/online are discoverable
-      const acceptableStyles: string[] = serviceStyle === 'at_center'
-        ? ['at_center', 'at_vendor']
-        : serviceStyle === 'tele'
-          ? ['tele', 'online']
-          : [serviceStyle];
+      const acceptableStyles: string[] = acceptableStylesForService(serviceStyle);
 
       const customerLat = latitude ? parseFloat(latitude) : null;
       const customerLng = longitude ? parseFloat(longitude) : null;
@@ -3543,6 +3726,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // ========== FOR AT_CENTER: Return vendors directly ==========
       if (serviceStyle === 'at_center') {
+        const hasLogoUrl = await columnExists('vendors', 'logo_url');
+        const logoColumn = hasLogoUrl ? 'v.logo_url' : 'NULL';
         let vendorsQuery = `
           SELECT DISTINCT ON (v.id)
             v.id as vendor_id,
@@ -3556,9 +3741,12 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             v.metadata,
             v.profile_photo_url,
             v.profile_image,
+            ${logoColumn} as logo_url,
+            v.specializations,
             v.vendor_type,
             r.name as role_name,
             r.display_name as role_display_name,
+            r.config as role_config,
             (SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id) as avg_rating,
             (SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id) as review_count,
             'vendor' as provider_type
@@ -3569,9 +3757,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             AND v.is_active = true
             AND vs.service_style = ANY($1::text[])
             AND vs.is_enabled = true
-            AND vs.publish_status = 'published'
-            AND (r.name IS NULL OR r.name NOT LIKE '%_solo')
-            AND (v.vendor_type IS NULL OR v.vendor_type != 'solo')
+            AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+            AND (r.name IS NULL OR LOWER(r.name) NOT LIKE '%solo%')
         `;
         
         const params: any[] = [acceptableStyles];
@@ -3656,8 +3843,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
         const vendorsResult = await query(vendorsQuery, params);
 
-        const vendorsWithServices = await Promise.all(
+        const vendorsWithServices = (await Promise.all(
           vendorsResult.rows.map(async (vendor) => {
+            if (serviceStyle && !roleConfigAllowsStyle((vendor as any).role_config, serviceStyle)) {
+              return null;
+            }
             const servicesResult = await query(
               `SELECT 
                 vs.id,
@@ -3671,7 +3861,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                WHERE vs.vendor_id = $1 
                  AND vs.service_style = ANY($2::text[])
                  AND vs.is_enabled = true
-                 AND vs.publish_status = 'published'
+                 AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
                ORDER BY vs.price ASC`,
               [vendor.vendor_id, acceptableStyles]
             );
@@ -3790,7 +3980,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               })),
             };
           })
-        );
+        )).filter(Boolean);
 
         let filteredVendors = vendorsWithServices.filter(v => v.services.length > 0);
 
@@ -3887,7 +4077,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const mobileVerifiedCondition = has_mobile_verified ? 'AND s.mobile_verified = true' : '';
       const individualProviderCondition = has_individual_provider ? 'AND s.is_individual_provider = true' : '';
       const enabledByStaffCondition = has_enabled_by_staff ? 'AND ss.enabled_by_staff = true' : '';
-      const serviceStyleFilter = has_service_styles ? '$PARAM = ANY(ss.service_styles)' : 'TRUE';
+      const acceptableStylesForStaff = acceptableStylesForService(serviceStyle);
+      const serviceStyleFilter = has_service_styles ? 'ss.service_styles && $PARAM::text[]' : 'TRUE';
       const avgRatingSubquery = (has_reviews_table && has_reviews_staff_id) 
         ? 'COALESCE((SELECT AVG(rating) FROM reviews WHERE staff_id = s.id), 0)' 
         : '0';
@@ -3999,7 +4190,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // Check if staff has services with this style enabled (check both staff_services AND vendor_services)
       const styleFilterWithParam = has_service_styles 
-        ? `$${individualParamIdx} = ANY(ss.service_styles)` 
+        ? `ss.service_styles && $${individualParamIdx}::text[]` 
         : 'TRUE';
       
       individualQuery += ` AND (
@@ -4017,10 +4208,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           WHERE vs.vendor_id = s.vendor_id
             AND vs.is_enabled = true
             AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
-            AND vs.service_style = $${individualParamIdx}
+            AND vs.service_style = ANY($${individualParamIdx}::text[])
         )
       )`;
-      individualParams.push(serviceStyle);
+      individualParams.push(acceptableStylesForStaff);
       individualParamIdx++;
 
       // NOTE: Availability check removed - providers appear based on service style enablement
@@ -4065,9 +4256,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
            WHERE ss.staff_id = $1 
              AND ss.enabled_by_staff = true 
              AND ss.is_active = true
-             AND $2 = ANY(ss.service_styles)
+             AND ss.service_styles && $2::text[]
            ORDER BY ss.price ASC`,
-          [ind.id, serviceStyle]
+          [ind.id, acceptableStylesForStaff]
         ).catch(() => ({ rows: [] }));
 
         // ✅ FIX: If no staff_services found, try vendor_services (for individual providers who use vendor_services)
@@ -4101,6 +4292,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             distance = calculateDistance(customerLat, customerLng, parseFloat(loc.lat), parseFloat(loc.lng));
           }
         }
+        const distanceKm = distance ? parseFloat(distance.toFixed(2)) : null;
+        const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
 
         providers.push({
           providerId: ind.id,
@@ -4115,9 +4308,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           qualifications: ind.qualifications,
           rating: parseFloat(ind.avg_rating || '0').toFixed(1),
           reviewCount: parseInt(ind.review_count || '0', 10),
-          distance: distance ? parseFloat(distance.toFixed(2)) : null,
+          distance: distanceKm,
+          distanceKm,
+          distanceText,
           isVerified: true,
           isIndividualProvider: true,
+          photoUrl: ind.photo || null,
+          serviceStyles: serviceStyle ? ((normalizeServiceStyle(serviceStyle) || serviceStyle) ? [normalizeServiceStyle(serviceStyle) || serviceStyle] : []) : [],
+          vendorType: ind.vendor_id ? 'business' : 'solo',
+          roleName: ind.role,
+          specializations: [],
+          nextAvailable: null,
           services: servicesResult.rows.map(s => ({
             id: s.id,
             serviceId: s.service_id,
@@ -4174,7 +4375,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       // Check if staff has services with this style enabled (check both staff_services AND vendor_services)
       const staffStyleFilterWithParam = has_service_styles 
-        ? `$${staffParamIdx} = ANY(ss.service_styles)` 
+        ? `ss.service_styles && $${staffParamIdx}::text[]` 
         : 'TRUE';
         
       staffQuery += ` AND (
@@ -4192,10 +4393,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           WHERE vs.vendor_id = s.vendor_id
             AND vs.is_enabled = true
             AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
-            AND vs.service_style = $${staffParamIdx}
+            AND vs.service_style = ANY($${staffParamIdx}::text[])
         )
       )`;
-      staffParams.push(serviceStyle);
+      staffParams.push(acceptableStylesForStaff);
       staffParamIdx++;
 
       // NOTE: Availability check removed - providers appear based on service style enablement
@@ -4240,9 +4441,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
            WHERE ss.staff_id = $1 
              AND ss.enabled_by_staff = true 
              AND ss.is_active = true
-             AND $2 = ANY(ss.service_styles)
+             AND ss.service_styles && $2::text[]
            ORDER BY ss.price ASC`,
-          [staff.id, serviceStyle]
+          [staff.id, acceptableStylesForStaff]
         ).catch(() => ({ rows: [] }));
 
         // ✅ FIX: If no staff_services found, fallback to vendor_services
@@ -4258,11 +4459,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               vs.category
              FROM vendor_services vs
              WHERE vs.vendor_id = $1 
-               AND vs.service_style = $2
+               AND vs.service_style = ANY($2::text[])
                AND vs.is_enabled = true
                AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
              ORDER BY vs.price ASC`,
-            [staff.vendor_id, serviceStyle]
+            [staff.vendor_id, acceptableStylesForStaff]
           ).catch(() => ({ rows: [] }));
         }
 
@@ -4285,6 +4486,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             distance = calculateDistance(customerLat, customerLng, lat, lng);
           }
         }
+        const distanceKm = distance ? parseFloat(distance.toFixed(2)) : null;
+        const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
 
         providers.push({
           providerId: staff.id,
@@ -4303,9 +4506,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           vendorRoleDisplay: staff.vendor_role_display,
           rating: parseFloat(staff.avg_rating || '0').toFixed(1),
           reviewCount: parseInt(staff.review_count || '0', 10),
-          distance: distance ? parseFloat(distance.toFixed(2)) : null,
+          distance: distanceKm,
+          distanceKm,
+          distanceText,
           isVerified: true,
           isIndividualProvider: false,
+          photoUrl: staff.photo || null,
+          serviceStyles: serviceStyle ? ((normalizeServiceStyle(serviceStyle) || serviceStyle) ? [normalizeServiceStyle(serviceStyle) || serviceStyle] : []) : [],
+          vendorType: staff.vendor_id ? 'business' : 'solo',
+          roleName: staff.vendor_role_display || staff.role || '',
+          specializations: [],
+          nextAvailable: null,
           services: servicesResult.rows.map(s => ({
             id: s.id,
             serviceId: s.service_id,
@@ -4321,6 +4532,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       // ========== 3. FALLBACK: Vendors with at_home/tele – align with admin active (any published service when category set) ==========
       const vendorIdsWithStaff = new Set(providers.map(p => p.vendorId).filter(Boolean));
       
+      const acceptableStylesFallback = acceptableStylesForService(serviceStyle);
+      const hasLogoUrlFallback = await columnExists('vendors', 'logo_url');
+      const logoColumnFallback = hasLogoUrlFallback ? 'v.logo_url' : 'NULL';
       const vendorFallbackSoloCondition = targetRoles.length > 0
         ? ''
         : ` AND (
@@ -4328,19 +4542,14 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             OR r.name LIKE '%_solo'
             OR r.name LIKE '%Solo%'
             OR LOWER(r.name) LIKE '%solo%'
+            OR LOWER(r.name) IN ('walker','pet_walker','dog_walker','pet_sitter','sitter','pet_taxi','pet_transport','pet_relocation','relocation')
           )`;
-      const vendorFallbackExistsService = targetRoles.length > 0
-        ? ` AND EXISTS (
-            SELECT 1 FROM vendor_services vs
-            WHERE vs.vendor_id = v.id AND vs.is_enabled = true
-              AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
-          )`
-        : ` AND EXISTS (
-            SELECT 1 FROM vendor_services vs
-            WHERE vs.vendor_id = v.id AND (vs.service_style = $1 OR vs.service_style IS NULL)
-              AND vs.is_enabled = true
-              AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
-          )`;
+      const vendorFallbackExistsService = ` AND EXISTS (
+          SELECT 1 FROM vendor_services vs
+          WHERE vs.vendor_id = v.id AND vs.is_enabled = true
+            AND vs.service_style = ANY($1::text[])
+            AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+        )`;
       let vendorFallbackQuery = `
         SELECT DISTINCT ON (v.id)
           v.id as vendor_id,
@@ -4353,11 +4562,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           v.longitude,
           v.profile_photo_url,
           v.profile_image,
-          v.logo_url,
+          ${logoColumnFallback} as logo_url,
           v.specializations,
           v.metadata,
+          v.vendor_type,
           r.name as role_name,
           r.display_name as role_display_name,
+          r.config as role_config,
           (SELECT AVG(rating) FROM reviews WHERE vendor_id = v.id) as avg_rating,
           (SELECT COUNT(*) FROM reviews WHERE vendor_id = v.id) as review_count
         FROM vendors v
@@ -4365,17 +4576,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         WHERE (v.status = 'approved' OR v.status = 'active')
           AND v.is_active = true
           ${vendorFallbackSoloCondition}
-          AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%clinic%'
-          AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%hospital%'
-          AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%center%'
-          AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%centre%'
-          AND COALESCE(LOWER(v.business_name), '') NOT LIKE '%salon%'
-          AND COALESCE(LOWER(v.business_name), '') NOT LIKE '% business%'
           ${vendorFallbackExistsService}
       `;
       
-      const vendorFallbackParams: any[] = targetRoles.length > 0 ? [] : [serviceStyle];
-      let vendorFallbackParamIdx = targetRoles.length > 0 ? 1 : 2;
+      const vendorFallbackParams: any[] = [acceptableStylesFallback];
+      let vendorFallbackParamIdx = 2;
 
       if (targetRoles.length > 0) {
         vendorFallbackQuery += ` AND (
@@ -4404,6 +4609,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       for (const vendor of vendorFallbackResult.rows) {
         // Skip vendors that already have staff in providers list
         if (vendorIdsWithStaff.has(vendor.vendor_id)) continue;
+        if (serviceStyle && !roleConfigAllowsStyle((vendor as any).role_config, serviceStyle)) continue;
 
         // Get services for this vendor
         const servicesResult = await query(
@@ -4417,17 +4623,19 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             vs.category
            FROM vendor_services vs
            WHERE vs.vendor_id = $1 
-             AND (vs.service_style = $2 OR vs.service_style IS NULL)
+             AND vs.service_style = ANY($2::text[])
              AND vs.is_enabled = true
              AND (vs.publish_status = 'published' OR vs.publish_status = 'draft')
            ORDER BY vs.price ASC`,
-          [vendor.vendor_id, serviceStyle]
+          [vendor.vendor_id, acceptableStylesFallback]
         ).catch(() => ({ rows: [] }));
 
         let distance = null;
         if (customerLat && customerLng && vendor.latitude && vendor.longitude) {
           distance = calculateDistance(customerLat, customerLng, parseFloat(vendor.latitude), parseFloat(vendor.longitude));
         }
+        const distanceKm = distance ? parseFloat(distance.toFixed(2)) : null;
+        const distanceText = distanceKm != null ? (distanceKm < 1 ? `${Math.round(distanceKm * 1000)}m away` : `${distanceKm.toFixed(1)} km away`) : null;
 
         const minPrice = servicesResult.rows.length > 0
           ? Math.min(...servicesResult.rows.map((s: any) => parseFloat(s.price || 0)))
@@ -4454,15 +4662,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           photo: getVendorPhotoUrl(vendor),
           photoUrl: getVendorPhotoUrl(vendor),
           role: vendor.role_display_name || vendor.role_name,
+          roleName: vendor.role_name || vendor.role_display_name || '',
           experienceYears: null,
           qualifications: null,
           address: vendor.address,
           city: vendor.city,
           rating: parseFloat(vendor.avg_rating || '0').toFixed(1),
           reviewCount: parseInt(vendor.review_count || '0', 10),
-          distance: distance ? parseFloat(distance.toFixed(2)) : null,
+          distance: distanceKm,
+          distanceKm,
+          distanceText,
           isVerified: true,
           isIndividualProvider: true,
+          vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
+          serviceStyles: serviceStyle ? ((normalizeServiceStyle(serviceStyle) || serviceStyle) ? [normalizeServiceStyle(serviceStyle) || serviceStyle] : []) : acceptableStylesFallback,
+          nextAvailable: null,
           price: minPrice,
           consultationFee: minPrice,
           specializations,
