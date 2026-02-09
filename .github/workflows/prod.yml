@@ -526,16 +526,19 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Build admin-web (prod)
         run: |
+          cd packages/ui && npm ci
           cd apps/admin-web && npm ci && npm run build
         env:
           NEXT_PUBLIC_API_BASE_URL: ${{ needs.terraform-apply.outputs.api_endpoint }}
       - name: Build vendor-web (prod)
         run: |
+          cd packages/ui && npm ci
           cd apps/vendor-web && npm ci && npm run build
         env:
           NEXT_PUBLIC_API_BASE_URL: ${{ needs.terraform-apply.outputs.api_endpoint }}
       - name: Build customer-web (prod)
         run: |
+          cd packages/ui && npm ci
           cd apps/customer-web && npm ci && npm run build
         env:
           NEXT_PUBLIC_API_BASE_URL: ${{ needs.terraform-apply.outputs.api_endpoint }}
