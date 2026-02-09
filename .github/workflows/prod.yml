@@ -526,19 +526,34 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Build admin-web (prod)
         run: |
+          cd packages/ui && npm ci
+          cd ../..
           cd apps/admin-web && npm ci && npm run build
         env:
           NEXT_PUBLIC_API_BASE_URL: ${{ needs.terraform-apply.outputs.api_endpoint }}
       - name: Build vendor-web (prod)
         run: |
+          cd packages/ui && npm ci
+          cd ../..
           cd apps/vendor-web && npm ci && npm run build
         env:
           NEXT_PUBLIC_API_BASE_URL: ${{ needs.terraform-apply.outputs.api_endpoint }}
       - name: Build customer-web (prod)
         run: |
+          cd packages/ui && npm ci
+          cd ../..
           cd apps/customer-web && npm ci && npm run build
         env:
           NEXT_PUBLIC_API_BASE_URL: ${{ needs.terraform-apply.outputs.api_endpoint }}
+      - name: Verify build outputs exist
+        run: |
+          for app in admin-web vendor-web customer-web; do
+            if [ ! -d "apps/${app}/dist" ]; then
+              echo "❌ ERROR: apps/${app}/dist does not exist - build may have failed"
+              exit 1
+            fi
+            echo "✅ apps/${app}/dist exists"
+          done
       - name: Upload frontend artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -548,6 +563,18 @@ jobs:
             apps/vendor-web/dist
             apps/customer-web/dist
           retention-days: 1
+          if-no-files-found: error
+      - name: Debug artifact upload
+        run: |
+          echo "=== Verifying what was uploaded ==="
+          for app in admin-web vendor-web customer-web; do
+            if [ -d "apps/${app}/dist" ]; then
+              echo "✅ apps/${app}/dist exists (size: $(du -sh apps/${app}/dist | cut -f1))"
+              echo "   Files: $(find apps/${app}/dist -type f | wc -l) files"
+            else
+              echo "❌ apps/${app}/dist MISSING - this will cause deployment to fail"
+            fi
+          done
 
   deploy-web:
     name: Deploy Web to Prod (S3 + CloudFront)
@@ -564,22 +591,74 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frontends-prod
+      - name: Debug artifact structure
+        run: |
+          echo "=== Artifact download location ==="
+          find . -name "dist" -type d | head -20
+          echo ""
+          echo "=== Checking for dist directories ==="
+          for app in admin-web vendor-web customer-web; do
+            if [ -d "apps/${app}/dist" ]; then
+              echo "✅ Found apps/${app}/dist"
+              echo "   Size: $(du -sh apps/${app}/dist | cut -f1)"
+            else
+              echo "❌ Missing apps/${app}/dist"
+              # Check if it's in a different location
+              if [ -d "${app}/dist" ]; then
+                echo "   Found ${app}/dist instead - moving to apps/${app}/dist"
+                mkdir -p apps/${app}
+                mv ${app}/dist apps/${app}/dist
+              fi
+            fi
+          done
+      - name: Verify downloaded artifacts
+        run: |
+          for app in admin-web vendor-web customer-web; do
+            if [ ! -d "apps/${app}/dist" ]; then
+              echo "❌ ERROR: apps/${app}/dist not found after download and fix attempt"
+              echo "Listing current directory:"
+              ls -la
+              echo "Listing apps directory:"
+              ls -la apps/ || echo "apps/ does not exist"
+              echo "Searching for any dist directories:"
+              find . -name "dist" -type d
+              exit 1
+            fi
+            echo "✅ apps/${app}/dist verified"
+            echo "   Contents: $(ls apps/${app}/dist | head -5)"
+          done
       - name: Inject runtime-config.js (prod API URL)
         run: |
           API="${{ needs.terraform-apply.outputs.api_endpoint }}"
           for app in admin-web vendor-web customer-web; do
             D="apps/${app}/dist"
-            [ -d "$D" ] || continue
+            if [ ! -d "$D" ]; then
+              echo "⚠️  Warning: $D does not exist, skipping runtime-config injection"
+              continue
+            fi
             printf '%s\n' "(function(){var u=\"$API\";window.__WARMPAWZ_RUNTIME_CONFIG__={apiBaseUrl:u,uatMode:false};if(typeof __API_BASE_URL__===\"undefined\"){window.__API_BASE_URL__=u;}}());" > "$D/runtime-config.js"
+            echo "✅ Injected runtime-config.js into $D"
           done
       - name: Deploy admin-web to S3
         run: |
+          if [ ! -d "apps/admin-web/dist" ]; then
+            echo "❌ ERROR: apps/admin-web/dist does not exist"
+            exit 1
+          fi
           aws s3 sync apps/admin-web/dist s3://${{ needs.terraform-apply.outputs.bucket_admin }} --delete
       - name: Deploy vendor-web to S3
         run: |
+          if [ ! -d "apps/vendor-web/dist" ]; then
+            echo "❌ ERROR: apps/vendor-web/dist does not exist"
+            exit 1
+          fi
           aws s3 sync apps/vendor-web/dist s3://${{ needs.terraform-apply.outputs.bucket_vendor }} --delete
       - name: Deploy customer-web to S3
         run: |
+          if [ ! -d "apps/customer-web/dist" ]; then
+            echo "❌ ERROR: apps/customer-web/dist does not exist"
+            exit 1
+          fi
           aws s3 sync apps/customer-web/dist s3://${{ needs.terraform-apply.outputs.bucket_customer }} --delete
       - name: Invalidate CloudFront (admin)
         run: |
@@ -646,7 +725,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - run: |
+      - name: Configure Git
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+      - name: Create and push version tag
+        run: |
           VERSION=$(date +%Y.%m.%d).${{ github.run_number }}
           git tag -a "v$VERSION" -m "Production release v$VERSION"
           git push origin "v$VERSION"
