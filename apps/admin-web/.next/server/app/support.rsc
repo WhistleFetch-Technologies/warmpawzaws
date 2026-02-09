@@ -1,10 +1,10 @@
 2:I[19107,[],"ClientPageRoot"]
-3:I[87319,["6606","static/chunks/6606-89eb89fdcaec6c7a.js","9895","static/chunks/9895-4ef37ef4fa634842.js","5451","static/chunks/app/support/page-904914a30505a1c7.js"],"default",1]
+3:I[87319,["6606","static/chunks/6606-7ded818f3fd51b06.js","9895","static/chunks/9895-bb8627f85c26e3a5.js","5451","static/chunks/app/support/page-1ba9361ab62d4990.js"],"default",1]
 4:I[4707,[],""]
 5:I[36423,[],""]
-7:I[49294,["3185","static/chunks/app/layout-d9ab9edc64ec8d4a.js"],"Providers"]
-8:I[88735,["9895","static/chunks/9895-4ef37ef4fa634842.js","7601","static/chunks/app/error-cf198cbb5d3ba0e1.js"],"default"]
-9:I[85447,["9160","static/chunks/app/not-found-06e9724babf3c716.js"],"default"]
+7:I[49294,["3185","static/chunks/app/layout-62ec5a8953c783d6.js"],"Providers"]
+8:I[88735,["9895","static/chunks/9895-bb8627f85c26e3a5.js","7601","static/chunks/app/error-fc5090c015f1c157.js"],"default"]
+9:I[85447,["9160","static/chunks/app/not-found-f7d0c7ee6f0af1da.js"],"default"]
 6:T6bc,
               // Inline fallback config (ensures API URL is always available)
               if (!window.__WARMPAWZ_RUNTIME_CONFIG__) {
@@ -36,6 +36,6 @@
                   }
                 }
               })();
-            0:["bfE0tdZmYuj6jhmX54cF6",[[["",{"children":["support",{"children":["__PAGE__",{}]}]},"$undefined","$undefined",true],["",{"children":["support",{"children":["__PAGE__",{},[["$L1",["$","$L2",null,{"props":{"params":{},"searchParams":{}},"Component":"$3"}],null],null],null]},[null,["$","$L4",null,{"parallelRouterKey":"children","segmentPath":["children","support","children"],"error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$L5",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":"$undefined","notFoundStyles":"$undefined"}]],null]},[[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/7e63a3e27e94924b.css","precedence":"next","crossOrigin":"$undefined"}],["$","link","1",{"rel":"stylesheet","href":"/_next/static/css/b1746c6859893045.css","precedence":"next","crossOrigin":"$undefined"}]],["$","html",null,{"lang":"en","suppressHydrationWarning":true,"children":["$","body",null,{"className":"__className_8a0ba0","suppressHydrationWarning":true,"children":[["$","script",null,{"dangerouslySetInnerHTML":{"__html":"$6"}}],["$","$L7",null,{"children":["$","$L4",null,{"parallelRouterKey":"children","segmentPath":["children"],"error":"$8","errorStyles":[],"errorScripts":[],"template":["$","$L5",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":["$","$L9",null,{}],"notFoundStyles":[]}]}]]}]}]],null],null],["$La",null]]]]
-a:[["$","meta","0",{"name":"viewport","content":"width=device-width, initial-scale=1"}],["$","meta","1",{"charSet":"utf-8"}],["$","title","2",{"children":"Warmpawz Admin Portal"}],["$","meta","3",{"name":"description","content":"Platform administration and governance"}],["$","meta","4",{"name":"next-size-adjust"}]]
+            0:["JHenudNeG4FoGcN8Yii3b",[[["",{"children":["support",{"children":["__PAGE__",{}]}]},"$undefined","$undefined",true],["",{"children":["support",{"children":["__PAGE__",{},[["$L1",["$","$L2",null,{"props":{"params":{},"searchParams":{}},"Component":"$3"}],null],null],null]},[null,["$","$L4",null,{"parallelRouterKey":"children","segmentPath":["children","support","children"],"error":"$undefined","errorStyles":"$undefined","errorScripts":"$undefined","template":["$","$L5",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":"$undefined","notFoundStyles":"$undefined"}]],null]},[[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/7e63a3e27e94924b.css","precedence":"next","crossOrigin":"$undefined"}],["$","link","1",{"rel":"stylesheet","href":"/_next/static/css/b1746c6859893045.css","precedence":"next","crossOrigin":"$undefined"}]],["$","html",null,{"lang":"en","suppressHydrationWarning":true,"children":["$","body",null,{"className":"__className_8a0ba0","suppressHydrationWarning":true,"children":[["$","script",null,{"dangerouslySetInnerHTML":{"__html":"$6"}}],["$","$L7",null,{"children":["$","$L4",null,{"parallelRouterKey":"children","segmentPath":["children"],"error":"$8","errorStyles":[],"errorScripts":[],"template":["$","$L5",null,{}],"templateStyles":"$undefined","templateScripts":"$undefined","notFound":["$","$L9",null,{}],"notFoundStyles":[]}]}]]}]}]],null],null],["$La",null]]]]
+a:[["$","meta","0",{"name":"viewport","content":"width=device-width, initial-scale=1"}],["$","meta","1",{"charSet":"utf-8"}],["$","title","2",{"children":"Warmpawz Admin Portal"}],["$","meta","3",{"name":"description","content":"Platform administration and governance"}]]
 1:null

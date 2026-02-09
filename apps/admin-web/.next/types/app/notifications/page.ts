@@ -1,4 +1,4 @@
-// File: /Users/ketan/Documents/warmpawzecodev/apps/admin-web/app/notifications/page.tsx
+// File: D:\WFTPL\warmpawzApp\warmpawzaws\apps\admin-web\app\notifications\page.tsx
 import * as entry from '../../../../app/notifications/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
