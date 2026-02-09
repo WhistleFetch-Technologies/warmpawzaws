@@ -580,15 +580,37 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frontends-prod
+      - name: Debug artifact structure
+        run: |
+          echo "=== Artifact download location ==="
+          find . -name "dist" -type d | head -20
+          echo ""
+          echo "=== Checking for dist directories ==="
+          for app in admin-web vendor-web customer-web; do
+            if [ -d "apps/${app}/dist" ]; then
+              echo "✅ Found apps/${app}/dist"
+              echo "   Size: $(du -sh apps/${app}/dist | cut -f1)"
+            else
+              echo "❌ Missing apps/${app}/dist"
+              # Check if it's in a different location
+              if [ -d "${app}/dist" ]; then
+                echo "   Found ${app}/dist instead - moving to apps/${app}/dist"
+                mkdir -p apps/${app}
+                mv ${app}/dist apps/${app}/dist
+              fi
+            fi
+          done
       - name: Verify downloaded artifacts
         run: |
           for app in admin-web vendor-web customer-web; do
             if [ ! -d "apps/${app}/dist" ]; then
-              echo "❌ ERROR: apps/${app}/dist not found after download"
+              echo "❌ ERROR: apps/${app}/dist not found after download and fix attempt"
               echo "Listing current directory:"
               ls -la
               echo "Listing apps directory:"
               ls -la apps/ || echo "apps/ does not exist"
+              echo "Searching for any dist directories:"
+              find . -name "dist" -type d
               exit 1
             fi
             echo "✅ apps/${app}/dist verified"
