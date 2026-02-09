@@ -545,6 +545,15 @@ jobs:
           cd apps/customer-web && npm ci && npm run build
         env:
           NEXT_PUBLIC_API_BASE_URL: ${{ needs.terraform-apply.outputs.api_endpoint }}
+      - name: Verify build outputs exist
+        run: |
+          for app in admin-web vendor-web customer-web; do
+            if [ ! -d "apps/${app}/dist" ]; then
+              echo "❌ ERROR: apps/${app}/dist does not exist - build may have failed"
+              exit 1
+            fi
+            echo "✅ apps/${app}/dist exists"
+          done
       - name: Upload frontend artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -554,6 +563,7 @@ jobs:
             apps/vendor-web/dist
             apps/customer-web/dist
           retention-days: 1
+          if-no-files-found: error
 
   deploy-web:
     name: Deploy Web to Prod (S3 + CloudFront)
@@ -570,22 +580,52 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frontends-prod
+      - name: Verify downloaded artifacts
+        run: |
+          for app in admin-web vendor-web customer-web; do
+            if [ ! -d "apps/${app}/dist" ]; then
+              echo "❌ ERROR: apps/${app}/dist not found after download"
+              echo "Listing current directory:"
+              ls -la
+              echo "Listing apps directory:"
+              ls -la apps/ || echo "apps/ does not exist"
+              exit 1
+            fi
+            echo "✅ apps/${app}/dist verified"
+            echo "   Contents: $(ls apps/${app}/dist | head -5)"
+          done
       - name: Inject runtime-config.js (prod API URL)
         run: |
           API="${{ needs.terraform-apply.outputs.api_endpoint }}"
           for app in admin-web vendor-web customer-web; do
             D="apps/${app}/dist"
-            [ -d "$D" ] || continue
+            if [ ! -d "$D" ]; then
+              echo "⚠️  Warning: $D does not exist, skipping runtime-config injection"
+              continue
+            fi
             printf '%s\n' "(function(){var u=\"$API\";window.__WARMPAWZ_RUNTIME_CONFIG__={apiBaseUrl:u,uatMode:false};if(typeof __API_BASE_URL__===\"undefined\"){window.__API_BASE_URL__=u;}}());" > "$D/runtime-config.js"
+            echo "✅ Injected runtime-config.js into $D"
           done
       - name: Deploy admin-web to S3
         run: |
+          if [ ! -d "apps/admin-web/dist" ]; then
+            echo "❌ ERROR: apps/admin-web/dist does not exist"
+            exit 1
+          fi
           aws s3 sync apps/admin-web/dist s3://${{ needs.terraform-apply.outputs.bucket_admin }} --delete
       - name: Deploy vendor-web to S3
         run: |
+          if [ ! -d "apps/vendor-web/dist" ]; then
+            echo "❌ ERROR: apps/vendor-web/dist does not exist"
+            exit 1
+          fi
           aws s3 sync apps/vendor-web/dist s3://${{ needs.terraform-apply.outputs.bucket_vendor }} --delete
       - name: Deploy customer-web to S3
         run: |
+          if [ ! -d "apps/customer-web/dist" ]; then
+            echo "❌ ERROR: apps/customer-web/dist does not exist"
+            exit 1
+          fi
           aws s3 sync apps/customer-web/dist s3://${{ needs.terraform-apply.outputs.bucket_customer }} --delete
       - name: Invalidate CloudFront (admin)
         run: |
