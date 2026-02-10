@@ -332,22 +332,24 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       const roleId = c.req.query('roleId');
       const serviceStyle = c.req.query('serviceStyle');
 
-      // Build vendor query
-      // Only require: approved, active, lat/lng, and published vendor_services.
-      // Do NOT require vendor_availability_v2 — discovery must show vendors with published
-      // services; availability is enforced at booking. Requiring availability here excluded
-      // diagnostics_center (and other) vendors that had no availability rows, returning [].
+      // Build vendor query: strict discovery — advance availability (VA2), profile, published services
       let vendorQuery = `
         SELECT v.*, r.name as role_name, r.display_name as role_display_name
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
           AND v.latitude IS NOT NULL AND v.longitude IS NOT NULL
+          AND v.business_name IS NOT NULL AND TRIM(COALESCE(v.business_name, '')) != ''
           AND EXISTS (
             SELECT 1 FROM vendor_services vs 
             WHERE vs.vendor_id = v.id 
               AND vs.is_enabled = true 
               AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+          )
+          AND EXISTS (
+            SELECT 1 FROM vendor_availability_v2 va
+            WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
+              AND COALESCE(va.is_available, va.is_enabled, true) = true
           )
       `;
 
@@ -693,6 +695,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           LEFT JOIN roles r ON v.role_id = r.id
           WHERE (v.status = 'approved' OR v.status = 'active')
             AND v.is_active = true
+            AND v.business_name IS NOT NULL AND TRIM(COALESCE(v.business_name, '')) != ''
+            AND EXISTS (
+              SELECT 1 FROM vendor_availability_v2 va
+              WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
+                AND COALESCE(va.is_available, va.is_enabled, true) = true
+                AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${styleParamIndex}::text[] OR COALESCE(va.service_style, va.service_type)::text = ANY($${styleParamIndex}::text[]))
+            )
             ${soloOnlyClause}
             AND (${targetRolesLower.length > 0 ? '1=1' : "COALESCE(v.is_online, true) = true"})
             ${soloCondition}
@@ -877,7 +886,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 : JSON.parse(vendor.specializations || '[]');
             } catch { /* ignore */ }
           }
-          
+
+          const hasPhoto = !!(getVendorPhotoUrl(vendor) || (photos && photos.length > 0));
+          if (!nextAvailableSlot || !hasPhoto) continue;
+
           allProviders.push({
             id: vendor.id,
             vendorId: vendor.id,
@@ -971,10 +983,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         });
       }
 
-      // Build vendor query (for at_center services or no serviceStyle specified)
-      // ✅ LIVE STATUS FILTER: Only show vendors eligible for customer listing
-      // ⚠️ RELAXED: Removed strict requirements for lat/lng, published services, and availability
-      //    to allow vendors in onboarding phase to be discoverable
+      // Build vendor query: strict discovery — only vendors with advance availability, profile, and services
+      // No fallback: vendor must have slot-based advance availability (VA2), profile completion, and services configured for the booking flow.
       let vendorQuery = `
         SELECT v.*, r.name as role_name, r.display_name as role_display_name, r.config as role_config,
           COALESCE((SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true), 0) as service_count,
@@ -982,24 +992,45 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
+          AND v.business_name IS NOT NULL AND TRIM(COALESCE(v.business_name, '')) != ''
+          AND EXISTS (
+            SELECT 1 FROM vendor_availability_v2 va
+            WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
+              AND COALESCE(va.is_available, va.is_enabled, true) = true
+          )
       `;
 
       const params: any[] = [];
       let paramIndex = 1;
 
-      // ✅ FIX: When serviceStyle=at_center, exclude solo vendors and only include vendors with at_center services
+      // ✅ FIX: When serviceStyle=at_center, exclude solo vendors and only include vendors with at_center services + advance availability for that style
       if (serviceStyle === 'at_center') {
         const acceptableStyles = acceptableStylesForService(serviceStyle);
-        // Exclude explicit solo roles; avoid relying solely on vendor_type (often mis-set).
         vendorQuery += ` AND (LOWER(r.name) NOT LIKE '%solo%')`;
-        
-        // Only include vendors that have at_center services (relaxed publish_status for discovery)
         vendorQuery += ` AND EXISTS (
           SELECT 1 FROM vendor_services vs
           WHERE vs.vendor_id = v.id
             AND vs.service_style = ANY($${paramIndex}::text[])
             AND vs.is_enabled = true
             AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+        )`;
+        params.push(acceptableStyles);
+        paramIndex++;
+        vendorQuery += ` AND EXISTS (
+          SELECT 1 FROM vendor_availability_v2 va
+          WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
+            AND COALESCE(va.is_available, va.is_enabled, true) = true
+            AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${paramIndex}::text[] OR COALESCE(va.service_style, va.service_type)::text = ANY($${paramIndex}::text[]))
+        )`;
+        params.push(acceptableStyles);
+        paramIndex++;
+      } else if (serviceStyle === 'at_home' || serviceStyle === 'tele') {
+        const acceptableStyles = acceptableStylesForService(serviceStyle);
+        vendorQuery += ` AND EXISTS (
+          SELECT 1 FROM vendor_availability_v2 va
+          WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
+            AND COALESCE(va.is_available, va.is_enabled, true) = true
+            AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${paramIndex}::text[] OR COALESCE(va.service_style, va.service_type)::text = ANY($${paramIndex}::text[]))
         )`;
         params.push(acceptableStyles);
         paramIndex++;
@@ -1355,14 +1386,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         })
       )).filter(Boolean);
 
-      // ✅ FIX: When serviceStyle=at_center, filter out vendors with no at_center services
-      let filteredVendors = enrichedVendors;
+      // Strict discovery: photos loaded, next availability, profile (specializations), services with complete duration and info
+      let filteredVendors = enrichedVendors.filter((v: any) => {
+        const hasPhoto = !!(v.photoUrl || (v.photos && v.photos.length > 0));
+        const hasNextAvailability = !!v.nextAvailableSlot || !!v.nextAvailability;
+        const hasProfileInfo = !!(v.businessName || v.specializations?.length > 0);
+        const hasCompleteServices = v.featuredOfferings && v.featuredOfferings.length > 0 && v.featuredOfferings.every((o: any) =>
+          (o.duration != null && Number(o.duration) > 0) && (o.name || o.category)
+        );
+        return hasPhoto && hasNextAvailability && hasProfileInfo && hasCompleteServices;
+      });
       if (serviceStyle === 'at_center') {
-        filteredVendors = enrichedVendors.filter((v: any) => {
-          // Only include vendors that have at least one at_center service
-          return v.featuredOfferings && v.featuredOfferings.length > 0 && 
-                 v.featuredOfferings.some((offering: any) => offering.serviceStyle === 'at_center');
-        });
+        filteredVendors = filteredVendors.filter((v: any) =>
+          v.featuredOfferings && v.featuredOfferings.length > 0 &&
+          v.featuredOfferings.some((offering: any) => offering.serviceStyle === 'at_center')
+        );
       }
 
       // Rule book: discovery radius (clinic from customer location), max results, default sort
@@ -1742,36 +1780,35 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         // If no staff availability found, fall through to vendor_availability_v2 then operating hours
       }
 
-      // ---------- 2) Advanced availability only: vendor_availability_v2 (no basic fallback) ----------
-      // Normalize and expand: at_center also matches at_vendor (legacy); tele matches online (legacy).
+      // ---------- 2) Slot-based advance availability only: vendor_availability_v2 (no fallback) ----------
+      // Only vendors who have set advance availability in the dashboard get slots. No weekly fallback.
       const normalizedServiceStyle = (serviceStyle === 'at_vendor' || serviceStyle === 'at_center') ? 'at_center' : serviceStyle;
       const acceptableStylesForSlot: string[] =
         normalizedServiceStyle === 'at_center' ? ['at_center', 'at_vendor'] :
         normalizedServiceStyle === 'tele' ? ['tele', 'online', 'video_consultation'] :
         [normalizedServiceStyle];
+      const dayOfWeekValues = dayOfWeek === 0 ? [0, 7] : [dayOfWeek];
       let va2Slots: any[] = [];
       try {
-        // Match rows where: (1) service_styles array overlaps with acceptable styles, OR (2) legacy service_style/service_type is one of acceptable.
-        // This ensures slots show when vendor set advance availability with at_vendor/online or at_center/tele.
-        console.log(`[SLOTS] Querying vendor_availability_v2: vendorId=${resolvedVendorId}, dayOfWeek=${dayOfWeek}, acceptableStyles=${acceptableStylesForSlot.join(',')}`);
+        console.log(`[SLOTS] Querying vendor_availability_v2 (advance only): vendorId=${resolvedVendorId}, dayOfWeek=${dayOfWeek}, acceptableStyles=${acceptableStylesForSlot.join(',')}`);
         const va2Result = await query(
-          `SELECT id, time_window_start, time_window_end, start_time, end_time,
+          `SELECT id, day_of_week, time_window_start, time_window_end, start_time, end_time,
                   COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
                   COALESCE(buffer_time, buffer_time_minutes, 15) as buffer_time_minutes,
-                  lead_time_by_style, max_capacity, service_styles
+                  lead_time_by_style, max_capacity, service_styles, service_style, service_type
            FROM vendor_availability_v2
            WHERE vendor_id::text = ANY($1::text[])
-             AND day_of_week = $2
+             AND day_of_week = ANY($2::int[])
              AND (
                (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
                OR COALESCE(service_style, service_type)::text = ANY($3::text[])
              )
              AND COALESCE(is_available, is_enabled, true) = true
-           ORDER BY COALESCE(time_window_start, start_time)`,
-          [availabilityIds, dayOfWeek, acceptableStylesForSlot]
+           ORDER BY day_of_week, COALESCE(time_window_start, start_time)`,
+          [availabilityIds, dayOfWeekValues, acceptableStylesForSlot]
         );
         va2Slots = va2Result?.rows || [];
-        console.log(`[SLOTS] Found ${va2Slots.length} availability records for day_of_week=${dayOfWeek}, acceptableStyles=${acceptableStylesForSlot.join(',')}`);
+        console.log(`[SLOTS] Found ${va2Slots.length} advance availability records for day_of_week=${dayOfWeek}`);
         if (va2Slots.length > 0) {
           console.log(`[SLOTS] First record:`, JSON.stringify(va2Slots[0]));
         }
@@ -1780,17 +1817,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         try {
           // Fallback for 006 schema: time_window_* and service_style only (no start_time/end_time, no service_styles)
           const va2Result006 = await query(
-            `SELECT id, time_window_start, time_window_end,
+            `SELECT id, day_of_week, time_window_start, time_window_end,
                     time_window_start as start_time, time_window_end as end_time,
                     30 as slot_duration_minutes, 15 as buffer_time_minutes,
                     NULL::jsonb as lead_time_by_style, 1 as max_capacity,
-                    ARRAY[service_style::text] as service_styles
+                    ARRAY[service_style::text] as service_styles, service_style, service_type
              FROM vendor_availability_v2
-             WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
+             WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = ANY($2::int[])
                AND service_style::text = ANY($3::text[])
                AND (is_enabled = true OR is_enabled IS NULL)
-             ORDER BY time_window_start`,
-            [availabilityIds, dayOfWeek, acceptableStylesForSlot]
+             ORDER BY day_of_week, time_window_start`,
+            [availabilityIds, dayOfWeekValues, acceptableStylesForSlot]
           );
           va2Slots = va2Result006?.rows || [];
           console.log(`[SLOTS] 006-schema fallback found ${va2Slots.length} records`);
@@ -1798,20 +1835,20 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           // Fallback when time_window_* columns don't exist (e.g. 057 schema: start_time/end_time only)
           try {
             const va2ResultAlt = await query(
-            `SELECT id, start_time as time_window_start, end_time as time_window_end,
+            `SELECT id, day_of_week, start_time as time_window_start, end_time as time_window_end,
                     start_time, end_time,
                     COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
                     COALESCE(buffer_time, buffer_time_minutes, 15) as buffer_time_minutes,
-                    lead_time_by_style, max_capacity, service_styles
+                    lead_time_by_style, max_capacity, service_styles, service_style, service_type
              FROM vendor_availability_v2
-             WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
+             WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = ANY($2::int[])
                AND (
                  (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
                  OR COALESCE(service_style, service_type)::text = ANY($3::text[])
                )
                AND COALESCE(is_available, is_enabled, true) = true
-             ORDER BY start_time`,
-            [availabilityIds, dayOfWeek, acceptableStylesForSlot]
+             ORDER BY day_of_week, start_time`,
+            [availabilityIds, dayOfWeekValues, acceptableStylesForSlot]
           );
           va2Slots = va2ResultAlt?.rows || [];
           console.log(`[SLOTS] Fallback query found ${va2Slots.length} records`);
@@ -1826,37 +1863,37 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             try {
               // Minimal fallback when service_styles/slot_duration_minutes etc. don't exist (e.g. 057: start_time, end_time, service_type only; no service_style column)
               const va2Minimal = await query(
-                `SELECT id, start_time as time_window_start, end_time as time_window_end,
+                `SELECT id, day_of_week, start_time as time_window_start, end_time as time_window_end,
                         start_time, end_time,
                         30 as slot_duration_minutes, 15 as buffer_time_minutes,
                         NULL::jsonb as lead_time_by_style, 1 as max_capacity,
-                        ARRAY[service_type::text] as service_styles
+                        ARRAY[service_type::text] as service_styles, service_style, service_type
                  FROM vendor_availability_v2
-                 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
+                 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = ANY($2::int[])
                    AND service_type::text = ANY($3::text[])
                    AND COALESCE(is_available, is_enabled, true) = true
-                 ORDER BY start_time`,
-                [availabilityIds, dayOfWeek, acceptableStylesForSlot]
+                 ORDER BY day_of_week, start_time`,
+                [availabilityIds, dayOfWeekValues, acceptableStylesForSlot]
               );
               va2Slots = va2Minimal?.rows || [];
               console.log(`[SLOTS] Minimal (service_type only) query found ${va2Slots.length} records`);
             } catch (err3: any) {
               try {
                 const va2StylesOnly = await query(
-                  `SELECT id, start_time as time_window_start, end_time as time_window_end,
+                  `SELECT id, day_of_week, start_time as time_window_start, end_time as time_window_end,
                           start_time, end_time,
                           COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
                           COALESCE(buffer_time, buffer_time_minutes, 15) as buffer_time_minutes,
-                          lead_time_by_style, max_capacity, service_styles
+                          lead_time_by_style, max_capacity, service_styles, service_style, service_type
                    FROM vendor_availability_v2
-                   WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
+                   WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = ANY($2::int[])
                      AND (
                        (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
                        OR COALESCE(service_style, service_type)::text = ANY($3::text[])
                      )
                      AND COALESCE(is_available, is_enabled, true) = true
-                   ORDER BY start_time`,
-                  [availabilityIds, dayOfWeek, acceptableStylesForSlot]
+                   ORDER BY day_of_week, start_time`,
+                  [availabilityIds, dayOfWeekValues, acceptableStylesForSlot]
                 );
                 va2Slots = va2StylesOnly?.rows || [];
                 console.log(`[SLOTS] service_styles-only query found ${va2Slots.length} records`);
@@ -1865,11 +1902,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 // Final fallback: fetch all rows for vendor+day with minimal columns, filter by style in code
                 try {
                   const va2Any = await query(
-                    `SELECT id, time_window_start, time_window_end, time_window_start as start_time, time_window_end as end_time,
+                    `SELECT id, day_of_week, time_window_start, time_window_end, time_window_start as start_time, time_window_end as end_time,
                             30 as slot_duration_minutes, 15 as buffer_time_minutes, NULL::jsonb as lead_time_by_style, 1 as max_capacity,
-                            ARRAY[service_style::text] as service_styles
-                     FROM vendor_availability_v2 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2 ORDER BY time_window_start`,
-                    [availabilityIds, dayOfWeek]
+                            ARRAY[service_style::text] as service_styles, service_style, service_type
+                     FROM vendor_availability_v2 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = ANY($2::int[]) ORDER BY day_of_week, time_window_start`,
+                    [availabilityIds, dayOfWeekValues]
                   ).catch(() => null);
                   if (va2Any?.rows?.length) {
                     const filtered = va2Any.rows.filter((r: any) => {
@@ -1882,11 +1919,11 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 } catch (err5) {
                   try {
                     const va2Any57 = await query(
-                      `SELECT id, start_time as time_window_start, end_time as time_window_end, start_time, end_time,
+                      `SELECT id, day_of_week, start_time as time_window_start, end_time as time_window_end, start_time, end_time,
                               30 as slot_duration_minutes, 15 as buffer_time_minutes, NULL::jsonb as lead_time_by_style, 1 as max_capacity,
-                              ARRAY[service_type::text] as service_styles
-                       FROM vendor_availability_v2 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2 ORDER BY start_time`,
-                      [availabilityIds, dayOfWeek]
+                              ARRAY[service_type::text] as service_styles, service_style, service_type
+                       FROM vendor_availability_v2 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = ANY($2::int[]) ORDER BY day_of_week, start_time`,
+                      [availabilityIds, dayOfWeekValues]
                     ).catch(() => null);
                     if (va2Any57?.rows?.length) {
                       const filtered = va2Any57.rows.filter((r: any) => {
@@ -1906,6 +1943,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         }
       }
       }
+
+      // No fallback: only slot-based advance availability (vendor_availability_v2) produces slots.
+      // Vendors without advance scheduling do not show slots and should not be discoverable.
 
       // Breaks for this day
       let breaks: { startTime: string; endTime: string }[] = [];
@@ -2064,7 +2104,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         });
       }
 
-      // No advanced availability: return empty (legacy scheduler removed; only advanced schedule is used)
+      // No slot-based advance availability: do not show slots (no fallback)
       return c.json({
         success: true,
         slots: [],
@@ -2073,7 +2113,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         vendorIdentityId: vendorIdentityIdFromLookup ?? undefined,
         serviceStyle,
         staffBased: false,
-        message: 'No advanced availability set for this day and service type. Vendor can set schedule in Advanced Availability.',
+        message: 'No advance availability set for this day and service type. Vendor must set schedule in Advanced Availability.',
       });
     } catch (error: any) {
       console.error('Error fetching available slots:', error);
