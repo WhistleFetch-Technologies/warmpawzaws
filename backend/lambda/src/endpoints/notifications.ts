@@ -18,8 +18,7 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
-import { getSnsClient } from '../utils/sns-client';
-import { PublishCommand } from '@aws-sdk/client-sns';
+import { sendSMS } from '../utils/sms-service';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 
@@ -150,6 +149,10 @@ export function registerNotificationEndpoints(app: Hono) {
       // Send SMS if requested
       if (sendSms) {
         try {
+          const isUatMode = process.env.UAT_MODE === 'true';
+          if (!isUatMode) {
+            console.warn('[SMS] Skipping free-form SMS from /notifications in production (DLT compliance).');
+          } else {
           // Get user phone number
           let phone: string | null = null;
           if (userType === 'customer') {
@@ -161,17 +164,12 @@ export function registerNotificationEndpoints(app: Hono) {
           }
 
           if (phone) {
-            const snsClient = getSnsClient();
-            await snsClient.send(new PublishCommand({
-              PhoneNumber: phone,
-              Message: `${title}\n\n${message}`,
-              MessageAttributes: {
-                'AWS.SNS.SMS.SMSType': {
-                  DataType: 'String',
-                  StringValue: 'Transactional',
-                },
-              },
-            }));
+            await sendSMS({
+              to: phone,
+              message: `${title}\n\n${message}`,
+              type: 'transactional',
+            });
+          }
           }
         } catch (smsError) {
           console.error('Error sending SMS notification:', smsError);
@@ -451,4 +449,3 @@ export function registerNotificationEndpoints(app: Hono) {
     }
   });
 }
-

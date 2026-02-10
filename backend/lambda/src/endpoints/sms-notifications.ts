@@ -19,8 +19,7 @@
 
 import { Hono } from 'hono';
 import { select, insert, query } from '../database/rds-connection';
-import { getSnsClient } from '../utils/sns-client';
-import { PublishCommand } from '@aws-sdk/client-sns';
+import { sendSMS } from '../utils/sms-service';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 
@@ -29,14 +28,16 @@ interface SMSTemplate {
   event: string;
   message: string;
   variables: string[];
+  templateId?: string;
 }
 
 const SMS_TEMPLATES: Record<string, SMSTemplate> = {
   booking_created: {
     id: 'booking_created',
     event: 'booking_created',
-    message: 'Hi {customerName}! Your booking {bookingId} for {serviceName} on {date} at {time} is confirmed. Track at warmpawz.com/track/{bookingId}',
-    variables: ['customerName', 'bookingId', 'serviceName', 'date', 'time'],
+    message: 'Warmpawz Booking: Your booking with {bookingWith} for {bookingDate} at {bookingTime} is confirmed. For more details, refer to My Bookings.',
+    variables: ['bookingWith', 'bookingDate', 'bookingTime'],
+    templateId: '1207177035174777582',
   },
   payment_confirmed: {
     id: 'payment_confirmed',
@@ -74,11 +75,19 @@ const SMS_TEMPLATES: Record<string, SMSTemplate> = {
     message: 'Service completed for {petName}! OTP for completion: {otp}. Rate your experience: warmpawz.com/review/{bookingId}',
     variables: ['petName', 'otp', 'bookingId'],
   },
+  booking_rescheduled: {
+    id: 'booking_rescheduled',
+    event: 'booking_rescheduled',
+    message: 'Warmpawz Rescheduling: Your booking with {bookingWith} has been rescheduled to {bookingDateTime}. For more details, refer to My Bookings.',
+    variables: ['bookingWith', 'bookingDateTime'],
+    templateId: '1207177035515118051',
+  },
   booking_cancelled: {
     id: 'booking_cancelled',
     event: 'booking_cancelled',
-    message: 'Booking {bookingId} has been cancelled. Refund of ₹{refundAmount} will be processed in 5-7 days.',
-    variables: ['bookingId', 'refundAmount'],
+    message: 'Warmpawz Cancellation: Your booking with {bookingWith} scheduled for {bookingDateTime} has been cancelled. For more details, refer to My Bookings.',
+    variables: ['bookingWith', 'bookingDateTime'],
+    templateId: '1207177035326314961',
   },
   refund_processed: {
     id: 'refund_processed',
@@ -106,6 +115,14 @@ const SMS_TEMPLATES: Record<string, SMSTemplate> = {
   },
 };
 
+const JIO_APPROVED_EVENTS = new Set(['booking_created', 'booking_rescheduled', 'booking_cancelled']);
+
+function sanitizeAlphanumeric(value: string, maxLen: number = 40): string {
+  const raw = String(value || '').replace(/\s+/g, ' ').trim();
+  const cleaned = raw.replace(/[^a-zA-Z0-9\s:-]/g, '');
+  return cleaned.length > maxLen ? cleaned.slice(0, maxLen) : cleaned;
+}
+
 function replaceTemplateVariables(template: string, variables: Record<string, any>): string {
   let message = template;
   for (const [key, value] of Object.entries(variables)) {
@@ -124,7 +141,21 @@ export async function triggerBookingNotification(event: string, data: any) {
       return;
     }
 
+    const isUatMode = process.env.UAT_MODE === 'true';
+    if (!isUatMode && !template.templateId && !JIO_APPROVED_EVENTS.has(event)) {
+      console.warn(`[SMS] Skipping non-approved template for event: ${event} (DLT compliance)`);
+      return;
+    }
+
     const { booking, customer, vendor, staff, service } = data;
+    const bookingWith = sanitizeAlphanumeric(
+      vendor?.business_name || service?.name || booking?.service_type || 'Service'
+    );
+    const bookingDate = sanitizeAlphanumeric(booking?.booking_date || '');
+    const bookingTime = sanitizeAlphanumeric(booking?.booking_time || '');
+    const bookingDateTime = sanitizeAlphanumeric(
+      bookingDate && bookingTime ? `${bookingDate} at ${bookingTime}` : (bookingDate || bookingTime || '')
+    );
 
     // Build variables object
     const variables: Record<string, any> = {
@@ -142,6 +173,10 @@ export async function triggerBookingNotification(event: string, data: any) {
       otp: booking?.otp_code || '',
       refundAmount: booking?.refund_amount || '0',
       orderId: booking?.order_id || booking?.id || '',
+      bookingWith,
+      bookingDate,
+      bookingTime,
+      bookingDateTime,
     };
 
     const message = replaceTemplateVariables(template.message, variables);
@@ -153,14 +188,12 @@ export async function triggerBookingNotification(event: string, data: any) {
     }
 
     // Send SMS
-    const snsClient = getSnsClient();
-    await snsClient.send(new PublishCommand({
-      PhoneNumber: recipientPhone,
-      Message: message,
-      MessageAttributes: {
-        'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
-      },
-    }));
+    await sendSMS({
+      to: recipientPhone,
+      message,
+      type: 'transactional',
+      ...(template.templateId ? { templateId: template.templateId } : {}),
+    });
 
     // Log notification
     await insert('notifications', {
@@ -190,21 +223,24 @@ export function registerSmsNotificationEndpoints(app: Hono) {
    */
   app.post("/sms/send", async (c) => {
     try {
-      const { phone, message, event, variables } = await c.req.json();
+      const { phone, message, event, variables, templateId } = await c.req.json();
 
       if (!phone || !message) {
         return c.json({ error: 'phone and message are required' }, 400);
       }
 
+      const isUatMode = process.env.UAT_MODE === 'true';
+      if (!isUatMode && !templateId) {
+        return c.json({ error: 'templateId is required for SMS in production (DLT compliance)' }, 400);
+      }
+
       // Send SMS
-      const snsClient = getSnsClient();
-      const result = await snsClient.send(new PublishCommand({
-        PhoneNumber: phone,
-        Message: message,
-        MessageAttributes: {
-          'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
-        },
-      }));
+      const result = await sendSMS({
+        to: phone,
+        message,
+        type: 'transactional',
+        ...(templateId ? { templateId } : {}),
+      });
 
       // Log notification
       await insert('notifications', {
@@ -217,13 +253,13 @@ export function registerSmsNotificationEndpoints(app: Hono) {
         metadata: {
           event,
           phone,
-          messageId: result.MessageId,
+          messageId: result.messageId,
         },
       }).catch(() => {});
 
       return c.json({
         success: true,
-        messageId: result.MessageId,
+        messageId: result.messageId,
         message: 'SMS sent successfully',
       });
     } catch (error: any) {
@@ -333,4 +369,3 @@ export function registerSmsNotificationEndpoints(app: Hono) {
     }
   });
 }
-

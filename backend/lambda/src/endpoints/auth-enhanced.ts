@@ -15,7 +15,7 @@
  */
 
 import { Hono } from 'hono';
-import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
+import { sendSMS } from '../utils/sms-service';
 import { query, select, insert, update } from '../database/rds-connection';
 import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
 import { 
@@ -35,6 +35,8 @@ import { isValidUUID } from '../types/entities';
 // ============================================================================
 // OTP HELPERS
 // ============================================================================
+
+const JIO_LOGIN_OTP_TEMPLATE_ID = '1207177028377787269';
 
 async function createOtp(phone: string, code: string, purpose: string = 'login'): Promise<void> {
   const expiresAt = new Date();
@@ -75,89 +77,19 @@ async function verifyOtp(phone: string, code: string): Promise<boolean> {
 }
 
 /**
- * Send SMS via AWS SNS direct to phone number.
- * Uses admin:settings:aws from platform_settings (credentials + sns.enabled, smsOriginationNumber).
- * For India DLT: message must match Jio-approved template exactly.
- * 
- * ✅ FIX: Added timeout to prevent hanging (5 seconds max)
+ * Send SMS via SNS (DLT-aware)
  */
 async function sendSmsViaSns(phone: string, message: string): Promise<boolean> {
-  const SMS_TIMEOUT_MS = 5000; // 5 seconds max for SMS sending
-  const startTime = Date.now();
-  
-  try {
-    // ✅ FIX: Add timeout to database query (2 seconds max)
-    const dbTimeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Database query timeout for SMS settings')), 2000);
-    });
-    
-    const settingsPromise = select('platform_settings', {
-      setting_key: 'admin:settings:aws',
-    });
-    
-    const settings = await Promise.race([settingsPromise, dbTimeoutPromise]);
-
-    if (settings.length === 0) {
-      console.warn('[SMS] AWS settings not found in database (admin:settings:aws)');
-      return false;
-    }
-
-    const awsConfig = settings[0].setting_value as any;
-    if (!awsConfig?.sns?.enabled || !awsConfig?.credentials?.accessKeyId) {
-      console.warn('[SMS] SNS not enabled or credentials missing');
-      return false;
-    }
-
-    const snsClient = new SNSClient({
-      region: awsConfig?.sns?.region || awsConfig?.credentials?.region || 'ap-south-1',
-      credentials: {
-        accessKeyId: awsConfig.credentials.accessKeyId,
-        secretAccessKey: awsConfig.credentials.secretAccessKey,
-      },
-    });
-
-    const messageAttributes: Record<string, { DataType: string; StringValue: string }> = {
-      'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
-    };
-    if (awsConfig?.sns?.smsOriginationNumber) {
-      messageAttributes['AWS.SNS.SMS.SenderID'] = {
-        DataType: 'String',
-        StringValue: String(awsConfig.sns.smsOriginationNumber).trim().substring(0, 6),
-      };
-    }
-    // India DLT: Entity ID (PE) and Template ID required for local routes
-    const entityId = awsConfig?.sns?.entityId || '1201176605406673276';
-    const templateId = awsConfig?.sns?.templateId || '1207177028377787269';
-    messageAttributes['AWS.MM.SMS.EntityId'] = { DataType: 'String', StringValue: entityId };
-    messageAttributes['AWS.MM.SMS.TemplateId'] = { DataType: 'String', StringValue: templateId };
-
-    // ✅ FIX: Add timeout wrapper around SNS send
-    const snsSendPromise = snsClient.send(new PublishCommand({
-      PhoneNumber: phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`,
-      Message: message,
-      MessageAttributes: messageAttributes,
-    }));
-    
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('SNS send timeout after 5 seconds')), SMS_TIMEOUT_MS);
-    });
-    
-    await Promise.race([snsSendPromise, timeoutPromise]);
-    
-    const duration = Date.now() - startTime;
-    console.log(`[SMS] SMS sent successfully in ${duration}ms to ${phone}`);
-    return true;
-  } catch (error: any) {
-    const duration = Date.now() - startTime;
-    console.error(`[SMS] SNS send failed after ${duration}ms:`, error?.message || error);
-    
-    // Log timeout specifically
-    if (error?.message?.includes('timeout')) {
-      console.error('[SMS] ⚠️ SMS send timed out - this may indicate network or SNS service issues');
-    }
-    
-    return false;
+  const result = await sendSMS({
+    to: phone,
+    message,
+    type: 'otp',
+    templateId: JIO_LOGIN_OTP_TEMPLATE_ID,
+  });
+  if (!result.success) {
+    console.error('[SMS] SNS send failed');
   }
+  return result.success === true;
 }
 
 // ============================================================================
@@ -190,11 +122,7 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
     try {
       // Generate OTP - use 123456 in UAT mode, random 6-digit in production
       // Check multiple ways to detect dev/UAT environment
-      const isUATMode = process.env.UAT_MODE === 'true' || 
-                       process.env.NODE_ENV === 'development' ||
-                       process.env.STAGE === 'dev' ||
-                       process.env.ENVIRONMENT === 'dev' ||
-                       (process.env.AWS_LAMBDA_FUNCTION_NAME && process.env.AWS_LAMBDA_FUNCTION_NAME.includes('dev'));
+      const isUATMode = process.env.UAT_MODE === 'true';
       
       const otpCode = isUATMode ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
       
@@ -923,4 +851,3 @@ function createLambdaContext(): any {
     requestId: `req-${Date.now()}-${Math.random().toString(36).substring(7)}`,
   };
 }
-

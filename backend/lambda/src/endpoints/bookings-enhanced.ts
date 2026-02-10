@@ -33,6 +33,7 @@ import { logAuditEntry, logBookingStatusChange } from '../utils/audit-log';
 import { calculateStaffETA } from '../utils/commute-time-calculator';
 import { validateServiceAvailability } from '../utils/service-availability-validator';
 import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../utils/entity-extractor';
+import { triggerBookingNotification } from './sms-notifications';
 import { normalizeBooking, isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
 import {
@@ -765,6 +766,19 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           }),
           is_read: false,
           created_at: new Date(),
+        });
+
+        // ✅ Jio DLT SMS: Booking confirmation (non-blocking)
+        const customer = customers[0] || null;
+        const vendors = await select('vendors', { id: booking.vendor_id });
+        const vendor = vendors[0] || null;
+        triggerBookingNotification('booking_created', {
+          booking,
+          customer,
+          vendor,
+          service,
+        }).catch((smsErr) => {
+          console.warn('[SMS] Booking confirmation SMS failed:', smsErr?.message || smsErr);
         });
       } catch (notifErr) {
         console.warn('Failed to create vendor notification for new booking:', notifErr);
@@ -1972,6 +1986,27 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
         console.error('Failed to publish booking cancelled event:', error);
       }
 
+      // ✅ Jio DLT SMS: Booking cancelled (non-blocking)
+      try {
+        const customers = await select('customers', { id: currentBooking.customer_id });
+        const vendors = currentBooking.vendor_id ? await select('vendors', { id: currentBooking.vendor_id }) : [];
+        const services = currentBooking.service_id ? await select('services', { id: currentBooking.service_id }) : [];
+        const bookingForSms = {
+          ...currentBooking,
+          status: 'cancelled',
+        };
+        triggerBookingNotification('booking_cancelled', {
+          booking: bookingForSms,
+          customer: customers[0] || null,
+          vendor: vendors[0] || null,
+          service: services[0] || null,
+        }).catch((smsErr) => {
+          console.warn('[SMS] Booking cancellation SMS failed:', smsErr?.message || smsErr);
+        });
+      } catch (smsErr) {
+        console.warn('[SMS] Booking cancellation SMS setup failed:', smsErr?.message || smsErr);
+      }
+
       return this.success({
         bookingId,
         message: 'Booking cancelled successfully',
@@ -2133,6 +2168,29 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
         });
       } catch (error) {
         console.error('Failed to publish booking rescheduled event:', error);
+      }
+
+      // ✅ Jio DLT SMS: Booking rescheduled (non-blocking)
+      try {
+        const customers = await select('customers', { id: currentBooking.customer_id });
+        const vendors = currentBooking.vendor_id ? await select('vendors', { id: currentBooking.vendor_id }) : [];
+        const services = currentBooking.service_id ? await select('services', { id: currentBooking.service_id }) : [];
+        const bookingForSms = {
+          ...currentBooking,
+          booking_date: newDate,
+          booking_time: newTime,
+          status: 'rescheduled',
+        };
+        triggerBookingNotification('booking_rescheduled', {
+          booking: bookingForSms,
+          customer: customers[0] || null,
+          vendor: vendors[0] || null,
+          service: services[0] || null,
+        }).catch((smsErr) => {
+          console.warn('[SMS] Booking reschedule SMS failed:', smsErr?.message || smsErr);
+        });
+      } catch (smsErr) {
+        console.warn('[SMS] Booking reschedule SMS setup failed:', smsErr?.message || smsErr);
       }
 
       return this.success({

@@ -41,8 +41,8 @@ async function run() {
   const attrs = {
     'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
     'AWS.SNS.SMS.SenderID': { DataType: 'String', StringValue: 'WARMPZ' },
-    'AWS.MM.SMS.EntityId': { DataType: 'String', StringValue: ENTITY_ID },
-    'AWS.MM.SMS.TemplateId': { DataType: 'String', StringValue: TEMPLATE_ID },
+    'AWS.SNS.SMS.EntityId': { DataType: 'String', StringValue: ENTITY_ID },
+    'AWS.SNS.SMS.TemplateId': { DataType: 'String', StringValue: TEMPLATE_ID },
   };
 
   try {

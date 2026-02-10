@@ -15,34 +15,29 @@
     {
       "id": "booking_confirmed",
       "jioTemplateName": "Warmpawz Booking Confirmed",
-      "message": "Warmpawz: Your booking {#alphanumeric#} for {#alphanumeric#} on {#alphanumeric#} at {#alphanumeric#} is confirmed. Details: {#url#}",
+      "message": "Warmpawz Booking: Your booking with {#alphanumeric#} for {#alphanumeric#} at {#alphanumeric#} is confirmed. For more details, refer to My Bookings.",
       "variables": [
-        { "key": "bookingId", "jioTag": "alphanumeric", "maxLength": 40 },
-        { "key": "serviceName", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "providerName", "jioTag": "alphanumeric", "maxLength": 40 },
         { "key": "date", "jioTag": "alphanumeric", "maxLength": 40 },
-        { "key": "time", "jioTag": "alphanumeric", "maxLength": 40 },
-        { "key": "detailsUrl", "jioTag": "url" }
+        { "key": "time", "jioTag": "alphanumeric", "maxLength": 40 }
       ]
     },
     {
       "id": "booking_rescheduled",
       "jioTemplateName": "Warmpawz Booking Rescheduled",
-      "message": "Warmpawz: Your booking {#alphanumeric#} has been rescheduled to {#alphanumeric#} at {#alphanumeric#}. Details: {#url#}",
+      "message": "Warmpawz Rescheduling: Your booking with {#alphanumeric#} has been rescheduled to {#alphanumeric#}. For more details, refer to My Bookings.",
       "variables": [
-        { "key": "bookingId", "jioTag": "alphanumeric", "maxLength": 40 },
-        { "key": "date", "jioTag": "alphanumeric", "maxLength": 40 },
-        { "key": "time", "jioTag": "alphanumeric", "maxLength": 40 },
-        { "key": "detailsUrl", "jioTag": "url" }
+        { "key": "providerName", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "rescheduledTo", "jioTag": "alphanumeric", "maxLength": 40 }
       ]
     },
     {
       "id": "booking_cancelled",
       "jioTemplateName": "Warmpawz Booking Cancelled",
-      "message": "Warmpawz: Your booking {#alphanumeric#} has been cancelled. Refund of Rs. {#number#} will be processed in 5-7 days. {#url#}",
+      "message": "Warmpawz Cancellation: Your booking with {#alphanumeric#} scheduled for {#alphanumeric#} has been cancelled. For more details, refer to My Bookings.",
       "variables": [
-        { "key": "bookingId", "jioTag": "alphanumeric", "maxLength": 40 },
-        { "key": "refundAmount", "jioTag": "number", "maxLength": 30 },
-        { "key": "detailsUrl", "jioTag": "url" }
+        { "key": "providerName", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "scheduledFor", "jioTag": "alphanumeric", "maxLength": 40 }
       ]
     },
     {
