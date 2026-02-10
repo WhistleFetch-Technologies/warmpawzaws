@@ -24,8 +24,13 @@ export function useTaxCategories(filters?: TaxCategoryFilters) {
   const [taxCategories, setTaxCategories] = useState<TaxCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState(false);
 
   const fetchTaxCategories = useCallback(async () => {
+    // Don't retry if we have an auth error
+    if (authError) {
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -40,13 +45,21 @@ export function useTaxCategories(filters?: TaxCategoryFilters) {
       );
       
       setTaxCategories(response.taxCategories || []);
+      setAuthError(false); // Reset auth error on success
     } catch (err: any) {
+      // Stop retrying on authentication errors
+      if (err?.response?.code === 'AUTH_REQUIRED' || err?.message?.includes('Authentication required') || err?.response?.error === 'Authentication required') {
+        setError('Authentication required. Please log in again.');
+        setAuthError(true); // Set flag to prevent retries
+        setLoading(false);
+        return;
+      }
       setError(err.message || 'Failed to fetch tax categories');
       console.error('Error fetching tax categories:', err);
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters?.isActive, authError]);
 
   useEffect(() => {
     fetchTaxCategories();

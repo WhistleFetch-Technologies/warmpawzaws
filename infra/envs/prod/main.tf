@@ -214,7 +214,7 @@ module "lambda" {
 
   lambda_functions = {
     api-handler = {
-      handler              = "index.handler"
+      handler              = "handler.handler"
       runtime              = "nodejs20.x"
       timeout              = 30
       memory_size          = 2048

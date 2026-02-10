@@ -225,12 +225,29 @@ export function registerLocationSharingEndpoints(app: Hono) {
 }
 
 function createApiGatewayEvent(req: any, body?: any): any {
+  // ✅ FIX: Safely extract headers with null checks
+  const headers: Record<string, string> = {};
+  try {
+    if (req.raw && req.raw.headers && typeof req.raw.headers.entries === 'function') {
+      Object.assign(headers, Object.fromEntries(req.raw.headers.entries()));
+    } else if (req.headers && typeof req.headers.entries === 'function') {
+      Object.assign(headers, Object.fromEntries(req.headers.entries()));
+    } else if (req.headers) {
+      // Headers is already an object
+      Object.keys(req.headers).forEach(key => {
+        headers[key] = req.headers[key];
+      });
+    }
+  } catch (e) {
+    console.warn('[createApiGatewayEvent] Error parsing headers:', e);
+  }
+  
   return {
     httpMethod: req.method,
     path: req.url,
     pathParameters: {},
     queryStringParameters: {},
-    headers: Object.fromEntries(req.headers.entries()),
+    headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
     requestContext: {
       requestId: `req-${Date.now()}`,

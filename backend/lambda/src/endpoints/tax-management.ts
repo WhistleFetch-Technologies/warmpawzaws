@@ -509,7 +509,14 @@ export function registerTaxManagementEndpoints(app: Hono) {
 
   app.get('/admin/tax-rules', async (c) => {
     const event = createApiGatewayEvent(c.req);
-    event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
+    // ✅ FIX: Safely extract query parameters from Hono request
+    try {
+      const query = c.req.query();
+      event.queryStringParameters = query ? Object.fromEntries(Object.entries(query)) : {};
+    } catch (error) {
+      console.warn('[TAX-MGMT] Error extracting query params, using empty object:', error);
+      event.queryStringParameters = {};
+    }
     const context = createLambdaContext();
     const result = await getTaxRulesHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);
@@ -559,7 +566,14 @@ export function registerTaxManagementEndpoints(app: Hono) {
 
   app.get('/admin/hsn-codes', async (c) => {
     const event = createApiGatewayEvent(c.req);
-    event.queryStringParameters = Object.fromEntries(new URL(c.req.url, 'http://localhost').searchParams);
+    // ✅ FIX: Safely extract query parameters from Hono request
+    try {
+      const query = c.req.query();
+      event.queryStringParameters = query ? Object.fromEntries(Object.entries(query)) : {};
+    } catch (error) {
+      console.warn('[TAX-MGMT] Error extracting query params, using empty object:', error);
+      event.queryStringParameters = {};
+    }
     const context = createLambdaContext();
     const result = await getHSNCodesHandler.execute(event, context);
     const { body, statusCode } = parseHandlerResult(result);

@@ -4,6 +4,32 @@
 
 (function () {
   const defaultUatMode = true;
+  
+  // Determine environment
+  function isProduction() {
+    // Check hostname (production CloudFront domains)
+    if (typeof window !== 'undefined' && window.location) {
+      const hostname = window.location.hostname;
+      if (hostname.includes('cloudfront.net') || 
+          hostname.includes('warmpawz.com') ||
+          hostname.includes('customer.warmpawz.com')) {
+        return true;
+      }
+      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('localhost')) {
+        return false;
+      }
+    }
+    // Default to production for safety
+    return true;
+  }
+  
+  // Get API Gateway URL based on environment
+  function getApiGatewayUrl() {
+    return isProduction()
+      ? 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'
+      : 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+  }
+  
   // Next.js injects NEXT_PUBLIC_* vars - check multiple sources
   let apiBaseUrl = '';
   
@@ -19,14 +45,17 @@
   else if (typeof window !== 'undefined' && window.process?.env?.NEXT_PUBLIC_API_BASE_URL) {
     apiBaseUrl = window.process.env.NEXT_PUBLIC_API_BASE_URL;
   }
-  // 4. Fallback: Use the default API Gateway URL from config/urls.json
+  // 4. Fallback: Use environment-aware API Gateway selection
   else {
-    apiBaseUrl = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    apiBaseUrl = getApiGatewayUrl();
   }
+
+  const environment = isProduction() ? 'production' : 'development';
 
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: apiBaseUrl,
-    uatMode: defaultUatMode
+    uatMode: defaultUatMode,
+    environment: environment
   };
 
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);

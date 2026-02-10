@@ -1,7 +1,7 @@
 'use client';
 
 import { X, Package } from 'lucide-react';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Button } from '@warmpawz/ui';
 import { apiClient } from '@/lib/api-client';
 import { useTaxCategories } from '@/hooks/useTaxCategories';
@@ -92,8 +92,11 @@ export function AddServiceModal({
   const [specializationsByCategory, setSpecializationsByCategory] = useState<{ specializationId: string; name: string; displayName: string }[]>([]);
   const [loadingSpecializations, setLoadingSpecializations] = useState(false);
   const specLoadIdRef = useRef(0);
-  const { taxCategories } = useTaxCategories({ isActive: true });
-  const { hsnCodes } = useHSNCodes({ isActive: true });
+  
+  // Memoize filters to prevent infinite loops - object reference must be stable
+  const activeFilters = useMemo(() => ({ isActive: true }), []);
+  const { taxCategories } = useTaxCategories(activeFilters);
+  const { hsnCodes } = useHSNCodes(activeFilters);
   const [formData, setFormData] = useState({
     name: '',
     code: '',

@@ -109,7 +109,11 @@ export async function getRdsPool(): Promise<Pool> {
     // Each Lambda instance can have its own pool, so max: 5 per instance is safer
     // With many concurrent Lambda invocations, even 5 per instance can exhaust RDS
     const poolMax = parseInt(process.env.DB_POOL_MAX || '5', 10);
-    pool = new Pool({
+    
+    // ✅ FIX: RDS Proxy doesn't support statement_timeout option
+    // Only set statement_timeout if NOT using RDS Proxy (direct RDS connection)
+    const isRdsProxy = DB_HOST?.includes('proxy') || DB_HOST?.includes('.proxy.');
+    const poolConfig: any = {
       host: DB_HOST,
       port: DB_PORT,
       database: DB_NAME,
@@ -119,9 +123,17 @@ export async function getRdsPool(): Promise<Pool> {
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000, // Reduced timeout to fail faster
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-      // ✅ FIX: Add statement_timeout to prevent long-running queries from holding connections
-      statement_timeout: 45000, // 45 seconds (leave buffer for Lambda 60s timeout)
-    });
+    };
+    
+    // Only add statement_timeout for direct RDS connections (not RDS Proxy)
+    if (!isRdsProxy) {
+      poolConfig.statement_timeout = 45000; // 45 seconds (leave buffer for Lambda 60s timeout)
+      console.log('[DB] Using direct RDS connection - statement_timeout enabled');
+    } else {
+      console.log('[DB] Using RDS Proxy - statement_timeout disabled (not supported)');
+    }
+    
+    pool = new Pool(poolConfig);
 
     // Handle pool errors
     pool.on('error', (err) => {

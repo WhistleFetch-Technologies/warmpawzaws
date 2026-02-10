@@ -144,6 +144,13 @@ echo -e "${BLUE}📤 Uploading to S3 bucket: ${S3_BUCKET}...${NC}"
 # Upload all files except source maps
 aws s3 sync "apps/${APP_NAME}/dist/" "s3://${S3_BUCKET}/" --delete --exclude "*.map"
 
+# ✅ FIX: Explicitly upload runtime-config.js with no-cache headers to prevent browser caching
+echo -e "${BLUE}📤 Uploading runtime-config.js with no-cache headers...${NC}"
+aws s3 cp "apps/${APP_NAME}/dist/runtime-config.js" "s3://${S3_BUCKET}/runtime-config.js" \
+  --content-type "application/javascript" \
+  --cache-control "no-cache, no-store, must-revalidate" \
+  --metadata-directive REPLACE
+
 # Set proper cache headers for _next/static files (immutable)
 if [ -d "apps/${APP_NAME}/dist/_next/static" ]; then
   echo -e "${BLUE}📤 Setting cache headers for _next/static files...${NC}"

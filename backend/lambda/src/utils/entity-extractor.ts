@@ -176,6 +176,11 @@ export function normalizeDbRow<T extends Record<string, any>>(row: T): T & Recor
  * Normalize array of database rows
  */
 export function normalizeDbRows<T extends Record<string, any>>(rows: T[]): (T & Record<string, any>)[] {
+  // ✅ FIX: Defensive check - ensure rows is an array
+  if (!Array.isArray(rows)) {
+    console.warn('[normalizeDbRows] Input is not an array:', typeof rows, rows);
+    return [];
+  }
   return rows.map(normalizeDbRow);
 }
 

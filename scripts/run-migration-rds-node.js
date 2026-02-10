@@ -60,8 +60,13 @@ async function runMigration() {
   console.log('🔐 Getting database credentials from Secrets Manager...');
   const secretsClient = new SecretsManagerClient({ region: REGION });
 
-  // Try to find the secret
+  // Try to find the secret - check common patterns
   let secretName = `warmpawz-${ENVIRONMENT}-rds-master-20260106164510791100000002`;
+  
+  // For prod, use the actual secret name
+  if (ENVIRONMENT === 'prod') {
+    secretName = 'warmpawz-prod-rds-master-20260207201049162400000001';
+  }
   
   try {
     const secretValue = await secretsClient.send(

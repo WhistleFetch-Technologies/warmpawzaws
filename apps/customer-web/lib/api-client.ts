@@ -6,6 +6,7 @@
 type RuntimeConfig = {
   apiBaseUrl?: string;
   uatMode?: boolean;
+  environment?: string;
 };
 
 declare global {
@@ -17,6 +18,61 @@ declare global {
 function getRuntimeConfig(): RuntimeConfig {
   if (typeof window === 'undefined') return {};
   return window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
+}
+
+/**
+ * Determine if we're in production environment
+ * Checks: runtime config → NEXT_PUBLIC_ENVIRONMENT → NODE_ENV → hostname
+ */
+function isProductionEnvironment(): boolean {
+  const cfg = getRuntimeConfig();
+  
+  // 1. Check runtime config environment field
+  if (cfg.environment) {
+    return cfg.environment === 'production';
+  }
+  
+  // 2. Check NEXT_PUBLIC_ENVIRONMENT env var
+  if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_ENVIRONMENT) {
+    return process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
+  }
+  
+  // 3. Check NODE_ENV
+  if (typeof process !== 'undefined' && process.env?.NODE_ENV) {
+    return process.env.NODE_ENV === 'production';
+  }
+  
+  // 4. Check hostname (production CloudFront domains)
+  if (typeof window !== 'undefined' && window.location) {
+    const hostname = window.location.hostname;
+    // Production CloudFront domains
+    if (hostname.includes('cloudfront.net') || 
+        hostname.includes('warmpawz.com') ||
+        hostname.includes('admin.warmpawz.com') ||
+        hostname.includes('vendor.warmpawz.com') ||
+        hostname.includes('customer.warmpawz.com')) {
+      return true;
+    }
+    // Development indicators
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('localhost')) {
+      return false;
+    }
+  }
+  
+  // Default to production for safety
+  return true;
+}
+
+/**
+ * Get API Gateway URL based on environment
+ * Production: mss9sa4y01
+ * Development: z0b3obweb6
+ */
+function getApiGatewayUrl(): string {
+  const isProd = isProductionEnvironment();
+  return isProd
+    ? 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'
+    : 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
 }
 
 /**
@@ -40,9 +96,9 @@ export function getApiBaseUrl(): string {
   else if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
     raw = process.env.NEXT_PUBLIC_API_BASE_URL;
   }
-  // 4. Fallback: Use the default API Gateway URL
+  // 4. Fallback: Use environment-aware API Gateway selection
   else {
-    raw = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    raw = getApiGatewayUrl();
   }
   
   const result = (raw && typeof raw === 'string' ? raw.trim() : '').replace(/\/+$/, '');
@@ -50,11 +106,11 @@ export function getApiBaseUrl(): string {
   // Debug log in UAT mode
   if (typeof window !== 'undefined' && isUatMode()) {
     if (!result || result === 'http://localhost:3000') {
-      console.warn('⚠️ [UAT] API Base URL is invalid. Using fallback:', result || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com');
+      console.warn('⚠️ [UAT] API Base URL is invalid. Using environment-based fallback:', getApiGatewayUrl());
     }
   }
   
-  return result || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+  return result || getApiGatewayUrl();
 }
 
 // UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)

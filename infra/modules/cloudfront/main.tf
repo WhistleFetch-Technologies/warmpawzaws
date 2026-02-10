@@ -144,7 +144,32 @@ resource "aws_cloudfront_distribution" "frontend" {
     }
   }
 
-  # Handle SPA routing - return index.html for 404s
+  # Separate cache behavior for /_next/* static assets
+  # This prevents 404s from returning index.html for missing JavaScript files
+  ordered_cache_behavior {
+    path_pattern     = "/_next/*"
+    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "S3-${each.key}"
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+
+    viewer_protocol_policy = "redirect-to-https"
+    min_ttl                = 0
+    default_ttl            = 86400
+    max_ttl                = 31536000
+    compress               = true
+    
+    # No custom error responses for static assets
+    # Missing files should return 404, not index.html
+  }
+
+  # Handle SPA routing - return index.html for 404s (only applies to default behavior)
   custom_error_response {
     error_code         = 404
     response_code      = 200

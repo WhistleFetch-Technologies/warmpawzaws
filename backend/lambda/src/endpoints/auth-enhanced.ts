@@ -78,12 +78,24 @@ async function verifyOtp(phone: string, code: string): Promise<boolean> {
  * Send SMS via AWS SNS direct to phone number.
  * Uses admin:settings:aws from platform_settings (credentials + sns.enabled, smsOriginationNumber).
  * For India DLT: message must match Jio-approved template exactly.
+ * 
+ * ✅ FIX: Added timeout to prevent hanging (5 seconds max)
  */
 async function sendSmsViaSns(phone: string, message: string): Promise<boolean> {
+  const SMS_TIMEOUT_MS = 5000; // 5 seconds max for SMS sending
+  const startTime = Date.now();
+  
   try {
-    const settings = await select('platform_settings', {
+    // ✅ FIX: Add timeout to database query (2 seconds max)
+    const dbTimeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Database query timeout for SMS settings')), 2000);
+    });
+    
+    const settingsPromise = select('platform_settings', {
       setting_key: 'admin:settings:aws',
     });
+    
+    const settings = await Promise.race([settingsPromise, dbTimeoutPromise]);
 
     if (settings.length === 0) {
       console.warn('[SMS] AWS settings not found in database (admin:settings:aws)');
@@ -119,15 +131,31 @@ async function sendSmsViaSns(phone: string, message: string): Promise<boolean> {
     messageAttributes['AWS.MM.SMS.EntityId'] = { DataType: 'String', StringValue: entityId };
     messageAttributes['AWS.MM.SMS.TemplateId'] = { DataType: 'String', StringValue: templateId };
 
-    await snsClient.send(new PublishCommand({
+    // ✅ FIX: Add timeout wrapper around SNS send
+    const snsSendPromise = snsClient.send(new PublishCommand({
       PhoneNumber: phone.startsWith('+') ? phone : `+91${phone.replace(/\D/g, '')}`,
       Message: message,
       MessageAttributes: messageAttributes,
     }));
-
+    
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('SNS send timeout after 5 seconds')), SMS_TIMEOUT_MS);
+    });
+    
+    await Promise.race([snsSendPromise, timeoutPromise]);
+    
+    const duration = Date.now() - startTime;
+    console.log(`[SMS] SMS sent successfully in ${duration}ms to ${phone}`);
     return true;
-  } catch (error) {
-    console.error('[SMS] SNS send failed:', error);
+  } catch (error: any) {
+    const duration = Date.now() - startTime;
+    console.error(`[SMS] SNS send failed after ${duration}ms:`, error?.message || error);
+    
+    // Log timeout specifically
+    if (error?.message?.includes('timeout')) {
+      console.error('[SMS] ⚠️ SMS send timed out - this may indicate network or SNS service issues');
+    }
+    
     return false;
   }
 }
@@ -157,6 +185,8 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
     // Normalize phone number (add + if missing and starts with country code)
     const normalizedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
 
+    const handlerStartTime = Date.now();
+    
     try {
       // Generate OTP - use 123456 in UAT mode, random 6-digit in production
       // Check multiple ways to detect dev/UAT environment
@@ -174,12 +204,19 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
         console.log(`[AUTH] Production Mode: Generated random OTP for ${phone}`);
       }
       
-      // Store OTP (use original phone for storage, normalized for display)
+      // ✅ FIX: Store OTP with timeout protection (3 seconds max)
+      const otpStoreStartTime = Date.now();
       try {
-        await createOtp(phone, otpCode, body.role || 'login');
+        const createOtpPromise = createOtp(phone, otpCode, body.role || 'login');
+        const otpTimeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('OTP storage timeout after 3 seconds')), 3000);
+        });
+        await Promise.race([createOtpPromise, otpTimeoutPromise]);
+        const otpStoreDuration = Date.now() - otpStoreStartTime;
+        console.log(`[AUTH] OTP stored in ${otpStoreDuration}ms`);
       } catch (dbError: any) {
-        console.error('[AUTH] Database error creating OTP:', dbError);
-        console.error('[AUTH] Error details:', JSON.stringify(dbError, null, 2));
+        const otpStoreDuration = Date.now() - otpStoreStartTime;
+        console.error(`[AUTH] Database error creating OTP after ${otpStoreDuration}ms:`, dbError?.message || dbError);
         // In UAT environments, continue even if database fails (for testing)
         if (!isUATMode) {
           throw dbError;
@@ -187,22 +224,24 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
         console.warn('[AUTH] UAT Mode: Continuing despite database error - OTP will still work');
       }
 
-      // Send SMS (only in production, not in UAT mode)
+      // ✅ FIX: Send SMS asynchronously (fire and forget) to prevent blocking the response
       // Use exact Jio-approved Login OTP template: Warmpawz: Your OTP for logging in is {#number#}. Do not share this OTP with anyone.
       if (!isUATMode) {
-        try {
-          const message = `Warmpawz: Your OTP for logging in is ${otpCode}. Do not share this OTP with anyone.`;
-          await sendSmsViaSns(normalizedPhone, message);
-          console.log(`[AUTH] Production Mode: SMS sent to ${normalizedPhone}`);
-        } catch (smsError: any) {
-          console.warn('[AUTH] Production Mode: SMS send failed, continuing:', smsError);
-          // Don't fail OTP send if SMS fails, but log it
-        }
+        // Don't await - send SMS in background to avoid blocking response
+        const message = `Warmpawz: Your OTP for logging in is ${otpCode}. Do not share this OTP with anyone.`;
+        sendSmsViaSns(normalizedPhone, message).catch((smsError: any) => {
+          // Log error but don't block response
+          console.warn('[AUTH] Production Mode: SMS send failed (non-blocking):', smsError?.message || smsError);
+        });
+        console.log(`[AUTH] Production Mode: SMS sending initiated (non-blocking) to ${normalizedPhone}`);
       } else {
         console.log(`[AUTH] UAT Mode: SMS skipped for ${phone} (using fixed OTP 123456)`);
       }
 
-      // Return standardized response
+      const handlerDuration = Date.now() - handlerStartTime;
+      console.log(`[AUTH] Send OTP handler completed in ${handlerDuration}ms`);
+
+      // Return standardized response immediately (don't wait for SMS)
       return this.success({
         success: true,
         data: {

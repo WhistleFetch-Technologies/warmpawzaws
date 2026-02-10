@@ -415,24 +415,25 @@ export function registerAnalyticsEndpoints(app: Hono) {
         : period === '1y' ? 365 : parseInt(period, 10) || 30;
 
       // Get current period stats
+      // ✅ FIX: Changed vendor_roles to roles (vendors.role_id references roles.id)
       const vendorStats = await query(
         `SELECT 
            v.id,
            v.business_name,
            v.city,
            v.status as vendor_status,
-           COALESCE(vr.name, v.category, 'Other') as category,
+           COALESCE(rl.name, rl.display_name, v.category, 'Other') as category,
            COUNT(b.id) as total_bookings,
            COUNT(b.id) FILTER (WHERE b.status = 'completed') as completed_bookings,
            COALESCE(SUM(b.total_amount) FILTER (WHERE b.status = 'completed'), 0) as revenue,
-           COALESCE(AVG(r.rating), 0) as avg_rating,
-           COUNT(DISTINCT r.id) as review_count
+           COALESCE(AVG(rev.rating), 0) as avg_rating,
+           COUNT(DISTINCT rev.id) as review_count
          FROM vendors v
-         LEFT JOIN vendor_roles vr ON v.role_id = vr.id
+         LEFT JOIN roles rl ON v.role_id = rl.id
          LEFT JOIN bookings b ON v.id = b.vendor_id AND b.created_at >= CURRENT_DATE - INTERVAL '${days} days'
-         LEFT JOIN reviews r ON v.id = r.vendor_id AND r.is_approved = true
+         LEFT JOIN reviews rev ON v.id = rev.vendor_id AND rev.is_approved = true
          WHERE v.status = 'approved' AND v.is_active = true
-         GROUP BY v.id, v.business_name, v.city, v.status, COALESCE(vr.name, v.category, 'Other')
+         GROUP BY v.id, v.business_name, v.city, v.status, COALESCE(rl.name, rl.display_name, v.category, 'Other')
          ORDER BY revenue DESC
          LIMIT 50`
       );
@@ -630,20 +631,20 @@ export function registerAnalyticsEndpoints(app: Hono) {
       const period = c.req.query("period") || "30d";
       const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : period === "1y" ? 365 : 30;
 
-      // Try to get categories from vendor_roles first, fallback to vendors.category
+      // ✅ FIX: Changed vendor_roles to roles (vendors.role_id references roles.id)
       const categoryData = await query(
         `SELECT 
-            COALESCE(vr.name, v.category, 'Other') as category_name,
+            COALESCE(rl.name, rl.display_name, v.category, 'Other') as category_name,
             COUNT(b.id) as bookings,
             COALESCE(SUM(b.total_amount), 0) as revenue
          FROM vendors v
-         LEFT JOIN vendor_roles vr ON v.role_id = vr.id
+         LEFT JOIN roles rl ON v.role_id = rl.id
          LEFT JOIN bookings b ON v.id = b.vendor_id 
            AND b.created_at >= CURRENT_DATE - INTERVAL '${days} days'
            AND b.status = 'completed'
          WHERE v.status = 'approved' AND v.is_active = true
-         GROUP BY COALESCE(vr.name, v.category, 'Other')
-         HAVING COALESCE(vr.name, v.category, 'Other') IS NOT NULL
+         GROUP BY COALESCE(rl.name, rl.display_name, v.category, 'Other')
+         HAVING COALESCE(rl.name, rl.display_name, v.category, 'Other') IS NOT NULL
          ORDER BY revenue DESC`
       ).catch(() => ({ rows: [] }));
 
@@ -778,17 +779,18 @@ export function registerAnalyticsEndpoints(app: Hono) {
       const period = c.req.query("period") || "30d";
       const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : period === "1y" ? 365 : 30;
 
+      // ✅ FIX: Changed vendor_roles to roles (vendors.role_id references roles.id)
       const salesByRole = await query(
         `SELECT 
-            COALESCE(vr.name, 'Other') as role,
+            COALESCE(rl.name, rl.display_name, 'Other') as role,
             COALESCE(SUM(b.total_amount) FILTER (WHERE b.status = 'completed'), 0) as revenue,
             COUNT(b.id) as orders
          FROM vendors v
-         LEFT JOIN vendor_roles vr ON v.role_id = vr.id
+         LEFT JOIN roles rl ON v.role_id = rl.id
          LEFT JOIN bookings b ON v.id = b.vendor_id 
            AND b.created_at >= CURRENT_DATE - INTERVAL '${days} days'
          WHERE v.status = 'approved' AND v.is_active = true
-         GROUP BY COALESCE(vr.name, 'Other')
+         GROUP BY COALESCE(rl.name, rl.display_name, 'Other')
          HAVING COALESCE(SUM(b.total_amount) FILTER (WHERE b.status = 'completed'), 0) > 0
          ORDER BY revenue DESC
          LIMIT 10`

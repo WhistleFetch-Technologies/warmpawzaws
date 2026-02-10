@@ -176,7 +176,7 @@ class GetPlatformPoliciesHandler extends BaseHandler {
       // Check if platform_policies table exists, create if not
       await this.ensureTableExists();
 
-      const policies = await query(`
+      const policiesResult = await query(`
         SELECT 
           id,
           policy_type,
@@ -191,6 +191,24 @@ class GetPlatformPoliciesHandler extends BaseHandler {
         WHERE is_active = true
         ORDER BY policy_type
       `);
+
+      // ✅ FIX: Extract rows from query result (query returns { rows: [...] })
+      // Defensive check: ensure we always have an array
+      let policies: any[] = [];
+      if (Array.isArray(policiesResult)) {
+        policies = policiesResult;
+      } else if (policiesResult && typeof policiesResult === 'object' && 'rows' in policiesResult) {
+        policies = Array.isArray(policiesResult.rows) ? policiesResult.rows : [];
+      } else {
+        console.warn('[PLATFORM-POLICIES] Unexpected query result type:', typeof policiesResult, policiesResult);
+        policies = [];
+      }
+
+      // Additional safety check before calling normalizeDbRows
+      if (!Array.isArray(policies)) {
+        console.error('[PLATFORM-POLICIES] policies is not an array:', typeof policies, policies);
+        policies = [];
+      }
 
       const normalizedPolicies = normalizeDbRows(policies).map((p: any) => ({
         id: p.id,
@@ -276,10 +294,13 @@ class SavePlatformPolicyHandler extends BaseHandler {
 
     try {
       // Check if policy exists
-      const existing = await query(`
+      const existingResult = await query(`
         SELECT id, version FROM platform_policies 
         WHERE policy_type = $1
       `, [policyType]);
+
+      // ✅ FIX: Extract rows from query result
+      const existing = Array.isArray(existingResult) ? existingResult : (existingResult as any).rows || [];
 
       let policyId: string;
       let version: number;
@@ -345,22 +366,26 @@ class GetVendorPolicyHandler extends BaseHandler {
     const policyType = context.event.pathParameters?.policyType || 'all';
 
     try {
+      let policiesResult: any;
       let policies: any[];
 
       if (policyType === 'all') {
-        policies = await query(`
+        policiesResult = await query(`
           SELECT policy_type, title, content, version, updated_at
           FROM platform_policies
           WHERE is_active = true
           AND policy_type IN ('vendor_onboarding_agreement', 'terms_of_service')
         `);
       } else {
-        policies = await query(`
+        policiesResult = await query(`
           SELECT policy_type, title, content, version, updated_at
           FROM platform_policies
           WHERE is_active = true AND policy_type = $1
         `, [policyType]);
       }
+
+      // ✅ FIX: Extract rows from query result
+      policies = Array.isArray(policiesResult) ? policiesResult : (policiesResult as any).rows || [];
 
       // Return defaults if no policies found
       if (policies.length === 0) {
