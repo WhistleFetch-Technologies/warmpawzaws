@@ -349,7 +349,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           AND EXISTS (
             SELECT 1 FROM vendor_availability_v2 va
             WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
-              AND COALESCE(va.is_available, va.is_enabled, true) = true
+              AND (va.is_available IS NULL OR va.is_available = true)
           )
       `;
 
@@ -699,7 +699,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             AND EXISTS (
               SELECT 1 FROM vendor_availability_v2 va
               WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
-                AND COALESCE(va.is_available, va.is_enabled, true) = true
+                AND (va.is_available IS NULL OR va.is_available = true)
                 AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${styleParamIndex}::text[] OR COALESCE(va.service_style, va.service_type)::text = ANY($${styleParamIndex}::text[]))
             )
             ${soloOnlyClause}
@@ -731,7 +731,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               `SELECT va.day_of_week, COALESCE(va.time_window_start, va.start_time) as time_window_start, COALESCE(va.time_window_end, va.end_time) as time_window_end
                FROM vendor_availability_v2 va
                WHERE (va.vendor_id = $1 OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-                 AND COALESCE(va.is_enabled, va.is_available, true) = true
+                 AND (va.is_available IS NULL OR va.is_available = true)
                  AND ((COALESCE(va.service_styles, ARRAY[]::text[]) && $3::text[]) OR va.service_style = ANY($3::text[]) OR va.service_type = ANY($3::text[]))
                ORDER BY va.day_of_week ASC, COALESCE(va.time_window_start, va.start_time) ASC 
                LIMIT 1`,
@@ -996,7 +996,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           AND EXISTS (
             SELECT 1 FROM vendor_availability_v2 va
             WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
-              AND COALESCE(va.is_available, va.is_enabled, true) = true
+              AND (va.is_available IS NULL OR va.is_available = true)
           )
       `;
 
@@ -1019,7 +1019,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         vendorQuery += ` AND EXISTS (
           SELECT 1 FROM vendor_availability_v2 va
           WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
-            AND COALESCE(va.is_available, va.is_enabled, true) = true
+            AND (va.is_available IS NULL OR va.is_available = true)
             AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${paramIndex}::text[] OR COALESCE(va.service_style, va.service_type)::text = ANY($${paramIndex}::text[]))
         )`;
         params.push(acceptableStyles);
@@ -1029,7 +1029,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         vendorQuery += ` AND EXISTS (
           SELECT 1 FROM vendor_availability_v2 va
           WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
-            AND COALESCE(va.is_available, va.is_enabled, true) = true
+            AND (va.is_available IS NULL OR va.is_available = true)
             AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${paramIndex}::text[] OR COALESCE(va.service_style, va.service_type)::text = ANY($${paramIndex}::text[]))
         )`;
         params.push(acceptableStyles);
@@ -1128,7 +1128,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               `SELECT 1 FROM vendor_availability_v2 
                WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
                  AND day_of_week = $3 
-                 AND COALESCE(is_enabled, is_available, true) = true 
+                 AND (is_available IS NULL OR is_available = true) 
                LIMIT 1`,
               [vendor.id, vendor.phone || '', dayOfWeek]
             );
@@ -1197,7 +1197,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
                  FROM vendor_availability_v2
                  WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-                   AND COALESCE(is_enabled, is_available, true) = true
+                   AND (is_available IS NULL OR is_available = true)
                    ${acceptableStyles.length > 0 ? `AND ((COALESCE(service_styles, ARRAY[]::text[]) && $3::text[]) OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))` : ''}
                  ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC
                  LIMIT 7`,
@@ -1554,7 +1554,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           const va2DebugRows = await query(
             `SELECT vendor_id, day_of_week,
              COALESCE(service_styles, ARRAY[]::text[]) as service_styles,
-             service_style, service_type, is_enabled, is_available
+             service_style, service_type, is_available
              FROM vendor_availability_v2
              WHERE vendor_id::text = ANY($1::text[])
              ORDER BY day_of_week`,
@@ -1803,7 +1803,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
                OR COALESCE(service_style, service_type)::text = ANY($3::text[])
              )
-             AND COALESCE(is_available, is_enabled, true) = true
+             AND (is_available IS NULL OR is_available = true)
            ORDER BY day_of_week, COALESCE(time_window_start, start_time)`,
           [availabilityIds, dayOfWeekValues, acceptableStylesForSlot]
         );
@@ -1825,7 +1825,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
              FROM vendor_availability_v2
              WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = ANY($2::int[])
                AND service_style::text = ANY($3::text[])
-               AND (is_enabled = true OR is_enabled IS NULL)
+               AND (is_available IS NULL OR is_available = true)
              ORDER BY day_of_week, time_window_start`,
             [availabilityIds, dayOfWeekValues, acceptableStylesForSlot]
           );
@@ -1846,7 +1846,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                  (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
                  OR COALESCE(service_style, service_type)::text = ANY($3::text[])
                )
-               AND COALESCE(is_available, is_enabled, true) = true
+               AND (is_available IS NULL OR is_available = true)
              ORDER BY day_of_week, start_time`,
             [availabilityIds, dayOfWeekValues, acceptableStylesForSlot]
           );
@@ -1871,7 +1871,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                  FROM vendor_availability_v2
                  WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = ANY($2::int[])
                    AND service_type::text = ANY($3::text[])
-                   AND COALESCE(is_available, is_enabled, true) = true
+                   AND (is_available IS NULL OR is_available = true)
                  ORDER BY day_of_week, start_time`,
                 [availabilityIds, dayOfWeekValues, acceptableStylesForSlot]
               );
@@ -1891,7 +1891,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                        (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
                        OR COALESCE(service_style, service_type)::text = ANY($3::text[])
                      )
-                     AND COALESCE(is_available, is_enabled, true) = true
+                     AND (is_available IS NULL OR is_available = true)
                    ORDER BY day_of_week, start_time`,
                   [availabilityIds, dayOfWeekValues, acceptableStylesForSlot]
                 );
@@ -2518,7 +2518,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
                  FROM vendor_availability_v2
                  WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-                   AND COALESCE(is_enabled, is_available, true) = true
+                   AND (is_available IS NULL OR is_available = true)
                    AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[] OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))
                  ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC LIMIT 1`,
                 [vendor.id, vendor.phone || '', styleArray]
@@ -2845,7 +2845,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
              FROM vendor_availability_v2
              WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-               AND COALESCE(is_enabled, is_available, true) = true
+               AND (is_available IS NULL OR is_available = true)
              ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC LIMIT 1`,
             [vendorId, row.phone || '']
           );
@@ -3922,7 +3922,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
                  FROM vendor_availability_v2
                  WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-                   AND COALESCE(is_enabled, is_available, true) = true
+                   AND (is_available IS NULL OR is_available = true)
                    AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[] OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))
                  ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC LIMIT 1`,
                 [vendor.vendor_id, (vendor as any).phone || '', acceptableStyles]
