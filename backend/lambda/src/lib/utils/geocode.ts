@@ -17,9 +17,15 @@ async function getApiKey(): Promise<string> {
     return _apiKeyCache;
   }
   try {
-    const { getSecret } = await import('../../utils/secrets-manager');
-    const key = await getSecret('google-maps/api-key');
-    if (key) _apiKeyCache = key;
+    const { getSecret, getSecretJson } = await import('../../utils/secrets-manager');
+    const secretJson = await getSecretJson<{ apiKey?: string; api_key?: string; key?: string }>('google-maps');
+    if (secretJson?.apiKey) _apiKeyCache = secretJson.apiKey;
+    if (!(_apiKeyCache) && secretJson?.api_key) _apiKeyCache = secretJson.api_key;
+    if (!(_apiKeyCache) && secretJson?.key) _apiKeyCache = secretJson.key;
+    if (!(_apiKeyCache)) {
+      const key = await getSecret('google-maps/api-key');
+      if (key) _apiKeyCache = key;
+    }
   } catch {
     // ignore
   }

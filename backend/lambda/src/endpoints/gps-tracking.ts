@@ -116,7 +116,7 @@ export function registerGpsTrackingEndpoints(app: Hono) {
           const lng = addr.longitude ?? addr.coordinates?.lng ?? (typeof addr.coordinates === 'string' ? (() => { try { const c = JSON.parse(addr.coordinates); return c?.lng; } catch { return null; } })() : null);
           if (lat != null && lng != null) {
             destinationLocation = { latitude: parseFloat(String(lat)), longitude: parseFloat(String(lng)) };
-          } else if (addr.address || addr.full_address) {
+          } else if ((addr.address || addr.full_address) && !uatMode) {
             // Geocode customer address when it has text but no coords
             const geocoded = await geocodeAddress(addr.address || addr.full_address);
             if (geocoded) {
@@ -144,21 +144,58 @@ export function registerGpsTrackingEndpoints(app: Hono) {
 
       // If booking has address text but no coords, geocode using Google Maps API (customer home at booking)
       if (!destinationLocation) {
-        const addressText = booking.address || (booking as any).destination_address ||
+        const rawAddress = booking.address || (booking as any).destination_address ||
           (booking as any).location || (booking as any).delivery_address ||
           (booking as any).customer_address;
-        if (addressText) {
-          const geocoded = await geocodeAddress(addressText);
-          if (geocoded) {
-            destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
-            console.log('[GPS Tracking] Geocoded address to destination:', geocoded.latitude, geocoded.longitude);
-          } else if (uatMode) {
-            console.log('[GPS Tracking] Geocoding failed; UAT mode using default destination');
-            destinationLocation = { ...UAT_DEFAULT_DESTINATION };
+        let addressText: string | null = null;
+        let addressObj: Record<string, any> | null = null;
+
+        if (rawAddress && typeof rawAddress === 'object') {
+          addressObj = rawAddress as Record<string, any>;
+        } else if (typeof rawAddress === 'string') {
+          try {
+            const parsed = JSON.parse(rawAddress);
+            if (parsed && typeof parsed === 'object') {
+              addressObj = parsed as Record<string, any>;
+            } else {
+              addressText = rawAddress;
+            }
+          } catch {
+            addressText = rawAddress;
+          }
+        }
+
+        if (addressObj && !destinationLocation) {
+          const lat = addressObj.latitude ?? addressObj.lat ?? addressObj.coordinates?.lat ?? addressObj.coordinates?.latitude;
+          const lng = addressObj.longitude ?? addressObj.lng ?? addressObj.coordinates?.lng ?? addressObj.coordinates?.longitude;
+          if (lat != null && lng != null) {
+            destinationLocation = { latitude: parseFloat(String(lat)), longitude: parseFloat(String(lng)) };
+          }
+          if (!addressText) {
+            const parts = [
+              addressObj.addressLine1 || addressObj.address || addressObj.full_address || addressObj.formattedAddress,
+              addressObj.city,
+              addressObj.state,
+              addressObj.pincode,
+            ].filter(Boolean);
+            addressText = parts.length > 0 ? parts.join(', ') : null;
+          }
+        }
+
+        if (addressText && !destinationLocation) {
+          if (!uatMode) {
+            const geocoded = await geocodeAddress(addressText);
+            if (geocoded) {
+              destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+              console.log('[GPS Tracking] Geocoded address to destination:', geocoded.latitude, geocoded.longitude);
+            } else {
+              return c.json({
+                error: 'Could not resolve destination coordinates. Please ensure the customer address has a valid location, or add latitude/longitude to the address.',
+              }, 400);
+            }
           } else {
-            return c.json({
-              error: 'Could not resolve destination coordinates. Please ensure the customer address has a valid location, or add latitude/longitude to the address.',
-            }, 400);
+            console.log('[GPS Tracking] UAT mode skipping geocode; using default destination');
+            destinationLocation = { ...UAT_DEFAULT_DESTINATION };
           }
         }
       }

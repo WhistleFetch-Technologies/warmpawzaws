@@ -660,16 +660,35 @@ export const SettlementTierSystemApi = {
 
 // ✅ NEW: GPS Tracking API (Batch 1)
 export const GPSTrackingApi = {
-  updateLocation: (bookingId: string, location: { latitude: number; longitude: number; accuracy?: number; speed?: number; heading?: number }, sessionNumber?: number) => 
-    ApiService.post(`/bookings/${bookingId}/update-location`, { location, sessionNumber }),
+  updateLocation: (sessionId: string, location: { latitude: number; longitude: number; accuracy?: number; speed?: number; heading?: number }) => 
+    ApiService.post(`/tracking/${sessionId}/update`, { 
+      latitude: location.latitude,
+      longitude: location.longitude,
+      accuracy: location.accuracy,
+      speed: location.speed,
+      heading: location.heading,
+    }),
   startTracking: (bookingId: string, vendorId: string, currentLocation: { latitude: number; longitude: number }) => 
-    ApiService.post(`/home-service/${bookingId}/start-ride`, { vendorId, currentLocation }),
-  stopTracking: (bookingId: string, vendorId: string) => 
-    ApiService.post(`/home-service/${bookingId}/end-ride`, { vendorId }),
+    ApiService.post(`/vendor/bookings/${bookingId}/start-travel`, { 
+      vendorId, 
+      startLocation: currentLocation,
+    }),
+  stopTracking: (sessionId: string) => 
+    ApiService.post(`/tracking/${sessionId}/complete`, {}),
   getActiveTrackings: (vendorId: string) => 
     ApiService.get(`/vendor/${vendorId}/active-trackings`),
-  getRoute: (bookingId: string) => 
-    ApiService.get(`/bookings/${bookingId}/route`),
+  getRoute: async (bookingId: string) => {
+    try {
+      const status = await ApiService.get(`/tracking/booking/${bookingId}`);
+      const sessionId = status?.tracking?.sessionId || status?.tracking?.session_id;
+      if (sessionId) {
+        return ApiService.get(`/tracking/${sessionId}/route`);
+      }
+      return status;
+    } catch (error) {
+      throw error;
+    }
+  },
   trackRoute: (routeId: string) => 
     ApiService.get(`/routes/${routeId}/track`),
 };

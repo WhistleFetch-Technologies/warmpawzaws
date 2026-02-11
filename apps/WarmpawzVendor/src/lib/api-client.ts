@@ -470,21 +470,22 @@ class VendorApiClient {
   // GPS TRACKING
   // ============================================================================
 
-  async updateLocation(bookingId: string, latitude: number, longitude: number): Promise<void> {
-    return this.post('/gps-tracking/update-location', {
-      booking_id: bookingId,
+  async updateLocation(sessionId: string, latitude: number, longitude: number): Promise<void> {
+    return this.post(`/tracking/${sessionId}/update`, {
       latitude,
       longitude,
-      staff_id: this.vendorId,
     });
   }
 
-  async startTracking(bookingId: string): Promise<void> {
-    return this.post(`/gps-tracking/start/${bookingId}`, {});
+  async startTracking(bookingId: string, vendorId: string, currentLocation: { latitude: number; longitude: number }): Promise<any> {
+    return this.post(`/vendor/bookings/${bookingId}/start-travel`, {
+      vendorId,
+      startLocation: currentLocation,
+    });
   }
 
-  async stopTracking(bookingId: string): Promise<void> {
-    return this.post(`/gps-tracking/stop/${bookingId}`, {});
+  async stopTracking(sessionId: string): Promise<void> {
+    return this.post(`/tracking/${sessionId}/complete`, {});
   }
 
   // ============================================================================
@@ -492,23 +493,29 @@ class VendorApiClient {
   // ============================================================================
 
   async getVideoCall(bookingId: string): Promise<VideoCallData> {
-    return this.get(`/video-call/booking/${bookingId}`);
+    return this.get(`/video-call/${bookingId}`);
   }
 
-  async startVideoCall(bookingId: string): Promise<VideoCallData> {
-    return this.post('/video-call/create-meeting', { booking_id: bookingId });
-  }
-
-  async joinVideoCall(bookingId: string, meetingId: string): Promise<VideoCallJoinResponse> {
-    return this.post('/video-call/join', { booking_id: bookingId, meeting_id: meetingId });
-  }
-
-  async endVideoCall(bookingId: string, meetingId: string, durationSeconds: number): Promise<void> {
-    return this.post('/video-call/end', { 
-      booking_id: bookingId, 
-      meeting_id: meetingId,
-      duration_seconds: durationSeconds,
+  /** Create meeting (optional; join will create if missing). Requires customerId and vendorId from booking. */
+  async startVideoCall(bookingId: string, customerId: string, vendorId: string): Promise<VideoCallData> {
+    return this.post('/video-call/create-meeting', {
+      booking_id: bookingId,
+      customer_id: customerId,
+      vendor_id: vendorId,
     });
+  }
+
+  /** Join video call. Backend creates meeting on join if none exists. participantId = vendorId or customerId, participantType = 'vendor' | 'customer'. */
+  async joinVideoCall(bookingId: string, participantId: string, participantType: 'vendor' | 'customer'): Promise<VideoCallJoinResponse> {
+    return this.post('/video-call/join', {
+      booking_id: bookingId,
+      participant_id: participantId,
+      participant_type: participantType,
+    });
+  }
+
+  async endVideoCall(bookingId: string): Promise<void> {
+    return this.post('/video-call/end', { booking_id: bookingId });
   }
 
   // ============================================================================

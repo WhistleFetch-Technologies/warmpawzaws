@@ -19,6 +19,7 @@ import { Hono } from 'hono';
 import { select, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { geocodeAddress } from '../lib/utils/geocode';
 
 export function registerVendorBookingActionsEndpoints(app: Hono) {
   /**
@@ -291,6 +292,12 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
             const lng = addr.longitude ?? addr.coordinates?.lng ?? (typeof addr.coordinates === 'string' ? (() => { try { const c = JSON.parse(addr.coordinates); return c?.lng; } catch { return null; } })() : null);
             if (lat != null && lng != null) {
               destinationLocation = { latitude: parseFloat(String(lat)), longitude: parseFloat(String(lng)) };
+            } else if ((addr.address || addr.full_address) && !uatMode) {
+              const geocoded = await geocodeAddress(addr.address || addr.full_address);
+              if (geocoded) {
+                destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+                console.log('[START-TRAVEL] Geocoded customer_addresses to destination:', geocoded.latitude, geocoded.longitude);
+              }
             }
           }
         }
@@ -309,9 +316,52 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           };
         }
 
-        if (!destinationLocation && (booking.address || (booking as any).destination_address)) {
-          console.log('[START-TRAVEL] No coordinates for booking; using default destination (address text present)');
-          destinationLocation = { latitude: 19.0760, longitude: 72.8777 };
+        if (!destinationLocation) {
+          const rawAddress = booking.address || (booking as any).destination_address ||
+            (booking as any).location || (booking as any).delivery_address ||
+            (booking as any).customer_address;
+          let addressText: string | null = null;
+          let addressObj: Record<string, any> | null = null;
+
+          if (rawAddress && typeof rawAddress === 'object') {
+            addressObj = rawAddress as Record<string, any>;
+          } else if (typeof rawAddress === 'string') {
+            try {
+              const parsed = JSON.parse(rawAddress);
+              if (parsed && typeof parsed === 'object') {
+                addressObj = parsed as Record<string, any>;
+              } else {
+                addressText = rawAddress;
+              }
+            } catch {
+              addressText = rawAddress;
+            }
+          }
+
+          if (addressObj && !destinationLocation) {
+            const lat = addressObj.latitude ?? addressObj.lat ?? addressObj.coordinates?.lat ?? addressObj.coordinates?.latitude;
+            const lng = addressObj.longitude ?? addressObj.lng ?? addressObj.coordinates?.lng ?? addressObj.coordinates?.longitude;
+            if (lat != null && lng != null) {
+              destinationLocation = { latitude: parseFloat(String(lat)), longitude: parseFloat(String(lng)) };
+            }
+            if (!addressText) {
+              const parts = [
+                addressObj.addressLine1 || addressObj.address || addressObj.full_address || addressObj.formattedAddress,
+                addressObj.city,
+                addressObj.state,
+                addressObj.pincode,
+              ].filter(Boolean);
+              addressText = parts.length > 0 ? parts.join(', ') : null;
+            }
+          }
+
+          if (addressText && !destinationLocation && !uatMode) {
+            const geocoded = await geocodeAddress(addressText);
+            if (geocoded) {
+              destinationLocation = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+              console.log('[START-TRAVEL] Geocoded booking address to destination:', geocoded.latitude, geocoded.longitude);
+            }
+          }
         }
 
         if (!destinationLocation && uatMode) {
@@ -332,11 +382,22 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           destinationLocation
         );
 
-        // Update booking status
-        await update('bookings', { id: bookingId }, {
-          status: 'vendor_on_way',
-          vendor_departed_at: new Date().toISOString(),
-        });
+        // Update booking status (best-effort: some envs don't have vendor_departed_at column)
+        try {
+          await update('bookings', { id: bookingId }, {
+            status: 'vendor_on_way',
+            vendor_departed_at: new Date().toISOString(),
+          });
+        } catch (statusErr: any) {
+          console.warn('[START-TRAVEL] Booking status update failed (will retry without vendor_departed_at):', statusErr?.message || statusErr);
+          try {
+            await update('bookings', { id: bookingId }, {
+              status: 'vendor_on_way',
+            });
+          } catch (fallbackErr: any) {
+            console.warn('[START-TRAVEL] Booking status fallback update failed:', fallbackErr?.message || fallbackErr);
+          }
+        }
 
         // Send notification to customer
         try {
@@ -1072,4 +1133,3 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
     }
   });
 }
-

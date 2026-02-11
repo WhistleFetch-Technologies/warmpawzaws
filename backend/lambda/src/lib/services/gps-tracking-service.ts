@@ -26,12 +26,26 @@ import { sendVendorOnWay, sendEventNotification } from './push-notification-serv
 let _googleMapsKeyCache: string | null = null;
 async function getGoogleMapsApiKey(): Promise<string> {
   if (_googleMapsKeyCache) return _googleMapsKeyCache;
+  const isUatEnv =
+    process.env.UAT_MODE === 'true' ||
+    process.env.NODE_ENV === 'development' ||
+    process.env.NODE_ENV === 'dev';
   if (process.env.GOOGLE_MAPS_API_KEY) {
     _googleMapsKeyCache = process.env.GOOGLE_MAPS_API_KEY;
     return _googleMapsKeyCache;
   }
+  // In UAT/dev, skip Secrets Manager to avoid long timeouts (fallback ETA will be used)
+  if (isUatEnv) {
+    return '';
+  }
   try {
-    const { getSecret } = await import('../../utils/secrets-manager');
+    const { getSecret, getSecretJson } = await import('../../utils/secrets-manager');
+    const json = await getSecretJson('google-maps');
+    const jsonKey = json?.apiKey || json?.api_key || json?.key;
+    if (jsonKey) {
+      _googleMapsKeyCache = jsonKey;
+      return _googleMapsKeyCache;
+    }
     const key = await getSecret('google-maps/api-key');
     if (key) _googleMapsKeyCache = key;
   } catch (e) {

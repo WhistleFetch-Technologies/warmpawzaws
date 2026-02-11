@@ -106,6 +106,60 @@ function generateEventMetadata(requestId?: string) {
   };
 }
 
+function extractAddressMeta(address: unknown, body: Record<string, any>) {
+  const toNumber = (value: unknown): number | null => {
+    if (value === null || value === undefined) return null;
+    const num = parseFloat(String(value));
+    return Number.isFinite(num) ? num : null;
+  };
+
+  let addressText: string | null = typeof address === 'string' ? address : null;
+  let addressObj: Record<string, any> | null = null;
+
+  if (address && typeof address === 'object') {
+    addressObj = address as Record<string, any>;
+  } else if (typeof address === 'string') {
+    try {
+      const parsed = JSON.parse(address);
+      if (parsed && typeof parsed === 'object') {
+        addressObj = parsed as Record<string, any>;
+      }
+    } catch {
+      // keep addressText as-is
+    }
+  }
+
+  const addressId =
+    body.addressId ||
+    body.address_id ||
+    addressObj?.id ||
+    addressObj?.addressId ||
+    addressObj?.address_id ||
+    null;
+
+  let latitude = toNumber(body.deliveryLatitude ?? body.delivery_latitude ?? body.latitude ?? body.lat);
+  let longitude = toNumber(body.deliveryLongitude ?? body.delivery_longitude ?? body.longitude ?? body.lng);
+
+  if (latitude == null && addressObj) {
+    latitude = toNumber(addressObj.latitude ?? addressObj.lat ?? addressObj.coordinates?.lat ?? addressObj.coordinates?.latitude);
+  }
+  if (longitude == null && addressObj) {
+    longitude = toNumber(addressObj.longitude ?? addressObj.lng ?? addressObj.coordinates?.lng ?? addressObj.coordinates?.longitude);
+  }
+
+  if (!addressText && addressObj) {
+    const parts = [
+      addressObj.addressLine1 || addressObj.address || addressObj.full_address || addressObj.formattedAddress,
+      addressObj.city,
+      addressObj.state,
+      addressObj.pincode,
+    ].filter(Boolean);
+    addressText = parts.length > 0 ? parts.join(', ') : null;
+  }
+
+  return { addressText, addressId, latitude, longitude };
+}
+
 // ============================================================================
 // BOOKING HANDLERS
 // ============================================================================
@@ -127,6 +181,7 @@ class CreateBookingHandler extends BaseHandler {
       amount,
       idempotencyKey, // Client-provided idempotency key
     } = body;
+    const addressMeta = extractAddressMeta(address, body);
 
     // ✅ VALIDATION: Required fields
     this.validateRequired(body, ['customerId', 'vendorId', 'serviceId', 'bookingDate', 'bookingTime']);
@@ -191,7 +246,7 @@ class CreateBookingHandler extends BaseHandler {
           booking_date: bookingDate,
           booking_time: bookingTime,
           service_type: serviceType || 'at_vendor',
-          address: address,
+          address: addressMeta.addressText || address || null,
           base_price: amount || 0,
           total_amount: amount || 0,
           status: 'pending',
@@ -199,6 +254,17 @@ class CreateBookingHandler extends BaseHandler {
           notes: petId ? `Pet ID: ${petId}` : null, // Store pet reference in notes
           // Note: idempotency_key handled via separate table, not stored in bookings
         };
+
+        if (addressMeta.addressId) {
+          bookingData.address_id = addressMeta.addressId;
+        }
+        if (addressMeta.latitude != null && addressMeta.longitude != null) {
+          bookingData.delivery_latitude = addressMeta.latitude;
+          bookingData.delivery_longitude = addressMeta.longitude;
+          // Backward compatibility for older fields
+          bookingData.latitude = addressMeta.latitude;
+          bookingData.longitude = addressMeta.longitude;
+        }
 
         if (staffId) {
           bookingData.staff_id = staffId;

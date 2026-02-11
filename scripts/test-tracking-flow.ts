@@ -14,6 +14,13 @@
 import fetch from 'node-fetch';
 
 const API_BASE = process.env.API_BASE_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+const TEST_PHONE = process.env.TEST_CUSTOMER_PHONE || '9876543210';
+const TEST_BOOKING_ID = process.env.TEST_BOOKING_ID || '';
+const TEST_VENDOR_ID = process.env.TEST_VENDOR_ID || '';
+const DRY_RUN = String(process.env.DRY_RUN || '').toLowerCase() === 'true' || process.env.DRY_RUN === '1';
+const FORCE_UAT = String(process.env.FORCE_UAT || '').toLowerCase() === 'true' || process.env.FORCE_UAT === '1';
+const START_LAT = parseFloat(process.env.START_LAT || '19.0760');
+const START_LNG = parseFloat(process.env.START_LNG || '72.8777');
 
 interface TestResult {
   step: string;
@@ -41,11 +48,10 @@ async function testStep(name: string, testFn: () => Promise<any>): Promise<any> 
 async function main() {
   console.log('🚀 Starting End-to-End Tracking Flow Test\n');
   console.log(`API Base: ${API_BASE}\n`);
-
-  // Test data
-  const testBookingId = 'test-booking-123';
-  const testVendorId = 'test-vendor-456';
-  const testCustomerId = 'test-customer-789';
+  console.log(`Phone: ${TEST_PHONE}`);
+  console.log(`Dry run: ${DRY_RUN ? 'YES' : 'NO'}`);
+  console.log(`Force UAT header: ${FORCE_UAT ? 'YES' : 'NO'}`);
+  console.log('');
 
   try {
     // Step 1: Verify endpoint registration
@@ -57,52 +63,78 @@ async function main() {
       return { status: 'ok' };
     });
 
-    // Step 2: Test POST /tracking/start endpoint contract
-    await testStep('2. Test POST /tracking/start API Contract', async () => {
-      const requestBody = {
-        bookingId: testBookingId,
-        vendorId: testVendorId,
-        startLatitude: 19.0760,
-        startLongitude: 72.8777,
-      };
+    // Step 2: Resolve booking/vendor from phone (or env overrides)
+    let bookingId = TEST_BOOKING_ID;
+    let vendorId = TEST_VENDOR_ID;
+    await testStep('2. Resolve booking/vendor for tracking test', async () => {
+      if (bookingId && vendorId) {
+        return { bookingId, vendorId, source: 'env' };
+      }
 
-      const response = await fetch(`${API_BASE}/tracking/start`, {
+      const activeRes = await fetch(`${API_BASE}/customer/bookings/active?phone=${encodeURIComponent(TEST_PHONE)}`);
+      const activeData = await activeRes.json().catch(() => ({}));
+      const activeBookings = activeData.bookings || [];
+      const allRes = await fetch(`${API_BASE}/customer/bookings?phone=${encodeURIComponent(TEST_PHONE)}`);
+      const allData = await allRes.json().catch(() => ({}));
+      const allBookings = allData.bookings || [];
+      const pool = [...activeBookings, ...allBookings];
+
+      const candidate = pool.find((b: any) => {
+        const style = b.service_style || b.serviceStyle || b.service_type || b.serviceType;
+        return style === 'at_home' || style === 'home';
+      }) || pool[0];
+
+      if (!candidate) {
+        throw new Error(`No bookings found for phone ${TEST_PHONE}`);
+      }
+
+      bookingId = candidate.id || candidate.bookingId || candidate.booking_id;
+      vendorId = candidate.vendor_id || candidate.vendorId;
+      if (!bookingId || !vendorId) {
+        throw new Error('Booking/vendor IDs missing from candidate booking');
+      }
+
+      return { bookingId, vendorId, status: candidate.status, serviceStyle: candidate.service_style || candidate.service_type };
+    });
+
+    // Step 3: Start travel (POST /vendor/bookings/:bookingId/start-travel)
+    let sessionId: string | undefined;
+    await testStep('3. Start travel (vendor booking action)', async () => {
+      if (!bookingId || !vendorId) {
+        throw new Error('Missing bookingId/vendorId');
+      }
+      if (DRY_RUN) {
+        return { skipped: true, reason: 'DRY_RUN enabled', bookingId, vendorId };
+      }
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (FORCE_UAT) headers['x-uat-mode'] = 'true';
+
+      const response = await fetch(`${API_BASE}/vendor/bookings/${bookingId}/start-travel`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
+        headers,
+        body: JSON.stringify({
+          vendorId,
+          startLocation: { latitude: START_LAT, longitude: START_LNG },
+        }),
       });
 
       const data = await response.json();
-
-      // Verify response structure
-      if (!data.success) {
-        throw new Error(`Tracking start failed: ${data.error || 'Unknown error'}`);
+      if (!response.ok || !data.success) {
+        throw new Error(`Start travel failed: ${data.error || response.status}`);
       }
-
-      if (!data.session || !data.session.id) {
-        throw new Error('Session ID missing from response');
+      sessionId = data?.session?.id;
+      if (!sessionId) {
+        throw new Error('Session ID missing from start-travel response');
       }
-
-      // Verify session structure
-      const requiredFields = ['id', 'bookingId', 'vendorId', 'status'];
-      for (const field of requiredFields) {
-        if (!data.session[field]) {
-          throw new Error(`Missing required field: ${field}`);
-        }
-      }
-
-      return {
-        sessionId: data.session.id,
-        status: data.session.status,
-        message: data.message,
-      };
+      return { sessionId, message: data.message };
     });
 
-    // Step 3: Test GET /tracking/booking/:bookingId endpoint (backend has no /status suffix)
-    await testStep('3. Test GET /tracking/booking/:bookingId API Contract', async () => {
-      const response = await fetch(`${API_BASE}/tracking/booking/${testBookingId}`);
+    // Step 4: Test GET /tracking/booking/:bookingId endpoint
+    await testStep('4. Test GET /tracking/booking/:bookingId API Contract', async () => {
+      if (!bookingId) {
+        throw new Error('Missing bookingId');
+      }
+      const response = await fetch(`${API_BASE}/tracking/booking/${bookingId}`);
       const data = await response.json();
 
       // Backend returns success, tracking (or null), message
@@ -142,8 +174,21 @@ async function main() {
       };
     });
 
-    // Step 4: Test notification service integration
-    await testStep('4. Verify Notification Service Integration', async () => {
+    // Step 5: Verify tracking route endpoint
+    await testStep('5. Test GET /tracking/:sessionId/route', async () => {
+      if (!sessionId) {
+        return { skipped: true, reason: 'No sessionId from start-travel' };
+      }
+      const response = await fetch(`${API_BASE}/tracking/${sessionId}/route`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) {
+        throw new Error(`Route fetch failed: ${data.error || response.status}`);
+      }
+      return { hasRoute: !!data.route, routePoints: data.route?.length || 0 };
+    });
+
+    // Step 6: Test notification service integration
+    await testStep('6. Verify Notification Service Integration', async () => {
       // Check if sendVendorOnWay is called in gps-tracking-service
       // This is verified by checking the service code structure
       return {
@@ -152,11 +197,10 @@ async function main() {
       };
     });
 
-    // Step 5: Test customer polling mechanism
-    await testStep('5. Test Customer Polling Endpoint', async () => {
-      const testPhone = '9611377119';
+    // Step 7: Test customer polling mechanism
+    await testStep('7. Test Customer Polling Endpoint', async () => {
       const response = await fetch(
-        `${API_BASE}/customer/bookings?phone=${encodeURIComponent(testPhone)}&status=in_progress`
+        `${API_BASE}/customer/bookings?phone=${encodeURIComponent(TEST_PHONE)}&status=in_progress`
       );
       const data = await response.json();
 
@@ -172,8 +216,8 @@ async function main() {
       };
     });
 
-    // Step 6: Verify popup component props
-    await testStep('6. Verify Popup Component Interface', async () => {
+    // Step 8: Verify popup component props
+    await testStep('8. Verify Popup Component Interface', async () => {
       // Check if VendorLiveTrackingPopup accepts all required props
       const requiredProps = [
         'bookingId',

@@ -554,12 +554,10 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               setProcessing(false);
               return;
             }
-            const trackingResponse = await apiClient.post(`/tracking/start`, {
-              bookingId: booking.id,
+            const trackingResponse = await apiClient.post(`/vendor/bookings/${booking.id}/start-travel`, {
               vendorId: effectiveVendorId,
               staffId: booking.staffId || booking.staff_id,
-              startLatitude: latitude,
-              startLongitude: longitude
+              startLocation: { latitude, longitude },
             }) as any;
             
             // ✅ CRITICAL FIX: Get destination and session ID from tracking session response

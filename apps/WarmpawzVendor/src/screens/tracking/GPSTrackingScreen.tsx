@@ -45,6 +45,7 @@ export function GPSTrackingScreen({
   const [route, setRoute] = useState<LocationPoint[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [trackingId, setTrackingId] = useState<string | null>(null);
+  const trackingSessionIdRef = useRef<string | null>(null);
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const mapRef = useRef<MapView>(null);
 
@@ -95,9 +96,21 @@ export function GPSTrackingScreen({
       setTracking(true);
       setError(null);
 
-      // Generate tracking ID
-      const id = `track_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-      setTrackingId(id);
+      // Start tracking session on backend (so we get sessionId for updates)
+      try {
+        const startRes = await GPSTrackingApi.startTracking(bookingId, vendorId, {
+          latitude: initialPoint.latitude,
+          longitude: initialPoint.longitude,
+        }) as any;
+        const sessionId = startRes?.session?.id || startRes?.sessionId || startRes?.id || null;
+        if (sessionId) {
+          trackingSessionIdRef.current = sessionId;
+          setTrackingId(sessionId);
+        }
+      } catch (error) {
+        console.error('Error starting tracking on backend:', error);
+        // Continue with local tracking even if backend fails
+      }
 
       // Start location updates
       locationSubscription.current = await Location.watchPositionAsync(
@@ -127,31 +140,23 @@ export function GPSTrackingScreen({
           }
 
           // Send location update to backend
-          try {
-            await GPSTrackingApi.updateLocation(bookingId, {
-              latitude: point.latitude,
-              longitude: point.longitude,
-              accuracy: location.coords.accuracy,
-              speed: location.coords.speed || undefined,
-              heading: location.coords.heading || undefined,
-            });
-          } catch (error) {
-            console.error('Error updating location on backend:', error);
-            // Don't stop tracking on backend error
+          const sessionId = trackingSessionIdRef.current;
+          if (sessionId) {
+            try {
+              await GPSTrackingApi.updateLocation(sessionId, {
+                latitude: point.latitude,
+                longitude: point.longitude,
+                accuracy: location.coords.accuracy,
+                speed: location.coords.speed || undefined,
+                heading: location.coords.heading || undefined,
+              });
+            } catch (error) {
+              console.error('Error updating location on backend:', error);
+              // Don't stop tracking on backend error
+            }
           }
         }
       );
-
-      // Notify backend that tracking started
-      try {
-        await GPSTrackingApi.startTracking(bookingId, vendorId, {
-          latitude: initialPoint.latitude,
-          longitude: initialPoint.longitude,
-        });
-      } catch (error) {
-        console.error('Error starting tracking on backend:', error);
-        // Continue with local tracking even if backend fails
-      }
     } catch (err: any) {
       console.error('Error starting tracking:', err);
       setError(err.message || 'Failed to start GPS tracking');
@@ -167,7 +172,10 @@ export function GPSTrackingScreen({
     setTracking(false);
     // Notify backend that tracking stopped
     try {
-      await GPSTrackingApi.stopTracking(bookingId, vendorId);
+      const sessionId = trackingSessionIdRef.current;
+      if (sessionId) {
+        await GPSTrackingApi.stopTracking(sessionId);
+      }
     } catch (error) {
       console.error('Error stopping tracking on backend:', error);
     }
@@ -455,4 +463,3 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
 });
-

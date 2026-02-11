@@ -123,6 +123,60 @@ function generateEventMetadata(requestId?: string) {
   };
 }
 
+function extractAddressMeta(address: unknown, body: Record<string, any>) {
+  const toNumber = (value: unknown): number | null => {
+    if (value === null || value === undefined) return null;
+    const num = parseFloat(String(value));
+    return Number.isFinite(num) ? num : null;
+  };
+
+  let addressText: string | null = typeof address === 'string' ? address : null;
+  let addressObj: Record<string, any> | null = null;
+
+  if (address && typeof address === 'object') {
+    addressObj = address as Record<string, any>;
+  } else if (typeof address === 'string') {
+    try {
+      const parsed = JSON.parse(address);
+      if (parsed && typeof parsed === 'object') {
+        addressObj = parsed as Record<string, any>;
+      }
+    } catch {
+      // keep addressText as-is
+    }
+  }
+
+  const addressId =
+    body.addressId ||
+    body.address_id ||
+    addressObj?.id ||
+    addressObj?.addressId ||
+    addressObj?.address_id ||
+    null;
+
+  let latitude = toNumber(body.deliveryLatitude ?? body.delivery_latitude ?? body.latitude ?? body.lat);
+  let longitude = toNumber(body.deliveryLongitude ?? body.delivery_longitude ?? body.longitude ?? body.lng);
+
+  if (latitude == null && addressObj) {
+    latitude = toNumber(addressObj.latitude ?? addressObj.lat ?? addressObj.coordinates?.lat ?? addressObj.coordinates?.latitude);
+  }
+  if (longitude == null && addressObj) {
+    longitude = toNumber(addressObj.longitude ?? addressObj.lng ?? addressObj.coordinates?.lng ?? addressObj.coordinates?.longitude);
+  }
+
+  if (!addressText && addressObj) {
+    const parts = [
+      addressObj.addressLine1 || addressObj.address || addressObj.full_address || addressObj.formattedAddress,
+      addressObj.city,
+      addressObj.state,
+      addressObj.pincode,
+    ].filter(Boolean);
+    addressText = parts.length > 0 ? parts.join(', ') : null;
+  }
+
+  return { addressText, addressId, latitude, longitude };
+}
+
 // ============================================================================
 // BOOKING HANDLERS
 // ============================================================================
@@ -184,6 +238,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       petName,
       notes: notesFromSchema,
     } = validationResult.data;
+    const rawAddress = (body as Record<string, any>).address ?? address;
+    const addressMeta = extractAddressMeta(rawAddress, body as Record<string, any>);
 
     const amount = amountFromSchema ?? totalAmount;
     // ✅ Map legacy 'online' to 'tele' for backward compatibility
@@ -613,7 +669,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           booking_date: bookingDate,
           booking_time: bookingTime,
           service_type: serviceType || 'at_vendor',
-          address: address,
+          address: addressMeta.addressText || address || null,
           base_price: calculatedBasePrice,
           total_amount: calculatedFinalAmount, // ✅ Use calculated amount (may be 0 for subscriptions)
           status: 'pending',
@@ -632,6 +688,16 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           // ✅ Store customer phone for easy access
           customer_phone: customerPhone || null,
         };
+
+        if (addressMeta.addressId) {
+          bookingData.address_id = addressMeta.addressId;
+        }
+        if (addressMeta.latitude != null && addressMeta.longitude != null) {
+          bookingData.delivery_latitude = addressMeta.latitude;
+          bookingData.delivery_longitude = addressMeta.longitude;
+          bookingData.latitude = addressMeta.latitude;
+          bookingData.longitude = addressMeta.longitude;
+        }
 
         // ✅ Phase 2.3: Add roomId if provided (for boarding/resort bookings)
         if (roomId) {

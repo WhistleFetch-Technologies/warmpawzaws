@@ -104,7 +104,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const [processingOtp, setProcessingOtp] = useState(false);
   const [otpAction, setOtpAction] = useState<'start' | 'complete'>('complete');
 
-  // GPS tracking state (use /tracking/start so customer can track via GET /tracking/booking/:bookingId)
+  // GPS tracking state (use /vendor/bookings/:bookingId/start-travel so customer can track via GET /tracking/booking/:bookingId)
   const [isTracking, setIsTracking] = useState<{ [key: string]: boolean }>({});
   const [trackingSessionIds, setTrackingSessionIds] = useState<{ [key: string]: string }>({});
   const [trackingLocation, setTrackingLocation] = useState<{ [key: string]: { lat: number; lng: number; updated: string } }>({});
@@ -291,7 +291,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialLoadComplete]);
 
-  // GPS tracking: use /tracking/start so customer can track via GET /tracking/booking/:bookingId (joining hands with customer)
+  // GPS tracking: use /vendor/bookings/:bookingId/start-travel so customer can track via GET /tracking/booking/:bookingId
   const startLocationTracking = async (bookingId: string, _customerLat: string, _customerLng: string) => {
     if (!vendorId) return;
 
@@ -302,11 +302,9 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
             const latitude = position.coords.latitude;
             const longitude = position.coords.longitude;
 
-            const res = await apiClient.post<any>('/tracking/start', {
-              bookingId,
+            const res = await apiClient.post<any>(`/vendor/bookings/${bookingId}/start-travel`, {
               vendorId,
-              startLatitude: latitude,
-              startLongitude: longitude,
+              startLocation: { latitude, longitude },
             });
 
             const sessionId = res?.session?.id;

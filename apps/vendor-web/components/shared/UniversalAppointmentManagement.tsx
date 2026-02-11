@@ -412,11 +412,9 @@ export function UniversalAppointmentManagement({
             const latitude = position.coords.latitude;
             const longitude = position.coords.longitude;
 
-            const res = await apiClient.post<any>('/tracking/start', {
-              bookingId,
+            const res = await apiClient.post<any>(`/vendor/bookings/${bookingId}/start-travel`, {
               vendorId: effectiveVendorId,
-              startLatitude: latitude,
-              startLongitude: longitude,
+              startLocation: { latitude, longitude },
             });
 
             const sessionId = res?.session?.id;
