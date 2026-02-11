@@ -36,6 +36,9 @@ Thumbs.db
 .AppleDouble
 .LSOverride
 
+# Excluded projects (embedded / standalone)
+clinical-insight-ai/
+
 # =============================================================================
 # LOGS - Keep the root clean!
 # =============================================================================
