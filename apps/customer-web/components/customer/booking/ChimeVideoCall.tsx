@@ -39,6 +39,7 @@ import { toast } from 'sonner';
 // Chat data message topics
 const CHAT_TOPIC = 'chat-message';
 const TYPING_TOPIC = 'typing-indicator';
+const CALL_ENDED_TOPIC = 'call-ended';
 
 // Message lifetime in milliseconds (messages expire after this time in Chime)
 const MESSAGE_LIFETIME_MS = 300000; // 5 minutes
@@ -173,6 +174,8 @@ export function ChimeVideoCall({
     customerJoined: false,
     vendorJoined: false,
   });
+  const [endedByOther, setEndedByOther] = useState(false);
+  const endedByOtherRef = useRef(false);
   
   // Meeting data
   const [meetingData, setMeetingData] = useState<any>(null);
@@ -192,6 +195,8 @@ export function ChimeVideoCall({
   const audioContextRef = useRef<AudioContext | null>(null);
   // Store the loaded Chime SDK module
   const chimeSDKRef = useRef<any>(null);
+  const myAttendeeIdRef = useRef<string | null>(null);
+  const disconnectingRef = useRef(false);
 
   const ensureAudioContext = useCallback(async () => {
     if (typeof window === 'undefined') return null;
@@ -415,6 +420,9 @@ export function ChimeVideoCall({
 
       setMeetingData(response.meeting);
       setAttendeeData(response.attendee);
+      disconnectingRef.current = false;
+      endedByOtherRef.current = false;
+      setEndedByOther(false);
 
       // Initialize Chime meeting session
       await initializeChimeMeeting(response.meeting, response.attendee);
@@ -503,6 +511,7 @@ export function ChimeVideoCall({
       );
 
       meetingSessionRef.current = meetingSession;
+      myAttendeeIdRef.current = attendee.AttendeeId;
 
       // Set up audio and video
       await setupMediaDevices(meetingSession);
@@ -693,13 +702,15 @@ export function ChimeVideoCall({
 
     audioVideo.addObserver(observer);
 
-    // Attendee presence observer
-    const attendeeObserver = {
-      attendeeIdDidJoin: (attendeeId: string) => {
+    // Attendee presence - Chime SDK 3.x expects single callback (attendeeId, present), not object
+    const attendeePresenceCallback = (attendeeId: string, present: boolean) => {
+      // Ignore content attendees (screen share) and ourselves
+      if (attendeeId.includes('#content') || attendeeId === myAttendeeIdRef.current) return;
+
+      if (present) {
         console.log('Attendee joined:', attendeeId);
         addChatMessage('system', 'System', `${participantType === 'customer' ? vendorName : customerName} joined the call`);
-      },
-      attendeeIdDidLeave: (attendeeId: string) => {
+      } else {
         console.log('Attendee left:', attendeeId);
         setAttendeeStatus(prev => ({
           ...prev,
@@ -707,30 +718,49 @@ export function ChimeVideoCall({
           vendorJoined: participantType === 'customer' ? false : prev.vendorJoined,
         }));
         addChatMessage('system', 'System', `${participantType === 'customer' ? vendorName : customerName} left the call`);
-      },
+        // Other participant left - disconnect us too
+        if (!disconnectingRef.current) {
+          disconnectingRef.current = true;
+          endedByOtherRef.current = true;
+          setEndedByOther(true);
+          endCall(false);
+        }
+      }
     };
+    audioVideo.realtimeSubscribeToAttendeeIdPresence(attendeePresenceCallback);
 
-    audioVideo.realtimeSubscribeToAttendeeIdPresence(attendeeObserver);
+    // Fatal realtime error handler - prevents RealtimeApiFailed from crashing the call
+    audioVideo.realtimeSubscribeToFatalError((err: Error) => {
+      console.error('[ChimeVideoCall] realtime error:', err);
+    });
 
     // =========================================================================
-    // REAL-TIME CHAT VIA DATA MESSAGES
+    // REAL-TIME CHAT VIA DATA MESSAGES - Chime SDK 3.x requires (topic, callback)
     // =========================================================================
-    
-    // Subscribe to chat messages
-    audioVideo.realtimeSubscribeToReceiveDataMessage((dataMessage: any) => {
+    const handleDataMessage = (dataMessage: any) => {
       try {
         const topic = dataMessage.topic;
         const data = JSON.parse(new TextDecoder().decode(dataMessage.data));
-        
         if (topic === CHAT_TOPIC) {
           handleReceivedChatMessage(data as ChatDataMessage);
         } else if (topic === TYPING_TOPIC) {
           handleReceivedTypingIndicator(data as TypingDataMessage);
+        } else if (topic === CALL_ENDED_TOPIC) {
+          // Other participant ended the call - disconnect us too
+          if (!disconnectingRef.current) {
+            disconnectingRef.current = true;
+            endedByOtherRef.current = true;
+            setEndedByOther(true);
+            endCall(false);
+          }
         }
       } catch (err) {
         console.error('Error processing data message:', err);
       }
-    });
+    };
+    audioVideo.realtimeSubscribeToReceiveDataMessage(CHAT_TOPIC, handleDataMessage);
+    audioVideo.realtimeSubscribeToReceiveDataMessage(TYPING_TOPIC, handleDataMessage);
+    audioVideo.realtimeSubscribeToReceiveDataMessage(CALL_ENDED_TOPIC, handleDataMessage);
   };
 
   // Handle received chat message from other participant
@@ -828,6 +858,14 @@ export function ChimeVideoCall({
             vendorJoined: response.vendorJoined,
           });
 
+          if (response.sessionEnded && !disconnectingRef.current) {
+            disconnectingRef.current = true;
+            endedByOtherRef.current = true;
+            setEndedByOther(true);
+            endCall(false);
+            return;
+          }
+
           if (response.customerJoined && response.vendorJoined && status === 'waiting') {
             setStatus('active');
             startCallTimer();
@@ -836,7 +874,7 @@ export function ChimeVideoCall({
       } catch (e) {
         // Silent fail for polling
       }
-    }, 5000);
+    }, 2000); // Poll every 2s for faster transition when both join
   };
 
   const startCallTimer = () => {
@@ -847,12 +885,28 @@ export function ChimeVideoCall({
     }, 1000);
   };
 
-  const endCall = async () => {
+  const handleEndCallClick = () => {
+    if (typeof window !== 'undefined' && window.confirm('End the call?')) {
+      endCall(true);
+    }
+  };
+
+  const endCall = async (initiatedByUs = true) => {
     try {
+      const session = meetingSessionRef.current;
+
+      // Notify other participant we're ending (only if we initiated)
+      if (initiatedByUs && session?.audioVideo) {
+        try {
+          const payload = new TextEncoder().encode(JSON.stringify({ endedBy: participantType }));
+          session.audioVideo.realtimeSendDataMessage(CALL_ENDED_TOPIC, payload, 5000);
+        } catch {}
+      }
+
       // Stop local media
-      if (meetingSessionRef.current) {
-        meetingSessionRef.current.audioVideo.stopLocalVideoTile();
-        meetingSessionRef.current.audioVideo.stop();
+      if (session) {
+        session.audioVideo.stopLocalVideoTile();
+        session.audioVideo.stop();
       }
 
       // Clear timers
@@ -1362,7 +1416,7 @@ export function ChimeVideoCall({
             {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
           </button>
           <button
-            onClick={endCall}
+            onClick={handleEndCallClick}
             className="w-14 h-14 rounded-2xl bg-red-500 hover:bg-red-600 text-white flex items-center justify-center"
           >
             <PhoneOff className="w-6 h-6" />
@@ -1391,9 +1445,13 @@ export function ChimeVideoCall({
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <Check className="w-10 h-10 text-green-500" />
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Call Ended</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">
+            {endedByOther ? `${otherParticipantName} left the call` : 'Call ended'}
+          </h2>
           <p className="text-gray-600 mb-1">Duration: {formatDuration(callDuration)}</p>
-          <p className="text-gray-500 text-sm mb-6">Thank you for using Warmpawz</p>
+          <p className="text-gray-500 text-sm mb-6">
+            {endedByOther ? 'The other participant has disconnected.' : 'Thank you for using Warmpawz'}
+          </p>
           
           <div className="flex gap-3 justify-center">
             {participantType === 'vendor' && onPrescriptionUpload && (
@@ -1555,7 +1613,7 @@ export function ChimeVideoCall({
           </button>
           
           <button
-            onClick={endCall}
+            onClick={handleEndCallClick}
             className="w-14 h-14 rounded-2xl bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-all shadow-lg shadow-red-500/30"
           >
             <PhoneOff className="w-6 h-6" />

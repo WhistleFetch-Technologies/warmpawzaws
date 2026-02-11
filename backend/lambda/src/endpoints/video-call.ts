@@ -255,14 +255,16 @@ class CreateMeetingHandler extends BaseHandler {
       ),
     ]);
 
-    // ✅ SQL: Store meeting info in video_call_sessions
+    // ✅ SQL: Store meeting info in video_call_sessions (including join tokens so join returns them)
     await insert('video_call_sessions', {
       booking_id: bookingId,
       meeting_id: meetingId,
       customer_id: customerId,
       vendor_id: vendorId,
       customer_attendee_id: customerAttendee.Attendee?.AttendeeId,
+      customer_join_token: customerAttendee.Attendee?.JoinToken,
       vendor_attendee_id: vendorAttendee.Attendee?.AttendeeId,
+      vendor_join_token: vendorAttendee.Attendee?.JoinToken,
       status: 'active',
       started_at: new Date(),
     });
@@ -435,6 +437,64 @@ class JoinMeetingHandler extends BaseHandler {
         sessionRow.vendor_attendee_id = newAttendee.AttendeeId;
         sessionRow.vendor_join_token = newAttendee.JoinToken;
       }
+
+      // ✅ RACE FIX: Re-check for existing session right before insert. If the other participant
+      // created one concurrently, join that meeting instead of creating a duplicate.
+      const recheck = await select('video_call_sessions', { booking_id: bookingId });
+      const existingSession = recheck.find((s: any) => s.status === 'active' || s.status === 'waiting');
+      if (existingSession) {
+        vidlog('join', 'race-avoided-use-existing', {
+          bookingId,
+          participantType: userType,
+          existingMeetingId: existingSession.meeting_id,
+        }, cid);
+        // Create our attendee in the existing meeting (other participant created it)
+        const raceAttendeeResp = await withChimeRetry(
+          () =>
+            chimeClient.send(
+              new CreateAttendeeCommand({
+                MeetingId: existingSession.meeting_id,
+                ExternalUserId: `${userType}-${userId}`,
+              })
+            ),
+          { correlationId: cid }
+        );
+        const raceAttendee = {
+          AttendeeId: raceAttendeeResp.Attendee?.AttendeeId,
+          JoinToken: raceAttendeeResp.Attendee?.JoinToken,
+          ExternalUserId: `${userType}-${userId}`,
+        };
+        const updateData: any = {};
+        if (userType === 'customer') {
+          updateData.customer_attendee_id = raceAttendee.AttendeeId;
+          updateData.customer_join_token = raceAttendee.JoinToken;
+        } else {
+          updateData.vendor_attendee_id = raceAttendee.AttendeeId;
+          updateData.vendor_join_token = raceAttendee.JoinToken;
+        }
+        await update('video_call_sessions', { id: existingSession.id }, updateData);
+        const meetingInfo = (
+          await withChimeRetry(
+            () => chimeClient.send(new GetMeetingCommand({ MeetingId: existingSession.meeting_id })),
+            { correlationId: cid }
+          )
+        ).Meeting;
+        if (!meetingInfo?.MediaPlacement) {
+          return this.error('Meeting data invalid', 500);
+        }
+        return this.success({
+          success: true,
+          meetingId: existingSession.meeting_id,
+          meeting: {
+            MeetingId: meetingInfo.MeetingId,
+            MediaPlacement: meetingInfo.MediaPlacement,
+            MediaRegion: meetingInfo.MediaRegion,
+          },
+          attendee: raceAttendee,
+          session: { id: existingSession.id, status: existingSession.status },
+        });
+      }
+
       const inserted = await insert('video_call_sessions', sessionRow);
       session = inserted[0];
 
@@ -664,15 +724,30 @@ class GetAttendeesHandler extends BaseHandler {
       return this.error('Booking ID is required', 400);
     }
 
-    const sessions = await select('video_call_sessions', { booking_id: bookingId });
-    const activeSession = sessions.find((s: any) => s.status === 'active' || s.status === 'waiting');
+    const sessions = await select('video_call_sessions', {
+      booking_id: bookingId,
+    });
+    const sessionsList = sessions as any[];
+    const activeSessions = sessionsList.filter(
+      (s) => s.status === 'active' || s.status === 'waiting'
+    );
+    const completedSessions = sessionsList.filter(
+      (s) => s.status === 'completed' || s.status === 'ended'
+    );
+    // Prefer session that has both attendees (avoids stale single-participant sessions from races)
+    const activeSession = activeSessions.find(
+      (s) => s.customer_attendee_id && s.vendor_attendee_id
+    ) || activeSessions[0];
 
     if (!activeSession) {
       return this.success({
         success: true,
         customerJoined: false,
         vendorJoined: false,
-        message: 'No active meeting session',
+        sessionEnded: completedSessions.length > 0,
+        message: completedSessions.length > 0
+          ? 'Call has ended'
+          : 'No active meeting session',
       });
     }
 
@@ -681,6 +756,7 @@ class GetAttendeesHandler extends BaseHandler {
       success: true,
       customerJoined: !!(session.customer_attendee_id && session.customer_join_token),
       vendorJoined: !!(session.vendor_attendee_id && session.vendor_join_token),
+      sessionEnded: false,
     });
   }
 }
@@ -693,11 +769,11 @@ class EndMeetingHandler extends BaseHandler {
       return this.error('Booking ID is required', 400);
     }
 
-    // ✅ SQL: End meeting session
-    const sessions = await select('video_call_sessions', {
-      booking_id: bookingId,
-      status: 'active',
-    });
+    // ✅ SQL: End meeting session (include both 'active' and 'waiting' - call can end before both join)
+    const allSessions = await select('video_call_sessions', { booking_id: bookingId });
+    const sessions = (allSessions as any[]).filter(
+      (s) => s.status === 'active' || s.status === 'waiting'
+    );
 
     if (sessions.length > 0) {
       const session = sessions[0];
@@ -865,12 +941,13 @@ export function registerVideoCallEndpoints(app: Hono) {
 }
 
 function createApiGatewayEvent(req: any, body?: any): any {
+  const pathParams = typeof req?.param === 'function' ? req.param() : {};
   return {
     httpMethod: req.method,
     path: req.url,
     headers: req.headers,
     body: JSON.stringify(body || {}),
-    pathParameters: req.param() || {},
+    pathParameters: (pathParams && typeof pathParams === 'object') ? pathParams : {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
       requestId: randomUUID(),
