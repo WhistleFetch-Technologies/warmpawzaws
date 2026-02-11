@@ -232,7 +232,7 @@ export function registerPromotionEndpoints(app: Hono) {
    * GET /promotions/active
    * Get active promotions
    */
-  app.get("/promotions/active", async (c) => {
+  const handleActivePromotions = async (c: any) => {
     try {
       const serviceType = c.req.query('serviceType') || 'all';
       const customerId = c.req.query('customerId');
@@ -275,7 +275,11 @@ export function registerPromotionEndpoints(app: Hono) {
       console.error('Error fetching promotions:', error);
       return c.json({ error: error.message }, 500);
     }
-  });
+  };
+
+  app.get("/promotions/active", handleActivePromotions);
+  // Backward-compat alias for older customer web builds
+  app.get("/ecommerce/promotions/active", handleActivePromotions);
 
   /**
    * POST /promotions/apply
@@ -407,7 +411,7 @@ export function registerPromotionEndpoints(app: Hono) {
   app.get("/coupons/validate/:couponCode", async (c) => {
     try {
       const { couponCode } = c.req.param();
-      const amount = parseFloat(c.req.query('amount') || '0');
+      const amount = parseFloat(c.req.query('amount') || c.req.query('orderAmount') || '0');
 
       const coupons = await select('coupons', { code: couponCode.toUpperCase(), is_active: true });
       if (coupons.length === 0) {
@@ -595,13 +599,91 @@ export function registerPromotionEndpoints(app: Hono) {
   });
 
   // ============================================================================
+  // PUBLIC: APPLICABLE PROMOTIONS (customer checkout – no admin auth)
+  // ============================================================================
+
+  /**
+   * GET /promotions/applicable
+   * Get applicable promotions for checkout. Used by customer-web (UniversalPaymentPage).
+   * Not under /admin/* so customers are not blocked by requireAdmin().
+   * Query params: category, serviceStyle, amount
+   */
+  app.get("/promotions/applicable", async (c) => {
+    try {
+      const category = c.req.query('category') || 'all';
+      const serviceStyle = c.req.query('serviceStyle') || 'all';
+      const amount = parseFloat(c.req.query('amount') || '0');
+
+      const now = new Date().toISOString().split('T')[0];
+
+      let queryStr = `
+        SELECT * FROM promotions
+        WHERE is_active = true
+        AND (start_date IS NULL OR start_date <= $1)
+        AND (end_date IS NULL OR end_date >= $1)
+      `;
+
+      const params: any[] = [now];
+      let paramIndex = 2;
+
+      if (amount > 0) {
+        queryStr += ` AND (min_order_amount IS NULL OR min_order_amount <= $${paramIndex})`;
+        params.push(amount);
+        paramIndex++;
+      }
+
+      if (category && category !== 'all') {
+        queryStr += ` AND (
+          applicable_services IS NULL 
+          OR applicable_services = '[]'::jsonb
+          OR applicable_services @> $${paramIndex}::jsonb
+          OR applicable_to = 'all'
+          OR applicable_to = $${paramIndex + 1}
+        )`;
+        params.push(JSON.stringify([category]));
+        params.push(category);
+        paramIndex += 2;
+      }
+
+      queryStr += ` ORDER BY priority DESC, discount_value DESC LIMIT 20`;
+
+      const result = await query(queryStr, params);
+      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+
+      const promotions = rows.map((promo: any) => ({
+        id: promo.id,
+        code: promo.code,
+        name: promo.name || promo.title,
+        description: promo.description,
+        discountType: promo.discount_type,
+        discountValue: parseFloat(promo.discount_value || '0'),
+        minOrderAmount: parseFloat(promo.min_order_amount || '0'),
+        maxDiscountAmount: parseFloat(promo.max_discount_amount || '0'),
+        applicableServices: promo.applicable_services,
+        expiresAt: promo.end_date,
+      }));
+
+      return c.json({
+        success: true,
+        promotions,
+        total: promotions.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching applicable promotions:', error);
+      if (error.message && (error.message.includes('does not exist') || error.message.includes('column'))) {
+        return c.json({ success: true, promotions: [], total: 0 });
+      }
+      return c.json({ success: true, promotions: [], total: 0 });
+    }
+  });
+
+  // ============================================================================
   // ADMIN ENDPOINTS - PROMOTIONS CRUD
   // ============================================================================
 
   /**
    * GET /admin/promotions/applicable
-   * Get applicable promotions for checkout
-   * ✅ FIX: Add this route for frontend checkout flow
+   * Get applicable promotions for checkout (admin UI; same logic as /promotions/applicable)
    * Query params: category, serviceStyle, amount
    */
   app.get("/admin/promotions/applicable", async (c) => {
@@ -1579,4 +1661,3 @@ export function registerPromotionEndpoints(app: Hono) {
     }
   });
 }
-

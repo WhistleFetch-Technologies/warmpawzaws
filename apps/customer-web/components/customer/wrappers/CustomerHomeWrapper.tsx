@@ -875,9 +875,13 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
         onNavigate={(screen, data) => {
           // Handle navigation from TeleConsultationRouter
           if (screen === 'video-call') {
-            // Navigate to video call page
+            // Navigate to video call page (include phone for deep-link/reload support)
             if (typeof window !== 'undefined' && data?.bookingId) {
-              window.location.href = `/video/${data.bookingId}`;
+              const params = new URLSearchParams();
+              params.set('bookingId', data.bookingId);
+              if (phone) params.set('phone', phone);
+              const qs = params.toString();
+              window.location.href = `/video${qs ? `?${qs}` : ''}`;
             }
           } else if (screen === 'add-pet') {
             setCurrentScreen('add-pet');

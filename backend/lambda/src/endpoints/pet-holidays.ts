@@ -15,9 +15,10 @@
 
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
-import { query } from '../database/rds-connection';
+import { query, select } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { getCompletedPayment, resolvePaymentPolicy } from '../utils/payment-policy';
 
 // ============================================================================
 // GET /holidays/packages - List holiday packages
@@ -307,7 +308,10 @@ class BookHolidayHandler extends BaseHandler {
         travelDate,
         numberOfPets,
         petIds,
-        specialRequests
+        specialRequests,
+        paymentId,
+        razorpayPaymentId,
+        razorpayOrderId,
       } = body;
 
       if (!customerId) {
@@ -351,6 +355,46 @@ class BookHolidayHandler extends BaseHandler {
       // Calculate total amount
       const totalAmount = packageInfo.price * numberOfPets;
 
+      const vendorRows = await select('vendors', { id: packageInfo.vendor_id });
+      const vendorType = vendorRows[0]?.category || vendorRows[0]?.vendor_type || vendorRows[0]?.vendorType || null;
+      const policy = await resolvePaymentPolicy({
+        vendorType,
+        serviceType: 'at_center',
+        totalAmount,
+      });
+
+      let paymentRecord: any | null = null;
+      let amountPaid = 0;
+      if (policy.requiredUpfront > 0) {
+        if (!paymentId && !razorpayPaymentId && !razorpayOrderId) {
+          return this.error('Payment required before booking creation', 402);
+        }
+
+        paymentRecord = await getCompletedPayment({
+          paymentId,
+          razorpayPaymentId,
+          razorpayOrderId,
+          customerId,
+          vendorId: packageInfo.vendor_id,
+        });
+
+        if (!paymentRecord) {
+          return this.error('Payment not found or not completed', 402);
+        }
+
+        amountPaid = parseFloat(paymentRecord.amount || '0') || 0;
+        if (amountPaid + 0.01 < policy.requiredUpfront) {
+          return this.error('Insufficient payment for booking creation', 402);
+        }
+      }
+
+      const remainingDue = Math.max(0, totalAmount - amountPaid);
+      const paymentStatus = totalAmount === 0
+        ? 'paid'
+        : remainingDue > 0
+          ? 'partial'
+          : 'paid';
+
       // Create booking
       const booking = await query(`
         INSERT INTO bookings (
@@ -363,9 +407,10 @@ class BookHolidayHandler extends BaseHandler {
           number_of_pets,
           total_amount,
           status,
+          payment_status,
           special_requests,
           created_at
-        ) VALUES ($1, $2, $3, 'pet_holiday', CURRENT_DATE, $4, $5, $6, 'pending', $7, NOW())
+        ) VALUES ($1, $2, $3, 'pet_holiday', CURRENT_DATE, $4, $5, $6, 'pending', $7, $8, NOW())
         RETURNING *
       `, [
         customerId,
@@ -374,8 +419,16 @@ class BookHolidayHandler extends BaseHandler {
         travelDate,
         numberOfPets,
         totalAmount,
+        paymentStatus,
         specialRequests || null
       ]);
+
+      if (paymentRecord?.id) {
+        await query(
+          `UPDATE payments SET booking_id = $1, updated_at = NOW() WHERE id = $2`,
+          [booking.rows[0].id, paymentRecord.id]
+        );
+      }
 
       return this.success({
         booking: booking.rows[0],
@@ -455,4 +508,3 @@ function createApiGatewayEvent(req: any): any {
 function createLambdaContext(): any {
   return {};
 }
-

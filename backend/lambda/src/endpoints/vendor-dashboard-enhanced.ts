@@ -95,6 +95,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
              LEFT JOIN customers c ON b.customer_id = c.id
              WHERE b.vendor_id = $1 
                AND b.booking_date >= $2
+               AND b.status != 'pending_payment'
                AND b.status != 'cancelled'
              ORDER BY b.booking_date ASC, b.booking_time ASC`,
             [resolvedVendorId, startDateStr]
@@ -112,6 +113,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
              LEFT JOIN customers c ON b.customer_id = c.id
              WHERE (b.vendor_id = $1 OR b.vendor_id = $2)
                AND b.booking_date >= $3
+               AND b.status != 'pending_payment'
                AND b.status != 'cancelled'
              ORDER BY b.booking_date ASC, b.booking_time ASC`,
             [vendorIds[0], vendorIds[1], startDateStr]
@@ -1145,4 +1147,3 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
     }
   });
 }
-

@@ -33,6 +33,10 @@ interface Address {
   landmark?: string;
   isDefault: boolean;
   addressType: 'home' | 'work' | 'other';
+  coordinates?: {
+    lat: number;
+    lng: number;
+  };
 }
 
 type CheckoutStep = 'address' | 'payment' | 'review' | 'confirmation';
@@ -136,7 +140,7 @@ export default function CheckoutPage() {
 
     try {
       setCouponError('');
-      const result = await apiClient.get<any>(`/coupons/validate/${couponCode}?orderAmount=${subtotal}`);
+      const result = await apiClient.get<any>(`/coupons/validate/${couponCode}?amount=${subtotal}`);
       
       if (result.valid) {
         setAppliedCoupon(result.coupon);
@@ -515,6 +519,7 @@ export default function CheckoutPage() {
                               if (components.state) updates.state = components.state;
                               if (components.pincode) updates.pincode = components.pincode;
                               if (components.landmark) updates.landmark = components.landmark;
+                              if (components.coordinates) updates.coordinates = components.coordinates;
                             }
                             setNewAddress({ ...newAddress, ...updates });
                           }}

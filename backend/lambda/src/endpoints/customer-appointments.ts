@@ -301,6 +301,12 @@ class CancelAppointmentHandler extends BaseHandler {
       if (bookingRow.payment_status === 'paid' && bookingRow.total_amount > 0) {
         try {
           const totalAmount = parseFloat(String(bookingRow.total_amount));
+          const bookingDateTime = bookingRow.booking_date && bookingRow.booking_time
+            ? new Date(`${bookingRow.booking_date}T${bookingRow.booking_time}`)
+            : null;
+          const hoursUntilBooking = bookingDateTime && !isNaN(bookingDateTime.getTime())
+            ? (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60)
+            : undefined;
           const tier = await getRefundTierForCancellation(
             {
               id: bookingId,
@@ -311,7 +317,8 @@ class CancelAppointmentHandler extends BaseHandler {
               booking_time: bookingRow.booking_time,
               total_amount: totalAmount,
             },
-            'pet_parent'
+            'pet_parent',
+            { hoursUntilBooking }
           );
           const computed = tier
             ? computeRefundFromTier(totalAmount, tier, 100, 0)
@@ -462,4 +469,3 @@ function createApiGatewayEvent(req: any): any {
 function createLambdaContext(): any {
   return {};
 }
-

@@ -35,9 +35,15 @@ async function resolveCustomerIdFromPhone(phone: string): Promise<string | null>
   if (!cleanPhone || cleanPhone.length < 10) {
     return null;
   }
-
-  const customers = await select('customers', { phone: cleanPhone });
-  return customers.length > 0 ? customers[0].id : null;
+  // Try exact match first
+  let customers = await select('customers', { phone: cleanPhone });
+  if (customers.length > 0) return customers[0].id;
+  // Try with +91 prefix (Indian format)
+  if (cleanPhone.length === 10) {
+    customers = await select('customers', { phone: `+91${cleanPhone}` });
+    if (customers.length > 0) return customers[0].id;
+  }
+  return null;
 }
 
 export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
@@ -103,13 +109,15 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
 
   /**
    * GET /customer/:phone/bookings/upcoming-calls
-   * Get upcoming video calls within specified minutes
+   * Get video calls that are joinable: (a) upcoming within minutes, OR (b) live (scheduled passed, not completed)
+   * includeLive=true: also return tele calls where scheduled time passed but status still confirmed/in_progress (until completed)
    * ✅ CRITICAL: Must be registered BEFORE /customer/:customerId/bookings/:bookingId
    */
   app.get("/customer/:phone/bookings/upcoming-calls", async (c) => {
     try {
       const phone = c.req.param('phone');
       const minutes = parseInt(c.req.query('minutes') || '5', 10);
+      const includeLive = c.req.query('includeLive') === 'true' || c.req.query('include_live') === 'true';
 
       // Get customer by phone with error handling
       const customerId = await resolveCustomerIdFromPhone(phone);
@@ -117,31 +125,38 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         return c.json({ success: true, bookings: [] });
       }
 
-      // Get upcoming video calls within the specified minutes
-      const now = new Date();
-      const futureTime = new Date(now.getTime() + minutes * 60 * 1000);
+      // Joinable = upcoming (next X min) OR live (scheduled passed, status confirmed/in_progress, within 2h)
+      const statusFilter = includeLive
+        ? `AND b.status IN ('confirmed', 'scheduled', 'in_progress', 'active')`
+        : `AND b.status IN ('confirmed', 'scheduled')`;
+      const timeFilter = includeLive
+        ? `AND (b.booking_date + b.booking_time::time) >= NOW() - INTERVAL '2 hours'
+             AND (b.booking_date + b.booking_time::time) <= NOW() + ($2 || ' minutes')::interval`
+        : `AND (b.booking_date + b.booking_time::time) >= NOW()
+             AND (b.booking_date + b.booking_time::time) <= NOW() + ($2 || ' minutes')::interval`;
 
       let bookingsResult: any;
       try {
         bookingsResult = await query(
-          `SELECT b.id, b.booking_date, b.scheduled_at, b.booking_time,
+          `SELECT b.id, b.booking_date, b.booking_time, b.status,
+                  (b.booking_date + b.booking_time::time) as scheduled_at,
                   COALESCE(v.business_name, s.name) as vendor_name,
                   COALESCE(v.profile_photo, s.photo) as vendor_photo,
-                  sv.name as service_name,
+                  sv.service_name as service_name,
                   p.name as pet_name,
                   b.video_call_meeting_id
            FROM bookings b
            LEFT JOIN vendors v ON b.vendor_id = v.id
            LEFT JOIN staff s ON b.staff_id = s.id
-           LEFT JOIN services sv ON b.service_id = sv.id
+           LEFT JOIN vendor_services sv ON b.service_id = sv.id
            LEFT JOIN pets p ON b.pet_id = p.id
            WHERE b.customer_id = $1
-             AND b.status IN ('confirmed', 'scheduled')
+             ${statusFilter}
              AND (b.service_style = 'tele' OR b.service_type = 'tele' OR b.service_type = 'online')
-             AND (b.scheduled_at >= $2 AND b.scheduled_at <= $3)
-           ORDER BY b.scheduled_at ASC
+             ${timeFilter}
+           ORDER BY (b.booking_date + b.booking_time::time) ASC
            LIMIT 10`,
-          [customerId, now.toISOString(), futureTime.toISOString()]
+          [customerId, String(minutes)]
         );
       } catch (error: any) {
         console.warn('Error fetching upcoming calls (returning empty):', error.message);

@@ -120,6 +120,14 @@ export function registerCustomerContentEndpoints(app: Hono) {
   });
 
   /**
+   * ✅ Alias: GET /marketing/banners
+   * Backward-compatible admin/content endpoint
+   */
+  app.get("/marketing/banners", async (c) => {
+    return app.fetch(new Request(c.req.url.replace('/marketing/banners', '/customer/banners'), c.req.raw));
+  });
+
+  /**
    * GET /customer/articles
    * Get published articles for customer home screen
    * Query params: category (optional), limit (optional), featured (optional)
@@ -229,6 +237,14 @@ export function registerCustomerContentEndpoints(app: Hono) {
   });
 
   /**
+   * ✅ Alias: GET /marketing/articles
+   * Backward-compatible admin/content endpoint
+   */
+  app.get("/marketing/articles", async (c) => {
+    return app.fetch(new Request(c.req.url.replace('/marketing/articles', '/customer/articles'), c.req.raw));
+  });
+
+  /**
    * GET /customer/announcements
    * Get active announcements for "What's New" section
    * Query params: limit (optional)
@@ -320,6 +336,14 @@ export function registerCustomerContentEndpoints(app: Hono) {
         isDefault: true,
       });
     }
+  });
+
+  /**
+   * ✅ Alias: GET /marketing/announcements
+   * Backward-compatible admin/content endpoint
+   */
+  app.get("/marketing/announcements", async (c) => {
+    return app.fetch(new Request(c.req.url.replace('/marketing/announcements', '/customer/announcements'), c.req.raw));
   });
 
   /**

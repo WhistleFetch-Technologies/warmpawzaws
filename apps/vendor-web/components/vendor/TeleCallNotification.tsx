@@ -23,7 +23,7 @@ function useIncomingCallRingtone(ringing: boolean, callType: string) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
-    if (!ringing || callType !== 'incoming') return;
+    if (!ringing || (callType !== 'incoming' && callType !== 'customer_waiting')) return;
     try {
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
       audioContextRef.current = ctx;
@@ -52,7 +52,7 @@ function useIncomingCallRingtone(ringing: boolean, callType: string) {
 }
 
 interface TeleCallNotificationProps {
-  callType: 'incoming' | 'outgoing';
+  callType: 'incoming' | 'outgoing' | 'customer_waiting';
   customer: {
     id: string;
     name: string;
@@ -158,7 +158,7 @@ export function TeleCallNotification({
                 </div>
               )}
               <h3 className="text-white font-bold text-xl">
-                {callType === 'incoming' ? 'Incoming Call' : 'Calling...'}
+                {callType === 'customer_waiting' ? 'Customer Waiting' : callType === 'incoming' ? 'Incoming Call' : 'Calling...'}
               </h3>
             </div>
 

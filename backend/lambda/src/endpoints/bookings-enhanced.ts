@@ -41,6 +41,7 @@ import {
   computeRefundFromTier,
   type CancelledBy,
 } from '../lib/services/cancellation-policy-service';
+import { getCompletedPayment, resolvePaymentPolicy } from '../utils/payment-policy';
 import {
   CreateBookingRequestSchema,
   UpdateBookingStatusRequestSchema,
@@ -114,6 +115,47 @@ function validateBookingDate(bookingDate: string, bookingTime: string, minNotice
   return { valid: true };
 }
 
+function getBookingDateTimeInfo(booking: any): {
+  bookingDateTime: Date | null;
+  hoursUntilBooking: number | null;
+  bookingDate?: string;
+  bookingTime?: string;
+} {
+  const explicitDate = booking?.booking_date ?? booking?.bookingDate;
+  const explicitTime = booking?.booking_time ?? booking?.bookingTime;
+  const rawDateTime =
+    booking?.booking_datetime ??
+    booking?.bookingDateTime ??
+    booking?.scheduled_at ??
+    booking?.scheduledAt ??
+    null;
+
+  let bookingDateTime: Date | null = null;
+  if (rawDateTime) {
+    const dt = new Date(rawDateTime);
+    if (!isNaN(dt.getTime())) {
+      bookingDateTime = dt;
+    }
+  }
+
+  if (!bookingDateTime && explicitDate && explicitTime) {
+    const dt = new Date(`${explicitDate}T${explicitTime}`);
+    if (!isNaN(dt.getTime())) {
+      bookingDateTime = dt;
+    }
+  }
+
+  const hoursUntilBooking =
+    bookingDateTime && !isNaN(bookingDateTime.getTime())
+      ? (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60)
+      : null;
+
+  const bookingDate = explicitDate || (bookingDateTime ? bookingDateTime.toISOString().slice(0, 10) : undefined);
+  const bookingTime = explicitTime || (bookingDateTime ? bookingDateTime.toISOString().slice(11, 16) : undefined);
+
+  return { bookingDateTime, hoursUntilBooking, bookingDate, bookingTime };
+}
+
 function generateEventMetadata(requestId?: string) {
   return {
     eventTimestamp: new Date().toISOString(),
@@ -185,6 +227,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
     const requestId = context.requestId;
+    const paymentId = body.paymentId || body.payment_id || null;
+    const razorpayPaymentId = body.razorpayPaymentId || body.razorpay_payment_id || null;
+    const razorpayOrderId = body.razorpayOrderId || body.razorpay_order_id || null;
 
     // ✅ FORENSIC FIX: Resolve customerId from customerPhone when missing (CreateBookingRequestSchema requires customerId)
     if (!body.customerId && body.customerPhone) {
@@ -206,8 +251,16 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       return this.error('customerId or customerPhone (to resolve customer) is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
 
-    // Validate request with Zod schema
-    const validationResult = CreateBookingRequestSchema.safeParse(body);
+    // Validate request with Zod schema (strip payment fields if schema is strict)
+    const validationBody = { ...body } as Record<string, any>;
+    delete validationBody.paymentId;
+    delete validationBody.payment_id;
+    delete validationBody.razorpayPaymentId;
+    delete validationBody.razorpay_payment_id;
+    delete validationBody.razorpayOrderId;
+    delete validationBody.razorpay_order_id;
+
+    const validationResult = CreateBookingRequestSchema.safeParse(validationBody);
     if (!validationResult.success) {
       return this.error(
         'Validation failed',
@@ -540,6 +593,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     try {
+      let remainingDueForResponse = 0;
       const result = await withTransaction(async (client) => {
         // Slot collision prevention with row-level locking
         const lockQuery = staffId
@@ -661,6 +715,80 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         // Priority: 1. Subscription (free), 2. Selected services total, 3. Single service amount
         const calculatedBasePrice = totalSelectedServicesAmount > 0 ? totalSelectedServicesAmount : (amount || 0);
         const calculatedFinalAmount = isSubscriptionBooking ? 0 : calculatedBasePrice;
+
+        const vendorType = (vendorRow as any)?.category || (vendorRow as any)?.vendor_type || (vendorRow as any)?.vendorType || null;
+        const policy = await resolvePaymentPolicy({
+          vendorType,
+          serviceType,
+          totalAmount: calculatedFinalAmount,
+        });
+
+        let paymentRecord: any | null = null;
+        let amountPaid = 0;
+        if (policy.requiredUpfront > 0) {
+          if (!paymentId && !razorpayPaymentId && !razorpayOrderId) {
+            return this.error(
+              'Payment required before booking creation',
+              402,
+              'PAYMENT_REQUIRED',
+              {
+                paymentRequired: true,
+                requiredUpfront: policy.requiredUpfront,
+                totalAmount: calculatedFinalAmount,
+                policyRule: policy.rule || null,
+                policyReason: policy.reason,
+              },
+              requestId
+            );
+          }
+
+          paymentRecord = await getCompletedPayment({
+            paymentId,
+            razorpayPaymentId,
+            razorpayOrderId,
+            customerId,
+            vendorId: resolvedVendorId,
+          });
+
+          if (!paymentRecord) {
+            return this.error(
+              'Payment not found or not completed',
+              402,
+              'PAYMENT_NOT_COMPLETED',
+              {
+                paymentRequired: true,
+                requiredUpfront: policy.requiredUpfront,
+                totalAmount: calculatedFinalAmount,
+              },
+              requestId
+            );
+          }
+
+          amountPaid = parseFloat(paymentRecord.amount || '0') || 0;
+          if (amountPaid + 0.01 < policy.requiredUpfront) {
+            return this.error(
+              'Insufficient payment for booking creation',
+              402,
+              'PAYMENT_INSUFFICIENT',
+              {
+                paymentRequired: true,
+                requiredUpfront: policy.requiredUpfront,
+                totalAmount: calculatedFinalAmount,
+                amountPaid,
+              },
+              requestId
+            );
+          }
+        }
+
+        const remainingDue = Math.max(0, calculatedFinalAmount - amountPaid);
+        remainingDueForResponse = remainingDue;
+        const initialStatus = 'pending';
+        const initialPaymentStatus = calculatedFinalAmount === 0
+          ? 'paid'
+          : remainingDue > 0
+            ? 'partial'
+            : 'paid';
         
         const bookingData: Record<string, any> = {
           customer_id: customerId,
@@ -672,8 +800,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           address: addressMeta.addressText || address || null,
           base_price: calculatedBasePrice,
           total_amount: calculatedFinalAmount, // ✅ Use calculated amount (may be 0 for subscriptions)
-          status: 'pending',
-          payment_status: isSubscriptionBooking ? 'paid' : 'pending', // ✅ Mark as paid for subscription
+          status: initialStatus,
+          payment_status: initialPaymentStatus, // ✅ Mark as paid for zero-amount/subscription, pending otherwise
           notes: notesFromSchema || (petName ? `Pet: ${petName}` : null),
           subscription_id: subscriptionId, // ✅ Track subscription used
           subscription_booking: isSubscriptionBooking, // ✅ Flag for subscription booking
@@ -757,11 +885,22 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           `INSERT INTO bookings (${columns.join(', ')}) VALUES (${placeholders}) RETURNING *`,
           values
         );
-
-        return insertResult.rows[0];
+        const createdBooking = insertResult.rows[0];
+        if (paymentRecord?.id) {
+          await client.query(
+            `UPDATE payments SET booking_id = $1, updated_at = NOW() WHERE id = $2`,
+            [createdBooking.id, paymentRecord.id]
+          );
+        }
+        return createdBooking;
       });
 
-      const booking = result;
+      // If the callback returned a handler error (e.g. PAYMENT_REQUIRED), return it instead of treating as booking row
+      if (result && typeof (result as any).statusCode === 'number' && typeof (result as any).body === 'string') {
+        return result as HandlerResponse;
+      }
+
+      const booking = result as { id?: string; booking_id?: string; status?: string; [k: string]: any };
 
       // Log audit entry
       await logAuditEntry({
@@ -785,81 +924,91 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       await logBookingStatusChange(
         booking.id,
         null,
-        'pending',
+        booking.status,
         customerId,
         'customer',
-        'Booking created'
+        booking.status === 'pending_payment' ? 'Booking created (awaiting payment)' : 'Booking created'
       );
 
-      // Publish event
-      try {
-        const { publishBookingCreated } = await import('../utils/sns-client');
-        await publishBookingCreated({
-          bookingId: booking.id,
-          customerId: booking.customer_id,
-          vendorId: booking.vendor_id,
-          serviceType: booking.service_type,
-          status: booking.status,
-          bookingDate: booking.booking_date,
-          bookingTime: booking.booking_time,
-          ...generateEventMetadata(requestId),
-        });
-      } catch (error) {
-        console.error('Failed to publish booking created event:', error);
-      }
-
-      // Rule 4: Notify vendor with in-app notification (large on-screen alert on vendor side)
-      try {
-        const customers = await select('customers', { id: booking.customer_id });
-        const customerName = (customers[0] as any)?.name || (customers[0] as any)?.full_name || 'Customer';
-        const serviceName = service?.service_name || service?.name || 'Service';
-        const serviceTypeLabel = booking.service_type === 'at_home' ? 'Home visit' : booking.service_type === 'tele' ? 'Tele consultation' : 'At center';
-        await insert('notifications', {
-          recipient_id: booking.vendor_id,
-          recipient_type: 'vendor',
-          type: 'new_booking',
-          title: 'New appointment',
-          message: `${customerName} booked ${serviceName} • ${serviceTypeLabel} • ${booking.booking_date} ${booking.booking_time}`,
-          data: JSON.stringify({
+      {
+        // Publish event
+        try {
+          const { publishBookingCreated } = await import('../utils/sns-client');
+          await publishBookingCreated({
             bookingId: booking.id,
             customerId: booking.customer_id,
-            customerName,
-            serviceName,
+            vendorId: booking.vendor_id,
             serviceType: booking.service_type,
+            status: booking.status,
             bookingDate: booking.booking_date,
             bookingTime: booking.booking_time,
-            address: booking.address,
-          }),
-          is_read: false,
-          created_at: new Date(),
-        });
+            ...generateEventMetadata(requestId),
+          });
+        } catch (error) {
+          console.error('Failed to publish booking created event:', error);
+        }
 
-        // ✅ Jio DLT SMS: Booking confirmation (non-blocking)
-        const customer = customers[0] || null;
-        const vendors = await select('vendors', { id: booking.vendor_id });
-        const vendor = vendors[0] || null;
-        triggerBookingNotification('booking_created', {
-          booking,
-          customer,
-          vendor,
-          service,
-        }).catch((smsErr) => {
-          console.warn('[SMS] Booking confirmation SMS failed:', smsErr?.message || smsErr);
-        });
-      } catch (notifErr) {
-        console.warn('Failed to create vendor notification for new booking:', notifErr);
+        // Rule 4: Notify vendor with in-app notification (large on-screen alert on vendor side)
+        try {
+          const customers = await select('customers', { id: booking.customer_id });
+          const customerName = (customers[0] as any)?.name || (customers[0] as any)?.full_name || 'Customer';
+          const serviceName = service?.service_name || service?.name || 'Service';
+          const serviceTypeLabel = booking.service_type === 'at_home' ? 'Home visit' : booking.service_type === 'tele' ? 'Tele consultation' : 'At center';
+          await insert('notifications', {
+            recipient_id: booking.vendor_id,
+            recipient_type: 'vendor',
+            type: 'new_booking',
+            title: 'New appointment',
+            message: `${customerName} booked ${serviceName} • ${serviceTypeLabel} • ${booking.booking_date} ${booking.booking_time}`,
+            data: JSON.stringify({
+              bookingId: booking.id,
+              customerId: booking.customer_id,
+              customerName,
+              serviceName,
+              serviceType: booking.service_type,
+              bookingDate: booking.booking_date,
+              bookingTime: booking.booking_time,
+              address: booking.address,
+            }),
+            is_read: false,
+            created_at: new Date(),
+          });
+
+          // ✅ Jio DLT SMS: Booking confirmation (non-blocking)
+          const customer = customers[0] || null;
+          const vendors = await select('vendors', { id: booking.vendor_id });
+          const vendor = vendors[0] || null;
+          triggerBookingNotification('booking_created', {
+            booking,
+            customer,
+            vendor,
+            service,
+          }).catch((smsErr) => {
+            console.warn('[SMS] Booking confirmation SMS failed:', smsErr?.message || smsErr);
+          });
+        } catch (notifErr) {
+          console.warn('Failed to create vendor notification for new booking:', notifErr);
+        }
       }
 
+      // Read id/status from row (PostgreSQL returns lowercase; some schemas use id vs booking_id)
+      const bookingIdForResponse = (booking as any).id ?? (booking as any).booking_id ?? '';
+      const statusForResponse = (booking as any).status ?? 'pending';
+      if (!bookingIdForResponse) {
+        console.error('[BOOKING] Created row missing id/booking_id. Row keys:', Object.keys(booking || {}));
+      }
       const response = {
-        bookingId: booking.id,
-        status: booking.status,
+        bookingId: bookingIdForResponse,
+        status: statusForResponse,
         message: 'Booking created successfully',
         isNew: true,
+        paymentRequired: remainingDueForResponse > 0,
+        remainingDue: remainingDueForResponse,
       };
 
-      // Store idempotency key
+      // Store idempotency key (use same id for storage)
       if (idempotencyKey) {
-        await storeIdempotencyKey(idempotencyKey, 'booking', booking.id, JSON.stringify(response), 200);
+        await storeIdempotencyKey(idempotencyKey, 'booking', bookingIdForResponse, JSON.stringify(response), 200);
       }
 
       return this.success(response, requestId);
@@ -1664,121 +1813,106 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
 
       const booking = bookings[0];
 
-      // Calculate hours until booking
-      let hoursUntilBooking = 0;
-      if (booking.booking_datetime) {
-        const bookingDateTime = new Date(booking.booking_datetime);
-        hoursUntilBooking = Math.max(0, (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60));
-      } else if (booking.booking_date && booking.booking_time) {
-        const bookingDateTime = new Date(`${booking.booking_date}T${booking.booking_time}`);
-        hoursUntilBooking = Math.max(0, (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60));
-      }
+      const bookingTimeInfo = getBookingDateTimeInfo(booking);
+      const safeHoursUntilBooking = bookingTimeInfo.hoursUntilBooking != null && Number.isFinite(bookingTimeInfo.hoursUntilBooking)
+        ? Math.max(0, bookingTimeInfo.hoursUntilBooking)
+        : 0;
 
-      // Get refund rules from database
-      const rulesResult = await query(
-        `SELECT * FROM booking_cancellation_rules
-         WHERE (vendor_id = $1 OR vendor_id IS NULL)
-           AND (service_id = $2 OR service_id IS NULL)
-         ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
-         LIMIT 1`,
-        [booking.vendor_id || null, booking.service_id || null]
-      );
+      const totalAmount = parseFloat(booking.total_amount || '0');
 
-      const rule = rulesResult.rows.length > 0 ? rulesResult.rows[0] : null;
-      const fullRefundHours = rule?.full_refund_before_hours || 48;
-      const partialRefundHours = rule?.partial_refund_before_hours || 24;
-      const partialRefundPercentage = parseFloat(rule?.partial_refund_percentage || '50');
-      const cutoffHours = rule?.cancellation_cutoff_hours || 12;
-      
-      // Parse cancellation windows from admin-configured policy (stored as JSONB)
-      let cancellationWindows: Array<{
-        hoursBefore: number;
-        refundPercentage: number;
-        cancellationFee: number;
-        penaltyPercentage: number;
-      }> = [];
-      
-      if (rule?.cancellation_windows) {
-        try {
-          cancellationWindows = typeof rule.cancellation_windows === 'string' 
-            ? JSON.parse(rule.cancellation_windows) 
-            : rule.cancellation_windows;
-        } catch (e) {
-          console.warn('[RefundPreview] Error parsing cancellation_windows:', e);
-        }
-      }
-
-      // Calculate refund percentage and fees using admin-configured windows
+      // Prefer refund tiers (admin "Refund Policies") for preview to match actual cancellation logic
       let refundPercentage = 0;
       let cancellationFee = 0;
       let penaltyPercentage = 0;
-      
-      // First, try to find matching window from admin-configured cancellation windows
-      if (cancellationWindows.length > 0) {
-        // Sort windows by hoursBefore descending to find the most applicable window
-        const sortedWindows = [...cancellationWindows].sort((a, b) => b.hoursBefore - a.hoursBefore);
-        
-        for (const window of sortedWindows) {
-          if (hoursUntilBooking >= window.hoursBefore) {
-            refundPercentage = window.refundPercentage;
-            cancellationFee = window.cancellationFee || 0;
-            penaltyPercentage = window.penaltyPercentage || 0;
-            break;
-          }
+      let penaltyAmount = 0;
+      let refundAmount = 0;
+      let policyDetails: any = {};
+      let tierApplied = false;
+
+      try {
+        const tier = await getRefundTierForCancellation(
+          {
+            id: booking.id,
+            vendor_id: booking.vendor_id,
+            service_id: booking.service_id,
+            service_type: booking.service_type,
+            booking_date: bookingTimeInfo.bookingDate || booking.booking_date || '',
+            booking_time: bookingTimeInfo.bookingTime || booking.booking_time || '00:00',
+            booking_datetime: booking.booking_datetime,
+            scheduled_at: booking.scheduled_at,
+            total_amount: totalAmount,
+          },
+          'pet_parent',
+          { hoursUntilBooking: safeHoursUntilBooking }
+        );
+
+        if (tier) {
+          const computed = computeRefundFromTier(totalAmount, tier, 100, 0);
+          refundPercentage = computed.refundPercentage;
+          cancellationFee = computed.cancellationFee;
+          refundAmount = computed.refundAmount;
+          policyDetails = {
+            source: 'vendor_refund_tiers',
+            tierId: tier.tierId,
+            tierName: tier.tierName,
+            maxPartialRefundPercentage: tier.maxPartialRefundPercentage,
+          };
+          tierApplied = true;
         }
-        
-        // If no window matched (booking is too close), use the lowest window or no refund
-        if (refundPercentage === 0 && hoursUntilBooking > 0) {
-          const lowestWindow = sortedWindows[sortedWindows.length - 1];
-          if (lowestWindow && hoursUntilBooking < lowestWindow.hoursBefore) {
-            refundPercentage = 0;
-            cancellationFee = lowestWindow.cancellationFee || 0;
-            penaltyPercentage = lowestWindow.penaltyPercentage || 0;
-          }
-        }
-      } else {
-        // Fallback to legacy rule-based calculation if no cancellation windows configured
-        if (hoursUntilBooking >= fullRefundHours) {
+      } catch (tierError) {
+        console.warn('[RefundPreview] Failed to evaluate refund tiers:', tierError);
+      }
+
+      // Fallback to legacy booking_cancellation_rules (time-based)
+      if (!tierApplied) {
+        const rulesResult = await query(
+          `SELECT * FROM booking_cancellation_rules
+           WHERE (vendor_id = $1 OR vendor_id IS NULL)
+             AND (service_id = $2 OR service_id IS NULL)
+           ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
+           LIMIT 1`,
+          [booking.vendor_id || null, booking.service_id || null]
+        ).catch(() => ({ rows: [] }));
+
+        const rule = rulesResult.rows.length > 0 ? rulesResult.rows[0] : null;
+        const fullRefundHours = rule?.full_refund_before_hours || 48;
+        const partialRefundHours = rule?.partial_refund_before_hours || 24;
+        const partialRefundPercentage = parseFloat(rule?.partial_refund_percentage || '50');
+        const cutoffHours = rule?.cancellation_cutoff_hours || 12;
+
+        if (safeHoursUntilBooking >= fullRefundHours) {
           refundPercentage = 100;
-        } else if (hoursUntilBooking >= partialRefundHours) {
+        } else if (safeHoursUntilBooking >= partialRefundHours) {
           refundPercentage = partialRefundPercentage;
-        } else if (hoursUntilBooking >= cutoffHours) {
+        } else if (safeHoursUntilBooking >= cutoffHours) {
           refundPercentage = partialRefundPercentage;
         } else {
           refundPercentage = 0;
-          // Apply default 10% cancellation fee when no admin config exists
-          cancellationFee = parseFloat(booking.total_amount || '0') * 0.1;
         }
-      }
 
-      const totalAmount = parseFloat(booking.total_amount || '0');
-      
-      // Calculate penalty amount if penalty percentage is configured
-      const penaltyAmount = penaltyPercentage > 0 ? (totalAmount * penaltyPercentage) / 100 : 0;
-      
-      // Calculate final refund: base refund minus cancellation fee and penalty
-      const baseRefund = (totalAmount * refundPercentage) / 100;
-      const refundAmount = Math.max(0, baseRefund - cancellationFee - penaltyAmount);
+        refundAmount = Math.max(0, (totalAmount * refundPercentage) / 100);
+        policyDetails = {
+          source: 'booking_cancellation_rules',
+          fullRefundBeforeHours: fullRefundHours,
+          partialRefundBeforeHours: partialRefundHours,
+          partialRefundPercentage: partialRefundPercentage,
+          cancellationCutoffHours: cutoffHours,
+        };
+      }
 
       return this.success({
         refund: {
           eligible: refundPercentage > 0 || refundAmount > 0,
           refundAmount: Math.round(refundAmount * 100) / 100,
           refundPercentage: Math.round(refundPercentage),
-          hoursUntil: Math.round(hoursUntilBooking),
+          hoursUntil: Math.round(safeHoursUntilBooking),
           cancellationFee: Math.round(cancellationFee * 100) / 100,
           penaltyPercentage: Math.round(penaltyPercentage),
           penaltyAmount: Math.round(penaltyAmount * 100) / 100,
           message: refundAmount > 0
             ? `₹${Math.round(refundAmount * 100) / 100} will be refunded to your original payment method${cancellationFee > 0 ? ` (₹${cancellationFee} cancellation fee applied)` : ''}`
             : 'No refund available for this booking',
-          policy: {
-            fullRefundBeforeHours: fullRefundHours,
-            partialRefundBeforeHours: partialRefundHours,
-            partialRefundPercentage: partialRefundPercentage,
-            cancellationCutoffHours: cutoffHours,
-            configuredWindows: cancellationWindows.length > 0 ? cancellationWindows : null,
-          },
+          policy: policyDetails,
         },
       }, requestId);
     } catch (error: unknown) {
@@ -1836,10 +1970,10 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
       );
     }
 
-    // Check if booking is in the past
-    const bookingDateTime = new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
+    // Check if booking is in the past (best-effort)
+    const bookingTimeInfo = getBookingDateTimeInfo(currentBooking);
     const now = new Date();
-    if (bookingDateTime < now) {
+    if (bookingTimeInfo.bookingDateTime && bookingTimeInfo.bookingDateTime < now) {
       return this.error(
         'Cannot cancel past bookings',
         400,
@@ -1851,18 +1985,50 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
 
     try {
       // Update booking status to cancelled and record who cancelled (for policy enforcement)
-      await withTransaction(async (client) => {
-        await client.query(
-          `UPDATE bookings 
-           SET status = 'cancelled', 
-               cancelled_at = NOW(), 
-               cancellation_reason = $1,
-               cancelled_by = $2,
-               updated_at = NOW() 
-           WHERE id = $3`,
-          [reason, cancelledBy, bookingId]
-        );
-      });
+      const updateWithCancelledBy = async () => {
+        await withTransaction(async (client) => {
+          await client.query(
+            `UPDATE bookings 
+             SET status = 'cancelled', 
+                 cancelled_at = NOW(), 
+                 cancellation_reason = $1,
+                 cancelled_by = $2,
+                 updated_at = NOW() 
+             WHERE id = $3`,
+            [reason, cancelledBy, bookingId]
+          );
+        });
+      };
+
+      const updateWithoutCancelledBy = async () => {
+        await withTransaction(async (client) => {
+          await client.query(
+            `UPDATE bookings 
+             SET status = 'cancelled', 
+                 cancelled_at = NOW(), 
+                 cancellation_reason = $1,
+                 updated_at = NOW() 
+             WHERE id = $2`,
+            [reason, bookingId]
+          );
+        });
+      };
+
+      try {
+        await updateWithCancelledBy();
+      } catch (updateError: any) {
+        const message = String(updateError?.message || updateError);
+        const shouldRetry =
+          /cancelled_by/i.test(message) ||
+          /column .*cancelled_by.*does not exist/i.test(message) ||
+          /invalid input syntax for type uuid/i.test(message);
+        if (shouldRetry) {
+          console.warn('[CancelBooking] Retrying without cancelled_by column:', message);
+          await updateWithoutCancelledBy();
+        } else {
+          throw updateError;
+        }
+      }
 
       // Log status change
       await logBookingStatusChange(
@@ -1895,17 +2061,24 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
           let refundAmount: number;
           let refundPercentage: number;
 
+          const safeHoursUntilBooking = bookingTimeInfo.hoursUntilBooking != null && Number.isFinite(bookingTimeInfo.hoursUntilBooking)
+            ? bookingTimeInfo.hoursUntilBooking
+            : 0;
+
           const tier = await getRefundTierForCancellation(
             {
               id: currentBooking.id,
               vendor_id: currentBooking.vendor_id,
               service_id: currentBooking.service_id,
               service_type: currentBooking.service_type,
-              booking_date: currentBooking.booking_date,
-              booking_time: currentBooking.booking_time,
+              booking_date: bookingTimeInfo.bookingDate || currentBooking.booking_date || '',
+              booking_time: bookingTimeInfo.bookingTime || currentBooking.booking_time || '00:00',
+              booking_datetime: currentBooking.booking_datetime,
+              scheduled_at: currentBooking.scheduled_at,
               total_amount: totalAmount,
             },
-            cancelledBy
+            cancelledBy,
+            { hoursUntilBooking: safeHoursUntilBooking }
           );
 
           if (tier) {
@@ -1914,8 +2087,7 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
             refundPercentage = computed.refundPercentage;
           } else {
             // Fallback: booking_cancellation_rules or default time-based
-            const bookingDateTime = new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
-            const hoursUntilBooking = (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
+            const hoursUntilBooking = safeHoursUntilBooking;
             const rulesResult = await query(
               `SELECT * FROM booking_cancellation_rules
                WHERE (vendor_id = $1 OR vendor_id IS NULL)
@@ -2292,6 +2464,34 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
 }
 
 // ============================================================================
+// RESPONSE NORMALIZATION (booking create)
+// ============================================================================
+
+/** Ensures bookingId is at top level and in data for all create-booking response shapes (wrapped + idempotency replay). */
+function normalizeBookingCreateResponse(responseBody: any): void {
+  if (!responseBody || typeof responseBody !== 'object') return;
+  const data = responseBody.data ?? responseBody;
+  const bookingId =
+    responseBody?.data?.bookingId ??
+    responseBody?.data?.booking_id ??
+    (responseBody?.data?.id && typeof responseBody.data.id === 'string' ? responseBody.data.id : null) ??
+    responseBody?.bookingId ??
+    responseBody?.booking_id ??
+    responseBody?.id;
+  if (bookingId) {
+    responseBody.bookingId = bookingId;
+    if (responseBody.data && typeof responseBody.data === 'object') {
+      responseBody.data.bookingId = responseBody.data.bookingId ?? responseBody.data.booking_id ?? bookingId;
+      // Fallback when API Gateway strips body keys but keeps message: embed ID in message so frontend can parse it
+      const msg = responseBody.data.message;
+      if (typeof msg === 'string' && !msg.includes(bookingId)) {
+        responseBody.data.message = `${msg} | bookingId:${bookingId}`;
+      }
+    }
+  }
+}
+
+// ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
 
@@ -2356,11 +2556,18 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       
       const context = createLambdaContext();
       const result: any = await createHandler.execute(event, context);
-      const responseBody = JSON.parse(result.body);
-      // Unified contract: frontend may read data.bookingId or bookingId (legacy)
-      if (responseBody?.success && responseBody?.data?.bookingId) {
-        responseBody.bookingId = responseBody.data.bookingId;
+      // Diagnostic: exact body returned by handler (before parse/normalize) to trace where bookingId is lost
+      console.log('[BOOKING-CREATE] result.body from handler (first 500 chars):', typeof result?.body === 'string' ? result.body.slice(0, 500) : String(result?.body).slice(0, 500));
+      let responseBody: any;
+      try {
+        responseBody = typeof result.body === 'string' ? JSON.parse(result.body) : result.body;
+      } catch (parseErr) {
+        console.error('[BOOKING-CREATE] Invalid JSON in result.body:', (result.body || '').slice(0, 200));
+        throw parseErr;
       }
+      normalizeBookingCreateResponse(responseBody);
+      const outId = responseBody?.bookingId ?? responseBody?.data?.bookingId;
+      console.log('[BOOKING-CREATE] Response keys:', Object.keys(responseBody || {}), 'bookingId:', outId);
       return c.json(responseBody, result.statusCode);
     } catch (error: unknown) {
       const err = error as any;
@@ -2405,8 +2612,15 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       };
       const context = createLambdaContext();
       const result = await createHandler.execute(event, context);
-      const responseBody = JSON.parse(result.body);
-      if (responseBody?.success && responseBody?.data?.bookingId) responseBody.bookingId = responseBody.data.bookingId;
+      let responseBody: any;
+      try {
+        responseBody = typeof result.body === 'string' ? JSON.parse(result.body) : result.body;
+      } catch (parseErr) {
+        console.error('[BOOKING-CREATE /booking/create] Invalid JSON in result.body:', (result.body || '').slice(0, 200));
+        throw parseErr;
+      }
+      normalizeBookingCreateResponse(responseBody);
+      console.log('[BOOKING-CREATE /booking/create] Response keys:', Object.keys(responseBody || {}), 'bookingId:', responseBody?.bookingId ?? responseBody?.data?.bookingId);
       return c.json(responseBody, result.statusCode);
     } catch (error: unknown) {
       const err = error as any;
@@ -2450,8 +2664,15 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       };
       const context = createLambdaContext();
       const result = await createHandler.execute(event, context);
-      const responseBody = JSON.parse(result.body);
-      if (responseBody?.success && responseBody?.data?.bookingId) responseBody.bookingId = responseBody.data.bookingId;
+      let responseBody: any;
+      try {
+        responseBody = typeof result.body === 'string' ? JSON.parse(result.body) : result.body;
+      } catch (parseErr) {
+        console.error('[BOOKING-CREATE /customer/booking/create] Invalid JSON:', (result.body || '').slice(0, 200));
+        throw parseErr;
+      }
+      normalizeBookingCreateResponse(responseBody);
+      console.log('[BOOKING-CREATE /customer/booking/create] Response keys:', Object.keys(responseBody || {}), 'bookingId:', responseBody?.bookingId ?? responseBody?.data?.bookingId);
       return c.json(responseBody, result.statusCode);
     } catch (error: unknown) {
       const err = error as any;
@@ -2496,7 +2717,16 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       };
       const context = createLambdaContext();
       const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      let responseBody: any;
+      try {
+        responseBody = typeof result.body === 'string' ? JSON.parse(result.body) : result.body;
+      } catch (parseErr) {
+        console.error('[BOOKING-CREATE /customer/bookings/create] Invalid JSON:', (result.body || '').slice(0, 200));
+        throw parseErr;
+      }
+      normalizeBookingCreateResponse(responseBody);
+      console.log('[BOOKING-CREATE /customer/bookings/create] Response keys:', Object.keys(responseBody || {}), 'bookingId:', responseBody?.bookingId ?? responseBody?.data?.bookingId);
+      return c.json(responseBody, result.statusCode);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in customer/bookings/create:', error);

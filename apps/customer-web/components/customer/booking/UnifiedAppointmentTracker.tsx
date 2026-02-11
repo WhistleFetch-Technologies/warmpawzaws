@@ -77,8 +77,7 @@ export function UnifiedAppointmentTracker({
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const initialLoadDoneRef = useRef(false);
 
-  // Load appointments and active bookings. Poll every 30s — interval must live in effect
-  // only; never inside loadData to avoid interval explosion → ERR_INSUFFICIENT_RESOURCES.
+  // Load appointments and active bookings. Poll every 15s so 5-min-away tele calls show quickly
   useEffect(() => {
     initialLoadDoneRef.current = false;
     if (pollingRef.current) {
@@ -87,7 +86,7 @@ export function UnifiedAppointmentTracker({
     }
     const poll = () => loadData();
     poll();
-    const id = setInterval(poll, 30000);
+    const id = setInterval(poll, 15000);
     pollingRef.current = id;
     return () => {
       clearInterval(pollingRef.current!);
@@ -116,8 +115,32 @@ export function UnifiedAppointmentTracker({
     try {
       if (isInitial) setLoading(true);
       
-      // Fetch upcoming appointments (tele consultations)
-      const appointmentsRes = await apiClient.get<any>(
+      // Fetch upcoming tele consultations: use customer-specific upcoming-calls first (more reliable)
+      let appointmentItemsFromTele: any[] = [];
+      if (customerPhone) {
+        const upcomingCallsRes = await apiClient.get<any>(
+          `/customer/${encodeURIComponent(customerPhone)}/bookings/upcoming-calls?minutes=60&includeLive=true`
+        ).catch(() => null);
+        if (upcomingCallsRes?.success && upcomingCallsRes.bookings?.length > 0) {
+          upcomingCallsRes.bookings.forEach((apt: any) => {
+            const scheduledAt = new Date(apt.scheduledAt || apt.bookingDate);
+            const minutesUntil = Math.max(0, Math.round((scheduledAt.getTime() - Date.now()) / 60000));
+            appointmentItemsFromTele.push({
+              id: apt.id,
+              type: 'tele',
+              bookingId: apt.id,
+              serviceName: apt.serviceName || 'Tele Consultation',
+              providerName: apt.vendorName || 'Doctor',
+              status: minutesUntil <= 5 ? 'starting_soon' : 'upcoming',
+              minutesUntil,
+              bookingTime: apt.bookingTime,
+              meetingId: apt.meetingId,
+            });
+          });
+        }
+      }
+      // Fallback: reminders/upcoming (returns all customers; filter by customerPhone if available)
+      const appointmentsRes = appointmentItemsFromTele.length > 0 ? null : await apiClient.get<any>(
         `/reminders/upcoming?minutes=60&serviceStyle=tele`
       ).catch(() => null);
       
@@ -128,8 +151,14 @@ export function UnifiedAppointmentTracker({
 
       const appointmentItems: AppointmentItem[] = [];
 
-      // Process tele consultations
-      if (appointmentsRes?.success && appointmentsRes.appointments) {
+      // Process tele consultations (from upcoming-calls or reminders/upcoming)
+      if (appointmentItemsFromTele.length > 0) {
+        appointmentItemsFromTele.forEach((apt) => {
+          const secondsUntil = (apt.minutesUntil || 0) * 60;
+          appointmentItems.push(apt);
+          setCountdowns(prev => ({ ...prev, [apt.id]: secondsUntil }));
+        });
+      } else if (appointmentsRes?.success && appointmentsRes.appointments) {
         appointmentsRes.appointments.forEach((apt: any) => {
           if (apt.serviceStyle === 'tele') {
             const minutesUntil = apt.minutesUntil || 0;
@@ -379,7 +408,11 @@ export function UnifiedAppointmentTracker({
                         } else if (onNavigate) {
                           onNavigate('video-call', { bookingId: item.bookingId, meetingId: item.meetingId });
                         } else {
-                          window.location.href = `/video/${item.bookingId}`;
+                          const params = new URLSearchParams();
+                          params.set('bookingId', item.bookingId);
+                          if (customerPhone) params.set('phone', customerPhone);
+                          const qs = params.toString();
+                          window.location.href = `/video${qs ? `?${qs}` : ''}`;
                         }
                       }}
                       className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-xs"

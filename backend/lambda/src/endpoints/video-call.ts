@@ -24,6 +24,53 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { isValidUUID } from '../types/entities';
 import { randomUUID } from 'crypto';
 
+/** Configurable MediaRegion for global users. CHIME_MEDIA_REGION > AWS_REGION > ap-south-1 */
+function getMediaRegion(): string {
+  return process.env.CHIME_MEDIA_REGION || process.env.AWS_REGION || 'ap-south-1';
+}
+
+/** Generate correlation ID for structured logging */
+function vidcorId(): string {
+  return randomUUID().slice(0, 8);
+}
+
+/** Structured log helper */
+function vidlog(scope: string, event: string, data: Record<string, unknown>, correlationId?: string): void {
+  const payload = JSON.stringify({
+    scope: `video-call:${scope}`,
+    event,
+    vidcor: correlationId || vidcorId(),
+    ...data,
+    ts: new Date().toISOString(),
+  });
+  console.log(`[VIDEO CALL] ${payload}`);
+}
+
+/** Retry Chime API call with exponential backoff */
+async function withChimeRetry<T>(
+  fn: () => Promise<T>,
+  opts: { maxRetries?: number; correlationId?: string } = {}
+): Promise<T> {
+  const { maxRetries = 3, correlationId } = opts;
+  let lastErr: unknown;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastErr = err;
+      vidlog('chime', 'retry', {
+        attempt: i + 1,
+        maxRetries,
+        error: err?.message || String(err),
+      }, correlationId);
+      if (i < maxRetries - 1) {
+        await new Promise((r) => setTimeout(r, 300 * Math.pow(2, i)));
+      }
+    }
+  }
+  throw lastErr;
+}
+
 /** Video call allowed whenever the appointment is not completed. No time-window restriction. */
 function isWithinVideoCallWindow(booking: any): { allowed: boolean; reason?: string } {
   if (booking.status === 'completed') {
@@ -159,39 +206,54 @@ class CreateMeetingHandler extends BaseHandler {
       console.warn(`[VIDEO CALL] Warning: Booking ${bookingId} is not a tele service (${serviceStyle}), allowing anyway`);
     }
 
-    // ✅ AWS Chime: Create meeting
+    const cid = vidcorId();
+    vidlog('create-meeting', 'start', { bookingId, customerId, vendorId, mediaRegion: getMediaRegion() }, cid);
+
     const chimeClient = new ChimeSDKMeetingsClient({
       region: process.env.AWS_REGION || 'ap-south-1',
     });
 
-    const meetingResponse = await chimeClient.send(
-      new CreateMeetingCommand({
-        ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
-        MediaRegion: process.env.AWS_REGION || 'ap-south-1',
-        ExternalMeetingId: bookingId,
-      })
+    const meetingResponse = await withChimeRetry(
+      () =>
+        chimeClient.send(
+          new CreateMeetingCommand({
+            ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
+            MediaRegion: getMediaRegion(),
+            ExternalMeetingId: bookingId,
+          })
+        ),
+      { correlationId: cid }
     );
 
     if (!meetingResponse.Meeting) {
+      vidlog('create-meeting', 'error', { bookingId, reason: 'no meeting in response' }, cid);
       return this.error('Failed to create meeting', 500);
     }
 
     const meetingId = meetingResponse.Meeting.MeetingId!;
 
-    // ✅ AWS Chime: Create attendees
-    const customerAttendee = await chimeClient.send(
-      new CreateAttendeeCommand({
-        MeetingId: meetingId,
-        ExternalUserId: customerId,
-      })
-    );
-
-    const vendorAttendee = await chimeClient.send(
-      new CreateAttendeeCommand({
-        MeetingId: meetingId,
-        ExternalUserId: vendorId,
-      })
-    );
+    const [customerAttendee, vendorAttendee] = await Promise.all([
+      withChimeRetry(
+        () =>
+          chimeClient.send(
+            new CreateAttendeeCommand({
+              MeetingId: meetingId,
+              ExternalUserId: customerId,
+            })
+          ),
+        { correlationId: cid }
+      ),
+      withChimeRetry(
+        () =>
+          chimeClient.send(
+            new CreateAttendeeCommand({
+              MeetingId: meetingId,
+              ExternalUserId: vendorId,
+            })
+          ),
+        { correlationId: cid }
+      ),
+    ]);
 
     // ✅ SQL: Store meeting info in video_call_sessions
     await insert('video_call_sessions', {
@@ -211,7 +273,7 @@ class CreateMeetingHandler extends BaseHandler {
       video_call_started_at: new Date().toISOString(),
     });
 
-    // Return full meeting data with proper MediaPlacement for Chime SDK
+    vidlog('create-meeting', 'success', { bookingId, meetingId }, cid);
     return this.success({
       success: true,
       meetingId,
@@ -289,7 +351,8 @@ class JoinMeetingHandler extends BaseHandler {
       return this.error('participantType/userType must be customer or vendor', 400);
     }
 
-    console.log('[VIDEO CALL] join request', { bookingId, participantId: userId, participantType: userType });
+    const cid = vidcorId();
+    vidlog('join', 'start', { bookingId, participantId: userId, participantType: userType }, cid);
 
     // ✅ Ensure table schema exists before any DB access
     await ensureVideoCallSessionsTable();
@@ -322,25 +385,34 @@ class JoinMeetingHandler extends BaseHandler {
       });
       const customerId = booking.customer_id ?? booking.customerId;
       const vendorId = booking.vendor_id ?? booking.vendorId;
-      console.log('[VIDEO CALL] No active session; creating meeting on join', { bookingId, participantType: userType, participantId: userId });
+      vidlog('join', 'create-on-join', { bookingId, participantType: userType, participantId: userId }, cid);
 
-      const meetingResponse = await chimeClient.send(
-        new CreateMeetingCommand({
-          ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
-          MediaRegion: process.env.AWS_REGION || 'ap-south-1',
-          ExternalMeetingId: bookingId,
-        })
+      const meetingResponse = await withChimeRetry(
+        () =>
+          chimeClient.send(
+            new CreateMeetingCommand({
+              ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
+              MediaRegion: getMediaRegion(),
+              ExternalMeetingId: bookingId,
+            })
+          ),
+        { correlationId: cid }
       );
       if (!meetingResponse.Meeting?.MeetingId || !meetingResponse.Meeting?.MediaPlacement) {
+        vidlog('join', 'error', { bookingId, reason: 'create-on-join no meeting' }, cid);
         return this.error('Failed to create meeting', 500);
       }
       const newMeetingId = meetingResponse.Meeting.MeetingId;
 
-      const attendeeResponse = await chimeClient.send(
-        new CreateAttendeeCommand({
-          MeetingId: newMeetingId,
-          ExternalUserId: `${userType}-${userId}`,
-        })
+      const attendeeResponse = await withChimeRetry(
+        () =>
+          chimeClient.send(
+            new CreateAttendeeCommand({
+              MeetingId: newMeetingId,
+              ExternalUserId: `${userType}-${userId}`,
+            })
+          ),
+        { correlationId: cid }
       );
       const newAttendee = {
         AttendeeId: attendeeResponse.Attendee?.AttendeeId,
@@ -371,6 +443,43 @@ class JoinMeetingHandler extends BaseHandler {
         video_call_started_at: new Date().toISOString(),
       });
 
+      // Notify vendor when customer joins first (Practo-style "patient waiting")
+      if (userType === 'customer' && vendorId) {
+        const payload = { booking_id: bookingId, meeting_id: newMeetingId, call_type: 'customer_waiting' };
+        const notificationRow: Record<string, any> = {
+          recipient_id: vendorId,
+          recipient_type: 'vendor',
+          notification_type: 'tele_customer_waiting',
+          title: 'Customer Waiting',
+          message: 'A customer has joined the video consultation and is waiting for you',
+          channels: { email: false, sms: false, inApp: true, push: true },
+          is_read: false,
+          created_at: new Date(),
+        };
+        notificationRow.data = payload;
+        try {
+          await insert('notifications', notificationRow);
+          vidlog('join', 'tele_customer_waiting-sent', { bookingId, vendorId }, cid);
+        } catch (insertErr: any) {
+          vidlog('join', 'tele_customer_waiting-fail', { bookingId, err: insertErr?.message }, cid);
+          if (insertErr?.message?.includes('data') || insertErr?.message?.includes('column')) {
+            delete notificationRow.data;
+            await insert('notifications', notificationRow).catch(() => {});
+          }
+        }
+        try {
+          const { pushNotificationService } = await import('../lib/services/push-notification-service');
+          await pushNotificationService.sendEventNotification({
+            eventType: 'tele_customer_waiting',
+            recipientId: vendorId,
+            recipientType: 'vendor',
+            relatedId: bookingId,
+            data: { bookingId, meetingId: newMeetingId, callType: 'customer_waiting' },
+          });
+        } catch (_) {}
+      }
+
+      vidlog('join', 'create-on-join-success', { bookingId, meetingId: newMeetingId }, cid);
       return this.success({
         success: true,
         meetingId: newMeetingId,
@@ -384,44 +493,59 @@ class JoinMeetingHandler extends BaseHandler {
       });
     }
 
-    // ✅ AWS Chime client
     const chimeClient = new ChimeSDKMeetingsClient({
       region: process.env.AWS_REGION || 'ap-south-1',
     });
 
-    // ✅ Get full meeting info from Chime (including MediaPlacement)
     let meetingInfo;
     try {
-      const meetingResponse = await chimeClient.send(
-        new GetMeetingCommand({
-          MeetingId: session.meeting_id,
-        })
-      );
-      meetingInfo = meetingResponse.Meeting;
+      meetingInfo = (
+        await withChimeRetry(
+          () =>
+            chimeClient.send(
+              new GetMeetingCommand({
+                MeetingId: session.meeting_id,
+              })
+            ),
+          { correlationId: cid }
+        )
+      ).Meeting;
     } catch (getMeetingError: any) {
       // Meeting expired or deleted in Chime – create a new meeting and let user join
-      console.warn('[VIDEO CALL] Meeting expired or unavailable, creating new meeting for booking:', bookingId, getMeetingError?.message);
+      vidlog('join', 'meeting-expired-recreate', {
+        bookingId,
+        error: getMeetingError?.message,
+      }, cid);
       const bookings = await select('bookings', { id: bookingId });
       if (bookings.length === 0) {
         return this.error('Booking not found', 404);
       }
       const booking = bookings[0] as any;
-      const createResponse = await chimeClient.send(
-        new CreateMeetingCommand({
-          ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
-          MediaRegion: process.env.AWS_REGION || 'ap-south-1',
-          ExternalMeetingId: bookingId,
-        })
+      const createResponse = await withChimeRetry(
+        () =>
+          chimeClient.send(
+            new CreateMeetingCommand({
+              ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
+              MediaRegion: getMediaRegion(),
+              ExternalMeetingId: bookingId,
+            })
+          ),
+        { correlationId: cid }
       );
       if (!createResponse.Meeting?.MeetingId || !createResponse.Meeting?.MediaPlacement) {
+        vidlog('join', 'error', { bookingId, reason: 'recreate failed' }, cid);
         return this.error('Failed to create new meeting', 500);
       }
       const newMeetingId = createResponse.Meeting.MeetingId;
-      const attendeeResponse = await chimeClient.send(
-        new CreateAttendeeCommand({
-          MeetingId: newMeetingId,
-          ExternalUserId: `${userType}-${userId}`,
-        })
+      const attendeeResponse = await withChimeRetry(
+        () =>
+          chimeClient.send(
+            new CreateAttendeeCommand({
+              MeetingId: newMeetingId,
+              ExternalUserId: `${userType}-${userId}`,
+            })
+          ),
+        { correlationId: cid }
       );
       const newAttendee = {
         AttendeeId: attendeeResponse.Attendee?.AttendeeId,
@@ -477,12 +601,15 @@ class JoinMeetingHandler extends BaseHandler {
         ExternalUserId: userId,
       };
     } else {
-      // Create new attendee
-      const attendeeResponse = await chimeClient.send(
-        new CreateAttendeeCommand({
-          MeetingId: session.meeting_id,
-          ExternalUserId: `${userType}-${userId}`,
-        })
+      const attendeeResponse = await withChimeRetry(
+        () =>
+          chimeClient.send(
+            new CreateAttendeeCommand({
+              MeetingId: session.meeting_id,
+              ExternalUserId: `${userType}-${userId}`,
+            })
+          ),
+        { correlationId: cid }
       );
 
       attendee = {
@@ -504,7 +631,7 @@ class JoinMeetingHandler extends BaseHandler {
       await update('video_call_sessions', { id: session.id }, updateData);
     }
 
-    // Return full meeting data with MediaPlacement for Chime SDK
+    vidlog('join', 'success', { bookingId, meetingId: session.meeting_id, participantType: userType }, cid);
     return this.success({
       success: true,
       meetingId: session.meeting_id,

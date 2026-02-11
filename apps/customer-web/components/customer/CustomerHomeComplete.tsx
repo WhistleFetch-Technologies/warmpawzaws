@@ -751,7 +751,7 @@ export function CustomerHomeComplete({
         checkUpcomingCalls();
         checkActiveOrderTracking();
         checkIncomingCalls(); // Incoming call notification (Accept/Reject)
-      }, 30000);
+      }, 15000); // Poll every 15s so 5-min-away calls show quickly
       const incomingCallInterval = setInterval(checkIncomingCalls, 5000); // Poll every 5s for incoming call (like vendor)
       return () => {
         clearInterval(interval);
@@ -815,20 +815,21 @@ export function CustomerHomeComplete({
     }
   };
   
-  // ✅ FIX GAP-6.2: Check for upcoming calls within 5 minutes
+  // ✅ Check for joinable tele calls: from 5 min before until appointment completed (includeLive=true)
   const checkUpcomingCalls = async () => {
     try {
       const response = await apiClient.get<any>(
-        `/customer/${phone}/bookings/upcoming-calls?minutes=5`
+        `/customer/${phone}/bookings/upcoming-calls?minutes=5&includeLive=true`
       );
       
       if (response.success && response.bookings && response.bookings.length > 0) {
         const nextCall = response.bookings[0];
         const scheduledAt = new Date(nextCall.scheduledAt || nextCall.bookingDate);
         const now = new Date();
-        const minutesUntil = Math.max(0, Math.round((scheduledAt.getTime() - now.getTime()) / 60000));
-        
-        if (minutesUntil <= 5 && minutesUntil > 0) {
+        const minutesUntil = Math.round((scheduledAt.getTime() - now.getTime()) / 60000);
+        // Show banner: within 5 min before, or live (scheduled passed, not completed)
+        const isJoinable = minutesUntil <= 5 && nextCall.status !== 'completed' && nextCall.status !== 'cancelled';
+        if (isJoinable) {
           setUpcomingCall({
             id: nextCall.id || nextCall.bookingId,
             vendorName: nextCall.vendorName || nextCall.staffName || 'Provider',
@@ -836,11 +837,10 @@ export function CustomerHomeComplete({
             serviceName: nextCall.serviceName || 'Consultation',
             petName: nextCall.petName,
             scheduledAt: scheduledAt.toISOString(),
-            minutesUntil,
+            minutesUntil: Math.max(-60, minutesUntil), // Allow negative for "live" display
             meetingId: nextCall.meetingId || nextCall.video_call_meeting_id,
           });
-        } else if (minutesUntil <= 0) {
-          // Call has started or passed, dismiss notification
+        } else {
           setUpcomingCall(null);
         }
       } else {
@@ -2322,7 +2322,11 @@ export function CustomerHomeComplete({
           if (onNavigate) {
             onNavigate('video-call', { bookingId, meetingId });
           } else {
-            window.location.href = `/video/${bookingId}`;
+            const params = new URLSearchParams();
+            params.set('bookingId', bookingId);
+            if (phone) params.set('phone', phone);
+            const qs = params.toString();
+            window.location.href = `/video${qs ? `?${qs}` : ''}`;
           }
         }}
         onOpenChat={async (bookingId) => {
@@ -2365,8 +2369,11 @@ export function CustomerHomeComplete({
             if (onNavigate) {
               onNavigate('video-call', { bookingId, meetingId });
             } else {
-              // Fallback: navigate directly to video call page
-              window.location.href = `/video/${bookingId}`;
+              const params = new URLSearchParams();
+              params.set('bookingId', bookingId);
+              if (phone) params.set('phone', phone);
+              const qs = params.toString();
+              window.location.href = `/video${qs ? `?${qs}` : ''}`;
             }
           }}
           onCall={(vendorPhone) => {
@@ -2437,7 +2444,11 @@ export function CustomerHomeComplete({
             if (onNavigate) {
               onNavigate('video-call', { bookingId, meetingId });
             } else {
-              window.location.href = `/video/${bookingId}`;
+              const params = new URLSearchParams();
+              params.set('bookingId', bookingId);
+              if (phone) params.set('phone', phone);
+              const qs = params.toString();
+              window.location.href = `/video${qs ? `?${qs}` : ''}`;
             }
             setUpcomingCall(null);
           }}
@@ -2459,7 +2470,12 @@ export function CustomerHomeComplete({
             if (onNavigate) {
               onNavigate('video-call', { bookingId, meetingId });
             } else {
-              window.location.href = `/video/${bookingId}${meetingId ? `?meetingId=${meetingId}` : ''}`;
+              const params = new URLSearchParams();
+              params.set('bookingId', bookingId);
+              if (phone) params.set('phone', phone);
+              if (meetingId) params.set('meetingId', meetingId);
+              const qs = params.toString();
+              window.location.href = `/video${qs ? `?${qs}` : ''}`;
             }
             setIncomingCall(null);
           }}
@@ -2482,7 +2498,11 @@ export function CustomerHomeComplete({
             if (onNavigate) {
               onNavigate('video-call', { bookingId });
             } else {
-              window.location.href = `/video/${bookingId}`;
+              const params = new URLSearchParams();
+              params.set('bookingId', bookingId);
+              if (phone) params.set('phone', phone);
+              const qs = params.toString();
+              window.location.href = `/video${qs ? `?${qs}` : ''}`;
             }
             setChatFromNotification(null);
           }}

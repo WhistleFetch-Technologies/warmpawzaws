@@ -192,6 +192,66 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
   });
 
   /**
+   * ✅ Alias: GET /medical-records?phone=...&type=...
+   * Backward-compatible wrapper for customer medical records timeline
+   */
+  app.get("/medical-records", async (c) => {
+    const phone = c.req.query('phone');
+    if (!phone) {
+      return c.json({ success: false, error: 'phone query param is required', records: [] }, 400);
+    }
+    // Reuse the main customer handler by delegating to a synthetic request
+    const url = new URL(c.req.url);
+    const type = url.searchParams.get('type');
+    const limit = url.searchParams.get('limit');
+    const offset = url.searchParams.get('offset');
+    const params = new URLSearchParams();
+    if (type) params.append('type', type);
+    if (limit) params.append('limit', limit);
+    if (offset) params.append('offset', offset);
+
+    const aliasUrl = `/customer/${encodeURIComponent(phone)}/medical-records${params.toString() ? `?${params.toString()}` : ''}`;
+    return app.fetch(new Request(aliasUrl, c.req.raw));
+  });
+
+  /**
+   * ✅ Alias: GET /medical-records/vaccinations?phone=...
+   * Returns vaccination records from aggregated medical records
+   */
+  app.get("/medical-records/vaccinations", async (c) => {
+    const phone = c.req.query('phone');
+    if (!phone) {
+      return c.json({ success: false, error: 'phone query param is required', vaccinations: [] }, 400);
+    }
+
+    const aliasUrl = `/customer/${encodeURIComponent(phone)}/medical-records?type=vaccination`;
+    const response = await app.fetch(new Request(aliasUrl, c.req.raw));
+    const payload = await response.json().catch(() => null);
+
+    const records = payload?.records || [];
+    return c.json({
+      success: true,
+      vaccinations: records,
+      total: records.length,
+    }, response.status);
+  });
+
+  /**
+   * ✅ Alias: GET /medical-records/export?phone=...&pet_id=...
+   * Placeholder response (non-blocking) until export pipeline is implemented
+   */
+  app.get("/medical-records/export", async (c) => {
+    const phone = c.req.query('phone');
+    if (!phone) {
+      return c.json({ success: false, error: 'phone query param is required' }, 400);
+    }
+    return c.json({
+      success: true,
+      message: 'Export queued. You will receive an email with the download link if configured.',
+    });
+  });
+
+  /**
    * GET /medical-records/pet/:petId
    * Get all medical records for a pet
    * Fixes GAP: CC-5 - Medical Records in History

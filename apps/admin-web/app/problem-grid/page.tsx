@@ -26,6 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { apiClient } from '@/lib/api-client';
 
 // Types
 interface ProblemGridItem {
@@ -115,9 +116,9 @@ export default function ProblemGridManagement() {
     try {
       // Fetch categories, items, and roles in parallel
       const [categoriesRes, itemsRes, rolesRes] = await Promise.all([
-        fetch('/api/admin/problem-grid/categories').then(r => r.json()),
-        fetch('/api/admin/problem-grid/items').then(r => r.json()),
-        fetch('/api/config/roles').then(r => r.json()),
+        apiClient.get<any>('/admin/problem-grid/categories'),
+        apiClient.get<any>('/admin/problem-grid/items?includeInactive=true'),
+        apiClient.get<any>('/config/roles'),
       ]);
 
       setCategories(categoriesRes.categories || mockCategories);
@@ -207,19 +208,11 @@ export default function ProblemGridManagement() {
         keywords: formData.keywords.split(',').map(k => k.trim()).filter(Boolean),
       };
 
-      const url = modalMode === 'edit' 
-        ? `/api/admin/problem-grid/items/${editingItem?.id}`
-        : '/api/admin/problem-grid/items';
-      
-      const method = modalMode === 'edit' ? 'PUT' : 'POST';
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) throw new Error('Failed to save');
+      if (modalMode === 'edit') {
+        await apiClient.put(`/admin/problem-grid/items/${editingItem?.id}`, payload);
+      } else {
+        await apiClient.post('/admin/problem-grid/items', payload);
+      }
 
       toast.success(modalMode === 'edit' ? 'Item updated!' : 'Item created!');
       setShowModal(false);
@@ -235,9 +228,7 @@ export default function ProblemGridManagement() {
   // Delete item
   const deleteItem = async (id: string) => {
     try {
-      await fetch(`/api/admin/problem-grid/items/${id}`, {
-        method: 'DELETE',
-      });
+      await apiClient.delete(`/admin/problem-grid/items/${id}`);
       toast.success('Item deleted');
       setDeleteConfirm(null);
       loadData();
@@ -250,11 +241,7 @@ export default function ProblemGridManagement() {
   // Toggle item active status
   const toggleItemStatus = async (item: ProblemGridItem) => {
     try {
-      await fetch(`/api/admin/problem-grid/items/${item.id}/toggle`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: !item.isActive }),
-      });
+      await apiClient.post(`/admin/problem-grid/items/${item.id}/toggle`, { isActive: !item.isActive });
       toast.success(item.isActive ? 'Item deactivated' : 'Item activated');
       loadData();
     } catch (error) {

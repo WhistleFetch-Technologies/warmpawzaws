@@ -52,8 +52,8 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       console.log(`   Filters: date=${date}, status=${filter}`);
 
       let queryText = vendorIds.length === 1
-        ? 'SELECT * FROM bookings WHERE vendor_id = $1'
-        : 'SELECT * FROM bookings WHERE vendor_id = $1 OR vendor_id = $2';
+        ? 'SELECT * FROM bookings WHERE vendor_id = $1 AND status != \'pending_payment\''
+        : 'SELECT * FROM bookings WHERE (vendor_id = $1 OR vendor_id = $2) AND status != \'pending_payment\'';
       const params: any[] = [...vendorIds];
       let paramIndex = vendorIds.length + 1;
 
@@ -975,4 +975,3 @@ export function registerVendorBookingsEndpoints(app: Hono) {
     }
   });
 }
-

@@ -287,7 +287,20 @@ export function AppointmentCard({
                     e.preventDefault();
                     e.stopPropagation();
                     const bid = appointment.bookingId || appointment.id;
-                    if (bid) router.push(`/video/${bid}`);
+                    if (bid) {
+                      let vendorId = '';
+                      if (typeof window !== 'undefined') {
+                        vendorId =
+                          localStorage.getItem('vendorId') ||
+                          localStorage.getItem('vendor_id') ||
+                          '';
+                      }
+                      const params = new URLSearchParams();
+                      params.set('bookingId', bid);
+                      if (vendorId) params.set('vendorId', vendorId);
+                      const query = params.toString();
+                      router.push(`/video${query ? `?${query}` : ''}`);
+                    }
                   }}
                   className="flex-1 min-w-[80px] py-1.5 px-3 bg-purple-100 text-purple-700 rounded-lg text-xs font-medium flex items-center justify-center gap-1 hover:bg-purple-200"
                 >

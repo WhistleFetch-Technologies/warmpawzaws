@@ -13,6 +13,8 @@ interface RewardsBalance {
   points_to_next_tier: number;
   next_tier: string | null;
   lifetime_points: number;
+  current_tier_min_points?: number;
+  next_tier_min_points?: number | null;
 }
 
 interface RewardItem {
@@ -64,6 +66,100 @@ export default function RewardsPage() {
   const [filterCategory, setFilterCategory] = useState<string>('');
   const [redeeming, setRedeeming] = useState<string | null>(null);
 
+  const normalizeTierKey = (value: any): RewardsBalance['tier'] => {
+    if (!value) return 'bronze';
+    const key = String(value).toLowerCase();
+    if (key.includes('silver')) return 'silver';
+    if (key.includes('gold')) return 'gold';
+    if (key.includes('platinum')) return 'platinum';
+    return 'bronze';
+  };
+
+  const normalizeBalance = (raw: any): RewardsBalance => {
+    const data = raw?.balance || raw || {};
+    const points = Number(data.points ?? data.totalPoints ?? data.total_points ?? 0);
+    const tierKey = normalizeTierKey(data.tierKey || data.tier?.name || data.tier || 'bronze');
+    const nextTierRaw = data.nextTier ?? data.next_tier ?? null;
+    const nextTier = nextTierRaw ? String(nextTierRaw).toLowerCase() : null;
+    const pointsToNext = Number(data.pointsToNextTier ?? data.points_to_next_tier ?? 0);
+    const currentTierMinPoints = data.currentTierMinPoints ?? data.current_tier_min_points ?? data.tier?.min_points ?? 0;
+    const nextTierMinPoints = data.nextTierMinPoints ?? data.next_tier_min_points ?? null;
+    const lifetimePoints = Number(
+      data.lifetimePointsEarned ?? data.lifetime_points ?? data.lifetime_points_earned ?? 0
+    );
+
+    return {
+      points,
+      tier: tierKey,
+      points_to_next_tier: pointsToNext,
+      next_tier: nextTier,
+      lifetime_points: lifetimePoints,
+      current_tier_min_points: Number(currentTierMinPoints) || 0,
+      next_tier_min_points: nextTierMinPoints !== null ? Number(nextTierMinPoints) : null,
+    };
+  };
+
+  const normalizeRewards = (raw: any): RewardItem[] => {
+    const data = raw?.rewards || raw?.catalog || raw || [];
+    if (!Array.isArray(data)) return [];
+    return data.map((reward: any) => ({
+      id: reward.id,
+      name: reward.name,
+      description: reward.description || '',
+      points_required: Number(reward.points_required ?? reward.points_cost ?? 0),
+      category: (reward.category || reward.type || 'discount') as RewardItem['category'],
+      image_url: reward.image_url,
+      validity_days: Number(reward.validity_days ?? reward.validityDays ?? 30),
+      stock: reward.stock ?? reward.stock_left,
+      is_featured: Boolean(reward.is_featured ?? reward.featured ?? false),
+    }));
+  };
+
+  const normalizeHistory = (raw: any): PointsHistory[] => {
+    const data = raw?.history || raw || [];
+    if (!Array.isArray(data)) return [];
+    return data.map((item: any) => ({
+      id: item.id,
+      type: (item.type || 'earned') as PointsHistory['type'],
+      points: Number(item.points ?? 0),
+      description: item.description || '',
+      created_at: item.created_at || item.date || item.createdAt || new Date().toISOString(),
+      booking_id: item.booking_id || item.reference_id,
+      reward_id: item.reward_id || item.reference_id,
+    }));
+  };
+
+  const normalizeRedemptions = (raw: any, rewardsMap: Map<string, RewardItem>): RedeemedReward[] => {
+    const data = raw?.redemptions || raw?.redeemed || raw || [];
+    if (!Array.isArray(data)) return [];
+
+    return data.map((item: any) => {
+      const rewardFallback = rewardsMap.get(item.reward_id || item.rewardId) || {
+        id: item.reward_id || item.rewardId || 'unknown',
+        name: item.name || item.reward_name || item.description || 'Reward',
+        description: item.description || '',
+        points_required: Number(item.points_cost ?? item.points_used ?? 0),
+        category: (item.type || 'discount') as RewardItem['category'],
+        image_url: item.image_url,
+        validity_days: Number(item.validity_days ?? 30),
+        is_featured: false,
+      } as RewardItem;
+
+      const redeemedAt = item.redeemed_at || item.redeemedAt || item.created_at || new Date().toISOString();
+      const validityDays = Number(item.validity_days ?? rewardFallback.validity_days ?? 30);
+      const expiresAt = item.expires_at || item.expiresAt || new Date(new Date(redeemedAt).getTime() + validityDays * 24 * 60 * 60 * 1000).toISOString();
+
+      return {
+        id: item.redemption_id || item.id,
+        reward: rewardFallback,
+        redeemed_at: redeemedAt,
+        expires_at: expiresAt,
+        status: (item.status || 'active') as RedeemedReward['status'],
+        coupon_code: item.coupon_code || item.couponCode || undefined,
+      };
+    });
+  };
+
   // ============================================================================
   // DATA LOADING
   // ============================================================================
@@ -83,17 +179,51 @@ export default function RewardsPage() {
         setLoading(false);
         return;
       }
-      
+
       const [balanceRes, rewardsRes, historyRes] = await Promise.all([
         apiClient.get<any>(`/customer/${customerId}/rewards/points`),
         apiClient.get<any>(`/customer/${customerId}/rewards/available`),
         apiClient.get<any>(`/customer/${customerId}/rewards/history`),
       ]);
-      
-      setBalance(balanceRes.balance || balanceRes);
-      setRewards(rewardsRes.rewards || rewardsRes || []);
-      setHistory(historyRes.history || historyRes || []);
-      setRedeemed(historyRes.history?.filter((h: any) => h.type === 'redemption') || []);
+
+      let redeemedRes: any = null;
+      try {
+        redeemedRes = await apiClient.get<any>(`/customer/${customerId}/rewards/redeemed`);
+      } catch (err) {
+        console.warn('Redeemed rewards endpoint unavailable, using history fallback.');
+      }
+
+      const normalizedBalance = normalizeBalance(balanceRes);
+      const normalizedRewards = normalizeRewards(rewardsRes);
+      const normalizedHistory = normalizeHistory(historyRes);
+      const rewardsMap = new Map(normalizedRewards.map((reward) => [reward.id, reward]));
+
+      setBalance(normalizedBalance);
+      setRewards(normalizedRewards);
+      setHistory(normalizedHistory);
+
+      if (redeemedRes) {
+        setRedeemed(normalizeRedemptions(redeemedRes, rewardsMap));
+      } else {
+        const fallbackRedeemed: RedeemedReward[] = normalizedHistory
+          .filter((item) => item.type === 'redeemed')
+          .map((item): RedeemedReward => ({
+            id: item.id,
+            reward: {
+              id: item.reward_id || item.id,
+              name: item.description?.replace('Redeemed:', '').trim() || 'Reward',
+              description: item.description || '',
+              points_required: Math.abs(item.points),
+              category: 'discount',
+              validity_days: 30,
+              is_featured: false,
+            } as RewardItem,
+            redeemed_at: item.created_at,
+            expires_at: new Date(new Date(item.created_at).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            status: 'active',
+          }));
+        setRedeemed(fallbackRedeemed);
+      }
     } catch (err: any) {
       console.error('Error loading rewards:', err);
       setError(err.message || 'Failed to load rewards');
@@ -194,7 +324,15 @@ export default function RewardsPage() {
                 <div className="h-2 bg-white/20 rounded-full overflow-hidden">
                   <div 
                     className="h-full bg-white rounded-full transition-all" 
-                    style={{ width: `${Math.min(100, ((3000 - balance.points_to_next_tier) / 3000) * 100)}%` }}
+                    style={{
+                      width: `${Math.min(100, (() => {
+                        const currentMin = balance.current_tier_min_points ?? 0;
+                        const nextMin = balance.next_tier_min_points ?? (balance.points + balance.points_to_next_tier);
+                        const span = nextMin - currentMin;
+                        if (span <= 0) return 0;
+                        return ((balance.points - currentMin) / span) * 100;
+                      })())}%`,
+                    }}
                   />
                 </div>
               </div>
@@ -431,4 +569,3 @@ export default function RewardsPage() {
     </div>
   );
 }
-

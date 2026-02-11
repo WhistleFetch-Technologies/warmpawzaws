@@ -1,11 +1,24 @@
 #!/usr/bin/env node
 
 /**
- * Run Instant Tele Queue Migration via AWS RDS Data API
+ * Run DB migration via AWS RDS Data API
  * This works if RDS Data API is enabled on the cluster
+ *
+ * Usage:
+ *   ENVIRONMENT=dev node scripts/run-migration-via-rds-data-api.js 538_bookings_cancelled_by_penalty_processed.sql
+ *   ENVIRONMENT=dev node scripts/run-migration-via-rds-data-api.js db/migrations/538_bookings_cancelled_by_penalty_processed.sql
  */
 
-const { RDSDataClient, ExecuteStatementCommand, BeginTransactionCommand, CommitTransactionCommand } = require('@aws-sdk/client-rds-data');
+let RDSDataClient;
+let ExecuteStatementCommand;
+let BeginTransactionCommand;
+let CommitTransactionCommand;
+let useAwsCli = false;
+try {
+  ({ RDSDataClient, ExecuteStatementCommand, BeginTransactionCommand, CommitTransactionCommand } = require('@aws-sdk/client-rds-data'));
+} catch (err) {
+  useAwsCli = true;
+}
 const fs = require('fs');
 const { join } = require('path');
 const { execSync } = require('child_process');
@@ -14,7 +27,7 @@ const ENVIRONMENT = process.env.ENVIRONMENT || 'dev';
 const REGION = process.env.AWS_REGION || 'ap-south-1';
 
 async function main() {
-  console.log('🚀 Running Instant Tele Queue Migration via RDS Data API...\n');
+  console.log('🚀 Running DB Migration via RDS Data API...\n');
 
   try {
     // Get cluster ARN and database name
@@ -28,8 +41,17 @@ async function main() {
 
     const clusterArn = clusterInfo.DBClusters[0].DBClusterArn;
     const dbName = clusterInfo.DBClusters[0].DatabaseName || 'warmpawz';
-    const secretArn = clusterInfo.DBClusters[0].MasterUserSecret?.SecretArn || 
-                     `arn:aws:secretsmanager:${REGION}:${process.env.AWS_ACCOUNT_ID || ''}:secret:warmpawz-${ENVIRONMENT}-rds-master-20260106164510791100000002`;
+    let secretArn = clusterInfo.DBClusters[0].MasterUserSecret?.SecretArn;
+    if (!secretArn) {
+      const secretName = ENVIRONMENT === 'prod'
+        ? 'warmpawz-prod-rds-master-20260207201049162400000001'
+        : `warmpawz-${ENVIRONMENT}-rds-master-20260106164510791100000002`;
+      const describeSecret = JSON.parse(execSync(
+        `aws secretsmanager describe-secret --secret-id "${secretName}" --region ${REGION} --output json`,
+        { encoding: 'utf8' }
+      ));
+      secretArn = describeSecret.ARN;
+    }
 
     console.log('✅ Cluster found:');
     console.log(`   ARN: ${clusterArn}`);
@@ -37,34 +59,78 @@ async function main() {
     console.log(`   Secret ARN: ${secretArn}\n`);
 
     // Check if Data API is enabled
-    if (!clusterInfo.DBClusters[0].EnableHttpEndpoint) {
+    if (!clusterInfo.DBClusters[0].HttpEndpointEnabled) {
       throw new Error('RDS Data API is not enabled on this cluster. Enable it in RDS console or use Query Editor.');
     }
 
-    // Create RDS Data API client
-    const client = new RDSDataClient({ region: REGION });
+    // Create RDS Data API client (fallback to AWS CLI if SDK not installed)
+    const client = useAwsCli ? null : new RDSDataClient({ region: REGION });
+    const runAwsCli = (args) => {
+      const { execFileSync } = require('child_process');
+      const output = execFileSync('aws', args, { encoding: 'utf8' });
+      return output ? JSON.parse(output) : {};
+    };
 
     // Read migration file
-    const migrationFile = join(__dirname, '..', 'backend', 'lambda', 'src', 'database', 'schemas', 'instant-tele-queue.sql');
+    const arg = process.argv[2];
+    const migrationFile = (() => {
+      if (!arg) return null;
+      if (arg.startsWith('/') || arg.startsWith('./') || arg.startsWith('../')) {
+        return join(process.cwd(), arg);
+      }
+      if (arg.startsWith('db/')) {
+        return join(__dirname, '..', arg);
+      }
+      return join(__dirname, '..', 'db', 'migrations', arg);
+    })();
+
+    if (!migrationFile) {
+      throw new Error('Migration file argument is required (e.g. 538_bookings_cancelled_by_penalty_processed.sql)');
+    }
+
+    if (!fs.existsSync(migrationFile)) {
+      throw new Error(`Migration file not found: ${migrationFile}`);
+    }
+
     const migrationSQL = fs.readFileSync(migrationFile, 'utf8');
 
-    console.log('📁 Migration file loaded\n');
+    console.log(`📁 Migration file loaded: ${migrationFile}\n`);
     console.log('🔄 Executing migration...\n');
 
-    // Split SQL into individual statements
+    // Split SQL into individual statements (strip leading comment lines so ALTER/COMMENT/CREATE are not dropped)
     const statements = migrationSQL
       .split(';')
-      .map(s => s.trim())
-      .filter(s => s.length > 0 && !s.startsWith('--') && !s.startsWith('/*'));
+      .map((s) => s
+        .split('\n')
+        .filter((line) => !line.trim().startsWith('--') && !line.trim().startsWith('/*'))
+        .join('\n')
+        .trim())
+      .filter((s) => s.length > 10);
 
     // Begin transaction
-    const beginTx = await client.send(new BeginTransactionCommand({
-      resourceArn: clusterArn,
-      secretArn: secretArn,
-      database: dbName
-    }));
-
-    const transactionId = beginTx.transactionId;
+    let transactionId;
+    if (useAwsCli) {
+      const beginTx = runAwsCli([
+        'rds-data',
+        'begin-transaction',
+        '--resource-arn',
+        clusterArn,
+        '--secret-arn',
+        secretArn,
+        '--database',
+        dbName,
+        '--region',
+        REGION
+      ]);
+      transactionId = beginTx.transactionId;
+    } else {
+      const beginTx = await client.send(new BeginTransactionCommand({
+        resourceArn: clusterArn,
+        secretArn: secretArn,
+        database: dbName
+      }));
+      transactionId = beginTx.transactionId;
+    }
     console.log('✅ Transaction started\n');
 
     let successCount = 0;
@@ -76,13 +142,32 @@ async function main() {
       if (statement.length < 10) continue; // Skip very short statements
 
       try {
-        await client.send(new ExecuteStatementCommand({
-          resourceArn: clusterArn,
-          secretArn: secretArn,
-          database: dbName,
-          sql: statement,
-          transactionId: transactionId
-        }));
+        if (useAwsCli) {
+          runAwsCli([
+            'rds-data',
+            'execute-statement',
+            '--resource-arn',
+            clusterArn,
+            '--secret-arn',
+            secretArn,
+            '--database',
+            dbName,
+            '--sql',
+            statement,
+            '--transaction-id',
+            transactionId,
+            '--region',
+            REGION
+          ]);
+        } else {
+          await client.send(new ExecuteStatementCommand({
+            resourceArn: clusterArn,
+            secretArn: secretArn,
+            database: dbName,
+            sql: statement,
+            transactionId: transactionId
+          }));
+        }
         successCount++;
         process.stdout.write(`   ✅ Statement ${i + 1}/${statements.length}\r`);
       } catch (error) {
@@ -101,44 +186,74 @@ async function main() {
     console.log('\n');
 
     // Commit transaction
-    await client.send(new CommitTransactionCommand({
-      resourceArn: clusterArn,
-      secretArn: secretArn,
-      transactionId: transactionId
-    }));
+    if (useAwsCli) {
+      runAwsCli([
+        'rds-data',
+        'commit-transaction',
+        '--resource-arn',
+        clusterArn,
+        '--secret-arn',
+        secretArn,
+        '--transaction-id',
+        transactionId,
+        '--region',
+        REGION
+      ]);
+    } else {
+      await client.send(new CommitTransactionCommand({
+        resourceArn: clusterArn,
+        secretArn: secretArn,
+        transactionId: transactionId
+      }));
+    }
 
     console.log('✅ Transaction committed\n');
     console.log(`📊 Results: ${successCount} successful, ${errorCount} errors\n`);
 
-    // Verify tables
-    console.log('🔍 Verifying tables...');
-    const verifyResult = await client.send(new ExecuteStatementCommand({
-      resourceArn: clusterArn,
-      secretArn: secretArn,
-      database: dbName,
-      sql: `
-        SELECT 
-          table_name,
-          (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = t.table_name) as column_count,
-          (SELECT COUNT(*) FROM information_schema.indexes WHERE tablename = t.table_name) as index_count
-        FROM information_schema.tables t
-        WHERE table_schema = 'public' 
-          AND table_name IN ('staff_tele_availability', 'tele_queue')
-        ORDER BY table_name;
-      `,
-      formatRecordsAs: 'JSON'
-    }));
-
-    if (verifyResult.records && verifyResult.records.length > 0) {
-      console.log('✅ Tables created:');
-      verifyResult.records.forEach(record => {
-        const tableName = record[0].stringValue;
-        const columns = record[1].longValue;
-        const indexes = record[2].longValue;
-        console.log(`   - ${tableName}: ${columns} columns, ${indexes} indexes`);
-      });
+    // Verify migration (basic checks for known migrations)
+    const migrationBase = migrationFile.split('/').pop() || '';
+    if (migrationBase.includes('538')) {
+      console.log('🔍 Verifying migration 538 (bookings.cancelled_by, penalty_processed)...');
+      const verifySql = `
+          SELECT column_name
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'bookings'
+            AND column_name IN ('cancelled_by', 'penalty_processed')
+          ORDER BY column_name;
+        `;
+      const verifyResult = useAwsCli
+        ? runAwsCli([
+            'rds-data',
+            'execute-statement',
+            '--resource-arn',
+            clusterArn,
+            '--secret-arn',
+            secretArn,
+            '--database',
+            dbName,
+            '--sql',
+            verifySql,
+            '--format-records-as',
+            'JSON',
+            '--region',
+            REGION
+          ])
+        : await client.send(new ExecuteStatementCommand({
+            resourceArn: clusterArn,
+            secretArn: secretArn,
+            database: dbName,
+            sql: verifySql,
+            formatRecordsAs: 'JSON'
+          }));
+      const cols = (verifyResult.records || []).map(r => r[0]?.stringValue).filter(Boolean);
+      if (cols.includes('cancelled_by') && cols.includes('penalty_processed')) {
+        console.log('✅ Columns verified:', cols.join(', '));
+      } else {
+        console.log('⚠️  Columns not fully verified. Found:', cols.join(', ') || 'none');
+      }
     } else {
-      console.log('⚠️  Tables not found - migration may have failed');
+      console.log('✅ Migration executed (no specific verification configured).');
     }
 
     console.log('\n✅ Migration complete!\n');

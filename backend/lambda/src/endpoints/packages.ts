@@ -20,6 +20,7 @@ import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { getCompletedPayment, resolvePaymentPolicy } from '../utils/payment-policy';
 
 export function registerPackageEndpoints(app: Hono) {
   /**
@@ -290,7 +291,7 @@ export function registerPackageEndpoints(app: Hono) {
   app.post("/packages/:packageId/enroll", async (c) => {
     try {
       const { packageId } = c.req.param();
-      const { customerId, petId, startDate } = await c.req.json();
+      const { customerId, petId, startDate, paymentId, razorpayPaymentId, razorpayOrderId } = await c.req.json();
 
       if (!customerId || !petId) {
         return c.json({ error: 'customerId and petId are required' }, 400);
@@ -304,6 +305,61 @@ export function registerPackageEndpoints(app: Hono) {
 
       const pkg = packages[0];
 
+      const packageAmount = parseFloat(pkg.price || '0');
+      const vendorType = pkg.vendor_type || pkg.vendorType || pkg.category || null;
+      const policy = await resolvePaymentPolicy({
+        vendorType,
+        serviceType: pkg.service_style || 'at_center',
+        totalAmount: packageAmount,
+      });
+
+      let paymentRecord: any | null = null;
+      let amountPaid = 0;
+      if (policy.requiredUpfront > 0) {
+        if (!paymentId && !razorpayPaymentId && !razorpayOrderId) {
+          return c.json({
+            error: 'Payment required before booking creation',
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount: packageAmount,
+            policyRule: policy.rule || null,
+          }, 402);
+        }
+
+        paymentRecord = await getCompletedPayment({
+          paymentId,
+          razorpayPaymentId,
+          razorpayOrderId,
+          customerId,
+          vendorId: pkg.vendor_id,
+        });
+
+        if (!paymentRecord) {
+          return c.json({
+            error: 'Payment not found or not completed',
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount: packageAmount,
+          }, 402);
+        }
+
+        amountPaid = parseFloat(paymentRecord.amount || '0') || 0;
+        if (amountPaid + 0.01 < policy.requiredUpfront) {
+          return c.json({
+            error: 'Insufficient payment for booking creation',
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount: packageAmount,
+            amountPaid,
+          }, 402);
+        }
+      }
+
+      const remainingDue = Math.max(0, packageAmount - amountPaid);
+      const initialStatus = 'pending';
+      const initialPaymentStatus = packageAmount === 0
+        ? 'paid'
+        : remainingDue > 0
+          ? 'partial'
+          : 'paid';
+
       // Create package enrollment (assuming a package_enrollments table exists)
       // For now, we'll create a booking with package flag
       const booking = await insert('bookings', {
@@ -312,10 +368,12 @@ export function registerPackageEndpoints(app: Hono) {
         service_id: pkg.service_id || null,
         booking_date: startDate || new Date().toISOString().split('T')[0],
         booking_time: '00:00',
-        status: 'pending',
+        status: initialStatus,
         service_type: pkg.service_style || 'at_center',
-        base_price: pkg.price,
-        total_amount: pkg.price,
+        base_price: packageAmount,
+        total_amount: packageAmount,
+        payment_status: initialPaymentStatus,
+        payment_id: paymentRecord?.id || null,
         is_package: true,
         package_id: packageId,
         package_details: {
@@ -324,6 +382,13 @@ export function registerPackageEndpoints(app: Hono) {
           startDate: startDate || new Date().toISOString().split('T')[0],
         },
       });
+
+      if (paymentRecord?.id) {
+        await update('payments', { id: paymentRecord.id }, {
+          booking_id: booking[0].id,
+          updated_at: new Date().toISOString(),
+        });
+      }
 
       return c.json({
         success: true,
@@ -859,4 +924,3 @@ export function registerPackageEndpoints(app: Hono) {
     }
   });
 }
-

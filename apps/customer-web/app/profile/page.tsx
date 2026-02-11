@@ -54,7 +54,11 @@ export default function ProfilePage() {
     try {
       const customerId = localStorage.getItem('customerId');
       await apiClient.put(`/customer/${customerId}/profile`, editData);
-      setProfile({ ...profile, ...editData } as CustomerProfile);
+      const updatedProfile = { ...profile, ...editData } as CustomerProfile;
+      setProfile(updatedProfile);
+      setEditData(updatedProfile);
+      localStorage.setItem('customerProfile', JSON.stringify(updatedProfile));
+      localStorage.setItem('customerData', JSON.stringify(updatedProfile));
       setEditing(false);
     } catch (err) {
       console.error('Error saving profile:', err);
@@ -271,4 +275,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-

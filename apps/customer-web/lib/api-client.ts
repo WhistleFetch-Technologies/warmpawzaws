@@ -284,6 +284,18 @@ export class ApiClient {
             statusText: response.statusText
           };
         }
+        // 402 Payment Required: ensure error body has code so frontend can proceed to payment (even if body was empty)
+        if (response.status === 402 && !errorData?.error?.code && typeof errorData?.error !== 'object') {
+          errorData = {
+            ...errorData,
+            success: false,
+            error: {
+              code: 'PAYMENT_REQUIRED',
+              message: (typeof errorData?.error === 'object' && errorData?.error?.message) || errorData?.message || 'Payment required before booking creation',
+              details: (typeof errorData?.error === 'object' && errorData?.error?.details) || { paymentRequired: true },
+            },
+          };
+        }
         
         // Handle 401 by clearing token and redirecting to auth
         if (response.status === 401) {

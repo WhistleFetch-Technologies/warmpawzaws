@@ -45,7 +45,7 @@ export default function PromotionsPage() {
       setLoading(true);
       setError(null);
       
-      const result = await apiClient.get<any>('/ecommerce/promotions/active');
+      const result = await apiClient.get<any>('/promotions/active');
       setPromotions((result as any)?.promotions || []);
     } catch (err: any) {
       console.error('Error loading promotions:', err);

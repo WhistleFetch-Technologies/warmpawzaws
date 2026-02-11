@@ -54,6 +54,28 @@ interface Vaccination {
 // MAIN COMPONENT
 // ============================================================================
 
+const UI_TO_BACKEND_TYPE: Record<string, string> = {
+  consultation: 'consultation_notes',
+  vaccination: 'vaccination',
+  surgery: 'surgery_notes',
+  diagnostic: 'diagnostic_report',
+  lab_report: 'lab_result',
+  prescription: 'prescription',
+};
+
+const BACKEND_TO_UI_TYPE: Record<string, MedicalRecord['type']> = {
+  consultation_notes: 'consultation',
+  consultation: 'consultation',
+  vaccination: 'vaccination',
+  surgery_notes: 'surgery',
+  surgery: 'surgery',
+  diagnostic_report: 'diagnostic',
+  diagnostic: 'diagnostic',
+  lab_result: 'lab_report',
+  lab_report: 'lab_report',
+  prescription: 'prescription',
+};
+
 export default function MedicalRecordsPage() {
   const router = useRouter();
   const [pets, setPets] = useState<Pet[]>([]);
@@ -61,6 +83,8 @@ export default function MedicalRecordsPage() {
   const [vaccinations, setVaccinations] = useState<Vaccination[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [customerPhone, setCustomerPhone] = useState<string | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(null);
   
   // Filters
   const [selectedPet, setSelectedPet] = useState<string>('');
@@ -77,27 +101,130 @@ export default function MedicalRecordsPage() {
   // ============================================================================
 
   useEffect(() => {
+    const phone = localStorage.getItem('customerPhone');
+    if (!phone) {
+      router.push('/auth');
+      return;
+    }
+    setCustomerPhone(phone);
+    setCustomerId(localStorage.getItem('customerId'));
+  }, [router]);
+
+  useEffect(() => {
+    if (!customerPhone) return;
     loadData();
-  }, [selectedPet, selectedType]);
+  }, [customerPhone, customerId, selectedPet, selectedType]);
 
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
-      
+
+      if (!customerPhone) {
+        setError('Please log in to view medical records');
+        setLoading(false);
+        return;
+      }
+
+      let resolvedCustomerId = customerId;
+      if (!resolvedCustomerId) {
+        try {
+          const customerRes = await apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`);
+          resolvedCustomerId = customerRes?.customer?.id || null;
+          if (resolvedCustomerId) {
+            setCustomerId(resolvedCustomerId);
+          }
+        } catch (err) {
+          console.warn('Could not resolve customerId by phone', err);
+        }
+      }
+
+      const petsPromise = resolvedCustomerId
+        ? apiClient.get<any>(`/customer/${resolvedCustomerId}/pets`)
+        : Promise.resolve({ pets: [] });
+
       const params = new URLSearchParams();
-      if (selectedPet) params.append('pet_id', selectedPet);
-      if (selectedType) params.append('type', selectedType);
-      
-      const [petsRes, recordsRes, vaccinationsRes] = await Promise.all([
-        apiClient.get<any>('/pets'),
-        apiClient.get<any>(`/medical-records?${params.toString()}`),
-        apiClient.get<any>('/medical-records/vaccinations'),
+      const backendType = selectedType ? (UI_TO_BACKEND_TYPE[selectedType] || selectedType) : '';
+      if (backendType) params.append('type', backendType);
+
+      const recordsEndpoint = selectedPet
+        ? `/medical-records/pet/${selectedPet}`
+        : `/customer/${encodeURIComponent(customerPhone)}/medical-records`;
+      const recordsUrl = params.toString() ? `${recordsEndpoint}?${params.toString()}` : recordsEndpoint;
+
+      const [petsRes, recordsRes] = await Promise.all([
+        petsPromise,
+        apiClient.get<any>(recordsUrl),
       ]);
-      
-      setPets(petsRes.pets || petsRes || []);
-      setRecords(recordsRes.records || recordsRes || []);
-      setVaccinations(vaccinationsRes.vaccinations || vaccinationsRes || []);
+
+      const petsList = (petsRes?.pets || petsRes || []).map((pet: any) => ({
+        id: pet.id,
+        name: pet.name,
+        species: pet.species || pet.type || 'pet',
+        breed: pet.breed || '',
+        image_url: pet.image_url || pet.profile_photo_url,
+      }));
+
+      const normalizeRecordType = (recordType?: string): MedicalRecord['type'] => {
+        if (!recordType) return 'consultation';
+        const key = recordType.toLowerCase();
+        return BACKEND_TO_UI_TYPE[key] || (key as MedicalRecord['type']) || 'consultation';
+      };
+
+      const normalizeAttachments = (record: any): Attachment[] => {
+        const attachments = Array.isArray(record.attachments) ? record.attachments : [];
+        const mapped = attachments.map((att: any, index: number) => ({
+          id: att.id || `${record.id}-att-${index}`,
+          name: att.name || att.file_name || att.title || 'Attachment',
+          type: att.type || att.mime_type || 'file',
+          url: att.url || att.file_url || att.document_url || att.s3_url || '',
+          size: Number(att.size || att.file_size || 0),
+        }));
+
+        if (record.document_url && mapped.length === 0) {
+          mapped.push({
+            id: `${record.id}-doc`,
+            name: record.title || 'Document',
+            type: 'document',
+            url: record.document_url,
+            size: 0,
+          });
+        }
+
+        return mapped;
+      };
+
+      const normalizedRecords: MedicalRecord[] = (recordsRes?.records || recordsRes || []).map((record: any) => ({
+        id: record.id,
+        pet_id: record.pet_id,
+        type: normalizeRecordType(record.record_type || record.type),
+        title: record.title || record.record_type || 'Medical Record',
+        description: record.description || record.notes || '',
+        date: record.date || record.record_date || record.prescription_date || record.created_at,
+        vendor_name: record.vendor_name || record.clinic_name || record.vendorName || '',
+        doctor_name: record.doctor_name || record.veterinarian_name || record.staff_name || record.doctorName,
+        attachments: normalizeAttachments(record),
+        notes: record.notes || record.instructions,
+        follow_up_date: record.follow_up_date || record.followUpDate,
+        tags: Array.isArray(record.tags) ? record.tags : [],
+      }));
+
+      const vaccinationRecords: Vaccination[] = normalizedRecords
+        .filter((record) => record.type === 'vaccination')
+        .map((record) => ({
+          id: record.id,
+          pet_id: record.pet_id,
+          vaccine_name: record.title || 'Vaccination',
+          batch_number: '',
+          date_administered: record.date,
+          next_due_date: record.follow_up_date || record.date,
+          administered_by: record.doctor_name || '',
+          clinic_name: record.vendor_name || '',
+        }));
+
+      setPets(petsList);
+      setRecords(normalizedRecords);
+      setVaccinations(vaccinationRecords);
     } catch (err: any) {
       console.error('Error loading medical records:', err);
       setError(err.message || 'Failed to load medical records');
@@ -140,9 +267,7 @@ export default function MedicalRecordsPage() {
 
   const handleExportAll = async () => {
     try {
-      const response = await apiClient.get<any>(`/medical-records/export${selectedPet ? `?pet_id=${selectedPet}` : ''}`);
-      // In production, this would trigger a download
-      alert('Export started. You will receive an email with the download link.');
+      setError('Export is not available yet. Please contact support if you need a copy.');
     } catch (err: any) {
       setError(err.message || 'Failed to export records');
     }
@@ -540,4 +665,3 @@ export default function MedicalRecordsPage() {
     </div>
   );
 }
-

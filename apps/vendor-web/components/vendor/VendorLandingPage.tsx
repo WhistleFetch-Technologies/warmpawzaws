@@ -209,6 +209,7 @@ export function VendorLandingPage({
   const [incomingCall, setIncomingCall] = useState<{
     bookingId: string;
     meetingId?: string;
+    callType?: 'incoming' | 'customer_waiting';
     customer: {
       id: string;
       name: string;
@@ -347,9 +348,10 @@ export function VendorLandingPage({
         );
         
         if (response.success && response.notifications?.length > 0) {
-          // Filter for tele_call_incoming (backend returns notification_type, is_read)
+          // Filter for tele_call_incoming and tele_customer_waiting (backend returns notification_type, is_read)
+          const callTypes = ['tele_call_incoming', 'tele_customer_waiting'];
           const callNotifications = response.notifications.filter((n: any) => 
-            (n.notification_type || n.type) === 'tele_call_incoming' && !n.is_read
+            callTypes.includes(n.notification_type || n.type) && !n.is_read
           );
           
           if (callNotifications.length === 0) return;
@@ -359,11 +361,14 @@ export function VendorLandingPage({
             ? JSON.parse(callNotification.data) 
             : callNotification.data || {};
           
-          if (notificationData.booking_id && notificationData.call_type === 'incoming') {
+          const isIncoming = notificationData.call_type === 'incoming';
+          const isCustomerWaiting = notificationData.call_type === 'customer_waiting';
+          if (notificationData.booking_id && (isIncoming || isCustomerWaiting)) {
             // Show incoming call immediately from notification data (don't block on GET /bookings 404)
             const baseIncoming = {
               bookingId: notificationData.booking_id,
               meetingId: notificationData.meeting_id,
+              callType: isCustomerWaiting ? 'customer_waiting' as const : 'incoming' as const,
               customer: {
                 id: '',
                 name: 'Customer',
@@ -1690,14 +1695,19 @@ export function VendorLandingPage({
           )}
           {incomingCall && (
             <TeleCallNotification
-              callType="incoming"
+              callType={incomingCall.callType || 'incoming'}
               customer={incomingCall.customer}
               bookingId={incomingCall.bookingId}
               meetingId={incomingCall.meetingId}
               serviceName={incomingCall.serviceName}
               petName={incomingCall.petName}
               onAccept={(bookingId, meetingId) => {
-                router.push(`/video/${bookingId}${meetingId ? `?meetingId=${meetingId}` : ''}`);
+                const params = new URLSearchParams();
+                params.set('bookingId', bookingId);
+                if (meetingId) params.set('meetingId', meetingId);
+                if (vendorId) params.set('vendorId', vendorId);
+                const query = params.toString();
+                router.push(`/video${query ? `?${query}` : ''}`);
                 setIncomingCall(null);
               }}
               onReject={() => { setIncomingCall(null); toast.info('Call declined'); }}

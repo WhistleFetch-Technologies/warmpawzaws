@@ -69,11 +69,39 @@ export function registerRewardsEndpoints(app: Hono) {
         console.log('Loyalty tiers table not available:', tierError);
       }
 
+      // Get next tier (if any)
+      let nextTier: any = null;
+      try {
+        const nextTierResult = await query(
+          `SELECT * FROM loyalty_tiers 
+           WHERE min_points > $1 
+           ORDER BY min_points ASC 
+           LIMIT 1`,
+          [profile[0]?.total_points || 0]
+        );
+        if (nextTierResult.rows.length > 0) {
+          nextTier = nextTierResult.rows[0];
+        }
+      } catch (nextTierError) {
+        console.log('Next loyalty tier lookup failed:', nextTierError);
+      }
+
+      const currentPoints = parseInt(profile[0]?.total_points || '0', 10);
+      const pointsToNextTier = nextTier?.min_points ? Math.max(0, parseInt(nextTier.min_points, 10) - currentPoints) : 0;
+      const tierName = (tier as any)?.name || 'Bronze';
+      const nextTierName = nextTier?.name || null;
+
       return c.json({
         success: true,
-        points: parseInt(profile[0]?.total_points || '0', 10),
-        totalPoints: parseInt(profile[0]?.total_points || '0', 10),
+        points: currentPoints,
+        totalPoints: currentPoints,
         tier: tier,
+        tierName,
+        tierKey: String(tierName || 'bronze').toLowerCase(),
+        currentTierMinPoints: parseInt((tier as any)?.min_points || '0', 10),
+        nextTier: nextTierName,
+        nextTierMinPoints: nextTier?.min_points ? parseInt(nextTier.min_points, 10) : null,
+        pointsToNextTier,
         lifetimePointsEarned: parseInt(profile[0]?.lifetime_points_earned || '0', 10),
         lifetimePointsRedeemed: parseInt(profile[0]?.lifetime_points_redeemed || '0', 10),
       });
@@ -85,6 +113,12 @@ export function registerRewardsEndpoints(app: Hono) {
         points: 0,
         totalPoints: 0,
         tier: { name: 'Bronze', min_points: 0, multiplier: 1 },
+        tierName: 'Bronze',
+        tierKey: 'bronze',
+        currentTierMinPoints: 0,
+        nextTier: null,
+        nextTierMinPoints: null,
+        pointsToNextTier: 0,
         lifetimePointsEarned: 0,
         lifetimePointsRedeemed: 0,
         message: 'Loyalty program initializing'
@@ -270,6 +304,81 @@ export function registerRewardsEndpoints(app: Hono) {
   });
 
   /**
+   * GET /customer/:customerId/rewards/redeemed
+   * Get redeemed rewards for a customer
+   */
+  app.get("/customer/:customerId/rewards/redeemed", async (c) => {
+    try {
+      const { customerId } = c.req.param();
+      const limit = parseInt(c.req.query('limit') || '50', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      // Attempt to load redemption history with reward details
+      let rows: any[] = [];
+      try {
+        const result = await query(
+          `SELECT 
+             rr.id as redemption_id,
+             rr.reward_id,
+             rr.points_used,
+             rr.redeemed_at,
+             rr.status,
+             rr.expires_at,
+             rr.coupon_code,
+             rc.name,
+             rc.description,
+             rc.points_cost,
+             rc.type,
+             rc.image_url,
+             rc.validity_days
+           FROM reward_redemptions rr
+           LEFT JOIN rewards_catalog rc ON rc.id = rr.reward_id
+           WHERE rr.customer_id = $1
+           ORDER BY rr.redeemed_at DESC
+           LIMIT $2 OFFSET $3`,
+          [customerId, limit, offset]
+        );
+        rows = result.rows || [];
+      } catch (err: any) {
+        // Fallback query if optional columns don't exist
+        const fallback = await query(
+          `SELECT 
+             rr.id as redemption_id,
+             rr.reward_id,
+             rr.points_used,
+             rr.redeemed_at,
+             rc.name,
+             rc.description,
+             rc.points_cost,
+             rc.type,
+             rc.image_url
+           FROM reward_redemptions rr
+           LEFT JOIN rewards_catalog rc ON rc.id = rr.reward_id
+           WHERE rr.customer_id = $1
+           ORDER BY rr.redeemed_at DESC
+           LIMIT $2 OFFSET $3`,
+          [customerId, limit, offset]
+        );
+        rows = fallback.rows || [];
+      }
+
+      return c.json({
+        success: true,
+        redemptions: rows,
+        count: rows.length,
+      });
+    } catch (error: any) {
+      console.error('Error fetching redeemed rewards:', error);
+      return c.json({
+        success: true,
+        redemptions: [],
+        count: 0,
+        message: 'No redeemed rewards yet'
+      });
+    }
+  });
+
+  /**
    * GET /rewards/:rewardId
    * Get reward details
    */
@@ -296,4 +405,3 @@ export function registerRewardsEndpoints(app: Hono) {
     }
   });
 }
-

@@ -294,9 +294,11 @@ export function AppointmentDetailsView({
             {appointment.serviceStyle === 'tele' && (appointment.status === 'confirmed' || appointment.status === 'in_progress') && (
               <Button
                 onClick={() => {
-                  // Navigate to video call - try window location if onNavigate not available
-                  const videoCallUrl = `/video/${appointmentId}`;
-                  window.location.href = videoCallUrl;
+                  const params = new URLSearchParams();
+                  params.set('bookingId', appointmentId);
+                  if (customerId) params.set('customerId', customerId);
+                  const qs = params.toString();
+                  window.location.href = `/video${qs ? `?${qs}` : ''}`;
                 }}
                 className="w-full bg-purple-600 hover:bg-purple-700 text-white"
               >

@@ -53,8 +53,10 @@ export default function PetsPage() {
   const handleAddPet = async () => {
     try {
       const customerId = localStorage.getItem('customerId');
-      await apiClient.post('/pets/create', {
-        customerId,
+      if (!customerId) {
+        throw new Error('Customer not found');
+      }
+      await apiClient.post(`/customer/${customerId}/pets`, {
         ...newPet,
       });
       setShowAddForm(false);
@@ -205,4 +207,3 @@ export default function PetsPage() {
     </div>
   );
 }
-

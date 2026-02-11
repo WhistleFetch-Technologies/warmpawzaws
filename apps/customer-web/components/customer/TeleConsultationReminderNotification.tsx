@@ -63,22 +63,17 @@ export function TeleConsultationReminderNotification({
     return () => clearTimeout(timer);
   }, []);
 
-  // Update countdown every minute
+  // Update countdown every minute (allow negative = live; don't auto-dismiss - API stops returning when completed)
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
       const scheduled = new Date(booking.scheduledAt);
-      const diff = Math.max(0, Math.round((scheduled.getTime() - now.getTime()) / 60000));
+      const diff = Math.round((scheduled.getTime() - now.getTime()) / 60000);
       setCountdown(diff);
-
-      // Auto-dismiss if time has passed
-      if (diff <= 0) {
-        onDismiss();
-      }
-    }, 60000); // Update every minute
+    }, 60000);
 
     return () => clearInterval(interval);
-  }, [booking.scheduledAt, onDismiss]);
+  }, [booking.scheduledAt]);
 
   const handleOpenChat = () => {
     onOpenChat(booking.id);
@@ -122,7 +117,7 @@ export function TeleConsultationReminderNotification({
                 </div>
                 <div>
                   <h3 className="text-white font-bold text-lg">
-                    {countdown <= 1 ? 'Starting Now!' : `Starting in ${countdown} min`}
+                    {countdown <= 0 ? 'Join your consultation now' : countdown <= 1 ? 'Starting Now!' : `Starting in ${countdown} min`}
                   </h3>
                   <p className="text-white/90 text-sm">Video Consultation</p>
                 </div>
@@ -177,7 +172,7 @@ export function TeleConsultationReminderNotification({
               <div className="flex items-center justify-center gap-3">
                 <Clock className="w-5 h-5 text-orange-600" />
                 <span className="text-2xl font-bold text-orange-700">
-                  {countdown <= 0 ? 'Starting...' : `${countdown}:00`}
+                  {countdown <= 0 ? 'Join now' : `${Math.max(0, countdown)}:00`}
                 </span>
                 <span className="text-sm text-orange-600">
                   {countdown <= 0 ? '' : countdown === 1 ? 'minute' : 'minutes'}
@@ -201,7 +196,7 @@ export function TeleConsultationReminderNotification({
                 className="flex-1 h-12 bg-[#FF8C42] hover:bg-[#FF7A35] text-white font-semibold disabled:opacity-50"
               >
                 <Video className="w-4 h-4 mr-2" />
-                {countdown <= 1 ? 'Join Call' : 'Start Call'}
+                {countdown <= 0 ? 'Join Call' : countdown <= 1 ? 'Join Call' : 'Start Call'}
               </Button>
             </div>
 
@@ -234,7 +229,7 @@ export function TeleConsultationReminderNotification({
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-sm">
-                  Consultation in {countdown} {countdown === 1 ? 'minute' : 'minutes'}
+                  {countdown <= 0 ? 'Join your consultation now' : `Consultation in ${countdown} ${countdown === 1 ? 'minute' : 'minutes'}`}
                 </div>
                 <div className="text-xs text-white/90 truncate">
                   {booking.vendorName} • {booking.serviceName}

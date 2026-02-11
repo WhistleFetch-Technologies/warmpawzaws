@@ -43,7 +43,7 @@ interface PaymentRule {
 	id: string;
 	name: string;
 	vendorTypes: string[]; // Array of vendor type IDs
-	serviceLocation: "at_home" | "at_center" | "both";
+	serviceLocation: "at_home" | "at_center" | "tele" | "both";
 	reservationType: "flat" | "percentage" | "full";
 	reservationPercentage: number;
 	flatAmount: number;
@@ -294,7 +294,7 @@ export function PaymentRulesSection() {
 					{/* Service Location Selector */}
 					<div className="mb-6">
 						<Label className="text-sm mb-3 font-medium">Service Location</Label>
-						<div className="grid grid-cols-3 gap-4">
+						<div className="grid grid-cols-4 gap-4">
 							<div
 								className={`text-center p-4 border-2 rounded-lg cursor-pointer transition-all ${
 									editingRule.serviceLocation === "at_home"
@@ -370,6 +370,30 @@ export function PaymentRulesSection() {
 								<div className="text-sm font-medium text-gray-900">Both</div>
 								<div className="text-xs text-gray-500 mt-1">
 									Applicable to both locations
+								</div>
+							</div>
+							<div
+								className={`text-center p-4 border-2 rounded-lg cursor-pointer transition-all ${
+									editingRule.serviceLocation === "tele"
+										? "border-[#FF8C42] bg-orange-50 shadow-md"
+										: "border-gray-200 hover:border-[#FF8C42]"
+								}`}
+								onClick={() =>
+									setEditingRule({ ...editingRule, serviceLocation: "tele" })
+								}
+							>
+								<div
+									className={`w-10 h-10 rounded-full mx-auto mb-2 flex items-center justify-center text-lg ${
+										editingRule.serviceLocation === "tele"
+											? "bg-[#FF8C42] text-white"
+											: "bg-gray-100 text-gray-600"
+									}`}
+								>
+									📞
+								</div>
+								<div className="text-sm font-medium text-gray-900">Tele</div>
+								<div className="text-xs text-gray-500 mt-1">
+									Remote/tele-consultation only
 								</div>
 							</div>
 						</div>
@@ -719,6 +743,8 @@ export function PaymentRulesSection() {
 														"🏢 At Center"}
 													{rule.serviceLocation === "both" &&
 														"🌐 Both Locations"}
+													{rule.serviceLocation === "tele" &&
+														"📞 Tele"}
 												</span>
 												<span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full font-medium">
 													{rule.reservationType === "flat" && "₹ Flat"}

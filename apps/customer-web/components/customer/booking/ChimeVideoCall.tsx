@@ -29,7 +29,8 @@ import {
   Video, VideoOff, Phone, PhoneOff, Mic, MicOff, 
   MessageSquare, Settings, Maximize2, Minimize2,
   RotateCcw, User, Clock, Send, X, AlertCircle,
-  Monitor, MonitorOff, Loader2, Users, Check, Circle
+  Monitor, MonitorOff, Loader2, Users, Check, Circle,
+  Paperclip, FileText
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
@@ -82,17 +83,23 @@ interface ChatMessage {
   sender: 'customer' | 'vendor' | 'system';
   senderName: string;
   message: string;
+  messageType?: 'text' | 'file' | 'image';
+  fileName?: string;
+  fileUrl?: string;
   timestamp: Date;
   persisted?: boolean; // Whether this message has been saved to backend
 }
 
 // Data message payload structure
 interface ChatDataMessage {
-  type: 'message';
+  type: 'message' | 'file';
   id: string;
   sender: 'customer' | 'vendor';
   senderName: string;
   message: string;
+  messageType?: 'text' | 'file' | 'image';
+  fileName?: string;
+  fileUrl?: string;
   timestamp: string;
 }
 
@@ -128,6 +135,25 @@ export function ChimeVideoCall({
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [availableDevices, setAvailableDevices] = useState<{
+    audioInputs: MediaDeviceInfo[];
+    audioOutputs: MediaDeviceInfo[];
+    videoInputs: MediaDeviceInfo[];
+  }>({
+    audioInputs: [],
+    audioOutputs: [],
+    videoInputs: [],
+  });
+  const [selectedDevices, setSelectedDevices] = useState<{
+    audioInput: string;
+    audioOutput: string;
+    videoInput: string;
+  }>({
+    audioInput: '',
+    audioOutput: '',
+    videoInput: '',
+  });
   
   // Chat
   const [showChat, setShowChat] = useState(false);
@@ -139,6 +165,8 @@ export function ChimeVideoCall({
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastTypingSentRef = useRef<number>(0);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
   
   // Attendee status
   const [attendeeStatus, setAttendeeStatus] = useState<AttendeeStatus>({
@@ -159,6 +187,30 @@ export function ChimeVideoCall({
   const statusPollerRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectingToastShownRef = useRef(false);
   const hasAutoJoinedRef = useRef(false);
+  const lastLocalTileIdRef = useRef<number | null>(null);
+  const lastRemoteTileIdRef = useRef<number | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  // Store the loaded Chime SDK module
+  const chimeSDKRef = useRef<any>(null);
+
+  const ensureAudioContext = useCallback(async () => {
+    if (typeof window === 'undefined') return null;
+    const AudioContextCtor = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextCtor) return null;
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContextCtor();
+    }
+    const ctx = audioContextRef.current;
+    if (!ctx) return null;
+    if (ctx.state === 'suspended') {
+      try {
+        await ctx.resume();
+      } catch {
+        // Ignore resume errors (autoplay restrictions)
+      }
+    }
+    return ctx;
+  }, []);
 
   // Auto-join when SDK is ready (e.g. customer accepted call or opened video from booking)
   useEffect(() => {
@@ -190,8 +242,71 @@ export function ChimeVideoCall({
     };
   }, []);
 
-  // Store the loaded Chime SDK module
-  const chimeSDKRef = useRef<any>(null);
+  // Unlock audio context on first user interaction (for notification beeps)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const unlock = () => {
+      void ensureAudioContext();
+    };
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, [ensureAudioContext]);
+
+  // Remote audio autoplay: surface failures, allow retry on user gesture
+  const [remoteAudioBlocked, setRemoteAudioBlocked] = useState(false);
+  const retryRemoteAudio = useCallback(() => {
+    const session = meetingSessionRef.current;
+    const el = audioElementRef.current;
+    if (!session || !el) return;
+    try {
+      session.audioVideo.bindAudioElement(el);
+      const p = el.play();
+      if (p) {
+        p.then(() => setRemoteAudioBlocked(false)).catch(() => setRemoteAudioBlocked(true));
+      }
+    } catch {
+      setRemoteAudioBlocked(true);
+    }
+  }, []);
+
+  // Rebind audio/video elements after UI mounts (prevents blank remote video/audio)
+  useEffect(() => {
+    const session = meetingSessionRef.current;
+    if (!session) return;
+    const audioVideo = session.audioVideo;
+
+    if (audioElementRef.current) {
+      try {
+        audioVideo.bindAudioElement(audioElementRef.current);
+        const playPromise = audioElementRef.current.play();
+        if (playPromise) {
+          playPromise.then(() => setRemoteAudioBlocked(false)).catch(() => setRemoteAudioBlocked(true));
+        }
+      } catch {
+        setRemoteAudioBlocked(true);
+      }
+    }
+
+    if (localVideoRef.current && lastLocalTileIdRef.current !== null) {
+      try {
+        audioVideo.bindVideoElement(lastLocalTileIdRef.current, localVideoRef.current);
+      } catch {
+        // Ignore bind errors
+      }
+    }
+
+    if (remoteVideoRef.current && lastRemoteTileIdRef.current !== null) {
+      try {
+        audioVideo.bindVideoElement(lastRemoteTileIdRef.current, remoteVideoRef.current);
+      } catch {
+        // Ignore bind errors
+      }
+    }
+  }, [status]);
 
   const loadChimeSDK = async (retryCount = 0) => {
     const MAX_RETRIES = 2;
@@ -402,6 +517,13 @@ export function ChimeVideoCall({
 
       // Start the meeting
       meetingSession.audioVideo.start();
+      // Ensure local media starts even if observer callbacks are delayed
+      try {
+        meetingSession.audioVideo.realtimeUnmuteLocalAudio();
+      } catch {}
+      try {
+        meetingSession.audioVideo.startLocalVideoTile();
+      } catch {}
 
       setStatus('waiting');
       console.log('✅ Chime meeting initialized successfully');
@@ -412,24 +534,99 @@ export function ChimeVideoCall({
     }
   };
 
+  const refreshDeviceLists = useCallback(async (sessionOverride?: any) => {
+    const session = sessionOverride || meetingSessionRef.current;
+    if (!session) return;
+    try {
+      const audioInputDevices = await session.audioVideo.listAudioInputDevices();
+      const videoInputDevices = await session.audioVideo.listVideoInputDevices();
+      const audioOutputDevices = await session.audioVideo.listAudioOutputDevices();
+
+      setAvailableDevices({
+        audioInputs: audioInputDevices,
+        audioOutputs: audioOutputDevices,
+        videoInputs: videoInputDevices,
+      });
+
+      setSelectedDevices((prev) => ({
+        audioInput: prev.audioInput || audioInputDevices[0]?.deviceId || '',
+        audioOutput: prev.audioOutput || audioOutputDevices[0]?.deviceId || '',
+        videoInput: prev.videoInput || videoInputDevices[0]?.deviceId || '',
+      }));
+    } catch (err) {
+      console.warn('Unable to refresh device lists:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!showSettings) return;
+    void refreshDeviceLists();
+  }, [showSettings, refreshDeviceLists]);
+
+  const primeDevicePermissions = async () => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return;
+    const stopTracks = (stream: MediaStream) => stream.getTracks().forEach(track => track.stop());
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      stopTracks(stream);
+    } catch {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stopTracks(stream);
+      } catch {}
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stopTracks(stream);
+      } catch {}
+    }
+  };
+
   const setupMediaDevices = async (meetingSession: any) => {
     try {
       // Get available devices
-      const audioInputDevices = await meetingSession.audioVideo.listAudioInputDevices();
-      const videoInputDevices = await meetingSession.audioVideo.listVideoInputDevices();
-      const audioOutputDevices = await meetingSession.audioVideo.listAudioOutputDevices();
+      let audioInputDevices = await meetingSession.audioVideo.listAudioInputDevices();
+      let videoInputDevices = await meetingSession.audioVideo.listVideoInputDevices();
+      let audioOutputDevices = await meetingSession.audioVideo.listAudioOutputDevices();
+
+      // If device lists are empty (common on mobile before permission), prime permissions then re-list
+      if (audioInputDevices.length === 0 || videoInputDevices.length === 0) {
+        await primeDevicePermissions();
+        audioInputDevices = await meetingSession.audioVideo.listAudioInputDevices();
+        videoInputDevices = await meetingSession.audioVideo.listVideoInputDevices();
+        audioOutputDevices = await meetingSession.audioVideo.listAudioOutputDevices();
+      }
+
+      setAvailableDevices({
+        audioInputs: audioInputDevices,
+        audioOutputs: audioOutputDevices,
+        videoInputs: videoInputDevices,
+      });
+
+      setSelectedDevices((prev) => ({
+        audioInput: prev.audioInput || audioInputDevices[0]?.deviceId || '',
+        audioOutput: prev.audioOutput || audioOutputDevices[0]?.deviceId || '',
+        videoInput: prev.videoInput || videoInputDevices[0]?.deviceId || '',
+      }));
 
       // Select first available devices
       if (audioInputDevices.length > 0) {
         await meetingSession.audioVideo.startAudioInput(audioInputDevices[0].deviceId);
+      } else {
+        toast.error('No microphone detected');
       }
 
       if (audioOutputDevices.length > 0) {
-        await meetingSession.audioVideo.chooseAudioOutput(audioOutputDevices[0].deviceId);
+        try {
+          await meetingSession.audioVideo.chooseAudioOutput(audioOutputDevices[0].deviceId);
+        } catch (e) {
+          console.warn('Audio output selection not supported:', e);
+        }
       }
 
       if (videoInputDevices.length > 0) {
         await meetingSession.audioVideo.startVideoInput(videoInputDevices[0].deviceId);
+      } else {
+        toast.error('No camera detected');
       }
 
     } catch (err) {
@@ -459,13 +656,21 @@ export function ChimeVideoCall({
           setStatus('reconnecting');
         }
       },
+      connectionHealthDidChange: (connectionHealthData: any) => {
+        const metric = connectionHealthData?.connectionHealth || 'unknown';
+        if (metric !== 'good' && metric !== 'unknown') {
+          console.warn('[ChimeVideoCall] Connection health:', metric, connectionHealthData);
+        }
+      },
       videoTileDidUpdate: (tileState: any) => {
         if (tileState.localTile) {
+          lastLocalTileIdRef.current = tileState.tileId;
           // Bind local video
           if (localVideoRef.current) {
             audioVideo.bindVideoElement(tileState.tileId, localVideoRef.current);
           }
-        } else {
+        } else if (!tileState.isContent) {
+          lastRemoteTileIdRef.current = tileState.tileId;
           // Bind remote video
           if (remoteVideoRef.current) {
             audioVideo.bindVideoElement(tileState.tileId, remoteVideoRef.current);
@@ -496,11 +701,16 @@ export function ChimeVideoCall({
       },
       attendeeIdDidLeave: (attendeeId: string) => {
         console.log('Attendee left:', attendeeId);
+        setAttendeeStatus(prev => ({
+          ...prev,
+          customerJoined: participantType === 'vendor' ? false : prev.customerJoined,
+          vendorJoined: participantType === 'customer' ? false : prev.vendorJoined,
+        }));
         addChatMessage('system', 'System', `${participantType === 'customer' ? vendorName : customerName} left the call`);
       },
     };
 
-    audioVideo.realtimeSubscribeToAttendeeIdPresence(attendeeObserver.attendeeIdDidJoin);
+    audioVideo.realtimeSubscribeToAttendeeIdPresence(attendeeObserver);
 
     // =========================================================================
     // REAL-TIME CHAT VIA DATA MESSAGES
@@ -527,12 +737,18 @@ export function ChimeVideoCall({
   const handleReceivedChatMessage = (data: ChatDataMessage) => {
     // Don't add our own messages (they're already added locally)
     if (data.sender === participantType) return;
-    
+
+    const messageType =
+      data.messageType || (data.type === 'file' ? 'file' : 'text');
+
     const newMsg: ChatMessage = {
       id: data.id,
       sender: data.sender,
       senderName: data.senderName,
       message: data.message,
+      messageType,
+      fileName: data.fileName,
+      fileUrl: data.fileUrl,
       timestamp: new Date(data.timestamp),
     };
     
@@ -575,13 +791,27 @@ export function ChimeVideoCall({
 
   // Play notification sound for new message
   const playNotificationSound = () => {
-    try {
-      const audio = new Audio('/sounds/notification.mp3');
-      audio.volume = 0.3;
-      audio.play().catch(() => {}); // Ignore if sound can't play
-    } catch (e) {
-      // Ignore sound errors
-    }
+    void (async () => {
+      try {
+        const ctx = await ensureAudioContext();
+        if (!ctx) return;
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        oscillator.type = 'sine';
+        oscillator.frequency.value = 880;
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
+
+        oscillator.connect(gain);
+        gain.connect(ctx.destination);
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.21);
+      } catch {
+        // Ignore sound errors
+      }
+    })();
   };
 
   const startStatusPolling = () => {
@@ -697,16 +927,74 @@ export function ChimeVideoCall({
     }
   };
 
+  const handleAudioInputChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const deviceId = e.target.value;
+    setSelectedDevices(prev => ({ ...prev, audioInput: deviceId }));
+    try {
+      if (meetingSessionRef.current) {
+        await meetingSessionRef.current.audioVideo.startAudioInput(deviceId);
+        toast.success('Microphone updated');
+      }
+    } catch (err) {
+      console.error('Failed to switch microphone:', err);
+      toast.error('Failed to switch microphone');
+    }
+  };
+
+  const handleAudioOutputChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const deviceId = e.target.value;
+    setSelectedDevices(prev => ({ ...prev, audioOutput: deviceId }));
+    try {
+      if (meetingSessionRef.current?.audioVideo?.chooseAudioOutput) {
+        await meetingSessionRef.current.audioVideo.chooseAudioOutput(deviceId);
+        toast.success('Speaker updated');
+      } else {
+        toast.error('Audio output selection not supported in this browser');
+      }
+    } catch (err) {
+      console.error('Failed to switch speaker:', err);
+      toast.error('Failed to switch speaker');
+    }
+  };
+
+  const handleVideoInputChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const deviceId = e.target.value;
+    setSelectedDevices(prev => ({ ...prev, videoInput: deviceId }));
+    try {
+      if (meetingSessionRef.current) {
+        await meetingSessionRef.current.audioVideo.startVideoInput(deviceId);
+        if (!isVideoOff) {
+          meetingSessionRef.current.audioVideo.startLocalVideoTile();
+        }
+        toast.success('Camera updated');
+      }
+    } catch (err) {
+      console.error('Failed to switch camera:', err);
+      toast.error('Failed to switch camera');
+    }
+  };
+
   // ============================================================================
   // CHAT
   // ============================================================================
 
-  const addChatMessage = (sender: 'customer' | 'vendor' | 'system', senderName: string, message: string, id?: string) => {
+  const addChatMessage = (
+    sender: 'customer' | 'vendor' | 'system',
+    senderName: string,
+    message: string,
+    id?: string,
+    messageType: 'text' | 'file' | 'image' = 'text',
+    fileName?: string,
+    fileUrl?: string
+  ) => {
     const newMsg: ChatMessage = {
       id: id || Date.now().toString(),
       sender,
       senderName,
       message,
+      messageType,
+      fileName,
+      fileUrl,
       timestamp: new Date(),
     };
     
@@ -732,7 +1020,7 @@ export function ChimeVideoCall({
     const timestamp = new Date();
     
     // Add message locally first (optimistic update)
-    addChatMessage(participantType as 'customer' | 'vendor', senderName, messageText, messageId);
+    addChatMessage(participantType as 'customer' | 'vendor', senderName, messageText, messageId, 'text');
     setNewMessage('');
     
     // Send via Chime Data Messages for real-time delivery
@@ -745,6 +1033,7 @@ export function ChimeVideoCall({
         sender: participantType as 'customer' | 'vendor',
         senderName,
         message: messageText,
+        messageType: 'text',
         timestamp: timestamp.toISOString(),
       };
       
@@ -786,6 +1075,77 @@ export function ChimeVideoCall({
     } catch (err) {
       console.error('Error persisting message to backend:', err);
       // Don't show error to user - message was still sent via Chime
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!meetingSessionRef.current) return;
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+
+    const senderName = participantType === 'customer' ? customerName : vendorName;
+    setUploadingFile(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('bookingId', bookingId);
+      formData.append('senderPhone', participantId || 'unknown');
+      formData.append('senderName', senderName);
+      formData.append('senderType', participantType);
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/chat/upload-file`, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('authToken') || ''}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to upload file');
+      }
+
+      const result = await response.json();
+      const fileUrl = result.fileUrl || result.file_url;
+      const messageId = result.message?.id || `file-${Date.now()}`;
+      const messageType = file.type.startsWith('image/') ? 'image' : 'file';
+
+      addChatMessage(
+        participantType as 'customer' | 'vendor',
+        senderName,
+        file.name,
+        messageId,
+        messageType,
+        file.name,
+        fileUrl
+      );
+
+      // Send file message via Chime data channel for real-time delivery
+      const audioVideo = meetingSessionRef.current.audioVideo;
+      const chatData: ChatDataMessage = {
+        type: 'file',
+        id: messageId,
+        sender: participantType as 'customer' | 'vendor',
+        senderName,
+        message: file.name,
+        messageType,
+        fileName: file.name,
+        fileUrl,
+        timestamp: new Date().toISOString(),
+      };
+
+      const payload = new TextEncoder().encode(JSON.stringify(chatData));
+      audioVideo.realtimeSendDataMessage(CHAT_TOPIC, payload, MESSAGE_LIFETIME_MS);
+    } catch (err) {
+      console.error('Error uploading file:', err);
+      toast.error('Failed to send file');
+    } finally {
+      setUploadingFile(false);
     }
   };
 
@@ -1009,6 +1369,15 @@ export function ChimeVideoCall({
           </button>
         </div>
 
+        {remoteAudioBlocked && (
+          <button
+            type="button"
+            onClick={retryRemoteAudio}
+            className="mt-2 w-full py-2 bg-amber-500/90 hover:bg-amber-500 text-white rounded-lg text-sm font-medium"
+          >
+            Tap to enable sound
+          </button>
+        )}
         <audio ref={audioElementRef} autoPlay />
       </div>
     );
@@ -1135,6 +1504,17 @@ export function ChimeVideoCall({
           )}
         </div>
 
+        {/* Remote audio blocked - tap to enable */}
+        {remoteAudioBlocked && (
+          <button
+            type="button"
+            onClick={retryRemoteAudio}
+            className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-amber-500/90 hover:bg-amber-500 text-white px-4 py-2 rounded-full text-sm font-medium z-10"
+          >
+            Tap to enable sound
+          </button>
+        )}
+
         {/* Reconnecting Overlay */}
         {status === 'reconnecting' && (
           <div className="absolute inset-0 bg-slate-900/80 flex flex-col items-center justify-center">
@@ -1181,7 +1561,10 @@ export function ChimeVideoCall({
             <PhoneOff className="w-6 h-6" />
           </button>
           
-          <button className="w-12 h-12 rounded-2xl bg-slate-700 text-white hover:bg-slate-600 flex items-center justify-center">
+          <button
+            onClick={() => setShowSettings(true)}
+            className="w-12 h-12 rounded-2xl bg-slate-700 text-white hover:bg-slate-600 flex items-center justify-center"
+          >
             <Settings className="w-5 h-5" />
           </button>
         </div>
@@ -1239,7 +1622,46 @@ export function ChimeVideoCall({
                         {msg.sender !== participantType && (
                           <p className="text-[10px] font-medium opacity-80 mb-0.5">{msg.senderName}</p>
                         )}
-                        <p className="text-sm">{msg.message}</p>
+                        {msg.messageType === 'image' && msg.fileUrl ? (
+                          <div className="space-y-2">
+                            <img
+                              src={msg.fileUrl}
+                              alt={msg.fileName || 'Shared image'}
+                              className="max-w-full rounded-lg border border-white/10"
+                            />
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-4 h-4 opacity-80" />
+                              <p className="text-xs opacity-80">{msg.fileName || msg.message}</p>
+                            </div>
+                            <a
+                              href={msg.fileUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs underline opacity-90"
+                            >
+                              Open image
+                            </a>
+                          </div>
+                        ) : msg.messageType === 'file' || msg.fileUrl ? (
+                          <div className="flex items-center gap-2">
+                            <FileText className="w-4 h-4 opacity-80" />
+                            <div className="flex flex-col">
+                              <span className="text-sm">{msg.fileName || msg.message}</span>
+                              {msg.fileUrl && (
+                                <a
+                                  href={msg.fileUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-xs underline opacity-90"
+                                >
+                                  Download
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-sm">{msg.message}</p>
+                        )}
                         <p className="text-[10px] opacity-70 mt-1 flex items-center gap-1">
                           {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           {msg.sender === participantType && msg.persisted && (
@@ -1270,6 +1692,21 @@ export function ChimeVideoCall({
           <div className="p-4 border-t border-slate-700">
             <div className="flex gap-2">
               <input
+                ref={fileInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleFileUpload}
+                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+                disabled={uploadingFile}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingFile}
+                className="w-12 h-12 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl flex items-center justify-center transition-colors"
+              >
+                {uploadingFile ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
+              </button>
+              <input
                 type="text"
                 value={newMessage}
                 onChange={handleMessageInputChange}
@@ -1285,6 +1722,80 @@ export function ChimeVideoCall({
               >
                 <Send className="w-5 h-5" />
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Panel */}
+      {showSettings && (
+        <div className="absolute inset-0 z-50 bg-slate-900/80 backdrop-blur flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-800 rounded-2xl border border-slate-700 shadow-xl">
+            <div className="p-4 border-b border-slate-700 flex items-center justify-between">
+              <h3 className="text-white font-semibold">Call Settings</h3>
+              <button onClick={() => setShowSettings(false)} className="p-2 hover:bg-slate-700 rounded-xl">
+                <X className="w-5 h-5 text-white" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="text-xs text-slate-400 block mb-2">Microphone</label>
+                <select
+                  value={selectedDevices.audioInput}
+                  onChange={handleAudioInputChange}
+                  className="w-full bg-slate-900 text-white rounded-lg px-3 py-2 border border-slate-700"
+                >
+                  {availableDevices.audioInputs.length === 0 && (
+                    <option value="">No microphones detected</option>
+                  )}
+                  {availableDevices.audioInputs.map(device => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label || 'Microphone'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 block mb-2">Speaker</label>
+                <select
+                  value={selectedDevices.audioOutput}
+                  onChange={handleAudioOutputChange}
+                  className="w-full bg-slate-900 text-white rounded-lg px-3 py-2 border border-slate-700"
+                >
+                  {availableDevices.audioOutputs.length === 0 && (
+                    <option value="">Default speaker</option>
+                  )}
+                  {availableDevices.audioOutputs.map(device => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label || 'Speaker'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400 block mb-2">Camera</label>
+                <select
+                  value={selectedDevices.videoInput}
+                  onChange={handleVideoInputChange}
+                  className="w-full bg-slate-900 text-white rounded-lg px-3 py-2 border border-slate-700"
+                >
+                  {availableDevices.videoInputs.length === 0 && (
+                    <option value="">No cameras detected</option>
+                  )}
+                  {availableDevices.videoInputs.map(device => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label || 'Camera'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-700 flex justify-end">
+              <Button variant="outline" onClick={() => setShowSettings(false)}>
+                Close
+              </Button>
             </div>
           </div>
         </div>

@@ -49,6 +49,37 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
     loadTransactions();
   }, [customerPhone, filter]);
 
+  const normalizeWalletResponse = (response: any): WalletData | null => {
+    if (!response) return null;
+    const data = response.data || response.wallet || response;
+    if (!data) return null;
+
+    return {
+      balance: Number(data.balance ?? data.currentBalance ?? data.walletBalance ?? 0),
+      pending_credits: Number(data.pending_credits ?? data.pendingCredits ?? 0),
+      total_earned: Number(data.total_earned ?? data.totalEarned ?? 0),
+      total_spent: Number(data.total_spent ?? data.totalSpent ?? 0),
+    };
+  };
+
+  const normalizeTransactionsResponse = (response: any): Transaction[] => {
+    if (!response) return [];
+    const data = response.data || response;
+    const list = data.transactions || data.recentTransactions || [];
+    if (!Array.isArray(list)) return [];
+
+    return list.map((txn: any) => ({
+      id: txn.id,
+      type: txn.type || txn.transaction_type || txn.transactionType || 'debit',
+      amount: Number(txn.amount ?? 0),
+      description: txn.description || txn.reference_type || txn.referenceType || 'Wallet transaction',
+      reference_type: txn.reference_type || txn.referenceType,
+      reference_id: txn.reference_id || txn.referenceId,
+      status: txn.status || 'completed',
+      created_at: txn.created_at || txn.timestamp || txn.createdAt || new Date().toISOString(),
+    }));
+  };
+
   const loadWalletData = async () => {
     try {
       // First get customer ID from phone
@@ -64,21 +95,18 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
 
       // Then get wallet using customer ID
       const response = await apiClient.get<any>(`/wallet/${id}`);
-      if (response.success && response.data) {
-        setWallet({
-          balance: response.data.balance || 0,
-          pending_credits: 0,
-          total_earned: 0,
-          total_spent: 0,
-        });
+      const normalized = normalizeWalletResponse(response);
+      if (normalized) {
+        setWallet(normalized);
       }
     } catch (err) {
       console.error('Error loading wallet:', err);
       // Fallback: try old endpoint
       try {
         const response = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`);
-        if (response.wallet) {
-          setWallet(response.wallet);
+        const normalized = normalizeWalletResponse(response);
+        if (normalized) {
+          setWallet(normalized);
         }
       } catch (fallbackErr) {
         console.error('Fallback wallet load failed:', fallbackErr);
@@ -108,18 +136,18 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
       params.append('offset', '0');
 
       const response = await apiClient.get<any>(`/wallet/${customerId}/transactions?${params.toString()}`);
-      if (response.success && response.data) {
-        setTransactions(response.data.transactions || []);
-      }
+      const normalized = normalizeTransactionsResponse(response);
+      const filtered = filter === 'all' ? normalized : normalized.filter((txn) => txn.type === filter);
+      setTransactions(filtered);
     } catch (err) {
       console.error('Error loading transactions:', err);
       // Fallback: try old endpoint
       try {
         const params = filter !== 'all' ? `&type=${filter}` : '';
         const response = await apiClient.get<any>(`/customer/wallet/transactions?phone=${encodeURIComponent(customerPhone)}${params}`);
-        if (response.transactions) {
-          setTransactions(response.transactions);
-        }
+        const normalized = normalizeTransactionsResponse(response);
+        const filtered = filter === 'all' ? normalized : normalized.filter((txn) => txn.type === filter);
+        setTransactions(filtered);
       } catch (fallbackErr) {
         console.error('Fallback transactions load failed:', fallbackErr);
       }
@@ -432,4 +460,3 @@ export function CustomerWallet({ customerPhone }: CustomerWalletProps) {
     </div>
   );
 }
-

@@ -379,11 +379,11 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         const styles = serviceStyle.split(',').map((s: string) => s.trim()).filter(Boolean);
         const validStyles = styles.filter((s: string) => ['at_home', 'at_center', 'tele', 'all'].includes(s));
         if (validStyles.length > 1) {
-          catalogQuery += ` AND (service_style = ANY($${paramIndex}::text[]) OR service_style = 'all' OR service_style IS NULL)`;
+          catalogQuery += ` AND service_style = ANY($${paramIndex}::text[])`;
           params.push(validStyles);
           paramIndex++;
         } else if (validStyles.length === 1) {
-          catalogQuery += ` AND (service_style = $${paramIndex} OR service_style = 'all' OR service_style IS NULL)`;
+          catalogQuery += ` AND service_style = $${paramIndex}`;
           params.push(validStyles[0]);
           paramIndex++;
         }
@@ -1486,4 +1486,3 @@ export function registerServiceCatalogEndpoints(app: Hono) {
     }
   });
 }
-

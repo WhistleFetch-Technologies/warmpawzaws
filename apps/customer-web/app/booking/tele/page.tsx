@@ -135,7 +135,12 @@ function TeleConsultationContent() {
             console.log('Joined queue:', queueId);
           }}
           onAccepted={(bookingId, meetingId) => {
-            router.push(`/video/${bookingId}${meetingId ? `?meetingId=${meetingId}` : ''}`);
+            const params = new URLSearchParams();
+            params.set('bookingId', bookingId);
+            if (meetingId) params.set('meetingId', meetingId);
+            if (customerId) params.set('customerId', customerId);
+            const qs = params.toString();
+            router.push(`/video${qs ? `?${qs}` : ''}`);
           }}
         />
       </div>

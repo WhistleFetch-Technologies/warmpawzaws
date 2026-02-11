@@ -26,11 +26,34 @@ export default function VendorHomePage() {
 
   useEffect(() => {
     // ✅ CRITICAL: Don't render this page if we're on a video route
-    // Next.js static export might route all paths to root page
+    // Static hosting can route all paths to root HTML; force redirect to /video with query param fallback.
     if (typeof window !== 'undefined') {
       const pathname = window.location.pathname;
-      if (pathname.startsWith('/video/')) {
+      const isVideoRoute = pathname === '/video' || pathname.startsWith('/video/');
+      if (isVideoRoute) {
         console.log('[VendorHomePage] Skipping render - on video route:', pathname);
+        try {
+          const parts = pathname.split('/').filter(Boolean);
+          const bookingIdFromPath = parts[1] || '';
+          const url = new URL(window.location.href);
+          if (bookingIdFromPath && bookingIdFromPath !== '_' && pathname !== '/video') {
+            url.pathname = '/video';
+            url.searchParams.set('bookingId', bookingIdFromPath);
+          }
+          // Preserve vendorId / meetingId if already present
+          if (!url.searchParams.get('vendorId')) {
+            const storedVendorId = localStorage.getItem('vendorId') || localStorage.getItem('vendor_id');
+            if (storedVendorId) {
+              url.searchParams.set('vendorId', storedVendorId);
+            }
+          }
+          if (url.pathname === '/video' && window.location.pathname !== '/video') {
+            window.location.replace(url.pathname + url.search);
+            return;
+          }
+        } catch (err) {
+          console.warn('[VendorHomePage] Video route redirect failed:', err);
+        }
         return; // Don't render anything, let the video page handle it
       }
     }
@@ -82,7 +105,7 @@ export default function VendorHomePage() {
   }, []); // Empty dependency - run once
 
   // ✅ CRITICAL: Don't render if we're on a video route
-  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/video/')) {
+  if (typeof window !== 'undefined' && (window.location.pathname === '/video' || window.location.pathname.startsWith('/video/'))) {
     console.log('[VendorHomePage] Returning null - on video route');
     return null; // Let the video page render
   }

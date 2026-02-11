@@ -118148,6 +118148,345 @@ var init_audit_log = __esm({
   }
 });
 
+// src/endpoints/sms-notifications.ts
+function sanitizeAlphanumeric(value, maxLen = 40) {
+  const raw2 = String(value || "").replace(/\s+/g, " ").trim();
+  const cleaned = raw2.replace(/[^a-zA-Z0-9\s:-]/g, "");
+  return cleaned.length > maxLen ? cleaned.slice(0, maxLen) : cleaned;
+}
+function replaceTemplateVariables(template, variables) {
+  let message2 = template;
+  for (const [key, value] of Object.entries(variables)) {
+    message2 = message2.replace(new RegExp(`\\{${key}\\}`, "g"), String(value || ""));
+  }
+  return message2;
+}
+async function triggerBookingNotification(event, data) {
+  try {
+    console.log(`\u{1F514} Triggering SMS notification for event: ${event}`);
+    const template = SMS_TEMPLATES[event];
+    if (!template) {
+      console.warn(`No SMS template found for event: ${event}`);
+      return;
+    }
+    const isUatMode = process.env.UAT_MODE === "true";
+    if (!isUatMode && !template.templateId && !JIO_APPROVED_EVENTS.has(event)) {
+      console.warn(`[SMS] Skipping non-approved template for event: ${event} (DLT compliance)`);
+      return;
+    }
+    const { booking, customer, vendor, staff, service } = data;
+    const bookingWith = sanitizeAlphanumeric(
+      vendor?.business_name || service?.name || booking?.service_type || "Service"
+    );
+    const bookingDate = sanitizeAlphanumeric(booking?.booking_date || "");
+    const bookingTime = sanitizeAlphanumeric(booking?.booking_time || "");
+    const bookingDateTime = sanitizeAlphanumeric(
+      bookingDate && bookingTime ? `${bookingDate} at ${bookingTime}` : bookingDate || bookingTime || ""
+    );
+    const variables = {
+      customerName: customer?.name || customer?.phone || "Customer",
+      bookingId: booking?.id || booking?.order_number || "",
+      serviceName: service?.name || "Service",
+      date: booking?.booking_date || "",
+      time: booking?.booking_time || "",
+      amount: booking?.total_amount || booking?.amount || "0",
+      receiptUrl: booking?.receipt_url || "",
+      staffName: staff?.name || "Staff",
+      staffPhone: staff?.phone || "",
+      providerName: vendor?.business_name || vendor?.owner_name || "Provider",
+      petName: booking?.pet_name || "Pet",
+      otp: booking?.otp_code || "",
+      refundAmount: booking?.refund_amount || "0",
+      orderId: booking?.order_id || booking?.id || "",
+      bookingWith,
+      bookingDate,
+      bookingTime,
+      bookingDateTime
+    };
+    const message2 = replaceTemplateVariables(template.message, variables);
+    const recipientPhone = customer?.phone || booking?.customer_phone;
+    if (!recipientPhone) {
+      console.warn("No recipient phone number found");
+      return;
+    }
+    await sendSMS({
+      to: recipientPhone,
+      message: message2,
+      type: "transactional",
+      senderId: "WARMPZ",
+      ...template.templateId ? { templateId: template.templateId } : {}
+    });
+    await insert("notifications", {
+      user_id: customer?.id || booking?.customer_id,
+      user_type: "customer",
+      title: template.event,
+      message: message2,
+      notification_type: "sms",
+      is_read: false,
+      metadata: {
+        event,
+        bookingId: booking?.id,
+        sentVia: "sms"
+      }
+    }).catch((err) => console.error("Failed to log notification:", err));
+    console.log(`\u2705 SMS sent to ${recipientPhone} for event: ${event}`);
+  } catch (error) {
+    console.error("Error triggering SMS notification:", error);
+  }
+}
+function registerSmsNotificationEndpoints(app3) {
+  app3.post("/sms/send", async (c) => {
+    try {
+      const { phone, message: message2, event, variables, templateId } = await c.req.json();
+      if (!phone || !message2) {
+        return c.json({ error: "phone and message are required" }, 400);
+      }
+      const isUatMode = process.env.UAT_MODE === "true";
+      if (!isUatMode && !templateId) {
+        return c.json({ error: "templateId is required for SMS in production (DLT compliance)" }, 400);
+      }
+      const result = await sendSMS({
+        to: phone,
+        message: message2,
+        type: "transactional",
+        senderId: "WARMPZ",
+        ...templateId ? { templateId } : {}
+      });
+      await insert("notifications", {
+        user_id: null,
+        user_type: "customer",
+        title: event || "sms_notification",
+        message: message2,
+        notification_type: "sms",
+        is_read: false,
+        metadata: {
+          event,
+          phone,
+          messageId: result.messageId
+        }
+      }).catch(() => {
+      });
+      return c.json({
+        success: true,
+        messageId: result.messageId,
+        message: "SMS sent successfully"
+      });
+    } catch (error) {
+      console.error("Error sending SMS:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/sms/send-sample-templates", async (c) => {
+    try {
+      const { phone } = await c.req.json();
+      const to = phone || "9611377119";
+      const delayMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const samples = [
+        {
+          name: "Login OTP",
+          templateId: "1207177028377787269",
+          message: "Warmpawz: Your OTP for logging in is 123456. Do not share this OTP with anyone."
+        },
+        {
+          name: "Booking Confirmation",
+          templateId: "1207177035174777582",
+          message: "Warmpawz Booking: Your booking with PetCare Clinic for 10-Feb-2026 at 10:30 AM is confirmed. For more details, refer to My Bookings."
+        },
+        {
+          name: "Booking Rescheduled",
+          templateId: "1207177035515118051",
+          message: "Warmpawz Rescheduling: Your booking with PetCare Clinic has been rescheduled to 12-Feb-2026 at 2:00 PM. For more details, refer to My Bookings."
+        },
+        {
+          name: "Booking Cancelled",
+          templateId: "1207177035326314961",
+          message: "Warmpawz Cancellation: Your booking with PetCare Clinic scheduled for 10-Feb-2026 at 10:30 AM has been cancelled. For more details, refer to My Bookings."
+        }
+      ];
+      const results = [];
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        const result = await sendSMS({
+          to,
+          message: s.message,
+          type: i === 0 ? "otp" : "transactional",
+          templateId: s.templateId,
+          senderId: "WARMPZ"
+        });
+        results.push({ name: s.name, templateId: s.templateId, success: result.success, messageId: result.messageId });
+        if (i < samples.length - 1) await delayMs(2e3);
+      }
+      return c.json({
+        success: true,
+        message: "Sample templates sent (one by one with 2s delay)",
+        phone: to,
+        results
+      });
+    } catch (error) {
+      console.error("Error sending sample templates:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/sms/trigger-event", async (c) => {
+    try {
+      const { event, bookingId, data } = await c.req.json();
+      if (!event || !bookingId) {
+        return c.json({ error: "event and bookingId are required" }, 400);
+      }
+      const bookings = await select("bookings", { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: "Booking not found" }, 404);
+      }
+      const booking = bookings[0];
+      const customers = await select("customers", { id: booking.customer_id });
+      const customer = customers.length > 0 ? customers[0] : null;
+      const vendors = booking.vendor_id ? await select("vendors", { id: booking.vendor_id }) : [];
+      const vendor = vendors.length > 0 ? vendors[0] : null;
+      const staff = booking.staff_id ? await select("staff", { id: booking.staff_id }) : [];
+      const staffMember = staff.length > 0 ? staff[0] : null;
+      const services = await select("services", { id: booking.service_id });
+      const service = services.length > 0 ? services[0] : null;
+      await triggerBookingNotification(event, {
+        booking,
+        customer,
+        vendor,
+        staff: staffMember,
+        service,
+        ...data
+      });
+      return c.json({
+        success: true,
+        message: "SMS notification triggered"
+      });
+    } catch (error) {
+      console.error("Error triggering SMS event:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/sms/templates", async (c) => {
+    return c.json({
+      success: true,
+      templates: Object.values(SMS_TEMPLATES)
+    });
+  });
+  app3.get("/sms/history", async (c) => {
+    try {
+      const { userId, limit = 50, offset = 0 } = c.req.query();
+      let queryText = `SELECT * FROM notifications WHERE notification_type = 'sms'`;
+      const params = [];
+      let paramIndex = 1;
+      if (userId) {
+        queryText += ` AND user_id = $${paramIndex}`;
+        params.push(userId);
+        paramIndex++;
+      }
+      queryText += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(parseInt(limit, 10), parseInt(offset, 10));
+      const result = await query(queryText, params).catch(() => ({ rows: [] }));
+      return c.json({
+        success: true,
+        notifications: result.rows,
+        total: result.rows.length
+      });
+    } catch (error) {
+      console.error("Error fetching SMS history:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+}
+var SMS_TEMPLATES, JIO_APPROVED_EVENTS;
+var init_sms_notifications = __esm({
+  "src/endpoints/sms-notifications.ts"() {
+    "use strict";
+    init_rds_connection();
+    init_sms_service();
+    SMS_TEMPLATES = {
+      booking_created: {
+        id: "booking_created",
+        event: "booking_created",
+        message: "Warmpawz Booking: Your booking with {bookingWith} for {bookingDate} at {bookingTime} is confirmed. For more details, refer to My Bookings.",
+        variables: ["bookingWith", "bookingDate", "bookingTime"],
+        templateId: "1207177035174777582"
+      },
+      payment_confirmed: {
+        id: "payment_confirmed",
+        event: "payment_confirmed",
+        message: "Payment of \u20B9{amount} received for booking {bookingId}. Receipt: {receiptUrl}",
+        variables: ["amount", "bookingId", "receiptUrl"]
+      },
+      staff_assigned: {
+        id: "staff_assigned",
+        event: "staff_assigned",
+        message: "{staffName} has been assigned to your booking {bookingId}. Contact: {staffPhone}",
+        variables: ["staffName", "bookingId", "staffPhone"]
+      },
+      provider_en_route: {
+        id: "provider_en_route",
+        event: "provider_en_route",
+        message: "{providerName} is on the way! Track live location: warmpawz.com/track/{bookingId}",
+        variables: ["providerName", "bookingId"]
+      },
+      provider_arrived: {
+        id: "provider_arrived",
+        event: "provider_arrived",
+        message: "{providerName} has arrived at your location. OTP for verification: {otp}",
+        variables: ["providerName", "otp"]
+      },
+      service_started: {
+        id: "service_started",
+        event: "service_started",
+        message: "Service started for {petName}. You will receive updates shortly.",
+        variables: ["petName"]
+      },
+      service_completed: {
+        id: "service_completed",
+        event: "service_completed",
+        message: "Service completed for {petName}! OTP for completion: {otp}. Rate your experience: warmpawz.com/review/{bookingId}",
+        variables: ["petName", "otp", "bookingId"]
+      },
+      booking_rescheduled: {
+        id: "booking_rescheduled",
+        event: "booking_rescheduled",
+        message: "Warmpawz Rescheduling: Your booking with {bookingWith} has been rescheduled to {bookingDateTime}. For more details, refer to My Bookings.",
+        variables: ["bookingWith", "bookingDateTime"],
+        templateId: "1207177035515118051"
+      },
+      booking_cancelled: {
+        id: "booking_cancelled",
+        event: "booking_cancelled",
+        message: "Warmpawz Cancellation: Your booking with {bookingWith} scheduled for {bookingDateTime} has been cancelled. For more details, refer to My Bookings.",
+        variables: ["bookingWith", "bookingDateTime"],
+        templateId: "1207177035326314961"
+      },
+      refund_processed: {
+        id: "refund_processed",
+        event: "refund_processed",
+        message: "Refund of \u20B9{amount} for booking {bookingId} has been processed to your account.",
+        variables: ["amount", "bookingId"]
+      },
+      review_request: {
+        id: "review_request",
+        event: "review_request",
+        message: "How was your experience with {providerName}? Share your feedback: warmpawz.com/review/{bookingId}",
+        variables: ["providerName", "bookingId"]
+      },
+      delivery_dispatched: {
+        id: "delivery_dispatched",
+        event: "delivery_dispatched",
+        message: "Your order {orderId} has been dispatched. Track: warmpawz.com/track/{orderId}",
+        variables: ["orderId"]
+      },
+      delivery_arrived: {
+        id: "delivery_arrived",
+        event: "delivery_arrived",
+        message: "Your order {orderId} has arrived! OTP for delivery: {otp}",
+        variables: ["orderId", "otp"]
+      }
+    };
+    JIO_APPROVED_EVENTS = /* @__PURE__ */ new Set(["booking_created", "booking_rescheduled", "booking_cancelled"]);
+  }
+});
+
 // ../../packages/api-contracts/dist/bookings.js
 var require_bookings = __commonJS({
   "../../packages/api-contracts/dist/bookings.js"(exports2) {
@@ -118995,6 +119334,99 @@ var init_commission = __esm({
   }
 });
 
+// src/utils/booking-notifications.ts
+function buildServiceTypeLabel(serviceType) {
+  if (serviceType === "at_home") return "Home visit";
+  if (serviceType === "tele") return "Tele consultation";
+  return "At center";
+}
+async function notifyBookingCreated(bookingId, requestId) {
+  const bookings = await select("bookings", { id: bookingId });
+  if (bookings.length === 0) {
+    return { notified: false };
+  }
+  const booking = bookings[0];
+  const [customers, vendors] = await Promise.all([
+    booking.customer_id ? select("customers", { id: booking.customer_id }).catch(() => []) : Promise.resolve([]),
+    booking.vendor_id ? select("vendors", { id: booking.vendor_id }).catch(() => []) : Promise.resolve([])
+  ]);
+  const customer = customers[0] || null;
+  const vendor = vendors[0] || null;
+  let service = null;
+  if (booking.service_id) {
+    const serviceResult = await query(
+      `SELECT COALESCE(s.name, vs.service_name, sc.service_name, sc.display_name) as name
+       FROM (SELECT $1::uuid as id) x
+       LEFT JOIN services s ON s.id = x.id
+       LEFT JOIN vendor_services vs ON vs.id = x.id
+       LEFT JOIN service_catalog sc ON sc.id = x.id
+       LIMIT 1`,
+      [booking.service_id]
+    ).catch(() => ({ rows: [] }));
+    if (serviceResult.rows?.length > 0) {
+      service = { name: serviceResult.rows[0].name || "Service" };
+    }
+  }
+  const customerName = customer?.name || customer?.full_name || "Customer";
+  const serviceName = service?.name || "Service";
+  const serviceTypeLabel = buildServiceTypeLabel(booking.service_type);
+  await insert("notifications", {
+    recipient_id: booking.vendor_id,
+    recipient_type: "vendor",
+    type: "new_booking",
+    title: "New appointment",
+    message: `${customerName} booked ${serviceName} \u2022 ${serviceTypeLabel} \u2022 ${booking.booking_date} ${booking.booking_time}`,
+    data: JSON.stringify({
+      bookingId: booking.id,
+      customerId: booking.customer_id,
+      customerName,
+      serviceName,
+      serviceType: booking.service_type,
+      bookingDate: booking.booking_date,
+      bookingTime: booking.booking_time,
+      address: booking.address
+    }),
+    is_read: false,
+    created_at: /* @__PURE__ */ new Date()
+  });
+  triggerBookingNotification("booking_created", {
+    booking,
+    customer,
+    vendor,
+    service
+  }).catch((smsErr) => {
+    console.warn("[SMS] Booking confirmation SMS failed:", smsErr?.message || smsErr);
+  });
+  try {
+    const { publishBookingCreated: publishBookingCreated2 } = await Promise.resolve().then(() => (init_sns_client(), sns_client_exports));
+    await publishBookingCreated2({
+      bookingId: booking.id,
+      customerId: booking.customer_id,
+      vendorId: booking.vendor_id,
+      serviceType: booking.service_type,
+      status: booking.status,
+      bookingDate: booking.booking_date,
+      bookingTime: booking.booking_time,
+      eventTimestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      eventId: (0, import_crypto11.randomUUID)(),
+      requestId: requestId || (0, import_crypto11.randomUUID)(),
+      sourceService: "booking-notifier"
+    });
+  } catch (error) {
+    console.error("Failed to publish booking created event:", error);
+  }
+  return { notified: true, bookingId: booking.id };
+}
+var import_crypto11;
+var init_booking_notifications = __esm({
+  "src/utils/booking-notifications.ts"() {
+    "use strict";
+    import_crypto11 = require("crypto");
+    init_rds_connection();
+    init_sms_notifications();
+  }
+});
+
 // src/utils/aws-clients.ts
 var aws_clients_exports = {};
 __export(aws_clients_exports, {
@@ -119568,13 +120000,13 @@ function createApiGatewayEventWithBody2(req, parsedBody) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto11.randomUUID)()
+      requestId: (0, import_crypto12.randomUUID)()
     }
   };
 }
 function createLambdaContext3() {
   return {
-    requestId: (0, import_crypto11.randomUUID)(),
+    requestId: (0, import_crypto12.randomUUID)(),
     functionName: "razorpay-handler",
     functionVersion: "$LATEST"
   };
@@ -119628,15 +120060,17 @@ async function getVendorTierCommission(vendorId) {
     return DEFAULT_COMMISSION_RATE;
   }
 }
-var import_crypto11, CreateRazorpayOrderHandler, VerifyPaymentHandler, RazorpayWebhookHandler, MarketplaceSettlementHandler, ProcessRefundHandler;
+var import_crypto12, CreateRazorpayOrderHandler, VerifyPaymentHandler, RazorpayWebhookHandler, MarketplaceSettlementHandler, ProcessRefundHandler;
 var init_razorpay = __esm({
   "src/endpoints/razorpay.ts"() {
     "use strict";
     init_base_handler();
     init_rds_connection();
-    import_crypto11 = require("crypto");
+    import_crypto12 = require("crypto");
     init_razorpay_client();
     init_commission();
+    init_audit_log();
+    init_booking_notifications();
     CreateRazorpayOrderHandler = class extends BaseHandler {
       async handle(context) {
         try {
@@ -119644,9 +120078,15 @@ var init_razorpay = __esm({
           const { bookingId, orderId: pharmacyOrderId, amount, currency = "INR", customerId, vendorId, type } = body;
           const isPharmacyOrder = type === "pharmacy_order";
           const isDiagnosticsOrder = type === "diagnostics";
+          const isBookingPrepaid = type === "booking_prepaid";
           if (isPharmacyOrder) {
             if (!pharmacyOrderId || amount == null) {
               return this.error("orderId and amount are required for pharmacy_order", 400);
+            }
+          } else if (isBookingPrepaid) {
+            const missing = ["amount", "customerId", "vendorId"].filter((f) => !body[f]);
+            if (missing.length > 0) {
+              return this.error(`Missing required fields for booking_prepaid: ${missing.join(", ")}`, 400);
             }
           } else if (isDiagnosticsOrder) {
             const missing = ["amount", "customerId", "vendorId"].filter((f) => !body[f]);
@@ -119718,6 +120158,17 @@ var init_razorpay = __esm({
             const shortId = String(Date.now()).replace(/-/g, "").substring(0, 32);
             receipt = `diag_${shortId}`;
             notes = { type: "diagnostics", customerId: customerIdFinal, vendorId: vendorIdFinal };
+          } else if (isBookingPrepaid) {
+            customerIdFinal = customerId;
+            vendorIdFinal = vendorId;
+            const vendorResult = await Promise.race([
+              select("vendors", { id: vendorIdFinal }),
+              new Promise((_, reject) => setTimeout(() => reject(new Error("Vendor query timeout")), 5e3))
+            ]);
+            vendor = vendorResult.length > 0 ? vendorResult[0] : null;
+            const shortId = String(Date.now()).replace(/-/g, "").substring(0, 32);
+            receipt = `bk_pre_${shortId}`;
+            notes = { type: "booking_prepaid", customerId: customerIdFinal, vendorId: vendorIdFinal };
           } else {
             const bookingResult = await Promise.race([
               select("bookings", { id: bookingId }),
@@ -119800,6 +120251,17 @@ var init_razorpay = __esm({
               [pharmacyOrderId, customerIdFinal, vendorIdFinal, razorpayOrder.id, Number(amount), currency, "razorpay", "pending"]
             );
           } else if (isDiagnosticsOrder) {
+          } else if (isBookingPrepaid) {
+            await insert("payments", {
+              booking_id: null,
+              customer_id: customerIdFinal,
+              vendor_id: vendorIdFinal,
+              razorpay_order_id: razorpayOrder.id,
+              amount: Number(amount),
+              currency,
+              payment_method: "razorpay",
+              payment_status: "pending"
+            });
           } else {
             await insert("payments", {
               booking_id: bookingId,
@@ -119863,7 +120325,7 @@ var init_razorpay = __esm({
             return this.error("Payment gateway configuration error. Please contact support.", 500);
           }
           const text = `${razorpay_order_id}|${razorpay_payment_id}`;
-          const generatedSignature = (0, import_crypto11.createHmac)("sha256", config.keySecret).update(text).digest("hex");
+          const generatedSignature = (0, import_crypto12.createHmac)("sha256", config.keySecret).update(text).digest("hex");
           if (generatedSignature !== razorpay_signature) {
             console.error("[PAYMENT-VERIFY] Signature mismatch - rolling back booking:", {
               orderId: razorpay_order_id,
@@ -119895,6 +120357,8 @@ var init_razorpay = __esm({
             }
             return this.error("Invalid payment signature. Booking has been cancelled.", 400);
           }
+          let bookingToNotify = null;
+          let bookingStatusChange = null;
           const result = await withTransaction(async (client2) => {
             const { rows: payments } = await client2.query(
               `SELECT * FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
@@ -119922,10 +120386,6 @@ var init_razorpay = __esm({
             }
             const payment = payments[0];
             const bookingId = payment.booking_id;
-            if (!bookingId) {
-              console.error("[PAYMENT-VERIFY] Payment record exists but booking_id is missing:", payment.id);
-              throw new Error("Booking not found for payment. This should not happen.");
-            }
             await client2.query(
               `UPDATE payments SET 
             payment_status = 'completed',
@@ -119935,6 +120395,21 @@ var init_razorpay = __esm({
           WHERE id = $2`,
               [razorpay_payment_id, payment.id]
             );
+            if (!bookingId) {
+              return {
+                message: "Payment verified successfully",
+                paymentId: razorpay_payment_id,
+                orderId: razorpay_order_id,
+                bookingId: null
+              };
+            }
+            const { rows: bookingRows } = await client2.query(
+              `SELECT status, payment_status FROM bookings WHERE id = $1 FOR UPDATE`,
+              [bookingId]
+            );
+            const previousStatus = bookingRows[0]?.status || null;
+            const previousPaymentStatus = bookingRows[0]?.payment_status || null;
+            const shouldNotify = previousPaymentStatus !== "paid" || previousStatus === "pending_payment";
             await client2.query(
               `UPDATE bookings SET 
             payment_status = 'paid',
@@ -119943,6 +120418,12 @@ var init_razorpay = __esm({
           WHERE id = $1`,
               [bookingId]
             );
+            if (previousStatus !== "confirmed") {
+              bookingStatusChange = { bookingId, from: previousStatus, to: "confirmed" };
+            }
+            if (shouldNotify) {
+              bookingToNotify = bookingId;
+            }
             console.log("[PAYMENT-VERIFY] \u2705 Payment verified and booking confirmed:", bookingId);
             const pharmacyOrderId = payment.pharmacy_order_id;
             if (pharmacyOrderId) {
@@ -120018,6 +120499,19 @@ var init_razorpay = __esm({
               bookingId
             };
           });
+          if (bookingStatusChange) {
+            await logBookingStatusChange(
+              bookingStatusChange.bookingId,
+              bookingStatusChange.from,
+              bookingStatusChange.to,
+              "system",
+              "system",
+              "Payment verified"
+            );
+          }
+          if (bookingToNotify) {
+            await notifyBookingCreated(bookingToNotify, context.requestId);
+          }
           return this.success(result);
         } catch (error) {
           console.error("[PAYMENT-VERIFY] Verification error:", error);
@@ -120089,7 +120583,7 @@ var init_razorpay = __esm({
           return this.error("Razorpay not configured. Please configure in Platform Settings.", 400);
         }
         const payload = JSON.stringify(body);
-        const expectedSignature = (0, import_crypto11.createHmac)("sha256", config.webhookSecret).update(payload).digest("hex");
+        const expectedSignature = (0, import_crypto12.createHmac)("sha256", config.webhookSecret).update(payload).digest("hex");
         if (webhookSignature !== expectedSignature) {
           return this.error("Invalid webhook signature", 401);
         }
@@ -120108,11 +120602,34 @@ var init_razorpay = __esm({
           const payments = await select("payments", { razorpay_payment_id: payment.id });
           if (payments.length > 0) {
             const paymentRecord = payments[0];
+            let shouldNotify = false;
+            let previousStatus = null;
+            if (paymentRecord.booking_id) {
+              const bookingRows = await select("bookings", { id: paymentRecord.booking_id });
+              if (bookingRows.length > 0) {
+                const booking = bookingRows[0];
+                previousStatus = booking.status || null;
+                shouldNotify = booking.payment_status !== "paid" || previousStatus === "pending_payment";
+              }
+            }
             await update(
               "bookings",
               { id: paymentRecord.booking_id },
-              { payment_status: "paid" }
+              { payment_status: "paid", status: "confirmed" }
             );
+            if (previousStatus && previousStatus !== "confirmed") {
+              await logBookingStatusChange(
+                paymentRecord.booking_id,
+                previousStatus,
+                "confirmed",
+                "system",
+                "system",
+                "Payment captured (webhook)"
+              );
+            }
+            if (shouldNotify) {
+              await notifyBookingCreated(paymentRecord.booking_id, context.requestId);
+            }
             try {
               const vendors = await select("vendors", { id: paymentRecord.vendor_id });
               const vendor = vendors.length > 0 ? vendors[0] : null;
@@ -120139,6 +120656,18 @@ var init_razorpay = __esm({
               failure_reason: payment.error_description || "Payment failed"
             }
           );
+          const payments = await select("payments", { razorpay_payment_id: payment.id });
+          if (payments.length > 0 && payments[0].booking_id) {
+            const bookingRows = await select("bookings", { id: payments[0].booking_id });
+            const booking = bookingRows[0];
+            if (booking && booking.payment_status !== "paid" && booking.status === "pending_payment") {
+              await update(
+                "bookings",
+                { id: payments[0].booking_id },
+                { status: "cancelled", payment_status: "failed" }
+              );
+            }
+          }
         } else if (event === "refund.created") {
           const refund = payload_data.refund.entity;
           await insert("refunds", {
@@ -123020,7 +123549,7 @@ async function deliverWebhook(webhook, payload) {
   const body = JSON.stringify(payload);
   let signature;
   if (webhook.secret) {
-    signature = import_crypto18.default.createHmac("sha256", webhook.secret).update(body).digest("hex");
+    signature = import_crypto19.default.createHmac("sha256", webhook.secret).update(body).digest("hex");
   }
   const headers = {
     "Content-Type": "application/json",
@@ -123031,7 +123560,7 @@ async function deliverWebhook(webhook, payload) {
   if (signature) {
     headers["X-Webhook-Signature"] = `sha256=${signature}`;
   }
-  const eventId = (0, import_crypto17.randomUUID)();
+  const eventId = (0, import_crypto18.randomUUID)();
   await insert("webhook_events", {
     id: eventId,
     webhook_id: webhook.id,
@@ -123198,14 +123727,14 @@ function setupWebhookRoutes(app3) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
-var import_crypto17, import_crypto18, ListWebhooksHandler, CreateWebhookHandler, GetWebhookHandler, UpdateWebhookHandler, DeleteWebhookHandler, TestWebhookHandler, GetWebhookEventsHandler;
+var import_crypto18, import_crypto19, ListWebhooksHandler, CreateWebhookHandler, GetWebhookHandler, UpdateWebhookHandler, DeleteWebhookHandler, TestWebhookHandler, GetWebhookEventsHandler;
 var init_webhooks = __esm({
   "src/endpoints/webhooks.ts"() {
     "use strict";
-    import_crypto17 = require("crypto");
+    import_crypto18 = require("crypto");
     init_base_handler();
     init_rds_connection();
-    import_crypto18 = __toESM(require("crypto"));
+    import_crypto19 = __toESM(require("crypto"));
     ListWebhooksHandler = class extends BaseHandler {
       async handle(context) {
         try {
@@ -123234,7 +123763,7 @@ var init_webhooks = __esm({
         }
         try {
           const webhook = await insert("webhooks", {
-            id: (0, import_crypto17.randomUUID)(),
+            id: (0, import_crypto18.randomUUID)(),
             name,
             url,
             events: JSON.stringify(events),
@@ -124055,22 +124584,22 @@ function createApiGatewayEvent7(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto19.randomUUID)()
+      requestId: (0, import_crypto20.randomUUID)()
     }
   };
 }
 function createLambdaContext9() {
   return {
-    requestId: (0, import_crypto19.randomUUID)(),
+    requestId: (0, import_crypto20.randomUUID)(),
     functionName: "admin-handler",
     functionVersion: "$LATEST"
   };
 }
-var import_crypto19, VendorStatsHandler2, ApproveVendorHandler, RejectVendorHandler, ListVendorsHandler;
+var import_crypto20, VendorStatsHandler2, ApproveVendorHandler, RejectVendorHandler, ListVendorsHandler;
 var init_admin = __esm({
   "src/endpoints/admin.ts"() {
     "use strict";
-    import_crypto19 = require("crypto");
+    import_crypto20 = require("crypto");
     init_base_handler();
     init_rds_connection();
     VendorStatsHandler2 = class extends BaseHandler {
@@ -130279,7 +130808,7 @@ function formatTitle(str) {
 }
 
 // src/endpoints/bookings-enhanced.ts
-var import_crypto12 = require("crypto");
+var import_crypto13 = require("crypto");
 init_rds_connection();
 
 // src/utils/idempotency.ts
@@ -130841,338 +131370,8 @@ function parseSelectedServices(raw2) {
   return [];
 }
 
-// src/endpoints/sms-notifications.ts
-init_rds_connection();
-init_sms_service();
-var SMS_TEMPLATES = {
-  booking_created: {
-    id: "booking_created",
-    event: "booking_created",
-    message: "Warmpawz Booking: Your booking with {bookingWith} for {bookingDate} at {bookingTime} is confirmed. For more details, refer to My Bookings.",
-    variables: ["bookingWith", "bookingDate", "bookingTime"],
-    templateId: "1207177035174777582"
-  },
-  payment_confirmed: {
-    id: "payment_confirmed",
-    event: "payment_confirmed",
-    message: "Payment of \u20B9{amount} received for booking {bookingId}. Receipt: {receiptUrl}",
-    variables: ["amount", "bookingId", "receiptUrl"]
-  },
-  staff_assigned: {
-    id: "staff_assigned",
-    event: "staff_assigned",
-    message: "{staffName} has been assigned to your booking {bookingId}. Contact: {staffPhone}",
-    variables: ["staffName", "bookingId", "staffPhone"]
-  },
-  provider_en_route: {
-    id: "provider_en_route",
-    event: "provider_en_route",
-    message: "{providerName} is on the way! Track live location: warmpawz.com/track/{bookingId}",
-    variables: ["providerName", "bookingId"]
-  },
-  provider_arrived: {
-    id: "provider_arrived",
-    event: "provider_arrived",
-    message: "{providerName} has arrived at your location. OTP for verification: {otp}",
-    variables: ["providerName", "otp"]
-  },
-  service_started: {
-    id: "service_started",
-    event: "service_started",
-    message: "Service started for {petName}. You will receive updates shortly.",
-    variables: ["petName"]
-  },
-  service_completed: {
-    id: "service_completed",
-    event: "service_completed",
-    message: "Service completed for {petName}! OTP for completion: {otp}. Rate your experience: warmpawz.com/review/{bookingId}",
-    variables: ["petName", "otp", "bookingId"]
-  },
-  booking_rescheduled: {
-    id: "booking_rescheduled",
-    event: "booking_rescheduled",
-    message: "Warmpawz Rescheduling: Your booking with {bookingWith} has been rescheduled to {bookingDateTime}. For more details, refer to My Bookings.",
-    variables: ["bookingWith", "bookingDateTime"],
-    templateId: "1207177035515118051"
-  },
-  booking_cancelled: {
-    id: "booking_cancelled",
-    event: "booking_cancelled",
-    message: "Warmpawz Cancellation: Your booking with {bookingWith} scheduled for {bookingDateTime} has been cancelled. For more details, refer to My Bookings.",
-    variables: ["bookingWith", "bookingDateTime"],
-    templateId: "1207177035326314961"
-  },
-  refund_processed: {
-    id: "refund_processed",
-    event: "refund_processed",
-    message: "Refund of \u20B9{amount} for booking {bookingId} has been processed to your account.",
-    variables: ["amount", "bookingId"]
-  },
-  review_request: {
-    id: "review_request",
-    event: "review_request",
-    message: "How was your experience with {providerName}? Share your feedback: warmpawz.com/review/{bookingId}",
-    variables: ["providerName", "bookingId"]
-  },
-  delivery_dispatched: {
-    id: "delivery_dispatched",
-    event: "delivery_dispatched",
-    message: "Your order {orderId} has been dispatched. Track: warmpawz.com/track/{orderId}",
-    variables: ["orderId"]
-  },
-  delivery_arrived: {
-    id: "delivery_arrived",
-    event: "delivery_arrived",
-    message: "Your order {orderId} has arrived! OTP for delivery: {otp}",
-    variables: ["orderId", "otp"]
-  }
-};
-var JIO_APPROVED_EVENTS = /* @__PURE__ */ new Set(["booking_created", "booking_rescheduled", "booking_cancelled"]);
-function sanitizeAlphanumeric(value, maxLen = 40) {
-  const raw2 = String(value || "").replace(/\s+/g, " ").trim();
-  const cleaned = raw2.replace(/[^a-zA-Z0-9\s:-]/g, "");
-  return cleaned.length > maxLen ? cleaned.slice(0, maxLen) : cleaned;
-}
-function replaceTemplateVariables(template, variables) {
-  let message2 = template;
-  for (const [key, value] of Object.entries(variables)) {
-    message2 = message2.replace(new RegExp(`\\{${key}\\}`, "g"), String(value || ""));
-  }
-  return message2;
-}
-async function triggerBookingNotification(event, data) {
-  try {
-    console.log(`\u{1F514} Triggering SMS notification for event: ${event}`);
-    const template = SMS_TEMPLATES[event];
-    if (!template) {
-      console.warn(`No SMS template found for event: ${event}`);
-      return;
-    }
-    const isUatMode = process.env.UAT_MODE === "true";
-    if (!isUatMode && !template.templateId && !JIO_APPROVED_EVENTS.has(event)) {
-      console.warn(`[SMS] Skipping non-approved template for event: ${event} (DLT compliance)`);
-      return;
-    }
-    const { booking, customer, vendor, staff, service } = data;
-    const bookingWith = sanitizeAlphanumeric(
-      vendor?.business_name || service?.name || booking?.service_type || "Service"
-    );
-    const bookingDate = sanitizeAlphanumeric(booking?.booking_date || "");
-    const bookingTime = sanitizeAlphanumeric(booking?.booking_time || "");
-    const bookingDateTime = sanitizeAlphanumeric(
-      bookingDate && bookingTime ? `${bookingDate} at ${bookingTime}` : bookingDate || bookingTime || ""
-    );
-    const variables = {
-      customerName: customer?.name || customer?.phone || "Customer",
-      bookingId: booking?.id || booking?.order_number || "",
-      serviceName: service?.name || "Service",
-      date: booking?.booking_date || "",
-      time: booking?.booking_time || "",
-      amount: booking?.total_amount || booking?.amount || "0",
-      receiptUrl: booking?.receipt_url || "",
-      staffName: staff?.name || "Staff",
-      staffPhone: staff?.phone || "",
-      providerName: vendor?.business_name || vendor?.owner_name || "Provider",
-      petName: booking?.pet_name || "Pet",
-      otp: booking?.otp_code || "",
-      refundAmount: booking?.refund_amount || "0",
-      orderId: booking?.order_id || booking?.id || "",
-      bookingWith,
-      bookingDate,
-      bookingTime,
-      bookingDateTime
-    };
-    const message2 = replaceTemplateVariables(template.message, variables);
-    const recipientPhone = customer?.phone || booking?.customer_phone;
-    if (!recipientPhone) {
-      console.warn("No recipient phone number found");
-      return;
-    }
-    await sendSMS({
-      to: recipientPhone,
-      message: message2,
-      type: "transactional",
-      senderId: "WARMPZ",
-      ...template.templateId ? { templateId: template.templateId } : {}
-    });
-    await insert("notifications", {
-      user_id: customer?.id || booking?.customer_id,
-      user_type: "customer",
-      title: template.event,
-      message: message2,
-      notification_type: "sms",
-      is_read: false,
-      metadata: {
-        event,
-        bookingId: booking?.id,
-        sentVia: "sms"
-      }
-    }).catch((err) => console.error("Failed to log notification:", err));
-    console.log(`\u2705 SMS sent to ${recipientPhone} for event: ${event}`);
-  } catch (error) {
-    console.error("Error triggering SMS notification:", error);
-  }
-}
-function registerSmsNotificationEndpoints(app3) {
-  app3.post("/sms/send", async (c) => {
-    try {
-      const { phone, message: message2, event, variables, templateId } = await c.req.json();
-      if (!phone || !message2) {
-        return c.json({ error: "phone and message are required" }, 400);
-      }
-      const isUatMode = process.env.UAT_MODE === "true";
-      if (!isUatMode && !templateId) {
-        return c.json({ error: "templateId is required for SMS in production (DLT compliance)" }, 400);
-      }
-      const result = await sendSMS({
-        to: phone,
-        message: message2,
-        type: "transactional",
-        senderId: "WARMPZ",
-        ...templateId ? { templateId } : {}
-      });
-      await insert("notifications", {
-        user_id: null,
-        user_type: "customer",
-        title: event || "sms_notification",
-        message: message2,
-        notification_type: "sms",
-        is_read: false,
-        metadata: {
-          event,
-          phone,
-          messageId: result.messageId
-        }
-      }).catch(() => {
-      });
-      return c.json({
-        success: true,
-        messageId: result.messageId,
-        message: "SMS sent successfully"
-      });
-    } catch (error) {
-      console.error("Error sending SMS:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.post("/sms/send-sample-templates", async (c) => {
-    try {
-      const { phone } = await c.req.json();
-      const to = phone || "9611377119";
-      const delayMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      const samples = [
-        {
-          name: "Login OTP",
-          templateId: "1207177028377787269",
-          message: "Warmpawz: Your OTP for logging in is 123456. Do not share this OTP with anyone."
-        },
-        {
-          name: "Booking Confirmation",
-          templateId: "1207177035174777582",
-          message: "Warmpawz Booking: Your booking with PetCare Clinic for 10-Feb-2026 at 10:30 AM is confirmed. For more details, refer to My Bookings."
-        },
-        {
-          name: "Booking Rescheduled",
-          templateId: "1207177035515118051",
-          message: "Warmpawz Rescheduling: Your booking with PetCare Clinic has been rescheduled to 12-Feb-2026 at 2:00 PM. For more details, refer to My Bookings."
-        },
-        {
-          name: "Booking Cancelled",
-          templateId: "1207177035326314961",
-          message: "Warmpawz Cancellation: Your booking with PetCare Clinic scheduled for 10-Feb-2026 at 10:30 AM has been cancelled. For more details, refer to My Bookings."
-        }
-      ];
-      const results = [];
-      for (let i = 0; i < samples.length; i++) {
-        const s = samples[i];
-        const result = await sendSMS({
-          to,
-          message: s.message,
-          type: i === 0 ? "otp" : "transactional",
-          templateId: s.templateId,
-          senderId: "WARMPZ"
-        });
-        results.push({ name: s.name, templateId: s.templateId, success: result.success, messageId: result.messageId });
-        if (i < samples.length - 1) await delayMs(2e3);
-      }
-      return c.json({
-        success: true,
-        message: "Sample templates sent (one by one with 2s delay)",
-        phone: to,
-        results
-      });
-    } catch (error) {
-      console.error("Error sending sample templates:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.post("/sms/trigger-event", async (c) => {
-    try {
-      const { event, bookingId, data } = await c.req.json();
-      if (!event || !bookingId) {
-        return c.json({ error: "event and bookingId are required" }, 400);
-      }
-      const bookings = await select("bookings", { id: bookingId });
-      if (bookings.length === 0) {
-        return c.json({ error: "Booking not found" }, 404);
-      }
-      const booking = bookings[0];
-      const customers = await select("customers", { id: booking.customer_id });
-      const customer = customers.length > 0 ? customers[0] : null;
-      const vendors = booking.vendor_id ? await select("vendors", { id: booking.vendor_id }) : [];
-      const vendor = vendors.length > 0 ? vendors[0] : null;
-      const staff = booking.staff_id ? await select("staff", { id: booking.staff_id }) : [];
-      const staffMember = staff.length > 0 ? staff[0] : null;
-      const services = await select("services", { id: booking.service_id });
-      const service = services.length > 0 ? services[0] : null;
-      await triggerBookingNotification(event, {
-        booking,
-        customer,
-        vendor,
-        staff: staffMember,
-        service,
-        ...data
-      });
-      return c.json({
-        success: true,
-        message: "SMS notification triggered"
-      });
-    } catch (error) {
-      console.error("Error triggering SMS event:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.get("/sms/templates", async (c) => {
-    return c.json({
-      success: true,
-      templates: Object.values(SMS_TEMPLATES)
-    });
-  });
-  app3.get("/sms/history", async (c) => {
-    try {
-      const { userId, limit = 50, offset = 0 } = c.req.query();
-      let queryText = `SELECT * FROM notifications WHERE notification_type = 'sms'`;
-      const params = [];
-      let paramIndex = 1;
-      if (userId) {
-        queryText += ` AND user_id = $${paramIndex}`;
-        params.push(userId);
-        paramIndex++;
-      }
-      queryText += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(parseInt(limit, 10), parseInt(offset, 10));
-      const result = await query(queryText, params).catch(() => ({ rows: [] }));
-      return c.json({
-        success: true,
-        notifications: result.rows,
-        total: result.rows.length
-      });
-    } catch (error) {
-      console.error("Error fetching SMS history:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-}
+// src/endpoints/bookings-enhanced.ts
+init_sms_notifications();
 
 // src/lib/rule-engine.ts
 init_rds_connection();
@@ -131256,8 +131455,6 @@ function serviceTypeToLocation(serviceType) {
   return "all";
 }
 async function getRefundTierForCancellation(booking, cancelledBy, options) {
-  const bookingDateTime = /* @__PURE__ */ new Date(`${booking.booking_date}T${booking.booking_time}`);
-  const hoursUntilBooking = (bookingDateTime.getTime() - Date.now()) / (1e3 * 60 * 60);
   const serviceLocation = serviceTypeToLocation(booking.service_type);
   let vendorRoleName = null;
   if (booking.vendor_id) {
@@ -131305,7 +131502,20 @@ async function getRefundTierForCancellation(booking, cancelledBy, options) {
       tierName: tier2.name
     };
   }
-  const h = Math.max(0, hoursUntilBooking);
+  let computedHours = null;
+  if (typeof options?.hoursUntilBooking === "number" && Number.isFinite(options.hoursUntilBooking)) {
+    computedHours = options.hoursUntilBooking;
+  } else {
+    const rawDateTime = (booking.booking_datetime ? new Date(booking.booking_datetime) : null) || (booking.scheduled_at ? new Date(booking.scheduled_at) : null) || /* @__PURE__ */ new Date(`${booking.booking_date}T${booking.booking_time}`);
+    if (!isNaN(rawDateTime.getTime())) {
+      computedHours = (rawDateTime.getTime() - Date.now()) / (1e3 * 60 * 60);
+    }
+  }
+  if (computedHours == null || !Number.isFinite(computedHours)) {
+    console.warn("[RefundTier] Unable to compute hours until booking for tier evaluation:", booking.id);
+    return null;
+  }
+  const h = Math.max(0, computedHours);
   const tiersResult = await query(
     `SELECT id, name, refund_percentage, cancellation_fee, max_partial_refund_percentage, hours_before_service
      FROM vendor_refund_tiers
@@ -131361,6 +131571,120 @@ function computeRefundFromTier(totalAmount, tier, fallbackPercentage = 100, fall
     refundPercentage: effectivePercentage,
     cancellationFee
   };
+}
+
+// src/utils/payment-policy.ts
+init_rds_connection();
+function normalizeVendorType(value) {
+  if (!value) return null;
+  return String(value).trim().toLowerCase();
+}
+function normalizeServiceLocation(serviceType) {
+  const normalized = String(serviceType || "").toLowerCase();
+  if (normalized === "tele" || normalized === "online") return "tele";
+  if (normalized === "at_home") return "at_home";
+  return "at_center";
+}
+function ruleMatchesService(rule, serviceLocation) {
+  const ruleLocation = rule.serviceLocation || "both";
+  if (ruleLocation === "both") return true;
+  return ruleLocation === serviceLocation;
+}
+function ruleMatchesVendor(rule, vendorType) {
+  const types5 = (rule.vendorTypes || []).map((t) => String(t).toLowerCase());
+  if (types5.length === 0) return false;
+  if (!vendorType) return false;
+  return types5.includes(vendorType);
+}
+async function getPaymentRules() {
+  const settings = await select("platform_settings", { setting_key: "admin:settings:payment_rules" });
+  if (settings.length === 0) return [];
+  const raw2 = settings[0]?.setting_value;
+  if (!raw2 || !Array.isArray(raw2)) return [];
+  return raw2;
+}
+async function resolvePaymentPolicy(params) {
+  const totalAmount = Math.max(0, Number(params.totalAmount) || 0);
+  const vendorType = normalizeVendorType(params.vendorType);
+  const serviceLocation = normalizeServiceLocation(params.serviceType);
+  const rules = await getPaymentRules();
+  const matching = rules.filter((rule2) => {
+    if (rule2.isActive === false) return false;
+    return ruleMatchesVendor(rule2, vendorType) && ruleMatchesService(rule2, serviceLocation);
+  });
+  const rule = matching.length > 0 ? matching[0] : null;
+  if (!rule) {
+    return {
+      rule: null,
+      requiredUpfront: totalAmount,
+      allowsZeroUpfront: totalAmount === 0,
+      isPartialAllowed: false,
+      reason: "default_full_upfront"
+    };
+  }
+  const reservationType = rule.reservationType || "full";
+  const partialAllowed = rule.partialPaymentAllowed !== false;
+  let required = totalAmount;
+  if (!partialAllowed) {
+    required = totalAmount;
+  } else if (reservationType === "full") {
+    required = totalAmount;
+  } else if (reservationType === "percentage") {
+    const pct = Number(rule.reservationPercentage) || 0;
+    required = totalAmount * (pct / 100);
+  } else if (reservationType === "flat") {
+    required = Number(rule.flatAmount) || 0;
+  }
+  const minimumAdvance = Number(rule.minimumAdvancePayment) || 0;
+  if (minimumAdvance > 0) {
+    required = Math.max(required, minimumAdvance);
+  }
+  required = Math.min(Math.max(0, required), totalAmount);
+  return {
+    rule,
+    requiredUpfront: required,
+    allowsZeroUpfront: required === 0,
+    isPartialAllowed: partialAllowed,
+    reason: "rule_applied"
+  };
+}
+async function getCompletedPayment(params) {
+  const clauses = [];
+  const values = [];
+  let idx = 1;
+  if (params.paymentId) {
+    clauses.push(`id = $${idx++}`);
+    values.push(params.paymentId);
+  } else if (params.razorpayPaymentId) {
+    clauses.push(`razorpay_payment_id = $${idx++}`);
+    values.push(params.razorpayPaymentId);
+  } else if (params.razorpayOrderId) {
+    clauses.push(`razorpay_order_id = $${idx++}`);
+    values.push(params.razorpayOrderId);
+  } else {
+    return null;
+  }
+  if (params.customerId) {
+    clauses.push(`customer_id = $${idx++}`);
+    values.push(params.customerId);
+  }
+  if (params.vendorId) {
+    clauses.push(`vendor_id = $${idx++}`);
+    values.push(params.vendorId);
+  }
+  clauses.push(`payment_status = 'completed'`);
+  const where = clauses.join(" AND ");
+  const result = await query(`SELECT * FROM payments WHERE ${where} ORDER BY created_at DESC LIMIT 1`, values).catch(() => ({ rows: [] }));
+  return result.rows?.[0] || null;
+}
+async function getTotalPaidForBooking(bookingId) {
+  const result = await query(
+    `SELECT COALESCE(SUM(amount), 0) as total_paid
+     FROM payments
+     WHERE booking_id = $1 AND payment_status = 'completed'`,
+    [bookingId]
+  ).catch(() => ({ rows: [{ total_paid: "0" }] }));
+  return parseFloat(result.rows?.[0]?.total_paid || "0") || 0;
 }
 
 // src/endpoints/bookings-enhanced.ts
@@ -132714,11 +133038,33 @@ function validateBookingDate(bookingDate, bookingTime, minNoticeHours = DEFAULT_
   }
   return { valid: true };
 }
+function getBookingDateTimeInfo(booking) {
+  const explicitDate = booking?.booking_date ?? booking?.bookingDate;
+  const explicitTime = booking?.booking_time ?? booking?.bookingTime;
+  const rawDateTime = booking?.booking_datetime ?? booking?.bookingDateTime ?? booking?.scheduled_at ?? booking?.scheduledAt ?? null;
+  let bookingDateTime = null;
+  if (rawDateTime) {
+    const dt = new Date(rawDateTime);
+    if (!isNaN(dt.getTime())) {
+      bookingDateTime = dt;
+    }
+  }
+  if (!bookingDateTime && explicitDate && explicitTime) {
+    const dt = /* @__PURE__ */ new Date(`${explicitDate}T${explicitTime}`);
+    if (!isNaN(dt.getTime())) {
+      bookingDateTime = dt;
+    }
+  }
+  const hoursUntilBooking = bookingDateTime && !isNaN(bookingDateTime.getTime()) ? (bookingDateTime.getTime() - Date.now()) / (1e3 * 60 * 60) : null;
+  const bookingDate = explicitDate || (bookingDateTime ? bookingDateTime.toISOString().slice(0, 10) : void 0);
+  const bookingTime = explicitTime || (bookingDateTime ? bookingDateTime.toISOString().slice(11, 16) : void 0);
+  return { bookingDateTime, hoursUntilBooking, bookingDate, bookingTime };
+}
 function generateEventMetadata(requestId) {
   return {
     eventTimestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    eventId: (0, import_crypto12.randomUUID)(),
-    requestId: requestId || (0, import_crypto12.randomUUID)(),
+    eventId: (0, import_crypto13.randomUUID)(),
+    requestId: requestId || (0, import_crypto13.randomUUID)(),
     sourceService: "booking-handler"
   };
 }
@@ -132765,6 +133111,9 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
   async handle(context) {
     const body = this.parseBody(context.event);
     const requestId = context.requestId;
+    const paymentId = body.paymentId || body.payment_id || null;
+    const razorpayPaymentId = body.razorpayPaymentId || body.razorpay_payment_id || null;
+    const razorpayOrderId = body.razorpayOrderId || body.razorpay_order_id || null;
     if (!body.customerId && body.customerPhone) {
       try {
         const custResult = await query(
@@ -132783,7 +133132,14 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
     if (!body.customerId) {
       return this.error("customerId or customerPhone (to resolve customer) is required", 400, "VALIDATION_ERROR", void 0, requestId);
     }
-    const validationResult = import_bookings.CreateBookingRequestSchema.safeParse(body);
+    const validationBody = { ...body };
+    delete validationBody.paymentId;
+    delete validationBody.payment_id;
+    delete validationBody.razorpayPaymentId;
+    delete validationBody.razorpay_payment_id;
+    delete validationBody.razorpayOrderId;
+    delete validationBody.razorpay_order_id;
+    const validationResult = import_bookings.CreateBookingRequestSchema.safeParse(validationBody);
     if (!validationResult.success) {
       return this.error(
         "Validation failed",
@@ -133056,6 +133412,7 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
       }
     }
     try {
+      let remainingDueForResponse = 0;
       const result = await withTransaction(async (client2) => {
         const lockQuery = staffId ? `SELECT id FROM bookings 
              WHERE vendor_id = $1 AND booking_date = $2 AND booking_time = $3 AND staff_id = $4
@@ -133142,6 +133499,70 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
         }
         const calculatedBasePrice = totalSelectedServicesAmount > 0 ? totalSelectedServicesAmount : amount || 0;
         const calculatedFinalAmount = isSubscriptionBooking ? 0 : calculatedBasePrice;
+        const vendorType = vendorRow?.category || vendorRow?.vendor_type || vendorRow?.vendorType || null;
+        const policy = await resolvePaymentPolicy({
+          vendorType,
+          serviceType,
+          totalAmount: calculatedFinalAmount
+        });
+        let paymentRecord = null;
+        let amountPaid = 0;
+        if (policy.requiredUpfront > 0) {
+          if (!paymentId && !razorpayPaymentId && !razorpayOrderId) {
+            return this.error(
+              "Payment required before booking creation",
+              402,
+              "PAYMENT_REQUIRED",
+              {
+                paymentRequired: true,
+                requiredUpfront: policy.requiredUpfront,
+                totalAmount: calculatedFinalAmount,
+                policyRule: policy.rule || null,
+                policyReason: policy.reason
+              },
+              requestId
+            );
+          }
+          paymentRecord = await getCompletedPayment({
+            paymentId,
+            razorpayPaymentId,
+            razorpayOrderId,
+            customerId,
+            vendorId: resolvedVendorId
+          });
+          if (!paymentRecord) {
+            return this.error(
+              "Payment not found or not completed",
+              402,
+              "PAYMENT_NOT_COMPLETED",
+              {
+                paymentRequired: true,
+                requiredUpfront: policy.requiredUpfront,
+                totalAmount: calculatedFinalAmount
+              },
+              requestId
+            );
+          }
+          amountPaid = parseFloat(paymentRecord.amount || "0") || 0;
+          if (amountPaid + 0.01 < policy.requiredUpfront) {
+            return this.error(
+              "Insufficient payment for booking creation",
+              402,
+              "PAYMENT_INSUFFICIENT",
+              {
+                paymentRequired: true,
+                requiredUpfront: policy.requiredUpfront,
+                totalAmount: calculatedFinalAmount,
+                amountPaid
+              },
+              requestId
+            );
+          }
+        }
+        const remainingDue = Math.max(0, calculatedFinalAmount - amountPaid);
+        remainingDueForResponse = remainingDue;
+        const initialStatus = "pending";
+        const initialPaymentStatus = calculatedFinalAmount === 0 ? "paid" : remainingDue > 0 ? "partial" : "paid";
         const bookingData = {
           customer_id: customerId,
           vendor_id: resolvedVendorId,
@@ -133155,9 +133576,9 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
           base_price: calculatedBasePrice,
           total_amount: calculatedFinalAmount,
           // ✅ Use calculated amount (may be 0 for subscriptions)
-          status: "pending",
-          payment_status: isSubscriptionBooking ? "paid" : "pending",
-          // ✅ Mark as paid for subscription
+          status: initialStatus,
+          payment_status: initialPaymentStatus,
+          // ✅ Mark as paid for zero-amount/subscription, pending otherwise
           notes: notesFromSchema || (petName ? `Pet: ${petName}` : null),
           subscription_id: subscriptionId,
           // ✅ Track subscription used
@@ -133225,8 +133646,18 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
           `INSERT INTO bookings (${columns.join(", ")}) VALUES (${placeholders}) RETURNING *`,
           values
         );
-        return insertResult.rows[0];
+        const createdBooking = insertResult.rows[0];
+        if (paymentRecord?.id) {
+          await client2.query(
+            `UPDATE payments SET booking_id = $1, updated_at = NOW() WHERE id = $2`,
+            [createdBooking.id, paymentRecord.id]
+          );
+        }
+        return createdBooking;
       });
+      if (result && typeof result.statusCode === "number" && typeof result.body === "string") {
+        return result;
+      }
       const booking = result;
       await logAuditEntry({
         entityType: "booking",
@@ -133247,72 +133678,81 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
       await logBookingStatusChange(
         booking.id,
         null,
-        "pending",
+        booking.status,
         customerId,
         "customer",
-        "Booking created"
+        booking.status === "pending_payment" ? "Booking created (awaiting payment)" : "Booking created"
       );
-      try {
-        const { publishBookingCreated: publishBookingCreated2 } = await Promise.resolve().then(() => (init_sns_client(), sns_client_exports));
-        await publishBookingCreated2({
-          bookingId: booking.id,
-          customerId: booking.customer_id,
-          vendorId: booking.vendor_id,
-          serviceType: booking.service_type,
-          status: booking.status,
-          bookingDate: booking.booking_date,
-          bookingTime: booking.booking_time,
-          ...generateEventMetadata(requestId)
-        });
-      } catch (error) {
-        console.error("Failed to publish booking created event:", error);
-      }
-      try {
-        const customers = await select("customers", { id: booking.customer_id });
-        const customerName2 = customers[0]?.name || customers[0]?.full_name || "Customer";
-        const serviceName2 = service?.service_name || service?.name || "Service";
-        const serviceTypeLabel = booking.service_type === "at_home" ? "Home visit" : booking.service_type === "tele" ? "Tele consultation" : "At center";
-        await insert("notifications", {
-          recipient_id: booking.vendor_id,
-          recipient_type: "vendor",
-          type: "new_booking",
-          title: "New appointment",
-          message: `${customerName2} booked ${serviceName2} \u2022 ${serviceTypeLabel} \u2022 ${booking.booking_date} ${booking.booking_time}`,
-          data: JSON.stringify({
+      {
+        try {
+          const { publishBookingCreated: publishBookingCreated2 } = await Promise.resolve().then(() => (init_sns_client(), sns_client_exports));
+          await publishBookingCreated2({
             bookingId: booking.id,
             customerId: booking.customer_id,
-            customerName: customerName2,
-            serviceName: serviceName2,
+            vendorId: booking.vendor_id,
             serviceType: booking.service_type,
+            status: booking.status,
             bookingDate: booking.booking_date,
             bookingTime: booking.booking_time,
-            address: booking.address
-          }),
-          is_read: false,
-          created_at: /* @__PURE__ */ new Date()
-        });
-        const customer = customers[0] || null;
-        const vendors = await select("vendors", { id: booking.vendor_id });
-        const vendor = vendors[0] || null;
-        triggerBookingNotification("booking_created", {
-          booking,
-          customer,
-          vendor,
-          service
-        }).catch((smsErr) => {
-          console.warn("[SMS] Booking confirmation SMS failed:", smsErr?.message || smsErr);
-        });
-      } catch (notifErr) {
-        console.warn("Failed to create vendor notification for new booking:", notifErr);
+            ...generateEventMetadata(requestId)
+          });
+        } catch (error) {
+          console.error("Failed to publish booking created event:", error);
+        }
+        try {
+          const customers = await select("customers", { id: booking.customer_id });
+          const customerName2 = customers[0]?.name || customers[0]?.full_name || "Customer";
+          const serviceName2 = service?.service_name || service?.name || "Service";
+          const serviceTypeLabel = booking.service_type === "at_home" ? "Home visit" : booking.service_type === "tele" ? "Tele consultation" : "At center";
+          await insert("notifications", {
+            recipient_id: booking.vendor_id,
+            recipient_type: "vendor",
+            type: "new_booking",
+            title: "New appointment",
+            message: `${customerName2} booked ${serviceName2} \u2022 ${serviceTypeLabel} \u2022 ${booking.booking_date} ${booking.booking_time}`,
+            data: JSON.stringify({
+              bookingId: booking.id,
+              customerId: booking.customer_id,
+              customerName: customerName2,
+              serviceName: serviceName2,
+              serviceType: booking.service_type,
+              bookingDate: booking.booking_date,
+              bookingTime: booking.booking_time,
+              address: booking.address
+            }),
+            is_read: false,
+            created_at: /* @__PURE__ */ new Date()
+          });
+          const customer = customers[0] || null;
+          const vendors = await select("vendors", { id: booking.vendor_id });
+          const vendor = vendors[0] || null;
+          triggerBookingNotification("booking_created", {
+            booking,
+            customer,
+            vendor,
+            service
+          }).catch((smsErr) => {
+            console.warn("[SMS] Booking confirmation SMS failed:", smsErr?.message || smsErr);
+          });
+        } catch (notifErr) {
+          console.warn("Failed to create vendor notification for new booking:", notifErr);
+        }
+      }
+      const bookingIdForResponse = booking.id ?? booking.booking_id ?? "";
+      const statusForResponse = booking.status ?? "pending";
+      if (!bookingIdForResponse) {
+        console.error("[BOOKING] Created row missing id/booking_id. Row keys:", Object.keys(booking || {}));
       }
       const response = {
-        bookingId: booking.id,
-        status: booking.status,
+        bookingId: bookingIdForResponse,
+        status: statusForResponse,
         message: "Booking created successfully",
-        isNew: true
+        isNew: true,
+        paymentRequired: remainingDueForResponse > 0,
+        remainingDue: remainingDueForResponse
       };
       if (idempotencyKey) {
-        await storeIdempotencyKey(idempotencyKey, "booking", booking.id, JSON.stringify(response), 200);
+        await storeIdempotencyKey(idempotencyKey, "booking", bookingIdForResponse, JSON.stringify(response), 200);
       }
       return this.success(response, requestId);
     } catch (error) {
@@ -133996,89 +134436,91 @@ var GetRefundPreviewHandler = class extends BaseHandlerEnhanced {
         return this.error("Booking not found", 404, "NOT_FOUND", void 0, requestId);
       }
       const booking = bookings[0];
-      let hoursUntilBooking = 0;
-      if (booking.booking_datetime) {
-        const bookingDateTime = new Date(booking.booking_datetime);
-        hoursUntilBooking = Math.max(0, (bookingDateTime.getTime() - Date.now()) / (1e3 * 60 * 60));
-      } else if (booking.booking_date && booking.booking_time) {
-        const bookingDateTime = /* @__PURE__ */ new Date(`${booking.booking_date}T${booking.booking_time}`);
-        hoursUntilBooking = Math.max(0, (bookingDateTime.getTime() - Date.now()) / (1e3 * 60 * 60));
-      }
-      const rulesResult = await query(
-        `SELECT * FROM booking_cancellation_rules
-         WHERE (vendor_id = $1 OR vendor_id IS NULL)
-           AND (service_id = $2 OR service_id IS NULL)
-         ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
-         LIMIT 1`,
-        [booking.vendor_id || null, booking.service_id || null]
-      );
-      const rule = rulesResult.rows.length > 0 ? rulesResult.rows[0] : null;
-      const fullRefundHours = rule?.full_refund_before_hours || 48;
-      const partialRefundHours = rule?.partial_refund_before_hours || 24;
-      const partialRefundPercentage = parseFloat(rule?.partial_refund_percentage || "50");
-      const cutoffHours = rule?.cancellation_cutoff_hours || 12;
-      let cancellationWindows = [];
-      if (rule?.cancellation_windows) {
-        try {
-          cancellationWindows = typeof rule.cancellation_windows === "string" ? JSON.parse(rule.cancellation_windows) : rule.cancellation_windows;
-        } catch (e) {
-          console.warn("[RefundPreview] Error parsing cancellation_windows:", e);
-        }
-      }
+      const bookingTimeInfo = getBookingDateTimeInfo(booking);
+      const safeHoursUntilBooking = bookingTimeInfo.hoursUntilBooking != null && Number.isFinite(bookingTimeInfo.hoursUntilBooking) ? Math.max(0, bookingTimeInfo.hoursUntilBooking) : 0;
+      const totalAmount = parseFloat(booking.total_amount || "0");
       let refundPercentage = 0;
       let cancellationFee = 0;
       let penaltyPercentage = 0;
-      if (cancellationWindows.length > 0) {
-        const sortedWindows = [...cancellationWindows].sort((a, b) => b.hoursBefore - a.hoursBefore);
-        for (const window2 of sortedWindows) {
-          if (hoursUntilBooking >= window2.hoursBefore) {
-            refundPercentage = window2.refundPercentage;
-            cancellationFee = window2.cancellationFee || 0;
-            penaltyPercentage = window2.penaltyPercentage || 0;
-            break;
-          }
+      let penaltyAmount = 0;
+      let refundAmount = 0;
+      let policyDetails = {};
+      let tierApplied = false;
+      try {
+        const tier = await getRefundTierForCancellation(
+          {
+            id: booking.id,
+            vendor_id: booking.vendor_id,
+            service_id: booking.service_id,
+            service_type: booking.service_type,
+            booking_date: bookingTimeInfo.bookingDate || booking.booking_date || "",
+            booking_time: bookingTimeInfo.bookingTime || booking.booking_time || "00:00",
+            booking_datetime: booking.booking_datetime,
+            scheduled_at: booking.scheduled_at,
+            total_amount: totalAmount
+          },
+          "pet_parent",
+          { hoursUntilBooking: safeHoursUntilBooking }
+        );
+        if (tier) {
+          const computed = computeRefundFromTier(totalAmount, tier, 100, 0);
+          refundPercentage = computed.refundPercentage;
+          cancellationFee = computed.cancellationFee;
+          refundAmount = computed.refundAmount;
+          policyDetails = {
+            source: "vendor_refund_tiers",
+            tierId: tier.tierId,
+            tierName: tier.tierName,
+            maxPartialRefundPercentage: tier.maxPartialRefundPercentage
+          };
+          tierApplied = true;
         }
-        if (refundPercentage === 0 && hoursUntilBooking > 0) {
-          const lowestWindow = sortedWindows[sortedWindows.length - 1];
-          if (lowestWindow && hoursUntilBooking < lowestWindow.hoursBefore) {
-            refundPercentage = 0;
-            cancellationFee = lowestWindow.cancellationFee || 0;
-            penaltyPercentage = lowestWindow.penaltyPercentage || 0;
-          }
-        }
-      } else {
-        if (hoursUntilBooking >= fullRefundHours) {
+      } catch (tierError) {
+        console.warn("[RefundPreview] Failed to evaluate refund tiers:", tierError);
+      }
+      if (!tierApplied) {
+        const rulesResult = await query(
+          `SELECT * FROM booking_cancellation_rules
+           WHERE (vendor_id = $1 OR vendor_id IS NULL)
+             AND (service_id = $2 OR service_id IS NULL)
+           ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
+           LIMIT 1`,
+          [booking.vendor_id || null, booking.service_id || null]
+        ).catch(() => ({ rows: [] }));
+        const rule = rulesResult.rows.length > 0 ? rulesResult.rows[0] : null;
+        const fullRefundHours = rule?.full_refund_before_hours || 48;
+        const partialRefundHours = rule?.partial_refund_before_hours || 24;
+        const partialRefundPercentage = parseFloat(rule?.partial_refund_percentage || "50");
+        const cutoffHours = rule?.cancellation_cutoff_hours || 12;
+        if (safeHoursUntilBooking >= fullRefundHours) {
           refundPercentage = 100;
-        } else if (hoursUntilBooking >= partialRefundHours) {
+        } else if (safeHoursUntilBooking >= partialRefundHours) {
           refundPercentage = partialRefundPercentage;
-        } else if (hoursUntilBooking >= cutoffHours) {
+        } else if (safeHoursUntilBooking >= cutoffHours) {
           refundPercentage = partialRefundPercentage;
         } else {
           refundPercentage = 0;
-          cancellationFee = parseFloat(booking.total_amount || "0") * 0.1;
         }
+        refundAmount = Math.max(0, totalAmount * refundPercentage / 100);
+        policyDetails = {
+          source: "booking_cancellation_rules",
+          fullRefundBeforeHours: fullRefundHours,
+          partialRefundBeforeHours: partialRefundHours,
+          partialRefundPercentage,
+          cancellationCutoffHours: cutoffHours
+        };
       }
-      const totalAmount = parseFloat(booking.total_amount || "0");
-      const penaltyAmount = penaltyPercentage > 0 ? totalAmount * penaltyPercentage / 100 : 0;
-      const baseRefund = totalAmount * refundPercentage / 100;
-      const refundAmount = Math.max(0, baseRefund - cancellationFee - penaltyAmount);
       return this.success({
         refund: {
           eligible: refundPercentage > 0 || refundAmount > 0,
           refundAmount: Math.round(refundAmount * 100) / 100,
           refundPercentage: Math.round(refundPercentage),
-          hoursUntil: Math.round(hoursUntilBooking),
+          hoursUntil: Math.round(safeHoursUntilBooking),
           cancellationFee: Math.round(cancellationFee * 100) / 100,
           penaltyPercentage: Math.round(penaltyPercentage),
           penaltyAmount: Math.round(penaltyAmount * 100) / 100,
           message: refundAmount > 0 ? `\u20B9${Math.round(refundAmount * 100) / 100} will be refunded to your original payment method${cancellationFee > 0 ? ` (\u20B9${cancellationFee} cancellation fee applied)` : ""}` : "No refund available for this booking",
-          policy: {
-            fullRefundBeforeHours: fullRefundHours,
-            partialRefundBeforeHours: partialRefundHours,
-            partialRefundPercentage,
-            cancellationCutoffHours: cutoffHours,
-            configuredWindows: cancellationWindows.length > 0 ? cancellationWindows : null
-          }
+          policy: policyDetails
         }
       }, requestId);
     } catch (error) {
@@ -134123,9 +134565,9 @@ var CancelBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
         requestId
       );
     }
-    const bookingDateTime = /* @__PURE__ */ new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
+    const bookingTimeInfo = getBookingDateTimeInfo(currentBooking);
     const now = /* @__PURE__ */ new Date();
-    if (bookingDateTime < now) {
+    if (bookingTimeInfo.bookingDateTime && bookingTimeInfo.bookingDateTime < now) {
       return this.error(
         "Cannot cancel past bookings",
         400,
@@ -134135,18 +134577,45 @@ var CancelBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
       );
     }
     try {
-      await withTransaction(async (client2) => {
-        await client2.query(
-          `UPDATE bookings 
-           SET status = 'cancelled', 
-               cancelled_at = NOW(), 
-               cancellation_reason = $1,
-               cancelled_by = $2,
-               updated_at = NOW() 
-           WHERE id = $3`,
-          [reason, cancelledBy, bookingId]
-        );
-      });
+      const updateWithCancelledBy = async () => {
+        await withTransaction(async (client2) => {
+          await client2.query(
+            `UPDATE bookings 
+             SET status = 'cancelled', 
+                 cancelled_at = NOW(), 
+                 cancellation_reason = $1,
+                 cancelled_by = $2,
+                 updated_at = NOW() 
+             WHERE id = $3`,
+            [reason, cancelledBy, bookingId]
+          );
+        });
+      };
+      const updateWithoutCancelledBy = async () => {
+        await withTransaction(async (client2) => {
+          await client2.query(
+            `UPDATE bookings 
+             SET status = 'cancelled', 
+                 cancelled_at = NOW(), 
+                 cancellation_reason = $1,
+                 updated_at = NOW() 
+             WHERE id = $2`,
+            [reason, bookingId]
+          );
+        });
+      };
+      try {
+        await updateWithCancelledBy();
+      } catch (updateError) {
+        const message2 = String(updateError?.message || updateError);
+        const shouldRetry = /cancelled_by/i.test(message2) || /column .*cancelled_by.*does not exist/i.test(message2) || /invalid input syntax for type uuid/i.test(message2);
+        if (shouldRetry) {
+          console.warn("[CancelBooking] Retrying without cancelled_by column:", message2);
+          await updateWithoutCancelledBy();
+        } else {
+          throw updateError;
+        }
+      }
       await logBookingStatusChange(
         bookingId,
         oldStatus,
@@ -134172,25 +134641,28 @@ var CancelBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
           const totalAmount = parseFloat(String(currentBooking.total_amount));
           let refundAmount;
           let refundPercentage;
+          const safeHoursUntilBooking = bookingTimeInfo.hoursUntilBooking != null && Number.isFinite(bookingTimeInfo.hoursUntilBooking) ? bookingTimeInfo.hoursUntilBooking : 0;
           const tier = await getRefundTierForCancellation(
             {
               id: currentBooking.id,
               vendor_id: currentBooking.vendor_id,
               service_id: currentBooking.service_id,
               service_type: currentBooking.service_type,
-              booking_date: currentBooking.booking_date,
-              booking_time: currentBooking.booking_time,
+              booking_date: bookingTimeInfo.bookingDate || currentBooking.booking_date || "",
+              booking_time: bookingTimeInfo.bookingTime || currentBooking.booking_time || "00:00",
+              booking_datetime: currentBooking.booking_datetime,
+              scheduled_at: currentBooking.scheduled_at,
               total_amount: totalAmount
             },
-            cancelledBy
+            cancelledBy,
+            { hoursUntilBooking: safeHoursUntilBooking }
           );
           if (tier) {
             const computed = computeRefundFromTier(totalAmount, tier, 100, 0);
             refundAmount = computed.refundAmount;
             refundPercentage = computed.refundPercentage;
           } else {
-            const bookingDateTime2 = /* @__PURE__ */ new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
-            const hoursUntilBooking = (bookingDateTime2.getTime() - Date.now()) / (1e3 * 60 * 60);
+            const hoursUntilBooking = safeHoursUntilBooking;
             const rulesResult = await query(
               `SELECT * FROM booking_cancellation_rules
                WHERE (vendor_id = $1 OR vendor_id IS NULL)
@@ -134524,6 +134996,21 @@ var RescheduleBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
     }
   }
 };
+function normalizeBookingCreateResponse(responseBody) {
+  if (!responseBody || typeof responseBody !== "object") return;
+  const data = responseBody.data ?? responseBody;
+  const bookingId = responseBody?.data?.bookingId ?? responseBody?.data?.booking_id ?? (responseBody?.data?.id && typeof responseBody.data.id === "string" ? responseBody.data.id : null) ?? responseBody?.bookingId ?? responseBody?.booking_id ?? responseBody?.id;
+  if (bookingId) {
+    responseBody.bookingId = bookingId;
+    if (responseBody.data && typeof responseBody.data === "object") {
+      responseBody.data.bookingId = responseBody.data.bookingId ?? responseBody.data.booking_id ?? bookingId;
+      const msg = responseBody.data.message;
+      if (typeof msg === "string" && !msg.includes(bookingId)) {
+        responseBody.data.message = `${msg} | bookingId:${bookingId}`;
+      }
+    }
+  }
+}
 function registerBookingEndpointsEnhanced(app3) {
   const createHandler = new CreateBookingHandlerEnhanced();
   const getHandler = new GetBookingHandlerEnhanced();
@@ -134551,7 +135038,7 @@ function registerBookingEndpointsEnhanced(app3) {
         pathParameters: {},
         queryStringParameters: Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams),
         requestContext: {
-          requestId: (0, import_crypto12.randomUUID)(),
+          requestId: (0, import_crypto13.randomUUID)(),
           http: {
             method: c.req.method || "POST",
             path: c.req.path
@@ -134563,10 +135050,17 @@ function registerBookingEndpointsEnhanced(app3) {
       };
       const context = createLambdaContext4();
       const result = await createHandler.execute(event, context);
-      const responseBody = JSON.parse(result.body);
-      if (responseBody?.success && responseBody?.data?.bookingId) {
-        responseBody.bookingId = responseBody.data.bookingId;
+      console.log("[BOOKING-CREATE] result.body from handler (first 500 chars):", typeof result?.body === "string" ? result.body.slice(0, 500) : String(result?.body).slice(0, 500));
+      let responseBody;
+      try {
+        responseBody = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+      } catch (parseErr) {
+        console.error("[BOOKING-CREATE] Invalid JSON in result.body:", (result.body || "").slice(0, 200));
+        throw parseErr;
       }
+      normalizeBookingCreateResponse(responseBody);
+      const outId = responseBody?.bookingId ?? responseBody?.data?.bookingId;
+      console.log("[BOOKING-CREATE] Response keys:", Object.keys(responseBody || {}), "bookingId:", outId);
       return c.json(responseBody, result.statusCode);
     } catch (error) {
       const err = error;
@@ -134597,7 +135091,7 @@ function registerBookingEndpointsEnhanced(app3) {
             method: c.req.method || "POST",
             path: c.req.path
           },
-          requestId: (0, import_crypto12.randomUUID)()
+          requestId: (0, import_crypto13.randomUUID)()
         },
         rawPath: c.req.path,
         rawQueryString: new URL(c.req.url, "http://localhost").search.substring(1),
@@ -134605,8 +135099,15 @@ function registerBookingEndpointsEnhanced(app3) {
       };
       const context = createLambdaContext4();
       const result = await createHandler.execute(event, context);
-      const responseBody = JSON.parse(result.body);
-      if (responseBody?.success && responseBody?.data?.bookingId) responseBody.bookingId = responseBody.data.bookingId;
+      let responseBody;
+      try {
+        responseBody = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+      } catch (parseErr) {
+        console.error("[BOOKING-CREATE /booking/create] Invalid JSON in result.body:", (result.body || "").slice(0, 200));
+        throw parseErr;
+      }
+      normalizeBookingCreateResponse(responseBody);
+      console.log("[BOOKING-CREATE /booking/create] Response keys:", Object.keys(responseBody || {}), "bookingId:", responseBody?.bookingId ?? responseBody?.data?.bookingId);
       return c.json(responseBody, result.statusCode);
     } catch (error) {
       const err = error;
@@ -134637,7 +135138,7 @@ function registerBookingEndpointsEnhanced(app3) {
             method: c.req.method || "POST",
             path: c.req.path
           },
-          requestId: (0, import_crypto12.randomUUID)()
+          requestId: (0, import_crypto13.randomUUID)()
         },
         rawPath: c.req.path,
         rawQueryString: new URL(c.req.url, "http://localhost").search.substring(1),
@@ -134645,8 +135146,15 @@ function registerBookingEndpointsEnhanced(app3) {
       };
       const context = createLambdaContext4();
       const result = await createHandler.execute(event, context);
-      const responseBody = JSON.parse(result.body);
-      if (responseBody?.success && responseBody?.data?.bookingId) responseBody.bookingId = responseBody.data.bookingId;
+      let responseBody;
+      try {
+        responseBody = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+      } catch (parseErr) {
+        console.error("[BOOKING-CREATE /customer/booking/create] Invalid JSON:", (result.body || "").slice(0, 200));
+        throw parseErr;
+      }
+      normalizeBookingCreateResponse(responseBody);
+      console.log("[BOOKING-CREATE /customer/booking/create] Response keys:", Object.keys(responseBody || {}), "bookingId:", responseBody?.bookingId ?? responseBody?.data?.bookingId);
       return c.json(responseBody, result.statusCode);
     } catch (error) {
       const err = error;
@@ -134677,7 +135185,7 @@ function registerBookingEndpointsEnhanced(app3) {
             method: c.req.method || "POST",
             path: c.req.path
           },
-          requestId: (0, import_crypto12.randomUUID)()
+          requestId: (0, import_crypto13.randomUUID)()
         },
         rawPath: c.req.path,
         rawQueryString: new URL(c.req.url, "http://localhost").search.substring(1),
@@ -134685,7 +135193,16 @@ function registerBookingEndpointsEnhanced(app3) {
       };
       const context = createLambdaContext4();
       const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      let responseBody;
+      try {
+        responseBody = typeof result.body === "string" ? JSON.parse(result.body) : result.body;
+      } catch (parseErr) {
+        console.error("[BOOKING-CREATE /customer/bookings/create] Invalid JSON:", (result.body || "").slice(0, 200));
+        throw parseErr;
+      }
+      normalizeBookingCreateResponse(responseBody);
+      console.log("[BOOKING-CREATE /customer/bookings/create] Response keys:", Object.keys(responseBody || {}), "bookingId:", responseBody?.bookingId ?? responseBody?.data?.bookingId);
+      return c.json(responseBody, result.statusCode);
     } catch (error) {
       const err = error;
       console.error("Error in customer/bookings/create:", error);
@@ -134869,7 +135386,7 @@ async function createApiGatewayEventWithBody3(c) {
         method: c.req.method || "POST",
         path: url.pathname
       },
-      requestId: (0, import_crypto12.randomUUID)()
+      requestId: (0, import_crypto13.randomUUID)()
     },
     headers,
     body: JSON.stringify(body),
@@ -134881,7 +135398,7 @@ async function createApiGatewayEvent3(c) {
 }
 function createLambdaContext4() {
   return {
-    requestId: (0, import_crypto12.randomUUID)(),
+    requestId: (0, import_crypto13.randomUUID)(),
     functionName: "booking-handler",
     functionVersion: "$LATEST"
   };
@@ -135003,10 +135520,11 @@ function registerBookingOTPEndpoint(app3) {
 }
 
 // src/endpoints/payments-enhanced.ts
-var import_crypto13 = require("crypto");
+var import_crypto14 = require("crypto");
 init_rds_connection();
 init_audit_log();
 init_sns_client();
+init_booking_notifications();
 var import_payments = __toESM(require_payments());
 
 // src/endpoints/fee-config.ts
@@ -135677,6 +136195,8 @@ var RazorpayWebhookHandlerEnhanced = class extends BaseHandlerEnhanced {
         return this.success({ message: "Webhook processed (no payment_id)" }, requestId);
       }
       try {
+        let bookingToNotify = null;
+        let bookingStatusChange = null;
         await withTransaction(async (client2) => {
           const { rows: payments } = await client2.query(
             `SELECT * FROM payments 
@@ -135701,10 +136221,30 @@ var RazorpayWebhookHandlerEnhanced = class extends BaseHandlerEnhanced {
             [payment_id, order_id, payment.id]
           );
           if (payment.booking_id) {
-            await client2.query(
-              `UPDATE bookings SET payment_status = 'paid', updated_at = NOW() WHERE id = $1`,
+            const { rows: bookingRows } = await client2.query(
+              `SELECT * FROM bookings WHERE id = $1 FOR UPDATE`,
               [payment.booking_id]
             );
+            if (bookingRows.length > 0) {
+              const booking = bookingRows[0];
+              const previousStatus = booking.status || null;
+              const shouldNotify = booking.payment_status !== "paid" || previousStatus === "pending_payment";
+              const nextStatus = previousStatus === "pending_payment" ? "confirmed" : previousStatus;
+              await client2.query(
+                `UPDATE bookings SET 
+                   payment_status = 'paid', 
+                   status = $2,
+                   updated_at = NOW() 
+                 WHERE id = $1`,
+                [booking.id, nextStatus]
+              );
+              if (shouldNotify) {
+                bookingToNotify = booking.id;
+              }
+              if (previousStatus !== nextStatus) {
+                bookingStatusChange = { bookingId: booking.id, from: previousStatus, to: nextStatus };
+              }
+            }
           }
           await logPaymentStatusChange(
             payment.id,
@@ -135715,6 +136255,19 @@ var RazorpayWebhookHandlerEnhanced = class extends BaseHandlerEnhanced {
             { razorpay_payment_id: payment_id, amount: paymentEntity?.amount }
           );
         });
+        if (bookingStatusChange) {
+          await logBookingStatusChange(
+            bookingStatusChange.bookingId,
+            bookingStatusChange.from,
+            bookingStatusChange.to,
+            "system",
+            "system",
+            "Payment captured"
+          );
+        }
+        if (bookingToNotify) {
+          await notifyBookingCreated(bookingToNotify, requestId);
+        }
         try {
           await publishPaymentProcessed({
             paymentId: payment_id,
@@ -135773,8 +136326,8 @@ var RazorpayWebhookHandlerEnhanced = class extends BaseHandlerEnhanced {
         console.error("[SECURITY] RAZORPAY_WEBHOOK_SECRET not configured");
         return false;
       }
-      const expectedSignature = (0, import_crypto13.createHmac)("sha256", webhookSecret).update(body).digest("hex");
-      return (0, import_crypto13.timingSafeEqual)(
+      const expectedSignature = (0, import_crypto14.createHmac)("sha256", webhookSecret).update(body).digest("hex");
+      return (0, import_crypto14.timingSafeEqual)(
         Buffer.from(signature),
         Buffer.from(expectedSignature)
       );
@@ -135929,13 +136482,13 @@ function createApiGatewayEventWithBody4(req, parsedBody) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto13.randomUUID)()
+      requestId: (0, import_crypto14.randomUUID)()
     }
   };
 }
 function createLambdaContext5() {
   return {
-    requestId: (0, import_crypto13.randomUUID)(),
+    requestId: (0, import_crypto14.randomUUID)(),
     functionName: "payment-handler",
     functionVersion: "$LATEST"
   };
@@ -136051,7 +136604,7 @@ async function triggerAutoShipment(orderId, orderType) {
 }
 
 // src/endpoints/customer-enhanced.ts
-var import_crypto14 = require("crypto");
+var import_crypto15 = require("crypto");
 init_rds_connection();
 var import_customers = __toESM(require_customers());
 var GetCustomerHandlerEnhanced = class extends BaseHandlerEnhanced {
@@ -137576,13 +138129,13 @@ function createApiGatewayEvent4(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto14.randomUUID)()
+      requestId: (0, import_crypto15.randomUUID)()
     }
   };
 }
 function createLambdaContext6() {
   return {
-    requestId: (0, import_crypto14.randomUUID)(),
+    requestId: (0, import_crypto15.randomUUID)(),
     functionName: "customer-handler",
     functionVersion: "$LATEST"
   };
@@ -137750,7 +138303,7 @@ function registerTrackingEndpoints(app3) {
 }
 
 // src/endpoints/roles.ts
-var import_crypto15 = require("crypto");
+var import_crypto16 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var CANONICAL_SERVICE_STYLE_CODES = ["at_home", "at_center", "tele"];
@@ -138597,7 +139150,7 @@ function createApiGatewayEvent5(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto15.randomUUID)()
+      requestId: (0, import_crypto16.randomUUID)()
     }
   };
 }
@@ -138611,13 +139164,13 @@ async function createApiGatewayEventWithBody5(c) {
     pathParameters: {},
     queryStringParameters: {},
     requestContext: {
-      requestId: (0, import_crypto15.randomUUID)()
+      requestId: (0, import_crypto16.randomUUID)()
     }
   };
 }
 function createLambdaContext7() {
   return {
-    requestId: (0, import_crypto15.randomUUID)(),
+    requestId: (0, import_crypto16.randomUUID)(),
     functionName: "role-handler",
     functionVersion: "$LATEST"
   };
@@ -140701,7 +141254,7 @@ function registerOnboardingFormManagementEndpoints(app3) {
 }
 
 // src/endpoints/vendor-dashboard.ts
-var import_crypto16 = require("crypto");
+var import_crypto17 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var VendorDashboardHandler = class extends BaseHandler {
@@ -141162,13 +141715,13 @@ function createApiGatewayEvent6(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto16.randomUUID)()
+      requestId: (0, import_crypto17.randomUUID)()
     }
   };
 }
 function createLambdaContext8() {
   return {
-    requestId: (0, import_crypto16.randomUUID)(),
+    requestId: (0, import_crypto17.randomUUID)(),
     functionName: "vendor-dashboard-handler",
     functionVersion: "$LATEST"
   };
@@ -141893,7 +142446,43 @@ init_admin();
 init_base_handler();
 init_rds_connection();
 var import_client_chime_sdk_meetings = require("@aws-sdk/client-chime-sdk-meetings");
-var import_crypto20 = require("crypto");
+var import_crypto21 = require("crypto");
+function getMediaRegion() {
+  return process.env.CHIME_MEDIA_REGION || process.env.AWS_REGION || "ap-south-1";
+}
+function vidcorId() {
+  return (0, import_crypto21.randomUUID)().slice(0, 8);
+}
+function vidlog(scope, event, data, correlationId) {
+  const payload = JSON.stringify({
+    scope: `video-call:${scope}`,
+    event,
+    vidcor: correlationId || vidcorId(),
+    ...data,
+    ts: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  console.log(`[VIDEO CALL] ${payload}`);
+}
+async function withChimeRetry(fn, opts = {}) {
+  const { maxRetries = 3, correlationId } = opts;
+  let lastErr;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      vidlog("chime", "retry", {
+        attempt: i + 1,
+        maxRetries,
+        error: err?.message || String(err)
+      }, correlationId);
+      if (i < maxRetries - 1) {
+        await new Promise((r) => setTimeout(r, 300 * Math.pow(2, i)));
+      }
+    }
+  }
+  throw lastErr;
+}
 function isWithinVideoCallWindow(booking) {
   if (booking.status === "completed") {
     return { allowed: false, reason: "Video call is not allowed after the appointment is completed." };
@@ -141999,32 +142588,46 @@ var CreateMeetingHandler = class extends BaseHandler {
       console.log(`[VIDEO CALL] Service style check: ${serviceStyle}, booking:`, booking.id);
       console.warn(`[VIDEO CALL] Warning: Booking ${bookingId} is not a tele service (${serviceStyle}), allowing anyway`);
     }
+    const cid = vidcorId();
+    vidlog("create-meeting", "start", { bookingId, customerId, vendorId, mediaRegion: getMediaRegion() }, cid);
     const chimeClient = new import_client_chime_sdk_meetings.ChimeSDKMeetingsClient({
       region: process.env.AWS_REGION || "ap-south-1"
     });
-    const meetingResponse = await chimeClient.send(
-      new import_client_chime_sdk_meetings.CreateMeetingCommand({
-        ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
-        MediaRegion: process.env.AWS_REGION || "ap-south-1",
-        ExternalMeetingId: bookingId
-      })
+    const meetingResponse = await withChimeRetry(
+      () => chimeClient.send(
+        new import_client_chime_sdk_meetings.CreateMeetingCommand({
+          ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
+          MediaRegion: getMediaRegion(),
+          ExternalMeetingId: bookingId
+        })
+      ),
+      { correlationId: cid }
     );
     if (!meetingResponse.Meeting) {
+      vidlog("create-meeting", "error", { bookingId, reason: "no meeting in response" }, cid);
       return this.error("Failed to create meeting", 500);
     }
     const meetingId = meetingResponse.Meeting.MeetingId;
-    const customerAttendee = await chimeClient.send(
-      new import_client_chime_sdk_meetings.CreateAttendeeCommand({
-        MeetingId: meetingId,
-        ExternalUserId: customerId
-      })
-    );
-    const vendorAttendee = await chimeClient.send(
-      new import_client_chime_sdk_meetings.CreateAttendeeCommand({
-        MeetingId: meetingId,
-        ExternalUserId: vendorId
-      })
-    );
+    const [customerAttendee, vendorAttendee] = await Promise.all([
+      withChimeRetry(
+        () => chimeClient.send(
+          new import_client_chime_sdk_meetings.CreateAttendeeCommand({
+            MeetingId: meetingId,
+            ExternalUserId: customerId
+          })
+        ),
+        { correlationId: cid }
+      ),
+      withChimeRetry(
+        () => chimeClient.send(
+          new import_client_chime_sdk_meetings.CreateAttendeeCommand({
+            MeetingId: meetingId,
+            ExternalUserId: vendorId
+          })
+        ),
+        { correlationId: cid }
+      )
+    ]);
     await insert("video_call_sessions", {
       booking_id: bookingId,
       meeting_id: meetingId,
@@ -142039,6 +142642,7 @@ var CreateMeetingHandler = class extends BaseHandler {
       video_call_meeting_id: meetingId,
       video_call_started_at: (/* @__PURE__ */ new Date()).toISOString()
     });
+    vidlog("create-meeting", "success", { bookingId, meetingId }, cid);
     return this.success({
       success: true,
       meetingId,
@@ -142102,7 +142706,8 @@ var JoinMeetingHandler = class extends BaseHandler {
     if (!["customer", "vendor"].includes(userType)) {
       return this.error("participantType/userType must be customer or vendor", 400);
     }
-    console.log("[VIDEO CALL] join request", { bookingId, participantId: userId, participantType: userType });
+    const cid = vidcorId();
+    vidlog("join", "start", { bookingId, participantId: userId, participantType: userType }, cid);
     await ensureVideoCallSessionsTable();
     const bookings = await select("bookings", { id: bookingId });
     if (bookings.length === 0) {
@@ -142126,23 +142731,30 @@ var JoinMeetingHandler = class extends BaseHandler {
       });
       const customerId = booking.customer_id ?? booking.customerId;
       const vendorId = booking.vendor_id ?? booking.vendorId;
-      console.log("[VIDEO CALL] No active session; creating meeting on join", { bookingId, participantType: userType, participantId: userId });
-      const meetingResponse = await chimeClient2.send(
-        new import_client_chime_sdk_meetings.CreateMeetingCommand({
-          ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
-          MediaRegion: process.env.AWS_REGION || "ap-south-1",
-          ExternalMeetingId: bookingId
-        })
+      vidlog("join", "create-on-join", { bookingId, participantType: userType, participantId: userId }, cid);
+      const meetingResponse = await withChimeRetry(
+        () => chimeClient2.send(
+          new import_client_chime_sdk_meetings.CreateMeetingCommand({
+            ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
+            MediaRegion: getMediaRegion(),
+            ExternalMeetingId: bookingId
+          })
+        ),
+        { correlationId: cid }
       );
       if (!meetingResponse.Meeting?.MeetingId || !meetingResponse.Meeting?.MediaPlacement) {
+        vidlog("join", "error", { bookingId, reason: "create-on-join no meeting" }, cid);
         return this.error("Failed to create meeting", 500);
       }
       const newMeetingId = meetingResponse.Meeting.MeetingId;
-      const attendeeResponse = await chimeClient2.send(
-        new import_client_chime_sdk_meetings.CreateAttendeeCommand({
-          MeetingId: newMeetingId,
-          ExternalUserId: `${userType}-${userId}`
-        })
+      const attendeeResponse = await withChimeRetry(
+        () => chimeClient2.send(
+          new import_client_chime_sdk_meetings.CreateAttendeeCommand({
+            MeetingId: newMeetingId,
+            ExternalUserId: `${userType}-${userId}`
+          })
+        ),
+        { correlationId: cid }
       );
       const newAttendee = {
         AttendeeId: attendeeResponse.Attendee?.AttendeeId,
@@ -142170,6 +142782,43 @@ var JoinMeetingHandler = class extends BaseHandler {
         video_call_meeting_id: newMeetingId,
         video_call_started_at: (/* @__PURE__ */ new Date()).toISOString()
       });
+      if (userType === "customer" && vendorId) {
+        const payload = { booking_id: bookingId, meeting_id: newMeetingId, call_type: "customer_waiting" };
+        const notificationRow = {
+          recipient_id: vendorId,
+          recipient_type: "vendor",
+          notification_type: "tele_customer_waiting",
+          title: "Customer Waiting",
+          message: "A customer has joined the video consultation and is waiting for you",
+          channels: { email: false, sms: false, inApp: true, push: true },
+          is_read: false,
+          created_at: /* @__PURE__ */ new Date()
+        };
+        notificationRow.data = payload;
+        try {
+          await insert("notifications", notificationRow);
+          vidlog("join", "tele_customer_waiting-sent", { bookingId, vendorId }, cid);
+        } catch (insertErr) {
+          vidlog("join", "tele_customer_waiting-fail", { bookingId, err: insertErr?.message }, cid);
+          if (insertErr?.message?.includes("data") || insertErr?.message?.includes("column")) {
+            delete notificationRow.data;
+            await insert("notifications", notificationRow).catch(() => {
+            });
+          }
+        }
+        try {
+          const { pushNotificationService: pushNotificationService2 } = await Promise.resolve().then(() => (init_push_notification_service(), push_notification_service_exports));
+          await pushNotificationService2.sendEventNotification({
+            eventType: "tele_customer_waiting",
+            recipientId: vendorId,
+            recipientType: "vendor",
+            relatedId: bookingId,
+            data: { bookingId, meetingId: newMeetingId, callType: "customer_waiting" }
+          });
+        } catch (_) {
+        }
+      }
+      vidlog("join", "create-on-join-success", { bookingId, meetingId: newMeetingId }, cid);
       return this.success({
         success: true,
         meetingId: newMeetingId,
@@ -142187,35 +142836,47 @@ var JoinMeetingHandler = class extends BaseHandler {
     });
     let meetingInfo;
     try {
-      const meetingResponse = await chimeClient.send(
-        new import_client_chime_sdk_meetings.GetMeetingCommand({
-          MeetingId: session.meeting_id
-        })
-      );
-      meetingInfo = meetingResponse.Meeting;
+      meetingInfo = (await withChimeRetry(
+        () => chimeClient.send(
+          new import_client_chime_sdk_meetings.GetMeetingCommand({
+            MeetingId: session.meeting_id
+          })
+        ),
+        { correlationId: cid }
+      )).Meeting;
     } catch (getMeetingError) {
-      console.warn("[VIDEO CALL] Meeting expired or unavailable, creating new meeting for booking:", bookingId, getMeetingError?.message);
+      vidlog("join", "meeting-expired-recreate", {
+        bookingId,
+        error: getMeetingError?.message
+      }, cid);
       const bookings2 = await select("bookings", { id: bookingId });
       if (bookings2.length === 0) {
         return this.error("Booking not found", 404);
       }
       const booking2 = bookings2[0];
-      const createResponse = await chimeClient.send(
-        new import_client_chime_sdk_meetings.CreateMeetingCommand({
-          ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
-          MediaRegion: process.env.AWS_REGION || "ap-south-1",
-          ExternalMeetingId: bookingId
-        })
+      const createResponse = await withChimeRetry(
+        () => chimeClient.send(
+          new import_client_chime_sdk_meetings.CreateMeetingCommand({
+            ClientRequestToken: `booking-${bookingId}-${Date.now()}`,
+            MediaRegion: getMediaRegion(),
+            ExternalMeetingId: bookingId
+          })
+        ),
+        { correlationId: cid }
       );
       if (!createResponse.Meeting?.MeetingId || !createResponse.Meeting?.MediaPlacement) {
+        vidlog("join", "error", { bookingId, reason: "recreate failed" }, cid);
         return this.error("Failed to create new meeting", 500);
       }
       const newMeetingId = createResponse.Meeting.MeetingId;
-      const attendeeResponse = await chimeClient.send(
-        new import_client_chime_sdk_meetings.CreateAttendeeCommand({
-          MeetingId: newMeetingId,
-          ExternalUserId: `${userType}-${userId}`
-        })
+      const attendeeResponse = await withChimeRetry(
+        () => chimeClient.send(
+          new import_client_chime_sdk_meetings.CreateAttendeeCommand({
+            MeetingId: newMeetingId,
+            ExternalUserId: `${userType}-${userId}`
+          })
+        ),
+        { correlationId: cid }
       );
       const newAttendee = {
         AttendeeId: attendeeResponse.Attendee?.AttendeeId,
@@ -142267,11 +142928,14 @@ var JoinMeetingHandler = class extends BaseHandler {
         ExternalUserId: userId
       };
     } else {
-      const attendeeResponse = await chimeClient.send(
-        new import_client_chime_sdk_meetings.CreateAttendeeCommand({
-          MeetingId: session.meeting_id,
-          ExternalUserId: `${userType}-${userId}`
-        })
+      const attendeeResponse = await withChimeRetry(
+        () => chimeClient.send(
+          new import_client_chime_sdk_meetings.CreateAttendeeCommand({
+            MeetingId: session.meeting_id,
+            ExternalUserId: `${userType}-${userId}`
+          })
+        ),
+        { correlationId: cid }
       );
       attendee = {
         AttendeeId: attendeeResponse.Attendee?.AttendeeId,
@@ -142288,6 +142952,7 @@ var JoinMeetingHandler = class extends BaseHandler {
       }
       await update("video_call_sessions", { id: session.id }, updateData);
     }
+    vidlog("join", "success", { bookingId, meetingId: session.meeting_id, participantType: userType }, cid);
     return this.success({
       success: true,
       meetingId: session.meeting_id,
@@ -142495,20 +143160,20 @@ function createApiGatewayEvent8(req, body) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto20.randomUUID)()
+      requestId: (0, import_crypto21.randomUUID)()
     }
   };
 }
 function createLambdaContext10() {
   return {
-    requestId: (0, import_crypto20.randomUUID)(),
+    requestId: (0, import_crypto21.randomUUID)(),
     functionName: "video-call-handler",
     functionVersion: "$LATEST"
   };
 }
 
 // src/endpoints/package-sessions.ts
-var import_crypto21 = require("crypto");
+var import_crypto22 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var StartSessionHandler = class extends BaseHandler {
@@ -142663,20 +143328,20 @@ function createApiGatewayEvent9(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto21.randomUUID)()
+      requestId: (0, import_crypto22.randomUUID)()
     }
   };
 }
 function createLambdaContext11() {
   return {
-    requestId: (0, import_crypto21.randomUUID)(),
+    requestId: (0, import_crypto22.randomUUID)(),
     functionName: "package-session-handler",
     functionVersion: "$LATEST"
   };
 }
 
 // src/endpoints/search.ts
-var import_crypto22 = require("crypto");
+var import_crypto23 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var openSearchClient = null;
@@ -142904,13 +143569,13 @@ function createApiGatewayEvent10(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto22.randomUUID)()
+      requestId: (0, import_crypto23.randomUUID)()
     }
   };
 }
 function createLambdaContext12() {
   return {
-    requestId: (0, import_crypto22.randomUUID)(),
+    requestId: (0, import_crypto23.randomUUID)(),
     functionName: "search-handler",
     functionVersion: "$LATEST"
   };
@@ -142920,7 +143585,7 @@ function createLambdaContext12() {
 init_razorpay();
 
 // src/endpoints/wallet.ts
-var import_crypto23 = require("crypto");
+var import_crypto24 = require("crypto");
 init_base_handler();
 init_rds_connection();
 init_audit_log();
@@ -142954,6 +143619,14 @@ var GetWalletHandler = class extends BaseHandler {
     const wallet = await this.getOrCreateWallet(customerId);
     const transactions = await this.getRecentTransactions(customerId);
     return this.success({
+      success: true,
+      data: {
+        customerId: wallet.customer_id,
+        balance: parseFloat(wallet.balance),
+        currency: wallet.currency || "INR",
+        lastUpdated: wallet.updated_at,
+        recentTransactions: transactions
+      },
       customerId: wallet.customer_id,
       balance: parseFloat(wallet.balance),
       currency: wallet.currency || "INR",
@@ -143776,13 +144449,13 @@ function createApiGatewayEvent11(req) {
     pathParameters: {},
     queryStringParameters: Object.fromEntries(new URL(req.url, "http://localhost").searchParams),
     requestContext: {
-      requestId: (0, import_crypto23.randomUUID)()
+      requestId: (0, import_crypto24.randomUUID)()
     }
   };
 }
 function createLambdaContext13() {
   return {
-    requestId: (0, import_crypto23.randomUUID)(),
+    requestId: (0, import_crypto24.randomUUID)(),
     functionName: "wallet-handler",
     functionVersion: "$LATEST"
   };
@@ -147577,7 +148250,7 @@ function registerSpecializedServiceFlows(app3) {
 }
 
 // src/endpoints/admin-governance.ts
-var import_crypto24 = require("crypto");
+var import_crypto25 = require("crypto");
 init_base_handler();
 init_rds_connection();
 init_aws_clients();
@@ -147871,14 +148544,14 @@ async function createApiGatewayEvent12(c) {
     pathParameters: c.req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams),
     requestContext: {
-      requestId: (0, import_crypto24.randomUUID)(),
+      requestId: (0, import_crypto25.randomUUID)(),
       identity: {}
     }
   };
 }
 function createLambdaContext14() {
   return {
-    requestId: (0, import_crypto24.randomUUID)(),
+    requestId: (0, import_crypto25.randomUUID)(),
     functionName: "admin-governance-handler",
     functionVersion: "$LATEST"
   };
@@ -153462,7 +154135,10 @@ function registerFollowupRescheduleEndpoints(app3) {
         selectedTime,
         petId,
         address,
-        serviceStyle = "at_center"
+        serviceStyle = "at_center",
+        paymentId,
+        razorpayPaymentId,
+        razorpayOrderId
       } = body;
       if (!originalBookingId || !customerPhone || !vendorId || !selectedDate || !selectedTime) {
         return c.json({
@@ -153504,6 +154180,51 @@ function registerFollowupRescheduleEndpoints(app3) {
       if (existingBookings.rows.length > 0) {
         return c.json({ error: "Time slot is already booked" }, 409);
       }
+      const followupAmount = parseFloat(originalBooking.total_amount || "0");
+      const vendorType = vendorResult.rows[0]?.category || vendorResult.rows[0]?.vendor_type || vendorResult.rows[0]?.vendorType || null;
+      const policy = await resolvePaymentPolicy({
+        vendorType,
+        serviceType: serviceStyle,
+        totalAmount: followupAmount
+      });
+      let paymentRecord = null;
+      let amountPaid = 0;
+      if (policy.requiredUpfront > 0) {
+        if (!paymentId && !razorpayPaymentId && !razorpayOrderId) {
+          return c.json({
+            error: "Payment required before booking creation",
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount: followupAmount,
+            policyRule: policy.rule || null
+          }, 402);
+        }
+        paymentRecord = await getCompletedPayment({
+          paymentId,
+          razorpayPaymentId,
+          razorpayOrderId,
+          customerId,
+          vendorId
+        });
+        if (!paymentRecord) {
+          return c.json({
+            error: "Payment not found or not completed",
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount: followupAmount
+          }, 402);
+        }
+        amountPaid = parseFloat(paymentRecord.amount || "0") || 0;
+        if (amountPaid + 0.01 < policy.requiredUpfront) {
+          return c.json({
+            error: "Insufficient payment for booking creation",
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount: followupAmount,
+            amountPaid
+          }, 402);
+        }
+      }
+      const remainingDue = Math.max(0, followupAmount - amountPaid);
+      const initialStatus = "pending";
+      const initialPaymentStatus = followupAmount === 0 ? "paid" : remainingDue > 0 ? "partial" : "paid";
       const newBooking = await insert("bookings", {
         customer_id: customerId,
         vendor_id: vendorId,
@@ -153512,16 +154233,23 @@ function registerFollowupRescheduleEndpoints(app3) {
         booking_time: selectedTime,
         service_type: serviceStyle,
         address: address || originalBooking.address || null,
-        status: "confirmed",
-        payment_status: "pending",
+        status: initialStatus,
+        payment_status: initialPaymentStatus,
         base_price: originalBooking.base_price || 0,
-        total_amount: originalBooking.total_amount || 0,
+        total_amount: followupAmount,
+        payment_id: paymentRecord?.id || null,
         notes: `Follow-up appointment for booking ${originalBookingId}`,
         metadata: {
           is_followup: true,
           original_booking_id: originalBookingId
         }
       });
+      if (paymentRecord?.id) {
+        await query(
+          `UPDATE payments SET booking_id = $1, updated_at = NOW() WHERE id = $2`,
+          [newBooking[0].id, paymentRecord.id]
+        );
+      }
       return c.json({
         success: true,
         message: "Follow-up appointment created successfully",
@@ -157383,6 +158111,47 @@ function registerMedicalRecordsEndpoints(app3) {
       return c.json({ success: false, error: error.message, records: [] }, 500);
     }
   });
+  app3.get("/medical-records", async (c) => {
+    const phone = c.req.query("phone");
+    if (!phone) {
+      return c.json({ success: false, error: "phone query param is required", records: [] }, 400);
+    }
+    const url = new URL(c.req.url);
+    const type = url.searchParams.get("type");
+    const limit = url.searchParams.get("limit");
+    const offset = url.searchParams.get("offset");
+    const params = new URLSearchParams();
+    if (type) params.append("type", type);
+    if (limit) params.append("limit", limit);
+    if (offset) params.append("offset", offset);
+    const aliasUrl = `/customer/${encodeURIComponent(phone)}/medical-records${params.toString() ? `?${params.toString()}` : ""}`;
+    return app3.fetch(new Request(aliasUrl, c.req.raw));
+  });
+  app3.get("/medical-records/vaccinations", async (c) => {
+    const phone = c.req.query("phone");
+    if (!phone) {
+      return c.json({ success: false, error: "phone query param is required", vaccinations: [] }, 400);
+    }
+    const aliasUrl = `/customer/${encodeURIComponent(phone)}/medical-records?type=vaccination`;
+    const response = await app3.fetch(new Request(aliasUrl, c.req.raw));
+    const payload = await response.json().catch(() => null);
+    const records = payload?.records || [];
+    return c.json({
+      success: true,
+      vaccinations: records,
+      total: records.length
+    }, response.status);
+  });
+  app3.get("/medical-records/export", async (c) => {
+    const phone = c.req.query("phone");
+    if (!phone) {
+      return c.json({ success: false, error: "phone query param is required" }, 400);
+    }
+    return c.json({
+      success: true,
+      message: "Export queued. You will receive an email with the download link if configured."
+    });
+  });
   app3.get("/medical-records/pet/:petId", async (c) => {
     try {
       const { petId } = c.req.param();
@@ -158312,7 +159081,7 @@ function registerMedicalRecordsEndpoints(app3) {
 }
 
 // src/endpoints/ecommerce.ts
-var import_crypto25 = require("crypto");
+var import_crypto26 = require("crypto");
 init_rds_connection();
 function registerEcommerceEndpoints(app3) {
   app3.get("/products", async (c) => {
@@ -158456,7 +159225,7 @@ function registerEcommerceEndpoints(app3) {
         if (customers.rows.length > 0) {
           customerId = customers.rows[0].id;
         } else {
-          const newCustomerId = (0, import_crypto25.randomUUID)();
+          const newCustomerId = (0, import_crypto26.randomUUID)();
           const customerName = shippingAddress.name || `Customer ${customerPhone.slice(-4)}`;
           await insert("customers", {
             id: newCustomerId,
@@ -158474,7 +159243,7 @@ function registerEcommerceEndpoints(app3) {
       } catch (e) {
         console.log("Could not find/create customer by phone:", e.message);
         try {
-          const newCustomerId = (0, import_crypto25.randomUUID)();
+          const newCustomerId = (0, import_crypto26.randomUUID)();
           await insert("customers", {
             id: newCustomerId,
             name: shippingAddress.name || `Customer ${customerPhone.slice(-4)}`,
@@ -158518,7 +159287,7 @@ function registerEcommerceEndpoints(app3) {
           console.error("Error fetching product:", e);
         }
       }
-      const orderId = (0, import_crypto25.randomUUID)();
+      const orderId = (0, import_crypto26.randomUUID)();
       const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1e3)}`;
       const shippingAmount = subtotal > 499 ? 0 : 49;
       const taxAmount = subtotal * 0.18;
@@ -160566,7 +161335,7 @@ function registerPackageEndpoints(app3) {
   app3.post("/packages/:packageId/enroll", async (c) => {
     try {
       const { packageId } = c.req.param();
-      const { customerId, petId, startDate } = await c.req.json();
+      const { customerId, petId, startDate, paymentId, razorpayPaymentId, razorpayOrderId } = await c.req.json();
       if (!customerId || !petId) {
         return c.json({ error: "customerId and petId are required" }, 400);
       }
@@ -160575,16 +161344,63 @@ function registerPackageEndpoints(app3) {
         return c.json({ error: "Package not found" }, 404);
       }
       const pkg = packages[0];
+      const packageAmount = parseFloat(pkg.price || "0");
+      const vendorType = pkg.vendor_type || pkg.vendorType || pkg.category || null;
+      const policy = await resolvePaymentPolicy({
+        vendorType,
+        serviceType: pkg.service_style || "at_center",
+        totalAmount: packageAmount
+      });
+      let paymentRecord = null;
+      let amountPaid = 0;
+      if (policy.requiredUpfront > 0) {
+        if (!paymentId && !razorpayPaymentId && !razorpayOrderId) {
+          return c.json({
+            error: "Payment required before booking creation",
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount: packageAmount,
+            policyRule: policy.rule || null
+          }, 402);
+        }
+        paymentRecord = await getCompletedPayment({
+          paymentId,
+          razorpayPaymentId,
+          razorpayOrderId,
+          customerId,
+          vendorId: pkg.vendor_id
+        });
+        if (!paymentRecord) {
+          return c.json({
+            error: "Payment not found or not completed",
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount: packageAmount
+          }, 402);
+        }
+        amountPaid = parseFloat(paymentRecord.amount || "0") || 0;
+        if (amountPaid + 0.01 < policy.requiredUpfront) {
+          return c.json({
+            error: "Insufficient payment for booking creation",
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount: packageAmount,
+            amountPaid
+          }, 402);
+        }
+      }
+      const remainingDue = Math.max(0, packageAmount - amountPaid);
+      const initialStatus = "pending";
+      const initialPaymentStatus = packageAmount === 0 ? "paid" : remainingDue > 0 ? "partial" : "paid";
       const booking = await insert("bookings", {
         customer_id: customerId,
         vendor_id: pkg.vendor_id,
         service_id: pkg.service_id || null,
         booking_date: startDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0],
         booking_time: "00:00",
-        status: "pending",
+        status: initialStatus,
         service_type: pkg.service_style || "at_center",
-        base_price: pkg.price,
-        total_amount: pkg.price,
+        base_price: packageAmount,
+        total_amount: packageAmount,
+        payment_status: initialPaymentStatus,
+        payment_id: paymentRecord?.id || null,
         is_package: true,
         package_id: packageId,
         package_details: {
@@ -160593,6 +161409,12 @@ function registerPackageEndpoints(app3) {
           startDate: startDate || (/* @__PURE__ */ new Date()).toISOString().split("T")[0]
         }
       });
+      if (paymentRecord?.id) {
+        await update("payments", { id: paymentRecord.id }, {
+          booking_id: booking[0].id,
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
       return c.json({
         success: true,
         booking: booking[0],
@@ -161509,7 +162331,7 @@ function registerPetEndpoints(app3) {
 }
 
 // src/endpoints/vendor-services.ts
-var import_crypto26 = require("crypto");
+var import_crypto27 = require("crypto");
 init_rds_connection();
 var roleMappings = {
   // ✅ FIX: Healthcare roles with clinic services
@@ -162331,7 +163153,7 @@ function registerVendorServicesEndpoints(app3) {
           price: basePrice || 0,
           duration_minutes: duration || 30
         };
-        effectiveServiceId = (0, import_crypto26.randomUUID)();
+        effectiveServiceId = (0, import_crypto27.randomUUID)();
         console.log(`[VendorServices] Creating custom service with new UUID: ${effectiveServiceId}`);
       }
       if (!baseService) {
@@ -162710,7 +163532,7 @@ function registerVendorServicesEndpoints(app3) {
           service: updated[0] || existingService
         });
       }
-      const vendorServiceId = (0, import_crypto26.randomUUID)();
+      const vendorServiceId = (0, import_crypto27.randomUUID)();
       const newService = await insert("vendor_services", {
         id: vendorServiceId,
         vendor_id: actualVendorId,
@@ -162968,7 +163790,7 @@ function registerVendorServicesEndpoints(app3) {
               return { catalogServiceId, success: true, action: "updated" };
             } else {
               await insert("vendor_services", {
-                id: (0, import_crypto26.randomUUID)(),
+                id: (0, import_crypto27.randomUUID)(),
                 vendor_id: vendorId,
                 catalog_service_id: catalogServiceId,
                 service_style: serviceStyle,
@@ -165311,11 +166133,11 @@ function registerServiceCatalogEndpoints(app3) {
         const styles = serviceStyle.split(",").map((s) => s.trim()).filter(Boolean);
         const validStyles = styles.filter((s) => ["at_home", "at_center", "tele", "all"].includes(s));
         if (validStyles.length > 1) {
-          catalogQuery += ` AND (service_style = ANY($${paramIndex}::text[]) OR service_style = 'all' OR service_style IS NULL)`;
+          catalogQuery += ` AND service_style = ANY($${paramIndex}::text[])`;
           params.push(validStyles);
           paramIndex++;
         } else if (validStyles.length === 1) {
-          catalogQuery += ` AND (service_style = $${paramIndex} OR service_style = 'all' OR service_style IS NULL)`;
+          catalogQuery += ` AND service_style = $${paramIndex}`;
           params.push(validStyles[0]);
           paramIndex++;
         }
@@ -169328,8 +170150,13 @@ async function resolveCustomerIdFromPhone(phone) {
   if (!cleanPhone || cleanPhone.length < 10) {
     return null;
   }
-  const customers = await select("customers", { phone: cleanPhone });
-  return customers.length > 0 ? customers[0].id : null;
+  let customers = await select("customers", { phone: cleanPhone });
+  if (customers.length > 0) return customers[0].id;
+  if (cleanPhone.length === 10) {
+    customers = await select("customers", { phone: `+91${cleanPhone}` });
+    if (customers.length > 0) return customers[0].id;
+  }
+  return null;
 }
 function registerCustomerPhoneConvenienceEndpoints(app3) {
   app3.get("/customer/bookings/active", async (c) => {
@@ -169385,29 +170212,29 @@ function registerCustomerPhoneConvenienceEndpoints(app3) {
       if (!customerId) {
         return c.json({ success: true, bookings: [] });
       }
-      const now = /* @__PURE__ */ new Date();
-      const futureTime = new Date(now.getTime() + minutes * 60 * 1e3);
       let bookingsResult;
       try {
         bookingsResult = await query(
-          `SELECT b.id, b.booking_date, b.scheduled_at, b.booking_time,
+          `SELECT b.id, b.booking_date, b.booking_time,
+                  (b.booking_date + b.booking_time::time) as scheduled_at,
                   COALESCE(v.business_name, s.name) as vendor_name,
                   COALESCE(v.profile_photo, s.photo) as vendor_photo,
-                  sv.name as service_name,
+                  sv.service_name as service_name,
                   p.name as pet_name,
                   b.video_call_meeting_id
            FROM bookings b
            LEFT JOIN vendors v ON b.vendor_id = v.id
            LEFT JOIN staff s ON b.staff_id = s.id
-           LEFT JOIN services sv ON b.service_id = sv.id
+           LEFT JOIN vendor_services sv ON b.service_id = sv.id
            LEFT JOIN pets p ON b.pet_id = p.id
            WHERE b.customer_id = $1
              AND b.status IN ('confirmed', 'scheduled')
              AND (b.service_style = 'tele' OR b.service_type = 'tele' OR b.service_type = 'online')
-             AND (b.scheduled_at >= $2 AND b.scheduled_at <= $3)
-           ORDER BY b.scheduled_at ASC
+             AND (b.booking_date + b.booking_time::time) >= NOW()
+             AND (b.booking_date + b.booking_time::time) <= NOW() + ($2 || ' minutes')::interval
+           ORDER BY (b.booking_date + b.booking_time::time) ASC
            LIMIT 10`,
-          [customerId, now.toISOString(), futureTime.toISOString()]
+          [customerId, String(minutes)]
         );
       } catch (error) {
         console.warn("Error fetching upcoming calls (returning empty):", error.message);
@@ -172065,7 +172892,7 @@ function registerPromotionEndpoints(app3) {
       return c.json({ error: error.message }, 500);
     }
   });
-  app3.get("/promotions/active", async (c) => {
+  const handleActivePromotions = async (c) => {
     try {
       const serviceType = c.req.query("serviceType") || "all";
       const customerId = c.req.query("customerId");
@@ -172100,7 +172927,9 @@ function registerPromotionEndpoints(app3) {
       console.error("Error fetching promotions:", error);
       return c.json({ error: error.message }, 500);
     }
-  });
+  };
+  app3.get("/promotions/active", handleActivePromotions);
+  app3.get("/ecommerce/promotions/active", handleActivePromotions);
   app3.post("/promotions/apply", async (c) => {
     try {
       const { promotionId, bookingId, orderId, amount } = await c.req.json();
@@ -172198,7 +173027,7 @@ function registerPromotionEndpoints(app3) {
   app3.get("/coupons/validate/:couponCode", async (c) => {
     try {
       const { couponCode } = c.req.param();
-      const amount = parseFloat(c.req.query("amount") || "0");
+      const amount = parseFloat(c.req.query("amount") || c.req.query("orderAmount") || "0");
       const coupons = await select("coupons", { code: couponCode.toUpperCase(), is_active: true });
       if (coupons.length === 0) {
         return c.json({ error: "Invalid coupon code" }, 404);
@@ -172334,6 +173163,65 @@ function registerPromotionEndpoints(app3) {
     } catch (error) {
       console.error("Error applying coupon:", error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/promotions/applicable", async (c) => {
+    try {
+      const category = c.req.query("category") || "all";
+      const serviceStyle = c.req.query("serviceStyle") || "all";
+      const amount = parseFloat(c.req.query("amount") || "0");
+      const now = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      let queryStr = `
+        SELECT * FROM promotions
+        WHERE is_active = true
+        AND (start_date IS NULL OR start_date <= $1)
+        AND (end_date IS NULL OR end_date >= $1)
+      `;
+      const params = [now];
+      let paramIndex = 2;
+      if (amount > 0) {
+        queryStr += ` AND (min_order_amount IS NULL OR min_order_amount <= $${paramIndex})`;
+        params.push(amount);
+        paramIndex++;
+      }
+      if (category && category !== "all") {
+        queryStr += ` AND (
+          applicable_services IS NULL 
+          OR applicable_services = '[]'::jsonb
+          OR applicable_services @> $${paramIndex}::jsonb
+          OR applicable_to = 'all'
+          OR applicable_to = $${paramIndex + 1}
+        )`;
+        params.push(JSON.stringify([category]));
+        params.push(category);
+        paramIndex += 2;
+      }
+      queryStr += ` ORDER BY priority DESC, discount_value DESC LIMIT 20`;
+      const result = await query(queryStr, params);
+      const rows = Array.isArray(result) ? result : result.rows || [];
+      const promotions = rows.map((promo) => ({
+        id: promo.id,
+        code: promo.code,
+        name: promo.name || promo.title,
+        description: promo.description,
+        discountType: promo.discount_type,
+        discountValue: parseFloat(promo.discount_value || "0"),
+        minOrderAmount: parseFloat(promo.min_order_amount || "0"),
+        maxDiscountAmount: parseFloat(promo.max_discount_amount || "0"),
+        applicableServices: promo.applicable_services,
+        expiresAt: promo.end_date
+      }));
+      return c.json({
+        success: true,
+        promotions,
+        total: promotions.length
+      });
+    } catch (error) {
+      console.error("Error fetching applicable promotions:", error);
+      if (error.message && (error.message.includes("does not exist") || error.message.includes("column"))) {
+        return c.json({ success: true, promotions: [], total: 0 });
+      }
+      return c.json({ success: true, promotions: [], total: 0 });
     }
   });
   app3.get("/admin/promotions/applicable", async (c) => {
@@ -174322,6 +175210,9 @@ function registerCustomerContentEndpoints(app3) {
       });
     }
   });
+  app3.get("/marketing/banners", async (c) => {
+    return app3.fetch(new Request(c.req.url.replace("/marketing/banners", "/customer/banners"), c.req.raw));
+  });
   app3.get("/customer/articles", async (c) => {
     const startTime = Date.now();
     try {
@@ -174414,6 +175305,9 @@ function registerCustomerContentEndpoints(app3) {
       });
     }
   });
+  app3.get("/marketing/articles", async (c) => {
+    return app3.fetch(new Request(c.req.url.replace("/marketing/articles", "/customer/articles"), c.req.raw));
+  });
   app3.get("/customer/announcements", async (c) => {
     try {
       const limit = parseInt(c.req.query("limit") || "5", 10);
@@ -174489,6 +175383,9 @@ function registerCustomerContentEndpoints(app3) {
         isDefault: true
       });
     }
+  });
+  app3.get("/marketing/announcements", async (c) => {
+    return app3.fetch(new Request(c.req.url.replace("/marketing/announcements", "/customer/announcements"), c.req.raw));
   });
   app3.get("/customer/featured-packages", async (c) => {
     try {
@@ -180456,6 +181353,37 @@ function registerEnhancedOtpEndpoints(app3) {
           used_at: (/* @__PURE__ */ new Date()).toISOString()
         }
       );
+      if (action === "end") {
+        const totalAmount = parseFloat(bookings[0]?.total_amount || "0") || 0;
+        const totalPaid = await getTotalPaidForBooking(bookingId);
+        const remainingDue = Math.max(0, totalAmount - totalPaid);
+        if (remainingDue > 0.01) {
+          try {
+            await insert("notifications", {
+              recipient_id: bookings[0].customer_id,
+              recipient_type: "customer",
+              type: "payment_due",
+              title: "Payment required to complete appointment",
+              message: `Please complete payment of \u20B9${remainingDue.toFixed(2)} to finish your appointment.`,
+              data: JSON.stringify({
+                bookingId,
+                remainingDue,
+                totalAmount,
+                totalPaid
+              }),
+              is_read: false,
+              created_at: /* @__PURE__ */ new Date()
+            });
+          } catch (notifErr) {
+            console.warn("Failed to create payment due notification:", notifErr);
+          }
+          return c.json({
+            error: "Payment required",
+            message: "Please complete payment before ending the appointment.",
+            remainingDue
+          }, 402);
+        }
+      }
       const updateData = {};
       if (action === "start") {
         updateData.status = "in_progress";
@@ -180494,15 +181422,67 @@ function registerEnhancedOtpEndpoints(app3) {
         scheduledTime,
         petId,
         price,
-        notes
+        notes,
+        paymentId,
+        razorpayPaymentId,
+        razorpayOrderId
       } = body;
       if (!customerId || !vendorId || !serviceType || !serviceId) {
         return c.json({
           error: "Customer, vendor, service type, and service ID are required"
         }, 400);
       }
+      const vendorRows = await select("vendors", { id: vendorId });
+      const vendorType = vendorRows[0]?.category || vendorRows[0]?.vendor_type || vendorRows[0]?.vendorType || null;
+      const totalAmount = parseFloat(price || "0");
+      const policy = await resolvePaymentPolicy({
+        vendorType,
+        serviceType,
+        totalAmount
+      });
+      let paymentRecord = null;
+      let amountPaid = 0;
+      if (policy.requiredUpfront > 0) {
+        if (!paymentId && !razorpayPaymentId && !razorpayOrderId) {
+          return c.json({
+            error: "Payment required before booking creation",
+            paymentRequired: true,
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount,
+            policyRule: policy.rule || null
+          }, 402);
+        }
+        paymentRecord = await getCompletedPayment({
+          paymentId,
+          razorpayPaymentId,
+          razorpayOrderId,
+          customerId,
+          vendorId
+        });
+        if (!paymentRecord) {
+          return c.json({
+            error: "Payment not found or not completed",
+            paymentRequired: true,
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount
+          }, 402);
+        }
+        amountPaid = parseFloat(paymentRecord.amount || "0") || 0;
+        if (amountPaid + 0.01 < policy.requiredUpfront) {
+          return c.json({
+            error: "Insufficient payment for booking creation",
+            paymentRequired: true,
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount,
+            amountPaid
+          }, 402);
+        }
+      }
+      const remainingDue = Math.max(0, totalAmount - amountPaid);
+      const paymentStatus = totalAmount === 0 ? "paid" : remainingDue > 0 ? "partial" : "paid";
       const startOTP = generateOTP();
       const endOTP = generateOTP();
+      const initialStatus = "pending";
       const booking = await insert("bookings", {
         customer_id: customerId,
         vendor_id: vendorId,
@@ -180510,16 +181490,23 @@ function registerEnhancedOtpEndpoints(app3) {
         staff_id: staffId || null,
         booking_date: scheduledDate,
         booking_time: scheduledTime,
-        status: "confirmed",
+        status: initialStatus,
         service_type: serviceType,
-        base_price: parseFloat(price || "0"),
-        total_amount: parseFloat(price || "0"),
-        payment_status: "pending",
+        base_price: totalAmount,
+        total_amount: totalAmount,
+        payment_status: paymentStatus,
+        payment_id: paymentRecord?.id || null,
         notes: notes || null,
         otp_code: startOTP,
         // Store start OTP in booking
         otp_verified: false
       });
+      if (paymentRecord?.id) {
+        await update("payments", { id: paymentRecord.id }, {
+          booking_id: booking[0].id,
+          updated_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
       await insert("otp_tokens", {
         phone: null,
         otp_code: endOTP,
@@ -180558,6 +181545,9 @@ function registerEnhancedOtpEndpoints(app3) {
     }
   });
 }
+
+// src/handler/index.ts
+init_sms_notifications();
 
 // src/endpoints/customer-profile.ts
 init_rds_connection();
@@ -181995,7 +182985,7 @@ function getComplianceRecommendations(issues) {
 }
 
 // src/endpoints/vendor-bookings.ts
-var import_crypto27 = require("crypto");
+var import_crypto28 = require("crypto");
 init_rds_connection();
 init_audit_log();
 function registerVendorBookingsEndpoints(app3) {
@@ -182013,7 +183003,7 @@ function registerVendorBookingsEndpoints(app3) {
       const filter = c.req.query("filter") || "all";
       console.log(`\u{1F4CB} [VENDOR-BOOKINGS] Fetching bookings for vendor: ${paramVendorId} (resolved: ${vendorId})`);
       console.log(`   Filters: date=${date}, status=${filter}`);
-      let queryText = vendorIds.length === 1 ? "SELECT * FROM bookings WHERE vendor_id = $1" : "SELECT * FROM bookings WHERE vendor_id = $1 OR vendor_id = $2";
+      let queryText = vendorIds.length === 1 ? "SELECT * FROM bookings WHERE vendor_id = $1 AND status != 'pending_payment'" : "SELECT * FROM bookings WHERE (vendor_id = $1 OR vendor_id = $2) AND status != 'pending_payment'";
       const params = [...vendorIds];
       let paramIndex = vendorIds.length + 1;
       if (date) {
@@ -182153,7 +183143,7 @@ function registerVendorBookingsEndpoints(app3) {
             newStatus: status,
             reason: notes || "Status updated by vendor",
             eventTimestamp: (/* @__PURE__ */ new Date()).toISOString(),
-            eventId: (0, import_crypto27.randomUUID)()
+            eventId: (0, import_crypto28.randomUUID)()
           });
         } catch (error) {
           console.error("Failed to publish booking status updated event:", error);
@@ -182200,7 +183190,7 @@ function registerVendorBookingsEndpoints(app3) {
           newStatus: "confirmed",
           reason: "Vendor confirmed booking",
           eventTimestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          eventId: (0, import_crypto27.randomUUID)()
+          eventId: (0, import_crypto28.randomUUID)()
         });
       } catch (error) {
         console.error("Failed to publish booking status updated event:", error);
@@ -182257,7 +183247,7 @@ function registerVendorBookingsEndpoints(app3) {
           newStatus: "cancelled",
           reason: reason || "Vendor cancelled booking",
           eventTimestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          eventId: (0, import_crypto27.randomUUID)()
+          eventId: (0, import_crypto28.randomUUID)()
         });
       } catch (error) {
         console.error("Failed to publish booking status updated event:", error);
@@ -182318,7 +183308,7 @@ function registerVendorBookingsEndpoints(app3) {
           newStatus: "cancelled",
           reason: reason || "Vendor declined booking",
           eventTimestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          eventId: (0, import_crypto27.randomUUID)()
+          eventId: (0, import_crypto28.randomUUID)()
         });
       } catch (error) {
         console.error("Failed to publish booking status updated event:", error);
@@ -182397,7 +183387,7 @@ function registerVendorBookingsEndpoints(app3) {
           newStatus: "completed",
           reason: "Service completed",
           eventTimestamp: (/* @__PURE__ */ new Date()).toISOString(),
-          eventId: (0, import_crypto27.randomUUID)()
+          eventId: (0, import_crypto28.randomUUID)()
         });
       } catch (error) {
         console.error("Failed to publish booking status updated event:", error);
@@ -182821,6 +183811,7 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
              LEFT JOIN customers c ON b.customer_id = c.id
              WHERE b.vendor_id = $1 
                AND b.booking_date >= $2
+               AND b.status != 'pending_payment'
                AND b.status != 'cancelled'
              ORDER BY b.booking_date ASC, b.booking_time ASC`,
         [resolvedVendorId, startDateStr]
@@ -182837,6 +183828,7 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
              LEFT JOIN customers c ON b.customer_id = c.id
              WHERE (b.vendor_id = $1 OR b.vendor_id = $2)
                AND b.booking_date >= $3
+               AND b.status != 'pending_payment'
                AND b.status != 'cancelled'
              ORDER BY b.booking_date ASC, b.booking_time ASC`,
         [vendorIds[0], vendorIds[1], startDateStr]
@@ -183696,7 +184688,7 @@ function registerVendorDashboardEnhancedEndpoints(app3) {
 }
 
 // src/endpoints/appointment-reminders.ts
-var import_crypto28 = require("crypto");
+var import_crypto29 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var GetUpcomingAppointmentsHandler = class extends BaseHandler {
@@ -183731,7 +184723,7 @@ var GetUpcomingAppointmentsHandler = class extends BaseHandler {
       `;
       const params = [];
       if (serviceStyle) {
-        queryStr += ` AND b.service_type = $1`;
+        queryStr += ` AND (b.service_type = $1 OR b.service_style = $1)`;
         params.push(serviceStyle);
       }
       queryStr += ` ORDER BY scheduled_at ASC`;
@@ -183917,7 +184909,7 @@ var ScheduledReminderJobHandler = class extends BaseHandler {
           reminderMinutes: 5,
           serviceStyles: ["tele"]
         })
-      }, { requestId: context.event.requestContext?.requestId || (0, import_crypto28.randomUUID)() });
+      }, { requestId: context.event.requestContext?.requestId || (0, import_crypto29.randomUUID)() });
       results.push({ type: "5_min_tele", result: JSON.parse(fiveMinResult.body) });
       const thirtyMinHandler = new SendPreAppointmentNotificationsHandler();
       const thirtyMinResult = await thirtyMinHandler.execute({
@@ -183926,7 +184918,7 @@ var ScheduledReminderJobHandler = class extends BaseHandler {
           reminderMinutes: 30,
           serviceStyles: ["at_home"]
         })
-      }, { requestId: context.event.requestContext?.requestId || (0, import_crypto28.randomUUID)() });
+      }, { requestId: context.event.requestContext?.requestId || (0, import_crypto29.randomUUID)() });
       results.push({ type: "30_min_home", result: JSON.parse(thirtyMinResult.body) });
       const oneHourHandler = new SendPreAppointmentNotificationsHandler();
       const oneHourResult = await oneHourHandler.execute({
@@ -183935,7 +184927,7 @@ var ScheduledReminderJobHandler = class extends BaseHandler {
           reminderMinutes: 60,
           serviceStyles: ["at_center"]
         })
-      }, { requestId: context.event.requestContext?.requestId || (0, import_crypto28.randomUUID)() });
+      }, { requestId: context.event.requestContext?.requestId || (0, import_crypto29.randomUUID)() });
       results.push({ type: "1_hour_center", result: JSON.parse(oneHourResult.body) });
       return this.success({
         success: true,
@@ -184082,9 +185074,9 @@ function registerAppointmentReminderEndpoints(app3) {
       body: "",
       pathParameters: { bookingId: c.req.param("bookingId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto28.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto29.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto28.randomUUID)(), functionName: "appointment-reminders", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto29.randomUUID)(), functionName: "appointment-reminders", functionVersion: "$LATEST" };
     const result = await checkChatHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -184097,9 +185089,9 @@ function registerAppointmentReminderEndpoints(app3) {
         body: "",
         pathParameters: {},
         queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-        requestContext: { requestId: (0, import_crypto28.randomUUID)() }
+        requestContext: { requestId: (0, import_crypto29.randomUUID)() }
       };
-      const context = { requestId: (0, import_crypto28.randomUUID)(), functionName: "appointment-reminders", functionVersion: "$LATEST" };
+      const context = { requestId: (0, import_crypto29.randomUUID)(), functionName: "appointment-reminders", functionVersion: "$LATEST" };
       const result = await getUpcomingHandler.execute(event, context);
       if (result.statusCode >= 400) {
         return c.json({ success: true, reminders: [] }, 200);
@@ -184119,9 +185111,9 @@ function registerAppointmentReminderEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto28.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto29.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto28.randomUUID)(), functionName: "appointment-reminders", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto29.randomUUID)(), functionName: "appointment-reminders", functionVersion: "$LATEST" };
     const result = await sendRemindersHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -184133,9 +185125,9 @@ function registerAppointmentReminderEndpoints(app3) {
       body: "",
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto28.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto29.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto28.randomUUID)(), functionName: "appointment-reminders", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto29.randomUUID)(), functionName: "appointment-reminders", functionVersion: "$LATEST" };
     const result = await scheduledJobHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -184147,9 +185139,9 @@ function registerAppointmentReminderEndpoints(app3) {
       body: "",
       pathParameters: { bookingId: c.req.param("bookingId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto28.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto29.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto28.randomUUID)(), functionName: "appointment-reminders", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto29.randomUUID)(), functionName: "appointment-reminders", functionVersion: "$LATEST" };
     const result = await manualTriggerHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -186841,7 +187833,7 @@ function registerPushNotificationEndpoints(app3) {
 }
 
 // src/endpoints/commute-time.ts
-var import_crypto29 = require("crypto");
+var import_crypto30 = require("crypto");
 init_base_handler();
 var CalculateCommuteTimeHandler = class extends BaseHandler {
   async handle(context) {
@@ -186947,20 +187939,20 @@ async function createApiGatewayEvent14(c) {
     pathParameters: c.req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto29.randomUUID)()
+      requestId: (0, import_crypto30.randomUUID)()
     }
   };
 }
 function createLambdaContext16() {
   return {
-    requestId: (0, import_crypto29.randomUUID)(),
+    requestId: (0, import_crypto30.randomUUID)(),
     functionName: "commute-time-handler",
     functionVersion: "$LATEST"
   };
 }
 
 // src/endpoints/booking-details-enhanced.ts
-var import_crypto30 = require("crypto");
+var import_crypto31 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var GetEnhancedBookingDetailsHandler = class extends BaseHandler {
@@ -187266,20 +188258,20 @@ function createApiGatewayEvent15(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto30.randomUUID)()
+      requestId: (0, import_crypto31.randomUUID)()
     }
   };
 }
 function createLambdaContext17() {
   return {
-    requestId: (0, import_crypto30.randomUUID)(),
+    requestId: (0, import_crypto31.randomUUID)(),
     functionName: "booking-details-enhanced-handler",
     functionVersion: "$LATEST"
   };
 }
 
 // src/endpoints/razorpay-settlements.ts
-var import_crypto31 = require("crypto");
+var import_crypto32 = require("crypto");
 init_base_handler();
 init_rds_connection();
 init_razorpay_client();
@@ -187961,19 +188953,19 @@ async function createApiGatewayEvent16(c) {
     body,
     pathParameters: {},
     queryStringParameters: Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams),
-    requestContext: { requestId: (0, import_crypto31.randomUUID)() }
+    requestContext: { requestId: (0, import_crypto32.randomUUID)() }
   };
 }
 function createLambdaContext18() {
   return {
-    requestId: (0, import_crypto31.randomUUID)(),
+    requestId: (0, import_crypto32.randomUUID)(),
     functionName: "razorpay-settlement-handler",
     functionVersion: "$LATEST"
   };
 }
 
 // src/endpoints/refund-policy-engine.ts
-var import_crypto32 = require("crypto");
+var import_crypto33 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var CalculateRefundPolicyHandler = class extends BaseHandler {
@@ -188193,7 +189185,7 @@ function registerRefundPolicyEngineEndpoints(app3) {
         pathParameters: {},
         queryStringParameters: Object.fromEntries(new URL(c.req.url, "http://localhost").searchParams),
         requestContext: {
-          requestId: (0, import_crypto32.randomUUID)()
+          requestId: (0, import_crypto33.randomUUID)()
         }
       };
       const context = createLambdaContext19();
@@ -188342,20 +189334,20 @@ function createApiGatewayEvent17(req) {
     pathParameters: {},
     queryStringParameters: Object.fromEntries(new URL(req.url, "http://localhost").searchParams),
     requestContext: {
-      requestId: (0, import_crypto32.randomUUID)()
+      requestId: (0, import_crypto33.randomUUID)()
     }
   };
 }
 function createLambdaContext19() {
   return {
-    requestId: (0, import_crypto32.randomUUID)(),
+    requestId: (0, import_crypto33.randomUUID)(),
     functionName: "refund-policy-engine",
     functionVersion: "$LATEST"
   };
 }
 
 // src/endpoints/admin-governance-enhanced.ts
-var import_crypto33 = require("crypto");
+var import_crypto34 = require("crypto");
 init_base_handler();
 init_rds_connection();
 init_aws_clients();
@@ -189079,20 +190071,20 @@ function createApiGatewayEvent18(req) {
     pathParameters: {},
     queryStringParameters: Object.fromEntries(new URL(req.url, "http://localhost").searchParams),
     requestContext: {
-      requestId: (0, import_crypto33.randomUUID)()
+      requestId: (0, import_crypto34.randomUUID)()
     }
   };
 }
 function createLambdaContext20() {
   return {
-    requestId: (0, import_crypto33.randomUUID)(),
+    requestId: (0, import_crypto34.randomUUID)(),
     functionName: "admin-governance-enhanced",
     functionVersion: "$LATEST"
   };
 }
 
 // src/endpoints/admin-advanced.ts
-var import_crypto34 = require("crypto");
+var import_crypto35 = require("crypto");
 init_base_handler();
 init_rds_connection();
 
@@ -196677,13 +197669,13 @@ function createApiGatewayEvent19(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto34.randomUUID)()
+      requestId: (0, import_crypto35.randomUUID)()
     }
   };
 }
 function createLambdaContext21() {
   return {
-    requestId: (0, import_crypto34.randomUUID)(),
+    requestId: (0, import_crypto35.randomUUID)(),
     functionName: "admin-advanced-handler",
     functionVersion: "$LATEST"
   };
@@ -196872,7 +197864,7 @@ function registerDiscoveryRulesAdminEndpoints(app3) {
 }
 
 // src/endpoints/vendor-setup.ts
-var import_crypto35 = require("crypto");
+var import_crypto36 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var GetVendorSetupStatusHandler = class extends BaseHandler {
@@ -197680,13 +198672,13 @@ function createApiGatewayEvent20(req) {
     pathParameters: req.param() || {},
     queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
     requestContext: {
-      requestId: (0, import_crypto35.randomUUID)()
+      requestId: (0, import_crypto36.randomUUID)()
     }
   };
 }
 function createLambdaContext22() {
   return {
-    requestId: (0, import_crypto35.randomUUID)(),
+    requestId: (0, import_crypto36.randomUUID)(),
     functionName: "vendor-setup-handler",
     functionVersion: "$LATEST"
   };
@@ -198298,6 +199290,8 @@ var CancelAppointmentHandler = class extends BaseHandler {
       if (bookingRow.payment_status === "paid" && bookingRow.total_amount > 0) {
         try {
           const totalAmount = parseFloat(String(bookingRow.total_amount));
+          const bookingDateTime = bookingRow.booking_date && bookingRow.booking_time ? /* @__PURE__ */ new Date(`${bookingRow.booking_date}T${bookingRow.booking_time}`) : null;
+          const hoursUntilBooking = bookingDateTime && !isNaN(bookingDateTime.getTime()) ? (bookingDateTime.getTime() - Date.now()) / (1e3 * 60 * 60) : void 0;
           const tier = await getRefundTierForCancellation(
             {
               id: bookingId,
@@ -198308,7 +199302,8 @@ var CancelAppointmentHandler = class extends BaseHandler {
               booking_time: bookingRow.booking_time,
               total_amount: totalAmount
             },
-            "pet_parent"
+            "pet_parent",
+            { hoursUntilBooking }
           );
           const computed = tier ? computeRefundFromTier(totalAmount, tier, 100, 0) : { refundAmount: totalAmount, refundPercentage: 100, cancellationFee: 0 };
           const refundAmount = tier ? computed.refundAmount : Math.max(0, totalAmount * computed.refundPercentage / 100 - computed.cancellationFee);
@@ -198439,7 +199434,7 @@ function createLambdaContext23() {
 }
 
 // src/endpoints/customer-orders.ts
-var import_crypto36 = require("crypto");
+var import_crypto37 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var CreateCustomerOrderHandler = class extends BaseHandler {
@@ -198484,7 +199479,7 @@ var CreateCustomerOrderHandler = class extends BaseHandler {
           if (customers.rows.length > 0) {
             actualCustomerId = customers.rows[0].id;
           } else {
-            const newCustomerId = (0, import_crypto36.randomUUID)();
+            const newCustomerId = (0, import_crypto37.randomUUID)();
             const customerName = shippingAddress.name || `Customer ${customerPhone.slice(-4)}`;
             await insert("customers", {
               id: newCustomerId,
@@ -198545,7 +199540,7 @@ var CreateCustomerOrderHandler = class extends BaseHandler {
           });
         }
       }
-      const orderId = (0, import_crypto36.randomUUID)();
+      const orderId = (0, import_crypto37.randomUUID)();
       const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1e3)}`;
       const shippingAmount = subtotal > 499 ? 0 : 49;
       const calculatedTaxAmount = taxAmount || calculatedSubtotal * 0.18;
@@ -200838,7 +201833,10 @@ var BookHolidayHandler = class extends BaseHandler {
         travelDate,
         numberOfPets,
         petIds,
-        specialRequests
+        specialRequests,
+        paymentId,
+        razorpayPaymentId,
+        razorpayOrderId
       } = body;
       if (!customerId) {
         return this.error("Customer ID is required", 401);
@@ -200867,6 +201865,36 @@ var BookHolidayHandler = class extends BaseHandler {
         }
       }
       const totalAmount = packageInfo.price * numberOfPets;
+      const vendorRows = await select("vendors", { id: packageInfo.vendor_id });
+      const vendorType = vendorRows[0]?.category || vendorRows[0]?.vendor_type || vendorRows[0]?.vendorType || null;
+      const policy = await resolvePaymentPolicy({
+        vendorType,
+        serviceType: "at_center",
+        totalAmount
+      });
+      let paymentRecord = null;
+      let amountPaid = 0;
+      if (policy.requiredUpfront > 0) {
+        if (!paymentId && !razorpayPaymentId && !razorpayOrderId) {
+          return this.error("Payment required before booking creation", 402);
+        }
+        paymentRecord = await getCompletedPayment({
+          paymentId,
+          razorpayPaymentId,
+          razorpayOrderId,
+          customerId,
+          vendorId: packageInfo.vendor_id
+        });
+        if (!paymentRecord) {
+          return this.error("Payment not found or not completed", 402);
+        }
+        amountPaid = parseFloat(paymentRecord.amount || "0") || 0;
+        if (amountPaid + 0.01 < policy.requiredUpfront) {
+          return this.error("Insufficient payment for booking creation", 402);
+        }
+      }
+      const remainingDue = Math.max(0, totalAmount - amountPaid);
+      const paymentStatus = totalAmount === 0 ? "paid" : remainingDue > 0 ? "partial" : "paid";
       const booking = await query(`
         INSERT INTO bookings (
           customer_id,
@@ -200878,9 +201906,10 @@ var BookHolidayHandler = class extends BaseHandler {
           number_of_pets,
           total_amount,
           status,
+          payment_status,
           special_requests,
           created_at
-        ) VALUES ($1, $2, $3, 'pet_holiday', CURRENT_DATE, $4, $5, $6, 'pending', $7, NOW())
+        ) VALUES ($1, $2, $3, 'pet_holiday', CURRENT_DATE, $4, $5, $6, 'pending', $7, $8, NOW())
         RETURNING *
       `, [
         customerId,
@@ -200889,8 +201918,15 @@ var BookHolidayHandler = class extends BaseHandler {
         travelDate,
         numberOfPets,
         totalAmount,
+        paymentStatus,
         specialRequests || null
       ]);
+      if (paymentRecord?.id) {
+        await query(
+          `UPDATE payments SET booking_id = $1, updated_at = NOW() WHERE id = $2`,
+          [booking.rows[0].id, paymentRecord.id]
+        );
+      }
       return this.success({
         booking: booking.rows[0],
         message: "Holiday booking created successfully"
@@ -201716,7 +202752,7 @@ function createLambdaContext30() {
 }
 
 // src/endpoints/logistics-management.ts
-var import_crypto37 = require("crypto");
+var import_crypto38 = require("crypto");
 init_rds_connection();
 var GetLogisticsPartnersHandler = class extends BaseHandlerEnhanced {
   async handle(context) {
@@ -202057,7 +203093,7 @@ function createApiGatewayEvent29(req) {
 }
 function createLambdaContext31() {
   return {
-    awsRequestId: (0, import_crypto37.randomUUID)(),
+    awsRequestId: (0, import_crypto38.randomUUID)(),
     functionName: "logistics-management",
     functionVersion: "$LATEST",
     invokedFunctionArn: "arn:aws:lambda:ap-south-1:123456789012:function:logistics-management",
@@ -202253,7 +203289,7 @@ function registerLogisticsManagementEndpoints(app3) {
 }
 
 // src/endpoints/payment-gateway-management.ts
-var import_crypto38 = require("crypto");
+var import_crypto39 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var GetPaymentGatewaysHandler = class extends BaseHandler {
@@ -202515,7 +203551,7 @@ function createApiGatewayEvent30(req) {
 }
 function createLambdaContext32() {
   return {
-    awsRequestId: (0, import_crypto38.randomUUID)(),
+    awsRequestId: (0, import_crypto39.randomUUID)(),
     functionName: "payment-gateway-management",
     functionVersion: "$LATEST",
     invokedFunctionArn: "arn:aws:lambda:ap-south-1:123456789012:function:payment-gateway-management",
@@ -202610,7 +203646,7 @@ function registerPaymentGatewayManagementEndpoints(app3) {
 }
 
 // src/endpoints/loyalty-action-rules-management.ts
-var import_crypto39 = require("crypto");
+var import_crypto40 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var GetLoyaltyActionRulesHandler = class extends BaseHandler {
@@ -202853,7 +203889,7 @@ function createLambdaContext33() {
   return {
     functionName: "loyalty-action-rules-management",
     functionVersion: "$LATEST",
-    awsRequestId: (0, import_crypto39.randomUUID)()
+    awsRequestId: (0, import_crypto40.randomUUID)()
   };
 }
 function registerLoyaltyActionRulesManagementEndpoints(app3) {
@@ -202906,7 +203942,7 @@ function registerLoyaltyActionRulesManagementEndpoints(app3) {
 }
 
 // src/endpoints/loyalty-segments-management.ts
-var import_crypto40 = require("crypto");
+var import_crypto41 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var GetLoyaltySegmentsHandler = class extends BaseHandler {
@@ -203184,7 +204220,7 @@ function createLambdaContext34() {
   return {
     functionName: "loyalty-segments-management",
     functionVersion: "$LATEST",
-    awsRequestId: (0, import_crypto40.randomUUID)()
+    awsRequestId: (0, import_crypto41.randomUUID)()
   };
 }
 function registerLoyaltySegmentsManagementEndpoints(app3) {
@@ -203690,11 +204726,36 @@ function registerRewardsEndpoints(app3) {
       } catch (tierError) {
         console.log("Loyalty tiers table not available:", tierError);
       }
+      let nextTier = null;
+      try {
+        const nextTierResult = await query(
+          `SELECT * FROM loyalty_tiers 
+           WHERE min_points > $1 
+           ORDER BY min_points ASC 
+           LIMIT 1`,
+          [profile[0]?.total_points || 0]
+        );
+        if (nextTierResult.rows.length > 0) {
+          nextTier = nextTierResult.rows[0];
+        }
+      } catch (nextTierError) {
+        console.log("Next loyalty tier lookup failed:", nextTierError);
+      }
+      const currentPoints = parseInt(profile[0]?.total_points || "0", 10);
+      const pointsToNextTier = nextTier?.min_points ? Math.max(0, parseInt(nextTier.min_points, 10) - currentPoints) : 0;
+      const tierName = tier?.name || "Bronze";
+      const nextTierName = nextTier?.name || null;
       return c.json({
         success: true,
-        points: parseInt(profile[0]?.total_points || "0", 10),
-        totalPoints: parseInt(profile[0]?.total_points || "0", 10),
+        points: currentPoints,
+        totalPoints: currentPoints,
         tier,
+        tierName,
+        tierKey: String(tierName || "bronze").toLowerCase(),
+        currentTierMinPoints: parseInt(tier?.min_points || "0", 10),
+        nextTier: nextTierName,
+        nextTierMinPoints: nextTier?.min_points ? parseInt(nextTier.min_points, 10) : null,
+        pointsToNextTier,
         lifetimePointsEarned: parseInt(profile[0]?.lifetime_points_earned || "0", 10),
         lifetimePointsRedeemed: parseInt(profile[0]?.lifetime_points_redeemed || "0", 10)
       });
@@ -203705,6 +204766,12 @@ function registerRewardsEndpoints(app3) {
         points: 0,
         totalPoints: 0,
         tier: { name: "Bronze", min_points: 0, multiplier: 1 },
+        tierName: "Bronze",
+        tierKey: "bronze",
+        currentTierMinPoints: 0,
+        nextTier: null,
+        nextTierMinPoints: null,
+        pointsToNextTier: 0,
         lifetimePointsEarned: 0,
         lifetimePointsRedeemed: 0,
         message: "Loyalty program initializing"
@@ -203849,6 +204916,72 @@ function registerRewardsEndpoints(app3) {
     } catch (error) {
       console.error("Error redeeming reward:", error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/customer/:customerId/rewards/redeemed", async (c) => {
+    try {
+      const { customerId } = c.req.param();
+      const limit = parseInt(c.req.query("limit") || "50", 10);
+      const offset = parseInt(c.req.query("offset") || "0", 10);
+      let rows = [];
+      try {
+        const result = await query(
+          `SELECT 
+             rr.id as redemption_id,
+             rr.reward_id,
+             rr.points_used,
+             rr.redeemed_at,
+             rr.status,
+             rr.expires_at,
+             rr.coupon_code,
+             rc.name,
+             rc.description,
+             rc.points_cost,
+             rc.type,
+             rc.image_url,
+             rc.validity_days
+           FROM reward_redemptions rr
+           LEFT JOIN rewards_catalog rc ON rc.id = rr.reward_id
+           WHERE rr.customer_id = $1
+           ORDER BY rr.redeemed_at DESC
+           LIMIT $2 OFFSET $3`,
+          [customerId, limit, offset]
+        );
+        rows = result.rows || [];
+      } catch (err) {
+        const fallback = await query(
+          `SELECT 
+             rr.id as redemption_id,
+             rr.reward_id,
+             rr.points_used,
+             rr.redeemed_at,
+             rc.name,
+             rc.description,
+             rc.points_cost,
+             rc.type,
+             rc.image_url
+           FROM reward_redemptions rr
+           LEFT JOIN rewards_catalog rc ON rc.id = rr.reward_id
+           WHERE rr.customer_id = $1
+           ORDER BY rr.redeemed_at DESC
+           LIMIT $2 OFFSET $3`,
+          [customerId, limit, offset]
+        );
+        rows = fallback.rows || [];
+      }
+      return c.json({
+        success: true,
+        redemptions: rows,
+        count: rows.length
+      });
+    } catch (error) {
+      console.error("Error fetching redeemed rewards:", error);
+      return c.json({
+        success: true,
+        redemptions: [],
+        count: 0,
+        message: "No redeemed rewards yet"
+      });
     }
   });
   app3.get("/rewards/:rewardId", async (c) => {
@@ -215633,7 +216766,7 @@ function registerPharmacyInventoryEndpoints(app3) {
 // src/endpoints/meal-plans.ts
 init_rds_connection();
 init_razorpay_client();
-var import_crypto41 = require("crypto");
+var import_crypto42 = require("crypto");
 function registerMealPlanEndpoints(app3) {
   app3.post("/meal-plans/create", async (c) => {
     try {
@@ -216001,7 +217134,7 @@ function registerMealPlanEndpoints(app3) {
       if (!config?.keyId || !config?.keySecret) {
         return c.json({ error: "Payment gateway not configured" }, 503);
       }
-      const receiptId = receipt || `meal_${(0, import_crypto41.randomUUID)().replace(/-/g, "").slice(0, 24)}`;
+      const receiptId = receipt || `meal_${(0, import_crypto42.randomUUID)().replace(/-/g, "").slice(0, 24)}`;
       const orderData = {
         amount: Math.round(amountRupees * 100),
         currency: "INR",
@@ -217573,7 +218706,7 @@ function registerDeliveryTrackingEndpoints(app3) {
 }
 
 // src/endpoints/delivery-otp.ts
-var import_crypto42 = require("crypto");
+var import_crypto43 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var GetDeliveryStatusHandler = class extends BaseHandler {
@@ -217993,9 +219126,9 @@ function registerDeliveryOtpEndpoints(app3) {
       body: "",
       pathParameters: { orderId: c.req.param("orderId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto42.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto43.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto42.randomUUID)(), functionName: "delivery-otp", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto43.randomUUID)(), functionName: "delivery-otp", functionVersion: "$LATEST" };
     const result = await getStatusHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -218008,9 +219141,9 @@ function registerDeliveryOtpEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: { orderId: c.req.param("orderId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto42.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto43.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto42.randomUUID)(), functionName: "delivery-otp", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto43.randomUUID)(), functionName: "delivery-otp", functionVersion: "$LATEST" };
     const result = await verifyOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -218022,9 +219155,9 @@ function registerDeliveryOtpEndpoints(app3) {
       body: "",
       pathParameters: { orderId: c.req.param("orderId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto42.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto43.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto42.randomUUID)(), functionName: "delivery-otp", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto43.randomUUID)(), functionName: "delivery-otp", functionVersion: "$LATEST" };
     const result = await generateOtpHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -218037,9 +219170,9 @@ function registerDeliveryOtpEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: { orderId: c.req.param("orderId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto42.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto43.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto42.randomUUID)(), functionName: "delivery-otp", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto43.randomUUID)(), functionName: "delivery-otp", functionVersion: "$LATEST" };
     const result = await updateStatusHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -218052,9 +219185,9 @@ function registerDeliveryOtpEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: { partnerId: c.req.param("partnerId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto42.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto43.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto42.randomUUID)(), functionName: "delivery-otp", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto43.randomUUID)(), functionName: "delivery-otp", functionVersion: "$LATEST" };
     const result = await updateLocationHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -221118,7 +222251,7 @@ async function buildGoLiveChecklist(vendorId) {
 }
 
 // src/endpoints/diagnostics-reports.ts
-var import_crypto43 = require("crypto");
+var import_crypto44 = require("crypto");
 init_base_handler();
 init_rds_connection();
 function safeJsonParse(val, fallback) {
@@ -222076,9 +223209,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto43.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto43.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await assignAdhocHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -222091,9 +223224,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto43.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto43.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await assignSampleHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -222106,9 +223239,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: { assignmentId: c.req.param("assignmentId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto43.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto43.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await updateSampleStatusHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -222120,9 +223253,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: "",
       pathParameters: { bookingId: c.req.param("bookingId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto43.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto43.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await getSampleStatusHandler.execute(event, context);
     const body = typeof result.body === "string" ? (() => {
       try {
@@ -222142,9 +223275,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto43.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto43.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await uploadHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -222157,9 +223290,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: { reportId: c.req.param("reportId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto43.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto43.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await reviewHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -222171,9 +223304,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: "",
       pathParameters: { bookingId: c.req.param("bookingId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto43.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto43.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await getForBookingHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -222185,9 +223318,9 @@ function registerDiagnosticsReportEndpoints(app3) {
       body: "",
       pathParameters: { vetId: c.req.param("vetId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto43.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto43.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "diagnostics-reports", functionVersion: "$LATEST" };
     const result = await getPendingHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -222309,7 +223442,7 @@ function registerDiagnosticsReportEndpoints(app3) {
 }
 
 // src/endpoints/meal-subscriptions.ts
-var import_crypto44 = require("crypto");
+var import_crypto45 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var GetMealPlansHandler = class extends BaseHandler {
@@ -222759,9 +223892,9 @@ function registerMealSubscriptionEndpoints(app3) {
       body: "",
       pathParameters: {},
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
     const result = await getMealPlansHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -222774,9 +223907,9 @@ function registerMealSubscriptionEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
     const result = await createSubHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -222788,9 +223921,9 @@ function registerMealSubscriptionEndpoints(app3) {
       body: "",
       pathParameters: { customerId: c.req.param("customerId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
     const result = await getCustomerSubsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -222803,9 +223936,9 @@ function registerMealSubscriptionEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: { subscriptionId: c.req.param("subscriptionId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
     const result = await manageSubHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -222817,16 +223950,16 @@ function registerMealSubscriptionEndpoints(app3) {
       body: "",
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto44.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto44.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "meal-subscriptions", functionVersion: "$LATEST" };
     const result = await processRenewalsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
 
 // src/endpoints/document-expiry.ts
-var import_crypto45 = require("crypto");
+var import_crypto46 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var GetVendorDocumentsHandler2 = class extends BaseHandler {
@@ -223089,9 +224222,9 @@ function registerDocumentExpiryEndpoints(app3) {
       body: "",
       pathParameters: { vendorId: c.req.param("vendorId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
     const result = await getVendorDocsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -223104,9 +224237,9 @@ function registerDocumentExpiryEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: { documentId: c.req.param("documentId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
     const result = await updateDocHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -223118,9 +224251,9 @@ function registerDocumentExpiryEndpoints(app3) {
       body: "",
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
     const result = await checkExpiryJobHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -223132,16 +224265,16 @@ function registerDocumentExpiryEndpoints(app3) {
       body: "",
       pathParameters: {},
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: (0, import_crypto45.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto45.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "document-expiry", functionVersion: "$LATEST" };
     const result = await adminGetExpiringHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 }
 
 // src/endpoints/subscription-plans-admin.ts
-var import_crypto46 = require("crypto");
+var import_crypto47 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var GetSubscriptionPlansHandler = class extends BaseHandler {
@@ -223322,9 +224455,9 @@ function registerSubscriptionPlansAdminEndpoints(app3) {
       body: "",
       pathParameters: {},
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto47.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
     const result = await getPlansHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -223337,9 +224470,9 @@ function registerSubscriptionPlansAdminEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto47.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
     const result = await createPlanHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -223352,9 +224485,9 @@ function registerSubscriptionPlansAdminEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: { planId: c.req.param("planId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto47.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
     const result = await updatePlanHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -223366,9 +224499,9 @@ function registerSubscriptionPlansAdminEndpoints(app3) {
       body: "",
       pathParameters: { planId: c.req.param("planId") },
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto46.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto47.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto46.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "subscription-plans", functionVersion: "$LATEST" };
     const result = await deletePlanHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -226289,7 +227422,7 @@ function numberToWords(num) {
 }
 
 // src/endpoints/reviews-enhanced.ts
-var import_crypto47 = require("crypto");
+var import_crypto48 = require("crypto");
 init_base_handler();
 init_rds_connection();
 var CreateReviewHandler = class extends BaseHandler {
@@ -226585,9 +227718,9 @@ function registerReviewsEnhancedEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto47.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto48.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto48.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
     const result = await createHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -226600,9 +227733,9 @@ function registerReviewsEnhancedEndpoints(app3) {
       body: JSON.stringify(body),
       pathParameters: {},
       queryStringParameters: {},
-      requestContext: { requestId: (0, import_crypto47.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto48.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto48.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
     const result = await skipHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -226614,9 +227747,9 @@ function registerReviewsEnhancedEndpoints(app3) {
       body: "",
       pathParameters: { vendorId: c.req.param("vendorId") },
       queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-      requestContext: { requestId: (0, import_crypto47.randomUUID)() }
+      requestContext: { requestId: (0, import_crypto48.randomUUID)() }
     };
-    const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
+    const context = { requestId: (0, import_crypto48.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
     const result = await getVendorReviewsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
@@ -226629,9 +227762,9 @@ function registerReviewsEnhancedEndpoints(app3) {
         body: "",
         pathParameters: { customerId: c.req.param("customerId") },
         queryStringParameters: Object.fromEntries(new URL(c.req.url).searchParams),
-        requestContext: { requestId: (0, import_crypto47.randomUUID)() }
+        requestContext: { requestId: (0, import_crypto48.randomUUID)() }
       };
-      const context = { requestId: (0, import_crypto47.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
+      const context = { requestId: (0, import_crypto48.randomUUID)(), functionName: "reviews", functionVersion: "$LATEST" };
       const result = await getPendingHandler.execute(event, context);
       if (result.statusCode >= 400) {
         return c.json({ success: true, reviews: [], pending: [] }, 200);
@@ -229704,7 +230837,7 @@ function registerSpecializationMasterEndpoints(app3) {
 }
 
 // src/endpoints/platform-policies.ts
-var import_crypto48 = require("crypto");
+var import_crypto49 = require("crypto");
 init_base_handler();
 init_rds_connection();
 async function adaptAndHandle(handler2, c) {
@@ -229972,7 +231105,7 @@ var SavePlatformPolicyHandler = class extends BaseHandler {
           policyType
         ]);
       } else {
-        policyId = (0, import_crypto48.randomUUID)();
+        policyId = (0, import_crypto49.randomUUID)();
         version3 = 1;
         await query(`
           INSERT INTO platform_policies (id, policy_type, title, content, version, is_active, updated_by)

@@ -511,7 +511,12 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       }).catch(() => {});
       
       // ✅ CRITICAL FIX: Pass vendorId in URL to avoid localStorage issues after page reload
-      const videoUrl = `/video/${booking.id}?vendorId=${encodeURIComponent(effectiveVendorId)}`;
+      const params = new URLSearchParams();
+      params.set('bookingId', booking.id);
+      if (effectiveVendorId) {
+        params.set('vendorId', effectiveVendorId);
+      }
+      const videoUrl = `/video?${params.toString()}`;
       console.log('[Video Call] Navigating to:', videoUrl, 'with vendorId:', effectiveVendorId);
       
       if (typeof window !== 'undefined') {
@@ -1756,8 +1761,12 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                 participantId: vendorData?.id,
               }).catch(() => {});
               
-              // Navigate directly to video page - don't use reload as it may clear state
-              const videoUrl = `/video/${bid}`;
+              // CRITICAL: Pass vendorId in URL so VideoPageClient works on mobile/webview (localStorage may not be populated after full-page reload)
+              const vid = vendorData?.id || (typeof window !== 'undefined' ? localStorage.getItem('vendorId') || localStorage.getItem('vendor_id') || '' : '');
+              const params = new URLSearchParams();
+              params.set('bookingId', bid);
+              if (vid) params.set('vendorId', vid);
+              const videoUrl = `/video?${params.toString()}`;
               console.log('[Video Call] Navigating directly to:', videoUrl);
               
               if (typeof window !== 'undefined') {

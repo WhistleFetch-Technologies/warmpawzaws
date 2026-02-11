@@ -17,7 +17,16 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
   const bookingIdFromPath = typeof window !== 'undefined' 
     ? window.location.pathname.match(/\/video\/([^/?]+)/)?.[1] 
     : null;
-  const bookingId = bookingIdProp ?? (params?.bookingId as string) ?? bookingIdFromPath ?? '';
+  const bookingIdFromQuery = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('bookingId')
+    : null;
+  const normalizeBookingId = (value?: string | null) => (value && value !== '_' ? value : '');
+  const bookingId =
+    normalizeBookingId(bookingIdProp) ||
+    normalizeBookingId(params?.bookingId as string) ||
+    normalizeBookingId(bookingIdFromPath) ||
+    normalizeBookingId(bookingIdFromQuery) ||
+    '';
   
   const [bookingData, setBookingData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -38,10 +47,10 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
       pathname: typeof window !== 'undefined' ? window.location.pathname : 'SSR',
       search: typeof window !== 'undefined' ? window.location.search : '' 
     });
-    
-    // ✅ CRITICAL FIX: Get vendorId from URL first (most reliable after page reload)
-    // Then fallback to localStorage/sessionStorage
-    const getVendorId = (): string => {
+
+    let cancelled = false;
+
+    const resolveVendorId = async (): Promise<string> => {
       if (typeof window === 'undefined') {
         console.log('[VideoPageClient] window is undefined (SSR)');
         return '';
@@ -61,7 +70,7 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
       }
       
       // 2. Fallback to localStorage/sessionStorage
-      const vendorId =
+      const storedVendorId =
         localStorage.getItem('vendorId') ||
         localStorage.getItem('vendor_id') ||
         sessionStorage.getItem('vendorId') ||
@@ -81,35 +90,65 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
         })() ||
         '';
       
-      console.log('[VideoPageClient] vendorId from storage:', vendorId || 'NOT FOUND');
-      return vendorId;
+      if (storedVendorId) {
+        console.log('[VideoPageClient] ✅ Found vendorId in storage:', storedVendorId);
+        return storedVendorId;
+      }
+
+      // 3. Final fallback: fetch profile using auth token (mobile/webview cases)
+      try {
+        const profile = await apiClient.get<any>('/vendor/profile');
+        const fetchedVendorId =
+          profile?.vendor?.id ||
+          profile?.vendor?.vendorId ||
+          profile?.id ||
+          profile?.vendorId ||
+          '';
+        if (fetchedVendorId) {
+          localStorage.setItem('vendorId', fetchedVendorId);
+          localStorage.setItem('vendor_id', fetchedVendorId);
+          return fetchedVendorId;
+        }
+      } catch (err) {
+        console.warn('[VideoPageClient] ❌ Could not fetch vendor profile for ID:', err);
+      }
+
+      return '';
     };
     
-    const vendorId = getVendorId();
-    console.log('[VideoPageClient] Final vendorId check:', vendorId ? `✅ Found: ${vendorId}` : '❌ NOT FOUND');
-    
-    if (vendorId) {
-      console.log('[VideoPageClient] ✅ Setting participantId:', vendorId);
-      setParticipantId(vendorId);
-      // ✅ CRITICAL: Set loading to false immediately so ChimeVideoCall can render
-      // Don't wait for booking data - it's not required for video call to start
-      setLoading(false);
+    const init = async () => {
+      const vendorId = await resolveVendorId();
+      if (cancelled) return;
+      console.log('[VideoPageClient] Final vendorId check:', vendorId ? `✅ Found: ${vendorId}` : '❌ NOT FOUND');
       
-      if (bookingId) {
-        // Load booking data in background (non-blocking)
-        loadBookingData().catch(err => {
-          console.warn('[VideoPageClient] Background booking data load failed:', err);
-        });
+      if (vendorId) {
+        console.log('[VideoPageClient] ✅ Setting participantId:', vendorId);
+        setParticipantId(vendorId);
+        // ✅ CRITICAL: Set loading to false immediately so ChimeVideoCall can render
+        // Don't wait for booking data - it's not required for video call to start
+        setLoading(false);
+        
+        if (bookingId) {
+          // Load booking data in background (non-blocking)
+          loadBookingData().catch(err => {
+            console.warn('[VideoPageClient] Background booking data load failed:', err);
+          });
+        }
+      } else {
+        // If not found, show error immediately (don't retry - URL param is most reliable)
+        console.error('[VideoPageClient] ❌ No vendorId found in URL or storage. Redirecting to dashboard.');
+        setLoading(false);
+        // Redirect to dashboard after a short delay to show error
+        setTimeout(() => {
+          window.location.href = '/dashboard';
+        }, 2000);
       }
-    } else {
-      // If not found, show error immediately (don't retry - URL param is most reliable)
-      console.error('[VideoPageClient] ❌ No vendorId found in URL or storage. Redirecting to dashboard.');
-      setLoading(false);
-      // Redirect to dashboard after a short delay to show error
-      setTimeout(() => {
-        window.location.href = '/dashboard';
-      }, 2000);
-    }
+    };
+
+    init();
+    return () => {
+      cancelled = true;
+    };
   }, [bookingId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadBookingData = async () => {

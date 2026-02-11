@@ -1364,7 +1364,10 @@ export function VendorDashboard({
                                           participantId: effectiveVendorId,
                                         }).catch(() => {});
                                         
-                                        window.location.href = `/video/${bid}?vendorId=${encodeURIComponent(effectiveVendorId)}`;
+                                        const params = new URLSearchParams();
+                                        params.set('bookingId', bid);
+                                        if (effectiveVendorId) params.set('vendorId', effectiveVendorId);
+                                        window.location.href = `/video?${params.toString()}`;
                                       } catch (err: any) {
                                         console.error('Error starting video call:', err);
                                         toast.error(err?.message || 'Failed to start video call');

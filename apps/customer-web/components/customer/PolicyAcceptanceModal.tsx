@@ -75,8 +75,18 @@ export function PolicyAcceptanceModal({
   const loadPolicies = async () => {
     try {
       setLoading(true);
-      // Load refund policy from backend
-      const response = await apiClient.get<any>('/admin/settings/refund-policy');
+      // Load refund policy from customer-facing endpoint
+      const query = new URLSearchParams();
+      if (vendorId) query.append('vendorId', vendorId);
+      if (serviceId) query.append('serviceId', serviceId);
+      const endpoint = query.toString() ? `/customer/refund-policy?${query.toString()}` : '/customer/refund-policy';
+      let response: any = null;
+      try {
+        response = await apiClient.get<any>(endpoint);
+      } catch (err) {
+        // Fallback to admin endpoint if customer endpoint is unavailable
+        response = await apiClient.get<any>('/admin/settings/refund-policy');
+      }
       
       if (response.success && response.policy) {
         const policyData = response.policy;

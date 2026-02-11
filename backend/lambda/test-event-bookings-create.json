@@ -1,0 +1,13 @@
+{
+  "requestContext": {
+    "http": { "method": "POST", "path": "/bookings/create" },
+    "requestId": "test-req-1",
+    "apiId": "z0b3obweb6",
+    "domainName": "z0b3obweb6.execute-api.ap-south-1.amazonaws.com"
+  },
+  "rawPath": "/bookings/create",
+  "rawQueryString": "",
+  "headers": { "content-type": "application/json" },
+  "body": "{\"customerId\":\"39c84571-b26d-475a-bb38-94975cb8262d\",\"vendorId\":\"c96058cb-6356-4e2b-9cf2-5149c6e9b942\",\"serviceId\":\"03513ff5-284c-47c7-9382-1203f3b4af87\",\"bookingDate\":\"2026-02-15\",\"bookingTime\":\"10:00\",\"serviceType\":\"at_center\",\"amount\":3500,\"petId\":\"6e28df3a-3880-460a-b747-bd359330fc32\",\"customerName\":\"Test\",\"customerPhone\":\"9611377119\",\"petName\":\"Max\",\"notes\":\"\"}",
+  "isBase64Encoded": false
+}

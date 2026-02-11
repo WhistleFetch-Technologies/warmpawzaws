@@ -17,6 +17,7 @@ import { select, insert, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { resolveVendorById, getVendorIdsForAvailabilityLookup } from './vendor-profile';
+import { getCompletedPayment, resolvePaymentPolicy } from '../utils/payment-policy';
 
 export function registerFollowupRescheduleEndpoints(app: Hono) {
   /**
@@ -36,7 +37,10 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
         selectedTime,
         petId,
         address,
-        serviceStyle = 'at_center'
+        serviceStyle = 'at_center',
+        paymentId,
+        razorpayPaymentId,
+        razorpayOrderId,
       } = body;
 
       if (!originalBookingId || !customerPhone || !vendorId || !selectedDate || !selectedTime) {
@@ -90,6 +94,61 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
         return c.json({ error: 'Time slot is already booked' }, 409);
       }
 
+      const followupAmount = parseFloat(originalBooking.total_amount || '0');
+      const vendorType = vendorResult.rows[0]?.category || vendorResult.rows[0]?.vendor_type || vendorResult.rows[0]?.vendorType || null;
+      const policy = await resolvePaymentPolicy({
+        vendorType,
+        serviceType: serviceStyle,
+        totalAmount: followupAmount,
+      });
+
+      let paymentRecord: any | null = null;
+      let amountPaid = 0;
+      if (policy.requiredUpfront > 0) {
+        if (!paymentId && !razorpayPaymentId && !razorpayOrderId) {
+          return c.json({
+            error: 'Payment required before booking creation',
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount: followupAmount,
+            policyRule: policy.rule || null,
+          }, 402);
+        }
+
+        paymentRecord = await getCompletedPayment({
+          paymentId,
+          razorpayPaymentId,
+          razorpayOrderId,
+          customerId,
+          vendorId,
+        });
+
+        if (!paymentRecord) {
+          return c.json({
+            error: 'Payment not found or not completed',
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount: followupAmount,
+          }, 402);
+        }
+
+        amountPaid = parseFloat(paymentRecord.amount || '0') || 0;
+        if (amountPaid + 0.01 < policy.requiredUpfront) {
+          return c.json({
+            error: 'Insufficient payment for booking creation',
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount: followupAmount,
+            amountPaid,
+          }, 402);
+        }
+      }
+
+      const remainingDue = Math.max(0, followupAmount - amountPaid);
+      const initialStatus = 'pending';
+      const initialPaymentStatus = followupAmount === 0
+        ? 'paid'
+        : remainingDue > 0
+          ? 'partial'
+          : 'paid';
+
       // Create follow-up booking
       const newBooking = await insert('bookings', {
         customer_id: customerId,
@@ -99,16 +158,24 @@ export function registerFollowupRescheduleEndpoints(app: Hono) {
         booking_time: selectedTime,
         service_type: serviceStyle,
         address: address || originalBooking.address || null,
-        status: 'confirmed',
-        payment_status: 'pending',
+        status: initialStatus,
+        payment_status: initialPaymentStatus,
         base_price: originalBooking.base_price || 0,
-        total_amount: originalBooking.total_amount || 0,
+        total_amount: followupAmount,
+        payment_id: paymentRecord?.id || null,
         notes: `Follow-up appointment for booking ${originalBookingId}`,
         metadata: {
           is_followup: true,
           original_booking_id: originalBookingId
         }
       });
+
+      if (paymentRecord?.id) {
+        await query(
+          `UPDATE payments SET booking_id = $1, updated_at = NOW() WHERE id = $2`,
+          [newBooking[0].id, paymentRecord.id]
+        );
+      }
 
       return c.json({
         success: true,

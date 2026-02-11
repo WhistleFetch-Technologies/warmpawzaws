@@ -12,12 +12,13 @@ async function testBookingCreation() {
   console.log(`API URL: ${API_BASE_URL}`);
   console.log('');
 
+  // Use a date at least 1 hour in the future to pass validation
   const bookingPayload = {
     customerId: "39c84571-b26d-475a-bb38-94975cb8262d",
     vendorId: "c96058cb-6356-4e2b-9cf2-5149c6e9b942",
     serviceId: "03513ff5-284c-47c7-9382-1203f3b4af87",
-    bookingDate: "2026-01-24",
-    bookingTime: "18:00",
+    bookingDate: "2026-02-15",
+    bookingTime: "10:00",
     serviceType: "at_center",
     amount: 3500,
     petId: "6e28df3a-3880-460a-b747-bd359330fc32",
@@ -61,11 +62,16 @@ async function testBookingCreation() {
     console.log('');
 
     if (response.ok) {
-      console.log('✅ ✅ ✅ BOOKING CREATION SUCCESSFUL! ✅ ✅ ✅');
-      if (responseData.bookingId || responseData.data?.bookingId) {
-        console.log(`Booking ID: ${responseData.bookingId || responseData.data?.bookingId}`);
+      const bid = responseData.bookingId || responseData.data?.bookingId;
+      if (bid) {
+        console.log('✅ ✅ ✅ BOOKING CREATION SUCCESSFUL! ✅ ✅ ✅');
+        console.log(`Booking ID: ${bid}`);
+        return true;
       }
-      return true;
+      console.log('⚠️  HTTP 200 but no bookingId in response (check API Gateway passthrough)');
+      console.log('   Top-level keys:', Object.keys(responseData));
+      console.log('   data keys:', responseData.data ? Object.keys(responseData.data) : []);
+      return false;
     } else {
       console.log('❌ ❌ ❌ BOOKING CREATION FAILED ❌ ❌ ❌');
       if (responseData.error) {

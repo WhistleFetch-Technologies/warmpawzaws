@@ -78,12 +78,6 @@ interface MyBookingsProps {
   onNavigate?: (screen: string, data?: { bookingId?: string }) => void; // For diagnostics-reports, sample-collection-tracking, etc.
 }
 
-interface RefundPolicy {
-  cancellationWindowHours: number;
-  refundPercentages: { withinHours: number; percentage: number }[];
-  defaultRefundMethod: 'wallet' | 'original';
-}
-
 export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine, onNavigate }: MyBookingsProps) {
   const router = useRouter();
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -99,7 +93,6 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
   const [cancellationReason, setCancellationReason] = useState('');
   const [refundMethod, setRefundMethod] = useState<'wallet' | 'original'>('wallet');
   const [processing, setProcessing] = useState(false);
-  const [refundPolicy, setRefundPolicy] = useState<RefundPolicy | null>(null);
   const [estimatedRefund, setEstimatedRefund] = useState<{ percentage: number; amount: number } | null>(null);
   // ✅ FIX: Add state for review modal
   const [showReviewModal, setShowReviewModal] = useState<{ bookingId: string; vendorId: string; serviceName: string } | null>(null);
@@ -287,57 +280,28 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
     toast.success('OTP copied to clipboard');
   };
 
-  // ✅ Load refund policy (customer-facing endpoint; admin route requires admin auth)
-  const loadRefundPolicy = async (bookingId: string) => {
+  // ✅ Load refund preview based on actual backend policy (refund tiers / rules)
+  const loadRefundPreview = async (booking: Booking) => {
     try {
-      const result = await apiClient.get(`/customer/refund-policy`) as any;
-      setRefundPolicy(result.policy || {
-        cancellationWindowHours: 24,
-        refundPercentages: [
-          { withinHours: 24, percentage: 100 },
-          { withinHours: 12, percentage: 50 },
-          { withinHours: 6, percentage: 25 },
-        ],
-        defaultRefundMethod: 'wallet',
-      });
-    } catch (error) {
-      // Use default policy if not configured
-      setRefundPolicy({
-        cancellationWindowHours: 24,
-        refundPercentages: [
-          { withinHours: 24, percentage: 100 },
-          { withinHours: 12, percentage: 50 },
-          { withinHours: 6, percentage: 25 },
-        ],
-        defaultRefundMethod: 'wallet',
-      });
-    }
-  };
-
-  // ✅ Calculate estimated refund based on policy
-  const calculateRefund = (booking: Booking): { percentage: number; amount: number } => {
-    if (!refundPolicy || booking.paymentStatus !== 'paid') {
-      return { percentage: 0, amount: 0 };
-    }
-
-    const bookingDateTime = new Date(`${booking.bookingDate}T${booking.bookingTime}`);
-    const now = new Date();
-    const hoursUntilBooking = (bookingDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
-
-    // Sort policies by hours (descending) to find the best match
-    const sortedPolicies = [...refundPolicy.refundPercentages].sort((a, b) => b.withinHours - a.withinHours);
-    
-    for (const policy of sortedPolicies) {
-      if (hoursUntilBooking >= policy.withinHours) {
-        return {
-          percentage: policy.percentage,
-          amount: (booking.price * policy.percentage) / 100,
-        };
+      if (booking.paymentStatus !== 'paid') {
+        setEstimatedRefund({ percentage: 0, amount: 0 });
+        return;
       }
+      const result = await apiClient.post('/customer/bookings/refund-preview', { bookingId: booking.bookingId }) as any;
+      const payload = (result as any)?.data ?? result;
+      const refund = payload?.refund ?? payload;
+      if (refund && typeof refund.refundPercentage === 'number') {
+        setEstimatedRefund({
+          percentage: refund.refundPercentage,
+          amount: typeof refund.refundAmount === 'number' ? refund.refundAmount : 0,
+        });
+      } else {
+        setEstimatedRefund({ percentage: 0, amount: 0 });
+      }
+    } catch (error) {
+      console.error('Error loading refund preview:', error);
+      setEstimatedRefund({ percentage: 0, amount: 0 });
     }
-
-    // If less than minimum hours, no refund
-    return { percentage: 0, amount: 0 };
   };
 
   // ✅ Handle cancel booking
@@ -378,14 +342,9 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
   // ✅ Open cancel modal and load refund policy
   const openCancelModal = (booking: Booking, e: React.MouseEvent) => {
     e.stopPropagation();
-    loadRefundPolicy(booking.bookingId);
+    setEstimatedRefund(null);
+    loadRefundPreview(booking);
     setShowCancelModal(booking.bookingId);
-    
-    // Calculate estimated refund
-    setTimeout(() => {
-      const refund = calculateRefund(booking);
-      setEstimatedRefund(refund);
-    }, 100);
   };
 
   // ✅ Open reschedule modal

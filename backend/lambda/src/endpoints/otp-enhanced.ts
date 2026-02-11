@@ -20,6 +20,7 @@ import { select, insert, update, query } from '../database/rds-connection';
 import { sendSMS } from '../utils/sms-service';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { getCompletedPayment, getTotalPaidForBooking, resolvePaymentPolicy } from '../utils/payment-policy';
 
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
@@ -160,6 +161,41 @@ export function registerEnhancedOtpEndpoints(app: Hono) {
         }
       );
 
+      // Block completion if payment is still due
+      if (action === 'end') {
+        const totalAmount = parseFloat(bookings[0]?.total_amount || '0') || 0;
+        const totalPaid = await getTotalPaidForBooking(bookingId);
+        const remainingDue = Math.max(0, totalAmount - totalPaid);
+
+        if (remainingDue > 0.01) {
+          try {
+            await insert('notifications', {
+              recipient_id: bookings[0].customer_id,
+              recipient_type: 'customer',
+              type: 'payment_due',
+              title: 'Payment required to complete appointment',
+              message: `Please complete payment of ₹${remainingDue.toFixed(2)} to finish your appointment.`,
+              data: JSON.stringify({
+                bookingId,
+                remainingDue,
+                totalAmount,
+                totalPaid,
+              }),
+              is_read: false,
+              created_at: new Date(),
+            });
+          } catch (notifErr) {
+            console.warn('Failed to create payment due notification:', notifErr);
+          }
+
+          return c.json({
+            error: 'Payment required',
+            message: 'Please complete payment before ending the appointment.',
+            remainingDue,
+          }, 402);
+        }
+      }
+
       // Update booking status based on action
       const updateData: any = {};
       if (action === 'start') {
@@ -207,6 +243,9 @@ export function registerEnhancedOtpEndpoints(app: Hono) {
         petId,
         price,
         notes,
+        paymentId,
+        razorpayPaymentId,
+        razorpayOrderId,
       } = body;
 
       if (!customerId || !vendorId || !serviceType || !serviceId) {
@@ -215,9 +254,70 @@ export function registerEnhancedOtpEndpoints(app: Hono) {
         }, 400);
       }
 
+      const vendorRows = await select('vendors', { id: vendorId });
+      const vendorType = vendorRows[0]?.category || vendorRows[0]?.vendor_type || vendorRows[0]?.vendorType || null;
+
+      const totalAmount = parseFloat(price || '0');
+      const policy = await resolvePaymentPolicy({
+        vendorType,
+        serviceType,
+        totalAmount,
+      });
+
+      let paymentRecord: any | null = null;
+      let amountPaid = 0;
+      if (policy.requiredUpfront > 0) {
+        if (!paymentId && !razorpayPaymentId && !razorpayOrderId) {
+          return c.json({
+            error: 'Payment required before booking creation',
+            paymentRequired: true,
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount,
+            policyRule: policy.rule || null,
+          }, 402);
+        }
+
+        paymentRecord = await getCompletedPayment({
+          paymentId,
+          razorpayPaymentId,
+          razorpayOrderId,
+          customerId,
+          vendorId,
+        });
+
+        if (!paymentRecord) {
+          return c.json({
+            error: 'Payment not found or not completed',
+            paymentRequired: true,
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount,
+          }, 402);
+        }
+
+        amountPaid = parseFloat(paymentRecord.amount || '0') || 0;
+        if (amountPaid + 0.01 < policy.requiredUpfront) {
+          return c.json({
+            error: 'Insufficient payment for booking creation',
+            paymentRequired: true,
+            requiredUpfront: policy.requiredUpfront,
+            totalAmount,
+            amountPaid,
+          }, 402);
+        }
+      }
+
+      const remainingDue = Math.max(0, totalAmount - amountPaid);
+      const paymentStatus = totalAmount === 0
+        ? 'paid'
+        : remainingDue > 0
+          ? 'partial'
+          : 'paid';
+
       // Generate OTPs
       const startOTP = generateOTP();
       const endOTP = generateOTP();
+
+      const initialStatus = 'pending';
 
       // Create booking
       const booking = await insert('bookings', {
@@ -227,15 +327,23 @@ export function registerEnhancedOtpEndpoints(app: Hono) {
         staff_id: staffId || null,
         booking_date: scheduledDate,
         booking_time: scheduledTime,
-        status: 'confirmed',
+        status: initialStatus,
         service_type: serviceType,
-        base_price: parseFloat(price || '0'),
-        total_amount: parseFloat(price || '0'),
-        payment_status: 'pending',
+        base_price: totalAmount,
+        total_amount: totalAmount,
+        payment_status: paymentStatus,
+        payment_id: paymentRecord?.id || null,
         notes: notes || null,
         otp_code: startOTP, // Store start OTP in booking
         otp_verified: false,
       });
+
+      if (paymentRecord?.id) {
+        await update('payments', { id: paymentRecord.id }, {
+          booking_id: booking[0].id,
+          updated_at: new Date().toISOString(),
+        });
+      }
 
       // Store end OTP separately
       await insert('otp_tokens', {

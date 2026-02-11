@@ -20,6 +20,8 @@ export interface BookingForPolicy {
   vendor_id?: string | null;
   service_id?: string | null;
   service_type?: string | null;
+  booking_datetime?: string | null;
+  scheduled_at?: string | null;
   booking_date: string;
   booking_time: string;
   total_amount: number | string;
@@ -45,10 +47,8 @@ function serviceTypeToLocation(serviceType: string | null | undefined): string {
 export async function getRefundTierForCancellation(
   booking: BookingForPolicy,
   cancelledBy: CancelledBy,
-  options?: { vendorCancellationReason?: string | null }
+  options?: { vendorCancellationReason?: string | null; hoursUntilBooking?: number }
 ): Promise<RefundTierResult | null> {
-  const bookingDateTime = new Date(`${booking.booking_date}T${booking.booking_time}`);
-  const hoursUntilBooking = (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
   const serviceLocation = serviceTypeToLocation(booking.service_type);
 
   // Resolve vendor role name for vendor_types matching
@@ -103,7 +103,25 @@ export async function getRefundTierForCancellation(
   }
 
   // Customer cancels: match by preset (hours_before_service <= hours) OR flexible rule (hours_operator + hours_threshold)
-  const h = Math.max(0, hoursUntilBooking);
+  let computedHours: number | null = null;
+  if (typeof options?.hoursUntilBooking === 'number' && Number.isFinite(options.hoursUntilBooking)) {
+    computedHours = options.hoursUntilBooking;
+  } else {
+    const rawDateTime =
+      (booking.booking_datetime ? new Date(booking.booking_datetime) : null) ||
+      (booking.scheduled_at ? new Date(booking.scheduled_at) : null) ||
+      new Date(`${booking.booking_date}T${booking.booking_time}`);
+    if (!isNaN(rawDateTime.getTime())) {
+      computedHours = (rawDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
+    }
+  }
+
+  if (computedHours == null || !Number.isFinite(computedHours)) {
+    console.warn('[RefundTier] Unable to compute hours until booking for tier evaluation:', booking.id);
+    return null;
+  }
+
+  const h = Math.max(0, computedHours);
   const tiersResult = await query(
     `SELECT id, name, refund_percentage, cancellation_fee, max_partial_refund_percentage, hours_before_service
      FROM vendor_refund_tiers

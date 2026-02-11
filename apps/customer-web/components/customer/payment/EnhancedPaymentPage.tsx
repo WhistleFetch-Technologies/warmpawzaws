@@ -336,6 +336,10 @@ export function EnhancedPaymentPage({
     setProcessing(true);
     
     try {
+      let bookingCreationDeferred = false;
+      let deferredBookingPayload: Record<string, unknown> | null = null;
+      let requiredUpfrontAmount: number | null = null;
+
       // Step 1: Create booking/order if needed
       let currentBookingId = bookingId;
       let currentOrderId = orderId;
@@ -397,16 +401,29 @@ export function EnhancedPaymentPage({
           }
           console.log('✅ Booking created successfully:', currentBookingId);
         } catch (bookingError: any) {
+          const errorResponse = (bookingError as any)?.response || (bookingError as any)?.responseData || (bookingError as any)?.originalError;
+          const errorCode = errorResponse?.error?.code || errorResponse?.code;
+          const is402 = (bookingError as any)?.statusCode === 402 || (bookingError as any)?.status === 402;
+          if (is402 || ['PAYMENT_REQUIRED', 'PAYMENT_NOT_COMPLETED', 'PAYMENT_INSUFFICIENT'].includes(errorCode)) {
+            const details = errorResponse?.error?.details || errorResponse?.details || {};
+            requiredUpfrontAmount = Number(details?.requiredUpfront ?? details?.amount ?? finalAmount);
+            bookingCreationDeferred = true;
+            deferredBookingPayload = bookingPayload;
+            console.warn('⚠️ Booking creation blocked until payment is completed. Proceeding to payment.', {
+              errorCode,
+              details,
+            });
+            // Proceed to payment without throwing
+          } else {
           // Enhanced error logging
           console.error('❌ /bookings/create failed with non-404 error:', bookingError);
           console.error('❌ Payment error:', bookingError);
-          console.error('❌ Error response:', (bookingError as any)?.response || (bookingError as any)?.responseData);
+          console.error('❌ Error response:', errorResponse);
           console.error('❌ Error data:', (bookingError as any)?.responseData);
           console.error('❌ Error status:', (bookingError as any)?.status || (bookingError as any)?.statusCode);
           console.error('❌ Error message:', bookingError?.message);
           
           // Extract detailed error message
-          const errorResponse = (bookingError as any)?.response || (bookingError as any)?.responseData;
           const errorMessage = 
             errorResponse?.error?.message || 
             errorResponse?.error || 
@@ -415,6 +432,7 @@ export function EnhancedPaymentPage({
             'Failed to create booking. Please check all required fields and try again.';
           
           throw new Error(errorMessage);
+          }
         }
       }
       
@@ -434,12 +452,17 @@ export function EnhancedPaymentPage({
       }
       
       // Step 3: Create Razorpay order
+      const amountToCharge = bookingCreationDeferred
+        ? (requiredUpfrontAmount ?? finalAmount)
+        : finalAmount;
       const orderRes = await apiClient.post<any>('/razorpay/create-order', {
-        bookingId: currentBookingId,
+        bookingId: bookingCreationDeferred ? undefined : currentBookingId,
         orderId: currentOrderId,
-        amount: finalAmount,
+        amount: amountToCharge,
         customerId,
         offerId: selectedBankOffer?.id,
+        type: bookingCreationDeferred ? 'booking_prepaid' : undefined,
+        vendorId: bookingCreationDeferred ? items?.[0]?.vendorId : undefined,
       });
       
       if (!orderRes.orderId) {
@@ -449,7 +472,7 @@ export function EnhancedPaymentPage({
       // Step 4: Open Razorpay checkout with mobile-optimized config
       const options = {
         key: orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: finalAmount * 100,
+        amount: amountToCharge * 100,
         currency: 'INR',
         name: 'Warmpawz',
         description: items.length === 1 
@@ -464,6 +487,24 @@ export function EnhancedPaymentPage({
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
             });
+
+            // If booking creation was deferred, create booking now with payment info
+            if (type === 'booking' && bookingCreationDeferred && deferredBookingPayload) {
+              const createPayload = {
+                ...deferredBookingPayload,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpayOrderId: response.razorpay_order_id,
+              };
+              console.log('🔄 Creating booking after payment:', createPayload);
+              const bookingRes = await apiClient.post<any>('/bookings/create', createPayload);
+              const bookingIdValue = bookingRes?.data?.bookingId || bookingRes?.bookingId || bookingRes?.data?.booking?.id || bookingRes?.id;
+              if (!bookingIdValue) {
+                console.error('❌ No booking ID after payment:', bookingRes);
+                throw new Error('Payment succeeded but booking creation failed. Please contact support.');
+              }
+              currentBookingId = bookingIdValue;
+              bookingCreationDeferred = false;
+            }
             
             // Deduct wallet if used
             if (walletDeduction > 0) {
@@ -482,7 +523,7 @@ export function EnhancedPaymentPage({
                 bookingId: currentBookingId,
                 orderId: currentOrderId,
                 customerId,
-                amount: subtotal,
+                amount: amountToCharge,
               });
             }
             

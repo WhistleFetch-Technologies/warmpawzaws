@@ -53,7 +53,7 @@ interface CommunicationHubProps {
   onContactSupport?: (bookingId: string, reason: string) => void;
   onNavigate?: (screen: string, data?: any) => void; // ✅ NEW: For video call navigation
   meetingId?: string; // ✅ NEW: Meeting ID for video calls
-  onStartVideoCall?: (bookingId: string, meetingId?: string) => Promise<void>; // Rule 2: Create + notify vendor (WhatsApp-like) then navigate
+  onStartVideoCall?: (bookingId: string, meetingId?: string) => Promise<string | void>; // Rule 2: Create + notify vendor (WhatsApp-like) then navigate; may return meetingId
 }
 
 // ============================================================================
@@ -435,17 +435,16 @@ export function CommunicationHub({
           </div>
           <div className="flex items-center gap-2">
             {/* Rule 2: Video from chat - when onStartVideoCall provided, create + notify vendor (WhatsApp-like) then navigate */}
-            {(onNavigate || onStartVideoCall) && booking && (booking.status === 'confirmed' || booking.status === 'in_progress' || booking.status === 'active') && (
+            {(onNavigate || onStartVideoCall) && booking && ['confirmed', 'in_progress', 'active', 'scheduled'].includes(booking.status || '') && (
               <button
                 onClick={async () => {
+                  let resolvedMeetingId = meetingId;
                   if (onStartVideoCall) {
-                    await onStartVideoCall(bookingId, meetingId);
-                    if (onNavigate) onNavigate('video-call', { bookingId, meetingId, vendorName: otherUserName });
-                    onClose();
-                  } else if (onNavigate) {
-                    onNavigate('video-call', { bookingId, meetingId, vendorName: otherUserName });
-                    onClose();
+                    const returned = await onStartVideoCall(bookingId, meetingId);
+                    if (typeof returned === 'string') resolvedMeetingId = returned;
                   }
+                  if (onNavigate) onNavigate('video-call', { bookingId, meetingId: resolvedMeetingId, vendorName: otherUserName });
+                  onClose();
                 }}
                 className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors flex items-center gap-1.5 text-white text-sm"
                 title="Start Video Call"

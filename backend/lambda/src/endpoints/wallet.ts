@@ -79,6 +79,14 @@ class GetWalletHandler extends BaseHandler {
     const transactions = await this.getRecentTransactions(customerId);
 
     return this.success({
+      success: true,
+      data: {
+        customerId: wallet.customer_id,
+        balance: parseFloat(wallet.balance),
+        currency: wallet.currency || 'INR',
+        lastUpdated: wallet.updated_at,
+        recentTransactions: transactions,
+      },
       customerId: wallet.customer_id,
       balance: parseFloat(wallet.balance),
       currency: wallet.currency || 'INR',

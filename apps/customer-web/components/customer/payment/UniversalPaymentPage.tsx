@@ -157,6 +157,63 @@ interface RazorpayOffer {
   paymentMethod?: string; // 'card', 'upi', etc.
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Forensic: extract booking ID from any create-booking response shape.
+ * Handles wrapped ({ success, data: { bookingId } }), idempotency ({ bookingId }), double-wrapped, and snake_case.
+ */
+function extractBookingIdFromResponse(bookingRes: any, logLabel: string): string | undefined {
+  if (!bookingRes || typeof bookingRes !== 'object') return undefined;
+
+  const paths: (string | undefined)[] = [
+    bookingRes?.data?.bookingId,
+    bookingRes?.data?.booking_id,
+    bookingRes?.data?.data?.bookingId,
+    bookingRes?.data?.data?.booking_id,
+    bookingRes?.data?.booking?.id,
+    (bookingRes?.data ?? bookingRes)?.bookingId,
+    (bookingRes?.data ?? bookingRes)?.booking_id,
+    (bookingRes?.data ?? bookingRes)?.id,
+    bookingRes?.bookingId,
+    bookingRes?.booking_id,
+    bookingRes?.id,
+  ];
+
+  for (const v of paths) {
+    if (typeof v === 'string' && v.trim() && UUID_REGEX.test(v.trim())) return v.trim();
+  }
+
+  // Deep search: any nested object with key 'bookingId' or 'booking_id' and UUID value
+  function findInObj(obj: any): string | undefined {
+    if (!obj || typeof obj !== 'object') return undefined;
+    for (const k of ['bookingId', 'booking_id']) {
+      const val = obj[k];
+      if (typeof val === 'string' && UUID_REGEX.test(val.trim())) return val.trim();
+    }
+    for (const key of Object.keys(obj)) {
+      const found = findInObj(obj[key]);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  const deep = findInObj(bookingRes);
+  if (deep) return deep;
+
+  // Fallback: API Gateway may strip bookingId but keep data.message; backend embeds " | bookingId:uuid" in message
+  const messageStr = bookingRes?.data?.message ?? bookingRes?.message;
+  if (typeof messageStr === 'string') {
+    const uuidInMessage = messageStr.match(/\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i);
+    if (uuidInMessage && UUID_REGEX.test(uuidInMessage[1])) return uuidInMessage[1].trim();
+  }
+
+  // Forensic log when nothing found
+  const topKeys = Object.keys(bookingRes);
+  const dataKeys = bookingRes?.data && typeof bookingRes.data === 'object' ? Object.keys(bookingRes.data) : [];
+  console.warn(`[FORENSIC] ${logLabel}: No bookingId in response. Top keys: [${topKeys.join(', ')}], data keys: [${dataKeys.join(', ')}], sample:`, JSON.stringify(bookingRes).slice(0, 400));
+  return undefined;
+}
+
 export function UniversalPaymentPage({
   bookingId,
   orderId,
@@ -492,30 +549,36 @@ export function UniversalPaymentPage({
 
   const loadPromotions = async () => {
     try {
-      // Load applicable promotions from Admin Marketing
+      // Load applicable promotions (public endpoint – no admin auth required)
       const promoRes = await apiClient.get<any>(
-        `/admin/promotions/applicable?category=${category || ''}&serviceStyle=${serviceStyle || ''}&amount=${baseAmount}`
+        `/promotions/applicable?category=${category || ''}&serviceStyle=${serviceStyle || ''}&amount=${baseAmount}`
       );
-      
+
       if (promoRes.success && promoRes.promotions) {
-        const applicablePromos = promoRes.promotions
-          .filter((p: any) => p.published && (p.is_spotlight || p.target_service_dashboard === category))
+        const raw = promoRes.promotions as any[];
+        const applicablePromos = raw
+          .filter((p: any) => p != null)
           .map((p: any) => ({
             id: p.id,
-            type: p.promotion_type,
-            title: p.title || p.name,
-            description: p.description,
-            discountType: p.discount_type,
-            discountValue: p.discount_value,
-            discountAmount: calculateDiscountAmount(p.discount_type, p.discount_value, baseAmount, p.min_amount, p.max_discount),
-            minAmount: p.min_amount,
-            maxDiscount: p.max_discount,
+            type: p.promotion_type || (p.code ? 'coupon' : 'spotlight'),
+            title: p.title ?? p.name ?? p.code ?? 'Offer',
+            description: p.description ?? '',
+            discountType: p.discountType ?? p.discount_type,
+            discountValue: p.discountValue ?? p.discount_value ?? 0,
+            discountAmount: calculateDiscountAmount(
+              p.discountType ?? p.discount_type,
+              p.discountValue ?? p.discount_value,
+              baseAmount,
+              p.minOrderAmount ?? p.min_amount,
+              p.maxDiscountAmount ?? p.max_discount
+            ),
+            minAmount: p.minOrderAmount ?? p.min_amount,
+            maxDiscount: p.maxDiscountAmount ?? p.max_discount,
             applicable: true,
           }));
-        
+
         setPromotions(applicablePromos);
-        
-        // Auto-apply spotlight promotion if available
+
         const spotlight = applicablePromos.find((p: PromotionOffer) => p.type === 'spotlight');
         if (spotlight && spotlight.applicable) {
           setAppliedPromotion(spotlight);
@@ -828,6 +891,10 @@ export function UniversalPaymentPage({
     setProcessing(true);
     
     try {
+      let bookingCreationDeferred = false;
+      let deferredBookingPayload: Record<string, unknown> | null = null;
+      let requiredUpfrontAmount: number | null = null;
+
       // Step 1: Create booking/order if not already created
       let currentBookingId = bookingId;
       let currentOrderId = orderId;
@@ -1139,7 +1206,7 @@ export function UniversalPaymentPage({
           resolvedServiceId: finalServiceId, // Log resolved UUID
         });
         
-        // ✅ CRITICAL: Create booking BEFORE payment (booking will be rolled back if payment fails)
+        // ✅ Payment policy aware: attempt booking creation (may be blocked if upfront payment required)
         // Try all possible booking creation endpoints
         const endpoints = [
           '/bookings/create',
@@ -1149,6 +1216,7 @@ export function UniversalPaymentPage({
         ];
         
         let lastError: any = null;
+        let paymentRequiredError: any = null;
         for (const endpoint of endpoints) {
           try {
             console.log(`🔄 Trying booking endpoint: ${endpoint}`);
@@ -1165,10 +1233,25 @@ export function UniversalPaymentPage({
             if (is404) {
               console.warn(`⚠️ ${endpoint} returned 404, trying next endpoint...`);
               continue; // Try next endpoint
-            } else {
+            }
+
+            // ✅ Payment-required flow: do not throw, proceed to payment
+            const errorResponse = (error as any)?.response ?? (error as any)?.responseData ?? (error as any)?.responseBody ?? (error as any)?.originalError;
+            const errorCode = errorResponse?.error?.code || errorResponse?.code;
+            const is402 = (error as any)?.statusCode === 402 || (error as any)?.status === 402;
+            if (is402 || ['PAYMENT_REQUIRED', 'PAYMENT_NOT_COMPLETED', 'PAYMENT_INSUFFICIENT'].includes(errorCode)) {
+              paymentRequiredError = error;
+              console.warn('⚠️ Booking creation blocked until payment is completed. Proceeding to payment.', {
+                endpoint,
+                errorCode,
+                details: errorResponse?.error?.details || errorResponse?.details,
+              });
+              break;
+            }
+
+            {
               // Not a 404, might be validation error - log details and throw
               const err = error as any;
-              const errorResponse = err?.response ?? err?.responseData ?? err?.responseBody;
               console.error(`❌ ${endpoint} failed with non-404 error:`, error);
               console.error('❌ Error response:', errorResponse);
               console.error('❌ Error status:', err?.status ?? err?.statusCode);
@@ -1196,9 +1279,18 @@ export function UniversalPaymentPage({
             }
           }
         }
+
+        if (paymentRequiredError) {
+          const err = paymentRequiredError as any;
+          const errorResponse = err?.response ?? err?.responseData ?? err?.responseBody;
+          const details = errorResponse?.error?.details || errorResponse?.details || {};
+          requiredUpfrontAmount = Number(details?.requiredUpfront ?? details?.amount ?? taxBreakdown.total);
+          bookingCreationDeferred = true;
+          deferredBookingPayload = bookingPayload;
+        }
         
         // If we exhausted all endpoints, throw the last error
-        if (!bookingRes) {
+        if (!bookingRes && !bookingCreationDeferred) {
           console.error('❌ All booking creation endpoints failed');
           throw lastError || new Error('All booking creation endpoints returned 404. Lambda may need redeployment.');
         }
@@ -1209,33 +1301,30 @@ export function UniversalPaymentPage({
           throw new Error(errMsg);
         }
         
-        // Handle response format (can be in data.bookingId or bookingId)
-        const bookingIdValue = bookingRes.data?.bookingId || 
-                               bookingRes.data?.booking?.id ||
-                               bookingRes.bookingId || 
-                               bookingRes.booking_id || 
-                               bookingRes.id;
+        // Forensic: extract booking ID from any response shape (wrapped, idempotency, double-wrapped, deep)
+        const bookingIdValue = extractBookingIdFromResponse(bookingRes, 'Initial booking create');
         
         console.log('📋 Booking creation response:', {
           fullResponse: bookingRes,
           extractedBookingId: bookingIdValue,
-          hasData: !!bookingRes.data,
-          dataKeys: bookingRes.data ? Object.keys(bookingRes.data) : [],
+          hasData: !!bookingRes?.data,
+          dataKeys: bookingRes?.data ? Object.keys(bookingRes.data) : [],
         });
         
-        if (!bookingIdValue) {
+        if (!bookingIdValue && !bookingCreationDeferred) {
           console.error('❌ No booking ID in response:', bookingRes);
           throw new Error('Failed to create booking: No booking ID returned');
         }
         
-        // ✅ Validate bookingId is a UUID (reuse the regex defined above)
-        if (!uuidRegex.test(bookingIdValue)) {
+        if (bookingIdValue && !UUID_REGEX.test(bookingIdValue)) {
           console.error('❌ Invalid bookingId format from API:', bookingIdValue);
           throw new Error('Invalid booking ID format received from server');
         }
         
-        currentBookingId = bookingIdValue;
-        console.log('✅ Booking ID set:', currentBookingId);
+        if (bookingIdValue) {
+          currentBookingId = bookingIdValue;
+          console.log('✅ Booking ID set:', currentBookingId);
+        }
       } else if (type === 'order' && !currentOrderId) {
         const orderRes = await apiClient.post<any>('/customer/orders', {
           productId: productId,
@@ -1256,16 +1345,16 @@ export function UniversalPaymentPage({
         currentOrderId = orderRes.orderId || orderRes.id;
       }
       
-      // Step 2: Create payment record
-      // ✅ CRITICAL: bookingId is REQUIRED - booking should already exist (created before payment)
+      // Step 2: Create payment record (only when booking already exists)
+      // ✅ If booking creation is deferred, skip payment record creation here
       if (type === 'order' && !currentOrderId) {
         console.log('⚠️ Order payment - skipping payment record creation (order handles payment)');
         // For orders, proceed directly to Razorpay
       }
       
-      // ✅ For bookings, payment requires bookingId (booking created before payment)
-      if (type === 'booking' && !currentBookingId) {
-        throw new Error('Booking ID is required to create payment. Please create booking first.');
+      // ✅ For bookings, only create payment record if booking already exists
+      if (type === 'booking' && (!currentBookingId || bookingCreationDeferred)) {
+        console.log('ℹ️ Booking creation deferred; payment record will be created by Razorpay order flow.');
       }
       
       const paymentPayload: any = {
@@ -1307,7 +1396,7 @@ export function UniversalPaymentPage({
       
       // ✅ Create payment record (bookingId is REQUIRED - booking should already exist)
       let paymentRes: any = null;
-      if (type === 'booking' && currentBookingId) {
+      if (type === 'booking' && currentBookingId && !bookingCreationDeferred) {
         // ✅ Validate bookingId is a UUID before sending
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (!uuidRegex.test(currentBookingId)) {
@@ -1438,6 +1527,23 @@ export function UniversalPaymentPage({
       
       // If fully paid with wallet
       if (paymentRes.status === 'completed' || finalAmount === 0) {
+        // If booking creation was deferred (payment policy), create booking now
+        if (type === 'booking' && bookingCreationDeferred && deferredBookingPayload) {
+          const createPayload = {
+            ...deferredBookingPayload,
+            paymentId: paymentRes?.id,
+          } as Record<string, unknown>;
+          console.log('🔄 Creating booking after wallet payment:', createPayload);
+          const bookingRes = await apiClient.post<any>('/bookings/create', createPayload);
+          const bookingIdValue = extractBookingIdFromResponse(bookingRes, 'After wallet payment');
+          if (!bookingIdValue) {
+            console.error('❌ No booking ID after wallet payment:', bookingRes);
+            throw new Error('Payment succeeded but booking creation failed. Please contact support.');
+          }
+          currentBookingId = bookingIdValue;
+          bookingCreationDeferred = false;
+        }
+
         // Apply promotions and coupons
         if (appliedCoupon) {
           await apiClient.post('/coupons/apply', {
@@ -1445,7 +1551,7 @@ export function UniversalPaymentPage({
             bookingId: currentBookingId,
             orderId: currentOrderId,
             customerId,
-            amount: taxBreakdown.total,
+            amount: bookingCreationDeferred ? (requiredUpfrontAmount ?? finalAmount) : taxBreakdown.total,
           });
         }
         
@@ -1455,7 +1561,7 @@ export function UniversalPaymentPage({
             bookingId: currentBookingId,
             orderId: currentOrderId,
             customerId,
-            amount: taxBreakdown.total,
+            amount: bookingCreationDeferred ? (requiredUpfrontAmount ?? finalAmount) : taxBreakdown.total,
           });
         }
         
@@ -1472,13 +1578,18 @@ export function UniversalPaymentPage({
       // Step 3: Create Razorpay order
       // ✅ FIX: Use longer timeout (45s) for payment operations
       console.log('🔄 [PAYMENT] Creating Razorpay order...');
+      const amountToCharge = bookingCreationDeferred
+        ? (requiredUpfrontAmount ?? finalAmount)
+        : finalAmount;
       const orderRes = await apiClient.post<any>('/razorpay/create-order', {
-        // ✅ bookingId is REQUIRED - booking should already exist
-        bookingId: currentBookingId,
+        // ✅ bookingId is REQUIRED only when booking already exists
+        bookingId: bookingCreationDeferred ? undefined : currentBookingId,
         orderId: currentOrderId,
-        amount: finalAmount,
+        amount: amountToCharge,
         customerId,
         offerId: selectedRazorpayOffer?.id,
+        type: bookingCreationDeferred ? 'booking_prepaid' : undefined,
+        vendorId: bookingCreationDeferred ? vendorId : undefined,
       }, undefined, 45000); // ✅ FIX: 45 second timeout for payment operations
       
       console.log('✅ [PAYMENT] Razorpay order created:', orderRes.orderId);
@@ -1490,7 +1601,7 @@ export function UniversalPaymentPage({
       // Step 4: Open Razorpay checkout
       const options = {
         key: orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: finalAmount * 100,
+        amount: amountToCharge * 100,
         currency: 'INR',
         name: 'Warmpawz',
         description: `${serviceName || productName} - ${vendorName}`,
@@ -1504,7 +1615,6 @@ export function UniversalPaymentPage({
             });
 
             // ✅ Step 1: Verify payment with backend
-            // ✅ Booking should already exist (created before payment)
             console.log('🔄 [RAZORPAY] Verifying payment...');
             const verifyRes = await apiClient.post('/razorpay/verify-payment', {
               razorpay_order_id: response.razorpay_order_id,
@@ -1513,6 +1623,24 @@ export function UniversalPaymentPage({
             });
             
             console.log('✅ [RAZORPAY] Payment verified:', verifyRes);
+
+            // ✅ If booking creation was deferred, create booking now with payment info
+            if (type === 'booking' && bookingCreationDeferred && deferredBookingPayload) {
+              const createPayload = {
+                ...deferredBookingPayload,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpayOrderId: response.razorpay_order_id,
+              };
+              console.log('🔄 Creating booking after payment:', createPayload);
+              const bookingRes = await apiClient.post<any>('/bookings/create', createPayload);
+              const bookingIdValue = extractBookingIdFromResponse(bookingRes, 'After Razorpay payment');
+              if (!bookingIdValue) {
+                console.error('❌ No booking ID after payment:', bookingRes);
+                throw new Error('Payment succeeded but booking creation failed. Please contact support.');
+              }
+              currentBookingId = bookingIdValue;
+              bookingCreationDeferred = false;
+            }
             
             // ✅ Step 2: Apply coupon if used
             if (appliedCoupon) {
@@ -1522,7 +1650,7 @@ export function UniversalPaymentPage({
                   bookingId: currentBookingId,
                   orderId: currentOrderId,
                   customerId,
-                  amount: taxBreakdown.total,
+                  amount: amountToCharge,
                 });
                 console.log('✅ [COUPON] Applied successfully');
               } catch (couponErr) {
@@ -1539,7 +1667,7 @@ export function UniversalPaymentPage({
                   bookingId: currentBookingId,
                   orderId: currentOrderId,
                   customerId,
-                  amount: taxBreakdown.total,
+                  amount: amountToCharge,
                 });
                 console.log('✅ [PROMOTION] Applied successfully');
               } catch (promoErr) {

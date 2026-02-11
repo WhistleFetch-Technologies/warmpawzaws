@@ -234,6 +234,8 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           : (rawBooking.selectedServices ?? (Array.isArray(rawBooking.selected_services) ? rawBooking.selected_services : [])),
         totalDurationMinutes: rawBooking.totalDurationMinutes ?? rawBooking.total_duration_minutes,
         totalAmount: rawBooking.totalAmount ?? rawBooking.total_amount ?? rawBooking.amount,
+        // Video call - map snake_case for tele consultations
+        meetingId: rawBooking.meetingId || rawBooking.video_call_meeting_id,
       };
       console.log('✅ [BOOKING-DETAIL] Transformed booking:', bookingData);
       setBooking(bookingData);
@@ -1121,8 +1123,16 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           onBookFollowUp={() => setShowFollowUp(true)}
           onNavigate={onNavigate}
           meetingId={booking.meetingId}
-          onStartVideoCall={async (bid, existingMeetingId) => {
+          onStartVideoCall={async (bid, existingMeetingId): Promise<string | undefined> => {
             try {
+              if (existingMeetingId) {
+                await apiClient.post('/video-call/notify-ready', {
+                  bookingId: bid,
+                  participantType: 'customer',
+                  participantId: booking.customerId || phone,
+                }).catch(() => {});
+                return existingMeetingId;
+              }
               const createRes = await apiClient.post('/video-call/create-meeting', {
                 bookingId: bid,
                 customerId: booking.customerId || phone,
@@ -1134,10 +1144,10 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                   participantType: 'customer',
                   participantId: booking.customerId || phone,
                 }).catch(() => {});
-              } else {
-                const msg = createRes?.error || 'Could not start video call.';
-                toast.error(msg);
+                return createRes?.meetingId;
               }
+              const msg = createRes?.error || 'Could not start video call.';
+              toast.error(msg);
             } catch (err: any) {
               const msg = err?.response?.error || err?.responseData?.error || err?.message || 'Video call is not available for this appointment right now.';
               toast.error(typeof msg === 'string' ? msg : 'Could not start video call.');

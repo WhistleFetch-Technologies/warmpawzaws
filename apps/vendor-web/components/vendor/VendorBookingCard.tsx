@@ -177,7 +177,14 @@ export function VendorBookingCard({
         {/* Call Button - TELE ONLY */}
         {booking.communicationType === 'video' && booking.serviceType === 'tele' && booking.status !== 'completed' && (
           <button
-            onClick={() => router.push(`/video/${booking.bookingId || booking.id}`)}
+            onClick={() => {
+              const bid = booking.bookingId || booking.id;
+              const params = new URLSearchParams();
+              if (bid) params.set('bookingId', bid);
+              if (vendorId) params.set('vendorId', vendorId);
+              const query = params.toString();
+              router.push(`/video${query ? `?${query}` : ''}`);
+            }}
             className="flex-1 min-w-[100px] py-2 px-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1"
           >
             <Video className="w-3.5 h-3.5" />

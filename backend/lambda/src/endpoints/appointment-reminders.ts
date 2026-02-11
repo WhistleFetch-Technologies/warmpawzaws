@@ -79,8 +79,8 @@ class GetUpcomingAppointmentsHandler extends BaseHandler {
 
       const params: any[] = [];
       if (serviceStyle) {
-        // ✅ FIX: Use parameterized query for security
-        queryStr += ` AND b.service_type = $1`;
+        // Check both service_type and service_style (different booking flows use different columns)
+        queryStr += ` AND (b.service_type = $1 OR b.service_style = $1)`;
         params.push(serviceStyle);
       }
 

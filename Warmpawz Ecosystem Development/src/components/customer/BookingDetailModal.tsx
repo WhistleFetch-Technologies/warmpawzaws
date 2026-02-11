@@ -45,6 +45,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
   const [showRateModal, setShowRateModal] = useState(false);
   const [prescription, setPrescription] = useState<Prescription | null>(null);
   const [loadingPrescription, setLoadingPrescription] = useState(false);
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
 
   useEffect(() => {
     loadBookingDetails();
@@ -75,6 +76,43 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
       console.error('❌ [BOOKING-DETAIL] Error loading booking:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const downloadInvoice = async () => {
+    if (!booking?.id || downloadingInvoice) return;
+    try {
+      setDownloadingInvoice(true);
+      const response = await fetch(
+        `${getApiBaseUrl()}/bookings/${booking.id}/invoice`,
+        { headers: getAuthHeaders() }
+      );
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(text || `Failed to download invoice (${response.status})`);
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const extension = contentType.includes('pdf') ? 'pdf' : 'html';
+      a.download = `invoice-${booking.id}.${extension}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      if (!contentType.includes('pdf')) {
+        toast.info('Invoice generated as HTML. Open the downloaded file in your browser.');
+      }
+    } catch (error: any) {
+      console.error('❌ [BOOKING-DETAIL] Invoice download failed:', error);
+      toast.error('Failed to download invoice');
+    } finally {
+      setDownloadingInvoice(false);
     }
   };
 
@@ -536,14 +574,12 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               {/* Download Invoice Button - For completed bookings */}
               {booking.status === 'completed' && (
                 <Button
-                  onClick={() => {
-                    // TODO: Implement actual invoice download
-                    alert(`Invoice for booking ${booking.id.slice(0, 8)} will be generated. Coming soon!`);
-                  }}
+                  onClick={downloadInvoice}
+                  disabled={downloadingInvoice}
                   className="w-full bg-[#FF8C42] hover:bg-[#ff7a28] text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
                 >
                   <Download className="w-5 h-5" />
-                  Download Invoice
+                  {downloadingInvoice ? 'Downloading...' : 'Download Invoice'}
                 </Button>
               )}
 

@@ -26,6 +26,8 @@ import { getRazorpayConfig, getRazorpayAuthHeader, getRazorpayClient, razorpayRe
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { DEFAULT_COMMISSION_RATE } from '../lib/constants/commission';
+import { logBookingStatusChange } from '../utils/audit-log';
+import { notifyBookingCreated } from '../utils/booking-notifications';
 
 // Razorpay configuration is imported from utils
 
@@ -95,9 +97,15 @@ class CreateRazorpayOrderHandler extends BaseHandler {
 
       const isPharmacyOrder = type === 'pharmacy_order';
       const isDiagnosticsOrder = type === 'diagnostics';
+      const isBookingPrepaid = type === 'booking_prepaid';
       if (isPharmacyOrder) {
         if (!pharmacyOrderId || amount == null) {
           return this.error('orderId and amount are required for pharmacy_order', 400);
+        }
+      } else if (isBookingPrepaid) {
+        const missing = ['amount', 'customerId', 'vendorId'].filter((f) => !body[f]);
+        if (missing.length > 0) {
+          return this.error(`Missing required fields for booking_prepaid: ${missing.join(', ')}`, 400);
         }
       } else if (isDiagnosticsOrder) {
         // Diagnostics: payment before booking – only amount, customerId, vendorId required
@@ -178,6 +186,17 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         const shortId = String(Date.now()).replace(/-/g, '').substring(0, 32);
         receipt = `diag_${shortId}`;
         notes = { type: 'diagnostics', customerId: customerIdFinal, vendorId: vendorIdFinal };
+      } else if (isBookingPrepaid) {
+        customerIdFinal = customerId;
+        vendorIdFinal = vendorId;
+        const vendorResult = await Promise.race([
+          select('vendors', { id: vendorIdFinal }),
+          new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('Vendor query timeout')), 5000)),
+        ]);
+        vendor = vendorResult.length > 0 ? vendorResult[0] : null;
+        const shortId = String(Date.now()).replace(/-/g, '').substring(0, 32);
+        receipt = `bk_pre_${shortId}`;
+        notes = { type: 'booking_prepaid', customerId: customerIdFinal, vendorId: vendorIdFinal };
       } else {
         // ✅ bookingId is REQUIRED - booking should already exist (created before payment)
         const bookingResult = await Promise.race([
@@ -275,6 +294,17 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         );
       } else if (isDiagnosticsOrder) {
         // Diagnostics: booking is created after payment success; do not insert payment row here (no booking_id yet)
+      } else if (isBookingPrepaid) {
+        await insert('payments', {
+          booking_id: null,
+          customer_id: customerIdFinal,
+          vendor_id: vendorIdFinal,
+          razorpay_order_id: razorpayOrder.id,
+          amount: Number(amount),
+          currency: currency,
+          payment_method: 'razorpay',
+          payment_status: 'pending',
+        });
       } else {
         // ✅ bookingId is REQUIRED - booking should already exist
         await insert('payments', {
@@ -402,6 +432,9 @@ class VerifyPaymentHandler extends BaseHandler {
       }
 
       // ✅ Payment signature is valid - update booking and payment status
+      let bookingToNotify: string | null = null;
+      let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null = null;
+
       const result = await withTransaction(async (client) => {
         // ✅ SQL: Look up payment record with FOR UPDATE lock
         const { rows: payments } = await client.query(
@@ -435,12 +468,6 @@ class VerifyPaymentHandler extends BaseHandler {
         const payment = payments[0];
         const bookingId = payment.booking_id;
 
-        // ✅ CRITICAL: Booking should already exist (created before payment)
-        if (!bookingId) {
-          console.error('[PAYMENT-VERIFY] Payment record exists but booking_id is missing:', payment.id);
-          throw new Error('Booking not found for payment. This should not happen.');
-        }
-
         // Update payment status
         await client.query(
           `UPDATE payments SET 
@@ -452,7 +479,25 @@ class VerifyPaymentHandler extends BaseHandler {
           [razorpay_payment_id, payment.id]
         );
 
+        // ✅ If booking is created after payment (prepaid flow), return success without booking update
+        if (!bookingId) {
+          return {
+            message: 'Payment verified successfully',
+            paymentId: razorpay_payment_id,
+            orderId: razorpay_order_id,
+            bookingId: null,
+          };
+        }
+
         // ✅ Update booking status to confirmed and payment_status to paid
+        const { rows: bookingRows } = await client.query(
+          `SELECT status, payment_status FROM bookings WHERE id = $1 FOR UPDATE`,
+          [bookingId]
+        );
+        const previousStatus = bookingRows[0]?.status || null;
+        const previousPaymentStatus = bookingRows[0]?.payment_status || null;
+        const shouldNotify = previousPaymentStatus !== 'paid' || previousStatus === 'pending_payment';
+
         await client.query(
           `UPDATE bookings SET 
             payment_status = 'paid',
@@ -461,6 +506,13 @@ class VerifyPaymentHandler extends BaseHandler {
           WHERE id = $1`,
           [bookingId]
         );
+
+        if (previousStatus !== 'confirmed') {
+          bookingStatusChange = { bookingId, from: previousStatus, to: 'confirmed' };
+        }
+        if (shouldNotify) {
+          bookingToNotify = bookingId;
+        }
 
         console.log('[PAYMENT-VERIFY] ✅ Payment verified and booking confirmed:', bookingId);
 
@@ -546,6 +598,21 @@ class VerifyPaymentHandler extends BaseHandler {
           bookingId: bookingId,
         };
       });
+
+      if (bookingStatusChange) {
+        await logBookingStatusChange(
+          bookingStatusChange.bookingId,
+          bookingStatusChange.from,
+          bookingStatusChange.to,
+          'system',
+          'system',
+          'Payment verified'
+        );
+      }
+
+      if (bookingToNotify) {
+        await notifyBookingCreated(bookingToNotify, context.requestId);
+      }
 
       return this.success(result);
     } catch (error: any) {
@@ -668,11 +735,37 @@ class RazorpayWebhookHandler extends BaseHandler {
       const payments = await select('payments', { razorpay_payment_id: payment.id });
       if (payments.length > 0) {
         const paymentRecord = payments[0];
+        let shouldNotify = false;
+        let previousStatus: string | null = null;
+        if (paymentRecord.booking_id) {
+          const bookingRows = await select('bookings', { id: paymentRecord.booking_id });
+          if (bookingRows.length > 0) {
+            const booking = bookingRows[0];
+            previousStatus = booking.status || null;
+            shouldNotify = booking.payment_status !== 'paid' || previousStatus === 'pending_payment';
+          }
+        }
+
         await update(
           'bookings',
           { id: paymentRecord.booking_id },
-          { payment_status: 'paid' }
+          { payment_status: 'paid', status: 'confirmed' }
         );
+
+        if (previousStatus && previousStatus !== 'confirmed') {
+          await logBookingStatusChange(
+            paymentRecord.booking_id,
+            previousStatus,
+            'confirmed',
+            'system',
+            'system',
+            'Payment captured (webhook)'
+          );
+        }
+
+        if (shouldNotify) {
+          await notifyBookingCreated(paymentRecord.booking_id, context.requestId);
+        }
 
         // ✅ Trigger automatic settlement if marketplace mode is enabled
         try {
@@ -704,6 +797,19 @@ class RazorpayWebhookHandler extends BaseHandler {
           failure_reason: payment.error_description || 'Payment failed',
         }
       );
+
+      const payments = await select('payments', { razorpay_payment_id: payment.id });
+      if (payments.length > 0 && payments[0].booking_id) {
+        const bookingRows = await select('bookings', { id: payments[0].booking_id });
+        const booking = bookingRows[0];
+        if (booking && booking.payment_status !== 'paid' && booking.status === 'pending_payment') {
+          await update(
+            'bookings',
+            { id: payments[0].booking_id },
+            { status: 'cancelled', payment_status: 'failed' }
+          );
+        }
+      }
     } else if (event === 'refund.created') {
       const refund = payload_data.refund.entity;
       
@@ -1337,4 +1443,3 @@ export async function getVendorTierCommission(vendorId: string): Promise<number>
     return DEFAULT_COMMISSION_RATE;
   }
 }
-

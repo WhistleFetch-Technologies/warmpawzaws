@@ -23,10 +23,11 @@ import { randomUUID, createHmac, timingSafeEqual } from 'crypto';
 import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../handler/base-handler-enhanced';
 import { query, select, insert, update, withTransaction } from '../database/rds-connection';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
-import { logAuditEntry, logPaymentStatusChange } from '../utils/audit-log';
+import { logAuditEntry, logBookingStatusChange, logPaymentStatusChange } from '../utils/audit-log';
 import { publishPaymentCreated, publishPaymentProcessed } from '../utils/sns-client';
 import { normalizeDbRow, buildPaymentResponse } from '../utils/entity-extractor';
 import { normalizePayment, isValidUUID } from '../types/entities';
+import { notifyBookingCreated } from '../utils/booking-notifications';
 import {
   CreatePaymentRequestSchema,
 } from '@warmpawz/api-contracts/payments';
@@ -586,6 +587,9 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
       }
 
       try {
+        let bookingToNotify: string | null = null;
+        let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null = null;
+
         // Use transaction for atomicity
         await withTransaction(async (client) => {
           const { rows: payments } = await client.query(
@@ -617,10 +621,32 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
 
           // Update booking payment status
           if (payment.booking_id) {
-            await client.query(
-              `UPDATE bookings SET payment_status = 'paid', updated_at = NOW() WHERE id = $1`,
+            const { rows: bookingRows } = await client.query(
+              `SELECT * FROM bookings WHERE id = $1 FOR UPDATE`,
               [payment.booking_id]
             );
+            if (bookingRows.length > 0) {
+              const booking = bookingRows[0];
+              const previousStatus = booking.status || null;
+              const shouldNotify = booking.payment_status !== 'paid' || previousStatus === 'pending_payment';
+              const nextStatus = previousStatus === 'pending_payment' ? 'confirmed' : previousStatus;
+
+              await client.query(
+                `UPDATE bookings SET 
+                   payment_status = 'paid', 
+                   status = $2,
+                   updated_at = NOW() 
+                 WHERE id = $1`,
+                [booking.id, nextStatus]
+              );
+
+              if (shouldNotify) {
+                bookingToNotify = booking.id;
+              }
+              if (previousStatus !== nextStatus) {
+                bookingStatusChange = { bookingId: booking.id, from: previousStatus, to: nextStatus };
+              }
+            }
           }
 
           // Log status change
@@ -633,6 +659,23 @@ class RazorpayWebhookHandlerEnhanced extends BaseHandlerEnhanced {
             { razorpay_payment_id: payment_id, amount: paymentEntity?.amount }
           );
         });
+
+        // Log booking status change (if any)
+        if (bookingStatusChange) {
+          await logBookingStatusChange(
+            bookingStatusChange.bookingId,
+            bookingStatusChange.from,
+            bookingStatusChange.to,
+            'system',
+            'system',
+            'Payment captured'
+          );
+        }
+
+        // Notify vendor/customer only after payment confirmation
+        if (bookingToNotify) {
+          await notifyBookingCreated(bookingToNotify, requestId);
+        }
 
         // Publish event
         try {

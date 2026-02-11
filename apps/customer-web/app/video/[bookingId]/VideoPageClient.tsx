@@ -6,11 +6,26 @@ import { apiClient } from '@/lib/api-client';
 import { ChimeVideoCall } from '@/components/customer/booking/ChimeVideoCall';
 
 interface VideoPageClientProps {
-  bookingId: string;
+  bookingId?: string;
 }
 
-export function VideoPageClient({ bookingId }: VideoPageClientProps) {
+export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientProps) {
   const router = useRouter();
+
+  const bookingIdFromPath =
+    typeof window !== 'undefined'
+      ? window.location.pathname.match(/\/video\/([^/?]+)/)?.[1]
+      : null;
+  const bookingIdFromQuery =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('bookingId')
+      : null;
+  const normalizeBookingId = (value?: string | null) => (value && value !== '_' ? value : '');
+  const bookingId =
+    normalizeBookingId(bookingIdProp) ||
+    normalizeBookingId(bookingIdFromPath) ||
+    normalizeBookingId(bookingIdFromQuery) ||
+    '';
   
   const [bookingData, setBookingData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -50,10 +65,14 @@ export function VideoPageClient({ bookingId }: VideoPageClientProps) {
 
       setParticipantId(qpCustomerId || qpPhone || storedId);
     }
-    loadBookingData();
+    void loadBookingData();
   }, [bookingId]);
 
   const loadBookingData = async () => {
+    if (!bookingId) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       setError(null);
@@ -79,6 +98,24 @@ export function VideoPageClient({ bookingId }: VideoPageClientProps) {
       setLoading(false);
     }
   };
+
+  if (!bookingId && !loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 p-4">
+        <div className="text-center p-6 bg-slate-800 rounded-2xl max-w-md">
+          <div className="text-5xl mb-4">⚠️</div>
+          <h2 className="text-xl font-bold text-white mb-2">Invalid link</h2>
+          <p className="text-gray-400 mb-4">No booking ID in the URL.</p>
+          <button
+            onClick={() => router.push('/bookings')}
+            className="px-6 py-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition"
+          >
+            Back to bookings
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

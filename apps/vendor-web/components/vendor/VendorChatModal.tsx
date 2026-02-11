@@ -409,7 +409,12 @@ export function VendorChatModal({
         }
 
         // Open video in same window so vendor stays in app (no new tab / login page)
-        const videoUrl = `/video/${bookingId}${currentMeetingId ? `?meetingId=${currentMeetingId}` : ''}`;
+        const params = new URLSearchParams();
+        params.set('bookingId', bookingId);
+        if (currentMeetingId) params.set('meetingId', currentMeetingId);
+        if (effectiveVendorId) params.set('vendorId', effectiveVendorId);
+        const query = params.toString();
+        const videoUrl = `/video${query ? `?${query}` : ''}`;
         router.push(videoUrl);
         
         toast.success('Opening video call...');
