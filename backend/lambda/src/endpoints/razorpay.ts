@@ -20,7 +20,7 @@
 
 import { Hono } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
-import { query, select, insert, update } from '../database/rds-connection';
+import { query, select, insert, update, withTransaction } from '../database/rds-connection';
 import { createHmac, randomUUID } from 'crypto';
 import { getRazorpayConfig, getRazorpayAuthHeader, getRazorpayClient, razorpayRequest } from '../utils/razorpay-client';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
@@ -106,7 +106,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           return this.error(`Missing required fields for diagnostics order: ${missing.join(', ')}`, 400);
         }
       } else {
-        // Return 400 for missing required fields (do not throw - would become 500 in BaseHandler)
+        // ✅ bookingId is REQUIRED for booking orders (booking created before payment)
         const missing = ['bookingId', 'amount'].filter((f) => !body[f]);
         if (missing.length > 0) {
           return this.error(`Missing required fields: ${missing.join(', ')}`, 400);
@@ -125,9 +125,21 @@ class CreateRazorpayOrderHandler extends BaseHandler {
       }
 
       if (!config || !config.keyId || !config.keySecret) {
-        console.error('[RAZORPAY-CREATE-ORDER] ❌ Razorpay config invalid');
-        return this.error('Payment gateway configuration error', 500);
+        console.error('[RAZORPAY-CREATE-ORDER] ❌ Razorpay config invalid', {
+          hasConfig: !!config,
+          hasKeyId: !!config?.keyId,
+          hasKeySecret: !!config?.keySecret,
+          keyIdLength: config?.keyId?.length,
+        });
+        return this.error('Payment gateway configuration error: Razorpay keys not configured. Please check AWS Secrets Manager, Platform Settings, or environment variables.', 500);
       }
+      
+      // ✅ Log config status (without exposing secrets)
+      console.log('[RAZORPAY-CREATE-ORDER] ✅ Razorpay config loaded', {
+        keyId: config.keyId ? `${config.keyId.substring(0, 8)}...` : 'missing',
+        hasKeySecret: !!config.keySecret,
+        hasWebhookSecret: !!config.webhookSecret,
+      });
 
       let booking: any;
       let vendor: any;
@@ -167,6 +179,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         receipt = `diag_${shortId}`;
         notes = { type: 'diagnostics', customerId: customerIdFinal, vendorId: vendorIdFinal };
       } else {
+        // ✅ bookingId is REQUIRED - booking should already exist (created before payment)
         const bookingResult = await Promise.race([
           select('bookings', { id: bookingId }),
           new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('Booking query timeout')), 5000)),
@@ -225,11 +238,33 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         ];
       }
 
-      const razorpayOrder = await razorpayRequest('/orders', 'POST', orderData, 20000) as any;
+      // ✅ Enhanced logging before Razorpay API call
+      console.log('[RAZORPAY-CREATE-ORDER] Calling Razorpay API with orderData:', {
+        amount: orderData.amount,
+        currency: orderData.currency,
+        receipt: orderData.receipt,
+        hasTransfers: !!orderData.transfers,
+        notes: orderData.notes,
+      });
+
+      let razorpayOrder: any;
+      try {
+        razorpayOrder = await razorpayRequest('/orders', 'POST', orderData, 20000) as any;
+      } catch (razorpayError: any) {
+        console.error('[RAZORPAY-CREATE-ORDER] Razorpay API call failed:', {
+          error: razorpayError.message,
+          errorName: razorpayError.name,
+          errorCode: razorpayError.code,
+          stack: razorpayError.stack,
+          orderData,
+        });
+        // ✅ Re-throw with more context
+        throw new Error(`Razorpay API call failed: ${razorpayError.message || 'Unknown error'}. Check Lambda VPC configuration and internet connectivity.`);
+      }
 
       if (!razorpayOrder || !razorpayOrder.id) {
         console.error('[RAZORPAY-CREATE-ORDER] Invalid Razorpay response:', razorpayOrder);
-        return this.error('Failed to create payment order', 500);
+        return this.error('Failed to create payment order: Invalid response from Razorpay', 500);
       }
 
       if (isPharmacyOrder) {
@@ -241,6 +276,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
       } else if (isDiagnosticsOrder) {
         // Diagnostics: booking is created after payment success; do not insert payment row here (no booking_id yet)
       } else {
+        // ✅ bookingId is REQUIRED - booking should already exist
         await insert('payments', {
           booking_id: bookingId,
           customer_id: customerIdFinal,
@@ -260,12 +296,35 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         keyId: config.keyId,
       });
     } catch (error: any) {
-      console.error('[RAZORPAY-CREATE-ORDER] Error:', error);
+      console.error('[RAZORPAY-CREATE-ORDER] Error:', {
+        message: error?.message,
+        name: error?.name,
+        code: error?.code,
+        stack: error?.stack,
+        cause: error?.cause,
+      });
+      
       const errorMessage = error?.message || 'Failed to create payment order';
-      if (errorMessage.includes('timeout')) {
+      
+      // ✅ Handle specific error types
+      if (errorMessage.includes('timeout') || errorMessage.includes('AbortError')) {
         return this.error('Payment gateway request timed out. Please try again.', 504);
       }
-      return this.error(errorMessage, 500);
+      
+      if (errorMessage.includes('Network error') || errorMessage.includes('fetch failed') || errorMessage.includes('ENOTFOUND') || errorMessage.includes('ECONNREFUSED')) {
+        return this.error('Network error connecting to payment gateway. Please check Lambda VPC configuration and ensure internet connectivity is available.', 500);
+      }
+      
+      if (errorMessage.includes('SSL') || errorMessage.includes('certificate') || errorMessage.includes('TLS')) {
+        return this.error('SSL/TLS error connecting to payment gateway. Please check certificate configuration.', 500);
+      }
+      
+      if (errorMessage.includes('configuration error') || errorMessage.includes('not configured')) {
+        return this.error(errorMessage, 500);
+      }
+      
+      // ✅ Return detailed error message for debugging
+      return this.error(`Payment gateway error: ${errorMessage}`, 500);
     }
   }
 }
@@ -295,127 +354,263 @@ class VerifyPaymentHandler extends BaseHandler {
         return this.error('Payment gateway configuration error. Please contact support.', 500);
       }
 
-      // ✅ Verify signature
+      // ✅ CRITICAL: Verify signature FIRST before any database operations
       const text = `${razorpay_order_id}|${razorpay_payment_id}`;
       const generatedSignature = createHmac('sha256', config.keySecret)
         .update(text)
         .digest('hex');
 
+      // ✅ CRITICAL: If payment signature is invalid, rollback by deleting booking and payment
       if (generatedSignature !== razorpay_signature) {
-        console.error('[PAYMENT-VERIFY] Signature mismatch:', {
+        console.error('[PAYMENT-VERIFY] Signature mismatch - rolling back booking:', {
           orderId: razorpay_order_id,
           paymentId: razorpay_payment_id,
           received: razorpay_signature.substring(0, 10) + '...',
           generated: generatedSignature.substring(0, 10) + '...'
         });
-        return this.error('Invalid payment signature. Please ensure payment details are correct.', 400);
-      }
 
-      // ✅ SQL: Look up payment record
-      const payments = await select('payments', { razorpay_order_id });
-      if (payments.length === 0) {
-        // Diagnostics (and similar) orders: payment-before-booking – no row was inserted at create-order.
-        // Verify that this Razorpay order is a diagnostics order, then return success so frontend can create the booking.
+        // ✅ ROLLBACK: Delete booking and payment if payment verification fails
         try {
-          const razorpayOrder = await razorpayRequest(`/orders/${razorpay_order_id}`, 'GET', undefined, 10000) as any;
-          const notes = razorpayOrder?.notes || {};
-          const orderType = typeof notes === 'object' && notes !== null ? (notes.type || notes.orderType) : undefined;
-          if (orderType === 'diagnostics') {
-            console.log('[PAYMENT-VERIFY] Diagnostics order verified (no pre-inserted payment row), returning success');
-            return this.success({
-              message: 'Payment verified successfully',
-              paymentId: razorpay_payment_id,
-              orderId: razorpay_order_id,
-            });
-          }
-        } catch (fetchErr: any) {
-          console.warn('[PAYMENT-VERIFY] Could not fetch Razorpay order for diagnostics check:', fetchErr?.message);
+          await withTransaction(async (client) => {
+            const { rows: payments } = await client.query(
+              `SELECT booking_id FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
+              [razorpay_order_id]
+            );
+
+            if (payments.length > 0 && payments[0].booking_id) {
+              // Delete booking (rollback)
+              await client.query(
+                `DELETE FROM bookings WHERE id = $1`,
+                [payments[0].booking_id]
+              );
+              console.log('[PAYMENT-VERIFY] ❌ Payment failed - booking rolled back:', payments[0].booking_id);
+            }
+
+            // Delete payment record
+            await client.query(
+              `DELETE FROM payments WHERE razorpay_order_id = $1`,
+              [razorpay_order_id]
+            );
+            console.log('[PAYMENT-VERIFY] ❌ Payment failed - payment record deleted');
+          });
+        } catch (rollbackError: any) {
+          console.error('[PAYMENT-VERIFY] Error during rollback:', rollbackError);
+          // Continue to return error even if rollback fails
         }
-        console.error('[PAYMENT-VERIFY] Payment record not found for order:', razorpay_order_id);
-        return this.error('Payment record not found. Please contact support with your order ID.', 404);
+
+        return this.error('Invalid payment signature. Booking has been cancelled.', 400);
       }
 
-      await update(
-        'payments',
-        { razorpay_order_id },
-        {
-          razorpay_payment_id: razorpay_payment_id,
-          payment_status: 'completed',
-          completed_at: new Date(),
-        }
-      );
-
-      const payment = payments[0];
-      const pharmacyOrderId = payment.pharmacy_order_id;
-
-      if (pharmacyOrderId) {
-        // Pharmacy order: update status and create delivery_tracking with OTP for later use at dispatch
-        await update('pharmacy_orders', { id: pharmacyOrderId }, {
-          payment_status: 'paid',
-          razorpay_payment_id: razorpay_payment_id,
-          status: 'payment_confirmed',
-          updated_at: new Date().toISOString(),
-        });
-        const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
-        const existing = await select('delivery_tracking', { pharmacy_order_id: pharmacyOrderId });
-        if (existing.length === 0) {
-          await insert('delivery_tracking', {
-            pharmacy_order_id: pharmacyOrderId,
-            status: 'assigned',
-            delivery_otp: deliveryOtp,
-            assigned_at: new Date().toISOString(),
-          });
-        }
-      } else if (payment.booking_id) {
-        await update(
-          'bookings',
-          { id: payment.booking_id },
-          { 
-            payment_status: 'paid',
-            status: 'confirmed',
-            updated_at: new Date().toISOString(),
-          }
+      // ✅ Payment signature is valid - update booking and payment status
+      const result = await withTransaction(async (client) => {
+        // ✅ SQL: Look up payment record with FOR UPDATE lock
+        const { rows: payments } = await client.query(
+          `SELECT * FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
+          [razorpay_order_id]
         );
-        try {
-          const vendors = await select('vendors', { id: payment.vendor_id });
-          const vendor = vendors.length > 0 ? vendors[0] : null;
-          if (vendor?.razorpay_account_id && vendor.bank_verified) {
-            const { sendToSQS } = await import('../utils/aws-clients');
-            await sendToSQS('settlement-queue', {
-              type: 'auto_settle_booking',
-              bookingId: payment.booking_id,
-              vendorId: payment.vendor_id,
-              paymentId: payment.id,
-            });
-          }
-        } catch (error) {
-          console.error('Failed to queue automatic settlement:', error);
-        }
-        try {
-          const { publishPaymentProcessed } = await import('../utils/sns-client');
-          await publishPaymentProcessed({
-            paymentId: razorpay_payment_id,
-            bookingId: payment.booking_id,
-            amount: payment.amount,
-            status: 'completed',
-          });
-        } catch (error) {
-          console.error('Failed to publish payment processed event:', error);
-        }
-      }
 
-      return this.success({
-        message: 'Payment verified successfully',
-        paymentId: razorpay_payment_id,
-        orderId: razorpay_order_id,
+        if (payments.length === 0) {
+          // Diagnostics (and similar) orders: payment-before-booking – no row was inserted at create-order.
+          // Verify that this Razorpay order is a diagnostics order, then return success so frontend can create the booking.
+          try {
+            const razorpayOrder = await razorpayRequest(`/orders/${razorpay_order_id}`, 'GET', undefined, 10000) as any;
+            const notes = razorpayOrder?.notes || {};
+            const orderType = typeof notes === 'object' && notes !== null ? (notes.type || notes.orderType) : undefined;
+            if (orderType === 'diagnostics') {
+              console.log('[PAYMENT-VERIFY] Diagnostics order verified (no pre-inserted payment row), returning success');
+              return {
+                message: 'Payment verified successfully',
+                paymentId: razorpay_payment_id,
+                orderId: razorpay_order_id,
+                bookingId: null,
+              };
+            }
+          } catch (fetchErr: any) {
+            console.warn('[PAYMENT-VERIFY] Could not fetch Razorpay order for diagnostics check:', fetchErr?.message);
+          }
+          console.error('[PAYMENT-VERIFY] Payment record not found for order:', razorpay_order_id);
+          throw new Error('Payment record not found. Please contact support with your order ID.');
+        }
+
+        const payment = payments[0];
+        const bookingId = payment.booking_id;
+
+        // ✅ CRITICAL: Booking should already exist (created before payment)
+        if (!bookingId) {
+          console.error('[PAYMENT-VERIFY] Payment record exists but booking_id is missing:', payment.id);
+          throw new Error('Booking not found for payment. This should not happen.');
+        }
+
+        // Update payment status
+        await client.query(
+          `UPDATE payments SET 
+            payment_status = 'completed',
+            razorpay_payment_id = $1,
+            completed_at = NOW(),
+            updated_at = NOW()
+          WHERE id = $2`,
+          [razorpay_payment_id, payment.id]
+        );
+
+        // ✅ Update booking status to confirmed and payment_status to paid
+        await client.query(
+          `UPDATE bookings SET 
+            payment_status = 'paid',
+            status = 'confirmed',
+            updated_at = NOW()
+          WHERE id = $1`,
+          [bookingId]
+        );
+
+        console.log('[PAYMENT-VERIFY] ✅ Payment verified and booking confirmed:', bookingId);
+
+        const pharmacyOrderId = payment.pharmacy_order_id;
+
+        if (pharmacyOrderId) {
+          // Pharmacy order: update status and create delivery_tracking with OTP for later use at dispatch
+          await client.query(
+            `UPDATE pharmacy_orders SET 
+              payment_status = 'paid',
+              razorpay_payment_id = $1,
+              status = 'payment_confirmed',
+              updated_at = NOW()
+            WHERE id = $2`,
+            [razorpay_payment_id, pharmacyOrderId]
+          );
+          const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
+          const { rows: existing } = await client.query(
+            `SELECT id FROM delivery_tracking WHERE pharmacy_order_id = $1`,
+            [pharmacyOrderId]
+          );
+          if (existing.length === 0) {
+            await client.query(
+              `INSERT INTO delivery_tracking (pharmacy_order_id, status, delivery_otp, assigned_at)
+               VALUES ($1, $2, $3, NOW())`,
+              [pharmacyOrderId, 'assigned', deliveryOtp]
+            );
+          }
+        }
+
+        // Queue settlement and publish events (outside transaction for async operations)
+        if (bookingId) {
+          try {
+            const { rows: vendors } = await client.query(
+              `SELECT razorpay_account_id, bank_verified FROM vendors WHERE id = $1`,
+              [payment.vendor_id]
+            );
+            const vendor = vendors.length > 0 ? vendors[0] : null;
+            if (vendor?.razorpay_account_id && vendor.bank_verified) {
+              // Queue settlement asynchronously (don't await in transaction)
+              Promise.resolve().then(async () => {
+                try {
+                  const { sendToSQS } = await import('../utils/aws-clients');
+                  await sendToSQS('settlement-queue', {
+                    type: 'auto_settle_booking',
+                    bookingId: bookingId,
+                    vendorId: payment.vendor_id,
+                    paymentId: payment.id,
+                  });
+                } catch (error) {
+                  console.error('Failed to queue automatic settlement:', error);
+                }
+              });
+            }
+          } catch (error) {
+            console.error('Failed to check vendor for settlement:', error);
+          }
+          
+          try {
+            // Publish event asynchronously (don't await in transaction)
+            Promise.resolve().then(async () => {
+              try {
+                const { publishPaymentProcessed } = await import('../utils/sns-client');
+                await publishPaymentProcessed({
+                  paymentId: razorpay_payment_id,
+                  bookingId: bookingId,
+                  amount: payment.amount,
+                  status: 'completed',
+                });
+              } catch (error) {
+                console.error('Failed to publish payment processed event:', error);
+              }
+            });
+          } catch (error) {
+            console.error('Failed to publish payment event:', error);
+          }
+        }
+
+        return {
+          message: 'Payment verified successfully',
+          paymentId: razorpay_payment_id,
+          orderId: razorpay_order_id,
+          bookingId: bookingId,
+        };
       });
+
+      return this.success(result);
     } catch (error: any) {
       console.error('[PAYMENT-VERIFY] Verification error:', error);
-      // ✅ FIX: Return more specific error messages
-      if (error.message) {
-        return this.error(`Payment verification failed: ${error.message}`, 500);
+      
+      // ✅ CRITICAL: Only rollback if payment verification failed (payment_status is still 'pending')
+      // If transaction already committed (payment_status = 'completed'), don't delete booking
+      const body = this.parseBody(context.event);
+      const orderId = body?.razorpay_order_id;
+      
+      if (orderId) {
+        try {
+          await withTransaction(async (client) => {
+            const { rows: payments } = await client.query(
+              `SELECT booking_id, payment_status FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
+              [orderId]
+            );
+
+            if (payments.length > 0) {
+              const payment = payments[0];
+              
+              // ✅ Only delete booking if payment_status is still 'pending' (payment didn't succeed)
+              if (payment.payment_status === 'pending' && payment.booking_id) {
+                // Delete booking (rollback)
+                await client.query(
+                  `DELETE FROM bookings WHERE id = $1`,
+                  [payment.booking_id]
+                );
+                console.log('[PAYMENT-VERIFY] ❌ Payment verification failed - booking rolled back:', payment.booking_id);
+                
+                // Delete payment record
+                await client.query(
+                  `DELETE FROM payments WHERE razorpay_order_id = $1`,
+                  [orderId]
+                );
+                console.log('[PAYMENT-VERIFY] ❌ Payment verification failed - payment record deleted');
+              } else if (payment.payment_status === 'completed') {
+                // ✅ Payment already succeeded - don't delete booking
+                console.log('[PAYMENT-VERIFY] ⚠️ Error occurred but payment already succeeded (status: completed), skipping rollback');
+              } else {
+                // Payment status is something else (partial, failed, etc.) - still rollback
+                if (payment.booking_id) {
+                  await client.query(
+                    `DELETE FROM bookings WHERE id = $1`,
+                    [payment.booking_id]
+                  );
+                  console.log('[PAYMENT-VERIFY] ❌ Payment verification failed - booking rolled back (status:', payment.payment_status, ')');
+                }
+                await client.query(
+                  `DELETE FROM payments WHERE razorpay_order_id = $1`,
+                  [orderId]
+                );
+              }
+            }
+          });
+        } catch (rollbackError: any) {
+          console.error('[PAYMENT-VERIFY] Error during rollback:', rollbackError);
+          // Continue to return error even if rollback fails
+        }
       }
-      return this.error('Payment verification failed. Please try again or contact support.', 500);
+      
+      if (error.message) {
+        return this.error(`Payment verification failed: ${error.message}. Booking has been cancelled.`, 500);
+      }
+      return this.error('Payment verification failed. Booking has been cancelled. Please try again or contact support.', 500);
     }
   }
 }

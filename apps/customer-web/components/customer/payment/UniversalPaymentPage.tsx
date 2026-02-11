@@ -1139,8 +1139,8 @@ export function UniversalPaymentPage({
           resolvedServiceId: finalServiceId, // Log resolved UUID
         });
         
-        // ✅ Try all possible booking creation endpoints
-        // CRITICAL: Lambda may not be deployed with latest code, try all variations
+        // ✅ CRITICAL: Create booking BEFORE payment (booking will be rolled back if payment fails)
+        // Try all possible booking creation endpoints
         const endpoints = [
           '/bookings/create',
           '/booking/create', 
@@ -1257,24 +1257,21 @@ export function UniversalPaymentPage({
       }
       
       // Step 2: Create payment record
-      // ✅ FIX: Schema requires bookingId (UUID), amount (positive), paymentMethod (optional enum)
-      // orderId is not in schema - backend only handles bookings for now
-      if (!currentBookingId) {
-        // For orders, skip payment creation (order handles payment separately)
-        // Or we could create payment without bookingId if backend supports it
-        if (type === 'order') {
-          console.log('⚠️ Order payment - skipping payment record creation (order handles payment)');
-          // For orders, proceed directly to Razorpay
-        } else {
-          throw new Error('Booking ID is required to create payment');
-        }
+      // ✅ CRITICAL: bookingId is REQUIRED - booking should already exist (created before payment)
+      if (type === 'order' && !currentOrderId) {
+        console.log('⚠️ Order payment - skipping payment record creation (order handles payment)');
+        // For orders, proceed directly to Razorpay
       }
       
-      // ✅ FIX: Schema requires bookingId (UUID), amount (positive), paymentMethod (optional enum)
+      // ✅ For bookings, payment requires bookingId (booking created before payment)
+      if (type === 'booking' && !currentBookingId) {
+        throw new Error('Booking ID is required to create payment. Please create booking first.');
+      }
+      
       const paymentPayload: any = {
         amount: taxBreakdown.total, // ✅ Required: positive number
         paymentMethod: selectedMethod === 'razorpay' ? 'razorpay' : (selectedMethod || 'razorpay'), // ✅ Optional enum
-        bookingId: currentBookingId, // ✅ Required UUID (only for bookings)
+        bookingId: currentBookingId, // ✅ Required UUID (booking should already exist)
       };
       
       // ✅ Optional fields (not in schema but backend may handle)
@@ -1308,9 +1305,9 @@ export function UniversalPaymentPage({
       
       console.log('📤 Creating payment with payload:', paymentPayload);
       
-      // ✅ Only create payment record if we have a bookingId (required by schema)
+      // ✅ Create payment record (bookingId is REQUIRED - booking should already exist)
       let paymentRes: any = null;
-      if (currentBookingId) {
+      if (type === 'booking' && currentBookingId) {
         // ✅ Validate bookingId is a UUID before sending
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (!uuidRegex.test(currentBookingId)) {
@@ -1476,6 +1473,7 @@ export function UniversalPaymentPage({
       // ✅ FIX: Use longer timeout (45s) for payment operations
       console.log('🔄 [PAYMENT] Creating Razorpay order...');
       const orderRes = await apiClient.post<any>('/razorpay/create-order', {
+        // ✅ bookingId is REQUIRED - booking should already exist
         bookingId: currentBookingId,
         orderId: currentOrderId,
         amount: finalAmount,
@@ -1506,6 +1504,7 @@ export function UniversalPaymentPage({
             });
 
             // ✅ Step 1: Verify payment with backend
+            // ✅ Booking should already exist (created before payment)
             console.log('🔄 [RAZORPAY] Verifying payment...');
             const verifyRes = await apiClient.post('/razorpay/verify-payment', {
               razorpay_order_id: response.razorpay_order_id,

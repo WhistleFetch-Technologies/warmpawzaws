@@ -23,7 +23,9 @@ const nextConfig = {
     // Local dev: use config/urls.json apiGatewayDefaultUrl when NEXT_PUBLIC_API_BASE_URL not set
     NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || defaultApiUrl,
   },
-  output: 'export',
+  // Only use static export in production builds, not in development
+  // This allows dynamic routes to work in dev mode
+  ...(process.env.NODE_ENV === 'production' ? { output: 'export' } : {}),
   distDir: 'dist',
   reactStrictMode: true,
   transpilePackages: ['@warmpawz/ui', '@warmpawz/shared-libs'],

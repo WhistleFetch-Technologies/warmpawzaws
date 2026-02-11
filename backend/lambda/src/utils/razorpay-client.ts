@@ -147,6 +147,14 @@ export async function razorpayRequest(
 
   try {
     const startTime = Date.now();
+    
+    // ✅ Enhanced logging for debugging
+    console.log(`[RAZORPAY-REQUEST] Attempting ${method} ${url}`, {
+      hasBody: !!body,
+      bodySize: body ? JSON.stringify(body).length : 0,
+      timeout: timeoutMs,
+    });
+    
     const response = await fetch(url, {
       method,
       headers,
@@ -156,12 +164,19 @@ export async function razorpayRequest(
 
     clearTimeout(timeoutId);
     const duration = Date.now() - startTime;
-    console.log(`[RAZORPAY-REQUEST] Response received in ${duration}ms for ${endpoint}`);
+    console.log(`[RAZORPAY-REQUEST] Response received in ${duration}ms for ${endpoint}`, {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+    });
 
     if (!response.ok) {
       const error: any = await response.json().catch(() => ({}));
-      const errorMsg = error?.error?.description || response.statusText || 'Unknown error';
-      console.error(`[RAZORPAY-REQUEST] API error (${response.status}): ${errorMsg}`);
+      const errorMsg = error?.error?.description || error?.error?.message || response.statusText || 'Unknown error';
+      console.error(`[RAZORPAY-REQUEST] API error (${response.status}): ${errorMsg}`, {
+        errorDetails: error,
+        responseHeaders: Object.fromEntries(response.headers.entries()),
+      });
       throw new Error(`Razorpay API error: ${errorMsg}`);
     }
 
@@ -170,11 +185,42 @@ export async function razorpayRequest(
     return result;
   } catch (error: any) {
     clearTimeout(timeoutId);
+    
+    // ✅ Enhanced error logging with more details
+    const errorDetails: any = {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      cause: error.cause,
+      endpoint,
+      method,
+      url,
+    };
+    
     if (error.name === 'AbortError' || error.message?.includes('aborted')) {
-      console.error(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`);
+      console.error(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`, errorDetails);
       throw new Error(`Razorpay API request timeout after ${timeoutMs}ms`);
     }
-    console.error(`[RAZORPAY-REQUEST] Error for ${endpoint}:`, error.message);
+    
+    // ✅ Check for network/DNS errors
+    if (error.message?.includes('fetch failed') || error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
+      console.error(`[RAZORPAY-REQUEST] Network error for ${endpoint}:`, errorDetails);
+      throw new Error(`Network error connecting to Razorpay API: ${error.message || error.code || 'Unknown network error'}. Please check Lambda VPC configuration and internet connectivity.`);
+    }
+    
+    // ✅ Check for SSL/TLS errors
+    if (error.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' || error.code === 'CERT_HAS_EXPIRED' || error.message?.includes('certificate')) {
+      console.error(`[RAZORPAY-REQUEST] SSL/TLS error for ${endpoint}:`, errorDetails);
+      throw new Error(`SSL/TLS error connecting to Razorpay API: ${error.message || error.code}`);
+    }
+    
+    console.error(`[RAZORPAY-REQUEST] Error for ${endpoint}:`, errorDetails);
+    
+    // ✅ Re-throw with more context
+    if (error.message) {
+      throw new Error(`Razorpay API request failed: ${error.message}`);
+    }
     throw error;
   }
 }

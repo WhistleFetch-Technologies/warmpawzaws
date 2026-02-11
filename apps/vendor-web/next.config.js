@@ -8,7 +8,11 @@ const path = require('path');
  */
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',
+  // Disable static export in development to allow dynamic routes
+  // For production builds, set ENABLE_STATIC_EXPORT=true
+  ...(process.env.NODE_ENV === 'production' && process.env.ENABLE_STATIC_EXPORT === 'true'
+    ? { output: 'export' } 
+    : {}),
   distDir: 'dist',
   reactStrictMode: true,
   transpilePackages: ['@warmpawz/ui', '@warmpawz/shared-libs'],

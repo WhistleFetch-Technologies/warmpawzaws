@@ -112234,6 +112234,107 @@ var init_jwt_verification = __esm({
   }
 });
 
+// src/utils/sms-service.ts
+var sms_service_exports = {};
+__export(sms_service_exports, {
+  default: () => sms_service_default,
+  sendOTP: () => sendOTP,
+  sendSMS: () => sendSMS
+});
+function normalizePhone(phone) {
+  const raw2 = String(phone || "").trim();
+  const digits = raw2.replace(/\D/g, "");
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.startsWith("91") && digits.length === 12) return `+${digits}`;
+  if (raw2.startsWith("+")) return raw2;
+  return digits ? `+${digits}` : raw2;
+}
+async function loadSnsSettings() {
+  const envSender = process.env.SMS_SENDER_ID || process.env.SNS_SMS_SENDER_ID || "";
+  const envEntity = process.env.SMS_ENTITY_ID || process.env.SNS_SMS_ENTITY_ID || "";
+  const envTemplate = process.env.SMS_TEMPLATE_ID || process.env.SNS_SMS_TEMPLATE_ID || "";
+  if (envSender || envEntity || envTemplate) {
+    return {
+      senderId: envSender || void 0,
+      entityId: envEntity || void 0,
+      templateId: envTemplate || void 0
+    };
+  }
+  try {
+    const rows = await query(
+      `SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:settings:aws' LIMIT 1`
+    );
+    const setting = rows.rows?.[0]?.setting_value || null;
+    const sns = setting?.sns || {};
+    return {
+      senderId: sns?.smsOriginationNumber || void 0,
+      entityId: sns?.entityId || void 0,
+      templateId: sns?.templateId || void 0
+    };
+  } catch {
+    return null;
+  }
+}
+async function buildSmsAttributes(type, overrides) {
+  const attrs = {
+    "AWS.SNS.SMS.SMSType": {
+      DataType: "String",
+      StringValue: type === "promotional" ? "Promotional" : "Transactional"
+    }
+  };
+  const settings = await loadSnsSettings();
+  const senderId = overrides?.senderId || settings?.senderId;
+  if (senderId) {
+    attrs["AWS.SNS.SMS.SenderID"] = { DataType: "String", StringValue: senderId };
+  }
+  const entityId = overrides?.entityId || settings?.entityId;
+  if (entityId) {
+    attrs["AWS.SNS.SMS.EntityId"] = { DataType: "String", StringValue: entityId };
+  }
+  const templateId = overrides?.templateId || settings?.templateId;
+  if (templateId) {
+    attrs["AWS.SNS.SMS.TemplateId"] = { DataType: "String", StringValue: templateId };
+  }
+  return attrs;
+}
+async function sendSMS(options) {
+  const { to, message: message2, type = "transactional", templateId, entityId, senderId } = options;
+  const phone = normalizePhone(to);
+  const attrs = await buildSmsAttributes(type, { templateId, entityId, senderId });
+  try {
+    const snsClient4 = new import_client_sns.SNSClient({ region: process.env.AWS_REGION || "ap-south-1" });
+    const result = await snsClient4.send(
+      new import_client_sns.PublishCommand({
+        PhoneNumber: phone,
+        Message: message2,
+        MessageAttributes: attrs
+      })
+    );
+    return { success: true, messageId: result?.MessageId };
+  } catch (err) {
+    console.error("[SMS] SNS send failed:", err?.message || err);
+    return { success: false };
+  }
+}
+async function sendOTP(phone, otp) {
+  const templateId = process.env.SMS_OTP_TEMPLATE_ID;
+  return sendSMS({
+    to: phone,
+    message: `Your Warmpawz verification OTP is ${otp}. Valid for 10 minutes.`,
+    type: "otp",
+    ...templateId ? { templateId } : {}
+  });
+}
+var import_client_sns, sms_service_default;
+var init_sms_service = __esm({
+  "src/utils/sms-service.ts"() {
+    "use strict";
+    import_client_sns = require("@aws-sdk/client-sns");
+    init_rds_connection();
+    sms_service_default = { sendSMS, sendOTP };
+  }
+});
+
 // src/utils/cognito-client.ts
 var cognito_client_exports = {};
 __export(cognito_client_exports, {
@@ -118716,6 +118817,11 @@ async function razorpayRequest(endpoint, method = "GET", body, timeoutMs = 2e4, 
   }, timeoutMs);
   try {
     const startTime = Date.now();
+    console.log(`[RAZORPAY-REQUEST] Attempting ${method} ${url}`, {
+      hasBody: !!body,
+      bodySize: body ? JSON.stringify(body).length : 0,
+      timeout: timeoutMs
+    });
     const response = await fetch(url, {
       method,
       headers,
@@ -118724,11 +118830,18 @@ async function razorpayRequest(endpoint, method = "GET", body, timeoutMs = 2e4, 
     });
     clearTimeout(timeoutId);
     const duration = Date.now() - startTime;
-    console.log(`[RAZORPAY-REQUEST] Response received in ${duration}ms for ${endpoint}`);
+    console.log(`[RAZORPAY-REQUEST] Response received in ${duration}ms for ${endpoint}`, {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok
+    });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      const errorMsg = error?.error?.description || response.statusText || "Unknown error";
-      console.error(`[RAZORPAY-REQUEST] API error (${response.status}): ${errorMsg}`);
+      const errorMsg = error?.error?.description || error?.error?.message || response.statusText || "Unknown error";
+      console.error(`[RAZORPAY-REQUEST] API error (${response.status}): ${errorMsg}`, {
+        errorDetails: error,
+        responseHeaders: Object.fromEntries(response.headers.entries())
+      });
       throw new Error(`Razorpay API error: ${errorMsg}`);
     }
     const result = await response.json();
@@ -118736,11 +118849,32 @@ async function razorpayRequest(endpoint, method = "GET", body, timeoutMs = 2e4, 
     return result;
   } catch (error) {
     clearTimeout(timeoutId);
+    const errorDetails = {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      cause: error.cause,
+      endpoint,
+      method,
+      url
+    };
     if (error.name === "AbortError" || error.message?.includes("aborted")) {
-      console.error(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`);
+      console.error(`[RAZORPAY-REQUEST] Timeout after ${timeoutMs}ms for ${endpoint}`, errorDetails);
       throw new Error(`Razorpay API request timeout after ${timeoutMs}ms`);
     }
-    console.error(`[RAZORPAY-REQUEST] Error for ${endpoint}:`, error.message);
+    if (error.message?.includes("fetch failed") || error.code === "ENOTFOUND" || error.code === "ECONNREFUSED" || error.code === "ETIMEDOUT") {
+      console.error(`[RAZORPAY-REQUEST] Network error for ${endpoint}:`, errorDetails);
+      throw new Error(`Network error connecting to Razorpay API: ${error.message || error.code || "Unknown network error"}. Please check Lambda VPC configuration and internet connectivity.`);
+    }
+    if (error.code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" || error.code === "CERT_HAS_EXPIRED" || error.message?.includes("certificate")) {
+      console.error(`[RAZORPAY-REQUEST] SSL/TLS error for ${endpoint}:`, errorDetails);
+      throw new Error(`SSL/TLS error connecting to Razorpay API: ${error.message || error.code}`);
+    }
+    console.error(`[RAZORPAY-REQUEST] Error for ${endpoint}:`, errorDetails);
+    if (error.message) {
+      throw new Error(`Razorpay API request failed: ${error.message}`);
+    }
     throw error;
   }
 }
@@ -119507,9 +119641,19 @@ var init_razorpay = __esm({
             return this.error("Payment gateway configuration error. Please configure Razorpay in Platform Settings or environment variables.", 500);
           }
           if (!config || !config.keyId || !config.keySecret) {
-            console.error("[RAZORPAY-CREATE-ORDER] \u274C Razorpay config invalid");
-            return this.error("Payment gateway configuration error", 500);
+            console.error("[RAZORPAY-CREATE-ORDER] \u274C Razorpay config invalid", {
+              hasConfig: !!config,
+              hasKeyId: !!config?.keyId,
+              hasKeySecret: !!config?.keySecret,
+              keyIdLength: config?.keyId?.length
+            });
+            return this.error("Payment gateway configuration error: Razorpay keys not configured. Please check AWS Secrets Manager, Platform Settings, or environment variables.", 500);
           }
+          console.log("[RAZORPAY-CREATE-ORDER] \u2705 Razorpay config loaded", {
+            keyId: config.keyId ? `${config.keyId.substring(0, 8)}...` : "missing",
+            hasKeySecret: !!config.keySecret,
+            hasWebhookSecret: !!config.webhookSecret
+          });
           let booking;
           let vendor;
           let receipt;
@@ -119597,10 +119741,29 @@ var init_razorpay = __esm({
               }
             ];
           }
-          const razorpayOrder = await razorpayRequest("/orders", "POST", orderData, 2e4);
+          console.log("[RAZORPAY-CREATE-ORDER] Calling Razorpay API with orderData:", {
+            amount: orderData.amount,
+            currency: orderData.currency,
+            receipt: orderData.receipt,
+            hasTransfers: !!orderData.transfers,
+            notes: orderData.notes
+          });
+          let razorpayOrder;
+          try {
+            razorpayOrder = await razorpayRequest("/orders", "POST", orderData, 2e4);
+          } catch (razorpayError) {
+            console.error("[RAZORPAY-CREATE-ORDER] Razorpay API call failed:", {
+              error: razorpayError.message,
+              errorName: razorpayError.name,
+              errorCode: razorpayError.code,
+              stack: razorpayError.stack,
+              orderData
+            });
+            throw new Error(`Razorpay API call failed: ${razorpayError.message || "Unknown error"}. Check Lambda VPC configuration and internet connectivity.`);
+          }
           if (!razorpayOrder || !razorpayOrder.id) {
             console.error("[RAZORPAY-CREATE-ORDER] Invalid Razorpay response:", razorpayOrder);
-            return this.error("Failed to create payment order", 500);
+            return this.error("Failed to create payment order: Invalid response from Razorpay", 500);
           }
           if (isPharmacyOrder) {
             await query(
@@ -119628,12 +119791,27 @@ var init_razorpay = __esm({
             keyId: config.keyId
           });
         } catch (error) {
-          console.error("[RAZORPAY-CREATE-ORDER] Error:", error);
+          console.error("[RAZORPAY-CREATE-ORDER] Error:", {
+            message: error?.message,
+            name: error?.name,
+            code: error?.code,
+            stack: error?.stack,
+            cause: error?.cause
+          });
           const errorMessage = error?.message || "Failed to create payment order";
-          if (errorMessage.includes("timeout")) {
+          if (errorMessage.includes("timeout") || errorMessage.includes("AbortError")) {
             return this.error("Payment gateway request timed out. Please try again.", 504);
           }
-          return this.error(errorMessage, 500);
+          if (errorMessage.includes("Network error") || errorMessage.includes("fetch failed") || errorMessage.includes("ENOTFOUND") || errorMessage.includes("ECONNREFUSED")) {
+            return this.error("Network error connecting to payment gateway. Please check Lambda VPC configuration and ensure internet connectivity is available.", 500);
+          }
+          if (errorMessage.includes("SSL") || errorMessage.includes("certificate") || errorMessage.includes("TLS")) {
+            return this.error("SSL/TLS error connecting to payment gateway. Please check certificate configuration.", 500);
+          }
+          if (errorMessage.includes("configuration error") || errorMessage.includes("not configured")) {
+            return this.error(errorMessage, 500);
+          }
+          return this.error(`Payment gateway error: ${errorMessage}`, 500);
         }
       }
     };
@@ -119659,110 +119837,209 @@ var init_razorpay = __esm({
           const text = `${razorpay_order_id}|${razorpay_payment_id}`;
           const generatedSignature = (0, import_crypto11.createHmac)("sha256", config.keySecret).update(text).digest("hex");
           if (generatedSignature !== razorpay_signature) {
-            console.error("[PAYMENT-VERIFY] Signature mismatch:", {
+            console.error("[PAYMENT-VERIFY] Signature mismatch - rolling back booking:", {
               orderId: razorpay_order_id,
               paymentId: razorpay_payment_id,
               received: razorpay_signature.substring(0, 10) + "...",
               generated: generatedSignature.substring(0, 10) + "..."
             });
-            return this.error("Invalid payment signature. Please ensure payment details are correct.", 400);
-          }
-          const payments = await select("payments", { razorpay_order_id });
-          if (payments.length === 0) {
             try {
-              const razorpayOrder = await razorpayRequest(`/orders/${razorpay_order_id}`, "GET", void 0, 1e4);
-              const notes = razorpayOrder?.notes || {};
-              const orderType = typeof notes === "object" && notes !== null ? notes.type || notes.orderType : void 0;
-              if (orderType === "diagnostics") {
-                console.log("[PAYMENT-VERIFY] Diagnostics order verified (no pre-inserted payment row), returning success");
-                return this.success({
-                  message: "Payment verified successfully",
-                  paymentId: razorpay_payment_id,
-                  orderId: razorpay_order_id
-                });
-              }
-            } catch (fetchErr) {
-              console.warn("[PAYMENT-VERIFY] Could not fetch Razorpay order for diagnostics check:", fetchErr?.message);
-            }
-            console.error("[PAYMENT-VERIFY] Payment record not found for order:", razorpay_order_id);
-            return this.error("Payment record not found. Please contact support with your order ID.", 404);
-          }
-          await update(
-            "payments",
-            { razorpay_order_id },
-            {
-              razorpay_payment_id,
-              payment_status: "completed",
-              completed_at: /* @__PURE__ */ new Date()
-            }
-          );
-          const payment = payments[0];
-          const pharmacyOrderId = payment.pharmacy_order_id;
-          if (pharmacyOrderId) {
-            await update("pharmacy_orders", { id: pharmacyOrderId }, {
-              payment_status: "paid",
-              razorpay_payment_id,
-              status: "payment_confirmed",
-              updated_at: (/* @__PURE__ */ new Date()).toISOString()
-            });
-            const deliveryOtp = Math.floor(1e3 + Math.random() * 9e3).toString();
-            const existing = await select("delivery_tracking", { pharmacy_order_id: pharmacyOrderId });
-            if (existing.length === 0) {
-              await insert("delivery_tracking", {
-                pharmacy_order_id: pharmacyOrderId,
-                status: "assigned",
-                delivery_otp: deliveryOtp,
-                assigned_at: (/* @__PURE__ */ new Date()).toISOString()
+              await withTransaction(async (client2) => {
+                const { rows: payments } = await client2.query(
+                  `SELECT booking_id FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
+                  [razorpay_order_id]
+                );
+                if (payments.length > 0 && payments[0].booking_id) {
+                  await client2.query(
+                    `DELETE FROM bookings WHERE id = $1`,
+                    [payments[0].booking_id]
+                  );
+                  console.log("[PAYMENT-VERIFY] \u274C Payment failed - booking rolled back:", payments[0].booking_id);
+                }
+                await client2.query(
+                  `DELETE FROM payments WHERE razorpay_order_id = $1`,
+                  [razorpay_order_id]
+                );
+                console.log("[PAYMENT-VERIFY] \u274C Payment failed - payment record deleted");
               });
+            } catch (rollbackError) {
+              console.error("[PAYMENT-VERIFY] Error during rollback:", rollbackError);
             }
-          } else if (payment.booking_id) {
-            await update(
-              "bookings",
-              { id: payment.booking_id },
-              {
-                payment_status: "paid",
-                status: "confirmed",
-                updated_at: (/* @__PURE__ */ new Date()).toISOString()
-              }
+            return this.error("Invalid payment signature. Booking has been cancelled.", 400);
+          }
+          const result = await withTransaction(async (client2) => {
+            const { rows: payments } = await client2.query(
+              `SELECT * FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
+              [razorpay_order_id]
             );
-            try {
-              const vendors = await select("vendors", { id: payment.vendor_id });
-              const vendor = vendors.length > 0 ? vendors[0] : null;
-              if (vendor?.razorpay_account_id && vendor.bank_verified) {
-                const { sendToSQS: sendToSQS2 } = await Promise.resolve().then(() => (init_aws_clients(), aws_clients_exports));
-                await sendToSQS2("settlement-queue", {
-                  type: "auto_settle_booking",
-                  bookingId: payment.booking_id,
-                  vendorId: payment.vendor_id,
-                  paymentId: payment.id
-                });
+            if (payments.length === 0) {
+              try {
+                const razorpayOrder = await razorpayRequest(`/orders/${razorpay_order_id}`, "GET", void 0, 1e4);
+                const notes = razorpayOrder?.notes || {};
+                const orderType = typeof notes === "object" && notes !== null ? notes.type || notes.orderType : void 0;
+                if (orderType === "diagnostics") {
+                  console.log("[PAYMENT-VERIFY] Diagnostics order verified (no pre-inserted payment row), returning success");
+                  return {
+                    message: "Payment verified successfully",
+                    paymentId: razorpay_payment_id,
+                    orderId: razorpay_order_id,
+                    bookingId: null
+                  };
+                }
+              } catch (fetchErr) {
+                console.warn("[PAYMENT-VERIFY] Could not fetch Razorpay order for diagnostics check:", fetchErr?.message);
               }
-            } catch (error) {
-              console.error("Failed to queue automatic settlement:", error);
+              console.error("[PAYMENT-VERIFY] Payment record not found for order:", razorpay_order_id);
+              throw new Error("Payment record not found. Please contact support with your order ID.");
             }
-            try {
-              const { publishPaymentProcessed: publishPaymentProcessed2 } = await Promise.resolve().then(() => (init_sns_client(), sns_client_exports));
-              await publishPaymentProcessed2({
-                paymentId: razorpay_payment_id,
-                bookingId: payment.booking_id,
-                amount: payment.amount,
-                status: "completed"
-              });
-            } catch (error) {
-              console.error("Failed to publish payment processed event:", error);
+            const payment = payments[0];
+            const bookingId = payment.booking_id;
+            if (!bookingId) {
+              console.error("[PAYMENT-VERIFY] Payment record exists but booking_id is missing:", payment.id);
+              throw new Error("Booking not found for payment. This should not happen.");
             }
-          }
-          return this.success({
-            message: "Payment verified successfully",
-            paymentId: razorpay_payment_id,
-            orderId: razorpay_order_id
+            await client2.query(
+              `UPDATE payments SET 
+            payment_status = 'completed',
+            razorpay_payment_id = $1,
+            completed_at = NOW(),
+            updated_at = NOW()
+          WHERE id = $2`,
+              [razorpay_payment_id, payment.id]
+            );
+            await client2.query(
+              `UPDATE bookings SET 
+            payment_status = 'paid',
+            status = 'confirmed',
+            updated_at = NOW()
+          WHERE id = $1`,
+              [bookingId]
+            );
+            console.log("[PAYMENT-VERIFY] \u2705 Payment verified and booking confirmed:", bookingId);
+            const pharmacyOrderId = payment.pharmacy_order_id;
+            if (pharmacyOrderId) {
+              await client2.query(
+                `UPDATE pharmacy_orders SET 
+              payment_status = 'paid',
+              razorpay_payment_id = $1,
+              status = 'payment_confirmed',
+              updated_at = NOW()
+            WHERE id = $2`,
+                [razorpay_payment_id, pharmacyOrderId]
+              );
+              const deliveryOtp = Math.floor(1e3 + Math.random() * 9e3).toString();
+              const { rows: existing } = await client2.query(
+                `SELECT id FROM delivery_tracking WHERE pharmacy_order_id = $1`,
+                [pharmacyOrderId]
+              );
+              if (existing.length === 0) {
+                await client2.query(
+                  `INSERT INTO delivery_tracking (pharmacy_order_id, status, delivery_otp, assigned_at)
+               VALUES ($1, $2, $3, NOW())`,
+                  [pharmacyOrderId, "assigned", deliveryOtp]
+                );
+              }
+            }
+            if (bookingId) {
+              try {
+                const { rows: vendors } = await client2.query(
+                  `SELECT razorpay_account_id, bank_verified FROM vendors WHERE id = $1`,
+                  [payment.vendor_id]
+                );
+                const vendor = vendors.length > 0 ? vendors[0] : null;
+                if (vendor?.razorpay_account_id && vendor.bank_verified) {
+                  Promise.resolve().then(async () => {
+                    try {
+                      const { sendToSQS: sendToSQS2 } = await Promise.resolve().then(() => (init_aws_clients(), aws_clients_exports));
+                      await sendToSQS2("settlement-queue", {
+                        type: "auto_settle_booking",
+                        bookingId,
+                        vendorId: payment.vendor_id,
+                        paymentId: payment.id
+                      });
+                    } catch (error) {
+                      console.error("Failed to queue automatic settlement:", error);
+                    }
+                  });
+                }
+              } catch (error) {
+                console.error("Failed to check vendor for settlement:", error);
+              }
+              try {
+                Promise.resolve().then(async () => {
+                  try {
+                    const { publishPaymentProcessed: publishPaymentProcessed2 } = await Promise.resolve().then(() => (init_sns_client(), sns_client_exports));
+                    await publishPaymentProcessed2({
+                      paymentId: razorpay_payment_id,
+                      bookingId,
+                      amount: payment.amount,
+                      status: "completed"
+                    });
+                  } catch (error) {
+                    console.error("Failed to publish payment processed event:", error);
+                  }
+                });
+              } catch (error) {
+                console.error("Failed to publish payment event:", error);
+              }
+            }
+            return {
+              message: "Payment verified successfully",
+              paymentId: razorpay_payment_id,
+              orderId: razorpay_order_id,
+              bookingId
+            };
           });
+          return this.success(result);
         } catch (error) {
           console.error("[PAYMENT-VERIFY] Verification error:", error);
-          if (error.message) {
-            return this.error(`Payment verification failed: ${error.message}`, 500);
+          const body = this.parseBody(context.event);
+          const orderId = body?.razorpay_order_id;
+          if (orderId) {
+            try {
+              await withTransaction(async (client2) => {
+                const { rows: payments } = await client2.query(
+                  `SELECT booking_id, payment_status FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
+                  [orderId]
+                );
+                if (payments.length > 0) {
+                  const payment = payments[0];
+                  if (payment.payment_status === "pending" && payment.booking_id) {
+                    await client2.query(
+                      `DELETE FROM bookings WHERE id = $1`,
+                      [payment.booking_id]
+                    );
+                    console.log("[PAYMENT-VERIFY] \u274C Payment verification failed - booking rolled back:", payment.booking_id);
+                    await client2.query(
+                      `DELETE FROM payments WHERE razorpay_order_id = $1`,
+                      [orderId]
+                    );
+                    console.log("[PAYMENT-VERIFY] \u274C Payment verification failed - payment record deleted");
+                  } else if (payment.payment_status === "completed") {
+                    console.log("[PAYMENT-VERIFY] \u26A0\uFE0F Error occurred but payment already succeeded (status: completed), skipping rollback");
+                  } else {
+                    if (payment.booking_id) {
+                      await client2.query(
+                        `DELETE FROM bookings WHERE id = $1`,
+                        [payment.booking_id]
+                      );
+                      console.log("[PAYMENT-VERIFY] \u274C Payment verification failed - booking rolled back (status:", payment.payment_status, ")");
+                    }
+                    await client2.query(
+                      `DELETE FROM payments WHERE razorpay_order_id = $1`,
+                      [orderId]
+                    );
+                  }
+                }
+              });
+            } catch (rollbackError) {
+              console.error("[PAYMENT-VERIFY] Error during rollback:", rollbackError);
+            }
           }
-          return this.error("Payment verification failed. Please try again or contact support.", 500);
+          if (error.message) {
+            return this.error(`Payment verification failed: ${error.message}. Booking has been cancelled.`, 500);
+          }
+          return this.error("Payment verification failed. Booking has been cancelled. Please try again or contact support.", 500);
         }
       }
     };
@@ -120007,36 +120284,6 @@ var init_razorpay = __esm({
         });
       }
     };
-  }
-});
-
-// src/utils/sms-service.ts
-var sms_service_exports = {};
-__export(sms_service_exports, {
-  default: () => sms_service_default,
-  sendOTP: () => sendOTP,
-  sendSMS: () => sendSMS
-});
-async function sendSMS(options) {
-  const { to, message: message2, type = "transactional" } = options;
-  console.log(`[SMS-STUB] Would send ${type} SMS to ${to}: ${message2}`);
-  return {
-    success: true,
-    messageId: `stub-${Date.now()}`
-  };
-}
-async function sendOTP(phone, otp) {
-  return sendSMS({
-    to: phone,
-    message: `Your Warmpawz verification OTP is ${otp}. Valid for 10 minutes.`,
-    type: "otp"
-  });
-}
-var sms_service_default;
-var init_sms_service = __esm({
-  "src/utils/sms-service.ts"() {
-    "use strict";
-    sms_service_default = { sendSMS, sendOTP };
   }
 });
 
@@ -127527,7 +127774,7 @@ function slidingWindowRateLimit(config) {
 }
 
 // src/endpoints/auth-enhanced.ts
-var import_client_sns = require("@aws-sdk/client-sns");
+init_sms_service();
 init_rds_connection();
 
 // src/handler/base-handler-enhanced.ts
@@ -127792,6 +128039,7 @@ var BaseHandlerEnhanced = class {
 // src/endpoints/auth-enhanced.ts
 init_cognito_client();
 var import_auth = __toESM(require_auth());
+var JIO_LOGIN_OTP_TEMPLATE_ID = "1207177028377787269";
 async function createOtp(phone, code, purpose = "login") {
   const expiresAt = /* @__PURE__ */ new Date();
   expiresAt.setMinutes(expiresAt.getMinutes() + 5);
@@ -127823,65 +128071,16 @@ async function verifyOtp(phone, code) {
   return true;
 }
 async function sendSmsViaSns(phone, message2) {
-  const SMS_TIMEOUT_MS = 5e3;
-  const startTime = Date.now();
-  try {
-    const dbTimeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("Database query timeout for SMS settings")), 2e3);
-    });
-    const settingsPromise = select("platform_settings", {
-      setting_key: "admin:settings:aws"
-    });
-    const settings = await Promise.race([settingsPromise, dbTimeoutPromise]);
-    if (settings.length === 0) {
-      console.warn("[SMS] AWS settings not found in database (admin:settings:aws)");
-      return false;
-    }
-    const awsConfig = settings[0].setting_value;
-    if (!awsConfig?.sns?.enabled || !awsConfig?.credentials?.accessKeyId) {
-      console.warn("[SMS] SNS not enabled or credentials missing");
-      return false;
-    }
-    const snsClient4 = new import_client_sns.SNSClient({
-      region: awsConfig?.sns?.region || awsConfig?.credentials?.region || "ap-south-1",
-      credentials: {
-        accessKeyId: awsConfig.credentials.accessKeyId,
-        secretAccessKey: awsConfig.credentials.secretAccessKey
-      }
-    });
-    const messageAttributes = {
-      "AWS.SNS.SMS.SMSType": { DataType: "String", StringValue: "Transactional" }
-    };
-    if (awsConfig?.sns?.smsOriginationNumber) {
-      messageAttributes["AWS.SNS.SMS.SenderID"] = {
-        DataType: "String",
-        StringValue: String(awsConfig.sns.smsOriginationNumber).trim().substring(0, 6)
-      };
-    }
-    const entityId = awsConfig?.sns?.entityId || "1201176605406673276";
-    const templateId = awsConfig?.sns?.templateId || "1207177028377787269";
-    messageAttributes["AWS.MM.SMS.EntityId"] = { DataType: "String", StringValue: entityId };
-    messageAttributes["AWS.MM.SMS.TemplateId"] = { DataType: "String", StringValue: templateId };
-    const snsSendPromise = snsClient4.send(new import_client_sns.PublishCommand({
-      PhoneNumber: phone.startsWith("+") ? phone : `+91${phone.replace(/\D/g, "")}`,
-      Message: message2,
-      MessageAttributes: messageAttributes
-    }));
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("SNS send timeout after 5 seconds")), SMS_TIMEOUT_MS);
-    });
-    await Promise.race([snsSendPromise, timeoutPromise]);
-    const duration = Date.now() - startTime;
-    console.log(`[SMS] SMS sent successfully in ${duration}ms to ${phone}`);
-    return true;
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    console.error(`[SMS] SNS send failed after ${duration}ms:`, error?.message || error);
-    if (error?.message?.includes("timeout")) {
-      console.error("[SMS] \u26A0\uFE0F SMS send timed out - this may indicate network or SNS service issues");
-    }
-    return false;
+  const result = await sendSMS({
+    to: phone,
+    message: message2,
+    type: "otp",
+    templateId: JIO_LOGIN_OTP_TEMPLATE_ID
+  });
+  if (!result.success) {
+    console.error("[SMS] SNS send failed");
   }
+  return result.success === true;
 }
 var SendOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
   async handle(context) {
@@ -127900,7 +128099,7 @@ var SendOtpHandlerEnhanced = class extends BaseHandlerEnhanced {
     const normalizedPhone = phone.startsWith("+") ? phone : `+91${phone}`;
     const handlerStartTime = Date.now();
     try {
-      const isUATMode2 = process.env.UAT_MODE === "true" || true;
+      const isUATMode2 = process.env.UAT_MODE === "true";
       const otpCode = isUATMode2 ? "123456" : Math.floor(1e5 + Math.random() * 9e5).toString();
       if (isUATMode2) {
         console.log(`[AUTH] UAT Mode: Using fixed OTP 123456 for ${phone}`);
@@ -130595,6 +130794,286 @@ function parseSelectedServices(raw2) {
   return [];
 }
 
+// src/endpoints/sms-notifications.ts
+init_rds_connection();
+init_sms_service();
+var SMS_TEMPLATES = {
+  booking_created: {
+    id: "booking_created",
+    event: "booking_created",
+    message: "Warmpawz Booking: Your booking with {bookingWith} for {bookingDate} at {bookingTime} is confirmed. For more details, refer to My Bookings.",
+    variables: ["bookingWith", "bookingDate", "bookingTime"],
+    templateId: "1207177035174777582"
+  },
+  payment_confirmed: {
+    id: "payment_confirmed",
+    event: "payment_confirmed",
+    message: "Payment of \u20B9{amount} received for booking {bookingId}. Receipt: {receiptUrl}",
+    variables: ["amount", "bookingId", "receiptUrl"]
+  },
+  staff_assigned: {
+    id: "staff_assigned",
+    event: "staff_assigned",
+    message: "{staffName} has been assigned to your booking {bookingId}. Contact: {staffPhone}",
+    variables: ["staffName", "bookingId", "staffPhone"]
+  },
+  provider_en_route: {
+    id: "provider_en_route",
+    event: "provider_en_route",
+    message: "{providerName} is on the way! Track live location: warmpawz.com/track/{bookingId}",
+    variables: ["providerName", "bookingId"]
+  },
+  provider_arrived: {
+    id: "provider_arrived",
+    event: "provider_arrived",
+    message: "{providerName} has arrived at your location. OTP for verification: {otp}",
+    variables: ["providerName", "otp"]
+  },
+  service_started: {
+    id: "service_started",
+    event: "service_started",
+    message: "Service started for {petName}. You will receive updates shortly.",
+    variables: ["petName"]
+  },
+  service_completed: {
+    id: "service_completed",
+    event: "service_completed",
+    message: "Service completed for {petName}! OTP for completion: {otp}. Rate your experience: warmpawz.com/review/{bookingId}",
+    variables: ["petName", "otp", "bookingId"]
+  },
+  booking_rescheduled: {
+    id: "booking_rescheduled",
+    event: "booking_rescheduled",
+    message: "Warmpawz Rescheduling: Your booking with {bookingWith} has been rescheduled to {bookingDateTime}. For more details, refer to My Bookings.",
+    variables: ["bookingWith", "bookingDateTime"],
+    templateId: "1207177035515118051"
+  },
+  booking_cancelled: {
+    id: "booking_cancelled",
+    event: "booking_cancelled",
+    message: "Warmpawz Cancellation: Your booking with {bookingWith} scheduled for {bookingDateTime} has been cancelled. For more details, refer to My Bookings.",
+    variables: ["bookingWith", "bookingDateTime"],
+    templateId: "1207177035326314961"
+  },
+  refund_processed: {
+    id: "refund_processed",
+    event: "refund_processed",
+    message: "Refund of \u20B9{amount} for booking {bookingId} has been processed to your account.",
+    variables: ["amount", "bookingId"]
+  },
+  review_request: {
+    id: "review_request",
+    event: "review_request",
+    message: "How was your experience with {providerName}? Share your feedback: warmpawz.com/review/{bookingId}",
+    variables: ["providerName", "bookingId"]
+  },
+  delivery_dispatched: {
+    id: "delivery_dispatched",
+    event: "delivery_dispatched",
+    message: "Your order {orderId} has been dispatched. Track: warmpawz.com/track/{orderId}",
+    variables: ["orderId"]
+  },
+  delivery_arrived: {
+    id: "delivery_arrived",
+    event: "delivery_arrived",
+    message: "Your order {orderId} has arrived! OTP for delivery: {otp}",
+    variables: ["orderId", "otp"]
+  }
+};
+var JIO_APPROVED_EVENTS = /* @__PURE__ */ new Set(["booking_created", "booking_rescheduled", "booking_cancelled"]);
+function sanitizeAlphanumeric(value, maxLen = 40) {
+  const raw2 = String(value || "").replace(/\s+/g, " ").trim();
+  const cleaned = raw2.replace(/[^a-zA-Z0-9\s:-]/g, "");
+  return cleaned.length > maxLen ? cleaned.slice(0, maxLen) : cleaned;
+}
+function replaceTemplateVariables(template, variables) {
+  let message2 = template;
+  for (const [key, value] of Object.entries(variables)) {
+    message2 = message2.replace(new RegExp(`\\{${key}\\}`, "g"), String(value || ""));
+  }
+  return message2;
+}
+async function triggerBookingNotification(event, data) {
+  try {
+    console.log(`\u{1F514} Triggering SMS notification for event: ${event}`);
+    const template = SMS_TEMPLATES[event];
+    if (!template) {
+      console.warn(`No SMS template found for event: ${event}`);
+      return;
+    }
+    const isUatMode = process.env.UAT_MODE === "true";
+    if (!isUatMode && !template.templateId && !JIO_APPROVED_EVENTS.has(event)) {
+      console.warn(`[SMS] Skipping non-approved template for event: ${event} (DLT compliance)`);
+      return;
+    }
+    const { booking, customer, vendor, staff, service } = data;
+    const bookingWith = sanitizeAlphanumeric(
+      vendor?.business_name || service?.name || booking?.service_type || "Service"
+    );
+    const bookingDate = sanitizeAlphanumeric(booking?.booking_date || "");
+    const bookingTime = sanitizeAlphanumeric(booking?.booking_time || "");
+    const bookingDateTime = sanitizeAlphanumeric(
+      bookingDate && bookingTime ? `${bookingDate} at ${bookingTime}` : bookingDate || bookingTime || ""
+    );
+    const variables = {
+      customerName: customer?.name || customer?.phone || "Customer",
+      bookingId: booking?.id || booking?.order_number || "",
+      serviceName: service?.name || "Service",
+      date: booking?.booking_date || "",
+      time: booking?.booking_time || "",
+      amount: booking?.total_amount || booking?.amount || "0",
+      receiptUrl: booking?.receipt_url || "",
+      staffName: staff?.name || "Staff",
+      staffPhone: staff?.phone || "",
+      providerName: vendor?.business_name || vendor?.owner_name || "Provider",
+      petName: booking?.pet_name || "Pet",
+      otp: booking?.otp_code || "",
+      refundAmount: booking?.refund_amount || "0",
+      orderId: booking?.order_id || booking?.id || "",
+      bookingWith,
+      bookingDate,
+      bookingTime,
+      bookingDateTime
+    };
+    const message2 = replaceTemplateVariables(template.message, variables);
+    const recipientPhone = customer?.phone || booking?.customer_phone;
+    if (!recipientPhone) {
+      console.warn("No recipient phone number found");
+      return;
+    }
+    await sendSMS({
+      to: recipientPhone,
+      message: message2,
+      type: "transactional",
+      ...template.templateId ? { templateId: template.templateId } : {}
+    });
+    await insert("notifications", {
+      user_id: customer?.id || booking?.customer_id,
+      user_type: "customer",
+      title: template.event,
+      message: message2,
+      notification_type: "sms",
+      is_read: false,
+      metadata: {
+        event,
+        bookingId: booking?.id,
+        sentVia: "sms"
+      }
+    }).catch((err) => console.error("Failed to log notification:", err));
+    console.log(`\u2705 SMS sent to ${recipientPhone} for event: ${event}`);
+  } catch (error) {
+    console.error("Error triggering SMS notification:", error);
+  }
+}
+function registerSmsNotificationEndpoints(app3) {
+  app3.post("/sms/send", async (c) => {
+    try {
+      const { phone, message: message2, event, variables, templateId } = await c.req.json();
+      if (!phone || !message2) {
+        return c.json({ error: "phone and message are required" }, 400);
+      }
+      const isUatMode = process.env.UAT_MODE === "true";
+      if (!isUatMode && !templateId) {
+        return c.json({ error: "templateId is required for SMS in production (DLT compliance)" }, 400);
+      }
+      const result = await sendSMS({
+        to: phone,
+        message: message2,
+        type: "transactional",
+        ...templateId ? { templateId } : {}
+      });
+      await insert("notifications", {
+        user_id: null,
+        user_type: "customer",
+        title: event || "sms_notification",
+        message: message2,
+        notification_type: "sms",
+        is_read: false,
+        metadata: {
+          event,
+          phone,
+          messageId: result.messageId
+        }
+      }).catch(() => {
+      });
+      return c.json({
+        success: true,
+        messageId: result.messageId,
+        message: "SMS sent successfully"
+      });
+    } catch (error) {
+      console.error("Error sending SMS:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.post("/sms/trigger-event", async (c) => {
+    try {
+      const { event, bookingId, data } = await c.req.json();
+      if (!event || !bookingId) {
+        return c.json({ error: "event and bookingId are required" }, 400);
+      }
+      const bookings = await select("bookings", { id: bookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: "Booking not found" }, 404);
+      }
+      const booking = bookings[0];
+      const customers = await select("customers", { id: booking.customer_id });
+      const customer = customers.length > 0 ? customers[0] : null;
+      const vendors = booking.vendor_id ? await select("vendors", { id: booking.vendor_id }) : [];
+      const vendor = vendors.length > 0 ? vendors[0] : null;
+      const staff = booking.staff_id ? await select("staff", { id: booking.staff_id }) : [];
+      const staffMember = staff.length > 0 ? staff[0] : null;
+      const services = await select("services", { id: booking.service_id });
+      const service = services.length > 0 ? services[0] : null;
+      await triggerBookingNotification(event, {
+        booking,
+        customer,
+        vendor,
+        staff: staffMember,
+        service,
+        ...data
+      });
+      return c.json({
+        success: true,
+        message: "SMS notification triggered"
+      });
+    } catch (error) {
+      console.error("Error triggering SMS event:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+  app3.get("/sms/templates", async (c) => {
+    return c.json({
+      success: true,
+      templates: Object.values(SMS_TEMPLATES)
+    });
+  });
+  app3.get("/sms/history", async (c) => {
+    try {
+      const { userId, limit = 50, offset = 0 } = c.req.query();
+      let queryText = `SELECT * FROM notifications WHERE notification_type = 'sms'`;
+      const params = [];
+      let paramIndex = 1;
+      if (userId) {
+        queryText += ` AND user_id = $${paramIndex}`;
+        params.push(userId);
+        paramIndex++;
+      }
+      queryText += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(parseInt(limit, 10), parseInt(offset, 10));
+      const result = await query(queryText, params).catch(() => ({ rows: [] }));
+      return c.json({
+        success: true,
+        notifications: result.rows,
+        total: result.rows.length
+      });
+    } catch (error) {
+      console.error("Error fetching SMS history:", error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+}
+
 // src/lib/rule-engine.ts
 init_rds_connection();
 var PLATFORM_DEFAULTS = {
@@ -132662,6 +133141,17 @@ var CreateBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
           is_read: false,
           created_at: /* @__PURE__ */ new Date()
         });
+        const customer = customers[0] || null;
+        const vendors = await select("vendors", { id: booking.vendor_id });
+        const vendor = vendors[0] || null;
+        triggerBookingNotification("booking_created", {
+          booking,
+          customer,
+          vendor,
+          service
+        }).catch((smsErr) => {
+          console.warn("[SMS] Booking confirmation SMS failed:", smsErr?.message || smsErr);
+        });
       } catch (notifErr) {
         console.warn("Failed to create vendor notification for new booking:", notifErr);
       }
@@ -133673,6 +134163,25 @@ var CancelBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
       } catch (error) {
         console.error("Failed to publish booking cancelled event:", error);
       }
+      try {
+        const customers = await select("customers", { id: currentBooking.customer_id });
+        const vendors = currentBooking.vendor_id ? await select("vendors", { id: currentBooking.vendor_id }) : [];
+        const services = currentBooking.service_id ? await select("services", { id: currentBooking.service_id }) : [];
+        const bookingForSms = {
+          ...currentBooking,
+          status: "cancelled"
+        };
+        triggerBookingNotification("booking_cancelled", {
+          booking: bookingForSms,
+          customer: customers[0] || null,
+          vendor: vendors[0] || null,
+          service: services[0] || null
+        }).catch((smsErr) => {
+          console.warn("[SMS] Booking cancellation SMS failed:", smsErr?.message || smsErr);
+        });
+      } catch (smsErr) {
+        console.warn("[SMS] Booking cancellation SMS setup failed:", smsErr?.message || smsErr);
+      }
       return this.success({
         bookingId,
         message: "Booking cancelled successfully",
@@ -133812,6 +134321,27 @@ var RescheduleBookingHandlerEnhanced = class extends BaseHandlerEnhanced {
         });
       } catch (error) {
         console.error("Failed to publish booking rescheduled event:", error);
+      }
+      try {
+        const customers = await select("customers", { id: currentBooking.customer_id });
+        const vendors = currentBooking.vendor_id ? await select("vendors", { id: currentBooking.vendor_id }) : [];
+        const services = currentBooking.service_id ? await select("services", { id: currentBooking.service_id }) : [];
+        const bookingForSms = {
+          ...currentBooking,
+          booking_date: newDate,
+          booking_time: newTime,
+          status: "rescheduled"
+        };
+        triggerBookingNotification("booking_rescheduled", {
+          booking: bookingForSms,
+          customer: customers[0] || null,
+          vendor: vendors[0] || null,
+          service: services[0] || null
+        }).catch((smsErr) => {
+          console.warn("[SMS] Booking reschedule SMS failed:", smsErr?.message || smsErr);
+        });
+      } catch (smsErr) {
+        console.warn("[SMS] Booking reschedule SMS setup failed:", smsErr?.message || smsErr);
       }
       return this.success({
         bookingId,
@@ -134620,6 +135150,7 @@ var CreatePaymentHandlerEnhanced = class extends BaseHandlerEnhanced {
         requestId
       );
     }
+    const effectiveVendorId = vendorId || booking.vendor_id;
     try {
       let taxBreakdown = null;
       let gstAmount = 0;
@@ -134630,7 +135161,7 @@ var CreatePaymentHandlerEnhanced = class extends BaseHandlerEnhanced {
       let customerLocation = void 0;
       let vendorLocation = void 0;
       if (booking.customer_id) {
-        const customers = await select("customers", { id: booking.customer_id });
+        const customers = await select("customers", { id: effectiveCustomerId });
         if (customers.length > 0 && customers[0].address) {
           try {
             const rawAddr = customers[0].address;
@@ -134821,6 +135352,7 @@ var CreatePaymentHandlerEnhanced = class extends BaseHandlerEnhanced {
         payment = await withTransaction(async (client2) => {
           const paymentData = {
             booking_id: bookingId,
+            // ✅ bookingId is REQUIRED - booking should already exist
             customer_id: effectiveCustomerId,
             vendor_id: vendorId || booking.vendor_id,
             amount,
@@ -147709,11 +148241,17 @@ function registerServiceDiscoveryEndpoints(app3) {
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
           AND v.latitude IS NOT NULL AND v.longitude IS NOT NULL
+          AND v.business_name IS NOT NULL AND TRIM(COALESCE(v.business_name, '')) != ''
           AND EXISTS (
             SELECT 1 FROM vendor_services vs 
             WHERE vs.vendor_id = v.id 
               AND vs.is_enabled = true 
               AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+          )
+          AND EXISTS (
+            SELECT 1 FROM vendor_availability_v2 va
+            WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
+              AND (va.is_available IS NULL OR va.is_available = true)
           )
       `;
       const params = [];
@@ -147954,10 +148492,10 @@ function registerServiceDiscoveryEndpoints(app3) {
         const vendorParams = targetRolesLower.length > 0 ? [targetRolesLower, acceptableServiceStyles] : [acceptableServiceStyles];
         const styleParamIndex = targetRolesLower.length > 0 ? "2" : "1";
         const existsServiceClause = ` AND EXISTS (
-          SELECT 1 FROM vendor_services vs
-          WHERE vs.vendor_id = v.id
+              SELECT 1 FROM vendor_services vs
+              WHERE vs.vendor_id = v.id
             AND vs.service_style = ANY($${styleParamIndex}::text[])
-            AND vs.is_enabled = true
+                AND vs.is_enabled = true
             AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
         )`;
         const soloOnlyClause = ` AND (
@@ -147981,6 +148519,13 @@ function registerServiceDiscoveryEndpoints(app3) {
           LEFT JOIN roles r ON v.role_id = r.id
           WHERE (v.status = 'approved' OR v.status = 'active')
             AND v.is_active = true
+            AND v.business_name IS NOT NULL AND TRIM(COALESCE(v.business_name, '')) != ''
+            AND EXISTS (
+              SELECT 1 FROM vendor_availability_v2 va
+              WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
+                AND (va.is_available IS NULL OR va.is_available = true)
+                AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${styleParamIndex}::text[] OR COALESCE(va.service_style, va.service_type)::text = ANY($${styleParamIndex}::text[]))
+            )
             ${soloOnlyClause}
             AND (${targetRolesLower.length > 0 ? "1=1" : "COALESCE(v.is_online, true) = true"})
             ${soloCondition}
@@ -148006,7 +148551,7 @@ function registerServiceDiscoveryEndpoints(app3) {
               `SELECT va.day_of_week, COALESCE(va.time_window_start, va.start_time) as time_window_start, COALESCE(va.time_window_end, va.end_time) as time_window_end
                FROM vendor_availability_v2 va
                WHERE (va.vendor_id = $1 OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-                 AND COALESCE(va.is_enabled, va.is_available, true) = true
+                 AND (va.is_available IS NULL OR va.is_available = true)
                  AND ((COALESCE(va.service_styles, ARRAY[]::text[]) && $3::text[]) OR va.service_style = ANY($3::text[]) OR va.service_type = ANY($3::text[]))
                ORDER BY va.day_of_week ASC, COALESCE(va.time_window_start, va.start_time) ASC 
                LIMIT 1`,
@@ -148139,6 +148684,8 @@ function registerServiceDiscoveryEndpoints(app3) {
             } catch {
             }
           }
+          const hasPhoto = !!(getVendorPhotoUrl(vendor) || photos && photos.length > 0);
+          if (!nextAvailableSlot || !hasPhoto) continue;
           allProviders.push({
             id: vendor.id,
             vendorId: vendor.id,
@@ -148235,6 +148782,12 @@ function registerServiceDiscoveryEndpoints(app3) {
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
+          AND v.business_name IS NOT NULL AND TRIM(COALESCE(v.business_name, '')) != ''
+          AND EXISTS (
+            SELECT 1 FROM vendor_availability_v2 va
+            WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
+              AND (va.is_available IS NULL OR va.is_available = true)
+          )
       `;
       const params = [];
       let paramIndex = 1;
@@ -148247,6 +148800,24 @@ function registerServiceDiscoveryEndpoints(app3) {
             AND vs.service_style = ANY($${paramIndex}::text[])
             AND vs.is_enabled = true
             AND (vs.publish_status IN ('published','auto_published') OR vs.publish_status IS NULL)
+        )`;
+        params.push(acceptableStyles);
+        paramIndex++;
+        vendorQuery += ` AND EXISTS (
+          SELECT 1 FROM vendor_availability_v2 va
+          WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
+            AND (va.is_available IS NULL OR va.is_available = true)
+            AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${paramIndex}::text[] OR COALESCE(va.service_style, va.service_type)::text = ANY($${paramIndex}::text[]))
+        )`;
+        params.push(acceptableStyles);
+        paramIndex++;
+      } else if (serviceStyle === "at_home" || serviceStyle === "tele") {
+        const acceptableStyles = acceptableStylesForService(serviceStyle);
+        vendorQuery += ` AND EXISTS (
+          SELECT 1 FROM vendor_availability_v2 va
+          WHERE (va.vendor_id::text = v.id::text OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone))
+            AND (va.is_available IS NULL OR va.is_available = true)
+            AND (COALESCE(va.service_styles, ARRAY[]::text[]) && $${paramIndex}::text[] OR COALESCE(va.service_style, va.service_type)::text = ANY($${paramIndex}::text[]))
         )`;
         params.push(acceptableStyles);
         paramIndex++;
@@ -148331,7 +148902,7 @@ function registerServiceDiscoveryEndpoints(app3) {
               `SELECT 1 FROM vendor_availability_v2 
                WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
                  AND day_of_week = $3 
-                 AND COALESCE(is_enabled, is_available, true) = true 
+                 AND (is_available IS NULL OR is_available = true) 
                LIMIT 1`,
               [vendor.id, vendor.phone || "", dayOfWeek]
             );
@@ -148387,7 +148958,7 @@ function registerServiceDiscoveryEndpoints(app3) {
               `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
                  FROM vendor_availability_v2
                  WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-                   AND COALESCE(is_enabled, is_available, true) = true
+                   AND (is_available IS NULL OR is_available = true)
                    ${acceptableStyles.length > 0 ? `AND ((COALESCE(service_styles, ARRAY[]::text[]) && $3::text[]) OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))` : ""}
                  ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC
                  LIMIT 7`,
@@ -148553,11 +149124,19 @@ function registerServiceDiscoveryEndpoints(app3) {
           };
         })
       )).filter(Boolean);
-      let filteredVendors = enrichedVendors;
+      let filteredVendors = enrichedVendors.filter((v) => {
+        const hasPhoto = !!(v.photoUrl || v.photos && v.photos.length > 0);
+        const hasNextAvailability = !!v.nextAvailableSlot || !!v.nextAvailability;
+        const hasProfileInfo = !!(v.businessName || v.specializations?.length > 0);
+        const hasCompleteServices = v.featuredOfferings && v.featuredOfferings.length > 0 && v.featuredOfferings.every(
+          (o) => o.duration != null && Number(o.duration) > 0 && (o.name || o.category)
+        );
+        return hasPhoto && hasNextAvailability && hasProfileInfo && hasCompleteServices;
+      });
       if (serviceStyle === "at_center") {
-        filteredVendors = enrichedVendors.filter((v) => {
-          return v.featuredOfferings && v.featuredOfferings.length > 0 && v.featuredOfferings.some((offering) => offering.serviceStyle === "at_center");
-        });
+        filteredVendors = filteredVendors.filter(
+          (v) => v.featuredOfferings && v.featuredOfferings.length > 0 && v.featuredOfferings.some((offering) => offering.serviceStyle === "at_center")
+        );
       }
       const discoverRules = await getDiscoveryRules(
         category || roleId || "all",
@@ -148656,30 +149235,203 @@ function registerServiceDiscoveryEndpoints(app3) {
       if (!date) {
         return c.json({ error: "date parameter is required" }, 400);
       }
-      const vendor = await resolveVendorById(vendorId);
-      if (!vendor) {
-        return c.json({ error: "Vendor not found" }, 404);
+      console.log(`[SLOTS] ========== STARTING VENDOR RESOLUTION ==========`);
+      console.log(`[SLOTS] Input vendorId from URL: ${vendorId}`);
+      let linkedVendorId = null;
+      try {
+        const viCheck = await query(
+          `SELECT vendor_id::text as vendor_id_text, phone, onboarding_status
+           FROM vendor_identity 
+           WHERE id::text = $1 
+           LIMIT 1`,
+          [vendorId]
+        );
+        if (viCheck.rows.length > 0) {
+          const vi = viCheck.rows[0];
+          console.log(`[SLOTS] Input is vendor_identity.id: ${vendorId}`);
+          console.log(`[SLOTS] vendor_identity.vendor_id: ${vi.vendor_id_text}`);
+          console.log(`[SLOTS] vendor_identity.phone: ${vi.phone}, status: ${vi.onboarding_status}`);
+          if (vi.vendor_id_text) {
+            linkedVendorId = vi.vendor_id_text;
+            console.log(`[SLOTS] \u2705 Found linked vendor_id: ${linkedVendorId}`);
+          }
+        }
+      } catch (e) {
+        console.warn(`[SLOTS] Could not check vendor_identity: ${e?.message}`);
       }
-      const resolvedVendorId = vendor.id;
-      const availabilityIds = await getVendorIdsForAvailabilityLookup(resolvedVendorId);
-      const canonicalVendorId = availabilityIds[0] ?? resolvedVendorId;
-      const vendorIdentityIdFromLookup = availabilityIds.length > 1 ? availabilityIds[1] : null;
+      let resolvedVendorId;
+      let availabilityIdsForQuery;
+      let canonicalVendorId;
+      console.log(`[SLOTS] ========== CUSTOMER SLOTS REQUEST START ==========`);
+      console.log(`[SLOTS] Input vendorId (from URL param): ${vendorId}`);
+      console.log(`[SLOTS] Requested date: ${date}`);
+      console.log(`[SLOTS] Requested serviceStyle: ${serviceStyle}`);
+      const vendor = await resolveVendorById(vendorId);
+      console.log(`[SLOTS] resolveVendorById result:`, vendor ? { id: vendor.id, business_name: vendor.business_name, phone: vendor.phone, status: vendor.status, is_active: vendor.is_active } : "null");
+      if (!vendor) {
+        console.log(`[SLOTS] ERROR: Vendor not found for ID: ${vendorId}`);
+        if (linkedVendorId) {
+          console.log(`[SLOTS] \u26A0\uFE0F resolveVendorById failed, but found linked vendor_id: ${linkedVendorId}, trying direct lookup...`);
+          const directVendor = await query(
+            `SELECT * FROM vendors WHERE id::text = $1 LIMIT 1`,
+            [linkedVendorId]
+          ).catch(() => ({ rows: [] }));
+          if (directVendor.rows.length > 0) {
+            resolvedVendorId = linkedVendorId;
+            const availabilityIds = await getVendorIdsForAvailabilityLookup(resolvedVendorId);
+            canonicalVendorId = resolvedVendorId;
+            availabilityIdsForQuery = availabilityIds;
+            console.log(`[SLOTS] \u2705 Using linked vendor_id directly: ${canonicalVendorId}`);
+            console.log(`[SLOTS] availabilityIdsForQuery: ${JSON.stringify(availabilityIdsForQuery)}`);
+          } else {
+            return c.json({ error: "Vendor not found" }, 404);
+          }
+        } else {
+          return c.json({ error: "Vendor not found" }, 404);
+        }
+      } else {
+        console.log(`[SLOTS] Vendor found: id=${vendor.id}, business_name=${vendor.business_name}, phone=${vendor.phone}`);
+        const availabilityCheck = await query(
+          `SELECT COUNT(*) as count FROM vendor_availability_v2 WHERE vendor_id::text = $1`,
+          [vendor.id]
+        ).catch(() => ({ rows: [{ count: 0 }] }));
+        const availabilityCount = parseInt(availabilityCheck.rows[0]?.count || "0", 10);
+        console.log(`[SLOTS] Availability records for vendor.id ${vendor.id}: ${availabilityCount}`);
+        let finalVendorId = vendor.id;
+        let allAvailabilityIds = [];
+        if (vendor.phone) {
+          console.log(`[SLOTS] Checking for other vendors with same phone (${vendor.phone}) that have availability...`);
+          const duplicateVendors = await query(
+            `SELECT id::text, business_name, 
+                    (SELECT COUNT(*) FROM vendor_availability_v2 WHERE vendor_id::text = vendors.id::text) as availability_count
+             FROM vendors 
+             WHERE phone = $1
+             ORDER BY availability_count DESC, id::text
+             LIMIT 10`,
+            [vendor.phone]
+          ).catch(() => ({ rows: [] }));
+          if (duplicateVendors.rows.length > 0) {
+            console.log(`[SLOTS] Found ${duplicateVendors.rows.length} vendor(s) with same phone:`);
+            duplicateVendors.rows.forEach((dup) => {
+              console.log(`[SLOTS]   - vendor.id: ${dup.id}, business_name: ${dup.business_name}, availability_count: ${dup.availability_count}`);
+            });
+            const vendorWithMostAvailability = duplicateVendors.rows.find((dup) => parseInt(dup.availability_count || "0", 10) > 0) || (availabilityCount > 0 ? { id: vendor.id, availability_count: availabilityCount } : null);
+            if (vendorWithMostAvailability) {
+              finalVendorId = vendorWithMostAvailability.id;
+              console.log(`[SLOTS] \u2705 Using vendor with availability: ${finalVendorId} (availability_count: ${vendorWithMostAvailability.availability_count})`);
+            } else {
+              finalVendorId = vendor.id;
+              console.log(`[SLOTS] No vendor with availability found, using original: ${finalVendorId}`);
+            }
+          } else {
+            finalVendorId = vendor.id;
+          }
+        } else {
+          finalVendorId = vendor.id;
+        }
+        resolvedVendorId = finalVendorId;
+        canonicalVendorId = finalVendorId;
+        availabilityIdsForQuery = await getVendorIdsForAvailabilityLookup(finalVendorId);
+        console.log(`[SLOTS] ========== VENDOR ID RESOLUTION COMPLETE ==========`);
+        console.log(`[SLOTS] Input vendorId (from URL): ${vendorId}`);
+        console.log(`[SLOTS] Resolved vendor.id: ${vendor.id}`);
+        console.log(`[SLOTS] Final vendorId for query: ${finalVendorId}`);
+        console.log(`[SLOTS] canonicalVendorId: ${canonicalVendorId}`);
+        console.log(`[SLOTS] availabilityIdsForQuery: ${JSON.stringify(availabilityIdsForQuery)}`);
+        console.log(`[SLOTS] Are input and resolved different? ${vendorId !== vendor.id ? "YES - This might be the issue!" : "NO - Same ID"}`);
+        console.log(`[SLOTS] Vendor status check: status=${vendor.status}, is_active=${vendor.is_active}, is_online=${vendor.is_online}`);
+        console.log(`[SLOTS] Checking availability records...`);
+        for (const availId of availabilityIdsForQuery) {
+          const availCheck = await query(
+            `SELECT COUNT(*) as count, 
+                    array_agg(DISTINCT day_of_week) as days,
+                    array_agg(DISTINCT service_styles) as styles
+             FROM vendor_availability_v2 
+             WHERE vendor_id::text = $1 
+               AND (COALESCE(is_available, true) = true)`,
+            [availId]
+          ).catch(() => ({ rows: [{ count: 0, days: [], styles: [] }] }));
+          console.log(`[SLOTS]   - vendor_id ${availId}: ${availCheck.rows[0]?.count || 0} records, days: ${JSON.stringify(availCheck.rows[0]?.days)}, styles: ${JSON.stringify(availCheck.rows[0]?.styles)}`);
+          const vendorStatusCheck = await query(
+            `SELECT id::text, business_name, status, is_active, is_online 
+             FROM vendors 
+             WHERE id::text = $1`,
+            [availId]
+          ).catch(() => ({ rows: [] }));
+          if (vendorStatusCheck.rows.length > 0) {
+            const v = vendorStatusCheck.rows[0];
+            console.log(`[SLOTS]   - vendor status: id=${v.id}, status=${v.status}, is_active=${v.is_active}, is_online=${v.is_online}`);
+          } else {
+            const identityCheck = await query(
+              `SELECT id::text, vendor_id::text, phone, onboarding_status 
+               FROM vendor_identity 
+               WHERE id::text = $1`,
+              [availId]
+            ).catch(() => ({ rows: [] }));
+            if (identityCheck.rows.length > 0) {
+              const vi = identityCheck.rows[0];
+              console.log(`[SLOTS]   - This is vendor_identity.id: ${vi.id}, vendor_id: ${vi.vendor_id}, phone: ${vi.phone}`);
+            }
+          }
+        }
+        if (vendorId !== finalVendorId && !availabilityIdsForQuery.includes(vendorId)) {
+          console.log(`[SLOTS] \u26A0\uFE0F Input vendorId ${vendorId} not in availabilityIdsForQuery, checking availability directly...`);
+          const directAvailCheck = await query(
+            `SELECT COUNT(*) as count FROM vendor_availability_v2 WHERE vendor_id::text = $1`,
+            [vendorId]
+          ).catch(() => ({ rows: [{ count: 0 }] }));
+          console.log(`[SLOTS]   - Direct check for vendor_id ${vendorId}: ${directAvailCheck.rows[0]?.count || 0} records`);
+          if (parseInt(directAvailCheck.rows[0]?.count || "0", 10) > 0) {
+            console.log(`[SLOTS] \u26A0\uFE0F WARNING: Availability exists under input vendorId ${vendorId} but it's not in availabilityIdsForQuery!`);
+            availabilityIdsForQuery.push(vendorId);
+            console.log(`[SLOTS] \u2705 Added ${vendorId} to availabilityIdsForQuery`);
+          }
+        }
+        if (vendor.phone) {
+          console.log(`[SLOTS] \u26A0\uFE0F Checking ALL vendor_identity records for phone ${vendor.phone} to find availability...`);
+          const allIdentityRecords = await query(
+            `SELECT id::text, vendor_id::text, phone 
+             FROM vendor_identity 
+             WHERE phone = $1 OR vendor_id::text = $2`,
+            [vendor.phone, finalVendorId]
+          ).catch(() => ({ rows: [] }));
+          console.log(`[SLOTS] Found ${allIdentityRecords.rows.length} vendor_identity records for this vendor`);
+          for (const identityRow of allIdentityRecords.rows) {
+            const identityId = identityRow.id;
+            if (!availabilityIdsForQuery.includes(identityId)) {
+              const identityAvailCheck = await query(
+                `SELECT COUNT(*) as count FROM vendor_availability_v2 WHERE vendor_id::text = $1`,
+                [identityId]
+              ).catch(() => ({ rows: [{ count: 0 }] }));
+              const availCount = parseInt(identityAvailCheck.rows[0]?.count || "0", 10);
+              console.log(`[SLOTS]   - vendor_identity.id ${identityId}: ${availCount} availability records`);
+              if (availCount > 0) {
+                console.log(`[SLOTS] \u26A0\uFE0F WARNING: Availability exists under vendor_identity.id ${identityId}!`);
+                availabilityIdsForQuery.push(identityId);
+                console.log(`[SLOTS] \u2705 Added ${identityId} to availabilityIdsForQuery`);
+              }
+            }
+          }
+        }
+        console.log(`[SLOTS] Final resolved vendor: id=${resolvedVendorId}, business_name=${vendor.business_name}, phone=${vendor.phone}`);
+        console.log(`[SLOTS] \u2705 Using array query with availabilityIdsForQuery (includes all vendors with same phone)`);
+      }
       const [year2, month, day2] = date.split("-").map(Number);
       const requestedDate = new Date(year2, month - 1, day2);
       const dayOfWeek = requestedDate.getDay();
       const slotsDebug = c.req.query("debug") === "1" || c.req.query("debug") === "true";
       console.log(`[SLOTS] Date parsing: input=${date}, parsed=${requestedDate.toISOString()}, dayOfWeek=${dayOfWeek} (0=Sun, 1=Mon, 2=Tue, etc.)`);
       if (slotsDebug) {
-        console.log(`[SLOTS] debug: resolvedVendorId=${resolvedVendorId}, availabilityIds=${JSON.stringify(availabilityIds)}, date=${date}, dayOfWeek=${dayOfWeek}, serviceStyle=${serviceStyle}`);
+        console.log(`[SLOTS] debug: resolvedVendorId=${resolvedVendorId}, canonicalVendorId=${canonicalVendorId}, availabilityIdsForQuery=${JSON.stringify(availabilityIdsForQuery)}, date=${date}, dayOfWeek=${dayOfWeek}, serviceStyle=${serviceStyle}`);
         try {
           const va2DebugRows = await query(
             `SELECT vendor_id, day_of_week,
              COALESCE(service_styles, ARRAY[]::text[]) as service_styles,
-             service_style, service_type, is_enabled, is_available
+             service_style, service_type, is_available, is_enabled
              FROM vendor_availability_v2
              WHERE vendor_id::text = ANY($1::text[])
              ORDER BY day_of_week`,
-            [availabilityIds]
+            [availabilityIdsForQuery]
           );
           const rows = (va2DebugRows?.rows ?? []).slice(0, 25);
           console.log(`[SLOTS] debug: VA2 total=${va2DebugRows?.rows?.length ?? 0}, dayOfWeek requested=${dayOfWeek}, sample=${JSON.stringify(rows)}`);
@@ -148740,7 +149492,6 @@ function registerServiceDiscoveryEndpoints(app3) {
           slots: [],
           date,
           vendorId: canonicalVendorId,
-          vendorIdentityId: vendorIdentityIdFromLookup ?? void 0,
           serviceStyle,
           staffBased: false,
           message: "Vendor is on holiday or vacation on this date"
@@ -148862,151 +149613,346 @@ function registerServiceDiscoveryEndpoints(app3) {
       }
       const normalizedServiceStyle = serviceStyle === "at_vendor" || serviceStyle === "at_center" ? "at_center" : serviceStyle;
       const acceptableStylesForSlot = normalizedServiceStyle === "at_center" ? ["at_center", "at_vendor"] : normalizedServiceStyle === "tele" ? ["tele", "online", "video_consultation"] : [normalizedServiceStyle];
+      const dayOfWeekValues = dayOfWeek === 0 ? [0, 7] : [dayOfWeek];
       let va2Slots = [];
+      console.log(`[SLOTS] ========== VENDOR ID RESOLUTION ==========`);
+      console.log(`[SLOTS] inputVendorId=${vendorId}`);
+      console.log(`[SLOTS] resolvedVendorId=${resolvedVendorId}`);
+      console.log(`[SLOTS] canonicalVendorId=${canonicalVendorId}`);
+      console.log(`[SLOTS] availabilityIdsForQuery=${JSON.stringify(availabilityIdsForQuery)}`);
+      console.log(`[SLOTS] ========== QUERY PARAMETERS ==========`);
+      console.log(`[SLOTS] date=${date}, dayOfWeek=${dayOfWeek} (0=Sun, 1=Mon, 2=Tue, etc.)`);
+      console.log(`[SLOTS] serviceStyle=${serviceStyle}, normalizedServiceStyle=${normalizedServiceStyle}`);
+      console.log(`[SLOTS] acceptableStylesForSlot=${JSON.stringify(acceptableStylesForSlot)}`);
+      console.log(`[SLOTS] dayOfWeekValues=${JSON.stringify(dayOfWeekValues)}`);
       try {
-        console.log(`[SLOTS] Querying vendor_availability_v2: vendorId=${resolvedVendorId}, dayOfWeek=${dayOfWeek}, acceptableStyles=${acceptableStylesForSlot.join(",")}`);
-        const va2Result = await query(
-          `SELECT id, time_window_start, time_window_end, start_time, end_time,
-                  COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
-                  COALESCE(buffer_time, buffer_time_minutes, 15) as buffer_time_minutes,
-                  lead_time_by_style, max_capacity, service_styles
+        const anyRecordsQuery = await query(
+          `SELECT vendor_id::text, day_of_week, 
+                  COALESCE(service_styles, ARRAY[]::text[]) as service_styles,
+                  service_style, service_type
            FROM vendor_availability_v2
            WHERE vendor_id::text = ANY($1::text[])
-             AND day_of_week = $2
-             AND (
-               (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
-               OR COALESCE(service_style, service_type)::text = ANY($3::text[])
-             )
-             AND COALESCE(is_available, is_enabled, true) = true
-           ORDER BY COALESCE(time_window_start, start_time)`,
-          [availabilityIds, dayOfWeek, acceptableStylesForSlot]
+           ORDER BY day_of_week
+           LIMIT 10`,
+          [availabilityIdsForQuery]
         );
-        va2Slots = va2Result?.rows || [];
-        console.log(`[SLOTS] Found ${va2Slots.length} availability records for day_of_week=${dayOfWeek}, acceptableStyles=${acceptableStylesForSlot.join(",")}`);
-        if (va2Slots.length > 0) {
-          console.log(`[SLOTS] First record:`, JSON.stringify(va2Slots[0]));
+        console.log(`[SLOTS] ========== ANY RECORDS FOR availabilityIdsForQuery ==========`);
+        console.log(`[SLOTS] availabilityIdsForQuery: ${JSON.stringify(availabilityIdsForQuery)}`);
+        console.log(`[SLOTS] Total records found: ${anyRecordsQuery.rows.length}`);
+        if (anyRecordsQuery.rows.length > 0) {
+          console.log(`[SLOTS] Sample records:`, JSON.stringify(anyRecordsQuery.rows.slice(0, 3), null, 2));
+        } else {
+          console.log(`[SLOTS] \u26A0\uFE0F NO RECORDS FOUND for any vendor_id in availabilityIdsForQuery!`);
+          console.log(`[SLOTS] This means vendor_id in vendor_availability_v2 doesn't match any ID in availabilityIdsForQuery`);
         }
-      } catch (e) {
-        console.error(`[SLOTS] Query error:`, e);
-        try {
-          const va2Result006 = await query(
-            `SELECT id, time_window_start, time_window_end,
-                    time_window_start as start_time, time_window_end as end_time,
-                    30 as slot_duration_minutes, 15 as buffer_time_minutes,
-                    NULL::jsonb as lead_time_by_style, 1 as max_capacity,
-                    ARRAY[service_style::text] as service_styles
-             FROM vendor_availability_v2
-             WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
-               AND service_style::text = ANY($3::text[])
-               AND (is_enabled = true OR is_enabled IS NULL)
-             ORDER BY time_window_start`,
-            [availabilityIds, dayOfWeek, acceptableStylesForSlot]
+        const allVA2Records = await query(
+          `SELECT vendor_id::text, day_of_week, 
+                  COALESCE(service_styles, ARRAY[]::text[]) as service_styles,
+                  service_type, 
+                  is_available,
+                  COALESCE(time_window_start, start_time) as start_time,
+                  COALESCE(time_window_end, end_time) as end_time
+           FROM vendor_availability_v2
+           WHERE vendor_id::text = $1
+           ORDER BY day_of_week, COALESCE(time_window_start, start_time)`,
+          [canonicalVendorId]
+        );
+        console.log(`[SLOTS] ========== ALL vendor_availability_v2 RECORDS FOR CANONICAL VENDOR ID ==========`);
+        console.log(`[SLOTS] canonicalVendorId: ${canonicalVendorId}`);
+        console.log(`[SLOTS] Total records: ${allVA2Records.rows.length}`);
+        if (allVA2Records.rows.length > 0) {
+          console.log(`[SLOTS] Records:`, JSON.stringify(allVA2Records.rows, null, 2));
+        } else {
+          console.log(`[SLOTS] \u26A0\uFE0F NO RECORDS FOUND for canonicalVendorId!`);
+        }
+        const diagnosticQuery = await query(
+          `SELECT 
+            COUNT(*) as total_count,
+            COUNT(*) FILTER (WHERE day_of_week = ANY($2::int[])) as day_match_count,
+            COUNT(*) FILTER (WHERE day_of_week = ANY($2::int[]) AND (
+               (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
+              OR (service_type IS NOT NULL AND service_type::text = ANY($3::text[]))
+            )) as day_style_match_count,
+            COUNT(*) FILTER (WHERE day_of_week = ANY($2::int[]) AND (
+              (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
+              OR (service_type IS NOT NULL AND service_type::text = ANY($3::text[]))
+            ) AND (COALESCE(is_available, true) = true OR is_available IS NULL)) as day_style_enabled_match_count,
+            array_agg(DISTINCT day_of_week) as distinct_days,
+            array_agg(DISTINCT service_type) FILTER (WHERE service_type IS NOT NULL) as distinct_service_types
+           FROM vendor_availability_v2
+           WHERE vendor_id::text = $1`,
+          [canonicalVendorId, dayOfWeekValues, acceptableStylesForSlot]
+        );
+        const diag = diagnosticQuery.rows[0];
+        console.log(`[SLOTS] Diagnostic: total=${diag.total_count}, day_match=${diag.day_match_count}, day_style_match=${diag.day_style_match_count}, day_style_enabled_match=${diag.day_style_enabled_match_count}`);
+        console.log(`[SLOTS] Diagnostic: days=${JSON.stringify(diag.distinct_days)}, service_types=${JSON.stringify(diag.distinct_service_types)}`);
+      } catch (diagErr) {
+        console.warn(`[SLOTS] Diagnostic query failed:`, diagErr?.message);
+      }
+      console.log(`[SLOTS] ========== FINAL availabilityIdsForQuery BEFORE QUERY ==========`);
+      console.log(`[SLOTS] availabilityIdsForQuery: ${JSON.stringify(availabilityIdsForQuery)}`);
+      console.log(`[SLOTS] This array will be used to query vendor_availability_v2`);
+      console.log(`[SLOTS] ========== DIRECT VERIFICATION QUERY (NO VENDOR STATUS FILTERS) ==========`);
+      let verificationSlots = [];
+      try {
+        const directVerification = await query(
+          `SELECT va.id, va.day_of_week, 
+                  COALESCE(va.time_window_start, va.start_time) as time_window_start, 
+                  COALESCE(va.time_window_end, va.end_time) as time_window_end,
+                  va.start_time, va.end_time,
+                  va.service_styles, va.service_type,
+                  COALESCE(va.is_available, true) as is_available
+           FROM vendor_availability_v2 va
+           WHERE va.vendor_id::text = ANY($1::text[])
+             AND va.day_of_week = ANY($2::int[])
+             AND (
+               (COALESCE(va.service_styles, ARRAY[]::text[]) && $3::text[])
+               OR (va.service_type IS NOT NULL AND va.service_type::text = ANY($3::text[]))
+             )
+             AND COALESCE(va.is_available, true) = true`,
+          [availabilityIdsForQuery, dayOfWeekValues, acceptableStylesForSlot]
+        );
+        console.log(`[SLOTS] Direct verification query (with service style filter) returned ${directVerification.rows.length} rows`);
+        if (directVerification.rows.length > 0) {
+          console.log(`[SLOTS] \u2705 VERIFICATION SUCCESS: Found ${directVerification.rows.length} records matching service style`);
+          console.log(`[SLOTS] First record:`, JSON.stringify(directVerification.rows[0]));
+          console.log(`[SLOTS] First record time_window_start: ${directVerification.rows[0].time_window_start}, time_window_end: ${directVerification.rows[0].time_window_end}`);
+          verificationSlots = directVerification.rows;
+        } else {
+          console.log(`[SLOTS] \u26A0\uFE0F No records with service style filter, trying without service style filter...`);
+          const directVerificationNoStyle = await query(
+            `SELECT va.id, va.day_of_week, 
+                    COALESCE(va.time_window_start, va.start_time) as time_window_start, 
+                    COALESCE(va.time_window_end, va.end_time) as time_window_end,
+                    va.start_time, va.end_time,
+                    va.service_styles, va.service_type,
+                    COALESCE(va.is_available, true) as is_available
+             FROM vendor_availability_v2 va
+             WHERE va.vendor_id::text = ANY($1::text[])
+               AND va.day_of_week = ANY($2::int[])
+               AND COALESCE(va.is_available, true) = true`,
+            [availabilityIdsForQuery, dayOfWeekValues]
           );
-          va2Slots = va2Result006?.rows || [];
-          console.log(`[SLOTS] 006-schema fallback found ${va2Slots.length} records`);
-        } catch (_) {
+          console.log(`[SLOTS] Direct verification query (no service style filter) returned ${directVerificationNoStyle.rows.length} rows`);
+          if (directVerificationNoStyle.rows.length > 0) {
+            console.log(`[SLOTS] \u26A0\uFE0F Found ${directVerificationNoStyle.rows.length} records but service style filter excluded them`);
+            console.log(`[SLOTS] Sample record service_styles: ${JSON.stringify(directVerificationNoStyle.rows[0].service_styles)}`);
+            console.log(`[SLOTS] acceptableStylesForSlot: ${JSON.stringify(acceptableStylesForSlot)}`);
+            verificationSlots = directVerificationNoStyle.rows;
+          } else {
+            console.log(`[SLOTS] \u26A0\uFE0F VERIFICATION: No records found for day_of_week ${dayOfWeek} at all`);
+          }
+        }
+      } catch (verifyErr) {
+        console.error(`[SLOTS] Direct verification query failed: ${verifyErr?.message}`);
+      }
+      if (verificationSlots.length === 0) {
+        console.log(`[SLOTS] ========== EXECUTING MAIN QUERY (verification found 0, applying filters) ==========`);
+        try {
+          console.log(`[SLOTS] availabilityIdsForQuery: ${JSON.stringify(availabilityIdsForQuery)}`);
+          console.log(`[SLOTS] dayOfWeekValues: ${JSON.stringify(dayOfWeekValues)}`);
+          console.log(`[SLOTS] canonicalVendorId: ${canonicalVendorId}`);
+          console.log(`[SLOTS] acceptableStylesForSlot: ${JSON.stringify(acceptableStylesForSlot)}`);
+          console.log(`[SLOTS] Using ENHANCED AVAILABILITY VIEW with availabilityIdsForQuery=${JSON.stringify(availabilityIdsForQuery)}, dayOfWeek=${dayOfWeek}, acceptableStylesForSlot=${JSON.stringify(acceptableStylesForSlot)}`);
           try {
-            const va2ResultAlt = await query(
-              `SELECT id, start_time as time_window_start, end_time as time_window_end,
-                    start_time, end_time,
-                    COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
-                    COALESCE(buffer_time, buffer_time_minutes, 15) as buffer_time_minutes,
-                    lead_time_by_style, max_capacity, service_styles
-             FROM vendor_availability_v2
-             WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
-               AND (
-                 (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
-                 OR COALESCE(service_style, service_type)::text = ANY($3::text[])
-               )
-               AND COALESCE(is_available, is_enabled, true) = true
-             ORDER BY start_time`,
-              [availabilityIds, dayOfWeek, acceptableStylesForSlot]
-            );
-            va2Slots = va2ResultAlt?.rows || [];
-            console.log(`[SLOTS] Fallback query found ${va2Slots.length} records`);
-          } catch (err2) {
-            const columnMissing = err2?.message && (String(err2.message).includes("service_style") || String(err2.message).includes("service_type") || String(err2.message).includes("service_styles") || /column.*does not exist/i.test(String(err2.message)));
-            if (columnMissing) {
+            console.log(`[SLOTS] Attempting query with style filter...`);
+            let arrayQueryWithStyle = { rows: [] };
+            try {
+              arrayQueryWithStyle = await query(
+                `SELECT va.id, va.day_of_week, 
+                      COALESCE(va.time_window_start, va.start_time) as time_window_start, 
+                      COALESCE(va.time_window_end, va.end_time) as time_window_end,
+                      va.start_time, va.end_time,
+                      va.service_styles, va.service_type,
+                      COALESCE(va.is_available, true) as is_available,
+                      v.is_online, v.status, v.is_active
+               FROM vendor_availability_v2 va
+               JOIN vendors v ON va.vendor_id = v.id
+               WHERE va.vendor_id::text = ANY($1::text[])
+                 AND va.day_of_week = ANY($2::int[])
+                 AND (
+                   (COALESCE(va.service_styles, ARRAY[]::text[]) && $3::text[])
+                   OR (va.service_type IS NOT NULL AND va.service_type::text = ANY($3::text[]))
+                   OR EXISTS (
+                     SELECT 1 FROM unnest(COALESCE(va.service_styles, ARRAY[]::text[])) AS style
+                     WHERE style = ANY($3::text[])
+                   )
+                 )
+                 AND COALESCE(va.is_available, true) = true
+                 AND v.status = 'approved'
+                 AND v.is_active = true
+               ORDER BY va.day_of_week, COALESCE(va.time_window_start, va.start_time)`,
+                [availabilityIdsForQuery, dayOfWeekValues, acceptableStylesForSlot]
+              );
+              console.log(`[SLOTS] Query with style filter succeeded: ${arrayQueryWithStyle.rows.length} rows`);
+            } catch (err) {
+              console.log(`[SLOTS] Query with style filter failed: ${err?.message}`);
+              console.log(`[SLOTS] Error details:`, err);
+              arrayQueryWithStyle = { rows: [] };
+            }
+            va2Slots = arrayQueryWithStyle?.rows || [];
+            console.log(`[SLOTS] Array query (with style filter) found ${va2Slots.length} records`);
+            if (va2Slots.length > 0) {
+              console.log(`[SLOTS] \u2705 SUCCESS! Found ${va2Slots.length} records using array query with style filter`);
+              console.log(`[SLOTS] First record:`, JSON.stringify(va2Slots[0]));
+              console.log(`[SLOTS] First record time_window_start: ${va2Slots[0]?.time_window_start || va2Slots[0]?.start_time}, time_window_end: ${va2Slots[0]?.time_window_end || va2Slots[0]?.end_time}`);
+              console.log(`[SLOTS] First record service_styles: ${JSON.stringify(va2Slots[0]?.service_styles)}`);
+            } else {
+              console.log(`[SLOTS] \u26A0\uFE0F Array query with style filter returned 0 - trying without style filter...`);
+              console.log(`[SLOTS] Attempting query without style filter...`);
+              let arrayQueryNoStyle = { rows: [] };
               try {
-                const va2Minimal = await query(
-                  `SELECT id, start_time as time_window_start, end_time as time_window_end,
-                        start_time, end_time,
-                        30 as slot_duration_minutes, 15 as buffer_time_minutes,
-                        NULL::jsonb as lead_time_by_style, 1 as max_capacity,
-                        ARRAY[service_type::text] as service_styles
-                 FROM vendor_availability_v2
-                 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
-                   AND service_type::text = ANY($3::text[])
-                   AND COALESCE(is_available, is_enabled, true) = true
-                 ORDER BY start_time`,
-                  [availabilityIds, dayOfWeek, acceptableStylesForSlot]
+                arrayQueryNoStyle = await query(
+                  `SELECT va.id, va.day_of_week, 
+                        COALESCE(va.time_window_start, va.start_time) as time_window_start, 
+                        COALESCE(va.time_window_end, va.end_time) as time_window_end,
+                        va.start_time, va.end_time,
+                        va.service_styles, va.service_type,
+                        COALESCE(va.is_available, true) as is_available,
+                        v.is_online, v.status, v.is_active
+                 FROM vendor_availability_v2 va
+                 JOIN vendors v ON va.vendor_id = v.id
+                 WHERE va.vendor_id::text = ANY($1::text[])
+                   AND va.day_of_week = ANY($2::int[])
+                   AND (COALESCE(va.is_available, true) = true)
+                   AND v.status = 'approved'
+                   AND v.is_active = true
+                 ORDER BY va.day_of_week, COALESCE(va.time_window_start, va.start_time)`,
+                  [availabilityIdsForQuery, dayOfWeekValues]
                 );
-                va2Slots = va2Minimal?.rows || [];
-                console.log(`[SLOTS] Minimal (service_type only) query found ${va2Slots.length} records`);
-              } catch (err3) {
+                console.log(`[SLOTS] Query without style filter succeeded: ${arrayQueryNoStyle.rows.length} rows`);
+              } catch (err) {
+                console.log(`[SLOTS] Query without style filter failed: ${err?.message}`);
+                arrayQueryNoStyle = { rows: [] };
+              }
+              const noStyleRows = arrayQueryNoStyle?.rows || [];
+              console.log(`[SLOTS] Array query (NO style filter) found ${noStyleRows.length} records`);
+              if (noStyleRows.length > 0) {
+                console.log(`[SLOTS] \u26A0\uFE0F Records exist but service style filter excluded them!`);
+                console.log(`[SLOTS] Sample record service_styles: ${JSON.stringify(noStyleRows[0].service_styles)}`);
+                console.log(`[SLOTS] acceptableStylesForSlot: ${JSON.stringify(acceptableStylesForSlot)}`);
+                console.log(`[SLOTS] Sample record time_window_start: ${noStyleRows[0]?.time_window_start || noStyleRows[0]?.start_time}, time_window_end: ${noStyleRows[0]?.time_window_end || noStyleRows[0]?.end_time}`);
+                va2Slots = noStyleRows;
+              } else {
+                console.log(`[SLOTS] \u26A0\uFE0F No availability found even without service style filter, trying without vendor status filters...`);
+                console.log(`[SLOTS] Attempting query without vendor status filters...`);
+                let noStatusFilterResult = { rows: [] };
                 try {
-                  const va2StylesOnly = await query(
-                    `SELECT id, start_time as time_window_start, end_time as time_window_end,
-                          start_time, end_time,
-                          COALESCE(slot_duration_minutes, 30) as slot_duration_minutes,
-                          COALESCE(buffer_time, buffer_time_minutes, 15) as buffer_time_minutes,
-                          lead_time_by_style, max_capacity, service_styles
-                   FROM vendor_availability_v2
-                   WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2
-                     AND (
-                       (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[])
-                       OR COALESCE(service_style, service_type)::text = ANY($3::text[])
-                     )
-                     AND COALESCE(is_available, is_enabled, true) = true
-                   ORDER BY start_time`,
-                    [availabilityIds, dayOfWeek, acceptableStylesForSlot]
+                  noStatusFilterResult = await query(
+                    `SELECT va.id, va.day_of_week, 
+                          COALESCE(va.time_window_start, va.start_time) as time_window_start, 
+                          COALESCE(va.time_window_end, va.end_time) as time_window_end,
+                          va.start_time, va.end_time,
+                          va.service_styles, va.service_type,
+                          COALESCE(va.is_available, true) as is_available
+                   FROM vendor_availability_v2 va
+                   WHERE va.vendor_id::text = ANY($1::text[])
+                     AND va.day_of_week = ANY($2::int[])
+                     AND (COALESCE(va.is_available, true) = true)
+                   ORDER BY va.day_of_week, COALESCE(va.time_window_start, va.start_time)`,
+                    [availabilityIdsForQuery, dayOfWeekValues]
                   );
-                  va2Slots = va2StylesOnly?.rows || [];
-                  console.log(`[SLOTS] service_styles-only query found ${va2Slots.length} records`);
-                } catch (err4) {
-                  console.error(`[SLOTS] Minimal and service_styles-only queries also failed:`, err3, err4);
+                  console.log(`[SLOTS] Query without vendor status filters succeeded: ${noStatusFilterResult.rows.length} rows`);
+                } catch (err) {
+                  console.log(`[SLOTS] Query without vendor status filters failed: ${err?.message}`);
+                  noStatusFilterResult = { rows: [] };
+                }
+                console.log(`[SLOTS] \u26A0\uFE0F Query without vendor status filters returned ${noStatusFilterResult.rows.length} rows`);
+                if (noStatusFilterResult.rows.length > 0) {
+                  va2Slots = noStatusFilterResult.rows;
+                  console.log(`[SLOTS] \u2705 Using results without vendor status filters (${va2Slots.length} slots)`);
+                  console.log(`[SLOTS] \u26A0\uFE0F WARNING: Vendor status filters excluded these records! Vendor may not be approved/active/online.`);
+                  console.log(`[SLOTS] First record from no-status-filter query:`, JSON.stringify(noStatusFilterResult.rows[0]));
+                } else {
+                  console.log(`[SLOTS] \u26A0\uFE0F No records found even without style filter for availabilityIdsForQuery`);
+                  console.log(`[SLOTS] This means no availability exists for vendor_id in ${JSON.stringify(availabilityIdsForQuery)} on day_of_week ${dayOfWeek}`);
+                  console.log(`[SLOTS] \u26A0\uFE0F Last resort: Querying without ANY filters (except vendor_id and day_of_week)...`);
+                  console.log(`[SLOTS] Attempting last resort query (no filters except vendor_id and day_of_week)...`);
+                  let lastResortQuery = { rows: [] };
                   try {
-                    const va2Any = await query(
-                      `SELECT id, time_window_start, time_window_end, time_window_start as start_time, time_window_end as end_time,
-                            30 as slot_duration_minutes, 15 as buffer_time_minutes, NULL::jsonb as lead_time_by_style, 1 as max_capacity,
-                            ARRAY[service_style::text] as service_styles
-                     FROM vendor_availability_v2 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2 ORDER BY time_window_start`,
-                      [availabilityIds, dayOfWeek]
-                    ).catch(() => null);
-                    if (va2Any?.rows?.length) {
-                      const filtered = va2Any.rows.filter((r) => {
-                        const style = r.service_styles && r.service_styles[0] || r.service_style || r.service_type;
-                        return style && acceptableStylesForSlot.includes(String(style));
-                      });
-                      va2Slots = filtered;
-                      console.log(`[SLOTS] No-style-filter fallback: ${va2Any.rows.length} rows, ${filtered.length} after style filter`);
-                    }
-                  } catch (err5) {
-                    try {
-                      const va2Any57 = await query(
-                        `SELECT id, start_time as time_window_start, end_time as time_window_end, start_time, end_time,
-                              30 as slot_duration_minutes, 15 as buffer_time_minutes, NULL::jsonb as lead_time_by_style, 1 as max_capacity,
-                              ARRAY[service_type::text] as service_styles
-                       FROM vendor_availability_v2 WHERE vendor_id::text = ANY($1::text[]) AND day_of_week = $2 ORDER BY start_time`,
-                        [availabilityIds, dayOfWeek]
-                      ).catch(() => null);
-                      if (va2Any57?.rows?.length) {
-                        const filtered = va2Any57.rows.filter((r) => {
-                          const style = r.service_styles && r.service_styles[0] || r.service_style || r.service_type;
-                          return style && acceptableStylesForSlot.includes(String(style));
-                        });
-                        va2Slots = filtered;
-                        console.log(`[SLOTS] No-style-filter (057) fallback: ${va2Any57.rows.length} rows, ${filtered.length} after style filter`);
-                      }
-                    } catch (_2) {
-                    }
+                    lastResortQuery = await query(
+                      `SELECT va.id, va.day_of_week, 
+                            COALESCE(va.time_window_start, va.start_time) as time_window_start, 
+                            COALESCE(va.time_window_end, va.end_time) as time_window_end,
+                            va.start_time, va.end_time,
+                            va.service_styles, va.service_type,
+                            COALESCE(va.is_available, true) as is_available
+                     FROM vendor_availability_v2 va
+                     WHERE va.vendor_id::text = ANY($1::text[])
+                       AND va.day_of_week = ANY($2::int[])
+                     ORDER BY va.day_of_week, COALESCE(va.time_window_start, va.start_time)`,
+                      [availabilityIdsForQuery, dayOfWeekValues]
+                    );
+                    console.log(`[SLOTS] Last resort query succeeded: ${lastResortQuery.rows.length} rows`);
+                  } catch (err) {
+                    console.log(`[SLOTS] Last resort query failed: ${err?.message}`);
+                    lastResortQuery = { rows: [] };
+                  }
+                  console.log(`[SLOTS] \u26A0\uFE0F Last resort query returned ${lastResortQuery.rows.length} rows`);
+                  if (lastResortQuery.rows.length > 0) {
+                    va2Slots = lastResortQuery.rows;
+                    console.log(`[SLOTS] \u2705 Using last resort results (${va2Slots.length} slots) - NO FILTERS APPLIED`);
+                    console.log(`[SLOTS] First record:`, JSON.stringify(lastResortQuery.rows[0]));
                   }
                 }
               }
-            } else {
-              console.error(`[SLOTS] Fallback query also failed:`, err2);
+            }
+          } catch (innerErr) {
+            console.error(`[SLOTS] Inner query block failed: ${innerErr?.message}`);
+          }
+        } catch (queryErr) {
+          console.error(`[SLOTS] ========== QUERY BLOCK FAILED ==========`);
+          console.error(`[SLOTS] Query failed: ${queryErr?.message}`);
+          console.error(`[SLOTS] Query error stack: ${queryErr?.stack}`);
+          console.error(`[SLOTS] Query error code: ${queryErr?.code}`);
+          console.error(`[SLOTS] Query error detail: ${queryErr?.detail}`);
+          va2Slots = [];
+        }
+      }
+      if (verificationSlots.length > 0) {
+        console.log(`[SLOTS] ========== USING VERIFICATION RESULTS (${verificationSlots.length} records) - PRIORITIZED ==========`);
+        va2Slots = verificationSlots;
+      } else if (va2Slots.length === 0) {
+        console.log(`[SLOTS] ========== NO RECORDS FOUND (verification: ${verificationSlots.length}, main query: ${va2Slots.length}) ==========`);
+      } else {
+        console.log(`[SLOTS] ========== USING MAIN QUERY RESULTS (${va2Slots.length} records) ==========`);
+      }
+      console.log(`[SLOTS] ========== FINAL QUERY RESULT ==========`);
+      console.log(`[SLOTS] va2Slots.length: ${va2Slots.length}`);
+      console.log(`[SLOTS] canonicalVendorId: ${canonicalVendorId}`);
+      console.log(`[SLOTS] dayOfWeek: ${dayOfWeek}`);
+      console.log(`[SLOTS] acceptableStylesForSlot: ${JSON.stringify(acceptableStylesForSlot)}`);
+      if (va2Slots.length > 0) {
+        console.log(`[SLOTS] \u2705 Found ${va2Slots.length} availability records - will generate slots`);
+        console.log(`[SLOTS] First record:`, JSON.stringify(va2Slots[0]));
+        console.log(`[SLOTS] First record service_styles: ${JSON.stringify(va2Slots[0].service_styles)}`);
+        console.log(`[SLOTS] First record service_type: ${va2Slots[0].service_type}`);
+        console.log(`[SLOTS] First record is_available: ${va2Slots[0].is_available}`);
+        console.log(`[SLOTS] First record time_window_start: ${va2Slots[0].time_window_start}, time_window_end: ${va2Slots[0].time_window_end}`);
+      } else {
+        console.log(`[SLOTS] \u26A0\uFE0F No availability records found after all queries`);
+        try {
+          const vendorStatusCheck = await query(
+            `SELECT v.id::text, v.business_name, v.phone, v.status, v.is_active, v.is_online,
+                    (SELECT COUNT(*) FROM vendor_availability_v2 WHERE vendor_id::text = v.id::text) as availability_count
+             FROM vendors v
+             WHERE v.id::text = ANY($1::text[])
+             ORDER BY availability_count DESC
+             LIMIT 5`,
+            [availabilityIdsForQuery]
+          );
+          console.log(`[SLOTS] \u26A0\uFE0F ENHANCED AVAILABILITY DEBUG - Vendor status check: ${JSON.stringify(vendorStatusCheck.rows)}`);
+          for (const vendor2 of vendorStatusCheck.rows) {
+            const issues = [];
+            if (vendor2.status !== "approved") issues.push(`status=${vendor2.status} (needs 'approved')`);
+            if (!vendor2.is_active) issues.push(`is_active=false`);
+            if (vendor2.is_online === false) issues.push(`is_online=false`);
+            if (issues.length > 0) {
+              console.log(`[SLOTS] \u26A0\uFE0F Vendor ${vendor2.id} has issues: ${issues.join(", ")}`);
             }
           }
+        } catch (debugErr) {
+          console.warn(`[SLOTS] Enhanced availability debug failed: ${debugErr?.message}`);
         }
       }
       let breaks = [];
@@ -149059,31 +150005,76 @@ function registerServiceDiscoveryEndpoints(app3) {
       } catch (_) {
       }
       if (va2Slots.length > 0) {
+        console.log(`[SLOTS] ========== GENERATING SLOTS FROM ${va2Slots.length} AVAILABILITY RECORDS ==========`);
+        let filteredSlots = va2Slots;
+        if (acceptableStylesForSlot && acceptableStylesForSlot.length > 0) {
+          filteredSlots = va2Slots.filter((row) => {
+            const serviceStyles = Array.isArray(row.service_styles) ? row.service_styles : [];
+            const serviceType = row.service_type || row.service_style || "";
+            const hasMatchingStyle = serviceStyles.some((style) => acceptableStylesForSlot.includes(style)) || acceptableStylesForSlot.includes(serviceType);
+            if (!hasMatchingStyle) {
+              console.log(`[SLOTS] Filtering out record: service_styles=${JSON.stringify(serviceStyles)}, service_type=${serviceType}, acceptableStyles=${JSON.stringify(acceptableStylesForSlot)}`);
+            }
+            return hasMatchingStyle;
+          });
+          console.log(`[SLOTS] After service style filter: ${filteredSlots.length} records (from ${va2Slots.length})`);
+          if (filteredSlots.length === 0) {
+            console.log(`[SLOTS] \u26A0\uFE0F All records filtered out by service style! Using all records anyway to generate slots.`);
+            filteredSlots = va2Slots;
+          }
+        }
         const slots = [];
-        for (const row of va2Slots) {
+        let slotsGenerated = 0;
+        let slotsSkipped = 0;
+        console.log(`[SLOTS] ========== SLOT GENERATION DEBUG ==========`);
+        console.log(`[SLOTS] isToday: ${isToday}`);
+        console.log(`[SLOTS] requestedDate: ${date}`);
+        console.log(`[SLOTS] minBookingTime: ${minBookingTime.toISOString()}`);
+        console.log(`[SLOTS] Current time (now): ${now.toISOString()}`);
+        console.log(`[SLOTS] minNoticeMinutes: ${minNoticeMinutes}`);
+        console.log(`[SLOTS] Processing ${filteredSlots.length} availability records...`);
+        for (const row of filteredSlots) {
           const startTime = row.time_window_start || row.start_time;
           const endTime = row.time_window_end || row.end_time;
-          if (!startTime || !endTime) continue;
-          const slotDuration = Number(row.slot_duration_minutes) || 30;
+          console.log(`[SLOTS] Processing record: id=${row.id}, day_of_week=${row.day_of_week}, startTime=${startTime}, endTime=${endTime}`);
+          if (!startTime || !endTime) {
+            console.log(`[SLOTS] Skipping record with missing time: startTime=${startTime}, endTime=${endTime}`);
+            continue;
+          }
+          const slotDuration = 30;
+          console.log(`[SLOTS]   slotDuration: ${slotDuration} minutes`);
           const leadByStyle = row.lead_time_by_style != null ? typeof row.lead_time_by_style === "string" ? JSON.parse(row.lead_time_by_style) : row.lead_time_by_style : {};
           const bufferMinutes = leadByStyle && typeof leadByStyle === "object" && (leadByStyle[normalizedServiceStyle] != null || leadByStyle[serviceStyle] != null) ? Number(leadByStyle[normalizedServiceStyle] ?? leadByStyle[serviceStyle]) : Number(row.buffer_time ?? row.buffer_time_minutes) || minNoticeMinutes;
           const maxCapacity = row.max_capacity != null && row.max_capacity !== "" ? parseInt(String(row.max_capacity), 10) : null;
           const winStart = timeToMinutes2(startTime);
           const winEnd = timeToMinutes2(endTime);
+          console.log(`[SLOTS]   Time window: ${startTime} (${winStart} min) to ${endTime} (${winEnd} min)`);
+          console.log(`[SLOTS]   Total window duration: ${winEnd - winStart} minutes`);
           let currentMinutes = winStart;
+          let slotsGeneratedForThisRecord = 0;
+          let slotsSkippedForThisRecord = 0;
           while (currentMinutes + slotDuration <= winEnd) {
             const timeStr = `${String(Math.floor(currentMinutes / 60)).padStart(2, "0")}:${String(currentMinutes % 60).padStart(2, "0")}`;
             if (currentMinutes + totalDuration > winEnd) {
+              console.log(`[SLOTS]     Skipping ${timeStr}: slot would extend past window end (${currentMinutes + totalDuration} > ${winEnd})`);
               currentMinutes += slotDuration;
+              slotsSkippedForThisRecord++;
               continue;
             }
             if (isToday) {
               const slotDateTime = new Date(requestedDate);
               slotDateTime.setHours(Math.floor(currentMinutes / 60), currentMinutes % 60, 0, 0);
-              if (slotDateTime < minBookingTime) {
+              const isPast = slotDateTime < minBookingTime;
+              if (isPast) {
+                console.log(`[SLOTS]     Skipping ${timeStr}: slot is in the past (${slotDateTime.toISOString()} < ${minBookingTime.toISOString()})`);
                 currentMinutes += slotDuration;
+                slotsSkippedForThisRecord++;
                 continue;
+              } else {
+                console.log(`[SLOTS]     \u2705 ${timeStr} is NOT in the past (${slotDateTime.toISOString()} >= ${minBookingTime.toISOString()})`);
               }
+            } else {
+              console.log(`[SLOTS]     \u2705 ${timeStr} is for future date (not today), skipping past check`);
             }
             const slotEndMin = currentMinutes + totalDuration;
             const inBreak = breaks.some((brk) => {
@@ -149123,16 +150114,26 @@ function registerServiceDiscoveryEndpoints(app3) {
               ...row.max_capacity != null && row.max_capacity !== "" && { maxCapacity: parseInt(String(row.max_capacity), 10) }
             };
             slots.push(slotPayload);
+            slotsGenerated++;
+            slotsGeneratedForThisRecord++;
+            console.log(`[SLOTS]     \u2705 Added slot: ${timeStr} (available: ${available})`);
             currentMinutes += slotDuration;
           }
+          console.log(`[SLOTS]   Record complete: Generated ${slotsGeneratedForThisRecord} slots, skipped ${slotsSkippedForThisRecord} slots`);
+          slotsSkipped += Math.floor((winEnd - winStart) / slotDuration) - slotsGeneratedForThisRecord;
         }
+        console.log(`[SLOTS] ========== SLOT GENERATION COMPLETE ==========`);
+        console.log(`[SLOTS] Total slots generated: ${slotsGenerated}`);
+        console.log(`[SLOTS] Slots skipped: ${slotsSkipped}`);
+        console.log(`[SLOTS] Final slots array length: ${slots.length}`);
         const sortedSlots = slots.sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+        console.log(`[SLOTS] Returning ${sortedSlots.length} sorted slots`);
         return c.json({
           success: true,
           slots: sortedSlots,
           date,
           vendorId: canonicalVendorId,
-          vendorIdentityId: vendorIdentityIdFromLookup ?? void 0,
+          inputVendorId: vendorId,
           serviceStyle,
           staffBased: false,
           availabilityMeta: {
@@ -149147,10 +150148,12 @@ function registerServiceDiscoveryEndpoints(app3) {
         slots: [],
         date,
         vendorId: canonicalVendorId,
-        vendorIdentityId: vendorIdentityIdFromLookup ?? void 0,
+        // ✅ Use resolved canonical vendors.id
+        inputVendorId: vendorId,
+        // ✅ Also include original input for debugging
         serviceStyle,
         staffBased: false,
-        message: "No advanced availability set for this day and service type. Vendor can set schedule in Advanced Availability."
+        message: "No advance availability set for this day and service type. Vendor must set schedule in Advanced Availability."
       });
     } catch (error) {
       console.error("Error fetching available slots:", error);
@@ -149491,7 +150494,7 @@ function registerServiceDiscoveryEndpoints(app3) {
                 `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
                  FROM vendor_availability_v2
                  WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-                   AND COALESCE(is_enabled, is_available, true) = true
+                   AND (is_available IS NULL OR is_available = true)
                    AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[] OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))
                  ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC LIMIT 1`,
                 [vendor.id, vendor.phone || "", styleArray]
@@ -149774,7 +150777,7 @@ function registerServiceDiscoveryEndpoints(app3) {
             `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
              FROM vendor_availability_v2
              WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-               AND COALESCE(is_enabled, is_available, true) = true
+               AND (is_available IS NULL OR is_available = true)
              ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC LIMIT 1`,
             [vendorId, row.phone || ""]
           );
@@ -150621,7 +151624,7 @@ function registerServiceDiscoveryEndpoints(app3) {
                 `SELECT day_of_week, COALESCE(time_window_start, start_time) as start_time
                  FROM vendor_availability_v2
                  WHERE (vendor_id = $1 OR vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = $1 OR phone = $2))
-                   AND COALESCE(is_enabled, is_available, true) = true
+                   AND (is_available IS NULL OR is_available = true)
                    AND (COALESCE(service_styles, ARRAY[]::text[]) && $3::text[] OR service_style = ANY($3::text[]) OR service_type = ANY($3::text[]))
                  ORDER BY day_of_week ASC, COALESCE(time_window_start, start_time) ASC LIMIT 1`,
                 [vendor.vendor_id, vendor.phone || "", acceptableStyles]
@@ -151190,11 +152193,11 @@ function registerServiceDiscoveryEndpoints(app3) {
             OR LOWER(r.name) IN ('walker','pet_walker','dog_walker','pet_sitter','sitter','pet_taxi','pet_transport','pet_relocation','relocation')
           )`;
       const vendorFallbackExistsService = ` AND EXISTS (
-          SELECT 1 FROM vendor_services vs
-          WHERE vs.vendor_id = v.id AND vs.is_enabled = true
+            SELECT 1 FROM vendor_services vs
+            WHERE vs.vendor_id = v.id AND vs.is_enabled = true
             AND vs.service_style = ANY($1::text[])
-            AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
-        )`;
+              AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
+          )`;
       let vendorFallbackQuery = `
         SELECT DISTINCT ON (v.id)
           v.id as vendor_id,
@@ -151833,8 +152836,7 @@ function registerReviewEndpoints(app3) {
 
 // src/endpoints/notifications.ts
 init_rds_connection();
-init_sns_client();
-var import_client_sns6 = require("@aws-sdk/client-sns");
+init_sms_service();
 function registerNotificationEndpoints(app3) {
   app3.get("/notifications", async (c) => {
     try {
@@ -151936,28 +152938,27 @@ function registerNotificationEndpoints(app3) {
       });
       if (sendSms) {
         try {
-          let phone = null;
-          if (userType === "customer") {
-            const customers = await select("customers", { id: userId });
-            phone = customers[0]?.phone || null;
-          } else if (userType === "vendor") {
-            const vendors = await select("vendors", { id: userId });
-            phone = vendors[0]?.phone || null;
-          }
-          if (phone) {
-            const snsClient4 = getSnsClient();
-            await snsClient4.send(new import_client_sns6.PublishCommand({
-              PhoneNumber: phone,
-              Message: `${title}
+          const isUatMode = process.env.UAT_MODE === "true";
+          if (!isUatMode) {
+            console.warn("[SMS] Skipping free-form SMS from /notifications in production (DLT compliance).");
+          } else {
+            let phone = null;
+            if (userType === "customer") {
+              const customers = await select("customers", { id: userId });
+              phone = customers[0]?.phone || null;
+            } else if (userType === "vendor") {
+              const vendors = await select("vendors", { id: userId });
+              phone = vendors[0]?.phone || null;
+            }
+            if (phone) {
+              await sendSMS({
+                to: phone,
+                message: `${title}
 
 ${message2}`,
-              MessageAttributes: {
-                "AWS.SNS.SMS.SMSType": {
-                  DataType: "String",
-                  StringValue: "Transactional"
-                }
-              }
-            }));
+                type: "transactional"
+              });
+            }
           }
         } catch (smsError) {
           console.error("Error sending SMS notification:", smsError);
@@ -164904,7 +165905,7 @@ function registerServiceCatalogEndpoints(app3) {
 init_rds_connection();
 init_razorpay_client();
 init_sns_client();
-var import_client_sns7 = require("@aws-sdk/client-sns");
+var import_client_sns6 = require("@aws-sdk/client-sns");
 async function resolveOrCreateVendorIdForBank(vendorId) {
   const existingVendor = await select("vendors", { id: vendorId });
   if (existingVendor.length > 0) return { actualVendorId: vendorId };
@@ -165297,7 +166298,7 @@ function registerSettlementEndpoints(app3) {
             await createPayout(settlementRecord[0].id, vendorId, settlement.netAmount);
           }
           const snsClient4 = getSnsClient();
-          await snsClient4.send(new import_client_sns7.PublishCommand({
+          await snsClient4.send(new import_client_sns6.PublishCommand({
             TopicArn: process.env.SETTLEMENT_CREATED_TOPIC_ARN || "",
             Message: JSON.stringify({
               eventType: "SettlementCreated",
@@ -166972,7 +167973,7 @@ function registerRegionEndpoints(app3) {
 // src/endpoints/chat.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns8 = require("@aws-sdk/client-sns");
+var import_client_sns7 = require("@aws-sdk/client-sns");
 function registerChatEndpoints(app3) {
   app3.get("/chat/conversations", async (c) => {
     try {
@@ -167267,7 +168268,7 @@ function registerChatEndpoints(app3) {
       const recipientPhone = senderType === "customer" ? (await select("vendors", { id: booking.vendor_id }))[0]?.phone : (await select("customers", { id: booking.customer_id }))[0]?.phone;
       if (recipientPhone) {
         const snsClient4 = getSnsClient();
-        await snsClient4.send(new import_client_sns8.PublishCommand({
+        await snsClient4.send(new import_client_sns7.PublishCommand({
           PhoneNumber: recipientPhone,
           Message: `New message from ${senderName || senderPhone}: ${message2.substring(0, 100)}`,
           MessageAttributes: {
@@ -167354,7 +168355,7 @@ function registerChatEndpoints(app3) {
       });
       if (receiverPhone) {
         const snsClient4 = getSnsClient();
-        await snsClient4.send(new import_client_sns8.PublishCommand({
+        await snsClient4.send(new import_client_sns7.PublishCommand({
           PhoneNumber: receiverPhone,
           Message: `New message from ${senderName || senderPhone}: ${message2.substring(0, 100)}`,
           MessageAttributes: {
@@ -167405,7 +168406,7 @@ function registerChatEndpoints(app3) {
       if (recipientPhone) {
         const snsClient4 = getSnsClient();
         if (snsClient4) {
-          await snsClient4.send(new import_client_sns8.PublishCommand({
+          await snsClient4.send(new import_client_sns7.PublishCommand({
             TopicArn: process.env.CHAT_NOTIFICATIONS_TOPIC_ARN,
             Message: JSON.stringify({
               type: "chat_message",
@@ -178788,7 +179789,7 @@ function registerReturnsEndpoints(app3) {
 // src/endpoints/order-management.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns9 = require("@aws-sdk/client-sns");
+var import_client_sns8 = require("@aws-sdk/client-sns");
 var validTransitions = {
   "pending": ["confirmed", "cancelled"],
   "confirmed": ["processing", "cancelled"],
@@ -178855,7 +179856,7 @@ function registerOrderManagementEndpoints(app3) {
       const vendor = order.vendor_id ? await select("vendors", { id: order.vendor_id }) : [];
       const snsClient4 = getSnsClient();
       if (customer.length > 0 && customer[0].phone) {
-        await snsClient4.send(new import_client_sns9.PublishCommand({
+        await snsClient4.send(new import_client_sns8.PublishCommand({
           PhoneNumber: customer[0].phone,
           Message: `Your order ${order.order_number} status updated to: ${status}`,
           MessageAttributes: {
@@ -179043,7 +180044,7 @@ function registerOrderManagementEndpoints(app3) {
 // src/endpoints/otp-enhanced.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns10 = require("@aws-sdk/client-sns");
+var import_client_sns9 = require("@aws-sdk/client-sns");
 function generateOTP() {
   return Math.floor(1e5 + Math.random() * 9e5).toString();
 }
@@ -179077,7 +180078,7 @@ function registerEnhancedOtpEndpoints(app3) {
       const customer = customers.length > 0 ? customers[0] : null;
       if (customer?.phone) {
         const snsClient4 = getSnsClient();
-        await snsClient4.send(new import_client_sns10.PublishCommand({
+        await snsClient4.send(new import_client_sns9.PublishCommand({
           PhoneNumber: customer.phone,
           Message: `Your Warmpawz verification code for booking ${bookingId} (${action}): ${otp}. Valid for 24 hours.`,
           MessageAttributes: {
@@ -179233,7 +180234,7 @@ function registerEnhancedOtpEndpoints(app3) {
       const customer = customers.length > 0 ? customers[0] : null;
       if (customer?.phone) {
         const snsClient4 = getSnsClient();
-        await snsClient4.send(new import_client_sns10.PublishCommand({
+        await snsClient4.send(new import_client_sns9.PublishCommand({
           PhoneNumber: customer.phone,
           Message: `Your Warmpawz booking ${booking[0].id} is confirmed! Start OTP: ${startOTP}, End OTP: ${endOTP}. Save these for verification.`,
           MessageAttributes: {
@@ -179257,259 +180258,10 @@ function registerEnhancedOtpEndpoints(app3) {
   });
 }
 
-// src/endpoints/sms-notifications.ts
-init_rds_connection();
-init_sns_client();
-var import_client_sns11 = require("@aws-sdk/client-sns");
-var SMS_TEMPLATES = {
-  booking_created: {
-    id: "booking_created",
-    event: "booking_created",
-    message: "Hi {customerName}! Your booking {bookingId} for {serviceName} on {date} at {time} is confirmed. Track at warmpawz.com/track/{bookingId}",
-    variables: ["customerName", "bookingId", "serviceName", "date", "time"]
-  },
-  payment_confirmed: {
-    id: "payment_confirmed",
-    event: "payment_confirmed",
-    message: "Payment of \u20B9{amount} received for booking {bookingId}. Receipt: {receiptUrl}",
-    variables: ["amount", "bookingId", "receiptUrl"]
-  },
-  staff_assigned: {
-    id: "staff_assigned",
-    event: "staff_assigned",
-    message: "{staffName} has been assigned to your booking {bookingId}. Contact: {staffPhone}",
-    variables: ["staffName", "bookingId", "staffPhone"]
-  },
-  provider_en_route: {
-    id: "provider_en_route",
-    event: "provider_en_route",
-    message: "{providerName} is on the way! Track live location: warmpawz.com/track/{bookingId}",
-    variables: ["providerName", "bookingId"]
-  },
-  provider_arrived: {
-    id: "provider_arrived",
-    event: "provider_arrived",
-    message: "{providerName} has arrived at your location. OTP for verification: {otp}",
-    variables: ["providerName", "otp"]
-  },
-  service_started: {
-    id: "service_started",
-    event: "service_started",
-    message: "Service started for {petName}. You will receive updates shortly.",
-    variables: ["petName"]
-  },
-  service_completed: {
-    id: "service_completed",
-    event: "service_completed",
-    message: "Service completed for {petName}! OTP for completion: {otp}. Rate your experience: warmpawz.com/review/{bookingId}",
-    variables: ["petName", "otp", "bookingId"]
-  },
-  booking_cancelled: {
-    id: "booking_cancelled",
-    event: "booking_cancelled",
-    message: "Booking {bookingId} has been cancelled. Refund of \u20B9{refundAmount} will be processed in 5-7 days.",
-    variables: ["bookingId", "refundAmount"]
-  },
-  refund_processed: {
-    id: "refund_processed",
-    event: "refund_processed",
-    message: "Refund of \u20B9{amount} for booking {bookingId} has been processed to your account.",
-    variables: ["amount", "bookingId"]
-  },
-  review_request: {
-    id: "review_request",
-    event: "review_request",
-    message: "How was your experience with {providerName}? Share your feedback: warmpawz.com/review/{bookingId}",
-    variables: ["providerName", "bookingId"]
-  },
-  delivery_dispatched: {
-    id: "delivery_dispatched",
-    event: "delivery_dispatched",
-    message: "Your order {orderId} has been dispatched. Track: warmpawz.com/track/{orderId}",
-    variables: ["orderId"]
-  },
-  delivery_arrived: {
-    id: "delivery_arrived",
-    event: "delivery_arrived",
-    message: "Your order {orderId} has arrived! OTP for delivery: {otp}",
-    variables: ["orderId", "otp"]
-  }
-};
-function replaceTemplateVariables(template, variables) {
-  let message2 = template;
-  for (const [key, value] of Object.entries(variables)) {
-    message2 = message2.replace(new RegExp(`\\{${key}\\}`, "g"), String(value || ""));
-  }
-  return message2;
-}
-async function triggerBookingNotification(event, data) {
-  try {
-    console.log(`\u{1F514} Triggering SMS notification for event: ${event}`);
-    const template = SMS_TEMPLATES[event];
-    if (!template) {
-      console.warn(`No SMS template found for event: ${event}`);
-      return;
-    }
-    const { booking, customer, vendor, staff, service } = data;
-    const variables = {
-      customerName: customer?.name || customer?.phone || "Customer",
-      bookingId: booking?.id || booking?.order_number || "",
-      serviceName: service?.name || "Service",
-      date: booking?.booking_date || "",
-      time: booking?.booking_time || "",
-      amount: booking?.total_amount || booking?.amount || "0",
-      receiptUrl: booking?.receipt_url || "",
-      staffName: staff?.name || "Staff",
-      staffPhone: staff?.phone || "",
-      providerName: vendor?.business_name || vendor?.owner_name || "Provider",
-      petName: booking?.pet_name || "Pet",
-      otp: booking?.otp_code || "",
-      refundAmount: booking?.refund_amount || "0",
-      orderId: booking?.order_id || booking?.id || ""
-    };
-    const message2 = replaceTemplateVariables(template.message, variables);
-    const recipientPhone = customer?.phone || booking?.customer_phone;
-    if (!recipientPhone) {
-      console.warn("No recipient phone number found");
-      return;
-    }
-    const snsClient4 = getSnsClient();
-    await snsClient4.send(new import_client_sns11.PublishCommand({
-      PhoneNumber: recipientPhone,
-      Message: message2,
-      MessageAttributes: {
-        "AWS.SNS.SMS.SMSType": { DataType: "String", StringValue: "Transactional" }
-      }
-    }));
-    await insert("notifications", {
-      user_id: customer?.id || booking?.customer_id,
-      user_type: "customer",
-      title: template.event,
-      message: message2,
-      notification_type: "sms",
-      is_read: false,
-      metadata: {
-        event,
-        bookingId: booking?.id,
-        sentVia: "sms"
-      }
-    }).catch((err) => console.error("Failed to log notification:", err));
-    console.log(`\u2705 SMS sent to ${recipientPhone} for event: ${event}`);
-  } catch (error) {
-    console.error("Error triggering SMS notification:", error);
-  }
-}
-function registerSmsNotificationEndpoints(app3) {
-  app3.post("/sms/send", async (c) => {
-    try {
-      const { phone, message: message2, event, variables } = await c.req.json();
-      if (!phone || !message2) {
-        return c.json({ error: "phone and message are required" }, 400);
-      }
-      const snsClient4 = getSnsClient();
-      const result = await snsClient4.send(new import_client_sns11.PublishCommand({
-        PhoneNumber: phone,
-        Message: message2,
-        MessageAttributes: {
-          "AWS.SNS.SMS.SMSType": { DataType: "String", StringValue: "Transactional" }
-        }
-      }));
-      await insert("notifications", {
-        user_id: null,
-        user_type: "customer",
-        title: event || "sms_notification",
-        message: message2,
-        notification_type: "sms",
-        is_read: false,
-        metadata: {
-          event,
-          phone,
-          messageId: result.MessageId
-        }
-      }).catch(() => {
-      });
-      return c.json({
-        success: true,
-        messageId: result.MessageId,
-        message: "SMS sent successfully"
-      });
-    } catch (error) {
-      console.error("Error sending SMS:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.post("/sms/trigger-event", async (c) => {
-    try {
-      const { event, bookingId, data } = await c.req.json();
-      if (!event || !bookingId) {
-        return c.json({ error: "event and bookingId are required" }, 400);
-      }
-      const bookings = await select("bookings", { id: bookingId });
-      if (bookings.length === 0) {
-        return c.json({ error: "Booking not found" }, 404);
-      }
-      const booking = bookings[0];
-      const customers = await select("customers", { id: booking.customer_id });
-      const customer = customers.length > 0 ? customers[0] : null;
-      const vendors = booking.vendor_id ? await select("vendors", { id: booking.vendor_id }) : [];
-      const vendor = vendors.length > 0 ? vendors[0] : null;
-      const staff = booking.staff_id ? await select("staff", { id: booking.staff_id }) : [];
-      const staffMember = staff.length > 0 ? staff[0] : null;
-      const services = await select("services", { id: booking.service_id });
-      const service = services.length > 0 ? services[0] : null;
-      await triggerBookingNotification(event, {
-        booking,
-        customer,
-        vendor,
-        staff: staffMember,
-        service,
-        ...data
-      });
-      return c.json({
-        success: true,
-        message: "SMS notification triggered"
-      });
-    } catch (error) {
-      console.error("Error triggering SMS event:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-  app3.get("/sms/templates", async (c) => {
-    return c.json({
-      success: true,
-      templates: Object.values(SMS_TEMPLATES)
-    });
-  });
-  app3.get("/sms/history", async (c) => {
-    try {
-      const { userId, limit = 50, offset = 0 } = c.req.query();
-      let queryText = `SELECT * FROM notifications WHERE notification_type = 'sms'`;
-      const params = [];
-      let paramIndex = 1;
-      if (userId) {
-        queryText += ` AND user_id = $${paramIndex}`;
-        params.push(userId);
-        paramIndex++;
-      }
-      queryText += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(parseInt(limit, 10), parseInt(offset, 10));
-      const result = await query(queryText, params).catch(() => ({ rows: [] }));
-      return c.json({
-        success: true,
-        notifications: result.rows,
-        total: result.rows.length
-      });
-    } catch (error) {
-      console.error("Error fetching SMS history:", error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-}
-
 // src/endpoints/customer-profile.ts
 init_rds_connection();
 var import_api_contracts = __toESM(require_dist5());
-function normalizePhone(phone) {
+function normalizePhone2(phone) {
   return phone.replace(/\D/g, "");
 }
 async function resolveCustomerId(identifier) {
@@ -179518,7 +180270,7 @@ async function resolveCustomerId(identifier) {
     const customers2 = await select("customers", { id: identifier });
     return customers2.length > 0 ? customers2[0].id : null;
   }
-  const cleanPhone = normalizePhone(identifier);
+  const cleanPhone = normalizePhone2(identifier);
   const customers = await select("customers", { phone: cleanPhone });
   return customers.length > 0 ? customers[0].id : null;
 }
@@ -179677,7 +180429,7 @@ function registerCustomerProfileEndpoints(app3) {
       if (!phone) {
         return c.json({ error: "Phone number is required as query param" }, 400);
       }
-      const cleanPhone = normalizePhone(phone);
+      const cleanPhone = normalizePhone2(phone);
       let customers;
       try {
         customers = await select("customers", { phone: cleanPhone });
@@ -179799,7 +180551,7 @@ function registerCustomerProfileEndpoints(app3) {
       if (!phone) {
         return c.json({ error: "Phone number is required" }, 400);
       }
-      const cleanPhone = normalizePhone(phone);
+      const cleanPhone = normalizePhone2(phone);
       let customerId = await resolveCustomerId(cleanPhone);
       if (!customerId) {
         try {
@@ -180032,7 +180784,7 @@ function registerCustomerProfileEndpoints(app3) {
       if (!phone) {
         return c.json({ error: "Phone number is required" }, 400);
       }
-      const cleanPhone = normalizePhone(phone);
+      const cleanPhone = normalizePhone2(phone);
       const customers = await select("customers", { phone: cleanPhone });
       if (customers.length === 0) {
         return c.json({ error: "Customer not found", customer: null }, 404);
@@ -180344,7 +181096,7 @@ function registerSystemHealthEndpoints(app3) {
 // src/endpoints/vendor-settings.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns12 = require("@aws-sdk/client-sns");
+var import_client_sns10 = require("@aws-sdk/client-sns");
 function registerVendorSettingsEndpoints(app3) {
   app3.get("/admin/vendor-settings-rules", async (c) => {
     try {
@@ -180386,7 +181138,7 @@ function registerVendorSettingsEndpoints(app3) {
         "setting_key"
       );
       const snsClient4 = getSnsClient();
-      await snsClient4.send(new import_client_sns12.PublishCommand({
+      await snsClient4.send(new import_client_sns10.PublishCommand({
         TopicArn: process.env.ADMIN_SETTING_UPDATED_TOPIC_ARN,
         Message: JSON.stringify({
           eventType: "PaymentRuleCreated",
@@ -183891,7 +184643,7 @@ function registerVendorBookingActionsEndpoints(app3) {
 // src/endpoints/notification-system.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns13 = require("@aws-sdk/client-sns");
+var import_client_sns11 = require("@aws-sdk/client-sns");
 function registerNotificationSystemEndpoints(app3) {
   app3.post("/notifications/create", async (c) => {
     try {
@@ -183927,7 +184679,7 @@ function registerNotificationSystemEndpoints(app3) {
       });
       if (channels?.sms && recipientPhone) {
         const snsClient4 = getSnsClient();
-        await snsClient4.send(new import_client_sns13.PublishCommand({
+        await snsClient4.send(new import_client_sns11.PublishCommand({
           PhoneNumber: recipientPhone,
           Message: `${title}: ${message2}`,
           MessageAttributes: {
@@ -203490,7 +204242,7 @@ ${conversationHistory || "N/A"}`,
 // src/endpoints/support-crm.ts
 init_rds_connection();
 init_sns_client();
-var import_client_sns14 = require("@aws-sdk/client-sns");
+var import_client_sns12 = require("@aws-sdk/client-sns");
 function registerSupportCrmEndpoints(app3) {
   app3.post("/support/tickets", async (c) => {
     try {
@@ -203683,7 +204435,7 @@ function registerSupportCrmEndpoints(app3) {
           const snsClient4 = getSnsClient();
           const customerPhone = ticket.customer_phone || (ticket.customer_id ? (await select("customers", { id: ticket.customer_id }))[0]?.phone : null);
           if (customerPhone) {
-            await snsClient4.send(new import_client_sns14.PublishCommand({
+            await snsClient4.send(new import_client_sns12.PublishCommand({
               PhoneNumber: customerPhone,
               Message: `Support Update: ${message2.substring(0, 100)}...`,
               MessageAttributes: {

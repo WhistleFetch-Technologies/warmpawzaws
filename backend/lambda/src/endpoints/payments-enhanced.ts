@@ -94,7 +94,7 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       }
     }
 
-    // Get booking to extract customer_id and vendor_id
+    // ✅ bookingId is REQUIRED - booking should already exist (created before payment)
     let bookings: any[];
     try {
       bookings = await select('bookings', { id: bookingId });
@@ -121,6 +121,8 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       );
     }
 
+    const effectiveVendorId = vendorId || booking.vendor_id;
+
     try {
       // Calculate tax for booking payment
       let taxBreakdown = null;
@@ -135,7 +137,7 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       let vendorLocation: { state: string; city?: string } | undefined = undefined;
 
       if (booking.customer_id) {
-        const customers = await select('customers', { id: booking.customer_id });
+        const customers = await select('customers', { id: effectiveCustomerId });
         if (customers.length > 0 && customers[0].address) {
           try {
             // ✅ FIX: Handle both JSON and plain text addresses
@@ -372,7 +374,7 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       try {
         payment = await withTransaction(async (client) => {
         const paymentData: any = {
-          booking_id: bookingId,
+          booking_id: bookingId, // ✅ bookingId is REQUIRED - booking should already exist
           customer_id: effectiveCustomerId,
           vendor_id: vendorId || booking.vendor_id,
           amount: amount, // Base service amount
